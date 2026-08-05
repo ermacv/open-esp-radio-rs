@@ -402,6 +402,23 @@ pub(crate) struct LinkedProjectedSemanticAction {
     pub(crate) guard_scopes: Option<Vec<LinkedCallGuardScope>>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedEventDispatchBinding {
+    pub(crate) role: &'static str,
+    pub(crate) argument: LinkedProjectedCallArgument,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedEventDispatch {
+    pub(crate) semantic_action_index: usize,
+    pub(crate) mechanism: &'static str,
+    pub(crate) execution_context: &'static str,
+    pub(crate) receiver: Option<String>,
+    pub(crate) interface_complete: bool,
+    pub(crate) blockers: Vec<String>,
+    pub(crate) bindings: Vec<LinkedEventDispatchBinding>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedTrampolineSlot {
     pub(crate) trampoline: LinkedTrampoline,
@@ -425,6 +442,7 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) context_fields: Vec<LinkedSummaryContextField>,
     pub(crate) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
     pub(crate) semantic_actions: Vec<LinkedProjectedSemanticAction>,
+    pub(crate) event_dispatches: Vec<LinkedEventDispatch>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -4136,6 +4154,107 @@ fn extend_guard_scopes(
     Some(scopes)
 }
 
+struct EventDispatchSpec {
+    mechanism: &'static str,
+    execution_context: &'static str,
+    argument_roles: &'static [(&'static str, &'static str)],
+}
+
+const INTERNAL_SIGNAL_ARGUMENT_ROLES: &[(&str, &str)] = &[("selector", "signal")];
+const ISR_QUEUE_ARGUMENT_ROLES: &[(&str, &str)] = &[
+    ("channel", "queue"),
+    ("payload", "item"),
+    ("wake-output", "higher_priority_task_woken"),
+];
+const EVENT_POST_ARGUMENT_ROLES: &[(&str, &str)] = &[
+    ("channel", "event_base"),
+    ("selector", "event_id"),
+    ("payload", "event_data"),
+    ("payload-size", "event_data_size"),
+    ("wait", "ticks_to_wait"),
+];
+
+fn event_dispatch_spec(operation: &str) -> Option<EventDispatchSpec> {
+    let spec = match operation {
+        "wifi.internal-signal.post" => EventDispatchSpec {
+            mechanism: "internal-signal",
+            execution_context: "unspecified",
+            argument_roles: INTERNAL_SIGNAL_ARGUMENT_ROLES,
+        },
+        "rtos.queue.send-from-isr" => EventDispatchSpec {
+            mechanism: "rtos-queue",
+            execution_context: "isr",
+            argument_roles: ISR_QUEUE_ARGUMENT_ROLES,
+        },
+        "rtos.event.post" => EventDispatchSpec {
+            mechanism: "rtos-event-loop",
+            execution_context: "unspecified",
+            argument_roles: EVENT_POST_ARGUMENT_ROLES,
+        },
+        _ => return None,
+    };
+    Some(spec)
+}
+
+fn project_event_dispatches(actions: &[LinkedProjectedSemanticAction]) -> Vec<LinkedEventDispatch> {
+    actions
+        .iter()
+        .enumerate()
+        .filter_map(|(semantic_action_index, action)| {
+            let spec = event_dispatch_spec(&action.operation)?;
+            let mut blockers = BTreeSet::new();
+            if action.contract.is_none() {
+                blockers.insert("semantic action has no reviewed contract".to_owned());
+            }
+            let expected_names = spec
+                .argument_roles
+                .iter()
+                .map(|(_, name)| *name)
+                .collect::<BTreeSet<_>>();
+            for argument in &action.arguments {
+                if !expected_names.contains(argument.name.as_str()) {
+                    blockers.insert(format!(
+                        "unexpected semantic argument {} at position {}",
+                        argument.name, argument.position
+                    ));
+                }
+            }
+            let mut bindings = Vec::new();
+            for &(role, name) in spec.argument_roles {
+                let matching = action
+                    .arguments
+                    .iter()
+                    .filter(|argument| argument.name == name)
+                    .collect::<Vec<_>>();
+                match matching.as_slice() {
+                    [argument] => bindings.push(LinkedEventDispatchBinding {
+                        role,
+                        argument: (*argument).clone(),
+                    }),
+                    [] => {
+                        blockers
+                            .insert(format!("missing semantic argument {name} for role {role}"));
+                    }
+                    _ => {
+                        blockers.insert(format!(
+                            "ambiguous semantic argument {name} for role {role}"
+                        ));
+                    }
+                }
+            }
+            Some(LinkedEventDispatch {
+                semantic_action_index,
+                mechanism: spec.mechanism,
+                execution_context: spec.execution_context,
+                receiver: None,
+                interface_complete: blockers.is_empty(),
+                blockers: blockers.into_iter().collect(),
+                bindings,
+            })
+        })
+        .collect()
+}
+
 fn project_context_fields(
     root: usize,
     functions: &[LinkedIrFunction],
@@ -4148,6 +4267,7 @@ fn project_context_fields(
     Vec<LinkedSummaryContextField>,
     Vec<LinkedProjectedTrampolineCall>,
     Vec<LinkedProjectedSemanticAction>,
+    Vec<LinkedEventDispatch>,
 ) {
     let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
     for argument in 0..LINKED_CONTEXT_ARGUMENTS {
@@ -4373,12 +4493,15 @@ fn project_context_fields(
             },
         )
         .collect();
+    let semantic_actions = semantic_actions.into_iter().collect::<Vec<_>>();
+    let event_dispatches = project_event_dispatches(&semantic_actions);
     (
         call_graph_closed && blockers.is_empty(),
         blockers.into_iter().collect(),
         fields,
         trampoline_calls.into_iter().collect(),
-        semantic_actions.into_iter().collect(),
+        semantic_actions,
+        event_dispatches,
     )
 }
 
@@ -4561,6 +4684,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_fields,
                 trampoline_calls,
                 semantic_actions,
+                event_dispatches,
             ) = project_context_fields(
                 root,
                 functions,
@@ -4613,6 +4737,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_fields,
                 trampoline_calls,
                 semantic_actions,
+                event_dispatches,
             }
         })
         .collect::<Vec<_>>();
@@ -5522,6 +5647,142 @@ mod tests {
             reference_blockers: Vec::new(),
             pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
         }
+    }
+
+    fn projected_argument(
+        position: usize,
+        name: &str,
+        c_type: &str,
+        value: &str,
+    ) -> LinkedProjectedCallArgument {
+        LinkedProjectedCallArgument {
+            position,
+            name: name.to_owned(),
+            c_type: c_type.to_owned(),
+            direction: "input",
+            value: value.to_owned(),
+            binding: "constant-or-symbolic",
+            root_argument: None,
+            root_offset: None,
+        }
+    }
+
+    fn projected_semantic_action(
+        operation: &str,
+        arguments: Vec<LinkedProjectedCallArgument>,
+        reviewed: bool,
+    ) -> LinkedProjectedSemanticAction {
+        LinkedProjectedSemanticAction {
+            site_path: vec![Some(0x10)],
+            operation: operation.to_owned(),
+            target: "semantic::dispatch".to_owned(),
+            contract: reviewed.then(|| LinkedSemanticContract {
+                source: "test-reviewed-contract",
+                id: format!("test::{operation}"),
+                evidence: "unit-test".to_owned(),
+            }),
+            replacement_hint: None,
+            origin: "rom::irq_handler".to_owned(),
+            path: "rom::irq_handler --semantic@0x00000010--> semantic::dispatch".to_owned(),
+            site: Some(0x10),
+            argument_shapes: 1,
+            arguments,
+            guard_scopes: Some(Vec::new()),
+        }
+    }
+
+    #[test]
+    fn event_dispatch_projection_assigns_reviewed_argument_roles() {
+        let actions = vec![
+            projected_semantic_action("critical-section.enter", Vec::new(), true),
+            projected_semantic_action(
+                "wifi.internal-signal.post",
+                vec![projected_argument(0, "signal", "u32", "const:0x1a")],
+                true,
+            ),
+            projected_semantic_action(
+                "rtos.queue.send-from-isr",
+                vec![
+                    projected_argument(0, "queue", "*mut void", "arg0"),
+                    projected_argument(1, "item", "*const void", "arg1"),
+                    projected_argument(2, "higher_priority_task_woken", "*mut bool", "arg2"),
+                ],
+                true,
+            ),
+            projected_semantic_action(
+                "rtos.event.post",
+                vec![
+                    projected_argument(0, "event_base", "*const char", "arg0"),
+                    projected_argument(1, "event_id", "i32", "const:0x7"),
+                    projected_argument(2, "event_data", "*const void", "arg1"),
+                    projected_argument(3, "event_data_size", "usize", "const:0x4"),
+                    projected_argument(4, "ticks_to_wait", "u32", "const:0x0"),
+                ],
+                true,
+            ),
+        ];
+
+        let dispatches = project_event_dispatches(&actions);
+
+        assert_eq!(dispatches.len(), 3);
+        assert_eq!(dispatches[0].semantic_action_index, 1);
+        assert_eq!(dispatches[0].mechanism, "internal-signal");
+        assert_eq!(dispatches[0].execution_context, "unspecified");
+        assert_eq!(dispatches[0].receiver, None);
+        assert!(dispatches[0].interface_complete);
+        assert_eq!(dispatches[0].bindings[0].role, "selector");
+        assert_eq!(dispatches[0].bindings[0].argument.value, "const:0x1a");
+
+        assert_eq!(dispatches[1].semantic_action_index, 2);
+        assert_eq!(dispatches[1].mechanism, "rtos-queue");
+        assert_eq!(dispatches[1].execution_context, "isr");
+        assert_eq!(
+            dispatches[1]
+                .bindings
+                .iter()
+                .map(|binding| binding.role)
+                .collect::<Vec<_>>(),
+            ["channel", "payload", "wake-output"]
+        );
+
+        assert_eq!(dispatches[2].semantic_action_index, 3);
+        assert_eq!(dispatches[2].mechanism, "rtos-event-loop");
+        assert_eq!(
+            dispatches[2]
+                .bindings
+                .iter()
+                .map(|binding| binding.role)
+                .collect::<Vec<_>>(),
+            ["channel", "selector", "payload", "payload-size", "wait"]
+        );
+        assert!(dispatches.iter().all(|dispatch| {
+            dispatch.interface_complete
+                && dispatch.receiver.is_none()
+                && dispatch.blockers.is_empty()
+        }));
+    }
+
+    #[test]
+    fn event_dispatch_projection_exposes_contract_and_schema_mismatches() {
+        let actions = vec![projected_semantic_action(
+            "wifi.internal-signal.post",
+            vec![projected_argument(0, "unexpected", "u32", "arg0")],
+            false,
+        )];
+
+        let dispatches = project_event_dispatches(&actions);
+
+        assert_eq!(dispatches.len(), 1);
+        assert!(!dispatches[0].interface_complete);
+        assert!(dispatches[0].bindings.is_empty());
+        assert_eq!(
+            dispatches[0].blockers,
+            [
+                "missing semantic argument signal for role selector",
+                "semantic action has no reviewed contract",
+                "unexpected semantic argument unexpected at position 0",
+            ]
+        );
     }
 
     #[test]

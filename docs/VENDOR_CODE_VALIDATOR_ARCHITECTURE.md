@@ -246,6 +246,19 @@ from the report root through nested calls; missing instruction sites remain
 explicit rather than receiving invented offsets. Pointer arguments reuse
 affine root bindings; scalar values retain their recovered symbolic form.
 
+A conservative event-dispatch projection consumes those semantic actions. It
+recognizes only a small reviewed operation vocabulary and maps the contract's
+named arguments onto mechanism-neutral roles such as channel, selector and
+payload. The result points back to the underlying action by stable index, so
+its lexical site path, call path and factorized guard scopes remain the single
+source of provenance. A complete interface record means that the reviewed
+contract and expected argument schema matched; it does not mean that scheduler,
+queue storage, callback execution or delivery effects were modeled. Receiver
+inference is intentionally absent because the sending call alone does not
+identify the consuming task or callback. Unknown receivers and schema blockers
+remain explicit rather than being derived from symbol spelling or pointer
+values.
+
 Exploratory forced branch decisions are attached to direct calls as minimized
 DNF guard paths. Semantic projection keeps them factorized by the function in
 which they were observed: scopes compose conjunctively, paths within one scope

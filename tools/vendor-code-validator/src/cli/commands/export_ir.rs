@@ -149,7 +149,7 @@ fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize, usize, usi
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-semantic-operation-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -432,7 +432,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
         }
         let summary = &function.effect_summary;
         println!(
-            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tsemantic-actions={}\ttrampoline-calls={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
+            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tsemantic-actions={}\tevent-dispatches={}\ttrampoline-calls={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
             function.identity,
             summary.call_graph_closed,
             summary.max_depth,
@@ -442,6 +442,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
             summary.delays.len(),
             summary.semantic_operations.len(),
             summary.semantic_actions.len(),
+            summary.event_dispatches.len(),
             summary.trampoline_calls.len(),
             summary.context_projection_complete,
             summary.context_fields.len(),
@@ -595,6 +596,49 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                     "EFFECT-ACTION-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
                     function.identity,
                     action.operation,
+                    argument.position,
+                    argument.name,
+                    argument.c_type,
+                    argument.direction,
+                    argument.value,
+                    argument.binding,
+                    argument
+                        .root_argument
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                    argument
+                        .root_offset
+                        .map_or_else(|| "-".to_owned(), |value| format!("{value:+#x}")),
+                );
+            }
+        }
+        for dispatch in &summary.event_dispatches {
+            let action = &summary.semantic_actions[dispatch.semantic_action_index];
+            println!(
+                "EFFECT-EVENT-DISPATCH\t{}\tmechanism={}\texecution-context={}\treceiver={}\tinterface-complete={}\tsemantic-action-index={}\toperation={}\ttarget={}\torigin={}\tsite-path={}\tcfg-guard-scopes={}\tpath={}\tblockers={}",
+                function.identity,
+                dispatch.mechanism,
+                dispatch.execution_context,
+                dispatch.receiver.as_deref().unwrap_or("unknown"),
+                dispatch.interface_complete,
+                dispatch.semantic_action_index,
+                action.operation,
+                action.target,
+                action.origin,
+                format_site_path(&action.site_path),
+                action
+                    .guard_scopes
+                    .as_ref()
+                    .map_or_else(|| "unknown".to_owned(), |scopes| scopes.len().to_string()),
+                action.path,
+                dispatch.blockers.join(" | "),
+            );
+            for binding in &dispatch.bindings {
+                let argument = &binding.argument;
+                println!(
+                    "EFFECT-EVENT-DISPATCH-ARG\t{}\t{}\trole={}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
+                    function.identity,
+                    dispatch.semantic_action_index,
+                    binding.role,
                     argument.position,
                     argument.name,
                     argument.c_type,
@@ -1065,7 +1109,7 @@ fn write_pseudo(
             .expect("writing to String cannot fail");
         writeln!(
             output,
-            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} semantic-actions={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
+            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} semantic-actions={} event-dispatches={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
             summary.call_graph_closed,
             summary.max_depth,
             summary.reachable_functions.len(),
@@ -1073,6 +1117,7 @@ fn write_pseudo(
             summary.delays.len(),
             summary.semantic_operations.len(),
             summary.semantic_actions.len(),
+            summary.event_dispatches.len(),
             summary.trampoline_calls.len(),
             summary.context_fields.len(),
             summary.context_projection_complete,
@@ -1095,6 +1140,60 @@ fn write_pseudo(
                 semantic.origins.join(" | ")
             )
             .expect("writing to String cannot fail");
+        }
+        for dispatch in &summary.event_dispatches {
+            let action = &summary.semantic_actions[dispatch.semantic_action_index];
+            writeln!(
+                output,
+                "// EVENT-DISPATCH: mechanism={} context={} receiver={} interface-complete={} action={} operation={} target={}",
+                dispatch.mechanism,
+                dispatch.execution_context,
+                dispatch.receiver.as_deref().unwrap_or("unknown"),
+                dispatch.interface_complete,
+                dispatch.semantic_action_index + 1,
+                action.operation,
+                action.target,
+            )
+            .expect("writing to String cannot fail");
+            writeln!(output, "//   route: {}", action.path).expect("writing to String cannot fail");
+            for binding in &dispatch.bindings {
+                let argument = &binding.argument;
+                let projected = match (argument.root_argument, argument.root_offset) {
+                    (Some(root_argument), Some(root_offset)) => {
+                        format!("ctx{root_argument} {root_offset:+#x}")
+                    }
+                    _ => argument.value.clone(),
+                };
+                writeln!(
+                    output,
+                    "//   {} {}: {} = {}",
+                    binding.role, argument.name, argument.c_type, projected,
+                )
+                .expect("writing to String cannot fail");
+            }
+            match action.guard_scopes.as_deref() {
+                Some([]) => output.push_str("//   when: true\n"),
+                Some(scopes) => {
+                    for scope in scopes {
+                        writeln!(
+                            output,
+                            "//   when in {}: {}",
+                            scope.function,
+                            format_guard_paths(&scope.paths),
+                        )
+                        .expect("writing to String cannot fail");
+                    }
+                }
+                None => output.push_str("//   when: unknown (CFG guard unavailable)\n"),
+            }
+            if !dispatch.blockers.is_empty() {
+                writeln!(
+                    output,
+                    "//   interface blockers: {}",
+                    dispatch.blockers.join(" | "),
+                )
+                .expect("writing to String cannot fail");
+            }
         }
         for action in &summary.semantic_actions {
             let contract = action.contract.as_ref().map_or_else(
@@ -1694,42 +1793,46 @@ fn write_semantic_contract(output: &mut String, contract: Option<&LinkedSemantic
     output.push('}');
 }
 
+fn write_projected_argument(output: &mut String, argument: &LinkedProjectedCallArgument) {
+    write!(output, "{{\"position\": {}, \"name\": ", argument.position)
+        .expect("writing to String cannot fail");
+    write_string(output, &argument.name);
+    output.push_str(", \"c_type\": ");
+    write_string(output, &argument.c_type);
+    output.push_str(", \"direction\": ");
+    write_string(output, argument.direction);
+    output.push_str(", \"value\": ");
+    write_string(output, &argument.value);
+    output.push_str(", \"binding\": ");
+    write_string(output, argument.binding);
+    output.push_str(", \"root_argument\": ");
+    if let Some(root_argument) = argument.root_argument {
+        write!(output, "{root_argument}").expect("writing to String cannot fail");
+    } else {
+        output.push_str("null");
+    }
+    output.push_str(", \"root_offset\": ");
+    if let Some(root_offset) = argument.root_offset {
+        write!(output, "{root_offset}").expect("writing to String cannot fail");
+    } else {
+        output.push_str("null");
+    }
+    output.push_str(", \"root_offset_hex\": ");
+    if let Some(root_offset) = argument.root_offset {
+        write_string(output, &format!("{root_offset:+#x}"));
+    } else {
+        output.push_str("null");
+    }
+    output.push('}');
+}
+
 fn write_projected_arguments(output: &mut String, arguments: &[LinkedProjectedCallArgument]) {
     output.push('[');
     for (argument_index, argument) in arguments.iter().enumerate() {
         if argument_index != 0 {
             output.push_str(", ");
         }
-        write!(output, "{{\"position\": {}, \"name\": ", argument.position)
-            .expect("writing to String cannot fail");
-        write_string(output, &argument.name);
-        output.push_str(", \"c_type\": ");
-        write_string(output, &argument.c_type);
-        output.push_str(", \"direction\": ");
-        write_string(output, argument.direction);
-        output.push_str(", \"value\": ");
-        write_string(output, &argument.value);
-        output.push_str(", \"binding\": ");
-        write_string(output, argument.binding);
-        output.push_str(", \"root_argument\": ");
-        if let Some(root_argument) = argument.root_argument {
-            write!(output, "{root_argument}").expect("writing to String cannot fail");
-        } else {
-            output.push_str("null");
-        }
-        output.push_str(", \"root_offset\": ");
-        if let Some(root_offset) = argument.root_offset {
-            write!(output, "{root_offset}").expect("writing to String cannot fail");
-        } else {
-            output.push_str("null");
-        }
-        output.push_str(", \"root_offset_hex\": ");
-        if let Some(root_offset) = argument.root_offset {
-            write_string(output, &format!("{root_offset:+#x}"));
-        } else {
-            output.push_str("null");
-        }
-        output.push('}');
+        write_projected_argument(output, argument);
     }
     output.push(']');
 }
@@ -1777,7 +1880,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 28,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 29,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1819,6 +1922,10 @@ fn write_json_report(
     output.push_str(
         "  \"semantic_action_mode\": \"lexical-site-paths-factorized-cfg-guards-affine-root-bindings\",\n",
     );
+    output
+        .push_str("  \"event_dispatch_mode\": \"reviewed-semantic-operation-role-projection\",\n");
+    output.push_str("  \"event_dispatch_effect_completeness_claim\": false,\n");
+    output.push_str("  \"event_dispatch_receiver_inference_mode\": \"none\",\n");
     output.push_str(
         "  \"cfg_guard_mode\": \"forced-branch-paths-minimized-dnf-factorized-by-function\",\n",
     );
@@ -2540,6 +2647,42 @@ fn write_json_report(
             .expect("writing to String cannot fail");
             write_projected_arguments(&mut output, &action.arguments);
             output.push('}');
+        }
+        output.push_str("], \"event_dispatches\": [");
+        for (dispatch_index, dispatch) in summary.event_dispatches.iter().enumerate() {
+            if dispatch_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"semantic_action_index\": {}, \"mechanism\": ",
+                dispatch.semantic_action_index,
+            )
+            .expect("writing to String cannot fail");
+            write_string(&mut output, dispatch.mechanism);
+            output.push_str(", \"execution_context\": ");
+            write_string(&mut output, dispatch.execution_context);
+            output.push_str(", \"receiver\": ");
+            write_optional_string(&mut output, dispatch.receiver.as_deref());
+            write!(
+                output,
+                ", \"interface_complete\": {}, \"blockers\": ",
+                dispatch.interface_complete,
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &dispatch.blockers);
+            output.push_str(", \"bindings\": [");
+            for (binding_index, binding) in dispatch.bindings.iter().enumerate() {
+                if binding_index != 0 {
+                    output.push_str(", ");
+                }
+                output.push_str("{\"role\": ");
+                write_string(&mut output, binding.role);
+                output.push_str(", \"argument\": ");
+                write_projected_argument(&mut output, &binding.argument);
+                output.push('}');
+            }
+            output.push_str("]}");
         }
         write!(
             output,

@@ -2809,11 +2809,6 @@ pub struct HtBlockAckRegisters {
     pub block_ack: TxBlockAckBitmap,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HtBlockAckReadError {
-    InvalidHardwareQueue(u8),
-}
-
 /// Decode the fixed three-register result used by
 /// `hal_mac_tx_get_blockack` on S31.
 #[inline(always)]
@@ -2829,23 +2824,6 @@ pub const fn decode_ht_block_ack_registers(
             (bitmap_low as u64) | ((bitmap_high as u64) << 32),
         ),
     }
-}
-
-/// Read one completed HT BlockAck without entering the vendor completion
-/// graph. The body is three PAC reads and fixed bit decoding.
-#[unsafe(link_section = ".rwtext.wifi_strict.tx_block_ack")]
-pub fn read_ht_block_ack(
-    mmio: &RadioRegisters,
-    hardware_queue: u8,
-) -> Result<HtBlockAckRegisters, HtBlockAckReadError> {
-    let registers = mmio
-        .read_tx_block_ack_registers(hardware_queue)
-        .ok_or(HtBlockAckReadError::InvalidHardwareQueue(hardware_queue))?;
-    Ok(decode_ht_block_ack_registers(
-        registers.control_and_sequence,
-        registers.bitmap_low,
-        registers.bitmap_high,
-    ))
 }
 
 impl TxBlockAckBitmap {

@@ -11,8 +11,9 @@ use core::cell::UnsafeCell;
 use crate::{
     descriptor::Descriptor,
     rx::{
-        RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxDma, RxLiveAppend, RxRingError, RxRingHalted,
-        RxRingLive, RxRingStopped, RxSegment, prepare_recycled_buffer,
+        RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxCompletedUnit, RxCompletedUnitFrontier, RxDma,
+        RxLiveAppend, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+        prepare_recycled_buffer,
     },
 };
 
@@ -106,6 +107,70 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             buffer,
             next_descriptor_address: self.descriptor.next_descriptor_address(),
         }
+    }
+}
+
+/// Read and recycle authority for one complete, possibly chained RX unit.
+///
+/// All segment views are bounded by lengths captured before this token was
+/// created. The token retains the unique live-ring borrow until the complete
+/// copy is finished and [`recycle`](Self::recycle) consumes it.
+pub struct RxDmaCompletedUnit<
+    'owner,
+    'ring,
+    const COUNT: usize,
+    const BUFFER_SIZE: usize,
+    const STORAGE_SIZE: usize,
+> {
+    unit: RxCompletedUnit,
+    storage: &'owner RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+    ring: &'owner mut RxRingLive<'ring, COUNT>,
+}
+
+impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
+    RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>
+{
+    pub const fn head_index(&self) -> usize {
+        self.unit.head_index()
+    }
+
+    pub const fn descriptor_count(&self) -> usize {
+        self.unit.descriptor_count()
+    }
+
+    pub const fn total_length(&self) -> usize {
+        self.unit.total_length()
+    }
+
+    pub(crate) const fn metadata(&self) -> &RxCompletedUnit {
+        &self.unit
+    }
+
+    pub fn segment(&self, step: usize) -> Option<&[u8]> {
+        let length = self.unit.segment_length(step)?;
+        let index = self
+            .unit
+            .head_index()
+            .checked_add(step)?
+            .checked_rem(COUNT)?;
+        let buffer = self.storage.buffers.get(index)?;
+        // SAFETY: `RxCompletedUnit` proves that the terminal descriptor made
+        // every preceding segment CPU-owned. This token retains the mutable
+        // ring borrow, preventing recycle while the returned slice lives.
+        unsafe { buffer.completed().get(..length) }
+    }
+
+    pub(crate) fn recycle<M: RxDma>(
+        self,
+        mmio: &mut M,
+    ) -> Result<Option<RxLiveAppend>, RxRingError> {
+        let descriptor_count = self.unit.descriptor_count();
+        self.ring
+            .recycle_completed_unit(mmio, descriptor_count, |index| {
+                // SAFETY: this consuming token owns every segment until this
+                // rearm closure returns it to the live walker.
+                unsafe { self.storage.buffers[index].prepare_for_recycle() }
+            })
     }
 }
 
@@ -252,6 +317,34 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
             // prefix immediately before returning those buffers to DMA.
             unsafe { self.buffers[index].prepare_for_recycle() }
         })
+    }
+
+    pub fn completed_unit_frontier(
+        &self,
+        ring: &RxRingLive<'_, COUNT>,
+    ) -> Result<RxCompletedUnitFrontier, RxRingError> {
+        self.validate_live_ring(ring)?;
+        Ok(ring
+            .completed_unit_frontier_with(|index| self.buffers[index].leading_guard_overwritten()))
+    }
+
+    pub fn take_completed_unit<'owner, 'ring>(
+        &'owner self,
+        ring: &'owner mut RxRingLive<'ring, COUNT>,
+        descriptor_limit: usize,
+    ) -> Result<
+        Option<RxDmaCompletedUnit<'owner, 'ring, COUNT, BUFFER_SIZE, STORAGE_SIZE>>,
+        RxRingError,
+    > {
+        self.validate_live_ring(ring)?;
+        let Some(unit) = ring.take_completed_unit(descriptor_limit) else {
+            return Ok(None);
+        };
+        Ok(Some(RxDmaCompletedUnit {
+            unit,
+            storage: self,
+            ring,
+        }))
     }
 
     fn validate_live_ring(&self, ring: &RxRingLive<'_, COUNT>) -> Result<(), RxRingError> {

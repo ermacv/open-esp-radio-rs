@@ -28,6 +28,7 @@ use crate::{
         RxPhyInfo, RxReloadObservation, RxRingError, RxRingLive, RxSegment,
         decode_normalized_rx_metadata,
     },
+    rx_storage::RxDmaCompletedUnit,
 };
 use open_esp_radio_wifi_lmac::MacRxMetadata;
 
@@ -49,6 +50,13 @@ pub enum RxStageTransactionError {
     Stage(RxStageError),
     Ring(RxRingError),
     Ownership,
+}
+
+/// Result after a completed DMA unit has been returned to the live walker.
+pub enum RxDmaStageUnitOutcome<'pool, const SLOTS: usize, const CAPACITY: usize> {
+    Staged(RxStageReloadPending<'pool, SLOTS, CAPACITY>),
+    /// Malformed length metadata was discarded after descriptor recycle.
+    Discarded(RxStageError),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -279,6 +287,63 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             frame: Some(radio_frame),
             reload_samples: 0,
         })
+    }
+
+    /// Copy a storage-bound completed unit and recycle its descriptors.
+    ///
+    /// The completion token keeps the live ring mutably borrowed throughout
+    /// the copy. Empty and oversized units follow the vendor discard path:
+    /// they are not published to the protocol queue, but their descriptors
+    /// are still promptly returned to DMA.
+    pub fn stage_dma_unit_recycle<
+        'pool,
+        const COUNT: usize,
+        const BUFFER_SIZE: usize,
+        const STORAGE_SIZE: usize,
+        M: RxDma,
+    >(
+        &'pool self,
+        completed: RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+        mmio: &mut M,
+    ) -> Result<RxDmaStageUnitOutcome<'pool, SLOTS, CAPACITY>, RxStageTransactionError> {
+        let descriptor_count = completed.descriptor_count();
+        let staged = self.try_stage_unit(completed.metadata(), |step, destination| {
+            let source = completed
+                .segment(step)
+                .ok_or(RxStageError::SourceTooShort)?;
+            if source.len() != destination.len() {
+                return Err(RxStageError::SourceTooShort);
+            }
+            destination.copy_from_slice(source);
+            Ok(())
+        });
+
+        let radio_frame = match staged {
+            Ok(frame) => Some(frame),
+            Err(error @ (RxStageError::Empty | RxStageError::TooLong)) => {
+                let append = completed
+                    .recycle(mmio)
+                    .map_err(RxStageTransactionError::Ring)?
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+                if append.descriptor_count != descriptor_count {
+                    return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+                }
+                return Ok(RxDmaStageUnitOutcome::Discarded(error));
+            }
+            Err(error) => return Err(RxStageTransactionError::Stage(error)),
+        };
+
+        let append = completed
+            .recycle(mmio)
+            .map_err(RxStageTransactionError::Ring)?
+            .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
+        if append.descriptor_count != descriptor_count {
+            return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
+        }
+        Ok(RxDmaStageUnitOutcome::Staged(RxStageReloadPending {
+            frame: radio_frame,
+            reload_samples: 0,
+        }))
     }
 
     pub fn claimed_slots(&self) -> u32 {

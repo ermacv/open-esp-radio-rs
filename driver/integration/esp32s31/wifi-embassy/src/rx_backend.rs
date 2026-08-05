@@ -5,7 +5,7 @@
 //! completed unit is copied and recycled before its staging lease is handed to
 //! the separate protocol consumer.
 
-#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+#![forbid(unsafe_code)]
 
 use core::future::Future;
 
@@ -14,8 +14,8 @@ use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::{
     rx::{RxDma, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
     rx_pool::{
-        RxStageError, RxStagePool, RxStageTransactionError, VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
-        VENDOR_LARGE_RX_SLOT_COUNT,
+        RxDmaStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
+        VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
     },
     rx_storage::{RxDmaBuffer, RxDmaStorage},
 };
@@ -711,13 +711,10 @@ where
             // Freeze the completion frontier before any descriptor is rearmed.
             // A saturated producer can therefore only create a later epoch; it
             // cannot make this service call unbounded by refilling the ring.
-            let frontier_snapshot = self.ring.completed_unit_frontier_with(|index| {
-                // SAFETY: this is only a volatile guard observation. A word
-                // different from the recycle sentinel proves that DMA has
-                // begun consuming this non-terminal buffer; ownership is not
-                // transferred until a later terminal descriptor is visible.
-                self.storage.buffers()[index].leading_guard_overwritten()
-            });
+            let frontier_snapshot = self
+                .storage
+                .completed_unit_frontier(&self.ring)
+                .map_err(RxStageTransactionError::Ring)?;
             let frontier = frontier_snapshot.unit_count;
             let pool_credits = self.pool.available_slots();
             let queue_credits = self.frames.free_capacity();
@@ -728,42 +725,17 @@ where
 
             for _ in 0..admitted {
                 let unit = self
-                    .ring
-                    .take_completed_unit(remaining_descriptors)
+                    .storage
+                    .take_completed_unit(&mut self.ring, remaining_descriptors)
+                    .map_err(RxStageTransactionError::Ring)?
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                let head_index = unit.head_index();
                 let unit_descriptor_count = unit.descriptor_count();
                 remaining_descriptors = remaining_descriptors
                     .checked_sub(unit_descriptor_count)
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                let pending = self.pool.stage_unit_recycle(
-                    unit,
-                    |step, destination| {
-                        let index = (head_index + step) % COUNT;
-                        // SAFETY: `take_completed_unit` transferred every
-                        // segment through its terminal descriptor. The copy
-                        // completes before the recycle closure can publish any
-                        // of those buffers back to DMA.
-                        let source = unsafe { self.storage.buffers()[index].completed() };
-                        let source = source
-                            .get(..destination.len())
-                            .ok_or(RxStageError::SourceTooShort)?;
-                        destination.copy_from_slice(source);
-                        Ok(())
-                    },
-                    hardware,
-                    &mut self.ring,
-                    |recycled| {
-                        // SAFETY: the ring invokes this only for its owned
-                        // completed prefix immediately before publication.
-                        unsafe { self.storage.buffers()[recycled].prepare_for_recycle() }
-                    },
-                );
-                let pending = match pending {
-                    Ok(pending) => pending,
-                    Err(RxStageTransactionError::Stage(
-                        error @ (RxStageError::Empty | RxStageError::TooLong),
-                    )) => {
+                let pending = match self.pool.stage_dma_unit_recycle(unit, hardware)? {
+                    RxDmaStageUnitOutcome::Staged(pending) => pending,
+                    RxDmaStageUnitOutcome::Discarded(error) => {
                         // Length is supplied by an untrusted receive unit. A
                         // malformed/FCS/oversize unit must not terminate the
                         // sole radio owner: the vendor path discards such a
@@ -779,18 +751,6 @@ where
                             };
                             observer.observe(RxPipelineObservation::StageDiscarded(discard));
                         }
-                        let append = self
-                            .ring
-                            .recycle_completed_unit(hardware, unit_descriptor_count, |recycled| {
-                                // SAFETY: this is the same uniquely observed
-                                // descriptor rejected before staging copied it.
-                                unsafe { self.storage.buffers()[recycled].prepare_for_recycle() }
-                            })
-                            .map_err(RxStageTransactionError::Ring)?
-                            .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
-                        if append.descriptor_count != unit_descriptor_count {
-                            return Err(RxStageTransactionError::Ring(RxRingError::Corrupt));
-                        }
                         loop {
                             match self
                                 .ring
@@ -803,7 +763,6 @@ where
                         }
                         continue;
                     }
-                    Err(error) => return Err(error),
                 };
                 let frame =
                     await_staged_rx_reload(pending, hardware, &mut self.ring, &mut self.delay)
@@ -1106,11 +1065,7 @@ mod tests {
             Err(_) => panic!("restarted owner must stop before the split test"),
         };
         let (ring, epoch_resources) = stopped.into_epoch_parts();
-        let prepared = match ring.prepare(&mut hardware, ESP32S31_RX_BUFFER_SIZE as u32, |index| {
-            // SAFETY: the halted ring proves the mock walker released
-            // every matching test buffer before this preparation edge.
-            unsafe { storage.buffers()[index].prepare_for_recycle() }
-        }) {
+        let prepared = match storage.prepare_halted(ring, &mut hardware) {
             Ok(prepared) => prepared,
             Err(_) => panic!("split halted ring must rebuild"),
         };
@@ -1126,7 +1081,9 @@ mod tests {
         const COUNT: usize = 2;
         const STAGED_DEPTH: usize = 1;
         const STAGE_CAPACITY: usize = 16;
-        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        storage.buffer_mut(0).unwrap()[..4].copy_from_slice(&[1, 2, 3, 4]);
+        storage.buffer_mut(1).unwrap()[..4].copy_from_slice(&[5, 6, 7, 8]);
         let addresses = [0x2f00_2000, 0x2f00_3200];
         let mut hardware = MockRxDma::default();
         let stopped = RxRingStopped::prepare(
@@ -1139,20 +1096,6 @@ mod tests {
         )
         .unwrap();
         let ring = stopped.start(&mut hardware).unwrap();
-        // SAFETY: the mock walker never accesses host storage; the test owns
-        // both buffers until service copies and recycles the complete unit.
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                [1, 2, 3, 4].as_ptr(),
-                storage.buffers()[0].completed().as_ptr().cast_mut(),
-                4,
-            );
-            core::ptr::copy_nonoverlapping(
-                [5, 6, 7, 8].as_ptr(),
-                storage.buffers()[1].completed().as_ptr().cast_mut(),
-                4,
-            );
-        }
         storage.descriptors()[0]
             .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_31);
         storage.descriptors()[1]
@@ -1184,19 +1127,9 @@ mod tests {
         const SIGNAL: usize = MPDU + 4;
         const RECEIVED: usize = PUBLIC_HEADER_SIZE + SIGNAL;
 
-        let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+        let mut storage = Esp32s31RxDmaStorage::<COUNT>::new();
         let addresses = [0x2f00_2000, 0x2f00_2200, 0x2f00_2400, 0x2f00_2600];
         let mut hardware = MockRxDma::default();
-        let stopped = RxRingStopped::prepare(
-            &mut hardware,
-            storage.descriptors(),
-            BASE,
-            &addresses,
-            ESP32S31_RX_BUFFER_SIZE as u32,
-            |_| Ok(()),
-        )
-        .unwrap();
-        let ring = stopped.start(&mut hardware).unwrap();
 
         let mut buffer = [0_u8; ESP32S31_RX_BUFFER_SIZE];
         for (index, sequence) in [102_u16, 100, 101].into_iter().enumerate() {
@@ -1213,15 +1146,23 @@ mod tests {
             frame[26..34].copy_from_slice(&[3, 0, 0, 0x20, 0, 0, 0, 0]);
             frame[34..42].copy_from_slice(&[0xaa, 0xaa, 0x03, 0, 0, 0, 0x08, 0x00]);
             frame[42..46].copy_from_slice(&sequence.to_be_bytes().repeat(2));
-            // SAFETY: the test owns the stopped DMA storage before service
-            // publishes any descriptor back to the mock walker.
-            unsafe {
-                core::ptr::copy_nonoverlapping(
-                    buffer.as_ptr(),
-                    storage.buffers()[index].completed().as_ptr().cast_mut(),
-                    buffer.len(),
-                );
-            }
+            storage
+                .buffer_mut(index)
+                .expect("test RX buffer exists")
+                .copy_from_slice(&buffer);
+        }
+
+        let stopped = RxRingStopped::prepare(
+            &mut hardware,
+            storage.descriptors(),
+            BASE,
+            &addresses,
+            ESP32S31_RX_BUFFER_SIZE as u32,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let ring = stopped.start(&mut hardware).unwrap();
+        for index in 0..3 {
             storage.descriptors()[index].write_word0(
                 STAGE_CAPACITY as u32 | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
             );

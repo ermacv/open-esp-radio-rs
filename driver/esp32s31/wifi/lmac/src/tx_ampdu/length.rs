@@ -1,6 +1,8 @@
 //! Allocation-free A-MPDU byte accounting recovered from the PP formatter.
 
-use super::block_ack::TX_AMPDU_SLOT_CAPACITY;
+use core::pin::Pin;
+
+use super::{HtAmpduTxError, HtAmpduTxStorage, block_ack::TX_AMPDU_SLOT_CAPACITY};
 
 pub(super) const HARDWARE_HE_CONTROL_LENGTH: u16 = 4;
 const HT_MPDU_LENGTH_MASK: u32 = 0x3fff;
@@ -109,6 +111,96 @@ impl HtAmpduLengthAccumulator {
         }
         Ok(HtAmpduLength {
             bytes: bytes as u16,
+            subframes: self.count,
+        })
+    }
+}
+
+impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
+    /// Return the final A-MPDU length after appending one PSDU.
+    ///
+    /// The previous final MPDU gains its four-byte alignment and requested
+    /// empty delimiters only when another MPDU follows it. The new final MPDU
+    /// contributes one delimiter and its exact PSDU length. Keeping this
+    /// prefix total makes each append O(1); the former validation replayed all
+    /// preceding lengths on every `commit_frame`, making a 32-MPDU build
+    /// O(n²).
+    ///
+    /// SOURCE: complete `libpp.a[pp.o]::{ppCalSubFrameLength,
+    /// ppCalTxAMPDULength}`, complete `libpp.a[pp_he.o]::
+    /// ppCalSubFrameLength`, and the equivalent finite rules in
+    /// [`HtAmpduLengthAccumulator`].
+    pub(super) fn length_after_append(
+        &self,
+        psdu_length: u16,
+        hardware_he_control: bool,
+    ) -> Result<u16, HtAmpduTxError> {
+        if psdu_length == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
+        }
+        let mut next = u32::from(self.prepared_length);
+        if self.count != 0 {
+            let previous = usize::from(self.count - 1);
+            let previous_length = u32::from(self.psdu_lengths[previous]);
+            next = next
+                .checked_add((4 - (previous_length & 3)) & 3)
+                .and_then(|length| {
+                    length.checked_add(u32::from(self.empty_delimiters[previous]) * 4)
+                })
+                .ok_or(HtAmpduTxError::Length(
+                    HtAmpduLengthError::AggregateTooLong(u32::MAX),
+                ))?;
+        }
+        next = next
+            .checked_add(
+                4 + u32::from(psdu_length)
+                    + if hardware_he_control {
+                        u32::from(HARDWARE_HE_CONTROL_LENGTH)
+                    } else {
+                        0
+                    },
+            )
+            .ok_or(HtAmpduTxError::Length(
+                HtAmpduLengthError::AggregateTooLong(u32::MAX),
+            ))?;
+        if next > u32::from(self.max_aggregate_bytes) {
+            return Err(HtAmpduTxError::Length(
+                HtAmpduLengthError::AggregateTooLong(next),
+            ));
+        }
+        u16::try_from(next)
+            .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(next)))
+    }
+
+    pub(super) fn recalculate_prepared_length(
+        self: Pin<&mut Self>,
+    ) -> Result<HtAmpduLength, HtAmpduTxError> {
+        let storage = self.as_ref().get_ref();
+        let mut length = HtAmpduLengthAccumulator::new(storage.count, storage.max_aggregate_bytes)
+            .map_err(HtAmpduTxError::Length)?;
+        for index in 0..usize::from(storage.count) {
+            length
+                .push_with_hardware_he_control(
+                    u32::from(storage.psdu_lengths[index]),
+                    storage.empty_delimiters[index],
+                    storage.hardware_he_control[index],
+                )
+                .map_err(HtAmpduTxError::Length)?;
+        }
+        let aggregate = length.finish().map_err(HtAmpduTxError::Length)?;
+        *self.project().prepared_length = aggregate.bytes;
+        Ok(aggregate)
+    }
+
+    pub(super) fn calculate_aggregate(&self) -> Result<HtAmpduLength, HtAmpduTxError> {
+        if self.count == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::Empty));
+        }
+        if self.prepared_length == 0 {
+            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
+        }
+        Ok(HtAmpduLength {
+            bytes: self.prepared_length,
             subframes: self.count,
         })
     }

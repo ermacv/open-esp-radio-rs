@@ -56,8 +56,6 @@ pub use request::{
 #[cfg(not(target_pointer_width = "32"))]
 use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity};
 use crate::tx::{HtRate, LegacyTxQueue, TxCompletion, TxCookie, TxSlotState};
-use length::HARDWARE_HE_CONTROL_LENGTH;
-
 pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
@@ -1187,92 +1185,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )?;
         self.project().msdu_lengths[index] = msdu_length;
         Ok(())
-    }
-
-    /// Return the final A-MPDU length after appending one PSDU.
-    ///
-    /// The previous final MPDU gains its four-byte alignment and requested
-    /// empty delimiters only when another MPDU follows it. The new final MPDU
-    /// contributes one delimiter and its exact PSDU length. Keeping this
-    /// prefix total makes each append O(1); the former validation replayed all
-    /// preceding lengths on every `commit_frame`, making a 32-MPDU build
-    /// O(n²).
-    ///
-    /// SOURCE: complete `libpp.a[pp.o]::{ppCalSubFrameLength,
-    /// ppCalTxAMPDULength}`, complete `libpp.a[pp_he.o]::
-    /// ppCalSubFrameLength`, and the equivalent finite rules in
-    /// [`HtAmpduLengthAccumulator`].
-    fn length_after_append(
-        &self,
-        psdu_length: u16,
-        hardware_he_control: bool,
-    ) -> Result<u16, HtAmpduTxError> {
-        if psdu_length == 0 {
-            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
-        }
-        let mut next = u32::from(self.prepared_length);
-        if self.count != 0 {
-            let previous = usize::from(self.count - 1);
-            let previous_length = u32::from(self.psdu_lengths[previous]);
-            next = next
-                .checked_add((4 - (previous_length & 3)) & 3)
-                .and_then(|length| {
-                    length.checked_add(u32::from(self.empty_delimiters[previous]) * 4)
-                })
-                .ok_or(HtAmpduTxError::Length(
-                    HtAmpduLengthError::AggregateTooLong(u32::MAX),
-                ))?;
-        }
-        next = next
-            .checked_add(
-                4 + u32::from(psdu_length)
-                    + if hardware_he_control {
-                        u32::from(HARDWARE_HE_CONTROL_LENGTH)
-                    } else {
-                        0
-                    },
-            )
-            .ok_or(HtAmpduTxError::Length(
-                HtAmpduLengthError::AggregateTooLong(u32::MAX),
-            ))?;
-        if next > u32::from(self.max_aggregate_bytes) {
-            return Err(HtAmpduTxError::Length(
-                HtAmpduLengthError::AggregateTooLong(next),
-            ));
-        }
-        u16::try_from(next)
-            .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(next)))
-    }
-
-    fn recalculate_prepared_length(self: Pin<&mut Self>) -> Result<HtAmpduLength, HtAmpduTxError> {
-        let storage = self.as_ref().get_ref();
-        let mut length = HtAmpduLengthAccumulator::new(storage.count, storage.max_aggregate_bytes)
-            .map_err(HtAmpduTxError::Length)?;
-        for index in 0..usize::from(storage.count) {
-            length
-                .push_with_hardware_he_control(
-                    u32::from(storage.psdu_lengths[index]),
-                    storage.empty_delimiters[index],
-                    storage.hardware_he_control[index],
-                )
-                .map_err(HtAmpduTxError::Length)?;
-        }
-        let aggregate = length.finish().map_err(HtAmpduTxError::Length)?;
-        *self.project().prepared_length = aggregate.bytes;
-        Ok(aggregate)
-    }
-
-    fn calculate_aggregate(&self) -> Result<HtAmpduLength, HtAmpduTxError> {
-        if self.count == 0 {
-            return Err(HtAmpduTxError::Length(HtAmpduLengthError::Empty));
-        }
-        if self.prepared_length == 0 {
-            return Err(HtAmpduTxError::Length(HtAmpduLengthError::ZeroMpduLength));
-        }
-        Ok(HtAmpduLength {
-            bytes: self.prepared_length,
-            subframes: self.count,
-        })
     }
 }
 

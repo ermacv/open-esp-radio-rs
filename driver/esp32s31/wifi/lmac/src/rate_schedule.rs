@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Rust-owned ESP32-S31 transmit-rate schedule arenas.
 //!
 //! The nine vendor arenas are fixed arrays of 12-byte records.  `rcAttach`
@@ -25,6 +27,7 @@ pub enum RateScheduleKind {
     P2pDot11N = 0xf1,
 }
 
+#[cfg(test)]
 const RATE_SCHEDULE_KINDS: [RateScheduleKind; 9] = [
     RateScheduleKind::BarOfdm,
     RateScheduleKind::BasicOfdm,
@@ -108,20 +111,14 @@ impl<const BYTES: usize> ScheduleArena<BYTES> {
     }
 }
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static BAR_OFDM_SCHEDULE: ScheduleArena<12> = ScheduleArena::indexed([
     0x0b, 0x02, 0x0b, 0x02, 0x0b, 0x03, 0x0b, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static BASIC_OFDM_SCHEDULE: ScheduleArena<12> = ScheduleArena::indexed([
     0x0b, 0x02, 0x0b, 0x02, 0x0b, 0x03, 0x00, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static DOT11_AX_SCHEDULE: ScheduleArena<192> = ScheduleArena::indexed([
     0x23, 0x02, 0x22, 0x02, 0x0b, 0x03, 0x06, 0x19, 0x20, 0x72, 0x00, 0x00, 0x19, 0x02, 0x17, 0x02,
     0x0b, 0x03, 0x06, 0x19, 0x20, 0x72, 0x00, 0x00, 0x18, 0x02, 0x16, 0x02, 0x0b, 0x03, 0x06, 0x19,
@@ -137,8 +134,6 @@ static DOT11_AX_SCHEDULE: ScheduleArena<192> = ScheduleArena::indexed([
     0x20, 0x14, 0x00, 0x00, 0x29, 0x02, 0x29, 0x02, 0x29, 0x03, 0x29, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static DOT11_B_SCHEDULE: ScheduleArena<72> = ScheduleArena::indexed([
     0x07, 0x02, 0x06, 0x02, 0x06, 0x03, 0x06, 0x19, 0x20, 0x40, 0x00, 0x00, 0x06, 0x02, 0x06, 0x02,
     0x06, 0x03, 0x06, 0x19, 0x20, 0x39, 0x00, 0x00, 0x05, 0x02, 0x00, 0x02, 0x00, 0x03, 0x00, 0x19,
@@ -147,8 +142,6 @@ static DOT11_B_SCHEDULE: ScheduleArena<72> = ScheduleArena::indexed([
     0x29, 0x03, 0x29, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static DOT11_G_SCHEDULE: ScheduleArena<156> = ScheduleArena::indexed([
     0x0c, 0x02, 0x08, 0x02, 0x0b, 0x03, 0x06, 0x19, 0x20, 0x72, 0x00, 0x00, 0x08, 0x02, 0x0d, 0x02,
     0x0b, 0x03, 0x06, 0x19, 0x20, 0x65, 0x00, 0x00, 0x0d, 0x02, 0x09, 0x02, 0x0b, 0x03, 0x06, 0x19,
@@ -162,8 +155,6 @@ static DOT11_G_SCHEDULE: ScheduleArena<156> = ScheduleArena::indexed([
     0x29, 0x02, 0x29, 0x02, 0x29, 0x03, 0x29, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static DOT11_N_SCHEDULE: ScheduleArena<168> = ScheduleArena::indexed([
     0x21, 0x02, 0x16, 0x02, 0x0b, 0x03, 0x06, 0x19, 0x20, 0x72, 0x00, 0x00, 0x17, 0x02, 0x15, 0x02,
     0x0b, 0x03, 0x06, 0x19, 0x20, 0x72, 0x00, 0x00, 0x16, 0x02, 0x14, 0x02, 0x0b, 0x03, 0x06, 0x19,
@@ -178,15 +169,11 @@ static DOT11_N_SCHEDULE: ScheduleArena<168> = ScheduleArena::indexed([
     0x29, 0x03, 0x29, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static LORA_SCHEDULE: ScheduleArena<24> = ScheduleArena::indexed([
     0x2a, 0x08, 0x2a, 0x08, 0x2a, 0x02, 0x29, 0x0e, 0x20, 0x14, 0x00, 0x00, 0x29, 0x02, 0x29, 0x02,
     0x29, 0x03, 0x29, 0x19, 0x20, 0x00, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static P2P_DOT11_G_SCHEDULE: ScheduleArena<96> = ScheduleArena::indexed([
     0x0c, 0x02, 0x08, 0x02, 0x0d, 0x03, 0x0b, 0x19, 0x20, 0x72, 0x00, 0x00, 0x08, 0x02, 0x0d, 0x02,
     0x09, 0x03, 0x0b, 0x19, 0x20, 0x65, 0x00, 0x00, 0x0d, 0x02, 0x09, 0x02, 0x0e, 0x03, 0x0b, 0x19,
@@ -196,8 +183,6 @@ static P2P_DOT11_G_SCHEDULE: ScheduleArena<96> = ScheduleArena::indexed([
     0x20, 0x38, 0x00, 0x00, 0x0b, 0x02, 0x0b, 0x02, 0x0b, 0x03, 0x0b, 0x19, 0x20, 0x40, 0x00, 0x00,
 ]);
 
-#[used]
-#[unsafe(link_section = ".critical.data.wifi_strict.rate_schedules")]
 static P2P_DOT11_N_SCHEDULE: ScheduleArena<120> = ScheduleArena::indexed([
     0x21, 0x02, 0x16, 0x02, 0x15, 0x03, 0x0b, 0x19, 0x20, 0x72, 0x00, 0x00, 0x17, 0x02, 0x15, 0x02,
     0x14, 0x03, 0x0b, 0x19, 0x20, 0x72, 0x00, 0x00, 0x16, 0x02, 0x14, 0x02, 0x13, 0x03, 0x0b, 0x19,
@@ -226,32 +211,6 @@ fn arena_bytes(kind: RateScheduleKind) -> &'static [u8] {
 fn schedule_bytes(schedule: RateScheduleRef) -> &'static [u8] {
     let offset = usize::from(schedule.index) * RATE_SCHEDULE_RECORD_SIZE;
     &arena_bytes(schedule.kind)[offset..offset + RATE_SCHEDULE_RECORD_SIZE]
-}
-
-/// Address of one immutable compatibility record.
-///
-/// This exists only for oracle tooling that compares the former vendor
-/// pointer identity. Runtime rate selection uses [`RateScheduleRef`] and
-/// bounded slices, so no raw pointer is dereferenced by the driver.
-#[inline(never)]
-pub fn schedule_pointer(schedule: RateScheduleRef) -> *const u8 {
-    schedule_bytes(schedule).as_ptr()
-}
-
-pub fn schedule_from_pointer(pointer: *const u8) -> Option<RateScheduleRef> {
-    let address = pointer as usize;
-    for kind in RATE_SCHEDULE_KINDS {
-        let arena = arena_bytes(kind);
-        let base = arena.as_ptr() as usize;
-        let bytes = arena.len();
-        let Some(offset) = address.checked_sub(base) else {
-            continue;
-        };
-        if offset < bytes && offset % RATE_SCHEDULE_RECORD_SIZE == 0 {
-            return RateScheduleRef::new(kind, (offset / RATE_SCHEDULE_RECORD_SIZE) as u8);
-        }
-    }
-    None
 }
 
 pub fn schedule_state(schedule: RateScheduleRef) -> RateScheduleRecordState {
@@ -315,10 +274,6 @@ mod tests {
             for index in 0..kind.record_count() {
                 let schedule = RateScheduleRef::new(kind, index as u8).unwrap();
                 assert_eq!(schedule_state(schedule).index, index as u8);
-                assert_eq!(
-                    schedule_from_pointer(schedule_pointer(schedule)),
-                    Some(schedule)
-                );
                 total += 1;
             }
         }

@@ -1,5 +1,7 @@
 //! Ownership-bound leaves shared by the cold PHY prelude.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -7,7 +9,7 @@ impl RadioRegisters {
     pub fn capture_and_clear_rx_dco_control(&mut self) -> u8 {
         let control = self.peripherals.phy_rx_dco_oracle.control();
         let saved = control.read().calibration_control_unknown().bits();
-        control.modify(|_, w| unsafe { w.calibration_control_unknown().bits(0) });
+        control.modify(|_, w| w.calibration_control_unknown().set(0));
         saved
     }
 
@@ -17,7 +19,7 @@ impl RadioRegisters {
         self.peripherals
             .phy_rx_dco_oracle
             .control()
-            .modify(|_, w| unsafe { w.calibration_control_unknown().bits(saved_field & 3) });
+            .modify(|_, w| w.calibration_control_unknown().set(saved_field & 3));
     }
 
     /// Sample the full-width counter used by the SDM-stability deadline.

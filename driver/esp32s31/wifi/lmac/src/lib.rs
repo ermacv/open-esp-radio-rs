@@ -34,7 +34,6 @@ mod low_rate;
 pub mod rate_control;
 pub mod rate_rx;
 pub mod rate_schedule;
-pub mod registers;
 pub mod rx;
 pub mod rx_ampdu;
 pub mod rx_ampdu_hw;

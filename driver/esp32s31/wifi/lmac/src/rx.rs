@@ -84,7 +84,7 @@ impl RxDma for RadioRegisters {
     }
 
     fn fence(&mut self) {
-        RadioRegisters::fence(self);
+        self.order_device_accesses();
     }
 }
 

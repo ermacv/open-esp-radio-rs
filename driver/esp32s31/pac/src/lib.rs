@@ -11169,7 +11169,8 @@ pub mod phy_rx_dco_oracle {
         #[doc = "Field `CALIBRATION_CONTROL_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field preserved around the complete bounded RX-DCO measurement graph."]
         pub type CalibrationControlUnknownR = crate::FieldReader;
         #[doc = "Field `CALIBRATION_CONTROL_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field preserved around the complete bounded RX-DCO measurement graph."]
-        pub type CalibrationControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type CalibrationControlUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 22:23 - SOURCE\\[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field preserved around the complete bounded RX-DCO measurement graph."]
             #[inline(always)]
@@ -12015,7 +12016,7 @@ pub mod wifi_mac_interface_address {
         #[doc = "Field `BYTES_0_3` reader - "]
         pub type Bytes0_3R = crate::FieldReader<u32>;
         #[doc = "Field `BYTES_0_3` writer - "]
-        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -12039,7 +12040,7 @@ pub mod wifi_mac_interface_address {
         impl crate::Readable for AddressLowSpec {}
         #[doc = "`write(|w| ..)` method takes [`address_low::W`](W) writer structure"]
         impl crate::Writable for AddressLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "ADDRESS_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-partial\\]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.\n\nYou can [`read`](crate::Reg::read) this register and get [`address_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`address_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@address_high`] module"]
@@ -12054,7 +12055,7 @@ pub mod wifi_mac_interface_address {
         #[doc = "Field `BYTES_4_5` reader - "]
         pub type Bytes4_5R = crate::FieldReader<u16>;
         #[doc = "Field `BYTES_4_5` writer - "]
-        pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type Bytes4_5W<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `RX_POLICY_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-partial\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
         pub type RxPolicyEnableR = crate::BitReader;
         #[doc = "Field `RX_POLICY_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY\\]; CONFIDENCE\\[instruction-exact-partial\\]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch."]
@@ -12519,14 +12520,14 @@ pub mod wifi_mac_rx_filter {
         pub type R = crate::R<MiscPacketPolicySpec>;
         #[doc = "Register `MISC_PACKET_POLICY` writer"]
         pub type W = crate::W<MiscPacketPolicySpec>;
-        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` reader - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` reader - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight independent class-enable bits used by the working open scan/STA receive path; every eight-bit mask is representable."]
         pub type OpenMiscPacketClassesR = crate::FieldReader;
-        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` writer - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
-        pub type OpenMiscPacketClassesW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `OPEN_MISC_PACKET_CLASSES` writer - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight independent class-enable bits used by the working open scan/STA receive path; every eight-bit mask is representable."]
+        pub type OpenMiscPacketClassesW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `BASEBAND_ERROR` reader - SOURCE\\[BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fourth status bit sampled by the bounded hal_ifc_get_bb_err_bitmap loop."]
         pub type BasebandErrorR = crate::BitReader;
         impl R {
-            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight independent class-enable bits used by the working open scan/STA receive path; every eight-bit mask is representable."]
             #[inline(always)]
             pub fn open_misc_packet_classes(&self) -> OpenMiscPacketClassesR {
                 OpenMiscPacketClassesR::new(((self.bits >> 8) & 0xff) as u8)
@@ -12538,7 +12539,7 @@ pub mod wifi_mac_rx_filter {
             }
         }
         impl W {
-            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight class-enable bits set together by the working open scan/STA receive path."]
+            #[doc = "Bits 8:15 - SOURCE\\[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER\\]; CONFIDENCE\\[hil-observed\\]. Eight independent class-enable bits used by the working open scan/STA receive path; every eight-bit mask is representable."]
             #[inline(always)]
             pub fn open_misc_packet_classes(
                 &mut self,
@@ -12599,10 +12600,66 @@ pub mod wifi_mac_control {
         pub type NoRetentionStopRequestW<'a, REG> = crate::BitWriter<'a, REG>;
         #[doc = "Field `ACTIVE_STATE` reader - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,MIGRATION_CHANNEL_SWITCH\\]; CONFIDENCE\\[instruction-exact-partial\\]. Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."]
         pub type ActiveStateR = crate::FieldReader;
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH\\]; CONFIDENCE\\[instruction-exact\\]. Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum TxBlockStopRequest {
+            #[doc = "0: Clear every no-power-save TX block stop request."]
+            RunAll = 0,
+            #[doc = "255: Request every no-power-save TX block to stop before retuning."]
+            StopAll = 255,
+        }
+        impl From<TxBlockStopRequest> for u8 {
+            #[inline(always)]
+            fn from(variant: TxBlockStopRequest) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for TxBlockStopRequest {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for TxBlockStopRequest {}
         #[doc = "Field `TX_BLOCK_STOP_REQUEST` reader - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH\\]; CONFIDENCE\\[instruction-exact\\]. Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
-        pub type TxBlockStopRequestR = crate::FieldReader;
+        pub type TxBlockStopRequestR = crate::FieldReader<TxBlockStopRequest>;
+        impl TxBlockStopRequestR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<TxBlockStopRequest> {
+                match self.bits {
+                    0 => Some(TxBlockStopRequest::RunAll),
+                    255 => Some(TxBlockStopRequest::StopAll),
+                    _ => None,
+                }
+            }
+            #[doc = "Clear every no-power-save TX block stop request."]
+            #[inline(always)]
+            pub fn is_run_all(&self) -> bool {
+                *self == TxBlockStopRequest::RunAll
+            }
+            #[doc = "Request every no-power-save TX block to stop before retuning."]
+            #[inline(always)]
+            pub fn is_stop_all(&self) -> bool {
+                *self == TxBlockStopRequest::StopAll
+            }
+        }
         #[doc = "Field `TX_BLOCK_STOP_REQUEST` writer - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH\\]; CONFIDENCE\\[instruction-exact\\]. Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."]
-        pub type TxBlockStopRequestW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TxBlockStopRequestW<'a, REG> = crate::FieldWriter<'a, REG, 8, TxBlockStopRequest>;
+        impl<'a, REG> TxBlockStopRequestW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Clear every no-power-save TX block stop request."]
+            #[inline(always)]
+            pub fn run_all(self) -> &'a mut crate::W<REG> {
+                self.variant(TxBlockStopRequest::RunAll)
+            }
+            #[doc = "Request every no-power-save TX block to stop before retuning."]
+            #[inline(always)]
+            pub fn stop_all(self) -> &'a mut crate::W<REG> {
+                self.variant(TxBlockStopRequest::StopAll)
+            }
+        }
         #[doc = "Field `HIGH_CONTROL_UNKNOWN` reader - "]
         pub type HighControlUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_CONTROL_UNKNOWN` writer - "]
@@ -12710,10 +12767,53 @@ pub mod wifi_mac_regdma_control {
         pub type LowControlUnknownR = crate::BitReader;
         #[doc = "Field `LOW_CONTROL_UNKNOWN` writer - "]
         pub type LowControlUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum ActiveLink {
+            #[doc = "4: REGDMA link selected by the qualified Wi-Fi no-power-save restart."]
+            WifiNoPowerSave = 4,
+        }
+        impl From<ActiveLink> for u8 {
+            #[inline(always)]
+            fn from(variant: ActiveLink) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for ActiveLink {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for ActiveLink {}
         #[doc = "Field `ACTIVE_LINK` reader - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
-        pub type ActiveLinkR = crate::FieldReader;
+        pub type ActiveLinkR = crate::FieldReader<ActiveLink>;
+        impl ActiveLinkR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<ActiveLink> {
+                match self.bits {
+                    4 => Some(ActiveLink::WifiNoPowerSave),
+                    _ => None,
+                }
+            }
+            #[doc = "REGDMA link selected by the qualified Wi-Fi no-power-save restart."]
+            #[inline(always)]
+            pub fn is_wifi_no_power_save(&self) -> bool {
+                *self == ActiveLink::WifiNoPowerSave
+            }
+        }
         #[doc = "Field `ACTIVE_LINK` writer - SOURCE\\[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts."]
-        pub type ActiveLinkW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type ActiveLinkW<'a, REG> = crate::FieldWriter<'a, REG, 4, ActiveLink>;
+        impl<'a, REG> ActiveLinkW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "REGDMA link selected by the qualified Wi-Fi no-power-save restart."]
+            #[inline(always)]
+            pub fn wifi_no_power_save(self) -> &'a mut crate::W<REG> {
+                self.variant(ActiveLink::WifiNoPowerSave)
+            }
+        }
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
         pub type ModemTbttAutoPeriodIntervalR = crate::FieldReader<u16>;
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
@@ -21871,19 +21971,19 @@ pub mod wifi_mac_rtc_timer_update {
         pub type R = crate::R<SlowClockCalibrationSpec>;
         #[doc = "Register `SLOW_CLOCK_CALIBRATION` writer"]
         pub type W = crate::W<SlowClockCalibrationSpec>;
-        #[doc = "Field `VALUE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Low eighteen bits of the OS-adapter calibration value."]
+        #[doc = "Field `VALUE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
         pub type ValueR = crate::FieldReader<u32>;
-        #[doc = "Field `VALUE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Low eighteen bits of the OS-adapter calibration value."]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32>;
+        #[doc = "Field `VALUE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 18, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Low eighteen bits of the OS-adapter calibration value."]
+            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new(self.bits & 0x0003_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Low eighteen bits of the OS-adapter calibration value."]
+            #[doc = "Bits 0:17 - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation."]
             #[inline(always)]
             pub fn value(&mut self) -> ValueW<'_, SlowClockCalibrationSpec> {
                 ValueW::new(self, 0)
@@ -23670,14 +23770,102 @@ pub mod wifi_mac_rx_csi_control {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum HalInitLowByteUnknown {
+            #[doc = "1: `1`"]
+            Initialized = 1,
+        }
+        impl From<HalInitLowByteUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: HalInitLowByteUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for HalInitLowByteUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for HalInitLowByteUnknown {}
         #[doc = "Field `HAL_INIT_LOW_BYTE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
-        pub type HalInitLowByteUnknownR = crate::FieldReader;
+        pub type HalInitLowByteUnknownR = crate::FieldReader<HalInitLowByteUnknown>;
+        impl HalInitLowByteUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<HalInitLowByteUnknown> {
+                match self.bits {
+                    1 => Some(HalInitLowByteUnknown::Initialized),
+                    _ => None,
+                }
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_initialized(&self) -> bool {
+                *self == HalInitLowByteUnknown::Initialized
+            }
+        }
         #[doc = "Field `HAL_INIT_LOW_BYTE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 7:0 with one."]
-        pub type HalInitLowByteUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HalInitLowByteUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, HalInitLowByteUnknown>;
+        impl<'a, REG> HalInitLowByteUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn initialized(self) -> &'a mut crate::W<REG> {
+                self.variant(HalInitLowByteUnknown::Initialized)
+            }
+        }
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum HalInitSecondByteUnknown {
+            #[doc = "1: `1`"]
+            Initialized = 1,
+        }
+        impl From<HalInitSecondByteUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: HalInitSecondByteUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for HalInitSecondByteUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for HalInitSecondByteUnknown {}
         #[doc = "Field `HAL_INIT_SECOND_BYTE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
-        pub type HalInitSecondByteUnknownR = crate::FieldReader;
+        pub type HalInitSecondByteUnknownR = crate::FieldReader<HalInitSecondByteUnknown>;
+        impl HalInitSecondByteUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<HalInitSecondByteUnknown> {
+                match self.bits {
+                    1 => Some(HalInitSecondByteUnknown::Initialized),
+                    _ => None,
+                }
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_initialized(&self) -> bool {
+                *self == HalInitSecondByteUnknown::Initialized
+            }
+        }
         #[doc = "Field `HAL_INIT_SECOND_BYTE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete hal_init replaces bits 15:8 with one through a separate RMW."]
-        pub type HalInitSecondByteUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HalInitSecondByteUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, HalInitSecondByteUnknown>;
+        impl<'a, REG> HalInitSecondByteUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn initialized(self) -> &'a mut crate::W<REG> {
+                self.variant(HalInitSecondByteUnknown::Initialized)
+            }
+        }
         #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
         pub type LastRxBufferEnableUnknownR = crate::BitReader;
         #[doc = "Field `LAST_RX_BUFFER_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown."]
@@ -23956,10 +24144,67 @@ pub mod wifi_mac_core_enable {
         pub type R = crate::R<ControlSpec>;
         #[doc = "Register `CONTROL` writer"]
         pub type W = crate::W<ControlSpec>;
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum MacDisableGatesUnknown {
+            #[doc = "0: Clear all four disable gates."]
+            Enabled = 0,
+            #[doc = "15: Set all four disable gates."]
+            Disabled = 15,
+        }
+        impl From<MacDisableGatesUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: MacDisableGatesUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for MacDisableGatesUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for MacDisableGatesUnknown {}
         #[doc = "Field `MAC_DISABLE_GATES_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
-        pub type MacDisableGatesUnknownR = crate::FieldReader;
+        pub type MacDisableGatesUnknownR = crate::FieldReader<MacDisableGatesUnknown>;
+        impl MacDisableGatesUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<MacDisableGatesUnknown> {
+                match self.bits {
+                    0 => Some(MacDisableGatesUnknown::Enabled),
+                    15 => Some(MacDisableGatesUnknown::Disabled),
+                    _ => None,
+                }
+            }
+            #[doc = "Clear all four disable gates."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == MacDisableGatesUnknown::Enabled
+            }
+            #[doc = "Set all four disable gates."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == MacDisableGatesUnknown::Disabled
+            }
+        }
         #[doc = "Field `MAC_DISABLE_GATES_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC\\]; CONFIDENCE\\[instruction-exact\\]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown."]
-        pub type MacDisableGatesUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type MacDisableGatesUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, MacDisableGatesUnknown>;
+        impl<'a, REG> MacDisableGatesUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Clear all four disable gates."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(MacDisableGatesUnknown::Enabled)
+            }
+            #[doc = "Set all four disable gates."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(MacDisableGatesUnknown::Disabled)
+            }
+        }
         #[doc = "Field `HARDWARE_STATISTICS_CLEAR_ARM` reader - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
         pub type HardwareStatisticsClearArmR = crate::BitReader;
         #[doc = "Field `HARDWARE_STATISTICS_CLEAR_ARM` writer - Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics."]
@@ -30707,5 +30952,82 @@ pub mod fixed_register_write {
                 .enable()
                 .write_with_zero(|writer| writer.event_mask().masked());
         }
+    }
+}
+
+/// Safe, SVD-declared field writes based on an all-zero register image.
+pub mod zero_based_field_write {
+
+    /// Write `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_LOW%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_interface_address_low(
+        registers: &crate::WifiMacInterfaceAddress,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves the field accepts
+        // every value representable by the public argument type.
+        unsafe {
+            registers
+                .address_low(index)
+                .write_with_zero(|writer| writer.bytes_0_3().set(value));
+        }
+    }
+
+    /// Write `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_HIGH%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_interface_address_high(
+        registers: &crate::WifiMacInterfaceAddress,
+        index: usize,
+        value: u16,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves the field accepts
+        // every value representable by the public argument type.
+        unsafe {
+            registers
+                .address_high(index)
+                .write_with_zero(|writer| writer.bytes_4_5().set(value));
+        }
+    }
+}
+
+/// Safe, SVD-declared complete-register zero writes.
+pub mod zero_register_write {
+
+    /// Publish zero to every bit of `WIFI_MAC_CONTROL`.`CONTROL`.
+    #[inline]
+    pub fn open_mac_control_cold(registers: &crate::WifiMacControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.control().write_with_zero(|writer| writer);
+        }
+    }
+}
+
+/// Architecture-specific device-memory ordering primitives.
+pub mod device_access {
+    /// Order all preceding and following device-memory accesses.
+    #[inline]
+    pub fn fence() {
+        #[cfg(target_arch = "riscv32")]
+        // SAFETY: this instruction only orders memory and device accesses.
+        unsafe {
+            core::arch::asm!("fence iorw, iorw")
+        }
+        #[cfg(target_arch = "arm")]
+        // SAFETY: this instruction only orders memory and device accesses.
+        unsafe {
+            core::arch::asm!("dmb sy")
+        }
+        #[cfg(target_arch = "xtensa")]
+        // SAFETY: this instruction only orders memory and device accesses.
+        unsafe {
+            core::arch::asm!("memw")
+        }
+        #[cfg(not(any(target_arch = "riscv32", target_arch = "arm", target_arch = "xtensa",)))]
+        core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
     }
 }

@@ -1,9 +1,6 @@
 #![no_std]
 
-use core::{
-    ops::{Deref, DerefMut},
-    ptr::{read_volatile, write_volatile},
-};
+use core::ops::{Deref, DerefMut};
 
 mod agc;
 mod agc_runtime;
@@ -92,14 +89,7 @@ pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 #[inline]
 fn device_fence() {
-    #[cfg(target_arch = "riscv32")]
-    // SAFETY: this instruction only orders memory and device accesses.
-    unsafe {
-        core::arch::asm!("fence iorw, iorw")
-    }
-
-    #[cfg(not(target_arch = "riscv32"))]
-    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+    svd::device_access::fence();
 }
 
 /// Access policy recovered for one MMIO register.
@@ -283,40 +273,16 @@ impl RadioRegisters {
         self.wifi_baseband_enabled
     }
 
+    /// Order descriptor memory and MMIO at a hardware ownership boundary.
+    pub fn order_device_accesses(&mut self) {
+        device_fence();
+    }
+
     pub const fn contains(address: usize) -> bool {
         // The official platform PAC owns HP, PMU and LP peripherals. Legacy
         // raw compatibility is therefore limited to the remaining custom
         // modem/radio aperture and cannot manufacture access to those blocks.
         matches!(address, 0x2010_0000..=0x2010_ffff)
-    }
-
-    /// Read one PAC-described 32-bit register.
-    pub fn read32(&self, register: Register32) -> u32 {
-        debug_assert_ne!(register.access(), RegisterAccess::WriteOnly);
-        // SAFETY: only this crate constructs `Register32`, and
-        // `RadioRegisters` represents the unique live radio MMIO owner.
-        unsafe { read_volatile(register.address as *const u32) }
-    }
-
-    /// Write one PAC-described 32-bit register.
-    pub fn write32(&mut self, register: Register32, value: u32) {
-        debug_assert_ne!(register.access(), RegisterAccess::ReadOnly);
-        // SAFETY: only this crate constructs `Register32`, and the mutable
-        // borrow serializes writes through the unique live radio owner.
-        unsafe { write_volatile(register.address as *mut u32, value) }
-    }
-
-    /// Perform a finite read/modify/write on a PAC-described register.
-    pub fn modify32(&mut self, register: Register32, clear_mask: u32, set_bits: u32) -> u32 {
-        let previous = self.read32(register);
-        let next = (previous & !clear_mask) | (set_bits & clear_mask);
-        self.write32(register, next);
-        previous
-    }
-
-    /// Order device-memory accesses at a descriptor or interrupt boundary.
-    pub fn fence(&mut self) {
-        device_fence();
     }
 }
 

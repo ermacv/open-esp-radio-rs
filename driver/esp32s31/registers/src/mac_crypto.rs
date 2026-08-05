@@ -15,6 +15,21 @@ pub enum MacKeyInstallOutcome {
 }
 
 impl RadioRegisters {
+    /// Report whether one bounded hardware key-table entry is currently valid.
+    pub fn mac_key_entry_is_valid(&self, index: u8) -> Option<bool> {
+        if index >= KEY_ENTRY_COUNT {
+            return None;
+        }
+        let validity = self
+            .peripherals
+            .wifi_mac_crypto_control
+            .key_valid_bitmap()
+            .read()
+            .valid_entries()
+            .bits();
+        Some(validity & (1_u32 << index) != 0)
+    }
+
     /// Establish the common cold hardware-crypto bypass state.
     ///
     /// SOURCE: complete pinned
@@ -53,6 +68,7 @@ impl RadioRegisters {
             .wifi_mac_crypto_control
             .key_valid_bitmap()
             .read()
+            .valid_entries()
             .bits();
         if validity & valid_bit != 0 {
             return MacKeyInstallOutcome::Occupied;
@@ -92,7 +108,7 @@ impl RadioRegisters {
         unsafe { interface.write_with_zero(|w| w.bits(interface_image)) };
         device_fence();
 
-        if control.key_valid_bitmap().read().bits() & valid_bit == 0 {
+        if control.key_valid_bitmap().read().valid_entries().bits() & valid_bit == 0 {
             MacKeyInstallOutcome::Rejected
         } else {
             MacKeyInstallOutcome::Installed
@@ -103,7 +119,7 @@ impl RadioRegisters {
     pub fn clear_mac_key_entry(&mut self, index: u8) {
         assert!(index < KEY_ENTRY_COUNT);
         let control = &self.peripherals.wifi_mac_crypto_control;
-        let validity = control.key_valid_bitmap().read().bits();
+        let validity = control.key_valid_bitmap().read().valid_entries().bits();
         // SAFETY: the bounded bit is the SVD-described validity entry and the
         // complete clear leaf writes the preserved bitmap image.
         unsafe {

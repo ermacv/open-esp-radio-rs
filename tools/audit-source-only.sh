@@ -61,7 +61,7 @@ dependency_tree="$(
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-esp32s31-(phy|hal|registers|pac)|vcell) v'
+    rg -v '^(open-esp-radio-esp32s31-(phy|hal|registers|pac)|critical-section|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1

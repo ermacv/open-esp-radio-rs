@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the direct pre-COEX tail of `hal_init`.
 
+#![forbid(unsafe_code)]
+
 use super::ColdRadioRegisters;
 
 impl ColdRadioRegisters {
@@ -34,10 +36,9 @@ impl ColdRadioRegisters {
             .modify(|_, w| w.third_enable_unknown().set_bit());
 
         let csi = self.registers.peripherals.wifi_mac_rx_csi_control.control();
-        // SAFETY: both values fit their complete eight-bit fields. Keep the
-        // fresh-read byte replacements separate and in blob order.
-        csi.modify(|_, w| unsafe { w.hal_init_low_byte_unknown().bits(1) });
-        csi.modify(|_, w| unsafe { w.hal_init_second_byte_unknown().bits(1) });
+        // Keep the fresh-read byte replacements separate and in blob order.
+        csi.modify(|_, w| w.hal_init_low_byte_unknown().initialized());
+        csi.modify(|_, w| w.hal_init_second_byte_unknown().initialized());
 
         self.registers
             .peripherals
@@ -48,10 +49,8 @@ impl ColdRadioRegisters {
         let rtc = &self.registers.peripherals.wifi_mac_rtc_timer_update;
         rtc.control()
             .modify(|_, w| w.rtc_update_enable_unknown().set_bit());
-        // SAFETY: the explicit range check above proves the value fits the
-        // generated eighteen-bit field without truncation.
         rtc.slow_clock_calibration()
-            .modify(|_, w| unsafe { w.value().bits(slow_clock_calibration) });
+            .modify(|_, w| w.value().set(slow_clock_calibration));
         true
     }
 }

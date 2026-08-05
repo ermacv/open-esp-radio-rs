@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the complete MAC enable transaction.
 
+#![forbid(unsafe_code)]
+
 use super::ColdRadioRegisters;
 
 impl ColdRadioRegisters {
@@ -14,7 +16,7 @@ impl ColdRadioRegisters {
             .peripherals
             .wifi_mac_core_enable
             .control()
-            .modify(|_, w| unsafe { w.mac_disable_gates_unknown().bits(0) });
+            .modify(|_, w| w.mac_disable_gates_unknown().enabled());
         super::svd::full_register_write::mac_interrupt_enable(
             &self.interrupts.wifi_mac_interrupt,
             event_mask,

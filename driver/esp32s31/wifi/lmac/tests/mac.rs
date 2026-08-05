@@ -30,13 +30,6 @@ use open_esp_radio_esp32s31_wifi_lmac::{
         MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT, MacInterrupt, handle_mac_irq,
     },
     rate_schedule::{RateScheduleKind, RateScheduleRef},
-    registers::{
-        Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE, RX_ENABLE, RX_LAST_DESCRIPTOR,
-        RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR, RX_RELOAD, TX_CCA_CONTROL, TX_CCA_FORCE_MASK,
-        TX_COMPLETE_ALTERNATE_Q0, TX_COMPLETE_AUX_A_Q0, TX_COMPLETE_AUX_B_Q0, TX_COMPLETE_AUX_C_Q0,
-        TX_COMPLETE_CLEAR, TX_COMPLETE_PRIMARY_Q0, TX_COMPLETE_Q0, TX_COMPLETE_STATE,
-        TX_Q_ENABLE_VALID, TX_Q0_CONTROL, TX_STATE, TX_STATE_CLEAR, TX_TIMEOUT_SHIFT,
-    },
     rx::{
         HeBandwidth, HeGuardIntervalAndLtf, HeMuBandwidth, HeMuSignal, HeSuSignal,
         HeTriggerBasedSignal, INGRESS_STRICT_DUMP, INGRESS_STRICT_RXEND, RX_BUFFER_SENTINEL,
@@ -63,6 +56,36 @@ use open_esp_radio_ieee80211::trigger::{
     parse_trigger_common_info, parse_trigger_frame, parse_trigger_user_spatial_stream,
 };
 use open_esp_radio_wifi_lmac::{MacRxEvidence, MacRxMetadata};
+
+trait Mmio {
+    fn read32(&mut self, register: Register32) -> u32;
+    fn write32(&mut self, register: Register32, value: u32);
+    fn fence(&mut self);
+}
+
+const RX_CONTROL: Register32 = mac::RX_CONTROL;
+const RX_DESCRIPTOR_BASE: Register32 = mac::RX_DESCRIPTOR_BASE;
+const RX_LAST_DESCRIPTOR: Register32 = mac::RX_LAST_DESCRIPTOR;
+const RX_LAST_DESCRIPTOR_HIGH: Register32 = mac::RX_LAST_DESCRIPTOR_HIGH;
+const RX_NEXT_DESCRIPTOR: Register32 = mac::RX_NEXT_DESCRIPTOR;
+const TX_CCA_CONTROL: Register32 = mac::TX_CCA_CONTROL;
+const TX_COMPLETE_ALTERNATE_Q0: Register32 = mac::TX_COMPLETE_ALTERNATE_Q0;
+const TX_COMPLETE_AUX_A_Q0: Register32 = mac::TX_COMPLETE_AUX_A_Q0;
+const TX_COMPLETE_AUX_B_Q0: Register32 = mac::TX_COMPLETE_AUX_B_Q0;
+const TX_COMPLETE_AUX_C_Q0: Register32 = mac::TX_COMPLETE_AUX_C_Q0;
+const TX_COMPLETE_CLEAR: Register32 = mac::TX_COMPLETE_CLEAR;
+const TX_COMPLETE_PRIMARY_Q0: Register32 = mac::TX_COMPLETE_PRIMARY_Q0;
+const TX_COMPLETE_STATE: Register32 = mac::TX_COMPLETE_STATE;
+const TX_Q0_CONTROL: Register32 = mac::TX_Q0_CONTROL;
+const TX_STATE: Register32 = mac::TX_STATE;
+const TX_STATE_CLEAR: Register32 = mac::TX_STATE_CLEAR;
+
+const RX_ENABLE: u32 = mac::rx_control::WALKER_ENABLE.mask();
+const RX_RELOAD: u32 = mac::rx_control::APPEND_DESCRIPTOR_RELOAD.mask();
+const TX_Q_ENABLE_VALID: u32 = 0xc000_0000;
+const TX_CCA_FORCE_MASK: u32 = mac::tx_cca_control::FORCE.mask();
+const TX_TIMEOUT_SHIFT: u32 = mac::tx_state::TIMEOUT_SHIFT;
+const TX_COMPLETE_Q0: u32 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {

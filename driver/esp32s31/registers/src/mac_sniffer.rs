@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the open promiscuous receive boundary.
 
+#![forbid(unsafe_code)]
+
 use super::{RadioRegisters, device_fence};
 
 impl RadioRegisters {
@@ -9,13 +11,7 @@ impl RadioRegisters {
     /// `BLOB_LIBPP_HAL_SNIFFER_ENABLE`, and the register identity independently
     /// confirmed by `BLOB_LIBPP_HAL_SNIFFER_MISC`.
     pub fn configure_open_mac_promiscuous_receive(&mut self) {
-        // SAFETY: zero is the complete HIL-qualified cold register image.
-        unsafe {
-            self.peripherals
-                .wifi_mac_control
-                .control()
-                .write_with_zero(|w| w.bits(0));
-        }
+        super::svd::zero_register_write::open_mac_control_cold(&self.peripherals.wifi_mac_control);
 
         let filter = &self.peripherals.wifi_mac_rx_filter;
         let control = filter.policy(3);
@@ -38,7 +34,7 @@ impl RadioRegisters {
         // packet classes while preserving the other mode-dependent fields.
         filter
             .misc_packet_policy()
-            .modify(|_, w| unsafe { w.open_misc_packet_classes().bits(0xff) });
+            .modify(|_, w| w.open_misc_packet_classes().set(0xff));
         device_fence();
     }
 }

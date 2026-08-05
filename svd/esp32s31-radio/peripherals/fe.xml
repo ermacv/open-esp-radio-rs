@@ -1542,7 +1542,7 @@
             <field>
               <name>CALIBRATION_CONTROL_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field preserved around the complete bounded RX-DCO measurement graph.</description>
-              <bitOffset>22</bitOffset><bitWidth>2</bitWidth>
+              <bitOffset>22</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>

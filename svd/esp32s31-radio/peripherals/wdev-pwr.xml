@@ -37,7 +37,7 @@
           <fields>
             <field><name>MODEM_WAKEUP_PROTECT_EARLY_TIME</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits.</description><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>WIFI_NO_POWER_SAVE</name><description>REGDMA link selected by the qualified Wi-Fi no-power-save restart.</description><value>4</value></enumeratedValue></enumeratedValues></field>
             <field><name>MODEM_TBTT_AUTO_PERIOD_INTERVAL</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits.</description><bitOffset>21</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field>
             <field><name>MODEM_TBTT_AUTO_PERIOD_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated enable and disable leaves set or clear bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
@@ -204,7 +204,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.</description>
           <addressOffset>0x48</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>VALUE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Low eighteen bits of the OS-adapter calibration value.</description><bitOffset>0</bitOffset><bitWidth>18</bitWidth></field>
+            <field><name>VALUE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation.</description><bitOffset>0</bitOffset><bitWidth>18</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ffff</maximum></range></writeConstraint></field>
 
           </fields>
         </register>

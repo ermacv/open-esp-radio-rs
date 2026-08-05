@@ -56,10 +56,7 @@ use open_esp_radio::{
             phy_rfpll::phy_get_rf_cal_version,
             target_executor::PhyTargetPortError,
         },
-        registers::{
-            MacInterruptSetup,
-            mac::{self as mac_pac, init as mac_registers},
-        },
+        registers::MacInterruptSetup,
         wifi::lmac::{
             connected_rx::{ConnectedRxEvent, ConnectedRxSink},
             crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
@@ -73,10 +70,6 @@ use open_esp_radio::{
                 MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
             },
             rate_control::BeamformingReportHardware,
-            registers::{
-                MAC_INT_RAW, MAC_INT_STATUS, Mmio, RX_CONTROL, RX_DESCRIPTOR_BASE,
-                RX_LAST_DESCRIPTOR, RX_LAST_DESCRIPTOR_HIGH, RX_NEXT_DESCRIPTOR,
-            },
             rx::{
                 HeGuardIntervalAndLtf, PUBLIC_HEADER_SIZE, RxDma, RxIngressConfig,
                 decode_rx_phy_info,
@@ -213,7 +206,6 @@ use phy_diagnostics::*;
 // 220 post-PHY diagnostics, 230 MAC/RX/scan, 250 terminal halt.
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static DIAGNOSTIC_ACTION_ORDINAL: AtomicU32 = AtomicU32::new(0);
-static AUTH_REGISTER_SNAPSHOT_CAPTURED: AtomicBool = AtomicBool::new(false);
 
 fn set_diagnostic_stage(stage: u32) {
     DIAGNOSTIC_STAGE.store(stage, Ordering::Release);
@@ -951,8 +943,7 @@ type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
 type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
 
 fn assert_join_hardware_capabilities<
-    H: Mmio
-        + RxDma
+    H: RxDma
         + TxHardware
         + CcmpKeyHardware
         + He20PeerHardware
@@ -2003,14 +1994,7 @@ fn report_station_epoch_progress(progress: RadioHilStationEpochProgress) {
 struct RadioHilStaJoinObserver;
 
 impl Esp32s31StaJoinObserver for RadioHilStaJoinObserver {
-    fn authentication_transmitted(&mut self, _completion: TxCompletion) {
-        if AUTH_REGISTER_SNAPSHOT_CAPTURED
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-        {
-            log_open_auth_register_snapshot();
-        }
-    }
+    fn authentication_transmitted(&mut self, _completion: TxCompletion) {}
 
     fn association_profile_selected(&mut self, profile: Esp32s31StaAssociationProfile) {
         let (Some(power), Some(capability), Some(rate_power)) = (
@@ -2077,13 +2061,6 @@ impl IrqSink for OpenRadioMacIrqSink {
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn open_radio_power_interrupt() {
     let _report = service_power_interrupt(&OPEN_RADIO_POWER_IRQ_RUNTIME);
-}
-
-fn read_diagnostic_mmio(address: usize) -> u32 {
-    // SAFETY: diagnostic-only reads in this isolated HIL image. Production
-    // radio operations use typed PAC identities; keeping snapshots here raw
-    // avoids exporting ownership-free aliases solely for logging.
-    unsafe { (address as *const u32).read_volatile() }
 }
 
 const STA_ASSOCIATION_PREFERENCE: StaAssociationPreference =
@@ -4384,7 +4361,7 @@ async fn run_connected_network<'fixture, 'security>(
     let (frame, ethernet) = stopped_protocol.into_scratch();
     let (network, services) = radio_runner.into_parts();
     let services = services.into_inner();
-    let mut teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_slot) {
+    let teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_slot) {
         Ok(teardown) => teardown,
         Err(Esp32s31ConnectedStaTeardownFailure::Control {
             error,
@@ -4483,17 +4460,23 @@ async fn run_connected_network<'fixture, 'security>(
         teardown.stopped_rx.ring().descriptor_base(),
         teardown.stopped_rx.queued_frames(),
     ));
-    let key_bitmap = teardown.hardware.read32(mac_pac::CRYPTO_KEY_VALID_BITMAP);
-    let keys_cleared = key_bitmap
-        & ((1 << teardown.keys.pairwise_hardware_index)
-            | (1 << teardown.keys.group_hardware_index))
-        == 0;
+    let pairwise_cleared = teardown
+        .hardware
+        .ccmp_entry_is_valid(teardown.keys.pairwise_hardware_index)
+        == Some(false);
+    let group_cleared = teardown
+        .hardware
+        .ccmp_entry_is_valid(teardown.keys.group_hardware_index)
+        == Some(false);
+    let keys_cleared = pairwise_cleared && group_cleared;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result={} stage=production-connected-key-clear \
-         pairwise_slot={} group_slot={} valid_bitmap={key_bitmap:#010x}",
+         pairwise_slot={} group_slot={} pairwise_cleared={} group_cleared={}",
         if keys_cleared { "PASS" } else { "FAIL" },
         teardown.keys.pairwise_hardware_index,
         teardown.keys.group_hardware_index,
+        u8::from(pairwise_cleared),
+        u8::from(group_cleared),
     ));
     *sequences = teardown.sequences;
     tx_storage
@@ -5672,62 +5655,8 @@ async fn run_promiscuous_rx_hil(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=rx-active descriptor_base={descriptor_base:#010x} \
          buffer0={:#010x} handshake_samples={} handshake_value={:#010x} \
-         control={:#010x} base={:#010x} next={:#010x} last={:#010x} high={:#010x} \
-         int_raw={:#010x} int_status={:#010x} \
-         cold_int_mask={cold_interrupt_mask:#010x} \
-         he={:#010x}/{:#010x}/{:#010x} filter={:#010x} low_rate={:#010x}",
-        buffer_addresses[0],
-        cold.handshake_samples,
-        cold.handshake_value,
-        mmio.read32(RX_CONTROL),
-        mmio.read32(RX_DESCRIPTOR_BASE),
-        mmio.read32(RX_NEXT_DESCRIPTOR),
-        mmio.read32(RX_LAST_DESCRIPTOR),
-        mmio.read32(RX_LAST_DESCRIPTOR_HIGH),
-        mmio.read32(MAC_INT_RAW),
-        mmio.read32(MAC_INT_STATUS),
-        read_diagnostic_mmio(0x2010_4c80),
-        read_diagnostic_mmio(0x2010_4c88),
-        read_diagnostic_mmio(0x2010_4cc0),
-        read_diagnostic_mmio(0x2010_4020),
-        mmio.read32(mac_registers::R_8060),
-    ));
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL probe=mac-rx-diff \
-         gate407c={:#010x} sniffer={:#010x}/{:#010x} \
-         policy={:#010x}/{:#010x}/{:#010x}/{:#010x} \
-         subtype={:#010x} timing={:#010x} he_flags={:#010x} \
-         mac_control={:#010x} regdma={:#010x}",
-        mmio.read32(mac_registers::R_407C),
-        read_diagnostic_mmio(0x2010_40e4),
-        read_diagnostic_mmio(0x2010_40f4),
-        mmio.read32(mac_registers::RX_QUEUE_DEFAULT[0]),
-        mmio.read32(mac_registers::RX_QUEUE_DEFAULT[1]),
-        mmio.read32(mac_registers::RX_QUEUE_DEFAULT[2]),
-        mmio.read32(mac_registers::RX_QUEUE_DEFAULT[3]),
-        mmio.read32(mac_registers::R_4114),
-        mmio.read32(mac_registers::R_4C20),
-        mmio.read32(mac_registers::R_4C98),
-        mmio.read32(mac_registers::CONTROL),
-        mmio.read32(mac_registers::R_D83C),
-    ));
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL probe=phy-rx-diff \
-         frequency={:#010x}/{:#010x}/{:#010x} \
-         clocks={:#010x}/{:#010x} agc={:#010x}/{:#010x} \
-         rx={:#010x}/{:#010x}/{:#010x}/{:#010x}/{:#010x}",
-        read_diagnostic_mmio(0x2010_001c),
-        read_diagnostic_mmio(0x2010_0024),
-        read_diagnostic_mmio(0x2010_0028),
-        read_diagnostic_mmio(0x2010_0400),
-        read_diagnostic_mmio(0x2010_0408),
-        read_diagnostic_mmio(0x2010_705c),
-        read_diagnostic_mmio(0x2010_7064),
-        read_diagnostic_mmio(0x2010_70a0),
-        read_diagnostic_mmio(0x2010_7104),
-        read_diagnostic_mmio(0x2010_7114),
-        read_diagnostic_mmio(0x2010_7848),
-        read_diagnostic_mmio(0x2010_78c8),
+         cold_int_mask={cold_interrupt_mask:#010x}",
+        buffer_addresses[0], cold.handshake_samples, cold.handshake_value,
     ));
 
     let scan_started = Instant::now();
@@ -6248,30 +6177,6 @@ pub async fn run(
         .await;
     }
     set_diagnostic_stage(210);
-    let parameter = state.parameter_image();
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL probe=tx-calibration-parameter \
-                 references={:?} flags={:?} txdc={:?} txiq={:?} tail={:?}",
-        &parameter[0x018..0x01e],
-        &parameter[0x0a4..0x0a8],
-        &parameter[0x0a8..0x0c8],
-        &parameter[0x0d0..0x0e8],
-        &parameter[0x18e..0x1a8],
-    ));
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL probe=tx-calibration-mmio \
-                 detector={:#010x}/{:#010x}/{:#010x} \
-                 iq={:#010x}/{:#010x}/{:#010x} \
-                 tone={:#010x} correction={:#010x}",
-        read_diagnostic_mmio(0x2010_081c),
-        read_diagnostic_mmio(0x2010_0820),
-        read_diagnostic_mmio(0x2010_0830),
-        read_diagnostic_mmio(0x2010_0848),
-        read_diagnostic_mmio(0x2010_084c),
-        read_diagnostic_mmio(0x2010_0850),
-        read_diagnostic_mmio(0x2010_0870),
-        read_diagnostic_mmio(0x2010_0890),
-    ));
     set_diagnostic_stage(220);
     let legacy_power = core::array::from_fn::<_, 4, _>(|rate| tx_power_profile.pair(rate as u8));
     emergency_log(format_args!(

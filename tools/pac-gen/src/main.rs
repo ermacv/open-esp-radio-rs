@@ -91,6 +91,24 @@ struct FixedRegisterWriteBinding {
     variant: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ZeroBasedFieldWriteBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    field: String,
+    value_type: &'static str,
+    register_is_array: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ZeroRegisterWriteBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    register_is_array: bool,
+}
+
 const fn inherited_properties(
     parent: RegisterProperties,
     child: RegisterProperties,
@@ -898,6 +916,46 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             }
         }
     }
+    if let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioZeroBasedFieldWrites"))
+    {
+        for write in extension
+            .children()
+            .filter(|node| node.has_tag_name("write"))
+        {
+            let sources = required_attribute(write, "source")?;
+            for source in sources.split(',').map(str::trim) {
+                if source.is_empty() || !definitions.contains(source) {
+                    return Err(format!(
+                        "zero-based field write {} references undefined provenance source {source:?}",
+                        required_attribute(write, "name")?
+                    )
+                    .into());
+                }
+            }
+        }
+    }
+    if let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioZeroRegisterWrites"))
+    {
+        for write in extension
+            .children()
+            .filter(|node| node.has_tag_name("write"))
+        {
+            let sources = required_attribute(write, "source")?;
+            for source in sources.split(',').map(str::trim) {
+                if source.is_empty() || !definitions.contains(source) {
+                    return Err(format!(
+                        "zero-register write {} references undefined provenance source {source:?}",
+                        required_attribute(write, "name")?
+                    )
+                    .into());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1208,6 +1266,31 @@ fn generate_peripheral_ownership_api(document: &Document<'_>) -> Result<String, 
     ))
 }
 
+fn generate_device_access_api() -> &'static str {
+    "\n/// Architecture-specific device-memory ordering primitives.\n\
+     pub mod device_access {\n\
+         /// Order all preceding and following device-memory accesses.\n\
+         #[inline]\n\
+         pub fn fence() {\n\
+             #[cfg(target_arch = \"riscv32\")]\n\
+             // SAFETY: this instruction only orders memory and device accesses.\n\
+             unsafe { core::arch::asm!(\"fence iorw, iorw\") }\n\
+             #[cfg(target_arch = \"arm\")]\n\
+             // SAFETY: this instruction only orders memory and device accesses.\n\
+             unsafe { core::arch::asm!(\"dmb sy\") }\n\
+             #[cfg(target_arch = \"xtensa\")]\n\
+             // SAFETY: this instruction only orders memory and device accesses.\n\
+             unsafe { core::arch::asm!(\"memw\") }\n\
+             #[cfg(not(any(\n\
+                 target_arch = \"riscv32\",\n\
+                 target_arch = \"arm\",\n\
+                 target_arch = \"xtensa\",\n\
+             )))]\n\
+             core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);\n\
+         }\n\
+     }\n"
+}
+
 fn parse_full_register_writes(
     document: &Document<'_>,
 ) -> Result<Vec<FullRegisterWriteBinding>, Box<dyn Error>> {
@@ -1505,6 +1588,290 @@ fn generate_fixed_register_write_api(document: &Document<'_>) -> Result<String, 
                  }}\n\
              }}\n",
             binding.variant, binding.peripheral, binding.register, binding.name,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_zero_based_field_writes(
+    document: &Document<'_>,
+) -> Result<Vec<ZeroBasedFieldWriteBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioZeroBasedFieldWrites"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioZeroBasedFieldWrites"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioZeroBasedFieldWrites extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for write in extension
+        .children()
+        .filter(|node| node.has_tag_name("write"))
+    {
+        let name = required_attribute(write, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("zero-based field write name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate zero-based field write name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(write, "peripheral")?;
+        let register_name = required_attribute(write, "register")?;
+        let field_name = required_attribute(write, "field")?;
+        required_attribute(write, "source")?;
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "zero-based field write {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("zero-based field write {name} references unknown register {register_name}")
+            })?;
+        let access = child_text(register, "access")?;
+        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+            return Err(format!(
+                "zero-based field write {name} requires a writable 32-bit register"
+            )
+            .into());
+        }
+        let fields = register
+            .children()
+            .find(|node| node.has_tag_name("fields"))
+            .ok_or_else(|| format!("zero-based field write {name} register has no fields"))?;
+        let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
+            format!("zero-based field write {name} references unknown field {field_name}")
+        })?;
+        if optional_child_text(field, "access") == Some("read-only") {
+            return Err(format!("zero-based field write {name} field is read-only").into());
+        }
+        let width = parse_u64(child_text(field, "bitWidth")?, "field width")?;
+        if !(2..=32).contains(&width) {
+            return Err(format!(
+                "zero-based field write {name} requires a field between 2 and 32 bits"
+            )
+            .into());
+        }
+        let constraint = field
+            .children()
+            .find(|node| node.has_tag_name("writeConstraint"))
+            .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
+            .ok_or_else(|| format!("zero-based field write {name} has no range constraint"))?;
+        let maximum = if width == 32 {
+            u64::from(u32::MAX)
+        } else {
+            (1_u64 << width) - 1
+        };
+        if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
+            || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != maximum
+        {
+            return Err(format!(
+                "zero-based field write {name} field must accept every representable value"
+            )
+            .into());
+        }
+        let value_type = match width {
+            2..=8 => "u8",
+            9..=16 => "u16",
+            17..=32 => "u32",
+            _ => unreachable!(),
+        };
+
+        bindings.push(ZeroBasedFieldWriteBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            field: field_name.to_owned(),
+            value_type,
+            register_is_array: register.children().any(|node| node.has_tag_name("dim")),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_zero_based_field_write_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_zero_based_field_writes(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared field writes based on an all-zero register image.\n\
+         pub mod zero_based_field_write {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let field = member_binding_name(&binding.field);
+        let (index_parameter, index_argument) = if binding.register_is_array {
+            ("index: usize, ", "index")
+        } else {
+            ("", "")
+        };
+        output.push_str(&format!(
+            "\n    /// Write `{}`.`{}` while publishing zero to every other register bit.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}value: {}) {{\n\
+                 // SAFETY: the SVD extension explicitly qualifies the zero-based\n\
+                 // transaction, and generator validation proves the field accepts\n\
+                 // every value representable by the public argument type.\n\
+                 unsafe {{\n\
+                     registers.{register}({index_argument}).write_with_zero(|writer|\n\
+                         writer.{field}().set(value)\n\
+                     );\n\
+                 }}\n\
+             }}\n",
+            binding.peripheral, binding.register, binding.name, binding.value_type,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_zero_register_writes(
+    document: &Document<'_>,
+) -> Result<Vec<ZeroRegisterWriteBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioZeroRegisterWrites"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioZeroRegisterWrites"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioZeroRegisterWrites extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for write in extension
+        .children()
+        .filter(|node| node.has_tag_name("write"))
+    {
+        let name = required_attribute(write, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("zero-register write name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate zero-register write name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(write, "peripheral")?;
+        let register_name = required_attribute(write, "register")?;
+        required_attribute(write, "source")?;
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "zero-register write {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("zero-register write {name} references unknown register {register_name}")
+            })?;
+        let access = child_text(register, "access")?;
+        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+            return Err(
+                format!("zero-register write {name} requires a writable 32-bit register").into(),
+            );
+        }
+        if register
+            .children()
+            .any(|node| node.has_tag_name("modifiedWriteValues"))
+        {
+            return Err(format!(
+                "zero-register write {name} cannot target modified-write semantics"
+            )
+            .into());
+        }
+
+        bindings.push(ZeroRegisterWriteBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            register_is_array: register.children().any(|node| node.has_tag_name("dim")),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_zero_register_write_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_zero_register_writes(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared complete-register zero writes.\n\
+         pub mod zero_register_write {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let (index_parameter, index_argument) = if binding.register_is_array {
+            (", index: usize", "index")
+        } else {
+            ("", "")
+        };
+        output.push_str(&format!(
+            "\n    /// Publish zero to every bit of `{}`.`{}`.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}{index_parameter}) {{\n\
+                 // SAFETY: the SVD extension and its provenance explicitly\n\
+                 // qualify a complete zero write to this ordinary register.\n\
+                 unsafe {{\n\
+                     registers.{register}({index_argument}).write_with_zero(|writer| writer);\n\
+                 }}\n\
+             }}\n",
+            binding.peripheral, binding.register, binding.name,
         ));
     }
     output.push_str("}\n");
@@ -1911,6 +2278,8 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     parse_interrupt_snapshots(&document)?;
     parse_full_register_writes(&document)?;
     parse_fixed_register_writes(&document)?;
+    parse_zero_based_field_writes(&document)?;
+    parse_zero_register_writes(&document)?;
     Ok(windows)
 }
 
@@ -1948,13 +2317,18 @@ fn run() -> Result<(), Box<dyn Error>> {
     let peripheral_ownership_api = generate_peripheral_ownership_api(&document)?;
     let full_register_write_api = generate_full_register_write_api(&document)?;
     let fixed_register_write_api = generate_fixed_register_write_api(&document)?;
+    let zero_based_field_write_api = generate_zero_based_field_write_api(&document)?;
+    let zero_register_write_api = generate_zero_register_write_api(&document)?;
     let generated = format_generated(&format!(
-        "{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
         interrupt_snapshot_api,
         peripheral_ownership_api,
         full_register_write_api,
         fixed_register_write_api,
+        zero_based_field_write_api,
+        zero_register_write_api,
+        generate_device_access_api(),
     ))?;
     let binding_index = generate_binding_index(&input)?;
 
@@ -2004,13 +2378,15 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
-        generate_fixed_register_write_api, generate_full_register_write_api,
-        generate_interrupt_snapshot_api, generate_peripheral_ownership_api, member_binding_name,
-        mmio_window, parse_fixed_register_writes, parse_full_register_writes,
-        parse_interrupt_snapshots, parse_mmio_windows, type_binding_name, validate_alias_group,
-        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
-        validate_provenance, validate_register_aliases, validate_register_layout,
-        validate_write_semantics,
+        generate_device_access_api, generate_fixed_register_write_api,
+        generate_full_register_write_api, generate_interrupt_snapshot_api,
+        generate_peripheral_ownership_api, generate_zero_based_field_write_api,
+        generate_zero_register_write_api, member_binding_name, mmio_window,
+        parse_fixed_register_writes, parse_full_register_writes, parse_interrupt_snapshots,
+        parse_mmio_windows, parse_zero_based_field_writes, parse_zero_register_writes,
+        type_binding_name, validate_alias_group, validate_confidence, validate_dimension_order,
+        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
+        validate_register_layout, validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -2250,6 +2626,82 @@ mod tests {
         let generated = generate_fixed_register_write_api(&valid).unwrap();
         assert!(generated.contains("pub fn disable_port(registers: &crate::Port)"));
         assert!(generated.contains("writer.value().disabled()"));
+    }
+
+    #[test]
+    fn zero_based_field_write_requires_a_complete_range_and_keeps_array_index() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><dim>4</dim><name>ADDRESS%s</name><size>32</size>\
+             <access>read-write</access><fields><field><name>HIGH</name>\
+             <bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range>\
+             <minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint>\
+             </field><field><name>ENABLE</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth>\
+             </field></fields></register></registers></peripheral></peripherals>\
+             <vendorExtensions><openEspRadioZeroBasedFieldWrites>\
+             <write name=\"port_address_high\" peripheral=\"PORT\" register=\"ADDRESS%s\" \
+             field=\"HIGH\" source=\"TEST\"/></openEspRadioZeroBasedFieldWrites>\
+             </vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_zero_based_field_writes(&valid).unwrap().len(), 1);
+        let generated = generate_zero_based_field_write_api(&valid).unwrap();
+        assert!(generated.contains(
+            "pub fn port_address_high(registers: &crate::Port, index: usize, value: u16)"
+        ));
+        assert!(generated.contains("registers.address(index).write_with_zero"));
+        assert!(generated.contains("writer.high().set(value)"));
+
+        let partial_range = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>VALUE</name><size>32</size><access>write-only</access><fields>\
+             <field><name>BITS</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth>\
+             <writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range>\
+             </writeConstraint></field></fields></register></registers></peripheral>\
+             </peripherals><vendorExtensions><openEspRadioZeroBasedFieldWrites>\
+             <write name=\"port_value\" peripheral=\"PORT\" register=\"VALUE\" field=\"BITS\" \
+             source=\"TEST\"/></openEspRadioZeroBasedFieldWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert!(parse_zero_based_field_writes(&partial_range).is_err());
+    }
+
+    #[test]
+    fn zero_register_write_is_explicit_and_rejects_modified_write_semantics() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>CONTROL</name><size>32</size><access>read-write</access>\
+             </register></registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioZeroRegisterWrites><write name=\"clear_port_control\" \
+             peripheral=\"PORT\" register=\"CONTROL\" source=\"TEST\"/>\
+             </openEspRadioZeroRegisterWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_zero_register_writes(&valid).unwrap().len(), 1);
+        let generated = generate_zero_register_write_api(&valid).unwrap();
+        assert!(generated.contains("pub fn clear_port_control(registers: &crate::Port)"));
+        assert!(generated.contains("registers.control().write_with_zero(|writer| writer)"));
+
+        let w1c = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>CLEAR</name><size>32</size><access>write-only</access>\
+             <modifiedWriteValues>oneToClear</modifiedWriteValues></register>\
+             </registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioZeroRegisterWrites><write name=\"clear_port\" peripheral=\"PORT\" \
+             register=\"CLEAR\" source=\"TEST\"/></openEspRadioZeroRegisterWrites>\
+             </vendorExtensions></device>",
+        )
+        .unwrap();
+        assert!(parse_zero_register_writes(&w1c).is_err());
+    }
+
+    #[test]
+    fn device_fence_keeps_unsafe_inside_the_generated_pac() {
+        let generated = generate_device_access_api();
+        assert!(generated.contains("fence iorw, iorw"));
+        assert!(generated.contains("dmb sy"));
+        assert!(generated.contains("memw"));
+        assert!(generated.contains("compiler_fence"));
     }
 
     #[test]

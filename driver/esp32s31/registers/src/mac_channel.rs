@@ -1,8 +1,8 @@
 //! Generated-PAC ownership for the MAC side of a PHY channel switch.
 
-use super::{RadioRegisters, device_fence};
+#![forbid(unsafe_code)]
 
-const ACTIVE_REGDMA_LINK: u8 = 4;
+use super::{RadioRegisters, device_fence};
 
 impl RadioRegisters {
     /// Request the complete `WIFI_PS_NONE` MAC stop used before retuning PHY.
@@ -14,14 +14,10 @@ impl RadioRegisters {
     pub fn request_mac_channel_stop_without_power_save(&mut self) {
         let control = self.peripherals.wifi_mac_control.control();
         control.modify(|_, w| {
-            // SAFETY: 0xff exactly fills the SVD-described eight-bit stop
-            // request field recovered from the complete vendor leaf.
-            unsafe {
-                w.no_retention_stop_request()
-                    .set_bit()
-                    .tx_block_stop_request()
-                    .bits(u8::MAX)
-            }
+            w.no_retention_stop_request()
+                .set_bit()
+                .tx_block_stop_request()
+                .stop_all()
         });
         device_fence();
     }
@@ -47,23 +43,16 @@ impl RadioRegisters {
     pub fn restart_mac_after_channel_switch_without_power_save(&mut self) {
         let control = self.peripherals.wifi_mac_control.control();
         control.modify(|_, w| {
-            // SAFETY: zero exactly fills the SVD-described eight-bit field.
-            unsafe {
-                w.no_retention_stop_request()
-                    .clear_bit()
-                    .tx_block_stop_request()
-                    .bits(0)
-            }
+            w.no_retention_stop_request()
+                .clear_bit()
+                .tx_block_stop_request()
+                .run_all()
         });
 
         self.peripherals
             .wifi_mac_regdma_control
             .control()
-            .modify(|_, w| {
-                // SAFETY: four is the instruction-exact `ic_mac_init`
-                // selector and fits the SVD-described four-bit field.
-                unsafe { w.active_link().bits(ACTIVE_REGDMA_LINK) }
-            });
+            .modify(|_, w| w.active_link().wifi_no_power_save());
         device_fence();
     }
 

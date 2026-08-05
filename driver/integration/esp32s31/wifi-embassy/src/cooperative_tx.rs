@@ -20,7 +20,6 @@ use open_esp_radio_esp32s31_wifi_lmac::{
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
-    registers::Mmio,
     rx::RxDma,
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::TxHardware,
@@ -64,20 +63,6 @@ impl<'cell, 'registers> CooperativeTxHardware<'cell, 'registers> {
     }
 }
 
-impl Mmio for CooperativeTxHardware<'_, '_> {
-    fn read32(&mut self, register: open_esp_radio_esp32s31_registers::Register32) -> u32 {
-        Mmio::read32(&mut **self.registers.borrow_mut(), register)
-    }
-
-    fn write32(&mut self, register: open_esp_radio_esp32s31_registers::Register32, value: u32) {
-        Mmio::write32(&mut **self.registers.borrow_mut(), register, value);
-    }
-
-    fn fence(&mut self) {
-        Mmio::fence(&mut **self.registers.borrow_mut());
-    }
-}
-
 impl CcmpKeyHardware for CooperativeTxHardware<'_, '_> {
     fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
         CcmpKeyHardware::install_sta_ccmp_entry(&mut **self.registers.borrow_mut(), index, words)
@@ -85,6 +70,10 @@ impl CcmpKeyHardware for CooperativeTxHardware<'_, '_> {
 
     fn clear_ccmp_entry(&mut self, index: u8) {
         CcmpKeyHardware::clear_ccmp_entry(&mut **self.registers.borrow_mut(), index);
+    }
+
+    fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
+        CcmpKeyHardware::ccmp_entry_is_valid(&**self.registers.borrow(), index)
     }
 }
 

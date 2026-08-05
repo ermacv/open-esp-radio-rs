@@ -1755,7 +1755,7 @@
             <field>
               <name>CALIBRATION_CONTROL_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_XTAL_DUTY_CAL,ROM_REV0_PHY_RX_DCO_CAL]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field preserved around the complete bounded RX-DCO measurement graph.</description>
-              <bitOffset>22</bitOffset><bitWidth>2</bitWidth>
+              <bitOffset>22</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -1944,13 +1944,13 @@
       <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-hil-qualified]. Four interface-address pairs consumed by MAC receive filtering.</description>
       <baseAddress>0x2010405c</baseAddress>
       <registers>
-        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
+        <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex><name>ADDRESS_LOW%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR]; CONFIDENCE[instruction-exact]. Interface MAC bytes 0..3 in little-endian order, published by the first full-word store.</description><addressOffset>0x00</addressOffset><size>32</size><access>read-write</access><fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields></register>
         <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>ADDRESS_HIGH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact-partial]. Interface MAC bytes 4..5 are published as a full-word store before a separate fresh-read RMW sets receive-policy enable bit 16.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>BYTES_4_5</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>BYTES_4_5</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>RX_POLICY_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_ADDR,BLOB_LIBPP_RX_POLICY,BLOB_LIBNET80211_WIFI_RX_POLICY]; CONFIDENCE[instruction-exact-partial]. Set by a separate fresh-read RMW in hal_mac_set_addr and by the reachable associated-STA policy branch.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>POLICY_HIGH_UNKNOWN</name><bitOffset>17</bitOffset><bitWidth>15</bitWidth></field>
           </fields>
@@ -2002,7 +2002,7 @@
           <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>OPEN_MISC_PACKET_CLASSES</name><description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER]; CONFIDENCE[hil-observed]. Eight class-enable bits set together by the working open scan/STA receive path.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>OPEN_MISC_PACKET_CLASSES</name><description>SOURCE[OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER]; CONFIDENCE[hil-observed]. Eight independent class-enable bits used by the working open scan/STA receive path; every eight-bit mask is representable.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
 
             <field><name>BASEBAND_ERROR</name><description>SOURCE[BLOB_LIBPP_HAL_RUNTIME_MMIO_LEAVES]; CONFIDENCE[instruction-exact-semantics-unknown]. Fourth status bit sampled by the bounded hal_ifc_get_bb_err_bitmap loop.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth><access>read-only</access></field>
 
@@ -2023,7 +2023,7 @@
             <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field>
             <field><name>NO_RETENTION_STOP_REQUEST</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH]; CONFIDENCE[instruction-exact]. Included in the MAC stop request and cleared by hal_mac_init for the WIFI_PS_NONE all-ones retention mask.</description><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>ACTIVE_STATE</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,MIGRATION_CHANNEL_SWITCH]; CONFIDENCE[instruction-exact-partial]. Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed.</description><bitOffset>13</bitOffset><bitWidth>3</bitWidth><access>read-only</access></field>
-            <field><name>TX_BLOCK_STOP_REQUEST</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH]; CONFIDENCE[instruction-exact]. Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init.</description><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TX_BLOCK_STOP_REQUEST</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH]; CONFIDENCE[instruction-exact]. Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init.</description><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>RUN_ALL</name><description>Clear every no-power-save TX block stop request.</description><value>0</value></enumeratedValue><enumeratedValue><name>STOP_ALL</name><description>Request every no-power-save TX block to stop before retuning.</description><value>0xff</value></enumeratedValue></enumeratedValues></field>
             <field><name>HIGH_CONTROL_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
           </fields>
         </register>
@@ -2041,7 +2041,7 @@
           <fields>
             <field><name>MODEM_WAKEUP_PROTECT_EARLY_TIME</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits.</description><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>LOW_CONTROL_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>ACTIVE_LINK</name><description>SOURCE[BLOB_LIBPP_MAC_CHANNEL_SWITCH,HIL_OPEN_REGDMA_LINK4_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Four-bit Wi-Fi MAC REGDMA link selector; the active no-power-save channel restart writes four. Leaving zero after retuning caused intermittent authentication ACK timeouts.</description><bitOffset>17</bitOffset><bitWidth>4</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>WIFI_NO_POWER_SAVE</name><description>REGDMA link selected by the qualified Wi-Fi no-power-save restart.</description><value>4</value></enumeratedValue></enumeratedValues></field>
             <field><name>MODEM_TBTT_AUTO_PERIOD_INTERVAL</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits.</description><bitOffset>21</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field>
             <field><name>MODEM_TBTT_AUTO_PERIOD_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_PWR]; CONFIDENCE[instruction-exact-semantics-unknown]. The dedicated enable and disable leaves set or clear bit 31.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
@@ -3065,7 +3065,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Enabled hal_timer_update_by_rtc replaces bits 17:0 with the low eighteen bits returned by g_wifi_osi_funcs._slowclk_cal_get.</description>
           <addressOffset>0x48</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>VALUE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Low eighteen bits of the OS-adapter calibration value.</description><bitOffset>0</bitOffset><bitWidth>18</bitWidth></field>
+            <field><name>VALUE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Any eighteen-bit value returned by the OS-adapter calibration callback is published without interpretation.</description><bitOffset>0</bitOffset><bitWidth>18</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ffff</maximum></range></writeConstraint></field>
 
           </fields>
         </register>
@@ -3289,8 +3289,8 @@
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT,BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-partial]. Complete mac_last_rxbuf_init sets bit 27 after publishing all six table entries and both control groups. Complete hal_init later replaces byte zero with one, then byte one with one through a second fresh-read edge.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>HAL_INIT_LOW_BYTE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_init replaces bits 7:0 with one.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>HAL_INIT_SECOND_BYTE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_init replaces bits 15:8 with one through a separate RMW.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>HAL_INIT_LOW_BYTE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_init replaces bits 7:0 with one.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>INITIALIZED</name><value>1</value></enumeratedValue></enumeratedValues></field>
+            <field><name>HAL_INIT_SECOND_BYTE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete hal_init replaces bits 15:8 with one through a separate RMW.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>INITIALIZED</name><value>1</value></enumeratedValue></enumeratedValues></field>
 
             <field><name>LAST_RX_BUFFER_ENABLE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact]. Final set edge of mac_last_rxbuf_init; its narrower interaction with CSI is unknown.</description><bitOffset>27</bitOffset><bitWidth>1</bitWidth></field>
 
@@ -3352,7 +3352,7 @@
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>MAC_DISABLE_GATES_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC]; CONFIDENCE[instruction-exact]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>MAC_DISABLE_GATES_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC]; CONFIDENCE[instruction-exact]. Zero is the complete hal_enable_mac image and all ones is the complete hal_disable_mac image; individual gate identities remain unknown.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint><enumeratedValues><usage>write</usage><enumeratedValue><name>ENABLED</name><description>Clear all four disable gates.</description><value>0</value></enumeratedValue><enumeratedValue><name>DISABLED</name><description>Set all four disable gates.</description><value>0xf</value></enumeratedValue></enumeratedValues></field>
 
             <field><name>HARDWARE_STATISTICS_CLEAR_ARM</name><description>Set before and cleared after the 0x20104308 clear pulse by complete esp_test_clr_hw_statistics.</description><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
 
@@ -4165,6 +4165,24 @@
              variant="MASKED"
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
+    <openEspRadioZeroBasedFieldWrites>
+      <write name="mac_interface_address_low"
+             peripheral="WIFI_MAC_INTERFACE_ADDRESS"
+             register="ADDRESS_LOW%s"
+             field="BYTES_0_3"
+             source="BLOB_LIBPP_HAL_MAC_SET_ADDR"/>
+      <write name="mac_interface_address_high"
+             peripheral="WIFI_MAC_INTERFACE_ADDRESS"
+             register="ADDRESS_HIGH%s"
+             field="BYTES_4_5"
+             source="BLOB_LIBPP_HAL_MAC_SET_ADDR"/>
+    </openEspRadioZeroBasedFieldWrites>
+    <openEspRadioZeroRegisterWrites>
+      <write name="open_mac_control_cold"
+             peripheral="WIFI_MAC_CONTROL"
+             register="CONTROL"
+             source="OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"/>
+    </openEspRadioZeroRegisterWrites>
     <openEspRadioProvenance>
       <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>

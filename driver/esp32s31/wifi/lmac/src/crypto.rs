@@ -30,6 +30,11 @@ pub trait CcmpKeyHardware {
         words: [u32; CCMP_ENTRY_WORDS],
     ) -> MacKeyInstallOutcome;
     fn clear_ccmp_entry(&mut self, index: u8);
+
+    /// Query one hardware entry when the implementation exposes validity.
+    fn ccmp_entry_is_valid(&self, _index: u8) -> Option<bool> {
+        None
+    }
 }
 
 impl CcmpKeyHardware for RadioRegisters {
@@ -43,6 +48,10 @@ impl CcmpKeyHardware for RadioRegisters {
 
     fn clear_ccmp_entry(&mut self, index: u8) {
         self.clear_mac_key_entry(index);
+    }
+
+    fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
+        self.mac_key_entry_is_valid(index)
     }
 }
 

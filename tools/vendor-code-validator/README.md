@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v14 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v15 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -118,6 +118,19 @@ global definitions remain ambiguous, and local definitions are never selected.
 `project_call_linkage` records this policy. The edge is useful for navigation,
 but arguments, return propagation and addresses are not substituted, so the
 original reference blocker and incomplete function status remain intact.
+
+Call records are compacted by stable call identity: kind, target, recovered
+static site when available, ABI/semantic contract and typed signature.
+Distinct symbolic argument forms for that identity are reported as
+`argument_shapes` instead of duplicating the entire call record, while the
+report summary retains their total as
+`call_argument_shapes`. An argument value that differs is rendered as
+`varies-across-N-shapes`. An affine argument binding survives compaction only
+when the exact same binding is present in every shape; otherwise it is omitted
+and downstream context projection fails closed if the callee needs it. Shape
+counts are distinct recovered IR forms, not runtime call counts or loop
+iteration counts. The JSON records this policy as
+`call_compaction_mode: "stable-identity-universal-affine-bindings"`.
 
 Every function also has an `effect_summary` reachable inventory. It follows
 resolved internal and unique project edges to a fixed point, including through

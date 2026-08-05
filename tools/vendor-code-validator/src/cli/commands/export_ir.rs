@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tcontext-projection=affine-simple-call-paths\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tcall-compaction=stable-identity-universal-affine-bindings\tcontext-projection=affine-simple-call-paths\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -109,7 +109,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             |address| format!("{address:#010x}"),
         );
         println!(
-            "FUNCTION\t{}\tbinding={}\taddress={}\tobject-offset={:#010x}\tsize={}\tflow={}\tcomplete={}\texact={}\tcalls={}",
+            "FUNCTION\t{}\tbinding={}\taddress={}\tobject-offset={:#010x}\tsize={}\tflow={}\tcomplete={}\texact={}\tcalls={}\tcall-argument-shapes={}",
             function.identity,
             function.binding,
             address,
@@ -119,6 +119,11 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             function.complete,
             function.exact,
             function.calls.len(),
+            function
+                .calls
+                .iter()
+                .map(|call| call.argument_shapes)
+                .sum::<usize>(),
         );
         for call in &function.calls {
             let site = call
@@ -134,7 +139,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 },
             );
             println!(
-                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\taffine-bindings={}\t{}",
+                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\t{}",
                 function.identity,
                 call.kind,
                 call.target,
@@ -146,6 +151,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 trampoline,
                 call.project_symbol.as_deref().unwrap_or("-"),
                 call.project_candidates.join("|"),
+                call.argument_shapes,
                 call.argument_bindings.len(),
                 call.semantics.as_deref().unwrap_or("-"),
             );
@@ -327,7 +333,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         }
         for call in &summary.trampoline_calls {
             println!(
-                "EFFECT-TRAMPOLINE\t{}\t{}+{:#x}\tfunction={}\toperation={}\treturn-model={}\treturn-type={}\torigin={}\tpath={}\treplacement={}",
+                "EFFECT-TRAMPOLINE\t{}\t{}+{:#x}\tfunction={}\toperation={}\treturn-model={}\treturn-type={}\targument-shapes={}\torigin={}\tpath={}\treplacement={}",
                 function.identity,
                 call.trampoline.table,
                 call.trampoline.slot,
@@ -335,6 +341,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 call.trampoline.operation,
                 call.trampoline.return_model,
                 call.trampoline.return_type,
+                call.argument_shapes,
                 call.origin,
                 call.path,
                 call.trampoline.replacement_hint.as_deref().unwrap_or("-"),
@@ -449,7 +456,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         }
     }
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -470,6 +477,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         report.structured_functions,
         report.internal_calls,
         report.external_calls,
+        report.call_argument_shapes,
         report.project_linked_calls,
         report.ambiguous_project_calls,
         report.unresolved_calls,
@@ -550,11 +558,12 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
         for call in &summary.trampoline_calls {
             writeln!(
                 output,
-                "// REACHABLE-TRAMPOLINE: {}+{:#x} {} => {} via {}",
+                "// REACHABLE-TRAMPOLINE: {}+{:#x} {} => {} argument-shapes={} via {}",
                 call.trampoline.table,
                 call.trampoline.slot,
                 call.trampoline.c_name,
                 call.trampoline.operation,
+                call.argument_shapes,
                 call.path
             )
             .expect("writing to String cannot fail");
@@ -650,7 +659,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 14,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 15,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -672,6 +681,7 @@ fn write_json_report(
     );
     output.push_str(",\n");
     output.push_str("  \"effect_summary_mode\": \"reachable-inventory-origin-preserving\",\n");
+    output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
     output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
@@ -698,7 +708,7 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}}},",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -719,6 +729,7 @@ fn write_json_report(
         report.structured_functions,
         report.internal_calls,
         report.external_calls,
+        report.call_argument_shapes,
         report.project_linked_calls,
         report.ambiguous_project_calls,
         report.unresolved_calls,
@@ -902,6 +913,8 @@ fn write_json_report(
             write_optional_string(&mut output, call.project_symbol.as_deref());
             output.push_str(", \"project_candidates\": ");
             write_strings(&mut output, &call.project_candidates);
+            write!(output, ", \"argument_shapes\": {}", call.argument_shapes)
+                .expect("writing to String cannot fail");
             output.push_str(", \"arguments\": ");
             write_strings(&mut output, &call.arguments);
             output.push_str(", \"argument_bindings\": [");
@@ -1172,6 +1185,8 @@ fn write_json_report(
             write_string(&mut output, &call.origin);
             output.push_str(", \"path\": ");
             write_string(&mut output, &call.path);
+            write!(output, ", \"argument_shapes\": {}", call.argument_shapes)
+                .expect("writing to String cannot fail");
             output.push_str(", \"arguments\": [");
             for (argument_index, argument) in call.arguments.iter().enumerate() {
                 if argument_index != 0 {

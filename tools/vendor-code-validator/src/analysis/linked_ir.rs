@@ -66,6 +66,7 @@ pub(crate) struct LinkedCall {
     pub(crate) project_symbol: Option<String>,
     pub(crate) project_candidates: Vec<String>,
     pub(crate) trampoline: Option<LinkedTrampoline>,
+    pub(crate) argument_shapes: usize,
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
@@ -210,6 +211,7 @@ pub(crate) struct LinkedProjectedTrampolineCall {
     pub(crate) trampoline: LinkedTrampoline,
     pub(crate) origin: String,
     pub(crate) path: String,
+    pub(crate) argument_shapes: usize,
     pub(crate) arguments: Vec<LinkedProjectedTrampolineArgument>,
 }
 
@@ -294,6 +296,7 @@ pub(crate) struct LinkedIrReport {
     pub(crate) structured_functions: usize,
     pub(crate) internal_calls: usize,
     pub(crate) external_calls: usize,
+    pub(crate) call_argument_shapes: usize,
     pub(crate) project_linked_calls: usize,
     pub(crate) ambiguous_project_calls: usize,
     pub(crate) unresolved_calls: usize,
@@ -656,6 +659,129 @@ fn external_direction(direction: crate::ExternalArgumentDirection) -> &'static s
     }
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct LinkedCallIdentity {
+    kind: &'static str,
+    target: String,
+    site: Option<u32>,
+    tail: bool,
+    result_modeled: bool,
+    semantics: Option<String>,
+    semantic_operation: Option<String>,
+    replacement_hint: Option<String>,
+    project_symbol: Option<String>,
+    project_candidates: Vec<String>,
+    trampoline: Option<LinkedTrampoline>,
+    typed_signature: Vec<(usize, String, String, &'static str)>,
+}
+
+impl From<&LinkedCall> for LinkedCallIdentity {
+    fn from(call: &LinkedCall) -> Self {
+        Self {
+            kind: call.kind,
+            target: call.target.clone(),
+            site: call.site,
+            tail: call.tail,
+            result_modeled: call.result_modeled,
+            semantics: call.semantics.clone(),
+            semantic_operation: call.semantic_operation.clone(),
+            replacement_hint: call.replacement_hint.clone(),
+            project_symbol: call.project_symbol.clone(),
+            project_candidates: call.project_candidates.clone(),
+            trampoline: call.trampoline.clone(),
+            typed_signature: call
+                .typed_arguments
+                .iter()
+                .map(|argument| {
+                    (
+                        argument.position,
+                        argument.name.clone(),
+                        argument.c_type.clone(),
+                        argument.direction,
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+fn merged_argument_value(calls: &[LinkedCall], position: usize, argument_shapes: usize) -> String {
+    if let Some(first) = calls[0].arguments.get(position)
+        && calls
+            .iter()
+            .all(|call| call.arguments.get(position) == Some(first))
+    {
+        return first.clone();
+    }
+    format!("varies-across-{argument_shapes}-shapes")
+}
+
+fn merged_typed_argument_value(
+    calls: &[LinkedCall],
+    position: usize,
+    argument_shapes: usize,
+) -> String {
+    fn value(call: &LinkedCall, position: usize) -> Option<&str> {
+        call.typed_arguments
+            .iter()
+            .find(|argument| argument.position == position)
+            .map(|argument| argument.value.as_str())
+    }
+
+    if let Some(first) = value(&calls[0], position)
+        && calls
+            .iter()
+            .all(|call| value(call, position) == Some(first))
+    {
+        return first.to_owned();
+    }
+    format!("varies-across-{argument_shapes}-shapes")
+}
+
+fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<LinkedCall> {
+    let mut groups = BTreeMap::<LinkedCallIdentity, Vec<LinkedCall>>::new();
+    for call in calls {
+        groups
+            .entry(LinkedCallIdentity::from(&call))
+            .or_default()
+            .push(call);
+    }
+
+    groups
+        .into_values()
+        .map(|calls| {
+            let argument_shapes = calls.iter().map(|call| call.argument_shapes).sum();
+            let argument_count = calls
+                .iter()
+                .map(|call| call.arguments.len())
+                .max()
+                .unwrap_or_default();
+            let arguments = (0..argument_count)
+                .map(|position| merged_argument_value(&calls, position, argument_shapes))
+                .collect();
+            let argument_bindings = calls[0]
+                .argument_bindings
+                .iter()
+                .filter(|binding| {
+                    calls[1..]
+                        .iter()
+                        .all(|call| call.argument_bindings.contains(binding))
+                })
+                .cloned()
+                .collect();
+            let mut call = calls[0].clone();
+            for argument in &mut call.typed_arguments {
+                argument.value =
+                    merged_typed_argument_value(&calls, argument.position, argument_shapes);
+            }
+            call.argument_shapes = argument_shapes;
+            call.arguments = arguments;
+            call.argument_bindings = argument_bindings;
+            call
+        })
+        .collect()
+}
+
 fn collect_call_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
@@ -683,6 +809,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: Some(linked_trampoline(*table, *function)),
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: external_typed_arguments(*function, arguments),
@@ -703,6 +830,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -728,6 +856,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -753,6 +882,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -774,6 +904,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -803,6 +934,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -828,6 +960,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -912,6 +1045,7 @@ fn explore_direct_calls(
                     project_symbol: Some(relocation.symbol.clone()),
                     project_candidates: Vec::new(),
                     trampoline: None,
+                    argument_shapes: 1,
                     arguments: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
@@ -1999,10 +2133,11 @@ fn render_pseudo(
             .map_or_else(|| "unknown-site".to_owned(), |site| format!("{site:#010x}"));
         writeln!(
             output,
-            "// DIRECT-CALL {site}: {} {}{}",
+            "// DIRECT-CALL {site}: {} {}{} [argument-shapes={}]",
             call.kind,
             call.target,
-            if call.tail { " [tail]" } else { "" }
+            if call.tail { " [tail]" } else { "" },
+            call.argument_shapes,
         )
         .unwrap();
     }
@@ -2050,7 +2185,7 @@ fn calls_for_trace(
             collect_calls_from_event(event, resolver, identities, &mut calls);
         }
     }
-    calls.into_iter().collect()
+    compact_calls(calls)
 }
 
 pub(crate) fn build_linked_ir_for_source(
@@ -2087,7 +2222,7 @@ pub(crate) fn build_linked_ir_for_source(
                 let calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
-                    direct_calls.into_iter().collect()
+                    compact_calls(direct_calls)
                 };
                 let flow_kind = if trace.reference_flow.is_some() {
                     "structured"
@@ -2148,7 +2283,7 @@ pub(crate) fn build_linked_ir_for_source(
                 exact: false,
                 return_value: "unknown".to_owned(),
                 dependencies: Vec::new(),
-                calls: direct_calls.into_iter().collect(),
+                calls: compact_calls(direct_calls),
                 mmio_accesses: Vec::new(),
                 delays: Vec::new(),
                 context_accesses: Vec::new(),
@@ -2467,6 +2602,7 @@ fn project_context_fields(
                 ),
                 trampoline,
                 origin: function.identity.clone(),
+                argument_shapes: call.argument_shapes,
                 arguments,
             });
         }
@@ -2746,7 +2882,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                         continue;
                     };
                     let entry = semantics.entry(operation.clone()).or_default();
-                    entry.call_shapes += 1;
+                    entry.call_shapes += call.argument_shapes;
                     entry.targets.insert(call.target.clone());
                     if let Some(replacement) = call.replacement_hint.as_ref() {
                         entry.replacement_hints.insert(replacement.clone());
@@ -2993,6 +3129,11 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .flat_map(|function| &function.calls)
         .filter(|call| matches!(call.kind, "external" | "diagnostic"))
         .count();
+    let call_argument_shapes = functions
+        .iter()
+        .flat_map(|function| &function.calls)
+        .map(|call| call.argument_shapes)
+        .sum();
     let project_linked_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
@@ -3028,7 +3169,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .iter()
         .flat_map(|function| &function.calls)
         .filter(|call| call.semantic_operation.is_some())
-        .count();
+        .map(|call| call.argument_shapes)
+        .sum();
     let mut semantic_index =
         BTreeMap::<String, (usize, BTreeSet<String>, BTreeSet<String>, BTreeSet<String>)>::new();
     for function in &functions {
@@ -3037,7 +3179,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                 continue;
             };
             let entry = semantic_index.entry(operation.clone()).or_default();
-            entry.0 += 1;
+            entry.0 += call.argument_shapes;
             entry.1.insert(function.identity.clone());
             entry.2.insert(call.target.clone());
             if let Some(replacement) = call.replacement_hint.as_ref() {
@@ -3076,7 +3218,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             let entry = trampoline_index
                 .entry(trampoline.clone())
                 .or_insert_with(|| (abi_arguments, 0, BTreeSet::new()));
-            entry.1 += 1;
+            entry.1 += call.argument_shapes;
             entry.2.insert(function.identity.clone());
         }
     }
@@ -3113,6 +3255,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         structured_functions,
         internal_calls,
         external_calls,
+        call_argument_shapes,
         project_linked_calls,
         ambiguous_project_calls,
         unresolved_calls,
@@ -3330,6 +3473,63 @@ mod tests {
                 .is_some_and(|semantics| semantics.contains("version=3 slot=0x20 args=1")),
             "{:?}",
             call.semantics
+        );
+    }
+
+    #[test]
+    fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
+        let variant = |second_argument: &str, second_caller: u8| LinkedCall {
+            kind: "internal",
+            target: "member.o:callee".to_owned(),
+            site: Some(0x24),
+            tail: false,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: vec!["arg0".to_owned(), second_argument.to_owned()],
+            argument_bindings: vec![
+                LinkedArgumentBinding {
+                    position: 0,
+                    caller_argument: 0,
+                    offset: 0,
+                    expression: "arg0".to_owned(),
+                },
+                LinkedArgumentBinding {
+                    position: 1,
+                    caller_argument: second_caller,
+                    offset: 4,
+                    expression: format!("arg{second_caller} + 0x4"),
+                },
+            ],
+            typed_arguments: vec![LinkedCallArgument {
+                position: 1,
+                name: "context".to_owned(),
+                c_type: "*mut context".to_owned(),
+                direction: "input-output",
+                value: second_argument.to_owned(),
+            }],
+        };
+
+        let calls = compact_calls([variant("arg1+0x4", 1), variant("arg3+0x4", 3)]);
+
+        assert_eq!(calls.len(), 1);
+        let call = &calls[0];
+        assert_eq!(call.argument_shapes, 2);
+        assert_eq!(call.arguments, ["arg0", "varies-across-2-shapes"]);
+        assert_eq!(call.typed_arguments[0].value, "varies-across-2-shapes");
+        assert_eq!(
+            call.argument_bindings,
+            [LinkedArgumentBinding {
+                position: 0,
+                caller_argument: 0,
+                offset: 0,
+                expression: "arg0".to_owned(),
+            }]
         );
     }
 
@@ -3658,6 +3858,7 @@ mod tests {
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
@@ -3727,6 +3928,7 @@ mod tests {
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
@@ -3747,6 +3949,7 @@ mod tests {
                 project_symbol: None,
                 project_candidates: Vec::new(),
                 trampoline: None,
+                argument_shapes: 1,
                 arguments: vec!["const:0x00000014".to_owned()],
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
@@ -3856,6 +4059,7 @@ mod tests {
                 project_symbol: None,
                 project_candidates: Vec::new(),
                 trampoline: None,
+                argument_shapes: 1,
                 arguments: vec![format!("arg{caller_argument}{offset:+#x}")],
                 argument_bindings: vec![LinkedArgumentBinding {
                     position: 0,
@@ -3906,6 +4110,7 @@ mod tests {
                 return_type: "void".to_owned(),
                 replacement_hint: Some("Rust async timer registration".to_owned()),
             }),
+            argument_shapes: 1,
             arguments: vec!["arg0 + 0x4".to_owned()],
             argument_bindings: vec![LinkedArgumentBinding {
                 position: 0,
@@ -3979,6 +4184,7 @@ mod tests {
             project_symbol: None,
             project_candidates: Vec::new(),
             trampoline: None,
+            argument_shapes: 1,
             arguments: vec!["arg0".to_owned()],
             argument_bindings: vec![LinkedArgumentBinding {
                 position: 0,

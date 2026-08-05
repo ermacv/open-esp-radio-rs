@@ -184,6 +184,15 @@ definitions ambiguous. This produces a `project-linked` call-graph edge but
 does not substitute arguments, return values or addresses; the caller therefore
 retains its reference blocker and incomplete status.
 
+Exploratory branch/loop recovery can observe many symbolic argument forms at
+one static call site. Linked IR compacts them under the stable call identity and
+retains a distinct argument-shape count. Values that disagree become an
+explicit varying marker. Affine bindings are intersected across all shapes, so
+only universally proven caller-to-callee context relationships reach effect
+projection; disagreement removes the binding instead of selecting one path's
+value. These shape counts describe recovered IR alternatives, not dynamic
+execution multiplicity.
+
 The exploratory layer may follow those resolved edges to produce a reachable
 effect inventory. The fixed-point summary groups MMIO, delay and typed semantic
 shapes by the functions in which they were recovered, and identifies recursive

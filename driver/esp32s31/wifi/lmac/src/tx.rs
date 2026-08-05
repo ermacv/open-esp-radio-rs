@@ -11,6 +11,7 @@ use open_esp_radio_esp32s31_registers::{
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
     RadioRegisters,
 };
+pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 use open_esp_radio_ieee80211::he::HeDcmConstellation;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
@@ -284,15 +285,6 @@ impl TxHardware for ColdRadioRegisters {
     fn detach_completed_tx(&mut self, queue: u8) -> bool {
         TxHardware::detach_completed_tx(&mut **self, queue)
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TxSlotState {
-    Free,
-    Reserved,
-    HardwareOwned,
-    Completed,
-    ResetRequired,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

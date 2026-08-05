@@ -269,6 +269,15 @@ impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
         self.transition(TxDmaState::HardwareOwned, TxDmaState::ResetRequired)
     }
 
+    /// Fail closed after an impossible completion sequence or failed detach.
+    ///
+    /// Quarantine deliberately has no recovery edge. It is valid from every
+    /// state because retaining otherwise idle backing is safe, while guessing
+    /// that an asynchronously observed queue no longer references it is not.
+    pub fn quarantine(&mut self) {
+        *self.storage.as_mut().project().state = TxDmaState::ResetRequired;
+    }
+
     fn transition(
         &mut self,
         expected: TxDmaState,
@@ -413,6 +422,17 @@ mod tests {
         assert_eq!(storage.mark_completed(), Err(TxDmaStorageError::State));
         assert_eq!(storage.release_aborted(), Err(TxDmaStorageError::State));
         assert_eq!(storage.buffer_mut(), Err(TxDmaStorageError::Busy));
+    }
+
+    #[test]
+    fn impossible_sequence_can_only_quarantine_backing() {
+        let mut storage = storage();
+        storage.quarantine();
+
+        assert_eq!(storage.state(), TxDmaState::ResetRequired);
+        assert_eq!(storage.reserve(64, 8), Err(TxDmaStorageError::Busy));
+        assert_eq!(storage.cancel_reservation(), Err(TxDmaStorageError::State));
+        assert_eq!(storage.release_completed(), Err(TxDmaStorageError::State));
     }
 
     #[test]

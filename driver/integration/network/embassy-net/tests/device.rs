@@ -1,6 +1,5 @@
 use core::{
     future::Future,
-    mem::MaybeUninit,
     pin::pin,
     task::{Context, Waker},
 };
@@ -156,10 +155,8 @@ fn link_and_device_metadata_match_radio_state() {
 fn pinned_tx_slot_moves_between_network_and_radio_without_copying() {
     type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
-    let storage = Box::leak(Box::new(MaybeUninit::<TestResources>::uninit()));
-    let resources = TestResources::init_in_place(storage);
-    let pool = Box::leak(Box::new(MaybeUninit::<TestPool>::uninit()));
-    let pool = TestPool::pin_static(TestPool::init_in_place(pool));
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
     let (mut device, radio) = resources.split(pool, [2, 0, 0, 0, 0, 1]);
     device
         .transmit(&mut context())

@@ -167,10 +167,7 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
 
 #[cfg(test)]
 mod tests {
-    use core::{
-        mem::MaybeUninit,
-        task::{Context, Waker},
-    };
+    use core::task::{Context, Waker};
 
     use open_esp_radio_embassy_net::{
         Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool, RxEnqueueError,
@@ -199,11 +196,8 @@ mod tests {
             PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
         type Pool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, runner) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         let counters = RxEnqueueCounters::new();
         let mut sink = EmbassyNetConnectedRxSink::new(runner.rx_publisher(), Observer::default())

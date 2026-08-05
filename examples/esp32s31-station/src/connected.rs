@@ -656,8 +656,8 @@ pub async fn run_connected(
 
 /// Allocate the one-time Embassy network owner before the station lifecycle.
 pub fn initialize_station_network(station_address: [u8; 6]) -> StationNetwork {
-    let network_resources = NetworkResources::init_in_place(NETWORK_RESOURCES.uninit());
-    let tx_pool = NetworkTxPool::pin_static(NetworkTxPool::init_in_place(NETWORK_TX_POOL.uninit()));
+    let network_resources = NETWORK_RESOURCES.init_with(NetworkResources::new);
+    let tx_pool = NetworkTxPool::pin_static(NETWORK_TX_POOL.init_with(NetworkTxPool::new));
     let (device, runner) = network_resources.split(tx_pool, station_address);
     StationNetwork::Unstarted { device, runner }
 }

@@ -457,7 +457,6 @@ where
 mod tests {
     use core::{
         future::{Future, pending},
-        mem::MaybeUninit,
         sync::atomic::{AtomicBool, Ordering},
         task::{Context, Poll},
     };
@@ -624,11 +623,8 @@ mod tests {
 
     #[test]
     fn frame_arriving_inside_select_rechecks_control_as_network_pending() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
@@ -665,11 +661,8 @@ mod tests {
 
     #[test]
     fn rx_is_serviced_before_tx_when_both_irqs_are_ready() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         enqueue_frame(&mut device);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -708,11 +701,8 @@ mod tests {
 
     #[test]
     fn staging_backpressure_gates_new_rx_edges_but_not_tx_completion() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         enqueue_frame(&mut device);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -752,11 +742,8 @@ mod tests {
 
     #[test]
     fn executor_deadline_services_tx_without_an_interrupt() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         enqueue_frame(&mut device);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -790,11 +777,8 @@ mod tests {
 
     #[test]
     fn rx_control_waits_for_the_active_network_tx_then_precedes_another_lease() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         enqueue_frame(&mut device);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -827,11 +811,8 @@ mod tests {
 
     #[test]
     fn caller_stop_publishes_link_down_and_returns_distinct_outcome() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
@@ -870,11 +851,8 @@ mod tests {
 
     #[test]
     fn caller_stop_waits_for_active_tx_to_release_hardware() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         enqueue_frame(&mut device);
         network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
@@ -928,11 +906,8 @@ mod tests {
 
     #[test]
     fn disconnected_control_edge_publishes_link_down_and_returns() {
-        let resources =
-            std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Resources>::uninit()));
-        let resources = Resources::init_in_place(resources);
-        let pool = std::boxed::Box::leak(std::boxed::Box::new(MaybeUninit::<Pool>::uninit()));
-        let pool = Pool::pin_static(Pool::init_in_place(pool));
+        let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+        let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
         network.set_link_state(open_esp_radio_embassy_net::LinkState::Up);
         let irq = std::boxed::Box::leak(std::boxed::Box::new(

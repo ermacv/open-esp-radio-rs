@@ -3,7 +3,6 @@
 use core::{
     cell::UnsafeCell,
     marker::PhantomPinned,
-    mem::MaybeUninit,
     pin::Pin,
     ptr,
     sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
@@ -308,29 +307,8 @@ impl<
         }
     }
 
-    /// Initialize a large DMA pool directly in its final linker allocation.
-    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        let storage = storage.as_mut_ptr();
-
-        // SAFETY: `storage` is exclusively borrowed, aligned uninitialized
-        // memory. Every slot and the pin marker are initialized before the
-        // final reference is formed.
-        unsafe {
-            let slots =
-                ptr::addr_of_mut!((*storage).slots)
-                    .cast::<PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>>();
-            for index in 0..QUEUE_DEPTH {
-                slots.add(index).write(PinnedTxSlot::new());
-            }
-            ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
-            &mut *storage
-        }
-    }
-
     pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
-        // SAFETY: the unique static borrow is consumed by the returned pin.
-        // `PhantomPinned` prevents safe extraction or movement thereafter.
-        unsafe { Pin::new_unchecked(storage) }
+        Pin::static_mut(storage)
     }
 }
 
@@ -364,30 +342,6 @@ impl<
             ready_tx: Channel::new(),
             link: SharedLinkState::new(),
             split: AtomicBool::new(false),
-        }
-    }
-
-    /// Initialize a potentially large pool directly in its final allocation.
-    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        let storage = storage.as_mut_ptr();
-
-        // SAFETY: `storage` is exclusively borrowed, aligned uninitialized
-        // memory. Every field is initialized before the final reference is
-        // formed. Slots are written one at a time, so no complete pool-sized
-        // temporary is materialized on the embedded stack.
-        unsafe {
-            ptr::addr_of_mut!((*storage).free_rx).write(Channel::new());
-            ptr::addr_of_mut!((*storage).ready_rx).write(Channel::new());
-            let rx_slots =
-                ptr::addr_of_mut!((*storage).rx_slots).cast::<PinnedRxSlot<FRAME_CAPACITY>>();
-            for index in 0..RX_QUEUE_DEPTH {
-                rx_slots.add(index).write(PinnedRxSlot::new());
-            }
-            ptr::addr_of_mut!((*storage).free_tx).write(Channel::new());
-            ptr::addr_of_mut!((*storage).ready_tx).write(Channel::new());
-            ptr::addr_of_mut!((*storage).link).write(SharedLinkState::new());
-            ptr::addr_of_mut!((*storage).split).write(AtomicBool::new(false));
-            &mut *storage
         }
     }
 
@@ -440,9 +394,8 @@ impl<
                 .try_send(index as u8)
                 .expect("an empty free queue accepts every pool index");
         }
-        // SAFETY: the pool stays pinned for `'resources`; only an immutable
-        // slots reference escapes and no field is moved.
-        let slots = &unsafe { pool.get_unchecked_mut() }.slots;
+        let pool = Pin::into_ref(pool);
+        let slots: &'resources _ = &pool.get_ref().slots;
         let resources: &Self = self;
 
         (

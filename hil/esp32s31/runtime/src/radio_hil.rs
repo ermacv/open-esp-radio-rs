@@ -5540,15 +5540,15 @@ async fn run_reconnected_station_attempt<'fixture, 'security>(
 /// Allocate the station/network ownership graph exactly once.
 ///
 /// Keep both 32-frame queues out of the task stack. Passing
-/// `NetworkResources::new()` to `StaticCell::init` materializes a temporary of
-/// more than 100 KiB and previously corrupted the saved channel waker. A
+/// `StaticCell::init_with` constructs the resources directly in their final
+/// allocation and avoids a temporary of more than 100 KiB. A
 /// reconnect never calls this function: it receives `RadioHilStaNetwork::Running`
 /// from the completed connected epoch.
 fn initialize_sta_network(station_address: [u8; 6]) -> RadioHilStaNetwork {
-    let resources = NetworkResources::init_in_place(OPEN_RADIO_NETWORK_RESOURCES.uninit());
-    let tx_pool = NetworkTxPool::pin_static(NetworkTxPool::init_in_place(
-        OPEN_RADIO_NETWORK_TX_POOL.uninit(),
-    ));
+    let resources = OPEN_RADIO_NETWORK_RESOURCES.init_with(NetworkResources::new);
+    let tx_pool = NetworkTxPool::pin_static(
+        OPEN_RADIO_NETWORK_TX_POOL.init_with(NetworkTxPool::new),
+    );
     let (device, runner) = resources.split(tx_pool, station_address);
     RadioHilStaNetwork::Unstarted { device, runner }
 }

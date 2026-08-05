@@ -863,6 +863,7 @@
               <name>TONE_STOP_CONTROL_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE]; CONFIDENCE[instruction-exact]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown.</description>
               <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
             <field><name>FRONT_END_INIT_ENABLE_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
@@ -872,10 +873,10 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact]. Complete phy_txgain_comp_pacfg_new(1) publishes four ordered byte updates.</description>
           <addressOffset>0x0410</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>COMPENSATION_BYTE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>COMPENSATION_BYTE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>COMPENSATION_BYTE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>COMPENSATION_BYTE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>COMPENSATION_BYTE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>COMPENSATION_BYTE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>COMPENSATION_BYTE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>COMPENSATION_BYTE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -960,8 +961,8 @@
           <description>SOURCE[ROM_REV0_PHY_START_TX_TONE_STEP,ROM_REV0_PHY_TXIQ_GET_MIS_PWR,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact]. Low two selector bits for each calibration-tone path, updated through separate fresh-read edges.</description>
           <addressOffset>0x0428</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>PATH_0_SELECTOR_LOW</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>PATH_1_SELECTOR_LOW</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>PATH_0_SELECTOR_LOW</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>PATH_1_SELECTOR_LOW</name><bitOffset>2</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -969,8 +970,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT]; CONFIDENCE[instruction-exact]. Shared RX-IQ coefficient and correction-mode word.</description>
           <addressOffset>0x0438</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>RX_IQ_GAIN_COEFFICIENT</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>RX_IQ_PHASE_COEFFICIENT</name><bitOffset>22</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>RX_IQ_GAIN_COEFFICIENT</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>RX_IQ_PHASE_COEFFICIENT</name><bitOffset>22</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field>
             <field>
               <name>RX_IQ_CORRECTION_MODE_LOW</name>
               <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT]; CONFIDENCE[instruction-exact]. Low bit of the correction-mode field updated through a distinct fresh-read edge by the RXIQ parent.</description>
@@ -1012,10 +1013,10 @@
           <addressOffset>0x0808</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>SAR_TRIGGER</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>ENABLE_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>3</bitWidth></field>
-            <field><name>CALIBRATION_FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>ENABLE_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>3</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint></field>
+            <field><name>CALIBRATION_FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>BACKGROUND_CONTROL_ENABLE_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>INITIALIZATION_MODE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>INITIALIZATION_MODE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>3</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1024,7 +1025,7 @@
           <addressOffset>0x080c</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>SAR_CONFIG_CLEAR_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>SAR_MODE_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>SAR_MODE_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>SAR_READY</name><description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET]; CONFIDENCE[instruction-exact]. Hardware completion state sampled by the complete power-detector paths; neither source writes these bits.</description><bitOffset>14</bitOffset><bitWidth>3</bitWidth><access>read-only</access></field>
           </fields>
         </register>
@@ -1038,7 +1039,7 @@
           <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET]; CONFIDENCE[instruction-exact-partial]. Complete initialization writes 0x00ff0f64; TX-DC calibration temporarily replaces the low byte.</description>
           <addressOffset>0x0814</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TX_DC_TEMPORARY_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TX_DC_TEMPORARY_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>INITIALIZATION_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>16</bitWidth></field>
           </fields>
         </register>
@@ -1046,7 +1047,7 @@
           <name>POWER_DETECTOR_REFERENCE</name>
           <description>SOURCE[ROM_REV0_PHY_POWER_DETECTOR]; CONFIDENCE[instruction-exact]. PWDET reference word; initialization writes 0xaaaa and later paths publish 0, 0x5555 or 0xaaaa.</description>
           <addressOffset>0x0818</addressOffset><size>32</size><access>write-only</access>
-          <fields><field><name>REFERENCE_CODE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field></fields>
+          <fields><field><name>REFERENCE_CODE</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>POWER_DETECTOR_SAR_RESULT</name>
@@ -1089,8 +1090,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact]. Shared front-end low byte and PA-on high byte.</description>
           <addressOffset>0x086c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>FRONT_END_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>FRONT_END_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1099,8 +1100,8 @@
           <addressOffset>0x0870</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>RF_ON_BT_DELAY_CODE</name><description>SOURCE[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>PA_ON_BT_DELAY</name><description>SOURCE[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Bluetooth PA-on delay.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>PA_ON_BT_DELAY</name><description>SOURCE[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK]; CONFIDENCE[instruction-exact]. Bluetooth PA-on delay.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>PA_ON_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1108,8 +1109,8 @@
           <description>SOURCE[ROM_REV0_PHY_START_STOP_TX_TONE,ROM_REV0_PHY_DAC_SCALE_SET]; CONFIDENCE[instruction-exact]. Complete ROM tone start clears both byte-wide DAC-scale fields before measurement; complete phy_stop_tx_tone(1) restores both fields to 0xff through separate fresh-read writes.</description>
           <addressOffset>0x0c04</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>DAC_SCALE_LOW_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>DAC_SCALE_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DAC_SCALE_LOW_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>DAC_SCALE_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1126,8 +1127,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_IQ_COEFFICIENTS,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT]; CONFIDENCE[instruction-exact]. Shared TX-IQ coefficient and correction-mode word.</description>
           <addressOffset>0x0c0c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TX_IQ_GAIN_COEFFICIENT</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>TX_IQ_PHASE_COEFFICIENT</name><bitOffset>6</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>TX_IQ_GAIN_COEFFICIENT</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>TX_IQ_PHASE_COEFFICIENT</name><bitOffset>6</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field>
             <field>
               <name>TX_IQ_CORRECTION_MODE_LOW</name>
               <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT]; CONFIDENCE[instruction-exact]. Low bit of the auxiliary correction-mode field updated through a distinct fresh-read edge by the RXIQ parent.</description>
@@ -1150,7 +1151,7 @@
           <description>SOURCE[ROM_REV0_PHY_FE_REG_INIT]; CONFIDENCE[instruction-exact]. Final complete phy_fe_reg_init RMW replaces the low byte with 0x57.</description>
           <addressOffset>0x0c20</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1158,8 +1159,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact]. Complete phy_i2c_txrate_init replaces both evidenced rate fields before dispatching TX-gain compensation.</description>
           <addressOffset>0x448c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TX_RATE_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>TX_RATE_HIGH_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TX_RATE_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>TX_RATE_HIGH_UNKNOWN</name><bitOffset>18</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1187,14 +1188,14 @@
           <name>BASEBAND_INIT_7400</name>
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bits 14:13.</description>
           <addressOffset>0x7400</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>INIT_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>2</bitWidth></field></fields>
+          <fields><field><name>INIT_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>BASEBAND_INIT_7428</name>
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init sets bit 14 and replaces bits 13:8 with 0x15.</description>
           <addressOffset>0x7428</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>INIT_VALUE_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>INIT_VALUE_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
             <field><name>INIT_ENABLE_UNKNOWN</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -1202,7 +1203,7 @@
           <name>BASEBAND_INIT_743C</name>
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init clears bits 8:6 through two fresh-read updates.</description>
           <addressOffset>0x743c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>3</bitWidth></field></fields>
+          <fields><field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>6</bitOffset><bitWidth>3</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>TX_OUTPUT_FILTER_CONTROL</name>
@@ -1220,8 +1221,8 @@
           <addressOffset>0x7454</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>TRACK_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>INIT_SET_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>1</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>INIT_SET_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1229,10 +1230,10 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact]. Complete phy_bb_txpwr_track clears bits 1:0 and publishes three eight-bit tracking values.</description>
           <addressOffset>0x7458</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1240,10 +1241,10 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact]. Complete phy_bb_txpwr_track publishes four byte-wide tracking values.</description>
           <addressOffset>0x745c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_2_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_3_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1251,8 +1252,8 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_BASEBAND_CONFIG]; CONFIDENCE[instruction-exact]. Complete phy_bb_txpwr_track publishes two byte-wide tracking values.</description>
           <addressOffset>0x7460</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TRACK_VALUE_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>TRACK_VALUE_1_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1338,7 +1339,7 @@
           <name>BASEBAND_INIT_7808</name>
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits 13:7 with 0x60.</description>
           <addressOffset>0x7808</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth></field></fields>
+          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>BASEBAND_INIT_7890</name>
@@ -1353,7 +1354,7 @@
           <name>BASEBAND_INIT_78DC</name>
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_reg_init replaces bits 13:7 with two.</description>
           <addressOffset>0x78dc</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth></field></fields>
+          <fields><field><name>INIT_VALUE_UNKNOWN</name><bitOffset>7</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>BASEBAND_INIT_78E4</name>
@@ -1366,7 +1367,7 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG,ROM_REV0_PHY_CHAN_DUMP_CFG]; CONFIDENCE[instruction-exact-partial]. Complete phy_bb_reg_init clears bit 11; complete phy_lltf_mask_en independently replaces bits thirteen and twelve; complete phy_chan_dump_cfg replaces bits 7:4 and bit 11 through separate fresh-read RMWs.</description>
           <addressOffset>0x790c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>CHANNEL_DUMP_VALUE_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_CHAN_DUMP_CFG]; CONFIDENCE[instruction-exact]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>CHANNEL_DUMP_VALUE_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_CHAN_DUMP_CFG]; CONFIDENCE[instruction-exact]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
             <field><name>INIT_CLEAR_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>LLTF_MASK_INPUT_1</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>LLTF_MASK_INPUT_0</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
@@ -1390,7 +1391,7 @@
           <addressOffset>0x7c00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>BASEBAND_INIT_ENABLE_UNKNOWN</name><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>PA_ON_FIELD_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>PA_ON_FIELD_UNKNOWN</name><bitOffset>11</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field>
             <field><name>CHANNEL_DUMP_ENABLE_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_CHAN_DUMP_CFG]; CONFIDENCE[instruction-exact]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -1404,8 +1405,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact-partial]. Complete phy_bb_reg_init clears bits 19:12; complete phy_tx_paon_set replaces bits 9:0 with 0x1e.</description>
           <addressOffset>0x7c30</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>PA_ON_TIMING_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field>
-            <field><name>BASEBAND_INIT_CLEAR_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>PA_ON_TIMING_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field>
+            <field><name>BASEBAND_INIT_CLEAR_UNKNOWN</name><bitOffset>12</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1413,7 +1414,7 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION]; CONFIDENCE[instruction-exact]. Complete phy_bb_wdg_cfg publishes low configuration 0x00aa and sets bit 30.</description>
           <addressOffset>0x7c3c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>WATCHDOG_CONFIG_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>WATCHDOG_CONFIG_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>WATCHDOG_CONTROL_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -1455,8 +1456,8 @@
           <description>SOURCE[ROM_REV0_PHY_REGISTER_INITIALIZATION,ROM_REV0_PHY_BTBB_WIFI_BB_CFG2]; CONFIDENCE[instruction-exact]. Complete phy_bb_reg_init sets both nibbles to 0xf; complete phy_btbb_wifi_bb_cfg2 preserves low bit two, sets the other low bits and sets the high nibble.</description>
           <addressOffset>0x7cd0</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>INIT_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>INIT_HIGH_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
           </fields>
         </register>
       </registers>

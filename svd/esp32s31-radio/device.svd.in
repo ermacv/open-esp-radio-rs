@@ -308,6 +308,21 @@
              register="RF_RX_SATURATION_CONFIG"
              value="0x00000404"
              source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_tx_pa_table"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="TX_PA_TABLE_OPAQUE"
+             value="0x0661a45f"
+             source="ROM_REV0_PHY_REGISTER_INITIALIZATION"/>
+      <write name="initialize_power_detector_table_0"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="POWER_DETECTOR_TABLE_0_OPAQUE"
+             value="0x0f0f0fff"
+             source="ROM_REV0_PHY_POWER_DETECTOR"/>
+      <write name="initialize_power_detector_table_1"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="POWER_DETECTOR_TABLE_1"
+             value="0x00ff0f64"
+             source="ROM_REV0_PHY_POWER_DETECTOR"/>
     </openEspRadioFixedRegisterImages>
     <openEspRadioRegisterImageWrites>
       <write name="publish_mac_tx_control"
@@ -346,6 +361,18 @@
              peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
              register="LENGTH_CONTROL%s"
              source="BLOB_LIBPP_HAL_MAC_TX"/>
+      <write name="publish_power_detector_table_1_image"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="POWER_DETECTOR_TABLE_1"
+             source="BLOB_LIBPHY_PHY_TXDC_PWDET"/>
+      <write name="publish_power_detector_control_image"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="POWER_DETECTOR_CONTROL"
+             source="BLOB_LIBPHY_PHY_TXDC_PWDET"/>
+      <write name="restore_txiq_tone_control"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="TONE_PATH_0_CONTROL"
+             source="ROM_REV0_PHY_TXIQ_GET_MIS_PWR"/>
     </openEspRadioRegisterImageWrites>
     <openEspRadioZeroBasedFieldWrites>
       <write name="ersu_ack_rate_baseline"
@@ -468,6 +495,11 @@
              register="NRX_FREQUENCY_CONTROL"
              fields="FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN,SHIFT_LOW_OR_INIT_HIGH_UNKNOWN,SHIFT_HIGH_UNKNOWN"
              source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="power_detector_reference"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="POWER_DETECTOR_REFERENCE"
+             field="REFERENCE_CODE"
+             source="ROM_REV0_PHY_POWER_DETECTOR"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"
@@ -498,6 +530,14 @@
              peripheral="WIFI_MAC_HE_INIT_SUFFIX"
              register="HE_SCRATCH%s"
              source="BLOB_LIBPP_HAL_HE_INIT_SUFFIX"/>
+      <write name="clear_tx_gain_compensation"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="TX_GAIN_COMPENSATION"
+             source="BLOB_LIBPHY_PHY_BASEBAND_CONFIG"/>
+      <write name="clear_tx_gain_compensation_aux"
+             peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+             register="TX_GAIN_COMPENSATION_AUX"
+             source="BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"/>
     </openEspRadioZeroRegisterWrites>
     <openEspRadioMaskedRegisterModifies>
       <modify name="publish_pbus_force_test"
@@ -507,6 +547,34 @@
               inputMask="0x0001fffc"
               setMask="0x00000002"
               source="ROM_REV0_PHY_PBUS,ROM_REV0_PHY_RX_DCO"/>
+      <modify name="publish_tone_path_0_image"
+              peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+              register="TONE_PATH_0_CONTROL"
+              preserveMask="0xf0000000"
+              inputMask="0x0fffffff"
+              setMask="0x00000000"
+              source="ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"/>
+      <modify name="publish_tone_path_1_image"
+              peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+              register="TONE_PATH_1_CONTROL"
+              preserveMask="0xf0000000"
+              inputMask="0x0fffffff"
+              setMask="0x00000000"
+              source="ROM_REV0_PHY_START_STOP_TX_TONE,BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"/>
+      <modify name="publish_txiq_first_mismatch_image"
+              peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+              register="TONE_PATH_0_CONTROL"
+              preserveMask="0xf0000000"
+              inputMask="0x0fffffff"
+              setMask="0x00000000"
+              source="ROM_REV0_PHY_TXIQ_GET_MIS_PWR"/>
+      <modify name="publish_txiq_second_mismatch_image"
+              peripheral="PHY_BASEBAND_CONFIG_ORACLE"
+              register="TONE_PATH_0_CONTROL"
+              preserveMask="0xf0ffffff"
+              inputMask="0x0f000000"
+              setMask="0x00000000"
+              source="ROM_REV0_PHY_TXIQ_GET_MIS_PWR"/>
     </openEspRadioMaskedRegisterModifies>
     <openEspRadioProvenance>
       <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>

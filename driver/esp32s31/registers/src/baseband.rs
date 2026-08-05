@@ -4,6 +4,8 @@
 //! `svd/esp32s31-radio.svd`. Complete ROM/blob bodies cited there define the
 //! finite operation order.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 const fn tone_path_image(previous: u32, enabled: bool, selector: u16, step: u8) -> u32 {
@@ -156,48 +158,39 @@ impl RadioRegisters {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         bb.tx_power_track_control_0()
             .modify(|_, w| w.track_enable().bit(enabled));
-        // SAFETY: zero fits the generated four-bit field.
         bb.tx_power_track_control_0()
-            .modify(|_, w| unsafe { w.init_clear_unknown().bits(0) });
-        // SAFETY: 0x1f is the complete field-wide set image.
+            .modify(|_, w| w.init_clear_unknown().set(0));
         bb.tx_power_track_control_0()
-            .modify(|_, w| unsafe { w.init_set_unknown().bits(0x1f) });
+            .modify(|_, w| w.init_set_unknown().set(0x1f));
 
         // The complete body clears the adjacent bits through separate reads.
         bb.tx_power_track_control_1().modify(|r, w| {
-            // SAFETY: masking the generated two-bit reader remains in range.
-            unsafe {
-                w.init_clear_unknown()
-                    .bits(r.init_clear_unknown().bits() & !1)
-            }
+            w.init_clear_unknown()
+                .set(r.init_clear_unknown().bits() & !1)
         });
         bb.tx_power_track_control_1().modify(|r, w| {
-            // SAFETY: masking the generated two-bit reader remains in range.
-            unsafe {
-                w.init_clear_unknown()
-                    .bits(r.init_clear_unknown().bits() & !2)
-            }
+            w.init_clear_unknown()
+                .set(r.init_clear_unknown().bits() & !2)
         });
 
-        // SAFETY: every literal below fits its generated eight-bit field.
         bb.tx_power_track_control_3()
-            .modify(|_, w| unsafe { w.track_value_1_unknown().bits(0x79) });
+            .modify(|_, w| w.track_value_1_unknown().set(0x79));
         bb.tx_power_track_control_3()
-            .modify(|_, w| unsafe { w.track_value_0_unknown().bits(0x83) });
+            .modify(|_, w| w.track_value_0_unknown().set(0x83));
         bb.tx_power_track_control_2()
-            .modify(|_, w| unsafe { w.track_value_3_unknown().bits(0x8d) });
+            .modify(|_, w| w.track_value_3_unknown().set(0x8d));
         bb.tx_power_track_control_2()
-            .modify(|_, w| unsafe { w.track_value_2_unknown().bits(0x96) });
+            .modify(|_, w| w.track_value_2_unknown().set(0x96));
         bb.tx_power_track_control_2()
-            .modify(|_, w| unsafe { w.track_value_1_unknown().bits(0xa0) });
+            .modify(|_, w| w.track_value_1_unknown().set(0xa0));
         bb.tx_power_track_control_2()
-            .modify(|_, w| unsafe { w.track_value_0_unknown().bits(0xb1) });
+            .modify(|_, w| w.track_value_0_unknown().set(0xb1));
         bb.tx_power_track_control_1()
-            .modify(|_, w| unsafe { w.track_value_2_unknown().bits(0xbe) });
+            .modify(|_, w| w.track_value_2_unknown().set(0xbe));
         bb.tx_power_track_control_1()
-            .modify(|_, w| unsafe { w.track_value_1_unknown().bits(0xd2) });
+            .modify(|_, w| w.track_value_1_unknown().set(0xd2));
         bb.tx_power_track_control_1()
-            .modify(|_, w| unsafe { w.track_value_0_unknown().bits(0xe6) });
+            .modify(|_, w| w.track_value_0_unknown().set(0xe6));
     }
 
     /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.
@@ -206,24 +199,18 @@ impl RadioRegisters {
             .phy_baseband_config_oracle
             .baseband_init_7cd0()
             .modify(|r, w| {
-                // SAFETY: OR with 0x0b and the fixed high-nibble image both
-                // remain inside the generated four-bit fields.
-                unsafe {
-                    w.init_low_unknown()
-                        .bits(r.init_low_unknown().bits() | 0x0b)
-                        .init_high_unknown()
-                        .bits(0x0f)
-                }
+                w.init_low_unknown()
+                    .set(r.init_low_unknown().bits() | 0x0b)
+                    .init_high_unknown()
+                    .set(0x0f)
             });
     }
 
     /// Apply complete rev0 ROM `phy_chan_dump_cfg`.
     pub fn configure_channel_dump(&mut self, value: u32, enabled: u32, mode: u32) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: the caller value is explicitly retained to the generated
-        // four-bit field.
         bb.baseband_init_790c()
-            .modify(|_, w| unsafe { w.channel_dump_value_unknown().bits(value as u8 & 0x0f) });
+            .modify(|_, w| w.channel_dump_value_unknown().set(value as u8 & 0x0f));
         bb.baseband_init_790c()
             .modify(|_, w| w.init_clear_unknown().bit(mode & 1 != 0));
         bb.baseband_tx_pa_control()
@@ -241,19 +228,17 @@ impl RadioRegisters {
             .peripherals
             .phy_baseband_config_oracle
             .i2c_tx_rate_control();
-        // SAFETY: both complete-ROM literals fit their generated fields.
-        rate.modify(|_, w| unsafe { w.tx_rate_high_unknown().bits(0x55) });
-        rate.modify(|_, w| unsafe { w.tx_rate_low_unknown().bits(2) });
+        rate.modify(|_, w| w.tx_rate_high_unknown().set(0x55));
+        rate.modify(|_, w| w.tx_rate_low_unknown().set(2));
         self.restore_tx_gain_compensation();
     }
 
     /// Configure the complete baseband watchdog leaf.
     pub fn configure_baseband_watchdog(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: 0x00aa fits the generated sixteen-bit configuration field.
-        bb.baseband_watchdog_control().modify(|_, w| unsafe {
+        bb.baseband_watchdog_control().modify(|_, w| {
             w.watchdog_config_unknown()
-                .bits(0x00aa)
+                .set(0x00aa)
                 .watchdog_control_unknown()
                 .set_bit()
         });
@@ -392,46 +377,38 @@ impl RadioRegisters {
     /// Apply all six ordered PA-on configuration operations.
     pub fn configure_tx_pa_on(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: every literal below fits the corresponding generated field.
         bb.baseband_tx_pa_control()
-            .modify(|_, w| unsafe { w.pa_on_field_unknown().bits(0x14) });
+            .modify(|_, w| w.pa_on_field_unknown().set(0x14));
         bb.tx_pa_control_0()
-            .modify(|_, w| unsafe { w.pa_on_high_unknown().bits(0x78) });
-        // SAFETY: the complete ROM leaf publishes this full write-only word.
-        unsafe {
-            bb.tx_pa_table_opaque()
-                .write_with_zero(|w| w.bits(0x0661_a45f));
-        }
+            .modify(|_, w| w.pa_on_high_unknown().set(0x78));
+        super::svd::fixed_register_image::initialize_tx_pa_table(bb);
         bb.baseband_tx_pa_timing()
-            .modify(|_, w| unsafe { w.pa_on_timing_unknown().bits(0x1e) });
+            .modify(|_, w| w.pa_on_timing_unknown().set(0x1e));
         bb.tx_pa_control_1()
-            .modify(|_, w| unsafe { w.pa_on_high_unknown().bits(0x0a0e) });
+            .modify(|_, w| w.pa_on_high_unknown().set(0x0a0e));
         bb.tx_pa_control_1()
-            .modify(|_, w| unsafe { w.pa_on_bt_delay().bits(0xc8) });
+            .modify(|_, w| w.pa_on_bt_delay().set(0xc8));
     }
 
     /// Apply the local prefix of complete rev0 ROM `phy_bb_reg_init`.
     pub fn initialize_baseband_prefix(&mut self) {
-        // SAFETY: three is the complete two-bit field-wide set image.
         self.peripherals
             .phy_baseband_config_oracle
             .baseband_init_7400()
-            .modify(|_, w| unsafe { w.init_unknown().bits(3) });
+            .modify(|_, w| w.init_unknown().set(3));
     }
 
     /// Apply the twelve local middle edges of complete `phy_bb_reg_init`.
     pub fn initialize_baseband_middle(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: the instruction-exact literals fit their generated fields.
         bb.baseband_init_7808()
-            .modify(|_, w| unsafe { w.init_value_unknown().bits(0x60) });
+            .modify(|_, w| w.init_value_unknown().set(0x60));
         bb.baseband_init_78dc()
-            .modify(|_, w| unsafe { w.init_value_unknown().bits(2) });
+            .modify(|_, w| w.init_value_unknown().set(2));
         bb.baseband_init_78e4()
             .modify(|_, w| w.init_clear_unknown().clear_bit());
-        // SAFETY: zero fits the generated eight-bit field.
         bb.baseband_tx_pa_timing()
-            .modify(|_, w| unsafe { w.baseband_init_clear_unknown().bits(0) });
+            .modify(|_, w| w.baseband_init_clear_unknown().set(0));
         bb.baseband_init_790c()
             .modify(|_, w| w.init_clear_unknown().clear_bit());
         bb.baseband_init_7ca8()
@@ -446,13 +423,8 @@ impl RadioRegisters {
             .modify(|_, w| w.he_ru26_good_response_enable().set_bit());
         bb.baseband_init_7a28()
             .modify(|_, w| w.init_clear_unknown().clear_bit());
-        // SAFETY: 0x0f is the complete image of each four-bit field.
-        bb.baseband_init_7cd0().modify(|_, w| unsafe {
-            w.init_low_unknown()
-                .bits(0x0f)
-                .init_high_unknown()
-                .bits(0x0f)
-        });
+        bb.baseband_init_7cd0()
+            .modify(|_, w| w.init_low_unknown().set(0x0f).init_high_unknown().set(0x0f));
         bb.baseband_tx_pa_control()
             .modify(|_, w| w.baseband_init_enable_unknown().set_bit());
     }
@@ -462,56 +434,35 @@ impl RadioRegisters {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         // Complete ROM clears bits 7:6 and bit 8 through separate reads.
         bb.baseband_init_743c().modify(|r, w| {
-            // SAFETY: the helper maps a generated three-bit field to itself.
-            unsafe {
-                w.init_clear_unknown()
-                    .bits(clear_baseband_tail_low(r.init_clear_unknown().bits()))
-            }
+            w.init_clear_unknown()
+                .set(clear_baseband_tail_low(r.init_clear_unknown().bits()))
         });
         bb.baseband_init_743c().modify(|r, w| {
-            // SAFETY: the helper maps a generated three-bit field to itself.
-            unsafe {
-                w.init_clear_unknown()
-                    .bits(clear_baseband_tail_high(r.init_clear_unknown().bits()))
-            }
+            w.init_clear_unknown()
+                .set(clear_baseband_tail_high(r.init_clear_unknown().bits()))
         });
         bb.baseband_init_7428()
             .modify(|_, w| w.init_enable_unknown().set_bit());
-        // SAFETY: 0x15 fits the generated six-bit field.
         bb.baseband_init_7428()
-            .modify(|_, w| unsafe { w.init_value_unknown().bits(0x15) });
+            .modify(|_, w| w.init_value_unknown().set(0x15));
         bb.baseband_init_7cd0().modify(|r, w| {
-            // SAFETY: OR with values bounded to the generated four-bit
-            // readers produces values that remain within each field.
-            unsafe {
-                w.init_low_unknown()
-                    .bits(r.init_low_unknown().bits() | 0x0b)
-                    .init_high_unknown()
-                    .bits(r.init_high_unknown().bits() | 0x0f)
-            }
+            w.init_low_unknown()
+                .set(r.init_low_unknown().bits() | 0x0b)
+                .init_high_unknown()
+                .set(r.init_high_unknown().bits() | 0x0f)
         });
     }
 
     /// Apply the five internal-MMIO stores of complete ROM `phy_pwdet_reg_init`.
     pub fn initialize_power_detector_registers(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: these are complete full-word stores from the rev0 ROM body;
-        // they do not depend on an unknown reset image.
-        unsafe {
-            bb.power_detector_table_0_opaque()
-                .write_with_zero(|w| w.bits(0x0f0f_0fff));
-            bb.power_detector_table_1()
-                .write_with_zero(|w| w.bits(0x00ff_0f64));
-        }
+        super::svd::fixed_register_image::initialize_power_detector_table_0(bb);
+        super::svd::fixed_register_image::initialize_power_detector_table_1(bb);
         bb.power_detector_control()
-            .modify(|_, w| unsafe { w.calibration_field_unknown().bits(0x50) });
-        // SAFETY: the complete ROM publishes a zero-extended full reference.
-        unsafe {
-            bb.power_detector_reference()
-                .write_with_zero(|w| w.reference_code().bits(0xaaaa));
-        }
+            .modify(|_, w| w.calibration_field_unknown().set(0x50));
+        super::svd::zero_based_field_write::power_detector_reference(bb, 0xaaaa);
         bb.power_detector_control()
-            .modify(|_, w| unsafe { w.initialization_mode_unknown().bits(2) });
+            .modify(|_, w| w.initialization_mode_unknown().set(2));
     }
 
     /// Apply the internal-MMIO portion of complete ROM `phy_en_pwdet`.
@@ -521,20 +472,14 @@ impl RadioRegisters {
         for bit in [2_u8, 1, 4] {
             control.modify(|r, w| {
                 let field = clear_power_detector_enable_field(r.enable_clear_unknown().bits(), bit);
-                // SAFETY: `field` is derived from the three-bit reader by
-                // clearing one in-range bit.
-                unsafe { w.enable_clear_unknown().bits(field) }
+                w.enable_clear_unknown().set(field)
             });
         }
         bb.power_detector_sar_control_status()
-            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(3) });
+            .modify(|_, w| w.sar_mode_unknown().set(3));
         bb.power_detector_sar_control_status()
             .modify(|_, w| w.sar_config_clear_unknown().clear_bit());
-        // SAFETY: complete phy_pwdet_sar2_init publishes this full reference.
-        unsafe {
-            bb.power_detector_reference()
-                .write_with_zero(|w| w.reference_code().bits(0x016a));
-        }
+        super::svd::zero_based_field_write::power_detector_reference(bb, 0x016a);
     }
 
     /// Set the final background-control bit after PWDET enable.
@@ -552,14 +497,8 @@ impl RadioRegisters {
         let control = bb.power_detector_control().read().bits();
         let (saved_table, saved_control, next_table, next_control) =
             txdc_power_detector_images(table, control);
-        // SAFETY: each next image preserves every unowned bit from the
-        // preceding complete read and replaces only the SVD-described field.
-        unsafe {
-            bb.power_detector_table_1()
-                .write_with_zero(|w| w.bits(next_table));
-            bb.power_detector_control()
-                .write_with_zero(|w| w.bits(next_control));
-        }
+        super::svd::register_image_write::publish_power_detector_table_1_image(bb, next_table);
+        super::svd::register_image_write::publish_power_detector_control_image(bb, next_control);
         (saved_table, saved_control)
     }
 
@@ -568,7 +507,7 @@ impl RadioRegisters {
         self.peripherals
             .phy_baseband_config_oracle
             .power_detector_sar_control_status()
-            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(1) });
+            .modify(|_, w| w.sar_mode_unknown().set(1));
     }
 
     /// Restore the captured TX-DC fields and select final SAR mode three.
@@ -579,25 +518,21 @@ impl RadioRegisters {
     ) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         bb.power_detector_table_1()
-            .modify(|_, w| unsafe { w.tx_dc_temporary_low_unknown().bits(power_table_low) });
-        bb.power_detector_control().modify(|_, w| unsafe {
+            .modify(|_, w| w.tx_dc_temporary_low_unknown().set(power_table_low));
+        bb.power_detector_control().modify(|_, w| {
             w.calibration_field_unknown()
-                .bits((shifted_power_control_field >> 4) as u8)
+                .set((shifted_power_control_field >> 4) as u8)
         });
         bb.power_detector_sar_control_status()
-            .modify(|_, w| unsafe { w.sar_mode_unknown().bits(3) });
+            .modify(|_, w| w.sar_mode_unknown().set(3));
     }
 
     /// Publish one zero-extended power-detector reference word.
     pub fn write_power_detector_reference(&mut self, value: u16) {
-        // SAFETY: the complete callers publish a full word whose high half is
-        // zero; `value` exactly fills the SVD-described 16-bit field.
-        unsafe {
-            self.peripherals
-                .phy_baseband_config_oracle
-                .power_detector_reference()
-                .write_with_zero(|w| w.reference_code().bits(value));
-        }
+        super::svd::zero_based_field_write::power_detector_reference(
+            &self.peripherals.phy_baseband_config_oracle,
+            value,
+        );
     }
 
     /// Pulse the power-detector SAR trigger through two fresh RMW edges.
@@ -633,13 +568,8 @@ impl RadioRegisters {
 
     fn clear_tx_gain_compensation(&mut self) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        // SAFETY: both complete archive leaves publish a full zero word, so
-        // no unknown reset image is used as the source of either write.
-        unsafe {
-            bb.tx_gain_compensation().write_with_zero(|w| w.bits(0));
-            bb.tx_gain_compensation_aux()
-                .write_with_zero(|w| w.auxiliary_image_unknown().bits(0));
-        }
+        super::svd::zero_register_write::clear_tx_gain_compensation(bb);
+        super::svd::zero_register_write::clear_tx_gain_compensation_aux(bb);
     }
 
     fn restore_tx_gain_compensation(&mut self) {
@@ -647,10 +577,10 @@ impl RadioRegisters {
             .peripherals
             .phy_baseband_config_oracle
             .tx_gain_compensation();
-        compensation.modify(|_, w| unsafe { w.compensation_byte_0_unknown().bits(0) });
-        compensation.modify(|_, w| unsafe { w.compensation_byte_1_unknown().bits(0xfa) });
-        compensation.modify(|_, w| unsafe { w.compensation_byte_2_unknown().bits(0xff) });
-        compensation.modify(|_, w| unsafe { w.compensation_byte_3_unknown().bits(0) });
+        compensation.modify(|_, w| w.compensation_byte_0_unknown().set(0));
+        compensation.modify(|_, w| w.compensation_byte_1_unknown().set(0xfa));
+        compensation.modify(|_, w| w.compensation_byte_2_unknown().set(0xff));
+        compensation.modify(|_, w| w.compensation_byte_3_unknown().set(0));
     }
 
     fn configure_tone_selectors(&mut self, path_0: u16, path_1: u16) {
@@ -660,31 +590,21 @@ impl RadioRegisters {
             .peripherals
             .phy_baseband_config_oracle
             .tone_selector_control();
-        selectors.modify(|_, w| unsafe { w.path_0_selector_low().bits((path_0 & 3) as u8) });
-        selectors.modify(|_, w| unsafe { w.path_1_selector_low().bits((path_1 & 3) as u8) });
+        selectors.modify(|_, w| w.path_0_selector_low().set((path_0 & 3) as u8));
+        selectors.modify(|_, w| w.path_1_selector_low().set((path_1 & 3) as u8));
     }
 
     fn configure_tone_paths(&mut self, enabled: bool, path_0_selector: u16, path_0_step: u8) {
         debug_assert!(path_0_selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.tone_path_0_control().modify(|r, w| {
-            // SAFETY: the complete ROM/blob leaves replace the entire low
-            // 28-bit path image while preserving the high nibble. The helper
-            // reproduces that bounded instruction-level transform.
-            unsafe {
-                w.bits(tone_path_image(
-                    r.bits(),
-                    enabled,
-                    path_0_selector,
-                    path_0_step,
-                ))
-            }
-        });
-        bb.tone_path_1_control().modify(|r, w| {
-            // SAFETY: all currently evidenced callers disable path one and
-            // publish its zero low image while preserving the high nibble.
-            unsafe { w.bits(tone_path_image(r.bits(), false, 0, 0)) }
-        });
+        super::svd::masked_register_modify::publish_tone_path_0_image(
+            bb,
+            tone_path_image(0, enabled, path_0_selector, path_0_step),
+        );
+        super::svd::masked_register_modify::publish_tone_path_1_image(
+            bb,
+            tone_path_image(0, false, 0, 0),
+        );
     }
 
     /// Program the complete archive calibration-tone leaf and restore TX gain.
@@ -703,11 +623,11 @@ impl RadioRegisters {
     pub fn configure_power_control_tone(&mut self, selector: u16, step: u8) {
         let bb = &self.peripherals.phy_baseband_config_oracle;
         bb.front_end_and_tone_stop_control()
-            .modify(|_, w| unsafe { w.tone_stop_control_unknown().bits(0) });
+            .modify(|_, w| w.tone_stop_control_unknown().set(0));
         bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0) });
+            .modify(|_, w| w.dac_scale_high_unknown().set(0));
         bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0) });
+            .modify(|_, w| w.dac_scale_low_unknown().set(0));
         self.clear_tx_gain_compensation();
         self.configure_tone_selectors(selector, 0);
         self.configure_tone_paths(true, selector, step);
@@ -724,14 +644,10 @@ impl RadioRegisters {
 
     /// Restore the complete first-path word after TX-IQ cleanup.
     pub fn restore_txiq_tone_control(&mut self, saved: u32) {
-        // SAFETY: `saved` is the complete word previously sampled through the
-        // same unique owner, exactly matching ROM `phy_rfcal_txiq`.
-        unsafe {
-            self.peripherals
-                .phy_baseband_config_oracle
-                .tone_path_0_control()
-                .write_with_zero(|w| w.bits(saved));
-        }
+        super::svd::register_image_write::restore_txiq_tone_control(
+            &self.peripherals.phy_baseband_config_oracle,
+            saved,
+        );
     }
 
     /// Configure one of the two complete TX-IQ mismatch-power polarity edges.
@@ -745,26 +661,17 @@ impl RadioRegisters {
         debug_assert!(selector <= 0x03ff);
         let bb = &self.peripherals.phy_baseband_config_oracle;
         if first {
-            bb.tone_path_0_control().modify(|r, w| {
-                // SAFETY: the helper creates the complete recovered low
-                // 28-bit mismatch image and preserves only the high nibble.
-                unsafe {
-                    w.bits(txiq_first_mismatch_image(
-                        r.bits(),
-                        polarity,
-                        attenuation,
-                        selector,
-                    ))
-                }
-            });
+            super::svd::masked_register_modify::publish_txiq_first_mismatch_image(
+                bb,
+                txiq_first_mismatch_image(0, polarity, attenuation, selector),
+            );
             bb.tone_selector_control()
-                .modify(|_, w| unsafe { w.path_0_selector_low().bits((selector & 3) as u8) });
+                .modify(|_, w| w.path_0_selector_low().set((selector & 3) as u8));
         } else {
-            bb.tone_path_0_control().modify(|r, w| {
-                // SAFETY: the second ROM edge replaces only bits 27:24 with
-                // one of the two evidenced polarity nibbles.
-                unsafe { w.bits(txiq_second_mismatch_image(r.bits(), polarity)) }
-            });
+            super::svd::masked_register_modify::publish_txiq_second_mismatch_image(
+                bb,
+                txiq_second_mismatch_image(0, polarity),
+            );
         }
     }
 
@@ -781,9 +688,9 @@ impl RadioRegisters {
         self.stop_calibration_tone_paths();
         let bb = &self.peripherals.phy_baseband_config_oracle;
         bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_high_unknown().bits(0xff) });
+            .modify(|_, w| w.dac_scale_high_unknown().set(0xff));
         bb.dac_scale_control()
-            .modify(|_, w| unsafe { w.dac_scale_low_unknown().bits(0xff) });
+            .modify(|_, w| w.dac_scale_low_unknown().set(0xff));
     }
 
     /// Stop both tone paths without changing their DAC-scale fields.
@@ -798,7 +705,7 @@ impl RadioRegisters {
         bb.tone_path_1_control()
             .modify(|_, w| w.tone_enable_or_arm().clear_bit());
         bb.front_end_and_tone_stop_control()
-            .modify(|_, w| unsafe { w.tone_stop_control_unknown().bits(3) });
+            .modify(|_, w| w.tone_stop_control_unknown().set(3));
     }
 
     /// Enter or complete the TX-IQ correction phase with one fresh RMW.
@@ -841,12 +748,8 @@ impl RadioRegisters {
             .phy_baseband_config_oracle
             .iq_correction_aux()
             .modify(|_, w| {
-                // SAFETY: the helper saturates to [-31, 31], then returns the
-                // complete ROM leaf's six-bit two's-complement field image.
-                unsafe {
-                    w.tx_iq_gain_coefficient()
-                        .bits(tx_iq_gain_field(coefficient))
-                }
+                w.tx_iq_gain_coefficient()
+                    .set(tx_iq_gain_field(coefficient))
             });
     }
 
@@ -856,12 +759,8 @@ impl RadioRegisters {
             .phy_baseband_config_oracle
             .iq_correction_aux()
             .modify(|_, w| {
-                // SAFETY: the helper saturates to [-63, 63], then returns the
-                // complete ROM leaf's seven-bit two's-complement field image.
-                unsafe {
-                    w.tx_iq_phase_coefficient()
-                        .bits(tx_iq_phase_field(coefficient))
-                }
+                w.tx_iq_phase_coefficient()
+                    .set(tx_iq_phase_field(coefficient))
             });
     }
 
@@ -870,10 +769,7 @@ impl RadioRegisters {
         self.peripherals
             .phy_baseband_config_oracle
             .iq_correction_control()
-            .modify(|_, w| {
-                // SAFETY: the complete ROM leaf retains the low six bits.
-                unsafe { w.rx_iq_gain_coefficient().bits(coefficient as u8 & 0x3f) }
-            });
+            .modify(|_, w| w.rx_iq_gain_coefficient().set(coefficient as u8 & 0x3f));
     }
 
     /// Publish one signed RX-IQ phase coefficient using the ROM truncation.
@@ -881,10 +777,7 @@ impl RadioRegisters {
         self.peripherals
             .phy_baseband_config_oracle
             .iq_correction_control()
-            .modify(|_, w| {
-                // SAFETY: the complete ROM leaf retains the low seven bits.
-                unsafe { w.rx_iq_phase_coefficient().bits(coefficient as u8 & 0x7f) }
-            });
+            .modify(|_, w| w.rx_iq_phase_coefficient().set(coefficient as u8 & 0x7f));
     }
 
     /// Trigger one TX-DC comparator measurement using three fresh RMW edges.
@@ -990,11 +883,8 @@ impl RadioRegisters {
             .modify(|_, w| w.adc_rate_high_or_front_end_control_unknown().set_bit());
         bb.adc_rate_and_front_end_control()
             .modify(|_, w| w.adc_rate_low_or_front_end_control_unknown().set_bit());
-        bb.tx_pa_control_0().modify(|_, w| {
-            // SAFETY: four is the instruction-exact low-byte value from the
-            // complete ROM leaf and fits the recovered eight-bit field.
-            unsafe { w.front_end_low_unknown().bits(4) }
-        });
+        bb.tx_pa_control_0()
+            .modify(|_, w| w.front_end_low_unknown().set(4));
         bb.adc_rate_and_front_end_control()
             .modify(|_, w| w.adc_rate_low_or_front_end_control_unknown().set_bit());
         bb.adc_rate_and_front_end_control()
@@ -1003,11 +893,8 @@ impl RadioRegisters {
             .modify(|_, w| w.front_end_init_high_unknown().set_bit());
         bb.iq_correction_aux()
             .modify(|_, w| w.front_end_init_high_unknown().set_bit());
-        bb.front_end_init_0c20().modify(|_, w| {
-            // SAFETY: 0x57 is the complete ROM leaf's final low-byte value
-            // and fits the recovered eight-bit field.
-            unsafe { w.init_low_unknown().bits(0x57) }
-        });
+        bb.front_end_init_0c20()
+            .modify(|_, w| w.init_low_unknown().set(0x57));
     }
 
     /// Apply complete pinned `libphy.a[phy_reg.o]::phy_fe_reg_update`.

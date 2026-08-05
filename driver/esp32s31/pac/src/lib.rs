@@ -7346,7 +7346,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TONE_STOP_CONTROL_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
         pub type ToneStopControlUnknownR = crate::FieldReader;
         #[doc = "Field `TONE_STOP_CONTROL_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_START_STOP_TX_TONE\\]; CONFIDENCE\\[instruction-exact\\]. Two-bit field cleared before the ROM power-control tone and set by its complete cleanup; the individual bit meanings are unknown."]
-        pub type ToneStopControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ToneStopControlUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` reader - "]
         pub type FrontEndInitEnableUnknownR = crate::BitReader;
         #[doc = "Field `FRONT_END_INIT_ENABLE_UNKNOWN` writer - "]
@@ -7403,19 +7403,23 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `COMPENSATION_BYTE_0_UNKNOWN` reader - "]
         pub type CompensationByte0UnknownR = crate::FieldReader;
         #[doc = "Field `COMPENSATION_BYTE_0_UNKNOWN` writer - "]
-        pub type CompensationByte0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type CompensationByte0UnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `COMPENSATION_BYTE_1_UNKNOWN` reader - "]
         pub type CompensationByte1UnknownR = crate::FieldReader;
         #[doc = "Field `COMPENSATION_BYTE_1_UNKNOWN` writer - "]
-        pub type CompensationByte1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type CompensationByte1UnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `COMPENSATION_BYTE_2_UNKNOWN` reader - "]
         pub type CompensationByte2UnknownR = crate::FieldReader;
         #[doc = "Field `COMPENSATION_BYTE_2_UNKNOWN` writer - "]
-        pub type CompensationByte2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type CompensationByte2UnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `COMPENSATION_BYTE_3_UNKNOWN` reader - "]
         pub type CompensationByte3UnknownR = crate::FieldReader;
         #[doc = "Field `COMPENSATION_BYTE_3_UNKNOWN` writer - "]
-        pub type CompensationByte3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type CompensationByte3UnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -7930,11 +7934,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `PATH_0_SELECTOR_LOW` reader - "]
         pub type Path0SelectorLowR = crate::FieldReader;
         #[doc = "Field `PATH_0_SELECTOR_LOW` writer - "]
-        pub type Path0SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Path0SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `PATH_1_SELECTOR_LOW` reader - "]
         pub type Path1SelectorLowR = crate::FieldReader;
         #[doc = "Field `PATH_1_SELECTOR_LOW` writer - "]
-        pub type Path1SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Path1SelectorLowW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -7987,11 +7991,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `RX_IQ_GAIN_COEFFICIENT` reader - "]
         pub type RxIqGainCoefficientR = crate::FieldReader;
         #[doc = "Field `RX_IQ_GAIN_COEFFICIENT` writer - "]
-        pub type RxIqGainCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type RxIqGainCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `RX_IQ_PHASE_COEFFICIENT` reader - "]
         pub type RxIqPhaseCoefficientR = crate::FieldReader;
         #[doc = "Field `RX_IQ_PHASE_COEFFICIENT` writer - "]
-        pub type RxIqPhaseCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type RxIqPhaseCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `RX_IQ_CORRECTION_MODE_LOW` reader - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Low bit of the correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
         pub type RxIqCorrectionModeLowR = crate::BitReader;
         #[doc = "Field `RX_IQ_CORRECTION_MODE_LOW` writer - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Low bit of the correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
@@ -8217,11 +8221,12 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `ENABLE_CLEAR_UNKNOWN` reader - "]
         pub type EnableClearUnknownR = crate::FieldReader;
         #[doc = "Field `ENABLE_CLEAR_UNKNOWN` writer - "]
-        pub type EnableClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type EnableClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` reader - "]
         pub type CalibrationFieldUnknownR = crate::FieldReader;
         #[doc = "Field `CALIBRATION_FIELD_UNKNOWN` writer - "]
-        pub type CalibrationFieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type CalibrationFieldUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `BACKGROUND_CONTROL_ENABLE_UNKNOWN` reader - "]
         pub type BackgroundControlEnableUnknownR = crate::BitReader;
         #[doc = "Field `BACKGROUND_CONTROL_ENABLE_UNKNOWN` writer - "]
@@ -8229,7 +8234,8 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INITIALIZATION_MODE_UNKNOWN` reader - "]
         pub type InitializationModeUnknownR = crate::FieldReader;
         #[doc = "Field `INITIALIZATION_MODE_UNKNOWN` writer - "]
-        pub type InitializationModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type InitializationModeUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -8321,7 +8327,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `SAR_MODE_UNKNOWN` reader - "]
         pub type SarModeUnknownR = crate::FieldReader;
         #[doc = "Field `SAR_MODE_UNKNOWN` writer - "]
-        pub type SarModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type SarModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `SAR_READY` reader - SOURCE\\[ROM_REV0_PHY_POWER_DETECTOR,BLOB_LIBPHY_PHY_TXDC_PWDET\\]; CONFIDENCE\\[instruction-exact\\]. Hardware completion state sampled by the complete power-detector paths; neither source writes these bits."]
         pub type SarReadyR = crate::FieldReader;
         impl R {
@@ -8405,7 +8411,8 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TX_DC_TEMPORARY_LOW_UNKNOWN` reader - "]
         pub type TxDcTemporaryLowUnknownR = crate::FieldReader;
         #[doc = "Field `TX_DC_TEMPORARY_LOW_UNKNOWN` writer - "]
-        pub type TxDcTemporaryLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TxDcTemporaryLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `INITIALIZATION_HIGH_UNKNOWN` reader - "]
         pub type InitializationHighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `INITIALIZATION_HIGH_UNKNOWN` writer - "]
@@ -8459,7 +8466,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Register `POWER_DETECTOR_REFERENCE` writer"]
         pub type W = crate::W<PowerDetectorReferenceSpec>;
         #[doc = "Field `REFERENCE_CODE` writer - "]
-        pub type ReferenceCodeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ReferenceCodeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl W {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -8617,11 +8624,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `FRONT_END_LOW_UNKNOWN` reader - "]
         pub type FrontEndLowUnknownR = crate::FieldReader;
         #[doc = "Field `FRONT_END_LOW_UNKNOWN` writer - "]
-        pub type FrontEndLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type FrontEndLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` reader - "]
         pub type PaOnHighUnknownR = crate::FieldReader;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` writer - "]
-        pub type PaOnHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type PaOnHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -8674,11 +8681,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `PA_ON_BT_DELAY` reader - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
         pub type PaOnBtDelayR = crate::FieldReader;
         #[doc = "Field `PA_ON_BT_DELAY` writer - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Bluetooth PA-on delay."]
-        pub type PaOnBtDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type PaOnBtDelayW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` reader - "]
         pub type PaOnHighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `PA_ON_HIGH_UNKNOWN` writer - "]
-        pub type PaOnHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type PaOnHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit RF-on delay code printed by the vendor checker after integer division by 80. The electrical time unit of the raw code is not otherwise assumed."]
             #[inline(always)]
@@ -8737,11 +8744,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `DAC_SCALE_LOW_UNKNOWN` reader - "]
         pub type DacScaleLowUnknownR = crate::FieldReader;
         #[doc = "Field `DAC_SCALE_LOW_UNKNOWN` writer - "]
-        pub type DacScaleLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type DacScaleLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `DAC_SCALE_HIGH_UNKNOWN` reader - "]
         pub type DacScaleHighUnknownR = crate::FieldReader;
         #[doc = "Field `DAC_SCALE_HIGH_UNKNOWN` writer - "]
-        pub type DacScaleHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type DacScaleHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 8:15"]
             #[inline(always)]
@@ -8847,11 +8854,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TX_IQ_GAIN_COEFFICIENT` reader - "]
         pub type TxIqGainCoefficientR = crate::FieldReader;
         #[doc = "Field `TX_IQ_GAIN_COEFFICIENT` writer - "]
-        pub type TxIqGainCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type TxIqGainCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `TX_IQ_PHASE_COEFFICIENT` reader - "]
         pub type TxIqPhaseCoefficientR = crate::FieldReader;
         #[doc = "Field `TX_IQ_PHASE_COEFFICIENT` writer - "]
-        pub type TxIqPhaseCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type TxIqPhaseCoefficientW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `TX_IQ_CORRECTION_MODE_LOW` reader - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Low bit of the auxiliary correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
         pub type TxIqCorrectionModeLowR = crate::BitReader;
         #[doc = "Field `TX_IQ_CORRECTION_MODE_LOW` writer - SOURCE\\[ROM_REV0_PHY_REGISTER_INITIALIZATION,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Low bit of the auxiliary correction-mode field updated through a distinct fresh-read edge by the RXIQ parent."]
@@ -8952,7 +8959,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_LOW_UNKNOWN` reader - "]
         pub type InitLowUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_LOW_UNKNOWN` writer - "]
-        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -8991,11 +8998,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TX_RATE_LOW_UNKNOWN` reader - "]
         pub type TxRateLowUnknownR = crate::FieldReader;
         #[doc = "Field `TX_RATE_LOW_UNKNOWN` writer - "]
-        pub type TxRateLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type TxRateLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `TX_RATE_HIGH_UNKNOWN` reader - "]
         pub type TxRateHighUnknownR = crate::FieldReader;
         #[doc = "Field `TX_RATE_HIGH_UNKNOWN` writer - "]
-        pub type TxRateHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TxRateHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -9125,7 +9132,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_UNKNOWN` reader - "]
         pub type InitUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_UNKNOWN` writer - "]
-        pub type InitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type InitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 13:14"]
             #[inline(always)]
@@ -9164,7 +9171,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_VALUE_UNKNOWN` reader - "]
         pub type InitValueUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_UNKNOWN` writer - "]
-        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `INIT_ENABLE_UNKNOWN` reader - "]
         pub type InitEnableUnknownR = crate::BitReader;
         #[doc = "Field `INIT_ENABLE_UNKNOWN` writer - "]
@@ -9217,7 +9224,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
         pub type InitClearUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
-        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 6:8"]
             #[inline(always)]
@@ -9328,11 +9335,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
         pub type InitClearUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
-        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `INIT_SET_UNKNOWN` reader - "]
         pub type InitSetUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_SET_UNKNOWN` writer - "]
-        pub type InitSetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type InitSetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -9393,19 +9400,19 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
         pub type InitClearUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
-        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type InitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` reader - "]
         pub type TrackValue0UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` writer - "]
-        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` reader - "]
         pub type TrackValue1UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` writer - "]
-        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_2_UNKNOWN` reader - "]
         pub type TrackValue2UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_2_UNKNOWN` writer - "]
-        pub type TrackValue2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -9482,19 +9489,19 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` reader - "]
         pub type TrackValue0UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` writer - "]
-        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` reader - "]
         pub type TrackValue1UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` writer - "]
-        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_2_UNKNOWN` reader - "]
         pub type TrackValue2UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_2_UNKNOWN` writer - "]
-        pub type TrackValue2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_3_UNKNOWN` reader - "]
         pub type TrackValue3UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_3_UNKNOWN` writer - "]
-        pub type TrackValue3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -9571,11 +9578,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` reader - "]
         pub type TrackValue0UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_0_UNKNOWN` writer - "]
-        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` reader - "]
         pub type TrackValue1UnknownR = crate::FieldReader;
         #[doc = "Field `TRACK_VALUE_1_UNKNOWN` writer - "]
-        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TrackValue1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -9994,7 +10001,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_VALUE_UNKNOWN` reader - "]
         pub type InitValueUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_UNKNOWN` writer - "]
-        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 7:13"]
             #[inline(always)]
@@ -10090,7 +10097,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_VALUE_UNKNOWN` reader - "]
         pub type InitValueUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_VALUE_UNKNOWN` writer - "]
-        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type InitValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 7:13"]
             #[inline(always)]
@@ -10168,7 +10175,8 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `CHANNEL_DUMP_VALUE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
         pub type ChannelDumpValueUnknownR = crate::FieldReader;
         #[doc = "Field `CHANNEL_DUMP_VALUE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bits 7:4 with the low nibble of its first argument."]
-        pub type ChannelDumpValueUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type ChannelDumpValueUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` reader - "]
         pub type InitClearUnknownR = crate::BitReader;
         #[doc = "Field `INIT_CLEAR_UNKNOWN` writer - "]
@@ -10333,7 +10341,7 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `PA_ON_FIELD_UNKNOWN` reader - "]
         pub type PaOnFieldUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `PA_ON_FIELD_UNKNOWN` writer - "]
-        pub type PaOnFieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type PaOnFieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `CHANNEL_DUMP_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
         pub type ChannelDumpEnableUnknownR = crate::BitReader;
         #[doc = "Field `CHANNEL_DUMP_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CHAN_DUMP_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_chan_dump_cfg replaces bit 30 with the low bit of its second argument."]
@@ -10423,11 +10431,12 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `PA_ON_TIMING_UNKNOWN` reader - "]
         pub type PaOnTimingUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `PA_ON_TIMING_UNKNOWN` writer - "]
-        pub type PaOnTimingUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type PaOnTimingUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `BASEBAND_INIT_CLEAR_UNKNOWN` reader - "]
         pub type BasebandInitClearUnknownR = crate::FieldReader;
         #[doc = "Field `BASEBAND_INIT_CLEAR_UNKNOWN` writer - "]
-        pub type BasebandInitClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type BasebandInitClearUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:9"]
             #[inline(always)]
@@ -10481,7 +10490,8 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `WATCHDOG_CONFIG_UNKNOWN` reader - "]
         pub type WatchdogConfigUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `WATCHDOG_CONFIG_UNKNOWN` writer - "]
-        pub type WatchdogConfigUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type WatchdogConfigUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `WATCHDOG_CONTROL_UNKNOWN` reader - "]
         pub type WatchdogControlUnknownR = crate::BitReader;
         #[doc = "Field `WATCHDOG_CONTROL_UNKNOWN` writer - "]
@@ -10750,11 +10760,11 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `INIT_LOW_UNKNOWN` reader - "]
         pub type InitLowUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_LOW_UNKNOWN` writer - "]
-        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `INIT_HIGH_UNKNOWN` reader - "]
         pub type InitHighUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_HIGH_UNKNOWN` writer - "]
-        pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
@@ -31500,6 +31510,45 @@ pub mod fixed_register_image {
                 .write_with_zero(|writer| writer.bits(0x00000404));
         }
     }
+
+    /// Publish the SVD-qualified image `0x0661a45f` to `PHY_BASEBAND_CONFIG_ORACLE`.`TX_PA_TABLE_OPAQUE`.
+    #[inline]
+    pub fn initialize_tx_pa_table(registers: &crate::PhyBasebandConfigOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .tx_pa_table_opaque()
+                .write_with_zero(|writer| writer.bits(0x0661a45f));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0f0f0fff` to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_0_OPAQUE`.
+    #[inline]
+    pub fn initialize_power_detector_table_0(registers: &crate::PhyBasebandConfigOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .power_detector_table_0_opaque()
+                .write_with_zero(|writer| writer.bits(0x0f0f0fff));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00ff0f64` to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.
+    #[inline]
+    pub fn initialize_power_detector_table_1(registers: &crate::PhyBasebandConfigOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .power_detector_table_1()
+                .write_with_zero(|writer| writer.bits(0x00ff0f64));
+        }
+    }
 }
 
 /// Safe, SVD-declared writes of dynamic complete-register images.
@@ -31646,6 +31695,51 @@ pub mod register_image_write {
         unsafe {
             registers
                 .length_control(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_TABLE_1`.
+    #[inline]
+    pub fn publish_power_detector_table_1_image(
+        registers: &crate::PhyBasebandConfigOracle,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .power_detector_table_1()
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_CONTROL`.
+    #[inline]
+    pub fn publish_power_detector_control_image(
+        registers: &crate::PhyBasebandConfigOracle,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .power_detector_control()
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `PHY_BASEBAND_CONFIG_ORACLE`.`TONE_PATH_0_CONTROL`.
+    #[inline]
+    pub fn restore_txiq_tone_control(registers: &crate::PhyBasebandConfigOracle, image: u32) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .tone_path_0_control()
                 .write_with_zero(|writer| writer.bits(image));
         }
     }
@@ -32182,6 +32276,19 @@ pub mod zero_based_field_write {
             });
         }
     }
+
+    /// Write `REFERENCE_CODE` in `PHY_BASEBAND_CONFIG_ORACLE`.`POWER_DETECTOR_REFERENCE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn power_detector_reference(registers: &crate::PhyBasebandConfigOracle, value: u16) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .power_detector_reference()
+                .write_with_zero(|writer| writer.reference_code().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register zero writes.
@@ -32264,6 +32371,30 @@ pub mod zero_register_write {
             registers.he_scratch(index).write_with_zero(|writer| writer);
         }
     }
+
+    /// Publish zero to every bit of `PHY_BASEBAND_CONFIG_ORACLE`.`TX_GAIN_COMPENSATION`.
+    #[inline]
+    pub fn clear_tx_gain_compensation(registers: &crate::PhyBasebandConfigOracle) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .tx_gain_compensation()
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `PHY_BASEBAND_CONFIG_ORACLE`.`TX_GAIN_COMPENSATION_AUX`.
+    #[inline]
+    pub fn clear_tx_gain_compensation_aux(registers: &crate::PhyBasebandConfigOracle) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .tx_gain_compensation_aux()
+                .write_with_zero(|writer| writer);
+        }
+    }
 }
 
 /// Safe, SVD-declared masked read-modify-write transactions.
@@ -32274,6 +32405,56 @@ pub mod masked_register_modify {
     pub fn publish_pbus_force_test(registers: &crate::PhyPbus, input: u32) {
         registers.command().modify(|reader, writer| {
             let image = (reader.bits() & 0xfffe0001) | (input & 0x0001fffc) | 0x00000002;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
+    #[inline]
+    pub fn publish_tone_path_0_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.tone_path_0_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_1_CONTROL.
+    #[inline]
+    pub fn publish_tone_path_1_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
+        registers.tone_path_1_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xf0000000, accept input mask 0x0fffffff, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
+    #[inline]
+    pub fn publish_txiq_first_mismatch_image(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_path_0_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
+    }
+
+    /// Preserve mask 0xf0ffffff, accept input mask 0x0f000000, and set 0x00000000 in PHY_BASEBAND_CONFIG_ORACLE.TONE_PATH_0_CONTROL.
+    #[inline]
+    pub fn publish_txiq_second_mismatch_image(
+        registers: &crate::PhyBasebandConfigOracle,
+        input: u32,
+    ) {
+        registers.tone_path_0_control().modify(|reader, writer| {
+            let image = (reader.bits() & 0xf0ffffff) | (input & 0x0f000000) | 0x00000000;
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

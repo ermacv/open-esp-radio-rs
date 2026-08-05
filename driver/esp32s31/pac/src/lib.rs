@@ -4749,7 +4749,7 @@ pub mod phy_pbus {
         #[doc = "Field `FORCE_TXRX_MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."]
         pub type ForceTxrxModeUnknownR = crate::FieldReader;
         #[doc = "Field `FORCE_TXRX_MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown."]
-        pub type ForceTxrxModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type ForceTxrxModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."]
         pub type RxClockLowOrRxiqStatusFirstUnknownR = crate::BitReader;
         #[doc = "Field `RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE,BLOB_LIBPHY_PHY_RXIQ_CAL_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. phy_set_rxclk_en writes this bit with its neighbor as a pair; complete phy_rxiq_cal_init independently sets it first at root entry. The shared electrical identity remains unknown."]
@@ -4761,7 +4761,7 @@ pub mod phy_pbus {
         #[doc = "Field `TX_CLOCK_ENABLE_PAIR` reader - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE\\]; CONFIDENCE\\[instruction-exact\\]. phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown."]
         pub type TxClockEnablePairR = crate::FieldReader;
         #[doc = "Field `TX_CLOCK_ENABLE_PAIR` writer - SOURCE\\[ROM_REV0_PHY_CLOCK_FORCE\\]; CONFIDENCE\\[instruction-exact\\]. phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown."]
-        pub type TxClockEnablePairW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type TxClockEnablePairW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `BUSY` reader - "]
         pub type BusyR = crate::BitReader;
         #[doc = "Field `BUSY` writer - "]
@@ -31385,6 +31385,21 @@ pub mod zero_register_write {
         unsafe {
             registers.control().write_with_zero(|writer| writer);
         }
+    }
+}
+
+/// Safe, SVD-declared masked read-modify-write transactions.
+pub mod masked_register_modify {
+
+    /// Preserve mask 0xfffe0001, accept input mask 0x0001fffc, and set 0x00000002 in PHY_PBUS.COMMAND.
+    #[inline]
+    pub fn publish_pbus_force_test(registers: &crate::PhyPbus, input: u32) {
+        registers.command().modify(|reader, writer| {
+            let image = (reader.bits() & 0xfffe0001) | (input & 0x0001fffc) | 0x00000002;
+            // SAFETY: generator validation proves the three masks are
+            // disjoint and partition every bit of this ordinary register.
+            unsafe { writer.bits(image) }
+        });
     }
 }
 

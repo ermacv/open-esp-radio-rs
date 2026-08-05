@@ -114,6 +114,17 @@ struct ZeroRegisterWriteBinding {
     register_is_array: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct MaskedRegisterModifyBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    preserve_mask: u32,
+    input_mask: u32,
+    set_mask: u32,
+    register_is_array: bool,
+}
+
 const fn inherited_properties(
     parent: RegisterProperties,
     child: RegisterProperties,
@@ -1970,6 +1981,165 @@ fn generate_zero_register_write_api(document: &Document<'_>) -> Result<String, B
     Ok(output)
 }
 
+fn parse_masked_register_modifies(
+    document: &Document<'_>,
+) -> Result<Vec<MaskedRegisterModifyBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioMaskedRegisterModifies"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioMaskedRegisterModifies"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioMaskedRegisterModifies extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for modify in extension
+        .children()
+        .filter(|node| node.has_tag_name("modify"))
+    {
+        let name = required_attribute(modify, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("masked-register modify name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate masked-register modify name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(modify, "peripheral")?;
+        let register_name = required_attribute(modify, "register")?;
+        required_attribute(modify, "source")?;
+        let parse_mask = |attribute| -> Result<u32, Box<dyn Error>> {
+            let value = parse_u64(required_attribute(modify, attribute)?, attribute)?;
+            value
+                .try_into()
+                .map_err(|_| format!("{attribute} for {name} exceeds 32 bits").into())
+        };
+        let preserve_mask = parse_mask("preserveMask")?;
+        let input_mask = parse_mask("inputMask")?;
+        let set_mask = parse_mask("setMask")?;
+        if preserve_mask & input_mask != 0
+            || preserve_mask & set_mask != 0
+            || input_mask & set_mask != 0
+        {
+            return Err(format!("masked-register modify {name} masks overlap").into());
+        }
+        if preserve_mask | input_mask | set_mask != u32::MAX {
+            return Err(format!(
+                "masked-register modify {name} masks must partition all 32 register bits"
+            )
+            .into());
+        }
+
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "masked-register modify {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("masked-register modify {name} references unknown register {register_name}")
+            })?;
+        if child_text(register, "size")? != "32" || child_text(register, "access")? != "read-write"
+        {
+            return Err(format!(
+                "masked-register modify {name} requires a read-write 32-bit register"
+            )
+            .into());
+        }
+        if register
+            .descendants()
+            .any(|node| node.has_tag_name("modifiedWriteValues"))
+        {
+            return Err(format!(
+                "masked-register modify {name} cannot target modified-write semantics"
+            )
+            .into());
+        }
+
+        bindings.push(MaskedRegisterModifyBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            preserve_mask,
+            input_mask,
+            set_mask,
+            register_is_array: register.children().any(|node| node.has_tag_name("dim")),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_masked_register_modify_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_masked_register_modifies(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared masked read-modify-write transactions.\n\
+         pub mod masked_register_modify {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let (index_parameter, index_argument) = if binding.register_is_array {
+            ("index: usize, ", "index")
+        } else {
+            ("", "")
+        };
+        output.push_str(&format!(
+            "\n    /// Preserve mask 0x{:08x}, accept input mask 0x{:08x}, and set 0x{:08x} in {}.{}.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}input: u32) {{\n\
+                 registers.{register}({index_argument}).modify(|reader, writer| {{\n\
+                     let image = (reader.bits() & 0x{:08x})\n\
+                         | (input & 0x{:08x})\n\
+                         | 0x{:08x};\n\
+                     // SAFETY: generator validation proves the three masks are\n\
+                     // disjoint and partition every bit of this ordinary register.\n\
+                     unsafe {{ writer.bits(image) }}\n\
+                 }});\n\
+             }}\n",
+            binding.preserve_mask,
+            binding.input_mask,
+            binding.set_mask,
+            binding.peripheral,
+            binding.register,
+            binding.name,
+            binding.preserve_mask,
+            binding.input_mask,
+            binding.set_mask,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
 fn expanded_register_addresses(
     peripheral_name: &str,
     peripheral_base: u64,
@@ -2372,6 +2542,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     parse_fixed_register_writes(&document)?;
     parse_zero_based_field_writes(&document)?;
     parse_zero_register_writes(&document)?;
+    parse_masked_register_modifies(&document)?;
     Ok(windows)
 }
 
@@ -2411,8 +2582,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     let fixed_register_write_api = generate_fixed_register_write_api(&document)?;
     let zero_based_field_write_api = generate_zero_based_field_write_api(&document)?;
     let zero_register_write_api = generate_zero_register_write_api(&document)?;
+    let masked_register_modify_api = generate_masked_register_modify_api(&document)?;
     let generated = format_generated(&format!(
-        "{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
         interrupt_snapshot_api,
         peripheral_ownership_api,
@@ -2420,6 +2592,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         fixed_register_write_api,
         zero_based_field_write_api,
         zero_register_write_api,
+        masked_register_modify_api,
         generate_device_access_api(),
     ))?;
     let binding_index = generate_binding_index(&input)?;
@@ -2472,11 +2645,12 @@ mod tests {
         ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
         generate_device_access_api, generate_fixed_register_write_api,
         generate_full_register_write_api, generate_interrupt_snapshot_api,
-        generate_peripheral_ownership_api, generate_zero_based_field_write_api,
-        generate_zero_register_write_api, member_binding_name, mmio_window,
-        parse_fixed_register_writes, parse_full_register_writes, parse_interrupt_snapshots,
-        parse_mmio_windows, parse_zero_based_field_writes, parse_zero_register_writes,
-        type_binding_name, validate_alias_group, validate_confidence, validate_dimension_order,
+        generate_masked_register_modify_api, generate_peripheral_ownership_api,
+        generate_zero_based_field_write_api, generate_zero_register_write_api, member_binding_name,
+        mmio_window, parse_fixed_register_writes, parse_full_register_writes,
+        parse_interrupt_snapshots, parse_masked_register_modifies, parse_mmio_windows,
+        parse_zero_based_field_writes, parse_zero_register_writes, type_binding_name,
+        validate_alias_group, validate_confidence, validate_dimension_order,
         validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
         validate_register_layout, validate_write_semantics,
     };
@@ -2809,6 +2983,38 @@ mod tests {
         )
         .unwrap();
         assert!(parse_zero_register_writes(&w1c).is_err());
+    }
+
+    #[test]
+    fn masked_register_modify_requires_a_complete_disjoint_partition() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>COMMAND</name><size>32</size><access>read-write</access>\
+             </register></registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioMaskedRegisterModifies><modify name=\"publish_command\" \
+             peripheral=\"PORT\" register=\"COMMAND\" preserveMask=\"0xfffe0001\" \
+             inputMask=\"0x0001fffc\" setMask=\"0x00000002\" source=\"TEST\"/>\
+             </openEspRadioMaskedRegisterModifies></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_masked_register_modifies(&valid).unwrap().len(), 1);
+        let generated = generate_masked_register_modify_api(&valid).unwrap();
+        assert!(generated.contains("pub fn publish_command(registers: &crate::Port, input: u32)"));
+        assert!(generated.contains("reader.bits() & 0xfffe0001"));
+        assert!(generated.contains("input & 0x0001fffc"));
+        assert!(generated.contains("| 0x00000002"));
+
+        let overlapping = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>COMMAND</name><size>32</size><access>read-write</access>\
+             </register></registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioMaskedRegisterModifies><modify name=\"publish_command\" \
+             peripheral=\"PORT\" register=\"COMMAND\" preserveMask=\"0xfffe0003\" \
+             inputMask=\"0x0001fffc\" setMask=\"0x00000002\" source=\"TEST\"/>\
+             </openEspRadioMaskedRegisterModifies></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert!(parse_masked_register_modifies(&overlapping).is_err());
     }
 
     #[test]

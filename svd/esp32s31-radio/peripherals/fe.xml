@@ -326,6 +326,7 @@
               <name>FORCE_TXRX_MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact-semantics-unknown]. phy_force_txrx_off replaces bits 11:8 with one of four evidenced encodings; the individual bit meanings remain unknown.</description>
               <bitOffset>8</bitOffset><bitWidth>4</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint>
             </field>
             <field>
               <name>RX_CLOCK_LOW_OR_RXIQ_STATUS_FIRST_UNKNOWN</name>
@@ -341,6 +342,7 @@
               <name>TX_CLOCK_ENABLE_PAIR</name>
               <description>SOURCE[ROM_REV0_PHY_CLOCK_FORCE]; CONFIDENCE[instruction-exact]. phy_set_txclk_en writes both bits as a pair; individual clock identities are unknown.</description>
               <bitOffset>16</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
             <field><name>BUSY</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>

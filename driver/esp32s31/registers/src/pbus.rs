@@ -3,11 +3,17 @@
 //! Register identities, multifunction fields and packed result windows come
 //! from complete rev0 ROM PBus and clock-force bodies cited in the SVD.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 const PBUS_COMMAND_PRESERVE_MASK: u32 = 0xfffe_0001;
 const PBUS_COMMAND_ARGUMENT_MASK: u32 = 0x0001_fffc;
 const PBUS_TRANSACTION_START: u32 = 1 << 1;
+
+const fn pbus_force_test_arguments(selector: u8, path: u8, test_value: u16) -> u32 {
+    ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15)
+}
 
 /// Reproduce the complete rev0 ROM `phy_pbus_force_test` command encoder.
 ///
@@ -24,7 +30,7 @@ pub const fn pbus_force_test_command_image(
     path: u8,
     test_value: u16,
 ) -> u32 {
-    let arguments = ((test_value as u32) << 6) | ((selector as u32) << 2) | ((path as u32) << 15);
+    let arguments = pbus_force_test_arguments(selector, path, test_value);
     (current & PBUS_COMMAND_PRESERVE_MASK)
         | (arguments & PBUS_COMMAND_ARGUMENT_MASK)
         | PBUS_TRANSACTION_START
@@ -36,13 +42,10 @@ impl RadioRegisters {
         if mode > 0x0f {
             return false;
         }
-        // SAFETY: the range check proves `mode` fits the recovered field.
-        unsafe {
-            self.peripherals
-                .phy_pbus
-                .status_clock_force()
-                .modify(|_, w| w.force_txrx_mode_unknown().bits(mode));
-        }
+        self.peripherals
+            .phy_pbus
+            .status_clock_force()
+            .modify(|_, w| w.force_txrx_mode_unknown().set(mode));
         true
     }
 
@@ -84,13 +87,10 @@ impl RadioRegisters {
     /// RX-DCO passes signed halfword images, and the complete encoder retains
     /// their low eleven bits while composing the physical command word.
     pub fn publish_pbus_force_test(&mut self, selector: u8, path: u8, test_value: u16) {
-        self.peripherals.phy_pbus.command().modify(|r, w| {
-            let command = pbus_force_test_command_image(r.bits(), selector, path, test_value);
-            // SAFETY: `command` is the complete instruction-exact RMW image
-            // recovered from the ROM body cited above. Unknown bits outside
-            // its argument mask are preserved from this same read edge.
-            unsafe { w.bits(command) }
-        });
+        open_esp_radio_esp32s31_pac::masked_register_modify::publish_pbus_force_test(
+            &self.peripherals.phy_pbus,
+            pbus_force_test_arguments(selector, path, test_value),
+        );
     }
 
     /// Clear the force-test transaction bit after one completed observation.
@@ -208,13 +208,10 @@ impl RadioRegisters {
     /// Enable or disable both recovered TX clock bits as one pair.
     pub fn set_pbus_tx_clock_pair(&mut self, enabled: bool) {
         let value = if enabled { 3 } else { 0 };
-        // SAFETY: both values fit the recovered two-bit pair field.
-        unsafe {
-            self.peripherals
-                .phy_pbus
-                .status_clock_force()
-                .modify(|_, w| w.tx_clock_enable_pair().bits(value));
-        }
+        self.peripherals
+            .phy_pbus
+            .status_clock_force()
+            .modify(|_, w| w.tx_clock_enable_pair().set(value));
     }
 }
 

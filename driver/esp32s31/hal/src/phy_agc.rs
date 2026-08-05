@@ -4,8 +4,10 @@
 //! module retains only cross-peripheral sequencing and the async delay
 //! boundaries owned by upper PHY state machines.
 
+#![forbid(unsafe_code)]
+
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_registers::{ForcedRxGain, RadioRegisters};
 
 /// Apply complete rev0 ROM `phy_bb_agc_reg_update`.
 ///
@@ -76,13 +78,13 @@ pub fn configure_antenna(registers: &mut RadioRegisters) {
 
 /// Apply complete rev0 ROM `phy_ant_dft_cfg`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_antenna_diversity(registers: &mut RadioRegisters, enabled: u32) {
+pub fn configure_antenna_diversity(registers: &mut RadioRegisters, enabled: bool) {
     registers.configure_antenna_diversity(enabled);
 }
 
 /// Apply complete rev0 ROM `phy_force_rx_gain`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_forced_rx_gain(registers: &mut RadioRegisters, enabled: u32, gain: u32) {
+pub fn configure_forced_rx_gain(registers: &mut RadioRegisters, enabled: bool, gain: ForcedRxGain) {
     registers.configure_forced_rx_gain(enabled, gain);
 }
 

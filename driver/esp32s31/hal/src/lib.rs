@@ -7,7 +7,8 @@ use core::future::Future;
 use core::marker::PhantomData;
 
 pub use open_esp_radio_esp32s31_registers::{
-    CfrValue, ColdRadioRegisters, RadioRegisters, Register32, power as radio_registers,
+    CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters, Register32,
+    power as radio_registers,
 };
 pub mod analog_i2c;
 pub mod pbus;

@@ -5506,10 +5506,10 @@ pub mod phy_agc_oracle {
         pub type PulseUnknownR = crate::BitReader;
         #[doc = "Field `PULSE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
         pub type PulseUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `CONTROL_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
         pub type ControlHighUnknownR = crate::FieldReader;
-        #[doc = "Field `CONTROL_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
-        pub type ControlHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        #[doc = "Field `CONTROL_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
+        pub type ControlHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
             #[inline(always)]
@@ -5526,7 +5526,7 @@ pub mod phy_agc_oracle {
             pub fn pulse_unknown(&self) -> PulseUnknownR {
                 PulseUnknownR::new(((self.bits >> 23) & 1) != 0)
             }
-            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
+            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
             #[inline(always)]
             pub fn control_high_unknown(&self) -> ControlHighUnknownR {
                 ControlHighUnknownR::new(((self.bits >> 24) & 0xff) as u8)
@@ -5552,7 +5552,7 @@ pub mod phy_agc_oracle {
             pub fn pulse_unknown(&mut self) -> PulseUnknownW<'_, AgcSharedControlSpec> {
                 PulseUnknownW::new(self, 23)
             }
-            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument."]
+            #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image."]
             #[inline(always)]
             pub fn control_high_unknown(
                 &mut self,
@@ -6120,10 +6120,60 @@ pub mod phy_agc_oracle {
         pub type LowClearUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init clears bits 10:0."]
         pub type LowClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
-        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
-        pub type AntennaDiversityEnableUnknownR = crate::BitReader;
-        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
-        pub type AntennaDiversityEnableUnknownW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum AntennaDiversityEnable {
+            #[doc = "0: Disable the recovered antenna-diversity path."]
+            Disabled = 0,
+            #[doc = "1: Enable the recovered antenna-diversity path."]
+            Enabled = 1,
+        }
+        impl From<AntennaDiversityEnable> for bool {
+            #[inline(always)]
+            fn from(variant: AntennaDiversityEnable) -> Self {
+                variant as u8 != 0
+            }
+        }
+        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
+        pub type AntennaDiversityEnableUnknownR = crate::BitReader<AntennaDiversityEnable>;
+        impl AntennaDiversityEnableUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> AntennaDiversityEnable {
+                match self.bits {
+                    false => AntennaDiversityEnable::Disabled,
+                    true => AntennaDiversityEnable::Enabled,
+                }
+            }
+            #[doc = "Disable the recovered antenna-diversity path."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == AntennaDiversityEnable::Disabled
+            }
+            #[doc = "Enable the recovered antenna-diversity path."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == AntennaDiversityEnable::Enabled
+            }
+        }
+        #[doc = "Field `ANTENNA_DIVERSITY_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
+        pub type AntennaDiversityEnableUnknownW<'a, REG> =
+            crate::BitWriter<'a, REG, AntennaDiversityEnable>;
+        impl<'a, REG> AntennaDiversityEnableUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+        {
+            #[doc = "Disable the recovered antenna-diversity path."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(AntennaDiversityEnable::Disabled)
+            }
+            #[doc = "Enable the recovered antenna-diversity path."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(AntennaDiversityEnable::Enabled)
+            }
+        }
         #[doc = "Field `BIT_12_CLEAR_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
         pub type Bit12ClearUnknownR = crate::BitReader;
         #[doc = "Field `BIT_12_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init independently clears bit 12."]
@@ -6134,7 +6184,7 @@ pub mod phy_agc_oracle {
             pub fn low_clear_unknown(&self) -> LowClearUnknownR {
                 LowClearUnknownR::new((self.bits & 0x07ff) as u16)
             }
-            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
             #[inline(always)]
             pub fn antenna_diversity_enable_unknown(&self) -> AntennaDiversityEnableUnknownR {
                 AntennaDiversityEnableUnknownR::new(((self.bits >> 11) & 1) != 0)
@@ -6151,7 +6201,7 @@ pub mod phy_agc_oracle {
             pub fn low_clear_unknown(&mut self) -> LowClearUnknownW<'_, AntennaControl0Spec> {
                 LowClearUnknownW::new(self, 0)
             }
-            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit."]
+            #[doc = "Bit 11 - SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
             #[inline(always)]
             pub fn antenna_diversity_enable_unknown(
                 &mut self,

@@ -1469,7 +1469,7 @@ pub extern "C" fn open_phy_trace_phy_tx_atten_comp(values: &mut [u8; 3]) {
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_phy_trace_ant_dft_cfg(input: u32, registers: &mut RadioRegisters) {
-    open_esp_radio_esp32s31_hal::phy_agc::configure_antenna_diversity(registers, input);
+    open_esp_radio_esp32s31_hal::phy_agc::configure_antenna_diversity(registers, input & 1 != 0);
 }
 
 #[unsafe(no_mangle)]
@@ -1516,7 +1516,11 @@ pub extern "C" fn open_phy_trace_force_rx_gain(
     gain: u32,
     registers: &mut RadioRegisters,
 ) {
-    open_esp_radio_esp32s31_hal::phy_agc::configure_forced_rx_gain(registers, enabled, gain);
+    open_esp_radio_esp32s31_hal::phy_agc::configure_forced_rx_gain(
+        registers,
+        enabled & 1 != 0,
+        open_esp_radio_esp32s31_hal::ForcedRxGain::new(gain as u8),
+    );
 }
 
 #[unsafe(no_mangle)]

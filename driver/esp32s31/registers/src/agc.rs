@@ -130,8 +130,7 @@ impl RadioRegisters {
     /// Apply the two MMIO edges after the PBus work-mode 1 µs delay.
     pub fn configure_pbus_work_mode_pulse(&mut self) {
         let control = self.peripherals.phy_agc_oracle.agc_shared_control();
-        // SAFETY: 0x32 fits the generated eight-bit field.
-        control.modify(|_, w| unsafe { w.control_high_unknown().bits(0x32) });
+        control.modify(|_, w| w.control_high_unknown().set(0x32));
         control.modify(|_, w| w.pulse_unknown().set_bit());
     }
 
@@ -165,7 +164,7 @@ impl RadioRegisters {
                 .bits(agc_parameter_offset(parameter_120))
         });
         agc.agc_shared_control()
-            .modify(|_, w| unsafe { w.control_high_unknown().bits(0x32) });
+            .modify(|_, w| w.control_high_unknown().set(0x32));
         agc.agc_shared_control()
             .modify(|_, w| w.pulse_unknown().set_bit());
         agc.agc_shared_control()
@@ -189,22 +188,6 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.antenna_init_unknown().bits(0x34) });
         agc.antenna_control_2()
             .modify(|_, w| unsafe { w.low_unknown().bits(0x1e).high_unknown().bits(0x1e) });
-    }
-
-    /// Apply complete rev0 ROM `phy_ant_dft_cfg`.
-    pub fn configure_antenna_diversity(&mut self, enabled: u32) {
-        self.peripherals
-            .phy_agc_oracle
-            .antenna_control_0()
-            .modify(|_, w| w.antenna_diversity_enable_unknown().bit(enabled & 1 != 0));
-    }
-
-    /// Apply complete rev0 ROM `phy_force_rx_gain`.
-    pub fn configure_forced_rx_gain(&mut self, enabled: u32, gain: u32) {
-        let control = self.peripherals.phy_agc_oracle.agc_shared_control();
-        // SAFETY: retaining the caller low byte fits the generated field.
-        control.modify(|_, w| unsafe { w.control_high_unknown().bits(gain as u8) });
-        control.modify(|_, w| w.pulse_unknown().bit(enabled & 1 != 0));
     }
 
     /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller

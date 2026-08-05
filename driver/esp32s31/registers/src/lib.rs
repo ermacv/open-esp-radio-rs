@@ -6,6 +6,7 @@ use core::{
 };
 
 mod agc;
+mod agc_runtime;
 mod baseband;
 mod cfr;
 pub mod clock;
@@ -45,6 +46,7 @@ pub mod power;
 mod table_memory;
 #[cfg(feature = "validation-probes")]
 pub mod validation;
+pub use agc_runtime::ForcedRxGain;
 pub use cfr::CfrValue;
 pub use mac_block_ack::{
     InternalTxBlockAckSnapshot, TxBlockAckDiagnosticSnapshot, TxBlockAckRegisterImage,

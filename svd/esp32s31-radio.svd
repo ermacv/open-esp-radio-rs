@@ -655,8 +655,9 @@
             </field>
             <field>
               <name>CONTROL_HIGH_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain replaces the byte with its second argument.</description>
+              <description>SOURCE[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_agc_reg_init and the delayed phy_pbus_force_mode tail write 0x32 into bits 31:24 before pulsing bit 23; complete phy_force_rx_gain retains its second argument to this byte without rejecting any representable image.</description>
               <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -822,8 +823,15 @@
             </field>
             <field>
               <name>ANTENNA_DIVERSITY_ENABLE_UNKNOWN</name>
-              <description>SOURCE[ROM_REV0_PHY_ANT_DFT_CFG]; CONFIDENCE[instruction-exact]. Complete phy_ant_dft_cfg replaces bit 11 with its caller low bit.</description>
+              <description>SOURCE[ROM_REV0_PHY_ANT_DFT_CFG]; CONFIDENCE[instruction-exact]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it.</description>
               <bitOffset>11</bitOffset><bitWidth>1</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues>
+                <name>AntennaDiversityEnable</name>
+                <usage>read-write</usage>
+                <enumeratedValue><name>DISABLED</name><description>Disable the recovered antenna-diversity path.</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>ENABLED</name><description>Enable the recovered antenna-diversity path.</description><value>1</value></enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>BIT_12_CLEAR_UNKNOWN</name>

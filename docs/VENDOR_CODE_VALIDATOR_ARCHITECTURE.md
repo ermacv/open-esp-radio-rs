@@ -241,10 +241,13 @@ That projection also emits path-qualified semantic actions for both reviewed
 external slots and reviewed direct functions. An action retains operation,
 target, origin, static site, complete simple call path, typed argument shapes,
 replacement hint and the exact contract/evidence identifier that authorized
-the label. Pointer arguments reuse affine root bindings; scalar values retain
-their recovered symbolic form. This is deliberately not a total execution
-trace: mutually exclusive paths coexist, dynamic loop counts are not inferred
-and recursive revisits are bounded exactly like context projection.
+the label. A separate lexical site-path array gives a stable source-order key
+from the report root through nested calls; missing instruction sites remain
+explicit rather than receiving invented offsets. Pointer arguments reuse
+affine root bindings; scalar values retain their recovered symbolic form. This
+is deliberately not a total execution trace: mutually exclusive paths coexist,
+dynamic loop counts are not inferred and recursive revisits are bounded exactly
+like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

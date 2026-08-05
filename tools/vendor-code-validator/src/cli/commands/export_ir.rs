@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=simple-call-paths-affine-root-bindings\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-affine-root-bindings\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -355,11 +355,12 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 .as_ref()
                 .map_or("-", |contract| contract.evidence.as_str());
             println!(
-                "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
+                "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\tsite-path={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
                 function.identity,
                 action.operation,
                 action.target,
                 site,
+                format_site_path(&action.site_path),
                 action.argument_shapes,
                 action.origin,
                 action.path,
@@ -663,6 +664,12 @@ fn write_pseudo(
                     .map_or_else(String::new, |hint| { format!(" [replacement={hint}]") }),
             )
             .expect("writing to String cannot fail");
+            writeln!(
+                output,
+                "//   lexical-site-path: {}",
+                format_site_path(&action.site_path)
+            )
+            .expect("writing to String cannot fail");
             for argument in &action.arguments {
                 let projected = match (argument.root_argument, argument.root_offset) {
                     (Some(root_argument), Some(root_offset)) => {
@@ -743,6 +750,14 @@ fn write_optional_hex(output: &mut String, value: Option<u32>) {
     } else {
         output.push_str("null");
     }
+}
+
+fn format_site_path(site_path: &[Option<u32>]) -> String {
+    site_path
+        .iter()
+        .map(|site| site.map_or_else(|| "unknown".to_owned(), |site| format!("{site:#010x}")))
+        .collect::<Vec<_>>()
+        .join(" -> ")
 }
 
 fn write_trampoline(output: &mut String, trampoline: &LinkedTrampoline) {
@@ -884,7 +899,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 18,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 19,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -920,7 +935,7 @@ fn write_json_report(
     output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
     output.push_str("  \"diagnostic_compaction_mode\": \"exact-semicolon-fragment-inventory\",\n");
     output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
-    output.push_str("  \"semantic_action_mode\": \"simple-call-paths-affine-root-bindings\",\n");
+    output.push_str("  \"semantic_action_mode\": \"lexical-site-paths-affine-root-bindings\",\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
     for (index, artifact) in artifacts.iter().enumerate() {
@@ -1415,6 +1430,18 @@ fn write_json_report(
             } else {
                 output.push_str("null");
             }
+            output.push_str(", \"site_path\": [");
+            for (site_index, site) in action.site_path.iter().enumerate() {
+                if site_index != 0 {
+                    output.push_str(", ");
+                }
+                if let Some(site) = site {
+                    write_string(&mut output, &format!("{site:#010x}"));
+                } else {
+                    output.push_str("null");
+                }
+            }
+            output.push(']');
             write!(
                 output,
                 ", \"argument_shapes\": {}, \"arguments\": ",

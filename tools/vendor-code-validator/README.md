@@ -94,7 +94,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v18 records the selection mode plus root and
+`reachable-internal`, and schema v19 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v18 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v19 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v18 records
+symbolic states. Schema v19 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -183,12 +183,14 @@ semantic call on every explored simple call path. Each action retains its
 origin, static call site, target, typed argument values, replacement hint and
 any affine projection back to root arguments. It also carries the exact
 contract source, stable ID and evidence rule that justified the semantic name.
-The top-level
-`semantic_action_mode: "simple-call-paths-affine-root-bindings"` is explicit
+The `site_path` array records the lexical call-site chain from the report root
+to the action, and actions are stably ordered by that chain. The top-level
+`semantic_action_mode: "lexical-site-paths-affine-root-bindings"` is explicit
 because this is a path-qualified manual-analysis inventory, not a total runtime
-order. Mutually exclusive paths can both contribute actions, loops are
-represented by recovered shapes rather than iteration counts, and recursive
-revisits stop at the projection boundary.
+order. A `null` site means the backend recovered a composed boundary but not a
+standalone instruction address. Mutually exclusive paths can both contribute
+actions, loops are represented by recovered shapes rather than iteration
+counts, and recursive revisits stop at the projection boundary.
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,

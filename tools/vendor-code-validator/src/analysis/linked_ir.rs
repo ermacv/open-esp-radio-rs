@@ -225,6 +225,7 @@ pub(crate) struct LinkedProjectedTrampolineCall {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedProjectedSemanticAction {
+    pub(crate) site_path: Vec<Option<u32>>,
     pub(crate) operation: String,
     pub(crate) target: String,
     pub(crate) contract: Option<LinkedSemanticContract>,
@@ -2745,6 +2746,7 @@ struct ContextProjectionState {
     function: usize,
     argument_map: Vec<Option<(u8, i32)>>,
     visited_functions: Vec<usize>,
+    site_path: Vec<Option<u32>>,
     path: String,
 }
 
@@ -2831,6 +2833,7 @@ fn project_context_fields(
         function: root,
         argument_map: root_arguments,
         visited_functions: vec![root],
+        site_path: Vec::new(),
         path: functions[root].identity.clone(),
     }]);
     let mut blockers = BTreeSet::new();
@@ -2862,7 +2865,10 @@ fn project_context_fields(
                 .site
                 .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
             let boundary = format!("{operation} via {}", call.target);
+            let mut site_path = state.site_path.clone();
+            site_path.push(call.site);
             semantic_actions.insert(LinkedProjectedSemanticAction {
+                site_path,
                 path: format!("{} --semantic@{}--> {}", state.path, site, call.target),
                 operation,
                 target: call.target.clone(),
@@ -2997,6 +3003,8 @@ fn project_context_fields(
             }
             let mut visited_functions = state.visited_functions.clone();
             visited_functions.push(edge.target);
+            let mut site_path = state.site_path.clone();
+            site_path.push(edge.site);
             let site = edge
                 .site
                 .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
@@ -3004,6 +3012,7 @@ fn project_context_fields(
                 function: edge.target,
                 argument_map,
                 visited_functions,
+                site_path,
                 path: format!(
                     "{} --call@{}--> {}",
                     state.path, site, functions[edge.target].identity
@@ -4554,6 +4563,7 @@ mod tests {
         let action = &root.effect_summary.semantic_actions[0];
         assert_eq!(action.operation, "timer.arm-micros");
         assert_eq!(action.origin, "rom::leaf");
+        assert_eq!(action.site_path, [Some(0x10), Some(0x10), None]);
         assert!(
             action
                 .path

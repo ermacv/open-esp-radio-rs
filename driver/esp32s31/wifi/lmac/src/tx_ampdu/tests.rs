@@ -234,13 +234,9 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
     assert_eq!(pool.claimed_slots(), 1);
 }
 
-const CONFIG: TxBlockAckConfig = TxBlockAckConfig {
-    tid: 7,
-    window: 32,
-    timeout_tu: 0,
-    negotiation_timeout_us: 100_000,
-    amsdu: true,
-};
+fn block_ack_parameters(tid: u8, window: u16, amsdu: bool) -> [u8; 2] {
+    ((amsdu as u16) | 0x0002 | (u16::from(tid) << 2) | (window << 6)).to_le_bytes()
+}
 
 #[test]
 fn owned_dma_pool_builds_two_mpdu_length_without_publishing_hardware() {
@@ -881,43 +877,6 @@ fn he_rate_duration_gate_prevents_an_oversized_dma_publication() {
 }
 
 #[test]
-fn parses_block_ack_action_bodies_without_state() {
-    assert_eq!(
-        parse_block_ack_action(&[3, 0, 7, 0x87, 0x07, 0, 0, 0x30, 0x12]),
-        Some(BlockAckAction::AddbaRequest {
-            dialog_token: 7,
-            tid: 1,
-            immediate: true,
-            amsdu: true,
-            window: 30,
-            timeout_tu: 0,
-            starting_sequence: 0x123,
-        })
-    );
-    assert_eq!(
-        parse_block_ack_action(&[3, 1, 7, 0, 0, 0x86, 0x07, 5, 0]),
-        Some(BlockAckAction::AddbaResponse {
-            dialog_token: 7,
-            status: 0,
-            tid: 1,
-            immediate: true,
-            amsdu: false,
-            window: 30,
-            timeout_tu: 5,
-        })
-    );
-    assert_eq!(
-        parse_block_ack_action(&[3, 2, 0, 0x58, 39, 0]),
-        Some(BlockAckAction::Delba {
-            tid: 5,
-            initiator: true,
-            reason: 39,
-        })
-    );
-    assert_eq!(parse_block_ack_action(&[4, 0, 0]), None);
-}
-
-#[test]
 fn ht_ampdu_length_matches_the_s31_six_mpdu_oracle() {
     let mut length = HtAmpduLengthAccumulator::new(32, u16::MAX).unwrap();
     for sequence in 0x15_u32..=0x1a {
@@ -1077,28 +1036,6 @@ fn protection_spacing_matches_every_recovered_density_branch() {
 }
 
 #[test]
-fn request_encoding_is_exact_and_bounded() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let request = session.begin(0x1abc, 50).unwrap();
-    assert_eq!(request.starting_sequence, 0x0abc);
-    assert_eq!(request.alarm.deadline_us, 100_050);
-    assert_eq!(request.body, [3, 0, 1, 0x1f, 0x08, 0, 0, 0xc0, 0xab]);
-}
-
-#[test]
-fn shared_dialog_tokens_reproduce_the_vendor_three_tid_order_and_modulus() {
-    let mut tokens = TxBlockAckDialogTokenSequence::new();
-    assert_eq!(tokens.take().value(), 1);
-    assert_eq!(tokens.take().value(), 2);
-    assert_eq!(tokens.take().value(), 3);
-
-    tokens.next = 62;
-    assert_eq!(tokens.take().value(), 62);
-    assert_eq!(tokens.take().value(), 0);
-    assert_eq!(tokens.take().value(), 1);
-}
-
-#[test]
 fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
     let mut sessions = StaTxBlockAckSessions::new(32, 100_000, true).unwrap();
     let tid0 = sessions.begin(0, 0x100, 0).unwrap();
@@ -1112,7 +1049,7 @@ fn station_sessions_own_vendor_tid_order_response_routing_and_alarms() {
     assert_eq!(sessions.alarm(7), Some(tid7.alarm));
     assert_eq!(sessions.alarm(5), Some(tid5.alarm));
 
-    let parameters = encode_ba_parameters(7, 16, false).to_le_bytes();
+    let parameters = block_ack_parameters(7, 16, false);
     let response = [
         3,
         1,
@@ -1185,109 +1122,6 @@ fn station_sessions_reject_unowned_tid_and_stale_dialog_token() {
         Err(StaTxBlockAckSessionsError::UnexpectedDialogToken(42))
     );
     assert!(!sessions.stop(3));
-}
-
-#[test]
-fn matching_response_commits_only_the_static_window() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let request = session.begin(0x123, 0).unwrap();
-    let response = [3, 1, request.dialog_token, 0, 0, 0x1f, 0x08, 0, 0];
-    assert_eq!(
-        session.on_response(&response),
-        Ok(TxBlockAckResponse::Operational(OperationalTxBlockAck {
-            tid: 7,
-            window: 32,
-            timeout_tu: 0,
-            starting_sequence: 0x123,
-            amsdu: true,
-        }))
-    );
-    assert_eq!(
-        session.operational(),
-        Some(OperationalTxBlockAck {
-            tid: 7,
-            window: 32,
-            timeout_tu: 0,
-            starting_sequence: 0x123,
-            amsdu: true,
-        })
-    );
-    assert!(!session.on_alarm(request.alarm));
-}
-
-#[test]
-fn matching_he_response_accepts_an_addba_extension_ie() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let request = session.begin(0x123, 0).unwrap();
-    let response = [
-        3,
-        1,
-        request.dialog_token,
-        0,
-        0,
-        0x1f,
-        0x08,
-        0,
-        0,
-        159,
-        1,
-        0,
-    ];
-    assert_eq!(
-        session.on_response(&response),
-        Ok(TxBlockAckResponse::Operational(OperationalTxBlockAck {
-            tid: 7,
-            window: 32,
-            timeout_tu: 0,
-            starting_sequence: 0x123,
-            amsdu: true,
-        }))
-    );
-}
-
-#[test]
-fn stale_alarm_cannot_cancel_a_new_generation() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let stale = session.begin(1, 0).unwrap().alarm;
-    let current = session.begin(2, 10).unwrap().alarm;
-    assert!(!session.on_alarm(stale));
-    assert!(session.on_alarm(current));
-    assert_eq!(session.operational(), None);
-}
-
-#[test]
-fn response_cannot_expand_the_static_capacity() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let request = session.begin(0, 0).unwrap();
-    let parameters = encode_ba_parameters(7, 64, false).to_le_bytes();
-    let response = [
-        3,
-        1,
-        request.dialog_token,
-        0,
-        0,
-        parameters[0],
-        parameters[1],
-        0,
-        0,
-    ];
-    assert_eq!(
-        session.on_response(&response),
-        Err(TxBlockAckError::WindowExceedsCapacity(64))
-    );
-}
-
-#[test]
-fn rejected_response_returns_to_idle_without_a_timer_retry() {
-    let mut session = TxBlockAckSession::new(CONFIG).unwrap();
-    let request = session.begin(0, 0).unwrap();
-    let response = [3, 1, request.dialog_token, 37, 0, 0, 0, 0, 0];
-    assert_eq!(
-        session.on_response(&response),
-        Ok(TxBlockAckResponse::Rejected(37))
-    );
-    assert_eq!(session.operational(), None);
-    assert!(!session.on_alarm(request.alarm));
 }
 
 #[test]

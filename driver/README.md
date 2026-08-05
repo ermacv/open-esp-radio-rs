@@ -54,6 +54,12 @@ The hardware directory names now follow their responsibilities:
 - `wifi/ieee80211` contains portable code, but still combines frame codecs and
   some common HMAC mechanisms.
 
+TX BlockAck now demonstrates the intended boundary: `wifi/ieee80211::block_ack`
+owns the action codec and one generic agreement state machine, while
+`esp32s31/wifi/lmac::tx_ampdu::block_ack` owns the vendor STA TID order, S31
+completion-register normalization and fixed TX-slot batch. Neither layer owns
+DMA backing; that authority remains in the chip DMA leaf.
+
 `wifi/lmac` owns only the portable boundary: VIF/channel-context identity,
 implemented-role capabilities and normalized TX/RX plans/status. It does not
 own a scheduler, DMA buffers or an executor. The current S31 station plan is a

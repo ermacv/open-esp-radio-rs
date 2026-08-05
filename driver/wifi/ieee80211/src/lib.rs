@@ -10,6 +10,7 @@
 pub mod alignment;
 pub mod ap;
 pub mod beacon;
+pub mod block_ack;
 pub mod ccmp;
 pub mod classification;
 pub mod data;

@@ -1,7 +1,5 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
-#![allow(unsafe_code, reason = "pinned network slot ownership boundary")]
-
 use core::{
     cell::UnsafeCell,
     marker::PhantomPinned,
@@ -103,6 +101,7 @@ impl<const FRAME_CAPACITY: usize> PinnedRxSlot<FRAME_CAPACITY> {
 // SAFETY: the state machine and the free/ready index channels transfer unique
 // ownership of `bytes` between one radio publisher and one network token.
 // Acquire/release transitions publish the initialized length and contents.
+#[allow(unsafe_code, reason = "RX slot state machine is its Sync boundary")]
 unsafe impl<const FRAME_CAPACITY: usize> Sync for PinnedRxSlot<FRAME_CAPACITY> {}
 
 #[repr(C)]
@@ -209,6 +208,10 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
         self.length.load(Ordering::Acquire)
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "TX slot exposes one contiguous view to its unique state owner"
+    )]
     fn storage(&self) -> &[u8] {
         // SAFETY: callers hold either the unique network token or unique radio
         // lease selected by `state`. `PinnedTxBytes` is `repr(C)` and all
@@ -239,6 +242,7 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
 // SAFETY: `bytes` is accessed only by the single stage owner represented by
 // `state`. Ownership moves through the bounded free/ready channels with
 // acquire/release transitions. No public method can create two slot leases.
+#[allow(unsafe_code, reason = "TX slot state machine is its Sync boundary")]
 unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> Sync
     for PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>
 {
@@ -549,6 +553,10 @@ pub struct PinnedReceiveToken<
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy_net_driver::RxToken
     for PinnedReceiveToken<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
+    #[allow(
+        unsafe_code,
+        reason = "consuming the unique RX token lends its network-owned slot"
+    )]
     fn consume<R, F>(self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
@@ -621,6 +629,10 @@ impl<
 > embassy_net_driver::TxToken
     for PinnedTransmitToken<'_, '_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
+    #[allow(
+        unsafe_code,
+        reason = "consuming the unique TX token initializes its reserved slot"
+    )]
     fn consume<R, F>(mut self, length: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
@@ -790,6 +802,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         }
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "claimed RX slot is exclusively radio-owned until publication"
+    )]
     pub fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         Self::validate_length(frame.len()).map_err(RxEnqueueError::InvalidLength)?;
         let index = self.try_claim_slot()?;
@@ -804,6 +820,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         Ok(())
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "claimed RX slot is exclusively radio-owned until publication"
+    )]
     pub fn try_send_parts(
         &mut self,
         destination: [u8; 6],
@@ -1108,6 +1128,10 @@ impl<
     }
 
     /// Complete headroom + Ethernet capacity + hardware trailer allocation.
+    #[allow(
+        unsafe_code,
+        reason = "mutable radio lease owns one permanently located TX slot"
+    )]
     pub fn storage_mut(&mut self) -> &mut [u8] {
         let slot = self.slot();
         // SAFETY: `&mut self` is the unique live radio lease for this slot.
@@ -1124,6 +1148,10 @@ impl<
 // SAFETY: every `PinnedTxFrame` is a unique SLOT_RADIO lease into a separately
 // pinned `PinnedTxPool`. Moving this handle never moves its backing bytes, and
 // dropping it is the only safe operation that releases the allocation.
+#[allow(
+    unsafe_code,
+    reason = "pinned TX pool proves the stable DMA backing contract"
+)]
 unsafe impl<
     M: RawMutex,
     const FRAME_CAPACITY: usize,

@@ -1380,9 +1380,9 @@
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>LOW_ENABLE_GROUP_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact]. All six bits are set by the second control RMW.</description><bitOffset>1</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>LOW_ENABLE_GROUP_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact]. All six bits are set by the second control RMW.</description><bitOffset>1</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
 
-            <field><name>HIGH_ENABLE_GROUP_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact]. All six bits are set by the first control RMW.</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>HIGH_ENABLE_GROUP_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact]. All six bits are set by the first control RMW.</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
 
           </fields>
         </register>
@@ -1390,19 +1390,19 @@
           <name>ENTRY_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-partial]. First full-word image for each of six entries.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>write-only</access>
-          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>ENTRY_PARAMETER_A%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Second full-word image for each of six entries.</description>
           <addressOffset>0x20</addressOffset><size>32</size><access>write-only</access>
-          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>6</dim><dimIncrement>0x4</dimIncrement><dimIndex>0-5</dimIndex>
           <name>ENTRY_PARAMETER_B%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_LAST_RXBUF_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Third full-word image for each of six entries.</description>
           <addressOffset>0x3c</addressOffset><size>32</size><access>write-only</access>
-          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>

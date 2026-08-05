@@ -24140,11 +24140,11 @@ pub mod wifi_mac_last_rx_buffer {
         #[doc = "Field `LOW_ENABLE_GROUP_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. All six bits are set by the second control RMW."]
         pub type LowEnableGroupUnknownR = crate::FieldReader;
         #[doc = "Field `LOW_ENABLE_GROUP_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. All six bits are set by the second control RMW."]
-        pub type LowEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type LowEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `HIGH_ENABLE_GROUP_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. All six bits are set by the first control RMW."]
         pub type HighEnableGroupUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_ENABLE_GROUP_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. All six bits are set by the first control RMW."]
-        pub type HighEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type HighEnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 1:6 - SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact\\]. All six bits are set by the second control RMW."]
             #[inline(always)]
@@ -24191,7 +24191,7 @@ pub mod wifi_mac_last_rx_buffer {
         #[doc = "Register `ENTRY_CONTROL%s` writer"]
         pub type W = crate::W<EntryControlSpec>;
         #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24206,7 +24206,7 @@ pub mod wifi_mac_last_rx_buffer {
         }
         #[doc = "`write(|w| ..)` method takes [`entry_control::W`](W) writer structure"]
         impl crate::Writable for EntryControlSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "ENTRY_PARAMETER_A (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_a::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_parameter_a`] module"]
@@ -24217,7 +24217,7 @@ pub mod wifi_mac_last_rx_buffer {
         #[doc = "Register `ENTRY_PARAMETER_A%s` writer"]
         pub type W = crate::W<EntryParameterASpec>;
         #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24232,7 +24232,7 @@ pub mod wifi_mac_last_rx_buffer {
         }
         #[doc = "`write(|w| ..)` method takes [`entry_parameter_a::W`](W) writer structure"]
         impl crate::Writable for EntryParameterASpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "ENTRY_PARAMETER_B (w) register accessor: SOURCE\\[BLOB_LIBPP_MAC_LAST_RXBUF_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Third full-word image for each of six entries.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`entry_parameter_b::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@entry_parameter_b`] module"]
@@ -24243,7 +24243,7 @@ pub mod wifi_mac_last_rx_buffer {
         #[doc = "Register `ENTRY_PARAMETER_B%s` writer"]
         pub type W = crate::W<EntryParameterBSpec>;
         #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24258,7 +24258,7 @@ pub mod wifi_mac_last_rx_buffer {
         }
         #[doc = "`write(|w| ..)` method takes [`entry_parameter_b::W`](W) writer structure"]
         impl crate::Writable for EntryParameterBSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
 }
@@ -31334,6 +31334,57 @@ pub mod zero_based_field_write {
             registers
                 .address_high(index)
                 .write_with_zero(|writer| writer.bytes_4_5().set(value));
+        }
+    }
+
+    /// Write `IMAGE_UNKNOWN` in `WIFI_MAC_LAST_RX_BUFFER`.`ENTRY_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_last_rx_buffer_entry_control(
+        registers: &crate::WifiMacLastRxBuffer,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .entry_control(index)
+                .write_with_zero(|writer| writer.image_unknown().set(value));
+        }
+    }
+
+    /// Write `IMAGE_UNKNOWN` in `WIFI_MAC_LAST_RX_BUFFER`.`ENTRY_PARAMETER_A%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_last_rx_buffer_entry_parameter_a(
+        registers: &crate::WifiMacLastRxBuffer,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .entry_parameter_a(index)
+                .write_with_zero(|writer| writer.image_unknown().set(value));
+        }
+    }
+
+    /// Write `IMAGE_UNKNOWN` in `WIFI_MAC_LAST_RX_BUFFER`.`ENTRY_PARAMETER_B%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_last_rx_buffer_entry_parameter_b(
+        registers: &crate::WifiMacLastRxBuffer,
+        index: usize,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .entry_parameter_b(index)
+                .write_with_zero(|writer| writer.image_unknown().set(value));
         }
     }
 }

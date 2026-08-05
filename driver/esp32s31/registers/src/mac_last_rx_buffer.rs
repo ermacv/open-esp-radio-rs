@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the complete last-RX-buffer table init.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -35,28 +37,30 @@ impl RadioRegisters {
 
         let table = &self.peripherals.wifi_mac_last_rx_buffer;
         for entry in 0..6 {
-            // SAFETY: these are the complete full-width images from the leaf;
-            // all three generated registers are write-only table apertures.
-            unsafe {
-                table
-                    .entry_control(entry)
-                    .write_with_zero(|w| w.image_unknown().bits(CONTROL[entry]));
-                table
-                    .entry_parameter_a(entry)
-                    .write_with_zero(|w| w.image_unknown().bits(PARAMETER_A[entry]));
-                table
-                    .entry_parameter_b(entry)
-                    .write_with_zero(|w| w.image_unknown().bits(PARAMETER_B[entry]));
-            }
+            super::svd::zero_based_field_write::mac_last_rx_buffer_entry_control(
+                table,
+                entry,
+                CONTROL[entry],
+            );
+            super::svd::zero_based_field_write::mac_last_rx_buffer_entry_parameter_a(
+                table,
+                entry,
+                PARAMETER_A[entry],
+            );
+            super::svd::zero_based_field_write::mac_last_rx_buffer_entry_parameter_b(
+                table,
+                entry,
+                PARAMETER_B[entry],
+            );
         }
 
         // Preserve the two distinct fresh-read edges from the complete leaf.
         table
             .control()
-            .modify(|_, w| unsafe { w.high_enable_group_unknown().bits(0x3f) });
+            .modify(|_, w| w.high_enable_group_unknown().set(0x3f));
         table
             .control()
-            .modify(|_, w| unsafe { w.low_enable_group_unknown().bits(0x3f) });
+            .modify(|_, w| w.low_enable_group_unknown().set(0x3f));
         self.peripherals
             .wifi_mac_rx_csi_control
             .control()

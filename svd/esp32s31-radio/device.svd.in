@@ -243,6 +243,21 @@
              register="ADDRESS_HIGH%s"
              field="BYTES_4_5"
              source="BLOB_LIBPP_HAL_MAC_SET_ADDR"/>
+      <write name="mac_last_rx_buffer_entry_control"
+             peripheral="WIFI_MAC_LAST_RX_BUFFER"
+             register="ENTRY_CONTROL%s"
+             field="IMAGE_UNKNOWN"
+             source="BLOB_LIBPP_MAC_LAST_RXBUF_INIT"/>
+      <write name="mac_last_rx_buffer_entry_parameter_a"
+             peripheral="WIFI_MAC_LAST_RX_BUFFER"
+             register="ENTRY_PARAMETER_A%s"
+             field="IMAGE_UNKNOWN"
+             source="BLOB_LIBPP_MAC_LAST_RXBUF_INIT"/>
+      <write name="mac_last_rx_buffer_entry_parameter_b"
+             peripheral="WIFI_MAC_LAST_RX_BUFFER"
+             register="ENTRY_PARAMETER_B%s"
+             field="IMAGE_UNKNOWN"
+             source="BLOB_LIBPP_MAC_LAST_RXBUF_INIT"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

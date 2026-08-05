@@ -83,6 +83,25 @@ constants, and semantic trace builders for one domain. Artifact
 authentication remains a caller-owned precondition; these summaries only
 match the reviewed symbol metadata and body/schema constraints they declare.
 
+## RISC-V structural-analysis layout
+
+`backend-riscv/src/static_analysis/mod.rs` owns the fail-closed instruction
+walk, state lifetime, and dispatch order. Its supporting modules own semantic
+units that do not need to control that walk:
+
+| Module | Responsibility |
+| --- | --- |
+| `alu.rs` | Register-only RV32 integer semantics and ALU-related relocations |
+| `context.rs` | Relocated calls, pointer cells, tables, and harness summary context |
+| `memory.rs` | Effective addresses, data relocations, indexed MMIO, and bounded memory intrinsics |
+| `poll.rs` | Structural polling-loop recognition and checkpoint validation |
+| `stack.rs` | Symbolic private stack and RV32 call-argument recovery |
+
+ALU evaluation cannot emit effects or change instruction traversal. Poll
+recovery consumes immutable trace prefixes plus an explicit checkpoint. The
+orchestrator remains the owner of token allocation, register/stack lifetime,
+calls, memory effects, and control-flow decisions.
+
 ## RISC-V reference-analysis layout
 
 `backend-riscv/src/reference_analysis/mod.rs` is the entry facade for
@@ -147,8 +166,9 @@ pseudo-Rust, and terminal views consistent.
 Line count is only a signal, but the next useful responsibility reviews are:
 
 - `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
-  small and move any remaining decoding/control-flow policy into its existing
-  phase modules.
+  small; the next justified extraction is a shared state owner for memory and
+  call dispatch, rather than passing many independent mutable references into
+  instruction helpers.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

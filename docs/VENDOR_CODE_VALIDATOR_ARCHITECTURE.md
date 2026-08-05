@@ -158,6 +158,18 @@ containing callers, ABI targets and replacement hints. This index is a
 migration inventory for manual analysis; it does not weaken the per-function
 completeness or reference-eligibility checks.
 
+The same proven external calls form a structured trampoline inventory keyed by
+the complete registered table/slot contract: pointer and backing symbols,
+table version, magic, size, slot, reviewed C signature, return model and
+semantic overlay. A backend event reaches this inventory only after exact
+pointer-cell provenance and exact slot resolution; the linked layer does not
+reinterpret arbitrary indirect calls. Per-root effect summaries retain each
+reachable trampoline call and compose affine pointer arguments into root
+context coordinates. Unresolved or dynamic pointer provenance is exposed as a
+projection status/blocker rather than filled in heuristically, and recognizing
+the ABI does not turn an `Unmodeled` external effect into a validation-grade
+model.
+
 Project export may aggregate several named primary artifacts. Function IDs are
 source-namespaced and report summaries span all inputs, but each primary keeps
 an independent address space. The machine-readable `linkage_mode` makes that

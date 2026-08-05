@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v13 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v14 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -186,6 +186,27 @@ The report also builds a top-level `semantic_boundaries` index. It groups each
 operation across artifacts by calling functions, concrete ABI targets and
 replacement hints, so RTOS, timer, NVS and logging dependencies can be audited
 without first reading every recovered function body.
+
+Known function-table calls additionally carry a structured `trampoline`
+record. It includes the table pointer and backing symbols, version, magic and
+size contract, exact slot, C name, argument count, stable return model, typed
+semantic arguments and replacement hint. The top-level `trampoline_slots`
+index groups all observed calls by that ABI identity and lists their calling
+functions. This inventory is deliberately restricted to loads proven to start
+from a harness-registered table pointer and to select an exact slot in the
+registered version; arbitrary indirect calls are not assigned a trampoline
+identity.
+
+Reachable effect summaries also contain `trampoline_calls`. Their complete call
+path and origin are retained, and pointer arguments with proven affine
+provenance are projected into the root function as `ctxN + offset`. Pointer
+types are recognized conservatively from the reviewed external signature;
+dynamic pointers remain `not-affine-caller-context`, scalar arguments remain
+`non-pointer`, and failed affine composition closes
+`context_projection_complete` with an explicit blocker. These bindings are a
+manual-analysis aid, not a claim about pointee layout, lifetime, scheduler or
+storage effects. In particular, an `Unmodeled` ABI return/effect remains a
+validation blocker even though its name and signature are known.
 
 Pointer-relative RAM is rendered as an inferred context view. For example, an
 access rooted at ABI argument 0 becomes `ctx0.read16(+0x8)` or

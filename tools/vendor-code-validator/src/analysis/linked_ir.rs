@@ -35,6 +35,25 @@ pub(crate) struct LinkedArgumentBinding {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedTrampoline {
+    pub(crate) table: String,
+    pub(crate) pointer_symbol: String,
+    pub(crate) backing_symbol: String,
+    pub(crate) version: u32,
+    pub(crate) magic: u32,
+    pub(crate) table_size: u32,
+    pub(crate) magic_offset: u32,
+    pub(crate) function_id: String,
+    pub(crate) slot: u32,
+    pub(crate) c_name: String,
+    pub(crate) argument_count: u8,
+    pub(crate) return_model: String,
+    pub(crate) operation: String,
+    pub(crate) return_type: String,
+    pub(crate) replacement_hint: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCall {
     pub(crate) kind: &'static str,
     pub(crate) target: String,
@@ -46,6 +65,7 @@ pub(crate) struct LinkedCall {
     pub(crate) replacement_hint: Option<String>,
     pub(crate) project_symbol: Option<String>,
     pub(crate) project_candidates: Vec<String>,
+    pub(crate) trampoline: Option<LinkedTrampoline>,
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
@@ -173,6 +193,34 @@ pub(crate) struct LinkedSummaryContextField {
     pub(crate) write_values: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedProjectedTrampolineArgument {
+    pub(crate) position: usize,
+    pub(crate) name: String,
+    pub(crate) c_type: String,
+    pub(crate) direction: &'static str,
+    pub(crate) value: String,
+    pub(crate) binding: &'static str,
+    pub(crate) root_argument: Option<u8>,
+    pub(crate) root_offset: Option<i32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedProjectedTrampolineCall {
+    pub(crate) trampoline: LinkedTrampoline,
+    pub(crate) origin: String,
+    pub(crate) path: String,
+    pub(crate) arguments: Vec<LinkedProjectedTrampolineArgument>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedTrampolineSlot {
+    pub(crate) trampoline: LinkedTrampoline,
+    pub(crate) arguments: Vec<LinkedCallArgument>,
+    pub(crate) call_shapes: usize,
+    pub(crate) functions: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LinkedEffectSummary {
     pub(crate) call_graph_closed: bool,
@@ -186,6 +234,7 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) context_projection_complete: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<LinkedSummaryContextField>,
+    pub(crate) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -234,6 +283,8 @@ pub(crate) struct LinkedIrReport {
     pub(crate) delay_shapes: usize,
     pub(crate) semantic_boundaries: Vec<SemanticBoundary>,
     pub(crate) semantic_calls: usize,
+    pub(crate) trampoline_slots: Vec<LinkedTrampolineSlot>,
+    pub(crate) trampoline_calls: usize,
     pub(crate) exported_functions: usize,
     pub(crate) local_functions: usize,
     pub(crate) context_functions: usize,
@@ -520,11 +571,8 @@ fn external_typed_arguments(
                 ),
                 c_type: semantic
                     .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
-                direction: semantic.map_or("unknown", |argument| match argument.direction {
-                    crate::ExternalArgumentDirection::Input => "input",
-                    crate::ExternalArgumentDirection::Output => "output",
-                    crate::ExternalArgumentDirection::InputOutput => "input-output",
-                }),
+                direction: semantic
+                    .map_or("unknown", |argument| external_direction(argument.direction)),
                 value: value.canonical(),
             }
         })
@@ -564,6 +612,50 @@ fn external_semantics(event: &DraftReferenceEvent) -> Option<String> {
     ))
 }
 
+fn external_return_model(model: ExternalReturnModel) -> String {
+    match model {
+        ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
+        ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
+        ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
+            format!("private-stack-output-u8:arg{pointer_argument}")
+        }
+        ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
+    }
+}
+
+fn linked_trampoline(
+    table: crate::ExternalTableRef,
+    function: crate::ExternalFunctionRef,
+) -> LinkedTrampoline {
+    let table = table.spec();
+    let function = function.spec();
+    LinkedTrampoline {
+        table: table.id.to_owned(),
+        pointer_symbol: table.pointer_symbol.to_owned(),
+        backing_symbol: table.backing_symbol.to_owned(),
+        version: table.version,
+        magic: table.magic,
+        table_size: table.size,
+        magic_offset: table.magic_offset,
+        function_id: function.id.to_owned(),
+        slot: function.offset,
+        c_name: function.c_name.to_owned(),
+        argument_count: function.argument_count,
+        return_model: external_return_model(function.return_model),
+        operation: function.semantic.operation.to_owned(),
+        return_type: function.semantic.return_type.to_owned(),
+        replacement_hint: function.semantic.replacement.map(str::to_owned),
+    }
+}
+
+fn external_direction(direction: crate::ExternalArgumentDirection) -> &'static str {
+    match direction {
+        crate::ExternalArgumentDirection::Input => "input",
+        crate::ExternalArgumentDirection::Output => "output",
+        crate::ExternalArgumentDirection::InputOutput => "input-output",
+    }
+}
+
 fn collect_call_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
@@ -590,6 +682,7 @@ fn collect_call_event(
             replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: Some(linked_trampoline(*table, *function)),
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: external_typed_arguments(*function, arguments),
@@ -609,6 +702,7 @@ fn collect_call_event(
             replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -633,6 +727,7 @@ fn collect_call_event(
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -657,6 +752,7 @@ fn collect_call_event(
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -677,6 +773,7 @@ fn collect_call_event(
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -705,6 +802,7 @@ fn collect_call_event(
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -729,6 +827,7 @@ fn collect_call_event(
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
@@ -812,6 +911,7 @@ fn explore_direct_calls(
                     replacement_hint: None,
                     project_symbol: Some(relocation.symbol.clone()),
                     project_candidates: Vec::new(),
+                    trampoline: None,
                     arguments: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
@@ -2267,9 +2367,14 @@ fn project_context_fields(
     root: usize,
     functions: &[LinkedIrFunction],
     call_edges: &[Vec<SummaryCallEdge>],
-    context_reachable: &[bool],
+    projection_reachable: &[bool],
     call_graph_closed: bool,
-) -> (bool, Vec<String>, Vec<LinkedSummaryContextField>) {
+) -> (
+    bool,
+    Vec<String>,
+    Vec<LinkedSummaryContextField>,
+    Vec<LinkedProjectedTrampolineCall>,
+) {
     let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
     for argument in 0..LINKED_CONTEXT_ARGUMENTS {
         root_arguments[usize::from(argument)] = Some((argument, 0));
@@ -2282,6 +2387,7 @@ fn project_context_fields(
     }]);
     let mut blockers = BTreeSet::new();
     let mut fields = BTreeMap::<(u8, i32, u8), SummaryContextAccumulator>::new();
+    let mut trampoline_calls = BTreeSet::new();
     let mut explored = 0_usize;
 
     while let Some(state) = queue.pop_front() {
@@ -2293,6 +2399,77 @@ fn project_context_fields(
         }
         explored += 1;
         let function = &functions[state.function];
+        for call in function
+            .calls
+            .iter()
+            .filter(|call| call.trampoline.is_some())
+        {
+            let trampoline = call
+                .trampoline
+                .as_ref()
+                .expect("filtered trampoline call")
+                .clone();
+            let arguments = call
+                .typed_arguments
+                .iter()
+                .map(|argument| {
+                    let affine = call
+                        .argument_bindings
+                        .iter()
+                        .find(|binding| binding.position == argument.position);
+                    let pointer = argument.c_type.contains('*');
+                    let (binding, root_argument, root_offset) = if !pointer {
+                        ("non-pointer", None, None)
+                    } else if let Some(affine) = affine {
+                        match state
+                            .argument_map
+                            .get(usize::from(affine.caller_argument))
+                            .copied()
+                            .flatten()
+                            .and_then(|(argument, offset)| {
+                                offset
+                                    .checked_add(affine.offset)
+                                    .map(|offset| (argument, offset))
+                            }) {
+                            Some((argument, offset)) => {
+                                ("affine-root-context", Some(argument), Some(offset))
+                            }
+                            None => {
+                                blockers.insert(format!(
+                                    "trampoline pointer binding cannot reach root: {} {} arg{} along {}",
+                                    trampoline.table,
+                                    trampoline.c_name,
+                                    argument.position,
+                                    state.path
+                                ));
+                                ("affine-origin-context-unavailable", None, None)
+                            }
+                        }
+                    } else {
+                        ("not-affine-caller-context", None, None)
+                    };
+                    LinkedProjectedTrampolineArgument {
+                        position: argument.position,
+                        name: argument.name.clone(),
+                        c_type: argument.c_type.clone(),
+                        direction: argument.direction,
+                        value: argument.value.clone(),
+                        binding,
+                        root_argument,
+                        root_offset,
+                    }
+                })
+                .collect();
+            trampoline_calls.insert(LinkedProjectedTrampolineCall {
+                path: format!(
+                    "{} --trampoline@{}+{:#x}--> {}",
+                    state.path, trampoline.table, trampoline.slot, trampoline.c_name
+                ),
+                trampoline,
+                origin: function.identity.clone(),
+                arguments,
+            });
+        }
         for access in function
             .context_accesses
             .iter()
@@ -2347,7 +2524,7 @@ fn project_context_fields(
         }
 
         for edge in &call_edges[state.function] {
-            if !context_reachable[edge.target] {
+            if !projection_reachable[edge.target] {
                 continue;
             }
             if state.visited_functions.contains(&edge.target) {
@@ -2416,10 +2593,11 @@ fn project_context_fields(
         call_graph_closed && blockers.is_empty(),
         blockers.into_iter().collect(),
         fields,
+        trampoline_calls.into_iter().collect(),
     )
 }
 
-fn context_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usize>]) -> Vec<bool> {
+fn projection_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usize>]) -> Vec<bool> {
     let mut reverse = vec![Vec::new(); functions.len()];
     for (source, targets) in adjacency.iter().enumerate() {
         for &target in targets {
@@ -2428,7 +2606,10 @@ fn context_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usize>]
     }
     let mut reachable = functions
         .iter()
-        .map(|function| function.context_accesses.iter().any(local_context_access))
+        .map(|function| {
+            function.context_accesses.iter().any(local_context_access)
+                || function.calls.iter().any(|call| call.trampoline.is_some())
+        })
         .collect::<Vec<_>>();
     let mut queue = reachable
         .iter()
@@ -2518,7 +2699,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
         adjacency[index].dedup();
     }
     let recursive_nodes = recursive_call_graph_nodes(&adjacency);
-    let context_reachable = context_reachability(functions, &adjacency);
+    let projection_reachable = projection_reachability(functions, &adjacency);
 
     let summaries = (0..functions.len())
         .map(|root| {
@@ -2584,14 +2765,18 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 .map(|(index, _)| functions[*index].identity.clone())
                 .collect();
             let call_graph_closed = blockers.is_empty();
-            let (context_projection_complete, context_projection_blockers, context_fields) =
-                project_context_fields(
-                    root,
-                    functions,
-                    &call_edges,
-                    &context_reachable,
-                    call_graph_closed,
-                );
+            let (
+                context_projection_complete,
+                context_projection_blockers,
+                context_fields,
+                trampoline_calls,
+            ) = project_context_fields(
+                root,
+                functions,
+                &call_edges,
+                &projection_reachable,
+                call_graph_closed,
+            );
             LinkedEffectSummary {
                 call_graph_closed,
                 max_depth: reachable
@@ -2635,6 +2820,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_projection_complete,
                 context_projection_blockers,
                 context_fields,
+                trampoline_calls,
             }
         })
         .collect::<Vec<_>>();
@@ -2871,6 +3057,41 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             },
         )
         .collect();
+    let mut trampoline_index =
+        BTreeMap::<LinkedTrampoline, (Vec<LinkedCallArgument>, usize, BTreeSet<String>)>::new();
+    for function in &functions {
+        for call in &function.calls {
+            let Some(trampoline) = call.trampoline.as_ref() else {
+                continue;
+            };
+            let abi_arguments = call
+                .typed_arguments
+                .iter()
+                .cloned()
+                .map(|mut argument| {
+                    argument.value.clear();
+                    argument
+                })
+                .collect::<Vec<_>>();
+            let entry = trampoline_index
+                .entry(trampoline.clone())
+                .or_insert_with(|| (abi_arguments, 0, BTreeSet::new()));
+            entry.1 += 1;
+            entry.2.insert(function.identity.clone());
+        }
+    }
+    let trampoline_calls = trampoline_index.values().map(|entry| entry.1).sum();
+    let trampoline_slots = trampoline_index
+        .into_iter()
+        .map(
+            |(trampoline, (arguments, call_shapes, functions))| LinkedTrampolineSlot {
+                trampoline,
+                arguments,
+                call_shapes,
+                functions: functions.into_iter().collect(),
+            },
+        )
+        .collect();
 
     LinkedIrReport {
         functions,
@@ -2881,6 +3102,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         delay_shapes,
         semantic_boundaries,
         semantic_calls,
+        trampoline_slots,
+        trampoline_calls,
         exported_functions,
         local_functions,
         context_functions,
@@ -3084,6 +3307,17 @@ mod tests {
         assert_eq!(call.typed_arguments[0].name, "micros");
         assert_eq!(call.typed_arguments[0].c_type, "u32");
         assert_eq!(call.typed_arguments[0].direction, "input");
+        let trampoline = call.trampoline.as_ref().unwrap();
+        assert_eq!(trampoline.table, "wifi_osi");
+        assert_eq!(trampoline.pointer_symbol, "g_wifi_osi_funcs");
+        assert_eq!(trampoline.backing_symbol, "wifi_osi_funcs");
+        assert_eq!(trampoline.version, 3);
+        assert_eq!(trampoline.magic, 0x1234_5678);
+        assert_eq!(trampoline.table_size, 0x100);
+        assert_eq!(trampoline.slot, 0x20);
+        assert_eq!(trampoline.function_id, "delay_us");
+        assert_eq!(trampoline.return_model, "constant:0x00000000");
+        assert_eq!(trampoline.return_type, "void");
         assert!(
             pseudo.contains(
                 "semantic.time_delay_micros(micros /* u32 Input */ = arg0); // ABI wifi_osi+0x20 ets_delay_us, returns void; replacement: Rust async timer"
@@ -3423,6 +3657,7 @@ mod tests {
             replacement_hint: None,
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
@@ -3491,6 +3726,7 @@ mod tests {
             replacement_hint: None,
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
@@ -3510,6 +3746,7 @@ mod tests {
                 replacement_hint: Some("Rust async timer".to_owned()),
                 project_symbol: None,
                 project_candidates: Vec::new(),
+                trampoline: None,
                 arguments: vec!["const:0x00000014".to_owned()],
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
@@ -3618,6 +3855,7 @@ mod tests {
                 replacement_hint: None,
                 project_symbol: None,
                 project_candidates: Vec::new(),
+                trampoline: None,
                 arguments: vec![format!("arg{caller_argument}{offset:+#x}")],
                 argument_bindings: vec![LinkedArgumentBinding {
                     position: 0,
@@ -3640,6 +3878,49 @@ mod tests {
         middle.complete = true;
         let mut leaf = linked_test_function("rom", "leaf", "local", Vec::new());
         leaf.complete = true;
+        leaf.calls.push(LinkedCall {
+            kind: "external",
+            target: "platform::timer_arm".to_owned(),
+            site: None,
+            tail: false,
+            result_modeled: false,
+            semantics: Some("typed trampoline".to_owned()),
+            semantic_operation: Some("timer.arm-micros".to_owned()),
+            replacement_hint: Some("Rust async timer registration".to_owned()),
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: Some(LinkedTrampoline {
+                table: "platform".to_owned(),
+                pointer_symbol: "platform_table_ptr".to_owned(),
+                backing_symbol: "platform_table".to_owned(),
+                version: 1,
+                magic: 0x1234_5678,
+                table_size: 0x100,
+                magic_offset: 0xfc,
+                function_id: "timer-arm".to_owned(),
+                slot: 0x20,
+                c_name: "timer_arm".to_owned(),
+                argument_count: 1,
+                return_model: "unmodeled".to_owned(),
+                operation: "timer.arm-micros".to_owned(),
+                return_type: "void".to_owned(),
+                replacement_hint: Some("Rust async timer registration".to_owned()),
+            }),
+            arguments: vec!["arg0 + 0x4".to_owned()],
+            argument_bindings: vec![LinkedArgumentBinding {
+                position: 0,
+                caller_argument: 0,
+                offset: 4,
+                expression: "arg0 + 0x4".to_owned(),
+            }],
+            typed_arguments: vec![LinkedCallArgument {
+                position: 0,
+                name: "timer".to_owned(),
+                c_type: "*mut timer".to_owned(),
+                direction: "input-output",
+                value: "arg0 + 0x4".to_owned(),
+            }],
+        });
         leaf.context_accesses.push(ContextAccess {
             argument: 0,
             offset: 0x10,
@@ -3672,6 +3953,16 @@ mod tests {
         assert_eq!(field.write_values, ["0x00000001"]);
         assert!(field.paths[0].contains("rom::root --call@0x00000010--> rom::middle"));
         assert!(field.paths[0].contains("rom::leaf / entry / if arg1 != 0"));
+        assert_eq!(root.effect_summary.trampoline_calls.len(), 1);
+        let trampoline = &root.effect_summary.trampoline_calls[0];
+        assert_eq!(trampoline.origin, "rom::leaf");
+        assert_eq!(trampoline.trampoline.slot, 0x20);
+        assert_eq!(trampoline.trampoline.operation, "timer.arm-micros");
+        assert_eq!(trampoline.arguments[0].binding, "affine-root-context");
+        assert_eq!(trampoline.arguments[0].root_argument, Some(2));
+        assert_eq!(trampoline.arguments[0].root_offset, Some(0x1c));
+        assert_eq!(report.trampoline_slots.len(), 1);
+        assert_eq!(report.trampoline_slots[0].call_shapes, 1);
     }
 
     #[test]
@@ -3687,6 +3978,7 @@ mod tests {
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
+            trampoline: None,
             arguments: vec!["arg0".to_owned()],
             argument_bindings: vec![LinkedArgumentBinding {
                 position: 0,

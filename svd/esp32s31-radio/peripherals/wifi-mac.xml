@@ -1518,7 +1518,7 @@
           <name>RX_COLD_CONTROL_UNKNOWN</name>
           <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init clears the low byte immediately before publishing the descriptor base. Individual bit meanings are unknown.</description>
           <addressOffset>0x007c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>COLD_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>COLD_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>RX_CONTROL</name>
@@ -1544,10 +1544,10 @@
         </register>
         <register>
           <name>RX_DESCRIPTOR_BASE</name>
-          <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-hil-qualified]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier.</description>
+          <description>SOURCE[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-hil-qualified]. Complete first-descriptor address. The ROM and blob leaves publish the unmasked 32-bit pointer when installing a cold or repaired frontier; the selected high-address window separately completes the hardware last/next descriptor observations.</description>
           <addressOffset>0x0084</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>ADDRESS_LOW</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field>
+            <field><name>ADDRESS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1588,20 +1588,20 @@
           <name>RX_BUFFER_LIMIT_UNKNOWN</name>
           <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init sets the low twenty bits before descriptor publication.</description>
           <addressOffset>0x0c68</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field></fields>
+          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>RX_BUFFER_BASE_UNKNOWN</name>
           <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete mac_rxbuf_init replaces the low twenty bits with four before selecting the descriptor high window.</description>
           <addressOffset>0x0c6c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field></fields>
+          <fields><field><name>LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>RX_DESCRIPTOR_HIGH_WINDOW</name>
           <description>SOURCE[BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR,HIL_OPEN_RX_LIVE_APPEND_2026_07_27]; CONFIDENCE[instruction-exact-hil-qualified]. High 12 descriptor-address bits shared with the low-address RX pointer registers. Complete mac_rxbuf_init and the open driver program 0x2f0 for internal SRAM.</description>
           <addressOffset>0x0c70</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>ADDRESS_HIGH</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field>
+            <field><name>ADDRESS_HIGH</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>

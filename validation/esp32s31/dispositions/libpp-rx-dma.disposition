@@ -7,7 +7,7 @@ default-protocol wifi
 function libpp hal_mac_rx_disable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_disable
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::set_walker_enabled
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_disable
 effect-contract exact-effects-v1
@@ -17,7 +17,7 @@ effect mmio-write 32 0x20104080 required
 function libpp hal_mac_rx_enable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_enable
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::set_walker_enabled
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_enable
 effect-contract exact-effects-v1
@@ -27,7 +27,7 @@ effect mmio-write 32 0x20104080 required
 function libpp hal_mac_rx_read_rxdscrlast
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_read_rxdscrlast
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::read_last_descriptor
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_read_rxdscrlast
 compare-return true
@@ -37,7 +37,7 @@ effect mmio-read 32 0x2010408c required
 function libpp hal_mac_rx_read_rxdscrnext
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_read_rxdscrnext
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::read_next_descriptor
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_read_rxdscrnext
 compare-return true
@@ -47,7 +47,7 @@ effect mmio-read 32 0x20104088 required
 function libpp hal_mac_rx_set_base
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_set_base
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::write_descriptor_base
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_set_base
 effect-contract exact-effects-v1
@@ -56,7 +56,7 @@ effect mmio-write 32 0x20104084 required
 function libpp hal_mac_rx_get_last_dscr
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_get_last_dscr
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::read_last_descriptor_address
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_get_last_dscr
 compare-return true
@@ -67,7 +67,7 @@ effect mmio-read 32 0x20104c70 required
 function libpp hal_mac_rx_is_dscr_reload
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_is_dscr_reload
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::descriptor_reload_pending
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_is_dscr_reload
 compare-return true
@@ -77,7 +77,7 @@ effect mmio-read 32 0x20104080 required
 function libpp hal_mac_rx_set_dscr_reload
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_rx_set_dscr_reload
+rust-component open_esp_radio_esp32s31_registers::mac_rx_dma::request_descriptor_reload
 binding v1
 rust-probe open_libpp_rx_trace_hal_mac_rx_set_dscr_reload
 effect-contract exact-effects-v1

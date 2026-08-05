@@ -355,7 +355,7 @@ field 0x20104080 WIFI_MAC_RX_DMA.RX_CONTROL APPEND_DESCRIPTOR_RELOAD append_desc
 field 0x20104080 WIFI_MAC_RX_DMA.RX_CONTROL HARDWARE_BEACON_RELOAD_UNKNOWN hardware_beacon_reload_unknown - 27 1 read-write
 field 0x20104080 WIFI_MAC_RX_DMA.RX_CONTROL WALKER_ENABLE walker_enable - 31 1 read-write
 register 0x20104084 32 read-write WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_descriptor_base - -
-field 0x20104084 WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE ADDRESS_LOW address_low - 0 20 read-write
+field 0x20104084 WIFI_MAC_RX_DMA.RX_DESCRIPTOR_BASE ADDRESS address - 0 32 read-write
 register 0x20104088 32 read-only WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_next_descriptor - -
 field 0x20104088 WIFI_MAC_RX_DMA.RX_NEXT_DESCRIPTOR ADDRESS_LOW address_low - 0 20 read-only
 register 0x2010408c 32 read-only WIFI_MAC_RX_DMA.RX_LAST_DESCRIPTOR WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_last_descriptor - -

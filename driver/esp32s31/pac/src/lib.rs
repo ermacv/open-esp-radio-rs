@@ -24975,7 +24975,7 @@ pub mod wifi_mac_rx_dma {
         pub const fn rx_control(&self) -> &RxControl {
             &self.rx_control
         }
-        #[doc = "0x84 - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier."]
+        #[doc = "0x84 - SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete first-descriptor address. The ROM and blob leaves publish the unmasked 32-bit pointer when installing a cold or repaired frontier; the selected high-address window separately completes the hardware last/next descriptor observations."]
         #[inline(always)]
         pub const fn rx_descriptor_base(&self) -> &RxDescriptorBase {
             &self.rx_descriptor_base
@@ -26060,7 +26060,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `COLD_LOW_UNKNOWN` reader - "]
         pub type ColdLowUnknownR = crate::FieldReader;
         #[doc = "Field `COLD_LOW_UNKNOWN` writer - "]
-        pub type ColdLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ColdLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -26158,34 +26158,34 @@ pub mod wifi_mac_rx_dma {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "RX_DESCRIPTOR_BASE (rw) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_base::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_base::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_descriptor_base`] module"]
+    #[doc = "RX_DESCRIPTOR_BASE (rw) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete first-descriptor address. The ROM and blob leaves publish the unmasked 32-bit pointer when installing a cold or repaired frontier; the selected high-address window separately completes the hardware last/next descriptor observations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_base::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_base::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_descriptor_base`] module"]
     #[doc(alias = "RX_DESCRIPTOR_BASE")]
     pub type RxDescriptorBase = crate::Reg<rx_descriptor_base::RxDescriptorBaseSpec>;
-    #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier."]
+    #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete first-descriptor address. The ROM and blob leaves publish the unmasked 32-bit pointer when installing a cold or repaired frontier; the selected high-address window separately completes the hardware last/next descriptor observations."]
     pub mod rx_descriptor_base {
         #[doc = "Register `RX_DESCRIPTOR_BASE` reader"]
         pub type R = crate::R<RxDescriptorBaseSpec>;
         #[doc = "Register `RX_DESCRIPTOR_BASE` writer"]
         pub type W = crate::W<RxDescriptorBaseSpec>;
-        #[doc = "Field `ADDRESS_LOW` reader - "]
-        pub type AddressLowR = crate::FieldReader<u32>;
-        #[doc = "Field `ADDRESS_LOW` writer - "]
-        pub type AddressLowW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        #[doc = "Field `ADDRESS` reader - "]
+        pub type AddressR = crate::FieldReader<u32>;
+        #[doc = "Field `ADDRESS` writer - "]
+        pub type AddressW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:19"]
+            #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn address_low(&self) -> AddressLowR {
-                AddressLowR::new(self.bits & 0x000f_ffff)
+            pub fn address(&self) -> AddressR {
+                AddressR::new(self.bits)
             }
         }
         impl W {
-            #[doc = "Bits 0:19"]
+            #[doc = "Bits 0:31"]
             #[inline(always)]
-            pub fn address_low(&mut self) -> AddressLowW<'_, RxDescriptorBaseSpec> {
-                AddressLowW::new(self, 0)
+            pub fn address(&mut self) -> AddressW<'_, RxDescriptorBaseSpec> {
+                AddressW::new(self, 0)
             }
         }
-        #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 20 bits of the first descriptor address in the selected high-address window. ROM writes it when publishing a cold or repaired frontier.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_base::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_base::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        #[doc = "SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete first-descriptor address. The ROM and blob leaves publish the unmasked 32-bit pointer when installing a cold or repaired frontier; the selected high-address window separately completes the hardware last/next descriptor observations.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_descriptor_base::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_descriptor_base::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxDescriptorBaseSpec;
         impl crate::RegisterSpec for RxDescriptorBaseSpec {
             type Ux = u32;
@@ -26194,7 +26194,7 @@ pub mod wifi_mac_rx_dma {
         impl crate::Readable for RxDescriptorBaseSpec {}
         #[doc = "`write(|w| ..)` method takes [`rx_descriptor_base::W`](W) writer structure"]
         impl crate::Writable for RxDescriptorBaseSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RX_NEXT_DESCRIPTOR (r) register accessor: SOURCE\\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Low 20 bits of the hardware current/next descriptor. ROM interprets zero after reload completion as a terminal frontier and may repair RX_DESCRIPTOR_BASE.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_next_descriptor::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_next_descriptor`] module"]
@@ -26436,7 +26436,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `LOW_UNKNOWN` reader - "]
         pub type LowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `LOW_UNKNOWN` writer - "]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -26475,7 +26475,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `LOW_UNKNOWN` reader - "]
         pub type LowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `LOW_UNKNOWN` writer - "]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -26515,7 +26515,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `ADDRESS_HIGH` reader - "]
         pub type AddressHighR = crate::FieldReader<u16>;
         #[doc = "Field `ADDRESS_HIGH` writer - "]
-        pub type AddressHighW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type AddressHighW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 20:31"]
             #[inline(always)]
@@ -30344,6 +30344,19 @@ pub mod full_register_write {
             registers
                 .value_high()
                 .write_with_zero(|writer| writer.value().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_RX_DMA`.`RX_DESCRIPTOR_BASE` through its full-width field.
+    #[inline]
+    pub fn rx_descriptor_base(registers: &crate::WifiMacRxDma, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .rx_descriptor_base()
+                .write_with_zero(|writer| writer.address().set(value));
         }
     }
 }

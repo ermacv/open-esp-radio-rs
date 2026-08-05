@@ -149,6 +149,11 @@
              register="VALUE_HIGH"
              field="VALUE"
              source="BLOB_LIBPP_HAL_TSF"/>
+      <write name="rx_descriptor_base"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_DESCRIPTOR_BASE"
+             field="ADDRESS"
+             source="ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioProvenance>
       <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>

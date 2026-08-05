@@ -2407,27 +2407,23 @@ pub mod wifi_mac_rx_dma {
         pub const WALKER_ENABLE: Field32 = Field32::new(31, 1);
     }
 
-    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
-    /// CONFIDENCE\[instruction-exact-and-hil]. Low 20 bits of the first descriptor address in
-    /// the selected high-address window. ROM writes it when publishing a cold or repaired
-    /// frontier.
+    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE\[instruction-exact-and-hil]. Complete first-descriptor address published for
+    /// a cold or repaired frontier.
     pub const RX_DESCRIPTOR_BASE: Register32 =
         Register32::described(0x20104084, RegisterAccess::ReadWrite, None);
 
     /// Recovered fields of [`RX_DESCRIPTOR_BASE`].
-    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
-    /// CONFIDENCE\[instruction-exact-and-hil]. Low 20 bits of the first descriptor address in
-    /// the selected high-address window. ROM writes it when publishing a cold or repaired
-    /// frontier.
+    /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+    /// CONFIDENCE\[instruction-exact-and-hil]. Complete first-descriptor address published for
+    /// a cold or repaired frontier.
     pub mod rx_descriptor_base {
         use crate::Field32;
 
         /// Field layout from
-        /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
-        /// CONFIDENCE\[instruction-exact-and-hil]. Low 20 bits of the first descriptor address
-        /// in the selected high-address window. ROM writes it when publishing a cold or
-        /// repaired frontier.
-        pub const ADDRESS_LOW: Field32 = Field32::new(0, 20);
+        /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];
+        /// CONFIDENCE\[instruction-exact-and-hil]. Complete published descriptor pointer.
+        pub const ADDRESS: Field32 = Field32::new(0, 32);
     }
 
     /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,HIL_OPEN_RX_LIVE_APPEND_2026_07_27];

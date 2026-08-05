@@ -55,45 +55,46 @@ pub fn hal_pwr_interrupt_clr_event(registers: &svd::WifiMacPowerInterrupt, event
 
 #[inline(always)]
 pub fn hal_mac_rx_disable(registers: &svd::WifiMacRxDma, passthrough: u32) -> u32 {
-    generated::hal_mac_rx_disable::generated_hal_mac_rx_disable(registers, passthrough)
+    crate::mac_rx_dma::set_walker_enabled(registers, false);
+    passthrough
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_enable(registers: &svd::WifiMacRxDma, passthrough: u32) -> u32 {
-    generated::hal_mac_rx_enable::generated_hal_mac_rx_enable(registers, passthrough)
+    crate::mac_rx_dma::set_walker_enabled(registers, true);
+    passthrough
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_read_rxdscrlast(registers: &svd::WifiMacRxDma) -> u32 {
-    generated::hal_mac_rx_read_rxdscrlast::generated_hal_mac_rx_read_rxdscrlast(registers)
+    crate::mac_rx_dma::read_last_descriptor(registers)
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_read_rxdscrnext(registers: &svd::WifiMacRxDma) -> u32 {
-    generated::hal_mac_rx_read_rxdscrnext::generated_hal_mac_rx_read_rxdscrnext(registers)
+    crate::mac_rx_dma::read_next_descriptor(registers)
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_set_base(registers: &svd::WifiMacRxDma, address: u32) -> u32 {
-    generated::hal_mac_rx_set_base::generated_hal_mac_rx_set_base(registers, address)
+    crate::mac_rx_dma::write_descriptor_base(registers, address);
+    address
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_get_last_dscr(registers: &svd::WifiMacRxDma) -> u32 {
-    generated::hal_mac_rx_get_last_dscr::generated_hal_mac_rx_get_last_dscr(registers)
+    crate::mac_rx_dma::read_last_descriptor_address(registers)
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_is_dscr_reload(registers: &svd::WifiMacRxDma) -> u32 {
-    generated::hal_mac_rx_is_dscr_reload::generated_hal_mac_rx_is_dscr_reload(registers)
+    u32::from(crate::mac_rx_dma::descriptor_reload_pending(registers))
 }
 
 #[inline(always)]
 pub fn hal_mac_rx_set_dscr_reload(registers: &svd::WifiMacRxDma, passthrough: u32) -> u32 {
-    generated::hal_mac_rx_set_dscr_reload::generated_hal_mac_rx_set_dscr_reload(
-        registers,
-        passthrough,
-    )
+    crate::mac_rx_dma::request_descriptor_reload(registers);
+    passthrough
 }
 
 #[inline(always)]

@@ -211,10 +211,10 @@ code.
 
 The RX gate covers eight finite leaves used by the production ring owner:
 walker enable/disable, raw last/next reads, base publication, complete
-last-pointer reconstruction, and reload-bit read/set. The PAC implementations
-are generated from the same Effect Contracts exercised by the probes; the
-handwritten `RxRingStopped`/`RxRingLive` types retain lifecycle and descriptor
-memory ownership.
+last-pointer reconstruction, and reload-bit read/set. Safe typed PAC
+transactions implement the same Effect Contracts exercised by the probes;
+the handwritten `RxRingStopped`/`RxRingLive` types retain lifecycle and
+descriptor memory ownership.
 
 ```console
 cargo vendor-code-validator verify inventory \

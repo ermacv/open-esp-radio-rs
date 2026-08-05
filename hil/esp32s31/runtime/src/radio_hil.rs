@@ -5546,9 +5546,8 @@ async fn run_reconnected_station_attempt<'fixture, 'security>(
 /// from the completed connected epoch.
 fn initialize_sta_network(station_address: [u8; 6]) -> RadioHilStaNetwork {
     let resources = OPEN_RADIO_NETWORK_RESOURCES.init_with(NetworkResources::new);
-    let tx_pool = NetworkTxPool::pin_static(
-        OPEN_RADIO_NETWORK_TX_POOL.init_with(NetworkTxPool::new),
-    );
+    let tx_pool =
+        NetworkTxPool::pin_static(OPEN_RADIO_NETWORK_TX_POOL.init_with(NetworkTxPool::new));
     let (device, runner) = resources.split(tx_pool, station_address);
     RadioHilStaNetwork::Unstarted { device, runner }
 }
@@ -5601,11 +5600,11 @@ async fn run_promiscuous_rx_hil(
             poll_interval_us: 1,
         },
     ));
-    let descriptor_base = storage.descriptors().as_ptr().addr() as u32;
-    let buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT] = OPEN_RADIO_RX_BUFFER_ADDRESSES
-        .init(core::array::from_fn(|index| {
-            storage.buffers()[index].dma_address().unwrap()
-        }));
+    let buffer_addresses = OPEN_RADIO_RX_BUFFER_ADDRESSES.init([0; RX_DESCRIPTOR_COUNT]);
+    let descriptor_base = storage
+        .dma_layout(buffer_addresses)
+        .expect("RX DMA storage must be addressable by ESP32-S31");
+    let buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT] = buffer_addresses;
 
     let mut station_address = [0_u8; 6];
     station_address

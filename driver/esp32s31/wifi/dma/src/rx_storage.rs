@@ -251,13 +251,38 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         u32::try_from(self.descriptors.as_ptr().addr()).map_err(|_| RxDmaStorageError::AddressWidth)
     }
 
-    /// Prepare the first stopped ring while binding its descriptors and DMA
-    /// addresses to this exact storage arena.
+    /// Prepare the first stopped ring on a hardware target.
+    ///
+    /// The `'static` receiver is essential: safe code may forget a live ring,
+    /// so DMA-visible descriptors and buffers must remain allocated even when
+    /// the typestate owner is lost. Borrowing the arena for `'static` also
+    /// prevents later safe mutable pre-publication access.
+    #[cfg(target_pointer_width = "32")]
+    pub fn prepare_ring<'addresses, M: RxDma>(
+        &'static self,
+        mmio: &mut M,
+        descriptor_base: u32,
+        buffer_addresses: &'addresses [u32; COUNT],
+    ) -> Result<RxRingStopped<'addresses, COUNT>, RxRingError> {
+        self.prepare_ring_bound(mmio, descriptor_base, buffer_addresses)
+    }
+
+    /// Prepare a stopped ring for a native host model with no DMA actor.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub fn prepare_ring<'storage, M: RxDma>(
+        &'storage self,
+        mmio: &mut M,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; COUNT],
+    ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
+        self.prepare_ring_bound(mmio, descriptor_base, buffer_addresses)
+    }
+
     #[allow(
         unsafe_code,
         reason = "stopped ring exclusively owns initial buffer rearm"
     )]
-    pub fn prepare_ring<'storage, M: RxDma>(
+    fn prepare_ring_bound<'storage, M: RxDma>(
         &'storage self,
         mmio: &mut M,
         descriptor_base: u32,

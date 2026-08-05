@@ -153,9 +153,29 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
     Esp32s31ScanRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
     /// Prepare the first cold scan epoch under the caller's unique PAC owner.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn prepare_initial<H: RxDma>(
         hardware: &mut H,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        descriptor_base: u32,
+        buffer_addresses: &'storage [u32; COUNT],
+    ) -> Result<Self, RxRingError> {
+        if DMA_BUFFER_SIZE > u32::MAX as usize {
+            return Err(RxRingError::Size);
+        }
+        let ring = storage.prepare_ring(hardware, descriptor_base, buffer_addresses)?;
+        Ok(Self {
+            state: Esp32s31ScanRxState::Prepared(ring),
+            storage,
+        })
+    }
+
+    /// Prepare the first hardware scan epoch from permanently allocated DMA
+    /// storage. Losing a later live-ring owner cannot deallocate this arena.
+    #[cfg(target_pointer_width = "32")]
+    pub fn prepare_initial<H: RxDma>(
+        hardware: &mut H,
+        storage: &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<Self, RxRingError> {

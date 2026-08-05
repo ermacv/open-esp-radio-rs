@@ -72,6 +72,15 @@ not grant reset authority. A future recoverable reset path must first introduce
 an unforgeable reset-completion owner and test the complete MAC/DMA shutdown
 ordering before it can consume quarantined leases.
 
+On 32-bit hardware targets, initial RX-ring construction requires a
+`&'static RxDmaStorage`. Forgetting or losing a live typestate owner can still
+leak the ring and leave the walker active, but it cannot deallocate or move the
+descriptor/buffer arena underneath DMA. Native host models retain a borrowed
+constructor because they have no asynchronous hardware actor. Raw RX-DMA
+backend operations and validation-only cold-ring helpers are not storage
+ownership APIs; narrowing their public surface is the next remaining part of
+this audit.
+
 ## Layer rules
 
 - All crates above the three audited leaves are compiled with

@@ -272,18 +272,22 @@ identity, including concrete MMIO address and SVD name where the value came
 from a register read. This exactness describes the recovered value only and is
 orthogonal to function/control-flow completeness.
 
-For a guard result produced by a selected function, the linked layer intersects
-the guard's tested result bits with direct MMIO ranges in that function's
-return provenance. The resulting evidence retains both result and register
-masks and projects a known comparison value into both coordinate systems.
-Caller-side and producer-side inversion are composed, so shifted or inverted
-mappings do not get mistaken for aligned raw register tests. It intentionally
-does not guess through unknown arithmetic or
-perform transitive return-call substitution. Missing guard evidence likewise
-stays explicit, and the report makes no CFG guard completeness claim because
-exploration is bounded. Consequently this is deliberately not a total
-execution trace: mutually exclusive paths coexist, dynamic loop counts are not
-inferred and recursive revisits are bounded exactly like context projection.
+For a guard result produced by a selected function, the linked layer projects
+each tested result bit through that function's return provenance. A direct MMIO
+range terminates successfully; an exact internal `call-result` range continues
+at the mapped callee output bit. The resulting evidence retains result and
+register masks, projects a known comparison value into both coordinate systems
+and records the complete producer path to the MMIO leaf. Caller-side and every
+producer-side inversion are composed, so shifted or inverted wrappers do not
+get mistaken for aligned raw register tests. Traversal requires a resolved
+function identity in the selected report and rejects a recursive `(function,
+output bit)` revisit. Arguments, unknown arithmetic, external results and
+unresolved calls remain explicit stopping points rather than guesses. Missing
+guard evidence likewise stays explicit, and the report makes no CFG guard
+completeness claim because exploration is bounded. Consequently this is
+deliberately not a total execution trace: mutually exclusive paths coexist,
+dynamic loop counts are not inferred and recursive revisits are bounded
+exactly like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,
@@ -321,9 +325,11 @@ different action occurrences or different remaining conditions therefore
 remain distinguishable without duplicating the complete action guard per
 field. Full-register masks remain separate counters and do not become fields.
 Guard evidence is accepted only for an address with one observed access width.
+Producer paths keep all exact return wrappers in the function inventory while
+the leaf MMIO reader alone is classified as the access function.
 This join does not infer register or field names, merge adjacent hardware
 fields, recover W1C or reset semantics, or guess through arithmetic and
-transitive return calls.
+unresolved return calls.
 
 ### Shared model
 

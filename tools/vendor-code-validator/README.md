@@ -97,7 +97,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v27 records the selection mode plus root and
+`reachable-internal`, and schema v28 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -119,7 +119,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v27 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v28 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -147,7 +147,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v27 records
+symbolic states. Schema v28 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -225,17 +225,22 @@ expression.
 Missing producer resolution remains `null`, and the
 `cfg_guard_result_source_mode` value
 `"bit-provenance-with-operand-comparison-mapping-and-producer-targets"` makes
-the join contract explicit. When the selected producer returns bits directly
-from a concrete MMIO read, each result source also contains `mmio_sources`
-with the intersection between the tested result mask and the producer's return
-mapping.
-It records both result-bit and register-bit masks, comparison values in both
-coordinate systems, address, SVD name and composed inversion. This is
-deliberately direct rather than transitive through another returned call
-result, and an absent or non-MMIO mapping stays an empty array.
+the join contract explicit. When selected producer bits map to a concrete MMIO
+read, either directly or through exact internal `call-result` return ranges,
+each result source also contains `mmio_sources`. Projection is per bit, so
+shifted and inverted wrapper returns preserve the intersection between the
+tested result mask and the leaf register mapping. Each source records both
+result-bit and register-bit masks, comparison values in both coordinate
+systems, address, SVD name, composed inversion, `producer_path` and derived
+`return_depth`. Traversal follows only resolved identities present in the
+selected report and rejects a recursive `(function, output bit)` revisit.
+Arguments, unknown arithmetic, external results and unresolved targets stop
+projection; an absent mapping stays an empty array.
 The top-level `cfg_guard_mmio_linkage_mode` value
-`"two-stage-exact-bit-projection-with-comparison-values"` identifies that
-boundary.
+`"recursive-exact-bit-projection-with-producer-paths"` identifies that
+contract. The summary separates all `guard_mmio_links` from those whose
+producer path crosses at least one returned internal call as
+`transitive_guard_mmio_links`.
 
 The top-level
 `semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings"`
@@ -274,7 +279,7 @@ whole-register and read-modify-write shapes, and splits modified masks into
 contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-only inventory remains available for compatibility.
 
-Schema v27 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v28 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate
@@ -294,7 +299,10 @@ register value rather than being guessed. The same structured evidence appears
 under field candidates as `predicate_evidence`, together with poll and
 producer-return evidence. Guarded producer-return evidence also records
 `taken` and `effective_operation`; a false branch complements the supported
-comparison operator instead of hiding path polarity. `semantic_evidence`
+comparison operator instead of hiding path polarity. Predicate and semantic
+evidence retain the complete MMIO `producer_path`; `access_functions` names
+the leaf that actually reads the register while `functions` also inventories
+the intervening wrappers. `semantic_evidence`
 identifies the concrete semantic action by target, origin, call path, call site
 and full lexical site path. Scope/path indices form stable coordinates into the
 action's factorized `cfg_guard_scopes`; the evidence also retains the selected
@@ -311,9 +319,9 @@ writes, predicates and polls have separate counters. Discontiguous masks become
 separate contiguous candidates, so adjacent hardware fields can still be merged
 and one logical field can still be split. Guard evidence is indexed only when
 the address has one unambiguous observed access width. Direct predicates require
-recoverable per-bit provenance; producer predicates follow the exact direct
-producer-return linkage described below. Neither path guesses through unknown
-arithmetic or transitive calls. No access policy such as W1C, reset value,
+recoverable per-bit provenance; producer predicates follow the exact direct or
+return-chain linkage described above. Neither path guesses through unknown
+arithmetic or unresolved calls. No access policy such as W1C, reset value,
 field name or peripheral semantics is inferred. The JSON records this scope
 with `direct_mmio_predicate_mode`,
 `direct_mmio_predicate_completeness_claim: false`,

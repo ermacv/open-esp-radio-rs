@@ -327,6 +327,11 @@ pub enum HtAmpduTxError {
         index: u8,
         length: u16,
     },
+    /// Stored descriptor metadata did not resolve to any currently retained
+    /// stable backing or to the storage's own fixed DMA buffer.
+    BackingUnavailable {
+        index: u8,
+    },
     SlotCountOverflow {
         count: usize,
     },
@@ -382,6 +387,16 @@ struct PreparedHeTrigger {
     reservation: MacHeTbLinkReservation,
     tid: MacHeTid,
     queued_msdu_bytes: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CompletedFrameLayout {
+    index: usize,
+    buffer_address: usize,
+    capacity: usize,
+    frame_start: usize,
+    frame_end: usize,
+    hardware_mic_length: u8,
 }
 
 impl HtAmpduTxCompletion {
@@ -570,38 +585,51 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The returned slice excludes the private eight-byte DMA metadata prefix
     /// and the hardware-generated MIC/FCS trailer. Sequence Control and CCMP
     /// header are retained exactly as originally submitted.
-    #[allow(
-        unsafe_code,
-        reason = "completed state retains the backing behind stored DMA addresses"
-    )]
     pub fn completed_frame(
         &self,
         cookie: TxCookie,
         index: u8,
     ) -> Result<(&[u8], u8), HtAmpduTxError> {
+        let layout = self.completed_frame_layout(cookie, index)?;
+        let buffer = &self.buffers[layout.index].0;
+        if layout.buffer_address != buffer.as_ptr().addr() || layout.capacity > buffer.len() {
+            return Err(HtAmpduTxError::BackingUnavailable { index });
+        }
+        Ok((
+            &buffer[layout.frame_start..layout.frame_end],
+            layout.hardware_mic_length,
+        ))
+    }
+
+    fn completed_frame_layout(
+        &self,
+        cookie: TxCookie,
+        index: u8,
+    ) -> Result<CompletedFrameLayout, HtAmpduTxError> {
         if self.state != TxSlotState::Completed || self.active != cookie || !self.detached {
             return Err(HtAmpduTxError::Stale);
         }
-        let index = usize::from(index);
-        if index >= usize::from(self.count) {
+        let slot = usize::from(index);
+        if slot >= usize::from(self.count) {
             return Err(HtAmpduTxError::FrameIndexOutOfRange {
-                index: index as u8,
+                index,
                 count: self.count,
             });
         }
-        let frame_length = usize::from(self.frame_lengths[index]);
-        let buffer_address = self.buffer_addresses[index];
-        let capacity = usize::from(self.descriptor_capacities[index]);
-        // SAFETY: an internal commit uses this pool's pinned allocation. A
-        // referenced commit requires its caller to retain the external pinned
-        // lease through completion/retry. The completed state has returned DMA
-        // ownership, and the slice is bounded to the validated descriptor
-        // capacity.
-        let buffer = unsafe { core::slice::from_raw_parts(buffer_address as *const u8, capacity) };
-        Ok((
-            &buffer[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + frame_length],
-            self.hardware_mic_lengths[index],
-        ))
+        let frame_length = usize::from(self.frame_lengths[slot]);
+        let capacity = usize::from(self.descriptor_capacities[slot]);
+        let frame_end = TX_AMPDU_METADATA_SIZE
+            .checked_add(frame_length)
+            .filter(|end| *end <= capacity)
+            .ok_or(HtAmpduTxError::BackingUnavailable { index })?;
+        Ok(CompletedFrameLayout {
+            index: slot,
+            buffer_address: self.buffer_addresses[slot],
+            capacity,
+            frame_start: TX_AMPDU_METADATA_SIZE,
+            frame_end,
+            hardware_mic_length: self.hardware_mic_lengths[slot],
+        })
     }
 
     /// Retain only selected completed MPDUs for another A-MPDU attempt.
@@ -2333,6 +2361,65 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
 impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     RetainedDmaAmpduTx<'_, B, SLOTS, BUFFER_SIZE>
 {
+    /// Borrow a detached completed MPDU from its retained stable lease.
+    ///
+    /// The descriptor address is treated only as an identity to resolve the
+    /// owning lease. It is never converted back into a Rust reference.
+    pub fn completed_frame(
+        &mut self,
+        cookie: TxCookie,
+        index: u8,
+    ) -> Result<(&[u8], u8), HtAmpduTxError> {
+        let layout = self
+            .storage
+            .as_ref()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_ref()
+            .get_ref()
+            .completed_frame_layout(cookie, index)?;
+        let internal_matches = {
+            let storage = self
+                .storage
+                .as_ref()
+                .expect("retained DMA owner keeps storage until teardown")
+                .as_ref()
+                .get_ref();
+            let internal = &storage.buffers[layout.index].0;
+            layout.buffer_address == internal.as_ptr().addr() && layout.capacity <= internal.len()
+        };
+        if internal_matches {
+            return self
+                .storage
+                .as_ref()
+                .expect("retained DMA owner keeps storage until teardown")
+                .as_ref()
+                .get_ref()
+                .completed_frame(cookie, index);
+        }
+
+        for backing in &mut self.backings[..self.held] {
+            let Some(backing) = backing.as_mut() else {
+                continue;
+            };
+            let bytes = backing.stable_dma_region().into_mut_slice();
+            let base = bytes.as_ptr().addr();
+            let Some(offset) = layout.buffer_address.checked_sub(base) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(layout.capacity) else {
+                continue;
+            };
+            if end > bytes.len() {
+                continue;
+            }
+            return Ok((
+                &bytes[offset + layout.frame_start..offset + layout.frame_end],
+                layout.hardware_mic_length,
+            ));
+        }
+        Err(HtAmpduTxError::BackingUnavailable { index })
+    }
+
     /// Commit one HT frame and retain its stable backing in the same owner.
     pub fn commit_ht(
         &mut self,

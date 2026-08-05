@@ -54,6 +54,14 @@ impl<'a> StableDmaRegion<'a> {
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self.storage
     }
+
+    /// Consume the short region view and retain the original backing borrow.
+    ///
+    /// This is useful when an owner must return a slice borrowed from its
+    /// retained lease instead of from the temporary region wrapper.
+    pub fn into_mut_slice(self) -> &'a mut [u8] {
+        self.storage
+    }
 }
 
 /// An owned lease whose DMA region remains at one address until the lease is

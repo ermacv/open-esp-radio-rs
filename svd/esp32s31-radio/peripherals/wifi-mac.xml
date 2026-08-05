@@ -337,8 +337,8 @@
           <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-partial]. STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>CONTROL_LOW_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown.</description><bitOffset>0</bitOffset><bitWidth>30</bitWidth></field>
-            <field><name>MODE_HIGH_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>CONTROL_LOW_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown.</description><bitOffset>0</bitOffset><bitWidth>30</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3fffffff</maximum></range></writeConstraint></field>
+            <field><name>MODE_HIGH_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -347,7 +347,7 @@
           <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>LOW_POLICY_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>ORDINARY_ENABLE_CLEAR_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Cleared by the reachable STA CCMP enable transaction.</description><bitOffset>6</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>ORDINARY_ENABLE_CLEAR_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-semantics-unknown]. Cleared by the reachable STA CCMP enable transaction.</description><bitOffset>6</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>HIGH_POLICY_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field>
           </fields>
         </register>
@@ -362,7 +362,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact]. One validity bit per one of the 25 evidenced hardware key entries.</description>
           <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>VALID_ENTRIES</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact]. Bits 24:0 correspond to key-table entries 24:0.</description><bitOffset>0</bitOffset><bitWidth>25</bitWidth></field>
+            <field><name>VALID_ENTRIES</name><description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact]. Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25.</description><bitOffset>0</bitOffset><bitWidth>25</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1ffffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
       </registers>
@@ -383,7 +383,7 @@
           <name>ENTRY_WORD%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_CRYPTO]; CONFIDENCE[instruction-exact-partial]. Flat key-table word; entry is index/10 and word is index%10. Words zero and one carry peer/control, later words carry key material for the recovered CCMP transaction.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>

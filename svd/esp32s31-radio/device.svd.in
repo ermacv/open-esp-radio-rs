@@ -258,6 +258,21 @@
              register="ENTRY_PARAMETER_B%s"
              field="IMAGE_UNKNOWN"
              source="BLOB_LIBPP_MAC_LAST_RXBUF_INIT"/>
+      <write name="mac_crypto_interface_control"
+             peripheral="WIFI_MAC_CRYPTO_CONTROL"
+             register="INTERFACE_CONTROL%s"
+             fields="CONTROL_LOW_UNKNOWN,MODE_HIGH_UNKNOWN"
+             source="BLOB_LIBPP_HAL_CRYPTO,BLOB_LIBPP_HAL_CRYPTO_INIT"/>
+      <write name="mac_crypto_key_valid_bitmap"
+             peripheral="WIFI_MAC_CRYPTO_CONTROL"
+             register="KEY_VALID_BITMAP"
+             field="VALID_ENTRIES"
+             source="BLOB_LIBPP_HAL_CRYPTO"/>
+      <write name="mac_key_table_entry_word"
+             peripheral="WIFI_MAC_KEY_TABLE"
+             register="ENTRY_WORD%s"
+             field="VALUE"
+             source="BLOB_LIBPP_HAL_CRYPTO"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"
@@ -276,6 +291,14 @@
              peripheral="WIFI_MAC_CONTROL"
              register="CONTROL"
              source="OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"/>
+      <write name="clear_mac_crypto_init_aux"
+             peripheral="WIFI_MAC_CRYPTO_CONTROL"
+             register="INIT_AUX_UNKNOWN"
+             source="BLOB_LIBPP_HAL_CRYPTO_INIT"/>
+      <write name="clear_mac_crypto_policy"
+             peripheral="WIFI_MAC_CRYPTO_CONTROL"
+             register="POLICY_CONTROL"
+             source="BLOB_LIBPP_HAL_CRYPTO_INIT"/>
     </openEspRadioZeroRegisterWrites>
     <openEspRadioMaskedRegisterModifies>
       <modify name="publish_pbus_force_test"

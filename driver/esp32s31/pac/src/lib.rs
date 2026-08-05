@@ -13087,11 +13087,11 @@ pub mod wifi_mac_crypto_control {
         #[doc = "Field `CONTROL_LOW_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
         pub type ControlLowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `CONTROL_LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
-        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32>;
+        pub type ControlLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 30, u32, crate::Safe>;
         #[doc = "Field `MODE_HIGH_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
         pub type ModeHighUnknownR = crate::FieldReader;
         #[doc = "Field `MODE_HIGH_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."]
-        pub type ModeHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ModeHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:29 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."]
             #[inline(always)]
@@ -13144,7 +13144,8 @@ pub mod wifi_mac_crypto_control {
         #[doc = "Field `ORDINARY_ENABLE_CLEAR_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
         pub type OrdinaryEnableClearUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `ORDINARY_ENABLE_CLEAR_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Cleared by the reachable STA CCMP enable transaction."]
-        pub type OrdinaryEnableClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type OrdinaryEnableClearUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `HIGH_POLICY_UNKNOWN` reader - "]
         pub type HighPolicyUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_POLICY_UNKNOWN` writer - "]
@@ -13245,19 +13246,19 @@ pub mod wifi_mac_crypto_control {
         pub type R = crate::R<KeyValidBitmapSpec>;
         #[doc = "Register `KEY_VALID_BITMAP` writer"]
         pub type W = crate::W<KeyValidBitmapSpec>;
-        #[doc = "Field `VALID_ENTRIES` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+        #[doc = "Field `VALID_ENTRIES` reader - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
         pub type ValidEntriesR = crate::FieldReader<u32>;
-        #[doc = "Field `VALID_ENTRIES` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
-        pub type ValidEntriesW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32>;
+        #[doc = "Field `VALID_ENTRIES` writer - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
+        pub type ValidEntriesW<'a, REG> = crate::FieldWriter<'a, REG, 25, u32, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
             #[inline(always)]
             pub fn valid_entries(&self) -> ValidEntriesR {
                 ValidEntriesR::new(self.bits & 0x01ff_ffff)
             }
         }
         impl W {
-            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0."]
+            #[doc = "Bits 0:24 - SOURCE\\[BLOB_LIBPP_HAL_CRYPTO\\]; CONFIDENCE\\[instruction-exact\\]. Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."]
             #[inline(always)]
             pub fn valid_entries(&mut self) -> ValidEntriesW<'_, KeyValidBitmapSpec> {
                 ValidEntriesW::new(self, 0)
@@ -13315,7 +13316,7 @@ pub mod wifi_mac_key_table {
         #[doc = "Field `VALUE` reader - "]
         pub type ValueR = crate::FieldReader<u32>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -13339,7 +13340,7 @@ pub mod wifi_mac_key_table {
         impl crate::Readable for EntryWordSpec {}
         #[doc = "`write(|w| ..)` method takes [`entry_word::W`](W) writer structure"]
         impl crate::Writable for EntryWordSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
 }
@@ -31387,6 +31388,56 @@ pub mod zero_based_field_write {
                 .write_with_zero(|writer| writer.image_unknown().set(value));
         }
     }
+
+    /// Write `CONTROL_LOW_UNKNOWN`, `MODE_HIGH_UNKNOWN` in `WIFI_MAC_CRYPTO_CONTROL`.`INTERFACE_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_crypto_interface_control(
+        registers: &crate::WifiMacCryptoControl,
+        index: usize,
+        control_low_unknown_value: u32,
+        mode_high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .interface_control(index)
+                .write_with_zero(|writer| {
+                    writer
+                        .control_low_unknown()
+                        .set(control_low_unknown_value)
+                        .mode_high_unknown()
+                        .set(mode_high_unknown_value)
+                });
+        }
+    }
+
+    /// Write `VALID_ENTRIES` in `WIFI_MAC_CRYPTO_CONTROL`.`KEY_VALID_BITMAP` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_crypto_key_valid_bitmap(registers: &crate::WifiMacCryptoControl, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .key_valid_bitmap()
+                .write_with_zero(|writer| writer.valid_entries().set(value));
+        }
+    }
+
+    /// Write `VALUE` in `WIFI_MAC_KEY_TABLE`.`ENTRY_WORD%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_key_table_entry_word(registers: &crate::WifiMacKeyTable, index: usize, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .entry_word(index)
+                .write_with_zero(|writer| writer.value().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register zero writes.
@@ -31435,6 +31486,28 @@ pub mod zero_register_write {
         // qualify a complete zero write to this ordinary register.
         unsafe {
             registers.control().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_CRYPTO_CONTROL`.`INIT_AUX_UNKNOWN`.
+    #[inline]
+    pub fn clear_mac_crypto_init_aux(registers: &crate::WifiMacCryptoControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .init_aux_unknown()
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_CRYPTO_CONTROL`.`POLICY_CONTROL`.
+    #[inline]
+    pub fn clear_mac_crypto_policy(registers: &crate::WifiMacCryptoControl) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.policy_control().write_with_zero(|writer| writer);
         }
     }
 }

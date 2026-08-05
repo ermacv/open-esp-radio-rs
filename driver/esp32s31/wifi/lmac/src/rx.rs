@@ -1667,10 +1667,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         if accepted_tail.next_address() != 0 {
             return Err(RxRingError::Corrupt);
         }
-        // SAFETY: this type is the sole publication authority. All descriptors
-        // in the appended group were observed complete, rearmed and remain
+        // This type is the sole publication authority. All descriptors in the
+        // appended group were observed complete, rearmed and remain
         // unreachable until this old-tail link and the following doorbell.
-        unsafe { accepted_tail.publish_next_address(head_address) };
+        accepted_tail.publish_next_address(head_address);
         mmio.fence();
         mmio.request_reload();
         mmio.fence();

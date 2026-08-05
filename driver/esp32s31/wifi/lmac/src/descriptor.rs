@@ -1,6 +1,8 @@
 //! ESP32-S31 Wi-Fi DMA descriptor geometry and ownership words.
 
-use core::cell::UnsafeCell;
+#![forbid(unsafe_code)]
+
+use vcell::VolatileCell;
 
 pub const DMA_LOW: u32 = 0x2f00_0000;
 pub const DMA_HIGH: u32 = 0x2f08_0000;
@@ -17,12 +19,13 @@ pub const BIT_31: u32 = 0x8000_0000;
 ///
 /// This is deliberately not `esp_hal::dma::DmaDescriptor`: that type is
 /// padded to 16 bytes on ESP32-S31 for AXI-GDMA, while Wi-Fi walks 12-byte
-/// nodes. `UnsafeCell` models words that can change outside Rust through DMA.
+/// nodes. `VolatileCell` models words that can change outside Rust through
+/// DMA without leaking raw pointers into the LMAC.
 #[repr(C, align(4))]
 pub struct Descriptor {
-    word0: UnsafeCell<u32>,
-    buffer_address: UnsafeCell<u32>,
-    next_address: UnsafeCell<u32>,
+    word0: VolatileCell<u32>,
+    buffer_address: VolatileCell<u32>,
+    next_address: VolatileCell<u32>,
 }
 
 const _: () = {
@@ -33,42 +36,38 @@ const _: () = {
 impl Descriptor {
     pub const fn new() -> Self {
         Self {
-            word0: UnsafeCell::new(0),
-            buffer_address: UnsafeCell::new(0),
-            next_address: UnsafeCell::new(0),
+            word0: VolatileCell::new(0),
+            buffer_address: VolatileCell::new(0),
+            next_address: VolatileCell::new(0),
         }
     }
 
     #[inline]
     pub fn word0(&self) -> u32 {
-        // SAFETY: the cell is a valid aligned descriptor word and may be
-        // changed asynchronously by the device, hence the volatile access.
-        unsafe { self.word0.get().read_volatile() }
+        self.word0.get()
     }
 
     #[inline]
     pub fn buffer_address(&self) -> u32 {
-        unsafe { self.buffer_address.get().read_volatile() }
+        self.buffer_address.get()
     }
 
     #[inline]
     pub fn next_address(&self) -> u32 {
-        unsafe { self.next_address.get().read_volatile() }
+        self.next_address.get()
     }
 
     /// Writes address/link first and publishes the ownership word last.
     #[inline]
     pub fn publish(&self, word0: u32, buffer_address: u32, next_address: u32) {
-        unsafe {
-            self.buffer_address.get().write_volatile(buffer_address);
-            self.next_address.get().write_volatile(next_address);
-            self.word0.get().write_volatile(word0);
-        }
+        self.buffer_address.set(buffer_address);
+        self.next_address.set(next_address);
+        self.word0.set(word0);
     }
 
     #[inline]
     pub fn write_word0(&self, word0: u32) {
-        unsafe { self.word0.get().write_volatile(word0) }
+        self.word0.set(word0);
     }
 
     /// Links a prepared chain after the current hardware-visible tail.
@@ -79,13 +78,12 @@ impl Descriptor {
     /// is retained in `migration/esp32s31-hybrid-runtime/src/wdev.rs::
     /// publish_rx_recycle_chain`.
     ///
-    /// The caller must own the RX-list publication transaction: this is only
-    /// sound for the accepted tail while the appended chain itself is fully
-    /// prepared and not yet reachable by the walker. Publication is completed
-    /// by the MAC append-reload doorbell.
+    /// This crate-private edge is called only by the live RX-ring owner after
+    /// it has validated the accepted tail and prepared an unreachable append
+    /// chain. Publication is completed by the MAC append-reload doorbell.
     #[inline]
-    pub unsafe fn publish_next_address(&self, next_address: u32) {
-        unsafe { self.next_address.get().write_volatile(next_address) }
+    pub(crate) fn publish_next_address(&self, next_address: u32) {
+        self.next_address.set(next_address)
     }
 }
 

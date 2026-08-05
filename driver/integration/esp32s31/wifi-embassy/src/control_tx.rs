@@ -407,10 +407,6 @@ mod tests {
     }
 
     impl TxHardware for Hardware {
-        fn tx_descriptor_address(&self, _cpu_address: u32) -> u32 {
-            0x2f00_1000
-        }
-
         fn prepare_bound_legacy_tx(
             &mut self,
             _dma: &dyn PreparedTxDma,

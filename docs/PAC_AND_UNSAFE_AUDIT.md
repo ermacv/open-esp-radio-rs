@@ -137,21 +137,20 @@ only after validating the entire chain. Dropping an external owner after the
 hardware edge deliberately forgets the leases unless detach was confirmed,
 so a Rust destructor cannot return potentially DMA-visible memory.
 
-The old internally buffered `HtAmpduTxStorage` descriptor path remains as a
-transitional formatter/model API, but it can no longer submit hardware. Its
-legacy `submit`, `submit_he` and `submit_he_smpdu` entry points are deprecated
-and fail closed; `TxHardware` no longer contains raw HT/HE prepare/start
-operations, and the corresponding register methods are private helpers behind
-the capability-bound calls. Raw legacy submission had already been removed.
-The public TX hardware API is therefore capability-closed for legacy, HT and
-HE.
+`HtAmpduTxStorage` now contains only protocol/lifecycle metadata and its
+bounded frame-formatting workspace. Its duplicate descriptor array and the
+retired `submit`, `submit_he` and `submit_he_smpdu` entry points have been
+removed. Descriptor publication and queue-detach proof exist only in the
+composed lower owner. `TxHardware` no longer translates bare CPU addresses or
+contains raw legacy/HT/HE prepare/start operations; the corresponding register
+methods are private helpers behind capability-bound calls. The public TX
+hardware API is therefore capability-closed for legacy, HT and HE.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 
-1. remove the dead descriptor publication code from the transitional upper
-   formatter, then move any still-required internally buffered hardware path
-   onto the lower DMA leaf;
+1. move any future internally buffered hardware path onto the lower DMA leaf
+   instead of restoring descriptors in the upper formatter;
 2. add a recoverable reset authority only after the complete MAC/DMA shutdown
    order is qualified; until then quarantine remains terminal.
 

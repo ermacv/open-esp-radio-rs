@@ -167,12 +167,6 @@ impl LegacyTxQueue {
 
 /// Finite ordinary-queue hardware authority used by one owned TX slot.
 pub trait TxHardware {
-    /// Translate the pinned CPU descriptor address for a hardware/simulator.
-    /// Real ESP32-S31 implementations retain the identity mapping; host
-    /// executors may supply a deterministic internal-SRAM address.
-    fn tx_descriptor_address(&self, cpu_address: u32) -> u32 {
-        cpu_address
-    }
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,

@@ -1200,10 +1200,6 @@ mod tests {
     }
 
     impl open_esp_radio_esp32s31_wifi_lmac::tx::TxHardware for Hardware {
-        fn tx_descriptor_address(&self, cpu_address: u32) -> u32 {
-            0x2f00_1000 | (cpu_address & 0x0ffc)
-        }
-
         fn prepare_bound_legacy_tx(
             &mut self,
             _dma: &dyn PreparedTxDma,

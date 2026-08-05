@@ -5,6 +5,8 @@
 //! completed unit is copied and recycled before its staging lease is handed to
 //! the separate protocol consumer.
 
+#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+
 use core::future::Future;
 
 use embassy_sync::channel::{Sender, TrySendError};

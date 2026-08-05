@@ -5,6 +5,8 @@
 //! This module owns that DMA lifecycle and management-frame observation only;
 //! scan policy and active-probe TX live in their respective modules.
 
+#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::rx::{
     RxDma, RxIngressConfig, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive,

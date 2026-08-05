@@ -6,12 +6,15 @@
 //! cold backing. The bounded mailbox carries only the semantic agreement edge
 //! between those owners; it never carries a frame pointer or C context.
 
-use core::{
-    cell::UnsafeCell,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+#![forbid(unsafe_code)]
 
-use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+use embassy_sync::{
+    blocking_mutex::raw::CriticalSectionRawMutex,
+    channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
+    mutex::{Mutex, MutexGuard},
+};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::rx::RxSegment;
 
@@ -44,16 +47,13 @@ pub enum RxReorderStorageError {
 }
 
 #[repr(C, align(4))]
-struct RxReorderSlot<const CAPACITY: usize>(UnsafeCell<[u8; CAPACITY]>);
+struct RxReorderSlot<const CAPACITY: usize>(Mutex<CriticalSectionRawMutex, [u8; CAPACITY]>);
 
 impl<const CAPACITY: usize> RxReorderSlot<CAPACITY> {
     const fn new() -> Self {
-        Self(UnsafeCell::new([0; CAPACITY]))
+        Self(Mutex::new([0; CAPACITY]))
     }
 }
-
-// SAFETY: bytes are exposed only through one live reservation/frame token.
-unsafe impl<const CAPACITY: usize> Sync for RxReorderSlot<CAPACITY> {}
 
 /// CPU-only backing for MPDUs that actually cross a BlockAck sequence gap.
 ///
@@ -142,12 +142,12 @@ impl<'storage, const CAPACITY: usize, const SLOTS: usize>
         if segment.buffer.len() > CAPACITY {
             return Err((RxReorderStorageError::TooLong(segment.buffer.len()), self));
         }
-        // SAFETY: this reservation uniquely owns the selected slot, and the
-        // length check bounds the complete copy.
-        unsafe {
-            (&mut *self.storage.slots[self.slot].0.get())[..segment.buffer.len()]
-                .copy_from_slice(segment.buffer);
-        }
+        let mut bytes = self.storage.slots[self.slot]
+            .0
+            .try_lock()
+            .expect("a reserved RX reorder slot has no competing byte owner");
+        bytes[..segment.buffer.len()].copy_from_slice(segment.buffer);
+        drop(bytes);
         self.live = false;
         Ok(RxReorderFrame {
             storage: self.storage,
@@ -179,19 +179,46 @@ pub struct RxReorderFrame<'storage, const CAPACITY: usize, const SLOTS: usize> {
     length: usize,
 }
 
+/// Locked read view of one retained reorder slot.
+///
+/// The guard may live across the async protocol dispatch. The logical frame
+/// token keeps the same slot claimed, so no writer can reserve it until the
+/// frame and this view have both been dropped.
+pub struct RxReorderSegment<'frame, const CAPACITY: usize> {
+    bytes: MutexGuard<'frame, CriticalSectionRawMutex, [u8; CAPACITY]>,
+    descriptor_address: u32,
+    descriptor_word0: u32,
+    next_descriptor_address: u32,
+    length: usize,
+}
+
+impl<const CAPACITY: usize> RxReorderSegment<'_, CAPACITY> {
+    pub fn as_segment(&self) -> RxSegment<'_> {
+        RxSegment {
+            descriptor_address: self.descriptor_address,
+            descriptor_word0: self.descriptor_word0,
+            buffer: &self.bytes[..self.length],
+            next_descriptor_address: self.next_descriptor_address,
+        }
+    }
+}
+
 impl<const CAPACITY: usize, const SLOTS: usize> RxReorderFrame<'_, CAPACITY, SLOTS> {
     pub const fn slot(&self) -> usize {
         self.slot
     }
 
-    pub fn segment(&self) -> RxSegment<'_> {
-        // SAFETY: this token uniquely retains the claimed backing slot.
-        let bytes = unsafe { &*self.storage.slots[self.slot].0.get() };
-        RxSegment {
+    pub fn segment(&self) -> RxReorderSegment<'_, CAPACITY> {
+        let bytes = self.storage.slots[self.slot]
+            .0
+            .try_lock()
+            .expect("a retained RX reorder frame has unique byte ownership");
+        RxReorderSegment {
+            bytes,
             descriptor_address: self.descriptor_address,
             descriptor_word0: self.descriptor_word0,
-            buffer: &bytes[..self.length],
             next_descriptor_address: self.next_descriptor_address,
+            length: self.length,
         }
     }
 }
@@ -340,8 +367,8 @@ mod tests {
         };
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT - 1);
         assert_eq!(frame.slot(), slot);
-        assert_eq!(frame.segment().buffer, bytes);
-        assert_eq!(frame.segment().descriptor_word0, 0x2000);
+        assert_eq!(frame.segment().as_segment().buffer, bytes);
+        assert_eq!(frame.segment().as_segment().descriptor_word0, 0x2000);
         drop(frame);
         assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
     }
@@ -360,10 +387,6 @@ mod tests {
         ));
         drop((first, second, third));
         assert_eq!(storage.available_slots(), 3);
-        assert_eq!(
-            core::mem::size_of::<RxReorderFrameStorage<16, 3>>(),
-            3 * 16 + 2 * core::mem::size_of::<AtomicUsize>()
-        );
     }
 
     #[test]

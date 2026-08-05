@@ -810,7 +810,8 @@ where
         &mut self,
         frame: RxReorderFrame<'pool, CAPACITY, REORDER_SLOTS>,
     ) -> ConnectedRxDispatch {
-        let source = frame.segment();
+        let locked = frame.segment();
+        let source = locked.as_segment();
         let ordinary = !self.dispatcher.may_publish_amsdu(source);
         let result = if ordinary {
             if let Some(scratch) = self.reorder_scratch.as_deref_mut() {
@@ -836,6 +837,7 @@ where
         } else {
             self.dispatch_segment(source).await
         };
+        drop(locked);
         drop(frame);
         result
     }

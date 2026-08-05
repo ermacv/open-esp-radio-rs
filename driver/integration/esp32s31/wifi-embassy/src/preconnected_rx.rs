@@ -5,6 +5,8 @@
 //! retry must retain the last hardware-valid frontier. This owner contains no
 //! board storage addresses or protocol policy.
 
+#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+
 use core::{future::Future, marker::PhantomData};
 
 use embassy_time::Timer;

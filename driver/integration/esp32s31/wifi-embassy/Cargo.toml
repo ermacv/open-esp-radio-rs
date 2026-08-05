@@ -23,6 +23,7 @@ open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
 
 [dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
 embassy-time = { version = "0.5.1", features = ["generic-queue-64", "std"] }
 
 [lints]

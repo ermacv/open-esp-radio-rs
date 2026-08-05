@@ -498,7 +498,11 @@ fn collect_delay_from_event(
     }
 }
 
-fn collect_delays_from_flow(flow: &DraftReferenceFlow, path: &str, output: &mut Vec<LinkedDelay>) {
+pub(super) fn collect_delays_from_flow(
+    flow: &DraftReferenceFlow,
+    path: &str,
+    output: &mut Vec<LinkedDelay>,
+) {
     for event in &flow.events {
         collect_delay_from_event(event, path, output);
     }

@@ -17,14 +17,14 @@ pub(super) struct DirectGuardEvidence {
     direct_mmio_sources: Vec<LinkedDirectMmioPredicateSource>,
 }
 
-type DirectGuardState = BTreeMap<(u32, String), DirectGuardEvidence>;
+pub(super) type DirectGuardState = BTreeMap<(u32, String), DirectGuardEvidence>;
 
 #[derive(Default)]
 pub(super) struct DirectTraceEvidence {
-    guards: DirectGuardState,
-    call_results: BTreeMap<u32, String>,
-    calls: BTreeSet<LinkedCall>,
-    direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
+    pub(super) guards: DirectGuardState,
+    pub(super) call_results: BTreeMap<u32, String>,
+    pub(super) calls: BTreeSet<LinkedCall>,
+    pub(super) direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
 }
 
 pub(super) fn current_guard_path(guards: &DirectGuardState) -> LinkedCallGuardPath {

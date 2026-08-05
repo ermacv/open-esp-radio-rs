@@ -3,41 +3,41 @@
 use super::*;
 
 #[derive(Default)]
-struct MmioFieldCandidateAccumulator {
-    write_shapes: usize,
-    predicate_shapes: usize,
-    poll_shapes: usize,
-    functions: BTreeSet<String>,
-    access_functions: BTreeSet<String>,
-    predicate_functions: BTreeSet<String>,
-    predicate_evidence: BTreeSet<LinkedMmioFieldPredicateEvidence>,
-    semantic_operations: BTreeSet<String>,
-    semantic_roots: BTreeSet<String>,
-    semantic_evidence: BTreeSet<LinkedMmioFieldSemanticEvidence>,
+pub(super) struct MmioFieldCandidateAccumulator {
+    pub(super) write_shapes: usize,
+    pub(super) predicate_shapes: usize,
+    pub(super) poll_shapes: usize,
+    pub(super) functions: BTreeSet<String>,
+    pub(super) access_functions: BTreeSet<String>,
+    pub(super) predicate_functions: BTreeSet<String>,
+    pub(super) predicate_evidence: BTreeSet<LinkedMmioFieldPredicateEvidence>,
+    pub(super) semantic_operations: BTreeSet<String>,
+    pub(super) semantic_roots: BTreeSet<String>,
+    pub(super) semantic_evidence: BTreeSet<LinkedMmioFieldSemanticEvidence>,
 }
 
 #[derive(Default)]
-struct MmioRegisterAccumulator {
-    names: BTreeSet<String>,
-    read_shapes: usize,
-    write_shapes: usize,
-    poll_shapes: usize,
-    predicate_shapes: usize,
-    static_shapes: usize,
-    indexed_candidate_shapes: usize,
-    whole_register_write_shapes: usize,
-    whole_register_predicate_shapes: usize,
-    whole_register_poll_shapes: usize,
-    read_modify_write_shapes: usize,
-    write_masks: BTreeSet<u32>,
-    predicate_masks: BTreeSet<u32>,
-    poll_masks: BTreeSet<u32>,
-    candidate_bit_ranges: BTreeMap<(u8, u8, u32), (usize, BTreeSet<String>)>,
-    field_candidates: BTreeMap<(u8, u8, u32), MmioFieldCandidateAccumulator>,
-    functions: BTreeSet<String>,
+pub(super) struct MmioRegisterAccumulator {
+    pub(super) names: BTreeSet<String>,
+    pub(super) read_shapes: usize,
+    pub(super) write_shapes: usize,
+    pub(super) poll_shapes: usize,
+    pub(super) predicate_shapes: usize,
+    pub(super) static_shapes: usize,
+    pub(super) indexed_candidate_shapes: usize,
+    pub(super) whole_register_write_shapes: usize,
+    pub(super) whole_register_predicate_shapes: usize,
+    pub(super) whole_register_poll_shapes: usize,
+    pub(super) read_modify_write_shapes: usize,
+    pub(super) write_masks: BTreeSet<u32>,
+    pub(super) predicate_masks: BTreeSet<u32>,
+    pub(super) poll_masks: BTreeSet<u32>,
+    pub(super) candidate_bit_ranges: BTreeMap<(u8, u8, u32), (usize, BTreeSet<String>)>,
+    pub(super) field_candidates: BTreeMap<(u8, u8, u32), MmioFieldCandidateAccumulator>,
+    pub(super) functions: BTreeSet<String>,
 }
 
-fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
+pub(super) fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
     let mask = mask & width_mask(width);
     let mut output = Vec::new();
     let mut bit = 0_u8;
@@ -63,7 +63,7 @@ fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
     output
 }
 
-fn record_access_field_mask(
+pub(super) fn record_access_field_mask(
     entry: &mut MmioRegisterAccumulator,
     mask: u32,
     width: u8,
@@ -95,7 +95,7 @@ fn record_access_field_mask(
     }
 }
 
-fn record_predicate_field_mask(
+pub(super) fn record_predicate_field_mask(
     entry: &mut MmioRegisterAccumulator,
     mask: u32,
     width: u8,
@@ -130,31 +130,31 @@ fn record_predicate_field_mask(
     }
 }
 
-struct SemanticFieldEvidence<'a> {
-    kind: &'static str,
-    mask: u32,
-    width: u8,
-    operation: &'a str,
-    root: &'a str,
-    action_target: &'a str,
-    action_origin: &'a str,
-    action_site: Option<u32>,
-    action_site_path: &'a [Option<u32>],
-    action_path: &'a str,
-    predicate_function: &'a str,
-    producer: Option<&'a str>,
-    producer_path: &'a [String],
-    scope_index: usize,
-    scope_alternatives: usize,
-    path_index: usize,
-    path_expression: &'a str,
-    path_guards: usize,
-    guard_index: usize,
-    residual_path_expression: &'a str,
-    site: u32,
-    condition: &'a str,
-    taken: bool,
-    guard_operation: &'static str,
+pub(super) struct SemanticFieldEvidence<'a> {
+    pub(super) kind: &'static str,
+    pub(super) mask: u32,
+    pub(super) width: u8,
+    pub(super) operation: &'a str,
+    pub(super) root: &'a str,
+    pub(super) action_target: &'a str,
+    pub(super) action_origin: &'a str,
+    pub(super) action_site: Option<u32>,
+    pub(super) action_site_path: &'a [Option<u32>],
+    pub(super) action_path: &'a str,
+    pub(super) predicate_function: &'a str,
+    pub(super) producer: Option<&'a str>,
+    pub(super) producer_path: &'a [String],
+    pub(super) scope_index: usize,
+    pub(super) scope_alternatives: usize,
+    pub(super) path_index: usize,
+    pub(super) path_expression: &'a str,
+    pub(super) path_guards: usize,
+    pub(super) guard_index: usize,
+    pub(super) residual_path_expression: &'a str,
+    pub(super) site: u32,
+    pub(super) condition: &'a str,
+    pub(super) taken: bool,
+    pub(super) guard_operation: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -185,7 +185,7 @@ struct SemanticFieldLink {
     taken: bool,
 }
 
-fn record_semantic_field_link(
+pub(super) fn record_semantic_field_link(
     entry: &mut MmioRegisterAccumulator,
     evidence: SemanticFieldEvidence<'_>,
 ) {

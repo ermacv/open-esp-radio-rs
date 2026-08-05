@@ -1354,6 +1354,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi-dma"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-registers",
+ "vcell",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-wifi-embassy"
 version = "0.1.0"
 dependencies = [
@@ -1390,10 +1398,10 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-lmac",
  "pin-project",
- "vcell",
 ]
 
 [[package]]

@@ -298,6 +298,26 @@
              register="DISABLE_BITMAP"
              field="VALUE"
              source="BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"/>
+      <write name="mac_ack_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="ACK_RATE_TABLE"
+             fields="BPSK_RATE,QPSK_RATE,QAM16_RATE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_cts_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="CTS_RATE_TABLE"
+             fields="BPSK_RATE,QPSK_RATE,QAM16_RATE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_ack_cck_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="ACK_CCK_RATE_TABLE"
+             fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_cts_cck_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="CTS_CCK_RATE_TABLE"
+             fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

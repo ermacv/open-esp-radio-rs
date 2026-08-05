@@ -3157,11 +3157,11 @@
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>HIGH_23_16_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>HIGH_23_16_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>QUEUE_BIT_24_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>QUEUE_BIT_25_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>QUEUE_BIT_26_UNKNOWN</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>HIGH_31_27_UNKNOWN</name><bitOffset>27</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>HIGH_31_27_UNKNOWN</name><bitOffset>27</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -3181,7 +3181,7 @@
           <addressOffset>0x1c</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>TIMING_IMAGE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TIMING_IMAGE_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
 
             <field><name>ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
@@ -3216,7 +3216,7 @@
           <name>SHARED_ENABLE_CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_PREFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Final prefix RMW sets bits 1:0 together immediately before the first HE callback.</description>
           <addressOffset>0xba4</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>ENABLE_GROUP_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field></fields>
+          <fields><field><name>ENABLE_GROUP_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -3229,13 +3229,13 @@
           <name>ACK_RATE_TABLE</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG]; CONFIDENCE[instruction-exact]. ACK_TAB0. hal_he_set_ack_rate(0) publishes 0x00090a0b; complete dbg_read_ack_rate names its three byte lanes.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>QPSK_RATE</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>QAM16_RATE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>QPSK_RATE</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>QAM16_RATE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>ACK_CCK_RATE_TABLE</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG]; CONFIDENCE[instruction-exact]. ACK_TAB1. hal_he_set_ack_rate(0) publishes 0x00050100; complete dbg_read_ack_rate names the 1M, 2M and short-preamble 2M lanes.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>RATE_1M</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_2M</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_2M_SHORT_PREAMBLE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>RATE_1M</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_2M</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_2M_SHORT_PREAMBLE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>ACK_SCCK_RATE_TABLE</name>
@@ -3247,13 +3247,13 @@
           <name>CTS_RATE_TABLE</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG]; CONFIDENCE[instruction-exact]. CTS_TAB0. hal_he_set_ack_rate(0) publishes 0x00090a0b; complete dbg_read_cts_rate names its three byte lanes.</description>
           <addressOffset>0x0c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>QPSK_RATE</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>QAM16_RATE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>QPSK_RATE</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>QAM16_RATE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>CTS_CCK_RATE_TABLE</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_RESPONSE_RATE_DEBUG]; CONFIDENCE[instruction-exact]. CTS_TAB1. hal_he_set_ack_rate(0) publishes 0x00050100; complete dbg_read_cts_rate names the 1M, 2M and short-preamble 2M lanes.</description>
           <addressOffset>0x10</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>RATE_1M</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_2M</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_2M_SHORT_PREAMBLE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>RATE_1M</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_2M</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_2M_SHORT_PREAMBLE</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>CTS_SCCK_RATE_TABLE</name>
@@ -3265,19 +3265,19 @@
           <name>BB_RX_HANG_CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-partial]. Canonical multifunction word. hal_he_set_bbrxhung_time(0) replaces the low twelve bits with 0x00f; the direct mac_txrx_init suffix later sets bits 31 and 30 through two fresh-read RMWs.</description>
           <addressOffset>0x7d0</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>TIMEOUT_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field><field><name>TXRX_SUFFIX_SECOND_ENABLE_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field><field><name>TXRX_SUFFIX_FIRST_ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields><field><name>TIMEOUT_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint></field><field><name>TXRX_SUFFIX_SECOND_ENABLE_UNKNOWN</name><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field><field><name>TXRX_SUFFIX_FIRST_ENABLE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
         <register>
           <name>DELAY_SECONDARY</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT]; CONFIDENCE[instruction-exact-partial]. WDEVDELAY1. On-chip hal_he_set_mac_delay uses random slot 0..10 for bits 30:21, while complete phy_sifs_reg_init writes 0xea to that field.</description>
           <addressOffset>0x808</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>TX_CCK_DELAY</name><description>SOURCE[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG]; CONFIDENCE[instruction-exact].</description><bitOffset>10</bitOffset><bitWidth>11</bitWidth></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field></fields>
+          <fields><field><name>TX_CCK_DELAY</name><description>SOURCE[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG]; CONFIDENCE[instruction-exact].</description><bitOffset>10</bitOffset><bitWidth>11</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7ff</maximum></range></writeConstraint></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>DELAY_PRIMARY</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_CALLBACKS,BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG,ROM_REV0_PHY_SIFS_REG_INIT]; CONFIDENCE[instruction-exact-partial]. WDEVDELAY. On-chip hal_he_set_mac_delay performs separate RMWs for WDEV_RXCCK_DELAY, bits 9:0 and bits 30:21; complete phy_sifs_reg_init writes 0x3b8 and 0xf0 to the first two fields.</description>
           <addressOffset>0x80c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_DELAY_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth></field><field><name>RX_CCK_DELAY</name><description>SOURCE[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG]; CONFIDENCE[instruction-exact].</description><bitOffset>10</bitOffset><bitWidth>11</bitWidth></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth></field></fields>
+          <fields><field><name>LOW_DELAY_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field><field><name>RX_CCK_DELAY</name><description>SOURCE[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG]; CONFIDENCE[instruction-exact].</description><bitOffset>10</bitOffset><bitWidth>11</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7ff</maximum></range></writeConstraint></field><field><name>HIGH_DELAY_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -3296,25 +3296,25 @@
           <name>DEFAULT_IMAGE_A</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete suffix replaces the low twelve bits with 0x0f0.</description>
           <addressOffset>0x918</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>DEFAULT_IMAGE_B</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete suffix replaces the low twelve bits with 0x0f0.</description>
           <addressOffset>0x91c</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+          <fields><field><name>LOW_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>GATE_CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact]. Complete suffix sets bits 30:16 together, then sets bit 31 through a separate fresh-read edge.</description>
           <addressOffset>0x958</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_GATE_GROUP_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>15</bitWidth></field><field><name>HIGH_GATE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields><field><name>LOW_GATE_GROUP_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>15</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7fff</maximum></range></writeConstraint></field><field><name>HIGH_GATE_UNKNOWN</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
         <register>
           <name>FIELD_CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TXRX_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete suffix replaces bits 7:4 with four.</description>
           <addressOffset>0x9a0</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field></fields>
+          <fields><field><name>FIELD_UNKNOWN</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -4325,6 +4325,26 @@
              register="DISABLE_BITMAP"
              field="VALUE"
              source="BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"/>
+      <write name="mac_ack_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="ACK_RATE_TABLE"
+             fields="BPSK_RATE,QPSK_RATE,QAM16_RATE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_cts_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="CTS_RATE_TABLE"
+             fields="BPSK_RATE,QPSK_RATE,QAM16_RATE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_ack_cck_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="ACK_CCK_RATE_TABLE"
+             fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="mac_cts_cck_rate_table"
+             peripheral="WIFI_MAC_TXRX_CALLBACKS"
+             register="CTS_CCK_RATE_TABLE"
+             fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
+             source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

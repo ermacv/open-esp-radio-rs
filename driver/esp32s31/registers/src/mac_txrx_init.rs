@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the direct `mac_txrx_init` prefix.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -7,16 +9,15 @@ impl RadioRegisters {
     /// `phy_sifs_reg_init`.
     pub fn initialize_phy_wifi_sifs(&mut self) {
         let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
-        // SAFETY: all complete ROM literals fit their generated fields.
         callbacks
             .delay_secondary()
-            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0xea) });
+            .modify(|_, w| w.high_delay_unknown().set(0xea));
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.rx_cck_delay().bits(0x3b8) });
+            .modify(|_, w| w.rx_cck_delay().set(0x3b8));
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.low_delay_unknown().bits(0xf0) });
+            .modify(|_, w| w.low_delay_unknown().set(0xf0));
     }
 
     /// Apply all eighteen direct RMW edges before the first HE callback.
@@ -45,10 +46,18 @@ impl RadioRegisters {
             .modify(|_, w| w.init_clear_unknown().clear_bit());
 
         for queue in 0..4 {
-            // SAFETY: preserving the sampled low half and clearing the high
-            // half is the complete single RMW performed for each queue.
-            init.rx_queue_default(queue)
-                .modify(|r, w| unsafe { w.bits(r.bits() & 0x0000_ffff) });
+            init.rx_queue_default(queue).modify(|_, w| {
+                w.high_23_16_unknown()
+                    .set(0)
+                    .queue_bit_24_unknown()
+                    .clear_bit()
+                    .queue_bit_25_unknown()
+                    .clear_bit()
+                    .queue_bit_26_unknown()
+                    .clear_bit()
+                    .high_31_27_unknown()
+                    .set(0)
+            });
         }
         init.rx_queue_default(0)
             .modify(|_, w| w.queue_bit_24_unknown().set_bit());
@@ -67,12 +76,10 @@ impl RadioRegisters {
             .modify(|_, w| w.second_enable_unknown().set_bit());
         init.timing_control()
             .modify(|_, w| w.enable_unknown().set_bit());
-        // SAFETY: 0x1b is the complete eight-bit field image from the prefix.
         init.timing_control()
-            .modify(|_, w| unsafe { w.timing_image_unknown().bits(0x1b) });
-        // SAFETY: three is the complete two-bit set image.
+            .modify(|_, w| w.timing_image_unknown().set(0x1b));
         init.shared_enable_control()
-            .modify(|_, w| unsafe { w.enable_group_unknown().bits(3) });
+            .modify(|_, w| w.enable_group_unknown().set(3));
     }
 
     /// Apply the on-chip paths of all three HE callbacks in `mac_txrx_init`.
@@ -89,43 +96,29 @@ impl RadioRegisters {
         }
 
         let callbacks = &self.peripherals.wifi_mac_txrx_callbacks;
-        // SAFETY: all images fit their complete generated fields. Arithmetic
-        // bounds follow from the checked vendor slot range above.
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.rx_cck_delay().bits(0x3b9) });
+            .modify(|_, w| w.rx_cck_delay().set(0x3b9));
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.low_delay_unknown().bits(0xf5 + u16::from(delay_slot)) });
+            .modify(|_, w| w.low_delay_unknown().set(0xf5 + u16::from(delay_slot)));
         callbacks
             .delay_primary()
-            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0x5e) });
+            .modify(|_, w| w.high_delay_unknown().set(0x5e));
         callbacks
             .delay_secondary()
-            .modify(|_, w| unsafe { w.high_delay_unknown().bits(0xfa + u16::from(delay_slot)) });
+            .modify(|_, w| w.high_delay_unknown().set(0xfa + u16::from(delay_slot)));
         callbacks
             .delay_secondary()
-            .modify(|_, w| unsafe { w.tx_cck_delay().bits(0x276) });
+            .modify(|_, w| w.tx_cck_delay().set(0x276));
 
-        // SAFETY: each callback performs a complete full-word store; no reset
-        // value or unread field is used to construct these exact blob images.
-        unsafe {
-            callbacks
-                .ack_rate_table()
-                .write_with_zero(|w| w.bits(0x0009_0a0b));
-            callbacks
-                .cts_rate_table()
-                .write_with_zero(|w| w.bits(0x0009_0a0b));
-            callbacks
-                .ack_cck_rate_table()
-                .write_with_zero(|w| w.bits(0x0005_0100));
-            callbacks
-                .cts_cck_rate_table()
-                .write_with_zero(|w| w.bits(0x0005_0100));
-        }
+        super::svd::zero_based_field_write::mac_ack_rate_table(callbacks, 0x0b, 0x0a, 0x09, 0);
+        super::svd::zero_based_field_write::mac_cts_rate_table(callbacks, 0x0b, 0x0a, 0x09, 0);
+        super::svd::zero_based_field_write::mac_ack_cck_rate_table(callbacks, 0, 1, 5, 0);
+        super::svd::zero_based_field_write::mac_cts_cck_rate_table(callbacks, 0, 1, 5, 0);
         callbacks
             .bb_rx_hang_control()
-            .modify(|_, w| unsafe { w.timeout_unknown().bits(0x00f) });
+            .modify(|_, w| w.timeout_unknown().set(0x00f));
         true
     }
 
@@ -142,15 +135,13 @@ impl RadioRegisters {
             .bb_rx_hang_control()
             .modify(|_, w| w.txrx_suffix_second_enable_unknown().set_bit());
         let init = &self.peripherals.wifi_mac_txrx_suffix;
-        // SAFETY: both values fit their complete generated fields.
         init.default_image_a()
-            .modify(|_, w| unsafe { w.low_image_unknown().bits(0x0f0) });
+            .modify(|_, w| w.low_image_unknown().set(0x0f0));
         init.default_image_b()
-            .modify(|_, w| unsafe { w.low_image_unknown().bits(0x0f0) });
-        init.field_control()
-            .modify(|_, w| unsafe { w.field_unknown().bits(4) });
+            .modify(|_, w| w.low_image_unknown().set(0x0f0));
+        init.field_control().modify(|_, w| w.field_unknown().set(4));
         init.gate_control()
-            .modify(|_, w| unsafe { w.low_gate_group_unknown().bits(0x7fff) });
+            .modify(|_, w| w.low_gate_group_unknown().set(0x7fff));
         init.gate_control()
             .modify(|_, w| w.high_gate_unknown().set_bit());
         init.aux_enable()

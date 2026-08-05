@@ -22449,7 +22449,7 @@ pub mod wifi_mac_txrx_prefix {
         #[doc = "Field `HIGH_23_16_UNKNOWN` reader - "]
         pub type High23_16UnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_23_16_UNKNOWN` writer - "]
-        pub type High23_16UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type High23_16UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `QUEUE_BIT_24_UNKNOWN` reader - "]
         pub type QueueBit24UnknownR = crate::BitReader;
         #[doc = "Field `QUEUE_BIT_24_UNKNOWN` writer - "]
@@ -22465,7 +22465,7 @@ pub mod wifi_mac_txrx_prefix {
         #[doc = "Field `HIGH_31_27_UNKNOWN` reader - "]
         pub type High31_27UnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_31_27_UNKNOWN` writer - "]
-        pub type High31_27UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type High31_27UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 16:23"]
             #[inline(always)]
@@ -22597,7 +22597,7 @@ pub mod wifi_mac_txrx_prefix {
         #[doc = "Field `TIMING_IMAGE_UNKNOWN` reader - "]
         pub type TimingImageUnknownR = crate::FieldReader;
         #[doc = "Field `TIMING_IMAGE_UNKNOWN` writer - "]
-        pub type TimingImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TimingImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `ENABLE_UNKNOWN` reader - "]
         pub type EnableUnknownR = crate::BitReader;
         #[doc = "Field `ENABLE_UNKNOWN` writer - "]
@@ -22834,7 +22834,7 @@ pub mod wifi_mac_txrx_prefix {
         #[doc = "Field `ENABLE_GROUP_UNKNOWN` reader - "]
         pub type EnableGroupUnknownR = crate::FieldReader;
         #[doc = "Field `ENABLE_GROUP_UNKNOWN` writer - "]
-        pub type EnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type EnableGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -22947,19 +22947,19 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `BPSK_RATE` reader - "]
         pub type BpskRateR = crate::FieldReader;
         #[doc = "Field `BPSK_RATE` writer - "]
-        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `QPSK_RATE` reader - "]
         pub type QpskRateR = crate::FieldReader;
         #[doc = "Field `QPSK_RATE` writer - "]
-        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `QAM16_RATE` reader - "]
         pub type Qam16RateR = crate::FieldReader;
         #[doc = "Field `QAM16_RATE` writer - "]
-        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -23028,19 +23028,19 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `RATE_1M` reader - "]
         pub type Rate1mR = crate::FieldReader;
         #[doc = "Field `RATE_1M` writer - "]
-        pub type Rate1mW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate1mW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_2M` reader - "]
         pub type Rate2mR = crate::FieldReader;
         #[doc = "Field `RATE_2M` writer - "]
-        pub type Rate2mW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate2mW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_2M_SHORT_PREAMBLE` reader - "]
         pub type Rate2mShortPreambleR = crate::FieldReader;
         #[doc = "Field `RATE_2M_SHORT_PREAMBLE` writer - "]
-        pub type Rate2mShortPreambleW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate2mShortPreambleW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -23192,19 +23192,19 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `BPSK_RATE` reader - "]
         pub type BpskRateR = crate::FieldReader;
         #[doc = "Field `BPSK_RATE` writer - "]
-        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `QPSK_RATE` reader - "]
         pub type QpskRateR = crate::FieldReader;
         #[doc = "Field `QPSK_RATE` writer - "]
-        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `QAM16_RATE` reader - "]
         pub type Qam16RateR = crate::FieldReader;
         #[doc = "Field `QAM16_RATE` writer - "]
-        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -23273,19 +23273,19 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `RATE_1M` reader - "]
         pub type Rate1mR = crate::FieldReader;
         #[doc = "Field `RATE_1M` writer - "]
-        pub type Rate1mW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate1mW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_2M` reader - "]
         pub type Rate2mR = crate::FieldReader;
         #[doc = "Field `RATE_2M` writer - "]
-        pub type Rate2mW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate2mW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_2M_SHORT_PREAMBLE` reader - "]
         pub type Rate2mShortPreambleR = crate::FieldReader;
         #[doc = "Field `RATE_2M_SHORT_PREAMBLE` writer - "]
-        pub type Rate2mShortPreambleW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate2mShortPreambleW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -23437,7 +23437,7 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `TIMEOUT_UNKNOWN` reader - "]
         pub type TimeoutUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `TIMEOUT_UNKNOWN` writer - "]
-        pub type TimeoutUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type TimeoutUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         #[doc = "Field `TXRX_SUFFIX_SECOND_ENABLE_UNKNOWN` reader - "]
         pub type TxrxSuffixSecondEnableUnknownR = crate::BitReader;
         #[doc = "Field `TXRX_SUFFIX_SECOND_ENABLE_UNKNOWN` writer - "]
@@ -23508,11 +23508,11 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `TX_CCK_DELAY` reader - SOURCE\\[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
         pub type TxCckDelayR = crate::FieldReader<u16>;
         #[doc = "Field `TX_CCK_DELAY` writer - SOURCE\\[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
-        pub type TxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type TxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `HIGH_DELAY_UNKNOWN` reader - "]
         pub type HighDelayUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_DELAY_UNKNOWN` writer - "]
-        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 10:20 - SOURCE\\[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
             #[inline(always)]
@@ -23561,15 +23561,15 @@ pub mod wifi_mac_txrx_callbacks {
         #[doc = "Field `LOW_DELAY_UNKNOWN` reader - "]
         pub type LowDelayUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_DELAY_UNKNOWN` writer - "]
-        pub type LowDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type LowDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `RX_CCK_DELAY` reader - SOURCE\\[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
         pub type RxCckDelayR = crate::FieldReader<u16>;
         #[doc = "Field `RX_CCK_DELAY` writer - SOURCE\\[BLOB_LIBPP_HAL_WDEV_DELAY_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
-        pub type RxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type RxCckDelayW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `HIGH_DELAY_UNKNOWN` reader - "]
         pub type HighDelayUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_DELAY_UNKNOWN` writer - "]
-        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type HighDelayUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:9"]
             #[inline(always)]
@@ -23732,7 +23732,7 @@ pub mod wifi_mac_txrx_suffix {
         #[doc = "Field `LOW_IMAGE_UNKNOWN` reader - "]
         pub type LowImageUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_IMAGE_UNKNOWN` writer - "]
-        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -23771,7 +23771,7 @@ pub mod wifi_mac_txrx_suffix {
         #[doc = "Field `LOW_IMAGE_UNKNOWN` reader - "]
         pub type LowImageUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_IMAGE_UNKNOWN` writer - "]
-        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type LowImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -23810,7 +23810,7 @@ pub mod wifi_mac_txrx_suffix {
         #[doc = "Field `LOW_GATE_GROUP_UNKNOWN` reader - "]
         pub type LowGateGroupUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_GATE_GROUP_UNKNOWN` writer - "]
-        pub type LowGateGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        pub type LowGateGroupUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16, crate::Safe>;
         #[doc = "Field `HIGH_GATE_UNKNOWN` reader - "]
         pub type HighGateUnknownR = crate::BitReader;
         #[doc = "Field `HIGH_GATE_UNKNOWN` writer - "]
@@ -23863,7 +23863,7 @@ pub mod wifi_mac_txrx_suffix {
         #[doc = "Field `FIELD_UNKNOWN` reader - "]
         pub type FieldUnknownR = crate::FieldReader;
         #[doc = "Field `FIELD_UNKNOWN` writer - "]
-        pub type FieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type FieldUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 4:7"]
             #[inline(always)]
@@ -31524,6 +31524,114 @@ pub mod zero_based_field_write {
             registers
                 .disable_bitmap()
                 .write_with_zero(|writer| writer.value().set(value));
+        }
+    }
+
+    /// Write `BPSK_RATE`, `QPSK_RATE`, `QAM16_RATE`, `HIGH_UNKNOWN` in `WIFI_MAC_TXRX_CALLBACKS`.`ACK_RATE_TABLE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_ack_rate_table(
+        registers: &crate::WifiMacTxrxCallbacks,
+        bpsk_rate_value: u8,
+        qpsk_rate_value: u8,
+        qam16_rate_value: u8,
+        high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.ack_rate_table().write_with_zero(|writer| {
+                writer
+                    .bpsk_rate()
+                    .set(bpsk_rate_value)
+                    .qpsk_rate()
+                    .set(qpsk_rate_value)
+                    .qam16_rate()
+                    .set(qam16_rate_value)
+                    .high_unknown()
+                    .set(high_unknown_value)
+            });
+        }
+    }
+
+    /// Write `BPSK_RATE`, `QPSK_RATE`, `QAM16_RATE`, `HIGH_UNKNOWN` in `WIFI_MAC_TXRX_CALLBACKS`.`CTS_RATE_TABLE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_cts_rate_table(
+        registers: &crate::WifiMacTxrxCallbacks,
+        bpsk_rate_value: u8,
+        qpsk_rate_value: u8,
+        qam16_rate_value: u8,
+        high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.cts_rate_table().write_with_zero(|writer| {
+                writer
+                    .bpsk_rate()
+                    .set(bpsk_rate_value)
+                    .qpsk_rate()
+                    .set(qpsk_rate_value)
+                    .qam16_rate()
+                    .set(qam16_rate_value)
+                    .high_unknown()
+                    .set(high_unknown_value)
+            });
+        }
+    }
+
+    /// Write `RATE_1M`, `RATE_2M`, `RATE_2M_SHORT_PREAMBLE`, `HIGH_UNKNOWN` in `WIFI_MAC_TXRX_CALLBACKS`.`ACK_CCK_RATE_TABLE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_ack_cck_rate_table(
+        registers: &crate::WifiMacTxrxCallbacks,
+        rate_1m_value: u8,
+        rate_2m_value: u8,
+        rate_2m_short_preamble_value: u8,
+        high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.ack_cck_rate_table().write_with_zero(|writer| {
+                writer
+                    .rate_1m()
+                    .set(rate_1m_value)
+                    .rate_2m()
+                    .set(rate_2m_value)
+                    .rate_2m_short_preamble()
+                    .set(rate_2m_short_preamble_value)
+                    .high_unknown()
+                    .set(high_unknown_value)
+            });
+        }
+    }
+
+    /// Write `RATE_1M`, `RATE_2M`, `RATE_2M_SHORT_PREAMBLE`, `HIGH_UNKNOWN` in `WIFI_MAC_TXRX_CALLBACKS`.`CTS_CCK_RATE_TABLE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_cts_cck_rate_table(
+        registers: &crate::WifiMacTxrxCallbacks,
+        rate_1m_value: u8,
+        rate_2m_value: u8,
+        rate_2m_short_preamble_value: u8,
+        high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.cts_cck_rate_table().write_with_zero(|writer| {
+                writer
+                    .rate_1m()
+                    .set(rate_1m_value)
+                    .rate_2m()
+                    .set(rate_2m_value)
+                    .rate_2m_short_preamble()
+                    .set(rate_2m_short_preamble_value)
+                    .high_unknown()
+                    .set(high_unknown_value)
+            });
         }
     }
 }

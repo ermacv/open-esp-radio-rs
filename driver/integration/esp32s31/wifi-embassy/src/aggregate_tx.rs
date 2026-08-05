@@ -6,9 +6,12 @@
 //! contention state, power profile and clock through
 //! [`Esp32s31SingleMpduTx`]; no parallel HIL TX state exists.
 
+#![allow(unsafe_code, reason = "referenced TX DMA ownership boundary")]
+
 use core::{
     future::Future,
-    mem::{self, ManuallyDrop},
+    mem,
+    ops::{Deref, DerefMut},
     pin::Pin,
 };
 
@@ -146,6 +149,42 @@ enum ConnectedTxActive<const SLOTS: usize> {
     Aggregate(AggregateActive<SLOTS>),
 }
 
+struct TeardownResource<T>(Option<T>);
+
+impl<T> TeardownResource<T> {
+    fn new(resource: T) -> Self {
+        Self(Some(resource))
+    }
+
+    fn take(&mut self) -> T {
+        self.0
+            .take()
+            .expect("connected TX resource exists until successful teardown")
+    }
+
+    fn is_present(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
+impl<T> Deref for TeardownResource<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+            .as_ref()
+            .expect("connected TX resource is present while the owner is usable")
+    }
+}
+
+impl<T> DerefMut for TeardownResource<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0
+            .as_mut()
+            .expect("connected TX resource is present while the owner is usable")
+    }
+}
+
 /// Unique connected TX owner for ordinary frames and referenced A-MPDU.
 pub struct Esp32s31ConnectedTx<
     'slot,
@@ -163,8 +202,8 @@ pub struct Esp32s31ConnectedTx<
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
 > {
-    ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-    ampdu: Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+    ordinary: TeardownResource<Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>>,
+    ampdu: TeardownResource<Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>>,
     frames: [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
         SLOTS],
     held_frames: usize,
@@ -240,8 +279,8 @@ where
             ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
         Ok(Self {
-            ordinary,
-            ampdu,
+            ordinary: TeardownResource::new(ordinary),
+            ampdu: TeardownResource::new(ampdu),
             frames: [const { None }; SLOTS],
             held_frames: 0,
             cookie: None,
@@ -334,7 +373,7 @@ where
     /// unknowable to an outer reconnect owner.
     #[allow(clippy::result_large_err)]
     pub fn try_into_parts(
-        self,
+        mut self,
     ) -> Result<
         (
             Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
@@ -350,19 +389,9 @@ where
         {
             return Err(self);
         }
-        let owner = ManuallyDrop::new(self);
-        // SAFETY: the checks above prove the Drop implementation has no
-        // pinned network lease or aggregate transaction to release. Reading
-        // these two fields transfers their ownership exactly once; the
-        // remaining fields contain only Copy policy/diagnostic state or an
-        // all-None frame array, so intentionally suppressing their drop does
-        // not leak an owned resource.
-        unsafe {
-            Ok((
-                core::ptr::read(&owner.ordinary),
-                core::ptr::read(&owner.ampdu),
-            ))
-        }
+        let ordinary = self.ordinary.take();
+        let ampdu = self.ampdu.take();
+        Ok((ordinary, ampdu))
     }
 
     /// Return every idle connected-TX resource needed by station teardown.
@@ -1365,9 +1394,7 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let tx = Esp32s31ConnectedTx::<
             NoopRawMutex,
             _,
@@ -1382,7 +1409,7 @@ mod tests {
             TEST_BUFFER_SIZE,
         >::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1411,13 +1438,11 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let counters = AggregateTxCounters::new();
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
                 frame_limit: TEST_SLOTS as u8,
@@ -1473,13 +1498,11 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<2_048>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let counters = AggregateTxCounters::new();
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
                 frame_limit: TEST_SLOTS as u8,
@@ -1511,12 +1534,10 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1578,12 +1599,10 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1652,12 +1671,10 @@ mod tests {
         let mut hardware = Hardware::default();
         let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
-        let mut ampdu_backing = HtAmpduTxStorage::<TEST_SLOTS, 0>::new();
-        // SAFETY: the stack allocation is not moved while `tx` owns the pin.
-        let ampdu = unsafe { Pin::new_unchecked(&mut ampdu_backing) };
+        let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu,
+            ampdu.as_mut(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1922,6 +1939,9 @@ where
     T: WifiTxTimer,
 {
     fn drop(&mut self) {
+        if !self.ordinary.is_present() || !self.ampdu.is_present() {
+            return;
+        }
         match self.ampdu.state() {
             TxSlotState::Free => self.release_frames(),
             TxSlotState::Reserved => {

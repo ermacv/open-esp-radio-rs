@@ -1,5 +1,7 @@
 //! Safe ownership bridge from pinned `embassy-net` frames to S31 TX DMA.
 
+#![allow(unsafe_code, reason = "referenced TX DMA ownership boundary")]
+
 use core::{mem, pin::Pin};
 
 use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
@@ -515,10 +517,7 @@ impl<
 
 #[cfg(test)]
 mod tests {
-    use core::{
-        pin::Pin,
-        task::{Context, Waker},
-    };
+    use core::task::{Context, Waker};
 
     use open_esp_radio_embassy_net::{
         Driver as _, NoopRawMutex, PinnedResources, PinnedTxPool, TxToken as _,
@@ -602,11 +601,8 @@ mod tests {
         send_test_frame(&mut device, 1);
         send_test_frame(&mut device, 2);
 
-        let mut tx_storage_backing = HtAmpduTxStorage::<2, 0>::new();
-        // SAFETY: the local storage does not move while the batch owns this
-        // pin, and this test never publishes a hardware descriptor.
-        let tx_storage = unsafe { Pin::new_unchecked(&mut tx_storage_backing) };
-        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage).unwrap();
+        let mut tx_storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
+        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage.as_mut()).unwrap();
         for sequence_number in [10, 11] {
             let frame = radio.try_receive_tx().unwrap();
             let encoded = batch
@@ -633,7 +629,7 @@ mod tests {
         assert!(device.transmit(&mut context()).is_none());
 
         drop(batch);
-        assert_eq!(tx_storage_backing.state(), TxSlotState::Free);
+        assert_eq!(tx_storage.as_ref().state(), TxSlotState::Free);
         assert!(device.transmit(&mut context()).is_some());
     }
 
@@ -650,11 +646,8 @@ mod tests {
         send_test_frame(&mut device, 1);
 
         let frame = radio.try_receive_tx().unwrap();
-        let mut tx_storage_backing = HtAmpduTxStorage::<2, 0>::new();
-        // SAFETY: no descriptor is published, and the pinned storage remains
-        // stationary until the batch cancels on drop.
-        let tx_storage = unsafe { Pin::new_unchecked(&mut tx_storage_backing) };
-        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage).unwrap();
+        let mut tx_storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
+        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage.as_mut()).unwrap();
         let rate = HeRate::bcc_dcm(
             open_esp_radio_esp32s31_wifi_lmac::tx::HeBccDcmMcs::Mcs0,
             open_esp_radio_esp32s31_wifi_lmac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
@@ -697,7 +690,7 @@ mod tests {
         );
         assert_eq!(batch.prepared_aggregate().unwrap().subframes, 1);
         drop(batch);
-        assert_eq!(tx_storage_backing.state(), TxSlotState::Free);
+        assert_eq!(tx_storage.as_ref().state(), TxSlotState::Free);
     }
 
     #[test]
@@ -715,11 +708,8 @@ mod tests {
 
         let first = radio.try_receive_tx().unwrap();
         let second = radio.try_receive_tx().unwrap();
-        let mut tx_storage_backing = HtAmpduTxStorage::<2, 0>::new();
-        // SAFETY: the local storage does not move while the batch owns this
-        // pin, and this test never publishes a hardware descriptor.
-        let tx_storage = unsafe { Pin::new_unchecked(&mut tx_storage_backing) };
-        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage).unwrap();
+        let mut tx_storage = core::pin::pin!(HtAmpduTxStorage::<2, 0>::new());
+        let mut batch = ReferencedHtAmpduBatch::begin(tx_storage.as_mut()).unwrap();
         let encoded = batch
             .push_ht_amsdu_pair(
                 first,
@@ -750,7 +740,7 @@ mod tests {
         drop(recycled_second);
 
         drop(batch);
-        assert_eq!(tx_storage_backing.state(), TxSlotState::Free);
+        assert_eq!(tx_storage.as_ref().state(), TxSlotState::Free);
         send_test_frame(&mut device, 3);
         send_test_frame(&mut device, 4);
         assert!(radio.try_receive_tx().is_some());

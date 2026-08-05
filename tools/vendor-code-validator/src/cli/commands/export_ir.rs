@@ -110,7 +110,7 @@ fn provenance_summary(report: &LinkedIrReport) -> (usize, usize, usize, usize) {
     )
 }
 
-fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize) {
+fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize, usize, usize) {
     let registers = report
         .mmio_registers
         .iter()
@@ -121,12 +121,23 @@ fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize) {
         .iter()
         .map(|register| register.field_candidates.len())
         .sum();
-    (registers, candidates)
+    let direct_predicates = report
+        .functions
+        .iter()
+        .map(|function| function.direct_mmio_predicates.len())
+        .sum();
+    let direct_sources = report
+        .functions
+        .iter()
+        .flat_map(|function| &function.direct_mmio_predicates)
+        .map(|predicate| predicate.sources.len())
+        .sum();
+    (registers, candidates, direct_predicates, direct_sources)
 }
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-mmio-linkage=direct-producer-return-bit-intersection\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-mmio-linkage=direct-producer-return-bit-intersection\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -212,6 +223,29 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                     .map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}")),
                 source.register.as_deref().unwrap_or("-"),
             );
+        }
+        for predicate in &function.direct_mmio_predicates {
+            for source in &predicate.sources {
+                let optional_hex = |value: Option<u32>| {
+                    value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
+                };
+                println!(
+                    "MMIO-PREDICATE\t{}\tsite={:#010x}\toperation={}\tcondition={}\toperand={}\tread-token={}\t{:#010x}\tregister={}\tvalue-bits={:#010x}\tregister-bits={:#010x}\tinverted={}\tcomparison-value={}\tregister-comparison-value={}",
+                    function.identity,
+                    predicate.site,
+                    predicate.operation,
+                    predicate.condition,
+                    source.operand,
+                    source.read_token,
+                    source.address,
+                    source.register,
+                    source.value_bits,
+                    source.register_bits,
+                    source.inverted,
+                    optional_hex(source.comparison_value),
+                    optional_hex(source.register_comparison_value),
+                );
+            }
         }
         for call in &function.calls {
             let site = call
@@ -649,6 +683,30 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 candidate.semantic_operations.join("|"),
                 candidate.semantic_roots.join(","),
             );
+            for evidence in &candidate.predicate_evidence {
+                let optional_hex = |value: Option<u32>| {
+                    value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
+                };
+                println!(
+                    "MMIO-FIELD-PREDICATE\t{:#010x}\tbits={}-{}\tkind={}\tfunction={}\tproducer={}\tsite={}\tpath={}\tcondition={}\toperation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
+                    register.address,
+                    candidate.least_significant_bit,
+                    candidate.most_significant_bit,
+                    evidence.kind,
+                    evidence.function,
+                    evidence.producer.as_deref().unwrap_or("-"),
+                    evidence
+                        .site
+                        .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}")),
+                    evidence.path.as_deref().unwrap_or("-"),
+                    evidence.condition,
+                    evidence.operation,
+                    evidence.operand.unwrap_or("-"),
+                    optional_hex(evidence.comparison_value),
+                    optional_hex(evidence.register_comparison_value),
+                    evidence.inverted,
+                );
+            }
         }
     }
     for boundary in &report.semantic_boundaries {
@@ -703,9 +761,14 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
     let included_reachable_functions = report.functions.len() - root_functions;
     let (exact_return_functions, return_source_ranges, mmio_return_sources, guard_mmio_links) =
         provenance_summary(report);
-    let (mmio_field_candidate_registers, mmio_field_candidates) = field_candidate_summary(report);
+    let (
+        mmio_field_candidate_registers,
+        mmio_field_candidates,
+        direct_mmio_predicates,
+        direct_mmio_predicate_sources,
+    ) = field_candidate_summary(report);
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdirect-mmio-predicates={}\tdirect-mmio-predicate-sources={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -717,6 +780,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
         report.mmio_access_shapes,
         mmio_field_candidate_registers,
         mmio_field_candidates,
+        direct_mmio_predicates,
+        direct_mmio_predicate_sources,
         report.delay_functions,
         report.delay_shapes,
         report.context_functions,
@@ -806,6 +871,25 @@ fn write_pseudo(
                     "//   GUARDED-SEMANTICS: {} (roots: {})",
                     candidate.semantic_operations.join(" | "),
                     candidate.semantic_roots.join(" | ")
+                )
+                .expect("writing to String cannot fail");
+            }
+            for evidence in &candidate.predicate_evidence {
+                writeln!(
+                    output,
+                    "//   PREDICATE: kind={} function={} condition=({}) operation={} comparison={} register-value={}{}",
+                    evidence.kind,
+                    evidence.function,
+                    evidence.condition,
+                    evidence.operation,
+                    evidence
+                        .comparison_value
+                        .map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}")),
+                    evidence.register_comparison_value.map_or_else(
+                        || "-".to_owned(),
+                        |value| format!("{value:#010x}")
+                    ),
+                    if evidence.inverted { " inverted" } else { "" },
                 )
                 .expect("writing to String cannot fail");
             }
@@ -909,6 +993,23 @@ fn write_pseudo(
                             )
                             .expect("writing to String cannot fail");
                         }
+                        for (site, condition, operation, taken, mmio) in
+                            guard_direct_mmio_links(&scope.paths)
+                        {
+                            writeln!(
+                                output,
+                                "//     DIRECT-MMIO-PREDICATE: {}@{:#010x} register-bits={:#010x} site={:#010x} operation={} taken={} condition=({}){}",
+                                mmio.register,
+                                mmio.address,
+                                mmio.register_bits,
+                                site,
+                                operation,
+                                taken,
+                                condition,
+                                if mmio.inverted { " inverted" } else { "" },
+                            )
+                            .expect("writing to String cannot fail");
+                        }
                     }
                 }
                 None => output.push_str("//   when: unknown (CFG guard unavailable)\n"),
@@ -1008,6 +1109,30 @@ fn write_pseudo(
             )
             .expect("writing to String cannot fail");
         }
+        for predicate in &function.direct_mmio_predicates {
+            for source in &predicate.sources {
+                writeln!(
+                    output,
+                    "// DIRECT-MMIO-PREDICATE: {}@{:#010x} bits={:#010x} site={:#010x} operation={} operand={} comparison={} register-value={} condition=({}){}",
+                    source.register,
+                    source.address,
+                    source.register_bits,
+                    predicate.site,
+                    predicate.operation,
+                    source.operand,
+                    source
+                        .comparison_value
+                        .map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}")),
+                    source.register_comparison_value.map_or_else(
+                        || "-".to_owned(),
+                        |value| format!("{value:#010x}")
+                    ),
+                    predicate.condition,
+                    if source.inverted { " inverted" } else { "" },
+                )
+                .expect("writing to String cannot fail");
+            }
+        }
         output.push_str(&function.pseudo);
         output.push('\n');
     }
@@ -1086,6 +1211,34 @@ fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<(String, LinkedCallGua
         .collect()
 }
 
+type DirectMmioGuardLink = (
+    u32,
+    String,
+    &'static str,
+    bool,
+    LinkedDirectMmioPredicateSource,
+);
+
+fn guard_direct_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<DirectMmioGuardLink> {
+    paths
+        .iter()
+        .flat_map(|path| &path.guards)
+        .flat_map(|guard| {
+            guard.direct_mmio_sources.iter().cloned().map(|source| {
+                (
+                    guard.site,
+                    guard.condition.clone(),
+                    guard.operation,
+                    guard.taken,
+                    source,
+                )
+            })
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 fn write_return_provenance(output: &mut String, provenance: &LinkedReturnProvenance) {
     write!(
         output,
@@ -1135,6 +1288,28 @@ fn write_return_provenance(output: &mut String, provenance: &LinkedReturnProvena
     output.push_str("]}");
 }
 
+fn write_direct_mmio_source(output: &mut String, source: &LinkedDirectMmioPredicateSource) {
+    output.push_str("{\"operand\": ");
+    write_string(output, source.operand);
+    write!(
+        output,
+        ", \"read_token\": {}, \"address\": \"{:#010x}\", \"register\": ",
+        source.read_token, source.address
+    )
+    .expect("writing to String cannot fail");
+    write_string(output, &source.register);
+    write!(
+        output,
+        ", \"value_bits\": \"{:#010x}\", \"register_bits\": \"{:#010x}\", \"inverted\": {}, \"comparison_value\": ",
+        source.value_bits, source.register_bits, source.inverted,
+    )
+    .expect("writing to String cannot fail");
+    write_optional_hex(output, source.comparison_value);
+    output.push_str(", \"register_comparison_value\": ");
+    write_optional_hex(output, source.register_comparison_value);
+    output.push('}');
+}
+
 fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>) {
     let Some(paths) = paths else {
         output.push_str("null");
@@ -1159,6 +1334,8 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
             )
             .expect("writing to String cannot fail");
             write_string(output, &guard.condition);
+            output.push_str(", \"operation\": ");
+            write_string(output, guard.operation);
             write!(
                 output,
                 ", \"taken\": {}, \"result_sources\": [",
@@ -1207,6 +1384,13 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
                     .expect("writing to String cannot fail");
                 }
                 output.push_str("]}");
+            }
+            output.push_str("], \"direct_mmio_sources\": [");
+            for (source_index, source) in guard.direct_mmio_sources.iter().enumerate() {
+                if source_index != 0 {
+                    output.push_str(", ");
+                }
+                write_direct_mmio_source(output, source);
             }
             output.push_str("]}");
         }
@@ -1375,7 +1559,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 24,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 25,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1432,6 +1616,10 @@ fn write_json_report(
     output.push_str(
         "  \"mmio_field_candidate_mode\": \"contiguous-subregister-write-poll-and-direct-guard-evidence\",\n",
     );
+    output.push_str(
+        "  \"direct_mmio_predicate_mode\": \"exact-bit-provenance-with-constant-comparison-mapping\",\n",
+    );
+    output.push_str("  \"direct_mmio_predicate_completeness_claim\": false,\n");
     output.push_str("  \"mmio_field_semantics_claim\": false,\n");
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
@@ -1465,10 +1653,15 @@ fn write_json_report(
     let included_reachable_functions = report.functions.len() - root_functions;
     let (exact_return_functions, return_source_ranges, mmio_return_sources, guard_mmio_links) =
         provenance_summary(report);
-    let (mmio_field_candidate_registers, mmio_field_candidates) = field_candidate_summary(report);
+    let (
+        mmio_field_candidate_registers,
+        mmio_field_candidates,
+        direct_mmio_predicates,
+        direct_mmio_predicate_sources,
+    ) = field_candidate_summary(report);
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"root_functions\": {}, \"included_reachable_functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"mmio_field_candidate_registers\": {}, \"mmio_field_candidates\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}, \"exact_return_functions\": {}, \"return_source_ranges\": {}, \"mmio_return_sources\": {}, \"guard_mmio_links\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"root_functions\": {}, \"included_reachable_functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"mmio_field_candidate_registers\": {}, \"mmio_field_candidates\": {}, \"direct_mmio_predicates\": {}, \"direct_mmio_predicate_sources\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}, \"exact_return_functions\": {}, \"return_source_ranges\": {}, \"mmio_return_sources\": {}, \"guard_mmio_links\": {}}},",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -1480,6 +1673,8 @@ fn write_json_report(
         report.mmio_access_shapes,
         mmio_field_candidate_registers,
         mmio_field_candidates,
+        direct_mmio_predicates,
+        direct_mmio_predicate_sources,
         report.delay_functions,
         report.delay_shapes,
         report.context_functions,
@@ -1592,6 +1787,35 @@ fn write_json_report(
             write_strings(&mut output, &candidate.access_functions);
             output.push_str(", \"predicate_functions\": ");
             write_strings(&mut output, &candidate.predicate_functions);
+            output.push_str(", \"predicate_evidence\": [");
+            for (evidence_index, evidence) in candidate.predicate_evidence.iter().enumerate() {
+                if evidence_index != 0 {
+                    output.push_str(", ");
+                }
+                output.push_str("{\"kind\": ");
+                write_string(&mut output, evidence.kind);
+                output.push_str(", \"function\": ");
+                write_string(&mut output, &evidence.function);
+                output.push_str(", \"producer\": ");
+                write_optional_string(&mut output, evidence.producer.as_deref());
+                output.push_str(", \"site\": ");
+                write_optional_hex(&mut output, evidence.site);
+                output.push_str(", \"path\": ");
+                write_optional_string(&mut output, evidence.path.as_deref());
+                output.push_str(", \"condition\": ");
+                write_string(&mut output, &evidence.condition);
+                output.push_str(", \"operation\": ");
+                write_string(&mut output, evidence.operation);
+                output.push_str(", \"operand\": ");
+                write_optional_string(&mut output, evidence.operand);
+                output.push_str(", \"comparison_value\": ");
+                write_optional_hex(&mut output, evidence.comparison_value);
+                output.push_str(", \"register_comparison_value\": ");
+                write_optional_hex(&mut output, evidence.register_comparison_value);
+                write!(output, ", \"inverted\": {}}}", evidence.inverted)
+                    .expect("writing to String cannot fail");
+            }
+            output.push(']');
             output.push_str(", \"semantic_operations\": ");
             write_strings(&mut output, &candidate.semantic_operations);
             output.push_str(", \"semantic_roots\": ");
@@ -1771,6 +1995,29 @@ fn write_json_report(
             }
             output.push(']');
             output.push('}');
+        }
+        output.push_str("], \"direct_mmio_predicates\": [");
+        for (predicate_index, predicate) in function.direct_mmio_predicates.iter().enumerate() {
+            if predicate_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"site\": \"{:#010x}\", \"condition\": ",
+                predicate.site
+            )
+            .expect("writing to String cannot fail");
+            write_string(&mut output, &predicate.condition);
+            output.push_str(", \"operation\": ");
+            write_string(&mut output, predicate.operation);
+            output.push_str(", \"sources\": [");
+            for (source_index, source) in predicate.sources.iter().enumerate() {
+                if source_index != 0 {
+                    output.push_str(", ");
+                }
+                write_direct_mmio_source(&mut output, source);
+            }
+            output.push_str("]}");
         }
         output.push_str("], \"mmio_accesses\": [");
         for (access_index, access) in function.mmio_accesses.iter().enumerate() {

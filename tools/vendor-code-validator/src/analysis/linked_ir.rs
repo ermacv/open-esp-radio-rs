@@ -105,11 +105,34 @@ pub(crate) struct LinkedCallGuardResultSource {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedDirectMmioPredicateSource {
+    pub(crate) operand: &'static str,
+    pub(crate) read_token: u32,
+    pub(crate) address: u32,
+    pub(crate) register: String,
+    pub(crate) value_bits: u32,
+    pub(crate) register_bits: u32,
+    pub(crate) inverted: bool,
+    pub(crate) comparison_value: Option<u32>,
+    pub(crate) register_comparison_value: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedDirectMmioPredicate {
+    pub(crate) site: u32,
+    pub(crate) condition: String,
+    pub(crate) operation: &'static str,
+    pub(crate) sources: Vec<LinkedDirectMmioPredicateSource>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCallGuard {
     pub(crate) site: u32,
     pub(crate) condition: String,
+    pub(crate) operation: &'static str,
     pub(crate) taken: bool,
     pub(crate) result_sources: Vec<LinkedCallGuardResultSource>,
+    pub(crate) direct_mmio_sources: Vec<LinkedDirectMmioPredicateSource>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -214,8 +237,24 @@ pub(crate) struct LinkedMmioFieldCandidate {
     pub(crate) functions: Vec<String>,
     pub(crate) access_functions: Vec<String>,
     pub(crate) predicate_functions: Vec<String>,
+    pub(crate) predicate_evidence: Vec<LinkedMmioFieldPredicateEvidence>,
     pub(crate) semantic_operations: Vec<String>,
     pub(crate) semantic_roots: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedMmioFieldPredicateEvidence {
+    pub(crate) kind: &'static str,
+    pub(crate) function: String,
+    pub(crate) producer: Option<String>,
+    pub(crate) site: Option<u32>,
+    pub(crate) path: Option<String>,
+    pub(crate) condition: String,
+    pub(crate) operation: &'static str,
+    pub(crate) operand: Option<&'static str>,
+    pub(crate) comparison_value: Option<u32>,
+    pub(crate) register_comparison_value: Option<u32>,
+    pub(crate) inverted: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -391,6 +430,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) return_provenance: LinkedReturnProvenance,
     pub(crate) dependencies: Vec<String>,
     pub(crate) calls: Vec<LinkedCall>,
+    pub(crate) direct_mmio_predicates: Vec<LinkedDirectMmioPredicate>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,
     pub(crate) delays: Vec<LinkedDelay>,
     pub(crate) context_accesses: Vec<ContextAccess>,
@@ -921,6 +961,17 @@ fn direct_semantic_typed_arguments(
             }
         })
         .collect()
+}
+
+fn branch_operation(operation: BranchOperation) -> &'static str {
+    match operation {
+        BranchOperation::Equal => "equal",
+        BranchOperation::NotEqual => "not-equal",
+        BranchOperation::LessSigned => "less-signed",
+        BranchOperation::GreaterEqualSigned => "greater-equal-signed",
+        BranchOperation::LessUnsigned => "less-unsigned",
+        BranchOperation::GreaterEqualUnsigned => "greater-equal-unsigned",
+    }
 }
 
 fn branch_expression(condition: &BranchCondition) -> String {
@@ -1455,23 +1506,40 @@ fn collect_call_event(
 #[derive(Default)]
 struct DirectCallGraph {
     calls: BTreeSet<LinkedCall>,
+    direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
     blockers: BTreeSet<String>,
 }
 
-type DirectGuardState = BTreeMap<(u32, String), (bool, Vec<LinkedCallGuardResultSource>)>;
+#[derive(Clone)]
+struct DirectGuardEvidence {
+    taken: bool,
+    operation: &'static str,
+    result_sources: Vec<LinkedCallGuardResultSource>,
+    direct_mmio_sources: Vec<LinkedDirectMmioPredicateSource>,
+}
+
+type DirectGuardState = BTreeMap<(u32, String), DirectGuardEvidence>;
+
+#[derive(Default)]
+struct DirectTraceEvidence {
+    guards: DirectGuardState,
+    call_results: BTreeMap<u32, String>,
+    calls: BTreeSet<LinkedCall>,
+    direct_mmio_predicates: BTreeSet<LinkedDirectMmioPredicate>,
+}
 
 fn current_guard_path(guards: &DirectGuardState) -> LinkedCallGuardPath {
     LinkedCallGuardPath {
         guards: guards
             .iter()
-            .map(
-                |((site, condition), (taken, result_sources))| LinkedCallGuard {
-                    site: *site,
-                    condition: condition.clone(),
-                    taken: *taken,
-                    result_sources: result_sources.clone(),
-                },
-            )
+            .map(|((site, condition), evidence)| LinkedCallGuard {
+                site: *site,
+                condition: condition.clone(),
+                operation: evidence.operation,
+                taken: evidence.taken,
+                result_sources: evidence.result_sources.clone(),
+                direct_mmio_sources: evidence.direct_mmio_sources.clone(),
+            })
             .collect(),
     }
 }
@@ -1535,6 +1603,99 @@ fn guard_result_sources(
             mmio_sources: Vec::new(),
         })
         .collect()
+}
+
+#[derive(Default)]
+struct DirectMmioSourceAccumulator {
+    value_bits: u32,
+    register_bits: u32,
+    comparison_known_bits: u32,
+    comparison_one_bits: u32,
+    comparison_conflict: bool,
+}
+
+fn direct_mmio_operand_sources(
+    value: &SymbolicValue,
+    operand: &'static str,
+    comparison_value: Option<u32>,
+    operation: BranchOperation,
+    svd: &MmioRegisterMap,
+) -> Vec<LinkedDirectMmioPredicateSource> {
+    let mut sources = BTreeMap::<(u32, u32, bool), DirectMmioSourceAccumulator>::new();
+    for (value_bit, source) in value.bits().into_iter().enumerate() {
+        let BitSource::Register {
+            read_token,
+            address,
+            bit: register_bit,
+            inverted,
+        } = source
+        else {
+            continue;
+        };
+        let entry = sources.entry((read_token, address, inverted)).or_default();
+        entry.value_bits |= 1_u32 << value_bit;
+        entry.register_bits |= 1_u32 << register_bit;
+        let Some(comparison_value) = comparison_value.filter(|_| {
+            matches!(
+                operation,
+                BranchOperation::Equal | BranchOperation::NotEqual
+            )
+        }) else {
+            continue;
+        };
+        let register_mask = 1_u32 << register_bit;
+        let expected = (comparison_value & (1_u32 << value_bit) != 0) ^ inverted;
+        if entry.comparison_known_bits & register_mask != 0 {
+            let previous = entry.comparison_one_bits & register_mask != 0;
+            entry.comparison_conflict |= previous != expected;
+        } else {
+            entry.comparison_known_bits |= register_mask;
+            if expected {
+                entry.comparison_one_bits |= register_mask;
+            }
+        }
+    }
+    sources
+        .into_iter()
+        .map(
+            |((read_token, address, inverted), evidence)| LinkedDirectMmioPredicateSource {
+                operand,
+                read_token,
+                address,
+                register: svd.register_name(address),
+                value_bits: evidence.value_bits,
+                register_bits: evidence.register_bits,
+                inverted,
+                comparison_value,
+                register_comparison_value: (!evidence.comparison_conflict
+                    && evidence.comparison_known_bits == evidence.register_bits)
+                    .then_some(evidence.comparison_one_bits),
+            },
+        )
+        .collect()
+}
+
+fn direct_mmio_predicate_sources(
+    condition: &BranchCondition,
+    svd: &MmioRegisterMap,
+) -> Vec<LinkedDirectMmioPredicateSource> {
+    let mut sources = direct_mmio_operand_sources(
+        &condition.left,
+        "left",
+        condition.right.as_constant(),
+        condition.operation,
+        svd,
+    );
+    sources.extend(direct_mmio_operand_sources(
+        &condition.right,
+        "right",
+        condition.left.as_constant(),
+        condition.operation,
+        svd,
+    ));
+    sources.sort();
+    sources.dedup();
+    sources
 }
 
 fn call_result_identity(
@@ -1608,17 +1769,31 @@ fn collect_guarded_direct_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
-    guards: &mut DirectGuardState,
-    call_results: &mut BTreeMap<u32, String>,
-    calls: &mut BTreeSet<LinkedCall>,
+    svd: &MmioRegisterMap,
+    evidence: &mut DirectTraceEvidence,
 ) {
     if let DraftReferenceEvent::BranchDecision { condition, taken } = event {
-        guards.insert(
-            (
-                condition.site,
-                name_call_results(&branch_expression(condition), call_results),
-            ),
-            (*taken, guard_result_sources(condition, call_results)),
+        let rendered_condition =
+            name_call_results(&branch_expression(condition), &evidence.call_results);
+        let direct_mmio_sources = direct_mmio_predicate_sources(condition, svd);
+        if !direct_mmio_sources.is_empty() {
+            evidence
+                .direct_mmio_predicates
+                .insert(LinkedDirectMmioPredicate {
+                    site: condition.site,
+                    condition: rendered_condition.clone(),
+                    operation: branch_operation(condition.operation),
+                    sources: direct_mmio_sources.clone(),
+                });
+        }
+        evidence.guards.insert(
+            (condition.site, rendered_condition),
+            DirectGuardEvidence {
+                taken: *taken,
+                operation: branch_operation(condition.operation),
+                result_sources: guard_result_sources(condition, &evidence.call_results),
+                direct_mmio_sources,
+            },
         );
         return;
     }
@@ -1626,11 +1801,11 @@ fn collect_guarded_direct_event(
     let mut event_calls = BTreeSet::new();
     collect_call_event(event, resolver, identities, &mut event_calls);
     for mut call in event_calls {
-        call.guard_paths = Some(vec![current_guard_path(guards)]);
-        calls.insert(call);
+        call.guard_paths = Some(vec![current_guard_path(&evidence.guards)]);
+        evidence.calls.insert(call);
     }
     if let Some((token, target)) = call_result_identity(event, identities) {
-        call_results.insert(token, target);
+        evidence.call_results.insert(token, target);
     }
 }
 
@@ -1667,18 +1842,14 @@ fn explore_direct_calls(
                 continue;
             }
         };
-        let mut guards = BTreeMap::new();
-        let mut call_results = BTreeMap::new();
+        let mut evidence = DirectTraceEvidence::default();
         for event in &trace.reference_events {
-            collect_guarded_direct_event(
-                event,
-                resolver,
-                identities,
-                &mut guards,
-                &mut call_results,
-                &mut result.calls,
-            );
+            collect_guarded_direct_event(event, resolver, identities, svd, &mut evidence);
         }
+        result.calls.append(&mut evidence.calls);
+        result
+            .direct_mmio_predicates
+            .append(&mut evidence.direct_mmio_predicates);
         for relocation in symbol.relocations.iter().filter(|relocation| {
             matches!(
                 relocation.kind,
@@ -1715,7 +1886,7 @@ fn explore_direct_calls(
                     arguments: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
-                    guard_paths: Some(vec![current_guard_path(&guards)]),
+                    guard_paths: Some(vec![current_guard_path(&evidence.guards)]),
                 });
             }
         }
@@ -3246,8 +3417,10 @@ pub(crate) fn build_linked_ir_for_source(
         };
         let DirectCallGraph {
             calls: direct_calls,
+            direct_mmio_predicates,
             blockers,
         } = explore_direct_calls(&symbol, resolver, &identities, svd);
+        let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         if include_reachable {
             for call in direct_calls.iter().filter(|call| call.kind == "internal") {
                 let Some(callee) = identities.selectable_symbol(&call.target) else {
@@ -3322,6 +3495,7 @@ pub(crate) fn build_linked_ir_for_source(
                         })
                         .collect(),
                     calls,
+                    direct_mmio_predicates,
                     mmio_accesses,
                     delays,
                     context_accesses,
@@ -3362,6 +3536,7 @@ pub(crate) fn build_linked_ir_for_source(
                     ),
                     dependencies: Vec::new(),
                     calls,
+                    direct_mmio_predicates,
                     mmio_accesses: Vec::new(),
                     delays: Vec::new(),
                     context_accesses: Vec::new(),
@@ -4148,6 +4323,7 @@ struct MmioFieldCandidateAccumulator {
     functions: BTreeSet<String>,
     access_functions: BTreeSet<String>,
     predicate_functions: BTreeSet<String>,
+    predicate_evidence: BTreeSet<LinkedMmioFieldPredicateEvidence>,
     semantic_operations: BTreeSet<String>,
     semantic_roots: BTreeSet<String>,
 }
@@ -4205,6 +4381,7 @@ fn record_access_field_mask(
     width: u8,
     function: &str,
     access: &'static str,
+    evidence: Option<LinkedMmioFieldPredicateEvidence>,
 ) {
     let full_mask = width_mask(width);
     let mask = mask & full_mask;
@@ -4220,6 +4397,13 @@ fn record_access_field_mask(
         }
         candidate.functions.insert(function.to_owned());
         candidate.access_functions.insert(function.to_owned());
+        if let Some(mut evidence) = evidence.clone() {
+            evidence.register_comparison_value = evidence
+                .register_comparison_value
+                .map(|value| value & range.2);
+            candidate.predicate_functions.insert(function.to_owned());
+            candidate.predicate_evidence.insert(evidence);
+        }
     }
 }
 
@@ -4229,6 +4413,7 @@ fn record_predicate_field_mask(
     width: u8,
     predicate_function: &str,
     producer: Option<&str>,
+    evidence: LinkedMmioFieldPredicateEvidence,
 ) {
     let full_mask = width_mask(width);
     let mask = mask & full_mask;
@@ -4242,6 +4427,11 @@ fn record_predicate_field_mask(
         candidate
             .predicate_functions
             .insert(predicate_function.to_owned());
+        let mut evidence = evidence.clone();
+        evidence.register_comparison_value = evidence
+            .register_comparison_value
+            .map(|value| value & range.2);
+        candidate.predicate_evidence.insert(evidence);
         if let Some(producer) = producer {
             candidate.functions.insert(producer.to_owned());
             candidate.access_functions.insert(producer.to_owned());
@@ -4350,6 +4540,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                         access.width,
                         &function.identity,
                         "write",
+                        None,
                     );
                 }
                 "poll" => {
@@ -4367,6 +4558,22 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                         access.width,
                         &function.identity,
                         "poll",
+                        Some(LinkedMmioFieldPredicateEvidence {
+                            kind: "poll",
+                            function: function.identity.clone(),
+                            producer: None,
+                            site: None,
+                            path: Some(access.path.clone()),
+                            condition: access
+                                .guard
+                                .clone()
+                                .expect("poll MMIO access has a predicate expression"),
+                            operation: "equal",
+                            operand: Some("read"),
+                            comparison_value: access.predicate_expected,
+                            register_comparison_value: access.predicate_expected,
+                            inverted: false,
+                        }),
                     );
                 }
                 _ => unreachable!("linked MMIO access has a closed access vocabulary"),
@@ -4380,6 +4587,44 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         }
     }
     let unique_widths = unique_mmio_widths(&mmio_index);
+    for function in &functions {
+        for predicate in &function.direct_mmio_predicates {
+            for source in &predicate.sources {
+                let Some(width) = unique_widths.get(&source.address).copied().flatten() else {
+                    continue;
+                };
+                let entry = mmio_index
+                    .get_mut(&(source.address, width))
+                    .expect("unique MMIO width comes from the register index");
+                let predicate_mask = source.register_bits & width_mask(width);
+                entry.predicate_shapes += 1;
+                entry.predicate_masks.insert(predicate_mask);
+                entry.whole_register_predicate_shapes +=
+                    usize::from(predicate_mask == width_mask(width));
+                entry.functions.insert(function.identity.clone());
+                record_predicate_field_mask(
+                    entry,
+                    predicate_mask,
+                    width,
+                    &function.identity,
+                    Some(&function.identity),
+                    LinkedMmioFieldPredicateEvidence {
+                        kind: "direct-mmio",
+                        function: function.identity.clone(),
+                        producer: None,
+                        site: Some(predicate.site),
+                        path: None,
+                        condition: predicate.condition.clone(),
+                        operation: predicate.operation,
+                        operand: Some(source.operand),
+                        comparison_value: source.comparison_value,
+                        register_comparison_value: source.register_comparison_value,
+                        inverted: source.inverted,
+                    },
+                );
+            }
+        }
+    }
     let mut predicate_evidence = BTreeSet::new();
     for function in &functions {
         for call in &function.calls {
@@ -4397,6 +4642,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                             predicate_evidence.insert((
                                 function.identity.clone(),
                                 guard.site,
+                                guard.condition.clone(),
+                                guard.operation,
                                 producer.clone(),
                                 mmio.clone(),
                             ));
@@ -4406,7 +4653,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             }
         }
     }
-    for (predicate_function, _site, producer, mmio) in predicate_evidence {
+    for (predicate_function, site, condition, operation, producer, mmio) in predicate_evidence {
         let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
             continue;
         };
@@ -4427,9 +4674,23 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             width,
             &predicate_function,
             (producer != "unknown").then_some(producer.as_str()),
+            LinkedMmioFieldPredicateEvidence {
+                kind: "producer-return",
+                function: predicate_function.clone(),
+                producer: (producer != "unknown").then_some(producer.clone()),
+                site: Some(site),
+                path: None,
+                condition,
+                operation,
+                operand: None,
+                comparison_value: None,
+                register_comparison_value: None,
+                inverted: mmio.inverted,
+            },
         );
     }
     let mut semantic_evidence = BTreeSet::new();
+    let mut direct_semantic_evidence = BTreeSet::new();
     for function in &functions {
         for action in &function.effect_summary.semantic_actions {
             let Some(scopes) = action.guard_scopes.as_deref() else {
@@ -4438,6 +4699,14 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             for scope in scopes {
                 for path in &scope.paths {
                     for guard in &path.guards {
+                        for mmio in &guard.direct_mmio_sources {
+                            direct_semantic_evidence.insert((
+                                function.identity.clone(),
+                                action.operation.clone(),
+                                scope.function.clone(),
+                                mmio.clone(),
+                            ));
+                        }
                         for source in &guard.result_sources {
                             let producer = source
                                 .target
@@ -4474,6 +4743,25 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                 root: &root,
                 predicate_function: &predicate_function,
                 producer: (producer != "unknown").then_some(producer.as_str()),
+            },
+        );
+    }
+    for (root, operation, predicate_function, mmio) in direct_semantic_evidence {
+        let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
+            continue;
+        };
+        let entry = mmio_index
+            .get_mut(&(mmio.address, width))
+            .expect("unique MMIO width comes from the register index");
+        record_semantic_field_link(
+            entry,
+            SemanticFieldEvidence {
+                mask: mmio.register_bits,
+                width,
+                operation: &operation,
+                root: &root,
+                predicate_function: &predicate_function,
+                producer: Some(&predicate_function),
             },
         );
     }
@@ -4530,6 +4818,7 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                                 .predicate_functions
                                 .into_iter()
                                 .collect(),
+                            predicate_evidence: candidate.predicate_evidence.into_iter().collect(),
                             semantic_operations: candidate
                                 .semantic_operations
                                 .into_iter()
@@ -4773,6 +5062,7 @@ mod tests {
             },
             dependencies: Vec::new(),
             calls,
+            direct_mmio_predicates: Vec::new(),
             mmio_accesses: Vec::new(),
             delays: Vec::new(),
             context_accesses: Vec::new(),
@@ -5029,8 +5319,10 @@ mod tests {
                 guards: vec![LinkedCallGuard {
                     site: 0x10,
                     condition: "arg0 != 0".to_owned(),
+                    operation: "not-equal",
                     taken,
                     result_sources: Vec::new(),
+                    direct_mmio_sources: Vec::new(),
                 }],
             }]);
             call
@@ -5048,8 +5340,10 @@ mod tests {
         let guard = |site, condition: &str, taken| LinkedCallGuard {
             site,
             condition: condition.to_owned(),
+            operation: "not-equal",
             taken,
             result_sources: Vec::new(),
+            direct_mmio_sources: Vec::new(),
         };
         let paths = normalize_guard_paths([
             LinkedCallGuardPath {
@@ -5183,6 +5477,81 @@ mod tests {
                 producer_return_exact: None,
                 mmio_sources: Vec::new(),
             }]
+        );
+    }
+
+    #[test]
+    fn direct_mmio_predicate_maps_shifted_comparison_back_to_register_bits() {
+        let address = 0x2010_4c48;
+        let condition = BranchCondition {
+            site: 0x24,
+            operation: BranchOperation::Equal,
+            left: SymbolicValue::register_read(7, address, 32, false)
+                .and(0x0000_00f0)
+                .shift_right(4),
+            right: SymbolicValue::Constant(3),
+        };
+        let svd = MmioRegisterMap {
+            registers: vec![crate::Register {
+                address,
+                name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
+            }],
+            windows: Vec::new(),
+        };
+
+        assert_eq!(
+            direct_mmio_predicate_sources(&condition, &svd),
+            [LinkedDirectMmioPredicateSource {
+                operand: "left",
+                read_token: 7,
+                address,
+                register: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
+                value_bits: 0x0000_000f,
+                register_bits: 0x0000_00f0,
+                inverted: false,
+                comparison_value: Some(3),
+                register_comparison_value: Some(0x30),
+            }]
+        );
+    }
+
+    #[test]
+    fn direct_mmio_branch_is_inventoried_without_a_guarded_call() {
+        let address = 0x2010_4cb4;
+        let event = DraftReferenceEvent::BranchDecision {
+            condition: BranchCondition {
+                site: 0x54,
+                operation: BranchOperation::Equal,
+                left: SymbolicValue::register_read(2, address, 32, false).and(0xf0),
+                right: SymbolicValue::Constant(0),
+            },
+            taken: true,
+        };
+        let resolver = empty_resolver();
+        let identities = IrIdentityCatalog::new(&resolver, None);
+        let svd = MmioRegisterMap {
+            registers: vec![crate::Register {
+                address,
+                name: "WIFI_MAC_TX_COMMON.QUEUE_STATE".to_owned(),
+            }],
+            windows: Vec::new(),
+        };
+        let mut evidence = DirectTraceEvidence::default();
+
+        collect_guarded_direct_event(&event, &resolver, &identities, &svd, &mut evidence);
+
+        assert!(evidence.calls.is_empty());
+        assert_eq!(evidence.direct_mmio_predicates.len(), 1);
+        let predicate = evidence
+            .direct_mmio_predicates
+            .first()
+            .expect("direct predicate was retained");
+        assert_eq!(predicate.operation, "equal");
+        assert_eq!(predicate.sources[0].register_bits, 0xf0);
+        assert_eq!(predicate.sources[0].register_comparison_value, Some(0));
+        assert_eq!(
+            current_guard_path(&evidence.guards).guards[0].direct_mmio_sources,
+            predicate.sources
         );
     }
 
@@ -5457,9 +5826,28 @@ mod tests {
     #[test]
     fn field_candidates_separate_evidence_and_exclude_whole_register_masks() {
         let mut register = MmioRegisterAccumulator::default();
-        record_access_field_mask(&mut register, 0x30, 32, "writer", "write");
-        record_access_field_mask(&mut register, 0x30, 32, "poller", "poll");
-        record_predicate_field_mask(&mut register, 0x30, 32, "dispatcher", Some("reader"));
+        record_access_field_mask(&mut register, 0x30, 32, "writer", "write", None);
+        record_access_field_mask(&mut register, 0x30, 32, "poller", "poll", None);
+        record_predicate_field_mask(
+            &mut register,
+            0x30,
+            32,
+            "dispatcher",
+            Some("reader"),
+            LinkedMmioFieldPredicateEvidence {
+                kind: "producer-return",
+                function: "dispatcher".to_owned(),
+                producer: Some("reader".to_owned()),
+                site: Some(0x10),
+                path: None,
+                condition: "result & 0x30 != 0".to_owned(),
+                operation: "not-equal",
+                operand: None,
+                comparison_value: None,
+                register_comparison_value: None,
+                inverted: false,
+            },
+        );
         record_semantic_field_link(
             &mut register,
             SemanticFieldEvidence {
@@ -5471,8 +5859,27 @@ mod tests {
                 producer: Some("reader"),
             },
         );
-        record_access_field_mask(&mut register, u32::MAX, 32, "whole_writer", "write");
-        record_predicate_field_mask(&mut register, u32::MAX, 32, "whole_dispatcher", None);
+        record_access_field_mask(&mut register, u32::MAX, 32, "whole_writer", "write", None);
+        record_predicate_field_mask(
+            &mut register,
+            u32::MAX,
+            32,
+            "whole_dispatcher",
+            None,
+            LinkedMmioFieldPredicateEvidence {
+                kind: "direct-mmio",
+                function: "whole_dispatcher".to_owned(),
+                producer: None,
+                site: Some(0x20),
+                path: None,
+                condition: "read != 0".to_owned(),
+                operation: "not-equal",
+                operand: Some("left"),
+                comparison_value: Some(0),
+                register_comparison_value: Some(0),
+                inverted: false,
+            },
+        );
 
         assert_eq!(register.field_candidates.len(), 1);
         let candidate = register
@@ -5503,6 +5910,7 @@ mod tests {
             candidate.predicate_functions,
             BTreeSet::from(["dispatcher".to_owned()])
         );
+        assert_eq!(candidate.predicate_evidence.len(), 1);
         assert_eq!(
             candidate.semantic_operations,
             BTreeSet::from(["rtos.event.post".to_owned()])
@@ -5827,8 +6235,10 @@ mod tests {
                     guards: vec![LinkedCallGuard {
                         site: 0x08,
                         condition: "arg1 != 0".to_owned(),
+                        operation: "not-equal",
                         taken: true,
                         result_sources: Vec::new(),
+                        direct_mmio_sources: Vec::new(),
                     }],
                 }]),
             }
@@ -5897,8 +6307,10 @@ mod tests {
                 guards: vec![LinkedCallGuard {
                     site: 0x0c,
                     condition: "arg2 == 1".to_owned(),
+                    operation: "equal",
                     taken: false,
                     result_sources: Vec::new(),
+                    direct_mmio_sources: Vec::new(),
                 }],
             }]),
         });

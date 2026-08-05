@@ -6,13 +6,14 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
-use core::{cell::UnsafeCell, marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
+use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     RadioRegisters,
 };
+use pin_project::pin_project;
 
 #[cfg(target_arch = "riscv32")]
 use crate::descriptor::{descriptor_address_valid, dma_range_valid};
@@ -399,11 +400,11 @@ impl HtAmpduTxCompletion {
 }
 
 #[repr(C, align(16))]
-struct HtAmpduDmaBuffer<const BUFFER_SIZE: usize>(UnsafeCell<[u8; BUFFER_SIZE]>);
+struct HtAmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
 impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
     const fn new() -> Self {
-        Self(UnsafeCell::new([0; BUFFER_SIZE]))
+        Self([0; BUFFER_SIZE])
     }
 }
 
@@ -419,6 +420,7 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// psram-code-psram-data, open PHY/MAC, HT40 MCS7 SGI. Four observed
 /// two-MPDU submissions from this pool each returned a BlockAck bitmap ending
 /// in `0x000f`, with no aggregate hardware timeout.
+#[pin_project]
 pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     descriptors: [Descriptor; SLOTS],
     buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
@@ -453,6 +455,7 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     trigger_reservation: Option<MacHeTbLinkReservation>,
     trigger_publication_snapshot: Option<MacHeTriggerTxQueueSnapshot>,
     detached: bool,
+    #[pin]
     _pin: PhantomPinned,
 }
 
@@ -486,40 +489,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
     }
 
-    /// Initialize a large DMA pool directly in its final static allocation.
-    ///
-    /// Passing [`Self::new`] to `StaticCell::init` materializes the whole pool
-    /// on the embedded stack before moving it. A 32 x 1,700-byte pool therefore
-    /// consumed more than 55 KiB of stack in HIL. This method never creates a
-    /// complete by-value temporary.
-    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        let storage = storage.as_mut_ptr();
-
-        // SAFETY: `storage` is exclusively borrowed, correctly aligned
-        // uninitialized memory. Descriptor words, DMA byte buffers, length
-        // arrays, counters, cookies and `false` all accept zero. The two enum
-        // fields, optional reservation and pin marker are written with valid
-        // Rust values before a reference to the complete object is formed.
-        unsafe {
-            storage
-                .cast::<u8>()
-                .write_bytes(0, core::mem::size_of::<Self>());
-            ptr::addr_of_mut!((*storage).state).write(TxSlotState::Free);
-            ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::BestEffort);
-            ptr::addr_of_mut!((*storage).max_aggregate_bytes).write(TX_AMPDU_DEFAULT_MAX_BYTES);
-            ptr::addr_of_mut!((*storage).trigger_reservation).write(None);
-            ptr::addr_of_mut!((*storage).trigger_publication_snapshot).write(None);
-            ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
-            &mut *storage
-        }
-    }
-
     /// Consume a unique static owner and permanently pin its DMA addresses.
     pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
-        // SAFETY: the unique `&'static mut` is consumed by the returned
-        // `'static` pin. `PhantomPinned` prevents safe extraction or movement
-        // for the remainder of the program.
-        unsafe { Pin::new_unchecked(storage) }
+        Pin::static_mut(storage)
     }
 
     pub const fn state(&self) -> TxSlotState {
@@ -542,16 +514,14 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self: Pin<&mut Self>,
         max_aggregate_bytes: u16,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: this changes only scalar policy state and does not move any
-        // pinned descriptor or DMA buffer.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::Free {
-            return Err(HtAmpduTxError::NotFree(storage.state));
+        let storage = self.project();
+        if *storage.state != TxSlotState::Free {
+            return Err(HtAmpduTxError::NotFree(*storage.state));
         }
         if max_aggregate_bytes == 0 {
             return Err(HtAmpduTxError::Length(HtAmpduLengthError::InvalidLimits));
         }
-        storage.max_aggregate_bytes = max_aggregate_bytes;
+        *storage.max_aggregate_bytes = max_aggregate_bytes;
         Ok(())
     }
 
@@ -652,15 +622,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
     /// EDCA backoff are expected to change before republication.
     pub fn retain_for_ampdu_retry(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         cookie: TxCookie,
         retry_mask: u32,
     ) -> Result<HtAmpduLength, HtAmpduTxError> {
-        // SAFETY: the detached completion state proves exclusive CPU
-        // ownership. The pinned allocations themselves are not moved; backing
-        // addresses are compacted while descriptors are rebuilt by the next
-        // `submit`.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
         {
             return Err(HtAmpduTxError::Stale);
@@ -686,6 +652,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             }
         }
 
+        let storage = self.as_mut().project();
         let mut destination = 0_usize;
         for source in 0..old_count {
             if retry_mask & (1_u32 << source) == 0 {
@@ -714,24 +681,22 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             buffer[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
             destination += 1;
         }
-        storage.count = u8::try_from(destination)
+        *storage.count = u8::try_from(destination)
             .map_err(|_| HtAmpduTxError::SlotCountOverflow { count: destination })?;
-        storage.prepared_length = 0;
-        storage.aggregate_length = 0;
-        storage.trigger_reservation = None;
-        storage.trigger_publication_snapshot = None;
-        storage.detached = false;
-        storage.state = TxSlotState::Reserved;
-        storage.recalculate_prepared_length()
+        *storage.prepared_length = 0;
+        *storage.aggregate_length = 0;
+        *storage.trigger_reservation = None;
+        *storage.trigger_publication_snapshot = None;
+        *storage.detached = false;
+        *storage.state = TxSlotState::Reserved;
+        self.recalculate_prepared_length()
     }
 
     /// Begin constructing one aggregate in the software-owned pool.
     pub fn begin(self: Pin<&mut Self>) -> Result<TxCookie, HtAmpduTxError> {
-        // SAFETY: scalar mutation and buffer preparation do not move the
-        // pinned descriptors or buffers.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::Free {
-            return Err(HtAmpduTxError::NotFree(storage.state));
+        let storage = self.project();
+        if *storage.state != TxSlotState::Free {
+            return Err(HtAmpduTxError::NotFree(*storage.state));
         }
         if SLOTS < 2
             || SLOTS > TX_AMPDU_SLOT_CAPACITY
@@ -742,20 +707,19 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 buffer_size: BUFFER_SIZE,
             });
         }
-        let generation = storage
-            .generation_cursor
+        let generation = (*storage.generation_cursor)
             .checked_add(1)
             .ok_or(HtAmpduTxError::ResetRequired)?;
-        storage.generation_cursor = generation;
-        storage.active = TxCookie(generation);
-        storage.count = 0;
-        storage.prepared_length = 0;
-        storage.aggregate_length = 0;
-        storage.trigger_reservation = None;
-        storage.trigger_publication_snapshot = None;
-        storage.detached = false;
-        storage.state = TxSlotState::Reserved;
-        Ok(storage.active)
+        *storage.generation_cursor = generation;
+        *storage.active = TxCookie(generation);
+        *storage.count = 0;
+        *storage.prepared_length = 0;
+        *storage.aggregate_length = 0;
+        *storage.trigger_reservation = None;
+        *storage.trigger_publication_snapshot = None;
+        *storage.detached = false;
+        *storage.state = TxSlotState::Reserved;
+        Ok(*storage.active)
     }
 
     /// Return the payload area for the next MPDU while software owns it.
@@ -766,13 +730,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self: Pin<&mut Self>,
         cookie: TxCookie,
     ) -> Result<&mut [u8], HtAmpduTxError> {
-        // SAFETY: the state check below proves hardware cannot access this
-        // buffer, and the unique pinned borrow prevents a second CPU owner.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::Reserved || storage.active != cookie {
+        let storage = self.project();
+        if *storage.state != TxSlotState::Reserved || *storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        let index = usize::from(storage.count);
+        let index = usize::from(*storage.count);
         if index >= SLOTS {
             return Err(HtAmpduTxError::SlotCapacity);
         }
@@ -782,7 +744,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 buffer_size: BUFFER_SIZE,
             });
         }
-        let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+        let buffer = &mut storage.buffers[index].0;
         Ok(&mut buffer[TX_AMPDU_METADATA_SIZE..])
     }
 
@@ -1220,9 +1182,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware_mic_length: u8,
         empty_delimiters: u8,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: no address-bearing field is moved. The external lifetime
-        // and exclusivity invariant is supplied by this method's caller.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -1253,7 +1213,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .filter(|length| *length <= dma_storage.len())
             .and_then(|length| u16::try_from(length).ok())
             .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let prepared_length = storage.length_after_append(psdu_length, false)?;
 
+        let storage = self.project();
         storage.buffer_addresses[index] = dma_storage.as_mut_ptr().addr();
         dma_storage[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
         dma_storage[4] = empty_delimiters;
@@ -1269,8 +1231,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.hardware_he_control[index] = false;
         storage.empty_delimiters[index] = empty_delimiters;
         storage.descriptor_capacities[index] = descriptor_capacity;
-        storage.prepared_length = storage.length_after_append(psdu_length, false)?;
-        storage.count += 1;
+        *storage.prepared_length = prepared_length;
+        *storage.count += 1;
         Ok(())
     }
 
@@ -1320,8 +1282,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         empty_delimiters: u8,
         hardware_he_control: bool,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: no address-bearing field is moved.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -1352,8 +1313,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .filter(|length| *length <= BUFFER_SIZE)
             .and_then(|length| u16::try_from(length).ok())
             .ok_or(HtAmpduTxError::FrameTooLong)?;
+        let prepared_length = storage.length_after_append(psdu_length, hardware_he_control)?;
 
-        let buffer = unsafe { &mut *storage.buffers[index].0.get() };
+        let storage = self.project();
+        let buffer = &mut storage.buffers[index].0;
         storage.buffer_addresses[index] = buffer.as_mut_ptr().addr();
         buffer[..4].copy_from_slice(&u32::from(psdu_length).to_le_bytes());
         buffer[4] = empty_delimiters;
@@ -1380,8 +1343,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         storage.hardware_he_control[index] = hardware_he_control;
         storage.empty_delimiters[index] = empty_delimiters;
         storage.descriptor_capacities[index] = descriptor_capacity;
-        storage.prepared_length = storage.length_after_append(psdu_length, hardware_he_control)?;
-        storage.count += 1;
+        *storage.prepared_length = prepared_length;
+        *storage.count += 1;
         Ok(())
     }
 
@@ -1614,10 +1577,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let index = usize::from(self.count);
         self.as_mut()
             .commit_he_frame(cookie, frame_length, hardware_mic_length, rate, density)?;
-        // SAFETY: commit succeeded in Reserved state and incremented count
-        // exactly once. The pinned object's address-bearing fields do not
-        // move; this writes only the just-committed slot's scalar metadata.
-        unsafe { self.get_unchecked_mut() }.msdu_lengths[index] = msdu_length;
+        self.project().msdu_lengths[index] = msdu_length;
         Ok(())
     }
 
@@ -1666,20 +1626,17 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             density,
             txop_limit,
         )?;
-        // SAFETY: the successful commit incremented count once while retaining
-        // the same pinned allocation and exclusive software ownership.
-        unsafe { self.get_unchecked_mut() }.msdu_lengths[index] = msdu_length;
+        self.project().msdu_lengths[index] = msdu_length;
         Ok(())
     }
 
     /// Discard a software-owned partial batch.
-    pub fn cancel(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the Reserved state has not published any descriptor.
-        let storage = unsafe { self.get_unchecked_mut() };
+    pub fn cancel(mut self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        storage.release();
+        self.as_mut().release();
         Ok(())
     }
 
@@ -1691,9 +1648,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         queue: LegacyTxQueue,
         config: HtAmpduTxConfig,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
-        // through completion and only scalar ownership fields are mutated.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -1780,10 +1735,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !hardware.prepare_ht_tx(queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
         }
-        storage.queue = queue;
-        storage.aggregate_length = aggregate.bytes;
-        storage.detached = false;
-        storage.state = TxSlotState::HardwareOwned;
+        let storage = self.project();
+        *storage.queue = queue;
+        *storage.aggregate_length = aggregate.bytes;
+        *storage.detached = false;
+        *storage.state = TxSlotState::HardwareOwned;
         hardware.start_ht_tx(queue_index, image.plcp0);
         Ok(())
     }
@@ -1791,15 +1747,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// Publish and start one HE20 SU A-MPDU with the same pinned ownership
     /// and completion/BlockAck ordering as [`Self::submit`].
     pub fn submit_he<H: HtAmpduHardware>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
         queue: LegacyTxQueue,
         config: HeAmpduTxConfig,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
-        // through completion and only scalar ownership fields are mutated.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -1890,17 +1844,19 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !hardware.prepare_he_tx(queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
         }
+        let psdu_lengths = &storage.psdu_lengths[..count];
         if let Some(trigger) = trigger {
             let publication_snapshot = hardware
                 .prepare_he_trigger_based_queue(
                     trigger.policy,
                     trigger.reservation,
                     trigger.tid,
-                    &storage.psdu_lengths[..count],
+                    psdu_lengths,
                     trigger.queued_msdu_bytes,
                 )
                 .map_err(HtAmpduTxError::TriggerBased)?;
-            storage.trigger_reservation = Some(trigger.reservation);
+            let storage = self.as_mut().project();
+            *storage.trigger_reservation = Some(trigger.reservation);
             // SOURCE: complete blob/ROM `mac_tx_set_tb` make the BSR valid
             // bitmap their final publication edge. The following ordinary
             // HE queue doorbell can immediately consume and clear both BSR
@@ -1908,12 +1864,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             // HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30. Preserve the
             // PAC-backed readback at the only deterministic boundary: after
             // publication and before `start_he_tx`.
-            storage.trigger_publication_snapshot = Some(publication_snapshot);
+            *storage.trigger_publication_snapshot = Some(publication_snapshot);
         }
-        storage.queue = queue;
-        storage.aggregate_length = aggregate.bytes;
-        storage.detached = false;
-        storage.state = TxSlotState::HardwareOwned;
+        let storage = self.project();
+        *storage.queue = queue;
+        *storage.aggregate_length = aggregate.bytes;
+        *storage.detached = false;
+        *storage.state = TxSlotState::HardwareOwned;
         hardware.start_he_tx(queue_index, image.plcp0);
         Ok(())
     }
@@ -1931,9 +1888,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         queue: LegacyTxQueue,
         config: HeSmpduTxConfig,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the pinned pool retains stable descriptor/buffer addresses
-        // through completion and only scalar ownership fields are mutated.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -2020,10 +1975,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !hardware.prepare_he_tx(queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
         }
-        storage.queue = queue;
-        storage.aggregate_length = config.apep_length();
-        storage.detached = false;
-        storage.state = TxSlotState::HardwareOwned;
+        let storage = self.project();
+        *storage.queue = queue;
+        *storage.aggregate_length = config.apep_length();
+        *storage.detached = false;
+        *storage.state = TxSlotState::HardwareOwned;
         hardware.start_he_tx(queue_index, image.plcp0);
         Ok(())
     }
@@ -2033,21 +1989,20 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<HtAmpduTxCompletion>, HtAmpduTxError> {
-        // SAFETY: no pinned allocation is moved.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.project();
         let Some(registers) = hardware.take_ht_ampdu_completion(storage.queue.index()) else {
             return Ok(None);
         };
-        if storage.state != TxSlotState::HardwareOwned {
-            storage.state = TxSlotState::ResetRequired;
+        if *storage.state != TxSlotState::HardwareOwned {
+            *storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::Stale);
         }
         if let Some(reservation) = storage.trigger_reservation.take() {
             hardware.clear_he_trigger_based_queue(reservation);
         }
-        storage.state = TxSlotState::Completed;
+        *storage.state = TxSlotState::Completed;
         Ok(Some(HtAmpduTxCompletion {
-            tx: decode_tx_completion(storage.active, registers.tx),
+            tx: decode_tx_completion(*storage.active, registers.tx),
             block_ack: decode_ht_block_ack_registers(
                 registers.block_ack_control_and_sequence,
                 registers.block_ack_bitmap_low,
@@ -2083,17 +2038,16 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<TxCompletion>, HtAmpduTxError> {
-        // SAFETY: no pinned allocation is moved.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.project();
         let Some(registers) = hardware.take_tx_completion(storage.queue.index()) else {
             return Ok(None);
         };
-        if storage.state != TxSlotState::HardwareOwned || storage.count != 1 {
-            storage.state = TxSlotState::ResetRequired;
+        if *storage.state != TxSlotState::HardwareOwned || *storage.count != 1 {
+            *storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::Stale);
         }
-        storage.state = TxSlotState::Completed;
-        Ok(Some(decode_tx_completion(storage.active, registers)))
+        *storage.state = TxSlotState::Completed;
+        Ok(Some(decode_tx_completion(*storage.active, registers)))
     }
 
     pub fn begin_timeout_abort<H: HtAmpduHardware>(
@@ -2101,9 +2055,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, HtAmpduTxError> {
-        // SAFETY: scalar state only.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+        let storage = self.project();
+        if *storage.state != TxSlotState::HardwareOwned || *storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
         Ok(hardware.begin_tx_timeout_abort(storage.queue.index()))
@@ -2116,45 +2069,40 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// radio lifecycle owner resets the MAC; returning them would make
     /// potentially DMA-visible allocations writable by `embassy-net`.
     pub fn require_reset(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
-        // SAFETY: only scalar ownership state changes. Descriptors, referenced
-        // buffers and their pinned addresses remain untouched for reset.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+        let storage = self.project();
+        if *storage.state != TxSlotState::HardwareOwned || *storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
-        storage.state = TxSlotState::ResetRequired;
+        *storage.state = TxSlotState::ResetRequired;
         Ok(())
     }
 
     /// Disable and release one collision-owned aggregate queue.
     pub fn abort_collision<H: HtAmpduHardware>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, HtAmpduTxError> {
-        // SAFETY: hardware confirms the queue release before software clears
-        // its scalar ownership image; no pinned allocation is moved.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
         if !hardware.abort_tx_collision(storage.queue.index()) {
             return Ok(false);
         }
-        if let Some(reservation) = storage.trigger_reservation.take() {
+        if let Some(reservation) = self.as_mut().project().trigger_reservation.take() {
             hardware.clear_he_trigger_based_queue(reservation);
         }
-        storage.release();
+        self.as_mut().release();
         Ok(true)
     }
 
     pub fn finish_timeout_abort<H: HtAmpduHardware>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: scalar state only; hardware has stopped walking the pool.
-        let storage = unsafe { self.get_unchecked_mut() };
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
@@ -2162,13 +2110,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             return Err(HtAmpduTxError::TimeoutNotPending);
         };
         if !detached {
-            storage.state = TxSlotState::ResetRequired;
+            *self.as_mut().project().state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::DetachFailed);
         }
-        if let Some(reservation) = storage.trigger_reservation.take() {
+        if let Some(reservation) = self.as_mut().project().trigger_reservation.take() {
             hardware.clear_he_trigger_based_queue(reservation);
         }
-        storage.release();
+        self.as_mut().release();
         Ok(())
     }
 
@@ -2177,48 +2125,47 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the completion edge returned the pool to software; the
-        // detach readback proves the queue no longer references its head.
-        let storage = unsafe { self.get_unchecked_mut() };
-        if storage.state != TxSlotState::Completed || storage.active != cookie {
+        let storage = self.project();
+        if *storage.state != TxSlotState::Completed || *storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
         }
         if !hardware.detach_completed_tx(storage.queue.index()) {
-            storage.state = TxSlotState::ResetRequired;
+            *storage.state = TxSlotState::ResetRequired;
             return Err(HtAmpduTxError::DetachFailed);
         }
         // Keep the completed MPDUs and their lengths alive. BlockAck handling
         // may now copy any missing MPDU into the single-frame TX owner without
         // reconstructing Sequence Control or the CCMP PN. `release_completed`
         // is the explicit final ownership edge.
-        storage.detached = true;
+        *storage.detached = true;
         Ok(())
     }
 
     /// Release a detached completed batch after BlockAck processing and any
     /// individual retries have copied the retained MPDUs.
-    pub fn release_completed(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), HtAmpduTxError> {
-        // SAFETY: the queue has already been detached and this only clears
-        // scalar ownership metadata. Pinned descriptor and buffer addresses
-        // remain in place for the next reservation.
-        let storage = unsafe { self.get_unchecked_mut() };
+    pub fn release_completed(
+        mut self: Pin<&mut Self>,
+        cookie: TxCookie,
+    ) -> Result<(), HtAmpduTxError> {
+        let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
         {
             return Err(HtAmpduTxError::Stale);
         }
-        storage.release();
+        self.as_mut().release();
         Ok(())
     }
 
-    fn release(&mut self) {
-        self.active = TxCookie(0);
-        self.count = 0;
-        self.prepared_length = 0;
-        self.aggregate_length = 0;
-        self.trigger_reservation = None;
-        self.trigger_publication_snapshot = None;
-        self.detached = false;
-        self.state = TxSlotState::Free;
+    fn release(self: Pin<&mut Self>) {
+        let storage = self.project();
+        *storage.active = TxCookie(0);
+        *storage.count = 0;
+        *storage.prepared_length = 0;
+        *storage.aggregate_length = 0;
+        *storage.trigger_reservation = None;
+        *storage.trigger_publication_snapshot = None;
+        *storage.detached = false;
+        *storage.state = TxSlotState::Free;
     }
 
     /// Return the final A-MPDU length after appending one PSDU.
@@ -2276,20 +2223,21 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .map_err(|_| HtAmpduTxError::Length(HtAmpduLengthError::AggregateTooLong(next)))
     }
 
-    fn recalculate_prepared_length(&mut self) -> Result<HtAmpduLength, HtAmpduTxError> {
-        let mut length = HtAmpduLengthAccumulator::new(self.count, self.max_aggregate_bytes)
+    fn recalculate_prepared_length(self: Pin<&mut Self>) -> Result<HtAmpduLength, HtAmpduTxError> {
+        let storage = self.as_ref().get_ref();
+        let mut length = HtAmpduLengthAccumulator::new(storage.count, storage.max_aggregate_bytes)
             .map_err(HtAmpduTxError::Length)?;
-        for index in 0..usize::from(self.count) {
+        for index in 0..usize::from(storage.count) {
             length
                 .push_with_hardware_he_control(
-                    u32::from(self.psdu_lengths[index]),
-                    self.empty_delimiters[index],
-                    self.hardware_he_control[index],
+                    u32::from(storage.psdu_lengths[index]),
+                    storage.empty_delimiters[index],
+                    storage.hardware_he_control[index],
                 )
                 .map_err(HtAmpduTxError::Length)?;
         }
         let aggregate = length.finish().map_err(HtAmpduTxError::Length)?;
-        self.prepared_length = aggregate.bytes;
+        *self.project().prepared_length = aggregate.bytes;
         Ok(aggregate)
     }
 
@@ -4181,10 +4129,8 @@ mod tests {
 
     #[test]
     fn owned_dma_pool_builds_two_mpdu_length_without_publishing_hardware() {
-        let mut storage = HtAmpduTxStorage::<4, 256>::new();
-        // SAFETY: the local is not moved until the pin is dropped at the end
-        // of this test, and no hardware ownership is published.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<4, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
 
         storage.as_mut().next_frame_buffer(cookie).unwrap()[..100].fill(0xa5);
@@ -4210,13 +4156,10 @@ mod tests {
 
     #[test]
     fn referenced_commit_uses_the_retained_allocation_without_copying_payload() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
+        let storage = HtAmpduTxStorage::<2, 256>::new();
         let mut external = [0xa5_u8; 256];
         external[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 100].fill(0x5a);
-        // SAFETY: neither local is moved while the pin is live. The external
-        // allocation remains exclusively retained until `cancel` below, and
-        // no hardware ownership is published.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         unsafe {
             storage
@@ -4245,24 +4188,19 @@ mod tests {
             &[0x5a; 100]
         );
         // The ordinary internal backing was not used as a staging buffer.
-        assert_eq!(
-            unsafe { (&*storage.buffers[0].0.get())[TX_AMPDU_METADATA_SIZE] },
-            0
-        );
+        assert_eq!(storage.buffers[0].0[TX_AMPDU_METADATA_SIZE], 0);
     }
 
     #[test]
     fn referenced_he_commit_uses_external_capacity_with_descriptor_only_storage() {
-        let mut storage = HtAmpduTxStorage::<2, 0>::new();
+        let storage = HtAmpduTxStorage::<2, 0>::new();
         let mut first = [0xa5_u8; 256];
         let mut second = [0x5a_u8; 256];
         let rate = HeRate::bcc_dcm(
             crate::tx::HeBccDcmMcs::Mcs3,
             crate::rx::HeGuardIntervalAndLtf::TwoLtf800Ns,
         );
-        // SAFETY: the local storage and both external allocations remain at
-        // stable addresses until the Reserved batch is cancelled.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         for external in [&mut first, &mut second] {
             unsafe {
@@ -4297,16 +4235,14 @@ mod tests {
 
     #[test]
     fn referenced_ht_commit_stops_at_the_vendor_rate_byte_ceiling() {
-        let mut storage = HtAmpduTxStorage::<8, 0>::new();
+        let storage = HtAmpduTxStorage::<8, 0>::new();
         let mut external = [[0xa5_u8; 1_600]; 8];
         let mcs0_sgi = HtRate::new(
             crate::tx::HtMcs::Mcs0,
             crate::tx::HtGuardInterval::Short400Ns,
             crate::tx::HtChannelWidth::Mhz40,
         );
-        // SAFETY: the local storage and all eight external allocations remain
-        // at stable, exclusively retained addresses until `cancel`.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let mut storage = core::pin::pin!(storage);
         storage
             .as_mut()
             .configure_max_aggregate_bytes(u16::MAX)
@@ -4372,10 +4308,8 @@ mod tests {
 
     #[test]
     fn owned_dma_pool_preserves_one_subframe_he_ampdu_length() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         storage.as_mut().next_frame_buffer(cookie).unwrap()[..100].fill(0xa5);
         storage.as_mut().commit_frame(cookie, 100, 8, 0).unwrap();
@@ -4393,10 +4327,8 @@ mod tests {
 
     #[test]
     fn owned_he_commit_derives_empty_delimiters_from_rate_and_peer_density() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let rate = HeRate::bcc_dcm(
             crate::tx::HeBccDcmMcs::Mcs3,
@@ -4426,17 +4358,14 @@ mod tests {
                 subframes: 2,
             }
         );
-        // SAFETY: Reserved state proves hardware has not observed the buffer.
-        let first = unsafe { &*storage.buffers[0].0.get() };
+        let first = &storage.buffers[0].0;
         assert_eq!(first[4], 1);
     }
 
     #[test]
     fn hardware_he_control_uses_vendor_metadata_bit_without_dma_placeholder() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let rate = HeRate::new(
             crate::tx::HeMcs::Mcs9,
@@ -4460,8 +4389,7 @@ mod tests {
                 subframes: 1,
             }
         );
-        // SAFETY: Reserved state proves hardware has not observed the buffer.
-        let dma = unsafe { &*storage.buffers[0].0.get() };
+        let dma = &storage.buffers[0].0;
         assert_eq!(&dma[..4], &76_u32.to_le_bytes());
         assert_eq!(&dma[4..8], &0x0100_0000_u32.to_le_bytes());
         assert_eq!(
@@ -4472,10 +4400,8 @@ mod tests {
 
     #[test]
     fn he_trigger_preparation_uses_original_msdu_lengths_and_exact_link_range() {
-        let mut storage = HtAmpduTxStorage::<4, 256>::new();
-        // SAFETY: no address is published and the local remains pinned for
-        // the duration of the test.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<4, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let rate = HeRate::new(
             crate::tx::HeMcs::Mcs9,
@@ -4526,10 +4452,8 @@ mod tests {
 
     #[test]
     fn he_trigger_preparation_fails_closed_without_original_msdu_length() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: no address is published and the local remains pinned for
-        // the duration of the test.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let rate = HeRate::new(
             crate::tx::HeMcs::Mcs0,
@@ -4564,10 +4488,8 @@ mod tests {
 
     #[test]
     fn completion_exposes_publication_snapshot_then_clears_tb_enable() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: this test models hardware ownership without publishing the
-        // host address, and never moves the pinned local.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let reservation = MacHeTbLinkReservation::for_queue(MacHeTbTidLimit::Three, 2, 2).unwrap();
         let snapshot = MacHeTriggerTxQueueSnapshot {
@@ -4584,12 +4506,12 @@ mod tests {
             queued_msdu_bytes: 161,
             queue_valid: true,
         };
-        unsafe {
-            let storage = storage.as_mut().get_unchecked_mut();
-            storage.state = TxSlotState::HardwareOwned;
-            storage.queue = LegacyTxQueue::BestEffort;
-            storage.trigger_reservation = Some(reservation);
-            storage.trigger_publication_snapshot = Some(snapshot);
+        {
+            let storage = storage.as_mut().project();
+            *storage.state = TxSlotState::HardwareOwned;
+            *storage.queue = LegacyTxQueue::BestEffort;
+            *storage.trigger_reservation = Some(reservation);
+            *storage.trigger_publication_snapshot = Some(snapshot);
         }
         let mut hardware = CompletionHardware {
             completion: Some(MacHtAmpduCompletionRegisters {
@@ -4633,10 +4555,8 @@ mod tests {
 
     #[test]
     fn incremental_pool_length_matches_blob_accumulator_for_full_window() {
-        let mut storage = HtAmpduTxStorage::<32, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<32, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         storage
             .as_mut()
             .configure_max_aggregate_bytes(u16::MAX)
@@ -4669,22 +4589,20 @@ mod tests {
 
     #[test]
     fn completed_pool_retains_mpdu_until_explicit_release() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: the local is not moved while this pin exists and this test
-        // does not publish an address to hardware.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         storage.as_mut().next_frame_buffer(cookie).unwrap()[..32].fill(0x5a);
         storage.as_mut().commit_frame(cookie, 32, 8, 0).unwrap();
 
         // Model the two hardware ownership edges independently: completion
         // alone must not expose a buffer that the queue still references.
-        unsafe { storage.as_mut().get_unchecked_mut() }.state = TxSlotState::Completed;
+        *storage.as_mut().project().state = TxSlotState::Completed;
         assert_eq!(
             storage.completed_frame(cookie, 0),
             Err(HtAmpduTxError::Stale)
         );
-        unsafe { storage.as_mut().get_unchecked_mut() }.detached = true;
+        *storage.as_mut().project().detached = true;
         let (frame, mic_length) = storage.completed_frame(cookie, 0).unwrap();
         assert_eq!(frame, &[0x5a; 32]);
         assert_eq!(mic_length, 8);
@@ -4699,10 +4617,8 @@ mod tests {
 
     #[test]
     fn detached_pool_compacts_only_missing_frames_for_ampdu_retry() {
-        let mut storage = HtAmpduTxStorage::<4, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<4, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         for index in 0..4_u8 {
             let frame = storage.as_mut().next_frame_buffer(cookie).unwrap();
@@ -4710,10 +4626,10 @@ mod tests {
             frame[1] = 0x41;
             storage.as_mut().commit_frame(cookie, 32, 8, 0).unwrap();
         }
-        unsafe {
-            let storage = storage.as_mut().get_unchecked_mut();
-            storage.state = TxSlotState::Completed;
-            storage.detached = true;
+        {
+            let storage = storage.as_mut().project();
+            *storage.state = TxSlotState::Completed;
+            *storage.detached = true;
         }
 
         let aggregate = storage
@@ -4743,10 +4659,8 @@ mod tests {
 
     #[test]
     fn detached_he_pool_retains_one_missing_mpdu_at_the_original_rate() {
-        let mut storage = HtAmpduTxStorage::<2, 256>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // this pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<2, 256>::new();
+        let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         let initial = HeRate::ldpc(
             crate::tx::HeMcs::Mcs9,
@@ -4757,10 +4671,10 @@ mod tests {
             .as_mut()
             .commit_he_frame(cookie, 32, 8, initial, HtAmpduDensity::EightMicroseconds)
             .unwrap();
-        unsafe {
-            let storage = storage.as_mut().get_unchecked_mut();
-            storage.state = TxSlotState::Completed;
-            storage.detached = true;
+        {
+            let storage = storage.as_mut().project();
+            *storage.state = TxSlotState::Completed;
+            *storage.detached = true;
         }
 
         let retained = storage
@@ -4768,10 +4682,8 @@ mod tests {
             .retain_for_ampdu_retry(cookie, 0b1)
             .unwrap();
         assert_eq!(retained.subframes, 1);
-        unsafe {
-            let buffer = &*storage.as_ref().get_ref().buffers[0].0.get();
-            assert_eq!(buffer[TX_AMPDU_METADATA_SIZE + 1] & 0x08, 0x08);
-        }
+        let buffer = &storage.as_ref().get_ref().buffers[0].0;
+        assert_eq!(buffer[TX_AMPDU_METADATA_SIZE + 1] & 0x08, 0x08);
 
         assert_eq!(
             storage.prepared_empty_delimiters(cookie, 0).unwrap(),
@@ -4784,10 +4696,8 @@ mod tests {
 
     #[test]
     fn full_window_and_byte_ceiling_are_independent() {
-        let mut storage = HtAmpduTxStorage::<32, 1700>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // the pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<32, 1700>::new();
+        let mut storage = core::pin::pin!(storage);
         storage
             .as_mut()
             .configure_max_aggregate_bytes(0x7fff)
@@ -4822,10 +4732,8 @@ mod tests {
 
     #[test]
     fn he_rate_duration_gate_prevents_an_oversized_dma_publication() {
-        let mut storage = HtAmpduTxStorage::<32, 1_600>::new();
-        // SAFETY: no address is published and the local is not moved while
-        // the pin exists.
-        let mut storage = unsafe { Pin::new_unchecked(&mut storage) };
+        let storage = HtAmpduTxStorage::<32, 1_600>::new();
+        let mut storage = core::pin::pin!(storage);
         storage
             .as_mut()
             .configure_max_aggregate_bytes(u16::MAX)

@@ -4,6 +4,8 @@
 //! register banks. This module reproduces only the register transaction. It
 //! owns no agreement state, allocates nothing, and never waits.
 
+#![forbid(unsafe_code)]
+
 use open_esp_radio_esp32s31_registers::RadioRegisters;
 
 const RX_BLOCK_ACK_CAPACITY: u8 = 8;
@@ -70,7 +72,6 @@ impl S31RxBlockAckAgreement {
 /// The mutable PAC borrow serializes this transaction with other MAC register
 /// operations. The caller must keep the matching software reorder state alive
 /// until [`clear`] completes.
-#[unsafe(link_section = ".rwtext.wifi_strict.rx_ampdu_hw")]
 pub fn program(
     mmio: &mut RadioRegisters,
     agreement: S31RxBlockAckAgreement,
@@ -90,7 +91,6 @@ pub fn program(
 /// Remove one extra SoftAP receive BlockAck entry.
 ///
 /// The caller must recycle all retained software reorder slots first.
-#[unsafe(link_section = ".rwtext.wifi_strict.rx_ampdu_hw")]
 pub fn clear(
     mmio: &mut RadioRegisters,
     hardware_index: u8,

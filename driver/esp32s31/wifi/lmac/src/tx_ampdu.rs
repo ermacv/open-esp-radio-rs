@@ -8,8 +8,9 @@
 
 #![allow(unsafe_code, reason = "pinned A-MPDU DMA storage boundary")]
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{marker::PhantomPinned, mem, ops::Deref, pin::Pin};
 
+use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
@@ -2255,6 +2256,205 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> Default
     }
 }
 
+/// Descriptor owner coupled to every external DMA backing it references.
+///
+/// Unlike a bare [`HtAmpduTxStorage`], this value cannot return or drop a
+/// network allocation while hardware can still follow its descriptor. Safe
+/// callers append owned [`StableDmaBacking`] leases; release is admitted only
+/// after the underlying storage has returned to [`TxSlotState::Free`].
+pub struct RetainedDmaAmpduTx<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize> {
+    storage: Option<Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>>,
+    backings: [Option<B>; SLOTS],
+    held: usize,
+}
+
+impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
+    RetainedDmaAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>
+{
+    pub fn new(storage: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>) -> Self {
+        Self {
+            storage: Some(storage),
+            backings: [const { None }; SLOTS],
+            held: 0,
+        }
+    }
+
+    pub fn as_ref(&self) -> Pin<&HtAmpduTxStorage<SLOTS, BUFFER_SIZE>> {
+        self.storage
+            .as_ref()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_ref()
+    }
+
+    pub fn as_mut(&mut self) -> Pin<&mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>> {
+        self.storage
+            .as_mut()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_mut()
+    }
+
+    pub const fn held_backing_count(&self) -> usize {
+        self.held
+    }
+
+    /// Release retained leases after the descriptor owner has become free.
+    pub fn release_free_backings(&mut self) -> Result<(), HtAmpduTxError> {
+        if self.state() != TxSlotState::Free {
+            return Err(HtAmpduTxError::NotFree(self.state()));
+        }
+        for backing in &mut self.backings[..self.held] {
+            drop(backing.take());
+        }
+        self.held = 0;
+        Ok(())
+    }
+
+    /// Quarantine every retained lease when the hardware owner is unknowable.
+    ///
+    /// Leaking a finite static pool is the fail-closed alternative to making
+    /// DMA-visible memory reusable after a reset-required transition.
+    pub fn forget_backings(&mut self) {
+        for backing in &mut self.backings[..self.held] {
+            if let Some(backing) = backing.take() {
+                mem::forget(backing);
+            }
+        }
+        self.held = 0;
+    }
+
+    /// Recover descriptor storage only after all external leases are free.
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_storage(
+        mut self,
+    ) -> Result<Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>, Self> {
+        if self.state() != TxSlotState::Free || self.held != 0 {
+            return Err(self);
+        }
+        Ok(self
+            .storage
+            .take()
+            .expect("retained DMA owner contains teardown storage"))
+    }
+}
+
+impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
+    RetainedDmaAmpduTx<'_, B, SLOTS, BUFFER_SIZE>
+{
+    /// Commit one HT frame and retain its stable backing in the same owner.
+    pub fn commit_ht(
+        &mut self,
+        cookie: TxCookie,
+        mut backing: B,
+        dma_offset: usize,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        empty_delimiters: u8,
+        rate: HtRate,
+    ) -> Result<(), HtAmpduTxError> {
+        if self.held >= SLOTS || self.backings[self.held].is_some() {
+            return Err(HtAmpduTxError::SlotCapacity);
+        }
+        let mut region = backing.stable_dma_region();
+        let dma_storage = region
+            .as_mut_slice()
+            .get_mut(dma_offset..)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        // SAFETY: `StableDmaBacking` proves address stability. This owner
+        // retains `backing` immediately after the atomic software commit and
+        // releases it only after the storage returns to Free.
+        unsafe {
+            self.as_mut().commit_referenced_ht_frame(
+                cookie,
+                dma_storage,
+                frame_length,
+                hardware_mic_length,
+                empty_delimiters,
+                rate,
+            )?;
+        }
+        drop(region);
+        self.backings[self.held] = Some(backing);
+        self.held += 1;
+        Ok(())
+    }
+
+    /// Commit one HE frame under the exact TXOP policy and retain its backing.
+    pub fn commit_he_with_txop(
+        &mut self,
+        cookie: TxCookie,
+        mut backing: B,
+        dma_offset: usize,
+        frame_length: usize,
+        hardware_mic_length: u8,
+        rate: HeRate,
+        density: HtAmpduDensity,
+        txop_limit: HeEdcaTxopLimit,
+    ) -> Result<(), HtAmpduTxError> {
+        if self.held >= SLOTS || self.backings[self.held].is_some() {
+            return Err(HtAmpduTxError::SlotCapacity);
+        }
+        let mut region = backing.stable_dma_region();
+        let dma_storage = region
+            .as_mut_slice()
+            .get_mut(dma_offset..)
+            .ok_or(HtAmpduTxError::FrameTooLong)?;
+        // SAFETY: identical retained-backing invariant to `commit_ht`; the HE
+        // implementation additionally validates the complete APEP/TXOP gate.
+        unsafe {
+            self.as_mut().commit_referenced_he_frame_with_txop(
+                cookie,
+                dma_storage,
+                frame_length,
+                hardware_mic_length,
+                rate,
+                density,
+                txop_limit,
+            )?;
+        }
+        drop(region);
+        self.backings[self.held] = Some(backing);
+        self.held += 1;
+        Ok(())
+    }
+}
+
+impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Deref
+    for RetainedDmaAmpduTx<'_, B, SLOTS, BUFFER_SIZE>
+{
+    type Target = HtAmpduTxStorage<SLOTS, BUFFER_SIZE>;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref().get_ref()
+    }
+}
+
+impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
+    for RetainedDmaAmpduTx<'_, B, SLOTS, BUFFER_SIZE>
+{
+    fn drop(&mut self) {
+        let Some(storage) = self.storage.as_mut() else {
+            return;
+        };
+        let released = match storage.state() {
+            TxSlotState::Free => true,
+            TxSlotState::Reserved => {
+                let cookie = storage.active;
+                storage.as_mut().cancel(cookie).is_ok()
+            }
+            TxSlotState::Completed => {
+                let cookie = storage.active;
+                storage.as_mut().release_completed(cookie).is_ok()
+            }
+            TxSlotState::HardwareOwned | TxSlotState::ResetRequired => false,
+        };
+        if released {
+            let _ = self.release_free_backings();
+        } else {
+            self.forget_backings();
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BasicHtAmpduAssemblyError {
     AggregateShorterThanHeader,
@@ -3189,7 +3389,10 @@ const fn next_vendor_block_ack_dialog_token(current: u8) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use super::*;
+    use open_esp_radio_dma::StableDmaRegion;
     use open_esp_radio_esp32s31_registers::{
         MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters,
     };
@@ -3267,6 +3470,64 @@ mod tests {
         ) -> Option<MacHeTriggerTxQueueSnapshot> {
             self.trigger_snapshot
         }
+    }
+
+    struct TestStableBacking<'a> {
+        bytes: &'a mut [u8],
+        drops: &'a Cell<u8>,
+    }
+
+    // SAFETY: the backing is a borrowed allocation outside this movable
+    // handle and remains exclusively borrowed until the handle is dropped.
+    unsafe impl StableDmaBacking for TestStableBacking<'_> {
+        fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+            // SAFETY: `bytes` cannot move or be aliased for the lifetime of
+            // this retained test handle.
+            unsafe { StableDmaRegion::new(self.bytes) }
+        }
+    }
+
+    impl Drop for TestStableBacking<'_> {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+
+    #[test]
+    fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
+        let storage = HtAmpduTxStorage::<2, 0>::new();
+        let mut storage = core::pin::pin!(storage);
+        let mut bytes = [0_u8; 256];
+        bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
+        let drops = Cell::new(0);
+
+        {
+            let mut owner = RetainedDmaAmpduTx::new(storage.as_mut());
+            let cookie = owner.as_mut().begin().unwrap();
+            owner
+                .commit_ht(
+                    cookie,
+                    TestStableBacking {
+                        bytes: &mut bytes,
+                        drops: &drops,
+                    },
+                    0,
+                    32,
+                    8,
+                    0,
+                    HtRate::new(
+                        crate::tx::HtMcs::Mcs0,
+                        crate::tx::HtGuardInterval::Long800Ns,
+                        crate::tx::HtChannelWidth::Mhz20,
+                    ),
+                )
+                .unwrap();
+            assert_eq!(owner.held_backing_count(), 1);
+            assert_eq!(drops.get(), 0);
+        }
+
+        assert_eq!(drops.get(), 1);
+        assert_eq!(storage.state(), TxSlotState::Free);
     }
 
     const CONFIG: TxBlockAckConfig = TxBlockAckConfig {

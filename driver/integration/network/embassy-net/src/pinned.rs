@@ -16,6 +16,7 @@ use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
 };
+use open_esp_radio_dma::{StableDmaBacking, StableDmaRegion};
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
 
@@ -1117,6 +1118,24 @@ impl<
 
     pub const fn trailer_capacity(&self) -> usize {
         TRAILER
+    }
+}
+
+// SAFETY: every `PinnedTxFrame` is a unique SLOT_RADIO lease into a separately
+// pinned `PinnedTxPool`. Moving this handle never moves its backing bytes, and
+// dropping it is the only safe operation that releases the allocation.
+unsafe impl<
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> StableDmaBacking for PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+{
+    fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+        // SAFETY: the pool, rather than this movable lease handle, owns the
+        // allocation. It remains pinned until all radio leases are returned.
+        unsafe { StableDmaRegion::new(self.storage_mut()) }
     }
 }
 

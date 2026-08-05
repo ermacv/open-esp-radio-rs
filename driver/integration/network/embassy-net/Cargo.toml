@@ -10,6 +10,7 @@ description = "Bounded, owned Ethernet frame boundary between open ESP radio tas
 [dependencies]
 embassy-net-driver = "0.2"
 embassy-sync = "0.8.0"
+open-esp-radio-dma = { path = "../../../dma" }
 
 [lints]
 workspace = true

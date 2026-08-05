@@ -1,0 +1,11 @@
+[package]
+name = "open-esp-radio-dma"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Stable DMA backing contract for open ESP radio drivers"
+
+[lints]
+workspace = true

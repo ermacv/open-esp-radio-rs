@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "hil/protocol",
+    "driver/dma",
     "driver/radio",
     "driver/integration/network/embassy-net",
     "driver/integration/esp32s31/wifi-embassy",

@@ -21,7 +21,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HtAmpduTxConfig, LegacyTxQueue, TxCookie,
         TxPhyRate, TxSlotState,
     },
-    tx_ampdu::{HtAmpduHardware, HtAmpduTxError, HtAmpduTxStorage},
+    tx_ampdu::{HtAmpduHardware, HtAmpduTxError, HtAmpduTxStorage, RetainedDmaAmpduTx},
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 use open_esp_radio_ieee80211::{
@@ -201,10 +201,14 @@ pub struct Esp32s31ConnectedTx<
     const ORDINARY_BUFFER_SIZE: usize,
 > {
     ordinary: TeardownResource<Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>>,
-    ampdu: TeardownResource<Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>>,
-    frames: [Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>>;
-        SLOTS],
-    held_frames: usize,
+    ampdu: TeardownResource<
+        RetainedDmaAmpduTx<
+            'ampdu,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+        >,
+    >,
     cookie: Option<TxCookie>,
     block_ack_operational: [bool; 8],
     config: AggregateTxConfig,
@@ -278,9 +282,7 @@ where
         )?;
         Ok(Self {
             ordinary: TeardownResource::new(ordinary),
-            ampdu: TeardownResource::new(ampdu),
-            frames: [const { None }; SLOTS],
-            held_frames: 0,
+            ampdu: TeardownResource::new(RetainedDmaAmpduTx::new(ampdu)),
             cookie: None,
             block_ack_operational: [false; 8],
             config,
@@ -381,14 +383,16 @@ where
     > {
         if self.active()
             || self.ordinary.active()
-            || self.held_frames != 0
+            || self.ampdu.held_backing_count() != 0
             || self.cookie.is_some()
-            || self.frames.iter().any(Option::is_some)
         {
             return Err(self);
         }
         let ordinary = self.ordinary.take();
-        let ampdu = self.ampdu.take();
+        let ampdu = match self.ampdu.take().try_into_storage() {
+            Ok(storage) => storage,
+            Err(_) => unreachable!("idle retained DMA owner must return its storage"),
+        };
         Ok((ordinary, ampdu))
     }
 
@@ -635,7 +639,7 @@ where
         self.push_frame(first)?;
 
         let build_stop = loop {
-            if self.held_frames >= usize::from(self.config.frame_limit) {
+            if self.ampdu.held_backing_count() >= usize::from(self.config.frame_limit) {
                 break AggregateBuildStop::FrameLimit;
             }
             if !self.can_push(FRAME_CAPACITY)? {
@@ -699,15 +703,11 @@ where
         }
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "referenced TX commit until the retained-backing owner moves below this adapter"
-    )]
     fn push_frame(
         &mut self,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<(), AggregateTxError> {
-        if self.held_frames >= SLOTS || !self.can_push(frame.ethernet_length())? {
+        if self.ampdu.held_backing_count() >= SLOTS || !self.can_push(frame.ethernet_length())? {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
         let metadata = self
@@ -739,32 +739,28 @@ where
         }
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
-        // SAFETY: `frame` moves into `self.frames` immediately after the
-        // commit and stays there through every exposed hardware state.
-        unsafe {
-            match self.config.rate {
-                TxPhyRate::Ht(rate) => self.ampdu.as_mut().commit_referenced_ht_frame(
-                    cookie,
-                    &mut frame.storage_mut()[dma_offset..],
-                    encoded.length,
-                    hardware_mic_length,
-                    0,
-                    rate,
-                )?,
-                TxPhyRate::He(rate) => self.ampdu.as_mut().commit_referenced_he_frame_with_txop(
-                    cookie,
-                    &mut frame.storage_mut()[dma_offset..],
-                    encoded.length,
-                    hardware_mic_length,
-                    rate,
-                    self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
-                )?,
-                TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
-            }
+        match self.config.rate {
+            TxPhyRate::Ht(rate) => self.ampdu.commit_ht(
+                cookie,
+                frame,
+                dma_offset,
+                encoded.length,
+                hardware_mic_length,
+                0,
+                rate,
+            )?,
+            TxPhyRate::He(rate) => self.ampdu.commit_he_with_txop(
+                cookie,
+                frame,
+                dma_offset,
+                encoded.length,
+                hardware_mic_length,
+                rate,
+                self.ordinary.policy().ht_ampdu().density(),
+                self.config.he_txop_limit,
+            )?,
+            TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
         }
-        self.frames[self.held_frames] = Some(frame);
-        self.held_frames += 1;
         Ok(())
     }
 
@@ -1097,19 +1093,13 @@ where
     }
 
     fn release_frames(&mut self) {
-        for frame in &mut self.frames[..self.held_frames] {
-            drop(frame.take());
+        if self.ampdu.release_free_backings().is_err() {
+            self.ampdu.forget_backings();
         }
-        self.held_frames = 0;
     }
 
     fn forget_frames(&mut self) {
-        for frame in &mut self.frames[..self.held_frames] {
-            if let Some(frame) = frame.take() {
-                mem::forget(frame);
-            }
-        }
-        self.held_frames = 0;
+        self.ampdu.forget_backings();
     }
 
     fn reset_required(

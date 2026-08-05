@@ -13,6 +13,7 @@ large-rx-pool-48 = []
 rx-ba-window-8 = []
 
 [dependencies]
+open-esp-radio-dma = { path = "../../../dma" }
 open-esp-radio-esp32s31-registers = { path = "../../registers" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-lmac = { path = "../../../wifi/lmac" }

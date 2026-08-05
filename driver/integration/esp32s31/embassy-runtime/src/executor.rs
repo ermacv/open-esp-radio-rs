@@ -1,3 +1,5 @@
+#![allow(unsafe_code, reason = "ESP-HAL executor and interrupt binding")]
+
 use core::marker::PhantomData;
 
 use embassy_executor::{Spawner, raw};

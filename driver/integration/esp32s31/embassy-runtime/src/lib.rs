@@ -1,5 +1,6 @@
 #![no_std]
 #![cfg(feature = "esp32s31")]
+#![deny(unsafe_code)]
 
 //! Scheduler-free Embassy platform runtime for ESP32-S31 applications.
 //!

@@ -14,6 +14,8 @@
 //! `Free -> Radio -> Network -> Free` ownership and 32-by-1,700 geometry,
 //! while omitting the C-only ESF header and intrusive pointers.
 
+#![allow(unsafe_code, reason = "RX staging slot ownership boundary")]
+
 use core::{
     cell::UnsafeCell,
     sync::atomic::{AtomicUsize, Ordering},

@@ -6,6 +6,8 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
+#![allow(unsafe_code, reason = "pinned A-MPDU DMA storage boundary")]
+
 use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_registers::{

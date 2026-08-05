@@ -1,5 +1,7 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
+#![allow(unsafe_code, reason = "pinned network slot ownership boundary")]
+
 use core::{
     cell::UnsafeCell,
     marker::PhantomPinned,

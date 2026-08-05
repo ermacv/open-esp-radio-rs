@@ -1,5 +1,7 @@
 //! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
+#![allow(unsafe_code, reason = "qualified hot-path placement attributes")]
+
 use crate::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,

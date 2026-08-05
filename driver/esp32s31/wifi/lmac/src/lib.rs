@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unsafe_code)]
 
 //! Source-owned ESP32-S31 Wi-Fi MAC building blocks.
 //!

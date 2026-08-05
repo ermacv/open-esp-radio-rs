@@ -4,6 +4,8 @@
 //! payload capacity and placement policy are selected by the board or runtime
 //! composition and remain const-generic here.
 
+#![allow(unsafe_code, reason = "RX DMA storage boundary")]
+
 use core::cell::UnsafeCell;
 
 use crate::{

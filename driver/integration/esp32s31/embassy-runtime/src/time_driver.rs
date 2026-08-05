@@ -1,3 +1,5 @@
+#![allow(unsafe_code, reason = "Embassy global time-driver interrupt binding")]
+
 use core::{
     sync::atomic::{AtomicBool, Ordering},
     task::Waker,

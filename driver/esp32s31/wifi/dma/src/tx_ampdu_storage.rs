@@ -449,8 +449,22 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS,
         self.held
     }
 
+    pub fn descriptor_head(&self) -> u32 {
+        self.dma().binding().descriptor_head()
+    }
+
     pub fn begin(&mut self) -> Result<(), AmpduDmaStorageError> {
         self.dma_mut().begin()
+    }
+
+    /// Re-reserve a detached aggregate for a selective BlockAck retry.
+    ///
+    /// All leases stay retained. The new descriptor chain may reference a
+    /// compacted subset of them, while acknowledged frames remain owned until
+    /// the retry reaches its final detach/release edge.
+    pub fn begin_retry(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut()
+            .transition(AmpduDmaState::Detached, AmpduDmaState::Reserved)
     }
 
     pub fn push_backing(&mut self, backing: B) -> Result<u8, AmpduDmaStorageError> {
@@ -469,6 +483,27 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS,
         *slot = Some(backing);
         self.held += 1;
         Ok(backing_index)
+    }
+
+    /// Undo the most recent reserved backing insertion.
+    ///
+    /// Aggregate metadata is prepared by the upper MAC after the lease has
+    /// entered this owner.  If that preparation rejects the frame, this
+    /// strictly-LIFO edge returns the lease without leaving a hole in the
+    /// backing-index space later published to DMA descriptors.
+    pub fn pop_last_backing(&mut self, index: u8) -> Result<B, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Reserved {
+            return Err(AmpduDmaStorageError::State);
+        }
+        let index = usize::from(index);
+        if self.held.checked_sub(1) != Some(index) {
+            return Err(AmpduDmaStorageError::Count);
+        }
+        let backing = self.backings[index]
+            .take()
+            .ok_or(AmpduDmaStorageError::Count)?;
+        self.held = index;
+        Ok(backing)
     }
 
     pub fn reserved_backing_mut(&mut self, index: u8) -> Result<&mut B, AmpduDmaStorageError> {
@@ -570,6 +605,72 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS,
 impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     RetainedAmpduDma<B, SLOTS, BUFFER_SIZE>
 {
+    /// Resolve an upper-MAC frame range to a retained backing and offset.
+    ///
+    /// The caller supplies only integer identity metadata. This owner obtains
+    /// the actual slice from the lease and proves that the complete descriptor
+    /// capacity remains inside it before returning a publication entry.
+    pub fn reserved_external_descriptor(
+        &mut self,
+        address: usize,
+        buffer_capacity: u32,
+        transfer_length: u32,
+    ) -> Result<AmpduExternalDescriptor, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Reserved {
+            return Err(AmpduDmaStorageError::State);
+        }
+        let capacity =
+            usize::try_from(buffer_capacity).map_err(|_| AmpduDmaStorageError::Address)?;
+        for (index, backing) in self.backings[..self.held].iter_mut().enumerate() {
+            let Some(backing) = backing.as_mut() else {
+                continue;
+            };
+            let bytes = backing.stable_dma_region().into_mut_slice();
+            let Some(offset) = address.checked_sub(bytes.as_ptr().addr()) else {
+                continue;
+            };
+            if offset
+                .checked_add(capacity)
+                .is_some_and(|end| end <= bytes.len())
+            {
+                return Ok(AmpduExternalDescriptor {
+                    backing_index: u8::try_from(index).map_err(|_| AmpduDmaStorageError::Count)?,
+                    dma_offset: offset,
+                    buffer_capacity,
+                    transfer_length,
+                });
+            }
+        }
+        Err(AmpduDmaStorageError::Address)
+    }
+
+    /// Borrow a detached range only after the queue-detach proof was consumed.
+    pub fn detached_region_mut(
+        &mut self,
+        address: usize,
+        capacity: usize,
+    ) -> Result<&mut [u8], AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Detached {
+            return Err(AmpduDmaStorageError::State);
+        }
+        for backing in &mut self.backings[..self.held] {
+            let Some(backing) = backing.as_mut() else {
+                continue;
+            };
+            let bytes = backing.stable_dma_region().into_mut_slice();
+            let Some(offset) = address.checked_sub(bytes.as_ptr().addr()) else {
+                continue;
+            };
+            let Some(end) = offset.checked_add(capacity) else {
+                continue;
+            };
+            if end <= bytes.len() {
+                return Ok(&mut bytes[offset..end]);
+            }
+        }
+        Err(AmpduDmaStorageError::Address)
+    }
+
     /// Publish a complete chain whose entries resolve into retained leases.
     pub fn publish_external_chain(
         &mut self,
@@ -937,6 +1038,47 @@ mod tests {
     }
 
     #[test]
+    fn detached_external_chain_can_be_republished_for_retry() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let address = owner
+            .reserved_backing_mut(backing)
+            .unwrap()
+            .bytes
+            .as_ptr()
+            .addr()
+            + 8;
+        let entry = owner.reserved_external_descriptor(address, 64, 40).unwrap();
+        assert_eq!(entry.backing_index, backing);
+        assert_eq!(entry.dma_offset, 8);
+        owner
+            .publish_external_chain(&[entry])
+            .unwrap()
+            .commit(|_| {});
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+
+        owner.begin_retry().unwrap();
+        assert_eq!(owner.held_backing_count(), 1);
+        let retry = owner.reserved_external_descriptor(address, 64, 40).unwrap();
+        owner
+            .publish_external_chain(&[retry])
+            .unwrap()
+            .commit(|_| {});
+        owner.mark_completed().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+        assert_eq!(owner.detached_region_mut(address, 64).unwrap().len(), 64);
+        owner.release_detached().unwrap();
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
     fn dropping_hardware_owned_external_chain_forgets_backings() {
         let drops = Rc::new(Cell::new(0));
         let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
@@ -965,6 +1107,24 @@ mod tests {
 
         drop(owner);
         assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn reserved_backing_insert_can_be_rolled_back_transactionally() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        let first = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let second = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+
+        assert!(owner.pop_last_backing(first).is_err());
+        assert_eq!(owner.held_backing_count(), 2);
+        drop(owner.pop_last_backing(second).unwrap());
+        assert_eq!(owner.held_backing_count(), 1);
+        assert_eq!(drops.get(), 1);
+
+        owner.cancel().unwrap();
+        assert_eq!(drops.get(), 2);
     }
 
     #[test]

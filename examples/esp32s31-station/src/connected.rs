@@ -4,7 +4,7 @@
 //! reusable driver owns PAC/DMA/IRQ and 802.11 protocol transitions; no HIL
 //! command, benchmark or qualification telemetry is part of this graph.
 
-use core::{cell::RefCell, future::Future, pin::Pin};
+use core::{cell::RefCell, future::Future};
 
 use embassy_executor::Spawner;
 use embassy_net::{
@@ -19,17 +19,19 @@ use open_esp_radio::{
         hal::RadioRegisters,
         phy::phy_cold::PhyColdState,
         registers::MacInterruptSetup,
+        wifi::dma::tx_ampdu_storage::AmpduDmaStorage,
         wifi::lmac::{
             crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot},
             init::MAC_COLD_RX_INTERRUPT_MASK,
             rx::RxIngressConfig,
             rx_pool::RxStagePool,
             tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
-            tx_ampdu::HtAmpduTxStorage,
+            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
         },
     },
     integration::{
         esp32s31::wifi_embassy::{
+            connected_runner::ConnectedRunner,
             connected_sta_port::{
                 Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaControlResources,
                 Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaNetworkTxDomain,
@@ -45,9 +47,8 @@ use open_esp_radio::{
                 EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
             },
             embassy_rx::EmbassyEsp32s31RxReloadDelay,
-            preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            connected_runner::ConnectedRunner,
             network_rx::EmbassyNetConnectedRxSink,
+            preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             rx_backend::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
             rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
             sta_tx_epoch::Esp32s31StaTxEpochExt,
@@ -177,7 +178,7 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     { RX_BUFFER_SIZE + 4 },
 >;
 type ConnectedAmpduStorage =
-    Pin<&'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>>;
+    HtAmpduTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     Esp32s31PreconnectedRx<
@@ -220,6 +221,8 @@ static NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
 static NETWORK_TX_POOL: StaticCell<NetworkTxPool> = StaticCell::new();
 static NETWORK_STACK_RESOURCES: StaticCell<StackResources<4>> = StaticCell::new();
 static TX_AMPDU_STORAGE: StaticCell<HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>> =
+    StaticCell::new();
+static TX_AMPDU_DMA_STORAGE: StaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
     StaticCell::new();
 static REGISTER_CELL: StaticCell<RefCell<&'static mut RadioRegisters>> = StaticCell::new();
 static ETHERNET_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
@@ -475,8 +478,11 @@ pub async fn run_connected(
                 EmbassyEsp32s31RxReloadDelay,
             )
             .with_live_ring(live_ring);
-            let aggregate =
-                HtAmpduTxStorage::pin_static(TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new));
+            let aggregate = HtAmpduTxResources::pin_static(
+                TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
+                TX_AMPDU_DMA_STORAGE.init_with(AmpduDmaStorage::new),
+            )
+            .expect("A-MPDU metadata and descriptor storage must be valid");
             let control_resources = CONTROL_RESOURCES.init(ConnectedControlResources::new());
             let register_cell = REGISTER_CELL.init(RefCell::new(hardware));
             (

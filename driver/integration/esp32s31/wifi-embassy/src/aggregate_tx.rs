@@ -10,7 +10,6 @@ use core::{
     future::Future,
     mem,
     ops::{Deref, DerefMut},
-    pin::Pin,
 };
 
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
@@ -21,7 +20,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
         AmpduTxConfig, HeAmpduTxConfig, HeEdcaTxopLimit, HtAmpduTxConfig, LegacyTxQueue, TxCookie,
         TxPhyRate, TxSlotState,
     },
-    tx_ampdu::{HtAmpduHardware, HtAmpduTxError, HtAmpduTxStorage, RetainedDmaAmpduTx},
+    tx_ampdu::{HtAmpduHardware, HtAmpduTxError, HtAmpduTxResources, RetainedDmaAmpduTx},
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
 use open_esp_radio_ieee80211::{
@@ -258,7 +257,7 @@ where
 {
     pub fn new(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        mut ampdu: Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+        ampdu: HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
         if SLOTS == 0
@@ -277,12 +276,13 @@ where
         if config.attempt_limit == 0 {
             return Err(AmpduRetryError::ZeroAttemptLimit.into());
         }
-        ampdu.as_mut().configure_max_aggregate_bytes(
+        let mut ampdu = RetainedDmaAmpduTx::new(ampdu);
+        ampdu.configure_max_aggregate_bytes(
             ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
         Ok(Self {
             ordinary: TeardownResource::new(ordinary),
-            ampdu: TeardownResource::new(RetainedDmaAmpduTx::new(ampdu)),
+            ampdu: TeardownResource::new(ampdu),
             cookie: None,
             block_ack_operational: [false; 8],
             config,
@@ -377,7 +377,7 @@ where
     ) -> Result<
         (
             Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
@@ -389,8 +389,8 @@ where
             return Err(self);
         }
         let ordinary = self.ordinary.take();
-        let ampdu = match self.ampdu.take().try_into_storage() {
-            Ok(storage) => storage,
+        let ampdu = match self.ampdu.take().try_into_resources() {
+            Ok(resources) => resources,
             Err(_) => unreachable!("idle retained DMA owner must return its storage"),
         };
         Ok((ordinary, ampdu))
@@ -408,7 +408,7 @@ where
         (
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
             ConnectedTxHandoff,
-            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
@@ -434,7 +434,7 @@ where
     ) -> Result<
         Esp32s31ConnectedTxTeardownParts<
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>,
+            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         >,
         Self,
     > {
@@ -616,10 +616,10 @@ where
         // arena. Reinstall its byte ceiling at every Free -> Reserved edge so
         // a new batch cannot depend on cold scalar contents retained beside
         // hardware-owned words.
-        self.ampdu.as_mut().configure_max_aggregate_bytes(
+        self.ampdu.configure_max_aggregate_bytes(
             self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
-        let cookie = self.ampdu.as_mut().begin()?;
+        let cookie = self.ampdu.begin()?;
         self.cookie = Some(cookie);
 
         let result = self.prepare_reserved(first, network, first_sequence, cookie);
@@ -864,13 +864,13 @@ where
             .checked_add(self.config.completion_timeout_us)
             .ok_or(AggregateTxError::DeadlineOverflow)?;
         match active.config {
-            AmpduTxConfig::Ht(config) => self.ampdu.as_mut().submit(
+            AmpduTxConfig::Ht(config) => self.ampdu.submit(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,
                 config,
             )?,
-            AmpduTxConfig::He(config) => self.ampdu.as_mut().submit_he(
+            AmpduTxConfig::He(config) => self.ampdu.submit_he(
                 hardware,
                 self.cookie.ok_or(AggregateTxError::MissingCookie)?,
                 LegacyTxQueue::BestEffort,
@@ -906,9 +906,9 @@ where
             ));
         }
 
-        if let Some(completion) = self.ampdu.as_mut().acknowledge_completion(hardware)? {
+        if let Some(completion) = self.ampdu.acknowledge_completion(hardware)? {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            self.ampdu.as_mut().detach_completed(hardware, cookie)?;
+            self.ampdu.detach_completed(hardware, cookie)?;
             let current_subframes = self.ampdu.frame_count();
             let decision = active.retry.observe(completion, current_subframes)?;
             if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
@@ -1003,7 +1003,7 @@ where
         }
         if tx_events == MAC_INT_TX_TIMEOUT || matches!(wake, WifiTxWake::Deadline) {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            if !self.ampdu.as_mut().begin_timeout_abort(hardware, cookie)? {
+            if !self.ampdu.begin_timeout_abort(hardware, cookie)? {
                 return self.reset_required(if matches!(wake, WifiTxWake::Deadline) {
                     AggregateTxResetReason::ExecutorDeadline
                 } else {
@@ -1014,7 +1014,7 @@ where
                 .ordinary_mut()
                 .after_micros(AMPDU_ABORT_SETTLE_US)
                 .await;
-            self.ampdu.as_mut().finish_timeout_abort(hardware, cookie)?;
+            self.ampdu.finish_timeout_abort(hardware, cookie)?;
             self.release_frames();
             self.cookie = None;
             self.ordinary
@@ -1036,7 +1036,7 @@ where
         }
         if tx_events == MAC_INT_COLLISION {
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-            if !self.ampdu.as_mut().abort_collision(hardware, cookie)? {
+            if !self.ampdu.abort_collision(hardware, cookie)? {
                 return self.reset_required(AggregateTxResetReason::CollisionInterruptWithoutState);
             }
             self.release_frames();
@@ -1075,7 +1075,7 @@ where
 
     fn cancel_prepared(&mut self) {
         if let Some(cookie) = self.cookie.take() {
-            let _ = self.ampdu.as_mut().cancel(cookie);
+            let _ = self.ampdu.cancel(cookie);
         }
         self.release_frames();
         self.active = ConnectedTxActive::Idle;
@@ -1083,7 +1083,7 @@ where
 
     fn release_completed(&mut self) -> Result<(), AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        self.ampdu.as_mut().release_completed(cookie)?;
+        self.ampdu.release_completed(cookie)?;
         self.cookie = None;
         self.release_frames();
         Ok(())
@@ -1104,7 +1104,7 @@ where
         reason: AggregateTxResetReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        self.ampdu.as_mut().require_reset(cookie)?;
+        self.ampdu.require_reset(cookie)?;
         self.forget_frames();
         Err(AggregateTxError::RadioResetRequired(reason))
     }
@@ -1134,6 +1134,7 @@ mod tests {
             HardwareOwnedTxDma, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate,
             LegacyRate, PreparedTxDma, TxSlot,
         },
+        tx_ampdu::HtAmpduTxStorage,
         tx_runtime::StaTxRuntimePolicy,
     };
     use open_esp_radio_ieee80211::station::{
@@ -1418,7 +1419,7 @@ mod tests {
             TEST_BUFFER_SIZE,
         >::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1451,7 +1452,7 @@ mod tests {
         let counters = AggregateTxCounters::new();
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
                 frame_limit: TEST_SLOTS as u8,
@@ -1511,7 +1512,7 @@ mod tests {
         let counters = AggregateTxCounters::new();
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
                 frame_limit: TEST_SLOTS as u8,
@@ -1546,7 +1547,7 @@ mod tests {
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1611,7 +1612,7 @@ mod tests {
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1683,7 +1684,7 @@ mod tests {
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
             ordinary,
-            ampdu.as_mut(),
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
             AggregateTxConfig {
                 rate: TxPhyRate::Ht(TEST_RATE),
                 frame_limit: TEST_SLOTS as u8,
@@ -1956,7 +1957,7 @@ where
             TxSlotState::Reserved => {
                 if self
                     .cookie
-                    .is_some_and(|cookie| self.ampdu.as_mut().cancel(cookie).is_ok())
+                    .is_some_and(|cookie| self.ampdu.cancel(cookie).is_ok())
                 {
                     self.release_frames();
                 } else {
@@ -1966,7 +1967,7 @@ where
             TxSlotState::Completed => {
                 if self
                     .cookie
-                    .is_some_and(|cookie| self.ampdu.as_mut().release_completed(cookie).is_ok())
+                    .is_some_and(|cookie| self.ampdu.release_completed(cookie).is_ok())
                 {
                     self.release_frames();
                 } else {

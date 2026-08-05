@@ -5,13 +5,11 @@
 //! driver order: revoke association control state, stop RX DMA, prove TX idle,
 //! recover descriptor/sequence resources and clear both association keys.
 
-use core::pin::Pin;
-
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::{
     crypto::{CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpSlot, clear_sta_ccmp_slots},
     rx::{RxDma, RxRingError},
-    tx_ampdu::HtAmpduTxStorage,
+    tx_ampdu::HtAmpduTxResources,
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
@@ -157,7 +155,7 @@ where
     T: WifiTxTimer,
 {
     type Resources = WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>;
-    type Aggregate = Pin<&'ampdu mut HtAmpduTxStorage<SLOTS, AMPDU_BUFFER_SIZE>>;
+    type Aggregate = HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>;
 
     fn try_return(
         self,

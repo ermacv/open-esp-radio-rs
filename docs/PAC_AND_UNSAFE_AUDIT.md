@@ -112,18 +112,20 @@ Backing reuse no longer trusts a boolean returned by a safely implementable
 hardware trait. `RadioRegisters::with_detached_mac_tx` creates a private
 `MacTxQueueDetached` proof only after queue disable/invalid readback and lends
 it to a callback for the duration of its exclusive register borrow. Ordinary
-TX consumes that proof in the lower DMA owner; the transitional A-MPDU owner
-checks the same proof against its published descriptor head. Native mocks can
+TX and production A-MPDU consume that proof in their lower DMA owners and
+check it against the published descriptor head. Native mocks can
 construct model proofs only on non-32-bit hosts, where no asynchronous DMA
 actor exists. A target-side safe mock therefore cannot claim that DMA stopped
 and make live backing reusable.
 
-TX as a whole has not yet reached that boundary. `HtAmpduTxStorage` still
-retains descriptor arrays and buffers in safe LMAC, and the raw HT/HE
-`TxHardware`/`RadioRegisters` prepare and start methods remain public for that
-path. Raw legacy submission has been removed: a legacy queue can be prepared
-and started only with the phased capabilities. A raw but DMA-range-valid
-A-MPDU PLCP0 can still bypass the intended TX owner through HT/HE.
+Production TX now reaches that ownership boundary for ordinary MPDU and
+external-buffer A-MPDU. `HtAmpduTxResources` couples the upper recovered MAC
+metadata with a separately pinned lower descriptor arena, and station
+reconnect/teardown transfers that pair as one value. `RetainedDmaAmpduTx`
+retains each network lease in `RetainedAmpduDma<B>`, resolves metadata ranges
+inside those leases, publishes only through `PreparedTxDma`, records lower
+hardware ownership before the doorbell receives `HardwareOwnedTxDma`, and
+requires the detach proof before retry or release.
 
 `esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owners needed for
 both backing strategies. Internally buffered aggregates retain a static
@@ -135,23 +137,23 @@ only after validating the entire chain. Dropping an external owner after the
 hardware edge deliberately forgets the leases unless detach was confirmed,
 so a Rust destructor cannot return potentially DMA-visible memory.
 
-This primitive is not wired into LMAC yet. The current
-`RetainedDmaAmpduTx` wrapper still retains leases and descriptor metadata at
-the upper layer, and HT/HE submission therefore still uses the temporary raw
-entry points. The next migration must move that wrapper onto
-`RetainedAmpduDma<B>` rather than introducing a second retention mechanism.
+The old internally buffered `HtAmpduTxStorage` descriptor path remains as a
+transitional validation/model API. Its raw HT/HE `TxHardware` and
+`RadioRegisters` prepare/start methods are therefore still public even though
+the station, Embassy integration and HIL no longer call them. Raw legacy
+submission has already been removed. The remaining escape hatch is now
+isolated from the production owner graph but must still be deleted before the
+whole public TX API can be called capability-closed.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 
-1. move the LMAC A-MPDU metadata owner onto the chip DMA leaf's existing
-   internal or retained-external owner;
-2. pass its existing aggregate prepare/start capabilities through the LMAC
-   transaction;
-3. remove the remaining raw HT/HE `TxHardware` and `RadioRegisters`
+1. move any still-required internally buffered A-MPDU model onto the lower
+   DMA leaf, or retire it if external leases are the only production policy;
+2. remove the remaining raw HT/HE `TxHardware` and `RadioRegisters`
    submission methods once no production or validation caller depends on
    them;
-4. add a recoverable reset authority only after the complete MAC/DMA shutdown
+3. add a recoverable reset authority only after the complete MAC/DMA shutdown
    order is qualified; until then quarantine remains terminal.
 
 The reset-required/quarantine rule remains unchanged during this extraction:
@@ -159,9 +161,8 @@ no backing becomes reusable merely because its Rust queue owner was dropped.
 
 The application facade exposes this lower composition layer explicitly as
 `esp32s31::wifi::dma`, alongside `lmac` and `sta`; it is not re-exported as if
-DMA allocation were LMAC policy. This does not yet close the TX escape hatch:
-A-MPDU storage and the temporary raw HT/HE submission methods remain in the
-order above.
+DMA allocation were LMAC policy. The temporary raw HT/HE methods are now the
+only known public TX submission escape hatch above this boundary.
 
 ## Layer rules
 

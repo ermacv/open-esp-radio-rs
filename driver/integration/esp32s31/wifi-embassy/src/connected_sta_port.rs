@@ -5,8 +5,6 @@
 //! the associated peer, RX dispatcher/protocol, control-TX handoff,
 //! ordinary/A-MPDU TX, BlockAck control and the final [`Esp32s31ConnectedServices`].
 
-use core::pin::Pin;
-
 use embassy_sync::channel::Receiver;
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::{
@@ -19,7 +17,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
         HeDcmRate, HeEdcaTxopLimit, HeMcs, HtGuardInterval, HtMcs, LegacyRate, TxPhyRate,
         TxSlotState,
     },
-    tx_ampdu::{HtAmpduTxStorage, StaTxBlockAckSessions, TxBlockAckError},
+    tx_ampdu::{HtAmpduTxResources, StaTxBlockAckSessions, TxBlockAckError},
 };
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_ieee80211::{
@@ -454,7 +452,7 @@ impl Esp32s31ConnectedStaPort {
         T: WifiTxTimer,
     {
         assert_eq!(
-            resources.aggregate.as_ref().get_ref().state(),
+            resources.aggregate.state(),
             TxSlotState::Free,
             "a connected epoch requires returned idle aggregate storage"
         );
@@ -610,7 +608,7 @@ pub struct Esp32s31ConnectedStaTxResources<
     const ORDINARY_BUFFER_SIZE: usize,
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-    pub aggregate: Pin<&'resources mut HtAmpduTxStorage<AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>>,
+    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub pairwise_key: open_esp_radio_esp32s31_wifi_lmac::crypto::StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
     pub counters: Option<&'resources AggregateTxCounters>,
@@ -707,7 +705,7 @@ pub struct Esp32s31ConnectedStaTxHandoffFailure<
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
     pub handoff: ConnectedTxHandoff,
-    pub aggregate: Pin<&'resources mut HtAmpduTxStorage<AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>>,
+    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub counters: Option<&'resources AggregateTxCounters>,
 }
 

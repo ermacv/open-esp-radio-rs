@@ -25,7 +25,9 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
-use open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage;
+use open_esp_radio::esp32s31::wifi::dma::{
+    tx_ampdu_storage::AmpduDmaStorage, tx_storage::TxDmaStorage,
+};
 use open_esp_radio::esp32s31::wifi::sta::association::Esp32s31StaAssociationProfile;
 use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
 use open_esp_radio::esp32s31::wifi::sta::cold_start::{
@@ -81,7 +83,7 @@ use open_esp_radio::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
                 HtMcs, LegacyRate, TxCompletion, TxHardware, TxPhyRate, TxSlot,
             },
-            tx_ampdu::HtAmpduTxStorage,
+            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
         },
     },
     integration::{
@@ -858,6 +860,11 @@ static OPEN_RADIO_RX_BUFFER_ADDRESSES: StaticCell<[u32; RX_DESCRIPTOR_COUNT]> = 
 static OPEN_RADIO_TX_AMPDU_STORAGE: StaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = StaticCell::new();
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
+static OPEN_RADIO_TX_AMPDU_DMA_STORAGE: StaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
+    StaticCell::new();
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
 static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
 static ETHERNET_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
@@ -1035,7 +1042,7 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_STORAGE_SIZE,
 >;
 type ConnectedAmpduStorage =
-    Pin<&'static mut HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>>;
+    HtAmpduTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 type RadioHilReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     RadioHilJoinRx<'static>,
@@ -4081,9 +4088,11 @@ async fn run_connected_network<'fixture, 'security>(
             // (`BUFFER_SIZE == 0`), so constructing it in the static cell does
             // not materialize the former 55-KiB payload arena on this task's
             // stack. This edge belongs exclusively to the first epoch.
-            let ampdu = HtAmpduTxStorage::pin_static(
+            let ampdu = HtAmpduTxResources::pin_static(
                 OPEN_RADIO_TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
-            );
+                OPEN_RADIO_TX_AMPDU_DMA_STORAGE.init_with(AmpduDmaStorage::new),
+            )
+            .expect("A-MPDU metadata and descriptor storage must be valid");
             let control_resources = OPEN_RADIO_CONTROL_RESOURCES.init(ControlResources::new());
             let registers = OPEN_RADIO_REGISTER_CELL.init(RefCell::new(registers));
             (
@@ -5588,10 +5597,8 @@ async fn run_promiscuous_rx_hil(
     let platform = &mut platform;
     let mmio = &mut cold_mmio;
     let storage = OPEN_RADIO_RX_DMA_STORAGE.init_with(RxStorage::new);
-    let tx_dma = TxDmaStorage::pin_static(
-        OPEN_RADIO_TX_DMA_STORAGE.init_with(TxDmaStorage::new),
-    )
-    .expect("TX DMA storage must be addressable by ESP32-S31");
+    let tx_dma = TxDmaStorage::pin_static(OPEN_RADIO_TX_DMA_STORAGE.init_with(TxDmaStorage::new))
+        .expect("TX DMA storage must be addressable by ESP32-S31");
     let tx_slot = Pin::static_mut(OPEN_RADIO_TX_SLOT_STORAGE.init(TxSlot::from_dma(tx_dma)));
     let tx_storage = OPEN_RADIO_TX_STATE.init(TxStorage::from_slot(
         tx_slot,

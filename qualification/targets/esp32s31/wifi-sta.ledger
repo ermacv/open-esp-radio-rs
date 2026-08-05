@@ -104,8 +104,8 @@ test driver/adapters/embassy/esp32s31-wifi/src/rx_dma_service/tests.rs finite_se
 test driver/adapters/embassy/esp32s31-wifi/src/rx_reorder.rs board_profile_selects_the_allocated_reorder_slot_count
 test driver/chips/esp32s31/wifi/mac/src/connected_rx.rs dispatches_protected_ethernet_and_owns_duplicate_history
 test driver/chips/esp32s31/wifi/sta/src/tx_epoch.rs epoch_never_overwrites_or_duplicates_the_phase_owner
-test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port.rs port_binds_rx_and_control_to_one_validated_peer_plan
-test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port.rs compact_profile_rejects_rx_window_larger_than_reorder_storage
+test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port/tests.rs port_binds_rx_and_control_to_one_validated_peer_plan
+test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port/tests.rs compact_profile_rejects_rx_window_larger_than_reorder_storage
 vendor-anchor docs/esp32s31-radio-register-provenance.md wDev_AppendRxBlocks
 vendor-anchor docs/esp32s31-radio-register-provenance.md hal_mac_tx_config_timeout
 vendor-anchor docs/esp32s31-debug-oracles.md dbg_dump_rx_ppdu
@@ -263,7 +263,7 @@ owner driver/chips/esp32s31/wifi/sta/src/connected_control.rs Esp32s31ConnectedC
 owner driver/adapters/embassy/esp32s31-wifi/src/connected_control.rs ConnectedControlShutdown
 owner driver/chips/esp32s31/wifi/sta/src/scan.rs Esp32s31StaScanBackend
 owner driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs Esp32s31ScanRx
-owner driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs Esp32s31RunningScanRx
+owner driver/adapters/embassy/esp32s31-wifi/src/scan_rx/running.rs Esp32s31RunningScanRx
 owner driver/chips/esp32s31/wifi/sta/src/scan_tx.rs Esp32s31RunningScanTx
 owner driver/adapters/embassy/esp32s31-wifi/src/scan_port.rs Esp32s31ScanPort
 owner driver/chips/esp32s31/wifi/sta/src/channel.rs Esp32s31ScanPhy
@@ -285,7 +285,7 @@ test driver/adapters/embassy/esp32s31-wifi/src/sta_join_port.rs port_orders_driv
 test driver/chips/esp32s31/wifi/sta/src/attempt.rs every_borrowed_phase_failure_returns_the_exact_owner_and_frontier
 test driver/chips/esp32s31/wifi/sta/src/peer.rs port_owns_scan_and_association_peer_programming
 test driver/chips/esp32s31/wifi/sta/src/wpa2.rs eapol_copy_accepts_only_the_selected_station_link
-test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port.rs invalid_config_returns_the_exact_peer_before_owner_handoff
+test driver/adapters/embassy/esp32s31-wifi/src/connected_sta_port/tests.rs invalid_config_returns_the_exact_peer_before_owner_handoff
 test driver/adapters/embassy/esp32s31-wifi/src/station_epoch.rs running_scan_round_trip_and_reconnect_preserve_every_owner
 test driver/adapters/embassy/esp32s31-wifi/src/station.rs peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it
 test driver/adapters/embassy/esp32s31-wifi/src/station_tasks.rs missed_group_deadline_requires_platform_reset
@@ -293,10 +293,10 @@ test driver/adapters/embassy/esp32s31-wifi/src/station_tasks.rs one_deadline_ret
 test driver/chips/esp32s31/wifi/sta/src/control_tx.rs passive_fallback_requires_a_proven_quiescent_tx_owner
 test driver/chips/esp32s31/wifi/sta/src/scan.rs dwell_failure_still_stops_rx_and_returns_the_exact_owner
 test driver/chips/esp32s31/wifi/sta/src/scan.rs fatal_probe_failure_still_closes_the_live_rx_epoch
-test driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs complete_cold_scan_can_prepare_the_same_ring_for_a_retry
-test driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs scan_rx_hands_the_exact_halted_ring_to_the_next_phase
-test driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs scan_rx_retains_its_typed_phase_across_enable_and_disable_failure
-test driver/adapters/embassy/esp32s31-wifi/src/scan_rx.rs running_scan_rx_returns_the_exact_connected_epoch_resources
+test driver/adapters/embassy/esp32s31-wifi/src/scan_rx/tests.rs complete_cold_scan_can_prepare_the_same_ring_for_a_retry
+test driver/adapters/embassy/esp32s31-wifi/src/scan_rx/tests.rs scan_rx_hands_the_exact_halted_ring_to_the_next_phase
+test driver/adapters/embassy/esp32s31-wifi/src/scan_rx/tests.rs scan_rx_retains_its_typed_phase_across_enable_and_disable_failure
+test driver/adapters/embassy/esp32s31-wifi/src/scan_rx/tests.rs running_scan_rx_returns_the_exact_connected_epoch_resources
 test driver/chips/esp32s31/wifi/sta/src/scan_tx.rs running_scan_tx_returns_the_control_owner_after_a_probe
 test driver/chips/esp32s31/wifi/sta/src/scan_tx.rs failed_running_probe_disables_further_active_attempts
 test driver/chips/esp32s31/wifi/sta/src/scan.rs stop_failure_takes_precedence_over_an_earlier_dwell_failure

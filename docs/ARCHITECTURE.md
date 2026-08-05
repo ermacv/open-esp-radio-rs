@@ -236,6 +236,16 @@ DMA-to-staging publication. `connected_rx_protocol` owns the independently
 scheduled staging consumer, with separate owner, scheduler, BlockAck reorder
 and Ethernet/A-MSDU dispatch modules. No protocol parser can advance the DMA
 frontier, and the DMA service cannot retain borrowed protocol events.
+Connected STA composition is also distinct from runtime execution.
+`connected_sta_port::{plan,composition,resources}` validates policy before
+owner movement and then builds one named service graph. The adjacent
+`connected_runner::{owner,service,arbitration}` only schedules that graph and
+returns it at a bounded disconnect/stop frontier; it does not derive rates,
+VIF identity or BlockAck policy.
+The scan adapter mirrors this split: `scan_rx::ring` owns only the finite DMA
+phase machine, `scan_rx::running` preserves connected-epoch resources, and
+`scan_port::{owner,service,bindings}` separates owner composition from scan
+sequencing and concrete RX/TX adapters.
 The persistent `PhyColdState`/platform/observer owner used for cold scan,
 running scan and reconnect is similarly defined in
 `chips/esp32s31/wifi/sta::channel`; adapter modules only implement their scan

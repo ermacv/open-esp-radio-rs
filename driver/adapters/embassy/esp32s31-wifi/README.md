@@ -114,10 +114,22 @@ and HE-TID contract. This adapter's `connected_control` module owns only the
 Embassy receiver, deadline `select` and bounded reorder sender, while
 preserving the former application-facing type names.
 
-The connected datapath entry points use responsibility names rather than the
-generic `runner`/`backend` pair: `connected_runner` owns Embassy arbitration
-and cancellation-safe stopping, while `connected_services` owns the finite
-RX, control and network-TX service graph consumed by that runner.
+Connected-epoch composition is a separate phase from execution.
+`connected_sta_port::plan` validates VIF, rate, BlockAck and beacon policy
+before moving an owner. `composition` binds the already validated RX, TX and
+control resources, while `resources` contains the named handoff vocabulary.
+
+`connected_runner` then owns execution only. Its private `owner` module
+constructs and returns the network/service graph, `service` owns bounded RX/TX
+progress, and `arbitration` owns Embassy priority, deadlines and
+cancellation-safe stopping. `connected_services` remains the finite RX,
+control and network-TX capability graph consumed by that loop.
+
+The scan path follows the same ownership boundary. `scan_rx::ring` owns the
+typed DMA phase machine, while `scan_rx::running` only retains the surrounding
+connected-epoch resources across a finite rescan. `scan_port::owner` holds and
+returns the composed owners, `service` implements scan sequencing, and
+`bindings` adapts the concrete RX/TX owners to that service contract.
 
 WPA2 protocol deadlines and atomic key-publication rollback live in
 `open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31

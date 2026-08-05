@@ -1,0 +1,174 @@
+use super::*;
+
+/// Named protocol resources supplied by the platform composition.
+pub struct Esp32s31ConnectedStaRxProtocolResources<
+    'queue,
+    'pool,
+    'scratch,
+    'irq,
+    M: RawMutex,
+    S,
+    const DEPTH: usize,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
+    pub frames: Receiver<'queue, M, Esp32s31StagedRxFrame<'pool, CAPACITY, SLOTS>, DEPTH>,
+    pub irq: &'irq EmbassyMacIrqRuntime<M>,
+    pub sink: S,
+    pub mpdu: &'scratch mut [u8],
+    pub ethernet: &'scratch mut [u8],
+    pub reorder_commands: RxReorderCommandReceiver<'queue, M>,
+    pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
+    pub reorder_scratch: Option<&'scratch mut [u8]>,
+    /// Optional observation-only counters used by qualification fixtures.
+    pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
+}
+
+/// Named resources consumed by the control-to-connected TX handoff.
+pub struct Esp32s31ConnectedStaTxResources<
+    'slot,
+    'resources,
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const AGGREGATE_SLOTS: usize,
+    const AGGREGATE_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> {
+    pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub pairwise_key: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
+    pub sequences: StaTxSequenceCounters,
+    pub counters: Option<&'resources AggregateTxCounters>,
+    pub network_domain: Esp32s31ConnectedStaNetworkTxDomain<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+    >,
+}
+
+/// Type-only binding to the pinned `embassy-net` TX resource domain.
+///
+/// The runner, rather than this port, owns the actual consumer. Carrying its
+/// lifetime and const geometry here prevents inference from selecting a TX
+/// owner incompatible with that runner without introducing another runtime
+/// pointer or capability.
+pub struct Esp32s31ConnectedStaNetworkTxDomain<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> {
+    #[allow(clippy::type_complexity)]
+    marker: core::marker::PhantomData<&'resources (
+        M,
+        [u8; FRAME_CAPACITY],
+        [u8; HEADROOM],
+        [u8; TRAILER],
+        [u8; QUEUE_DEPTH],
+    )>,
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> Default
+    for Esp32s31ConnectedStaNetworkTxDomain<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+    >
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<
+    'resources,
+    M: RawMutex,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+>
+    Esp32s31ConnectedStaNetworkTxDomain<
+        'resources,
+        M,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+    >
+{
+    pub const fn new() -> Self {
+        Self {
+            marker: core::marker::PhantomData,
+        }
+    }
+}
+
+/// Complete owner return when control TX was still active at handoff.
+pub struct Esp32s31ConnectedStaTxHandoffFailure<
+    'slot,
+    'resources,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const AGGREGATE_SLOTS: usize,
+    const AGGREGATE_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> {
+    pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
+    pub handoff: ConnectedTxHandoff,
+    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub counters: Option<&'resources AggregateTxCounters>,
+}
+
+/// Named control-plane resources for one connected epoch.
+pub struct Esp32s31ConnectedStaControlResources<'resources, M: RawMutex, const CAPACITY: usize> {
+    pub receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
+    pub reorder_commands: RxReorderCommandSender<'resources, M>,
+}
+
+/// Final owner graph immediately before the connected services begin running.
+pub struct Esp32s31ConnectedStaDriverParts<H, R, X, C, P> {
+    pub hardware: H,
+    pub rx: R,
+    pub tx: X,
+    pub control: C,
+    pub protocol: P,
+}
+
+/// Driver composition returned to the executor/application layer.
+pub struct Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
+    pub services: Esp32s31ConnectedServices<H, R, X, C>,
+    pub protocol: P,
+    pub report: Esp32s31ConnectedStaReport,
+}
+
+/// Copy-only observations useful to qualification and application policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaReport {
+    pub link: Esp32s31StaConnectedLink,
+    pub data_tx_rate: TxPhyRate,
+    pub aggregate_tx_rate: TxPhyRate,
+}

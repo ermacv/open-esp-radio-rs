@@ -13,7 +13,7 @@ pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
-    RadioRegisters,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, RadioRegisters,
 };
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
@@ -224,11 +224,13 @@ pub trait TxHardware {
     }
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters>;
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool;
-    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool>;
-    fn abort_tx_collision(&mut self, _queue: u8) -> bool {
-        false
-    }
-    fn detach_completed_tx(&mut self, queue: u8) -> bool;
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        queue: u8,
+        expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R>;
 }
 
 fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
@@ -303,16 +305,14 @@ impl TxHardware for RadioRegisters {
         self.begin_mac_tx_timeout_abort(queue)
     }
 
-    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
-        self.finish_mac_tx_timeout_abort(queue)
-    }
-
-    fn abort_tx_collision(&mut self, queue: u8) -> bool {
-        self.abort_mac_tx_collision(queue)
-    }
-
-    fn detach_completed_tx(&mut self, queue: u8) -> bool {
-        self.detach_completed_mac_tx(queue)
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        queue: u8,
+        _expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
+        self.with_detached_mac_tx(queue, reason, detached)
     }
 }
 
@@ -384,16 +384,20 @@ impl TxHardware for ColdRadioRegisters {
         TxHardware::begin_tx_timeout_abort(&mut **self, queue)
     }
 
-    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
-        TxHardware::finish_tx_timeout_abort(&mut **self, queue)
-    }
-
-    fn abort_tx_collision(&mut self, queue: u8) -> bool {
-        TxHardware::abort_tx_collision(&mut **self, queue)
-    }
-
-    fn detach_completed_tx(&mut self, queue: u8) -> bool {
-        TxHardware::detach_completed_tx(&mut **self, queue)
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        queue: u8,
+        expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
+        TxHardware::with_tx_queue_detached(
+            &mut **self,
+            queue,
+            expected_descriptor_head,
+            reason,
+            detached,
+        )
     }
 }
 
@@ -3085,12 +3089,23 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        if !hardware.abort_tx_collision(slot.queue.index()) {
-            return Ok(false);
+        let descriptor_head = slot.dma.binding().descriptor_address();
+        match hardware.with_tx_queue_detached(
+            slot.queue.index(),
+            descriptor_head,
+            MacTxDetachReason::Collision,
+            |detached| slot.dma.release_aborted(detached),
+        ) {
+            MacTxDetachOutcome::NoEvent => Ok(false),
+            MacTxDetachOutcome::Detached(Ok(())) => {
+                slot.active = TxCookie(0);
+                Ok(true)
+            }
+            MacTxDetachOutcome::Failed | MacTxDetachOutcome::Detached(Err(_)) => {
+                slot.dma.quarantine();
+                Err(TxError::DetachFailed)
+            }
         }
-        slot.dma.release_aborted().map_err(map_dma_storage_error)?;
-        slot.active = TxCookie(0);
-        Ok(true)
     }
 
     /// Finishes a timed-out queue abort after at least 16 us of settling.
@@ -3108,16 +3123,23 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let Some(detached) = hardware.finish_tx_timeout_abort(slot.queue.index()) else {
-            return Err(TxError::TimeoutNotPending);
-        };
-        if !detached {
-            slot.dma.quarantine();
-            return Err(TxError::DetachFailed);
+        let descriptor_head = slot.dma.binding().descriptor_address();
+        match hardware.with_tx_queue_detached(
+            slot.queue.index(),
+            descriptor_head,
+            MacTxDetachReason::Timeout,
+            |detached| slot.dma.release_aborted(detached),
+        ) {
+            MacTxDetachOutcome::NoEvent => Err(TxError::TimeoutNotPending),
+            MacTxDetachOutcome::Detached(Ok(())) => {
+                slot.active = TxCookie(0);
+                Ok(())
+            }
+            MacTxDetachOutcome::Failed | MacTxDetachOutcome::Detached(Err(_)) => {
+                slot.dma.quarantine();
+                Err(TxError::DetachFailed)
+            }
         }
-        slot.dma.release_aborted().map_err(map_dma_storage_error)?;
-        slot.active = TxCookie(0);
-        Ok(())
     }
 
     /// Makes the completed static slot reusable after disabling q0 and exact
@@ -3132,15 +3154,24 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         if slot.dma.state() != TxSlotState::Completed || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        if !hardware.detach_completed_tx(slot.queue.index()) {
-            slot.dma.quarantine();
-            return Err(TxError::DetachFailed);
+        let descriptor_head = slot.dma.binding().descriptor_address();
+        match hardware.with_tx_queue_detached(
+            slot.queue.index(),
+            descriptor_head,
+            MacTxDetachReason::Completed,
+            |detached| slot.dma.release_completed(detached),
+        ) {
+            MacTxDetachOutcome::Detached(Ok(())) => {
+                slot.active = TxCookie(0);
+                Ok(())
+            }
+            MacTxDetachOutcome::NoEvent
+            | MacTxDetachOutcome::Failed
+            | MacTxDetachOutcome::Detached(Err(_)) => {
+                slot.dma.quarantine();
+                Err(TxError::DetachFailed)
+            }
         }
-        slot.dma
-            .release_completed()
-            .map_err(map_dma_storage_error)?;
-        slot.active = TxCookie(0);
-        Ok(())
     }
 }
 

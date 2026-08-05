@@ -7,6 +7,7 @@
 use core::{marker::PhantomPinned, mem, pin::Pin};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRange};
+use open_esp_radio_esp32s31_registers::MacTxQueueDetached;
 use pin_project::pin_project;
 
 use crate::descriptor::{
@@ -350,7 +351,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
         self.transition(AmpduDmaState::HardwareOwned, AmpduDmaState::Completed)
     }
 
-    pub fn mark_detached(&mut self) -> Result<(), AmpduDmaStorageError> {
+    pub fn mark_detached(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), AmpduDmaStorageError> {
+        if !detached.confirms_descriptor_head(self.binding.descriptor_base) {
+            return Err(AmpduDmaStorageError::Address);
+        }
         self.transition(AmpduDmaState::Completed, AmpduDmaState::Detached)
     }
 
@@ -374,7 +381,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
         self.clear_to_free(AmpduDmaState::Detached)
     }
 
-    pub fn release_aborted(&mut self) -> Result<(), AmpduDmaStorageError> {
+    pub fn release_aborted(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), AmpduDmaStorageError> {
+        if !detached.confirms_descriptor_head(self.binding.descriptor_base) {
+            return Err(AmpduDmaStorageError::Address);
+        }
         self.clear_to_free(AmpduDmaState::HardwareOwned)
     }
 
@@ -488,8 +501,11 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS,
         self.dma_mut().mark_completed()
     }
 
-    pub fn mark_detached(&mut self) -> Result<(), AmpduDmaStorageError> {
-        self.dma_mut().mark_detached()
+    pub fn mark_detached(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().mark_detached(detached)
     }
 
     pub fn release_detached(&mut self) -> Result<(), AmpduDmaStorageError> {
@@ -498,8 +514,11 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS,
         Ok(())
     }
 
-    pub fn release_aborted(&mut self) -> Result<(), AmpduDmaStorageError> {
-        self.dma_mut().release_aborted()?;
+    pub fn release_aborted(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().release_aborted(detached)?;
         self.drop_backings();
         Ok(())
     }
@@ -813,7 +832,9 @@ mod tests {
 
         storage.mark_completed().unwrap();
         assert!(storage.detached_buffer(0).is_err());
-        storage.mark_detached().unwrap();
+        storage
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
         assert_eq!(storage.detached_buffer(0).unwrap()[0], 0x11);
         storage.release_detached().unwrap();
         assert_eq!(storage.state(), AmpduDmaState::Free);
@@ -843,6 +864,30 @@ mod tests {
         assert_eq!(storage.state(), AmpduDmaState::ResetRequired);
         assert_eq!(storage.cancel(), Err(AmpduDmaStorageError::State));
         assert_eq!(storage.begin(), Err(AmpduDmaStorageError::State));
+    }
+
+    #[test]
+    fn detach_proof_must_name_the_aggregate_head() {
+        let mut storage = storage();
+        storage.begin().unwrap();
+        storage
+            .publish_internal_chain(&[AmpduInternalDescriptor {
+                buffer_capacity: 256,
+                transfer_length: 64,
+            }])
+            .unwrap()
+            .commit(|_| {});
+        storage.mark_completed().unwrap();
+
+        assert_eq!(
+            storage.mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE + 4)),
+            Err(AmpduDmaStorageError::Address)
+        );
+        assert_eq!(storage.state(), AmpduDmaState::Completed);
+        storage
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
+        storage.release_detached().unwrap();
     }
 
     #[test]
@@ -882,7 +927,9 @@ mod tests {
 
         owner.mark_completed().unwrap();
         assert!(owner.detached_backing_mut(first).is_err());
-        owner.mark_detached().unwrap();
+        owner
+            .mark_detached(MacTxQueueDetached::new_model(DESCRIPTOR_BASE))
+            .unwrap();
         assert_eq!(owner.detached_backing_mut(first).unwrap().bytes[8], 0x11);
         owner.release_detached().unwrap();
         assert_eq!(owner.state(), AmpduDmaState::Free);

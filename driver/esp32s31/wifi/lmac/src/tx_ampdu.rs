@@ -14,7 +14,7 @@ use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-    RadioRegisters,
+    MacTxDetachOutcome, MacTxDetachReason, RadioRegisters,
 };
 use pin_project::pin_project;
 
@@ -2119,12 +2119,30 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, HtAmpduTxError> {
-        let storage = self.as_ref().get_ref();
-        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
-            return Err(HtAmpduTxError::Stale);
-        }
-        if !hardware.abort_tx_collision(storage.queue.index()) {
-            return Ok(false);
+        let (queue, descriptor_head) = {
+            let storage = self.as_ref().get_ref();
+            if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+                return Err(HtAmpduTxError::Stale);
+            }
+            (
+                storage.queue.index(),
+                hardware.tx_descriptor_address(
+                    core::ptr::addr_of!(storage.descriptors[0]).addr() as u32
+                ),
+            )
+        };
+        match hardware.with_tx_queue_detached(
+            queue,
+            descriptor_head,
+            MacTxDetachReason::Collision,
+            |detached| detached.confirms_descriptor_head(descriptor_head),
+        ) {
+            MacTxDetachOutcome::NoEvent => return Ok(false),
+            MacTxDetachOutcome::Detached(true) => {}
+            MacTxDetachOutcome::Failed | MacTxDetachOutcome::Detached(false) => {
+                *self.as_mut().project().state = TxSlotState::ResetRequired;
+                return Err(HtAmpduTxError::DetachFailed);
+            }
         }
         if let Some(reservation) = self.as_mut().project().trigger_reservation.take() {
             hardware.clear_he_trigger_based_queue(reservation);
@@ -2138,16 +2156,30 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), HtAmpduTxError> {
-        let storage = self.as_ref().get_ref();
-        if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
-            return Err(HtAmpduTxError::Stale);
-        }
-        let Some(detached) = hardware.finish_tx_timeout_abort(storage.queue.index()) else {
-            return Err(HtAmpduTxError::TimeoutNotPending);
+        let (queue, descriptor_head) = {
+            let storage = self.as_ref().get_ref();
+            if storage.state != TxSlotState::HardwareOwned || storage.active != cookie {
+                return Err(HtAmpduTxError::Stale);
+            }
+            (
+                storage.queue.index(),
+                hardware.tx_descriptor_address(
+                    core::ptr::addr_of!(storage.descriptors[0]).addr() as u32
+                ),
+            )
         };
-        if !detached {
-            *self.as_mut().project().state = TxSlotState::ResetRequired;
-            return Err(HtAmpduTxError::DetachFailed);
+        match hardware.with_tx_queue_detached(
+            queue,
+            descriptor_head,
+            MacTxDetachReason::Timeout,
+            |detached| detached.confirms_descriptor_head(descriptor_head),
+        ) {
+            MacTxDetachOutcome::NoEvent => return Err(HtAmpduTxError::TimeoutNotPending),
+            MacTxDetachOutcome::Detached(true) => {}
+            MacTxDetachOutcome::Failed | MacTxDetachOutcome::Detached(false) => {
+                *self.as_mut().project().state = TxSlotState::ResetRequired;
+                return Err(HtAmpduTxError::DetachFailed);
+            }
         }
         if let Some(reservation) = self.as_mut().project().trigger_reservation.take() {
             hardware.clear_he_trigger_based_queue(reservation);
@@ -2161,19 +2193,38 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), HtAmpduTxError> {
-        let storage = self.project();
-        if *storage.state != TxSlotState::Completed || *storage.active != cookie {
-            return Err(HtAmpduTxError::Stale);
-        }
-        if !hardware.detach_completed_tx(storage.queue.index()) {
-            *storage.state = TxSlotState::ResetRequired;
-            return Err(HtAmpduTxError::DetachFailed);
+        let mut owner = self;
+        let (queue, descriptor_head) = {
+            let storage = owner.as_ref().get_ref();
+            if storage.state != TxSlotState::Completed || storage.active != cookie {
+                return Err(HtAmpduTxError::Stale);
+            }
+            (
+                storage.queue.index(),
+                hardware.tx_descriptor_address(
+                    core::ptr::addr_of!(storage.descriptors[0]).addr() as u32
+                ),
+            )
+        };
+        match hardware.with_tx_queue_detached(
+            queue,
+            descriptor_head,
+            MacTxDetachReason::Completed,
+            |detached| detached.confirms_descriptor_head(descriptor_head),
+        ) {
+            MacTxDetachOutcome::Detached(true) => {}
+            MacTxDetachOutcome::NoEvent
+            | MacTxDetachOutcome::Failed
+            | MacTxDetachOutcome::Detached(false) => {
+                *owner.as_mut().project().state = TxSlotState::ResetRequired;
+                return Err(HtAmpduTxError::DetachFailed);
+            }
         }
         // Keep the completed MPDUs and their lengths alive. BlockAck handling
         // may now copy any missing MPDU into the single-frame TX owner without
         // reconstructing Sequence Control or the CCMP PN. `release_completed`
         // is the explicit final ownership edge.
-        *storage.detached = true;
+        *owner.project().detached = true;
         Ok(())
     }
 
@@ -3609,7 +3660,7 @@ mod tests {
     use super::*;
     use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
     use open_esp_radio_esp32s31_registers::{
-        MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters,
+        MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxQueueDetached,
     };
 
     struct CompletionHardware {
@@ -3654,12 +3705,14 @@ mod tests {
             false
         }
 
-        fn finish_tx_timeout_abort(&mut self, _: u8) -> Option<bool> {
-            None
-        }
-
-        fn detach_completed_tx(&mut self, _: u8) -> bool {
-            false
+        fn with_tx_queue_detached<R>(
+            &mut self,
+            _: u8,
+            _: u32,
+            _: MacTxDetachReason,
+            _: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+        ) -> MacTxDetachOutcome<R> {
+            MacTxDetachOutcome::NoEvent
         }
     }
 

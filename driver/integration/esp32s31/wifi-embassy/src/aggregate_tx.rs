@@ -1124,7 +1124,8 @@ mod tests {
     use open_esp_radio_esp32s31_registers::{
         MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
         MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters,
+        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+        MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_lmac::{
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
@@ -1242,16 +1243,21 @@ mod tests {
             true
         }
 
-        fn finish_tx_timeout_abort(&mut self, _queue: u8) -> Option<bool> {
-            Some(false)
-        }
-
-        fn abort_tx_collision(&mut self, _queue: u8) -> bool {
-            true
-        }
-
-        fn detach_completed_tx(&mut self, _queue: u8) -> bool {
-            true
+        fn with_tx_queue_detached<R>(
+            &mut self,
+            _queue: u8,
+            expected_descriptor_head: u32,
+            reason: MacTxDetachReason,
+            detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+        ) -> MacTxDetachOutcome<R> {
+            match reason {
+                MacTxDetachReason::Timeout => MacTxDetachOutcome::Failed,
+                MacTxDetachReason::Collision | MacTxDetachReason::Completed => {
+                    MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
+                        expected_descriptor_head,
+                    )))
+                }
+            }
         }
     }
 

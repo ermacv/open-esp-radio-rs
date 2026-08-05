@@ -76,7 +76,8 @@ pub use mac_rx_statistics::{
 };
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-    MacLegacyTxProgram, MacTxCompletionRegisters,
+    MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
+    MacTxQueueDetached,
 };
 pub use mac_tx_power_init::{
     MAC_TX_POWER_RATE_COUNT, MacPartialRuPowerSelector, MacTxPowerIndex, MacTxPowerPair,

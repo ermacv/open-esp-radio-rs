@@ -8,6 +8,7 @@
 use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
+use open_esp_radio_esp32s31_registers::MacTxQueueDetached;
 use pin_project::pin_project;
 
 use crate::descriptor::{
@@ -257,11 +258,23 @@ impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
         self.transition(TxDmaState::HardwareOwned, TxDmaState::Completed)
     }
 
-    pub fn release_completed(&mut self) -> Result<(), TxDmaStorageError> {
+    pub fn release_completed(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), TxDmaStorageError> {
+        if !detached.confirms_descriptor_head(self.binding.descriptor_address) {
+            return Err(TxDmaStorageError::Address);
+        }
         self.transition_to_free(TxDmaState::Completed)
     }
 
-    pub fn release_aborted(&mut self) -> Result<(), TxDmaStorageError> {
+    pub fn release_aborted(
+        &mut self,
+        detached: MacTxQueueDetached<'_>,
+    ) -> Result<(), TxDmaStorageError> {
+        if !detached.confirms_descriptor_head(self.binding.descriptor_address) {
+            return Err(TxDmaStorageError::Address);
+        }
         self.transition_to_free(TxDmaState::HardwareOwned)
     }
 
@@ -406,8 +419,27 @@ mod tests {
 
         assert_eq!(storage.state(), TxDmaState::Completed);
         assert_eq!(storage.reserve(64, 8), Err(TxDmaStorageError::Busy));
-        storage.release_completed().unwrap();
+        storage
+            .release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS))
+            .unwrap();
         assert_eq!(storage.state(), TxDmaState::Free);
+    }
+
+    #[test]
+    fn detach_proof_must_name_the_active_descriptor() {
+        let mut storage = storage();
+        storage.reserve(64, 8).unwrap();
+        storage.publication().unwrap().commit(|_| {});
+        storage.mark_completed().unwrap();
+
+        assert_eq!(
+            storage.release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS + 4)),
+            Err(TxDmaStorageError::Address)
+        );
+        assert_eq!(storage.state(), TxDmaState::Completed);
+        storage
+            .release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS))
+            .unwrap();
     }
 
     #[test]
@@ -420,7 +452,10 @@ mod tests {
         assert_eq!(storage.state(), TxDmaState::ResetRequired);
         assert_eq!(storage.reserve(64, 8), Err(TxDmaStorageError::Busy));
         assert_eq!(storage.mark_completed(), Err(TxDmaStorageError::State));
-        assert_eq!(storage.release_aborted(), Err(TxDmaStorageError::State));
+        assert_eq!(
+            storage.release_aborted(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS)),
+            Err(TxDmaStorageError::State)
+        );
         assert_eq!(storage.buffer_mut(), Err(TxDmaStorageError::Busy));
     }
 
@@ -432,7 +467,10 @@ mod tests {
         assert_eq!(storage.state(), TxDmaState::ResetRequired);
         assert_eq!(storage.reserve(64, 8), Err(TxDmaStorageError::Busy));
         assert_eq!(storage.cancel_reservation(), Err(TxDmaStorageError::State));
-        assert_eq!(storage.release_completed(), Err(TxDmaStorageError::State));
+        assert_eq!(
+            storage.release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS)),
+            Err(TxDmaStorageError::State)
+        );
     }
 
     #[test]

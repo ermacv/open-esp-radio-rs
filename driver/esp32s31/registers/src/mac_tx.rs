@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+use core::marker::PhantomData;
+
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 
 use super::{RadioRegisters, device_fence, mac_tx_queue};
@@ -136,6 +138,59 @@ pub struct MacHtAmpduCompletionRegisters {
     pub block_ack_control_and_sequence: u32,
     pub block_ack_bitmap_low: u32,
     pub block_ack_bitmap_high: u32,
+}
+
+/// Hardware edge which must precede reuse of one TX descriptor chain.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MacTxDetachReason {
+    Collision,
+    Timeout,
+    Completed,
+}
+
+/// Result of one finite queue-detach transaction.
+#[derive(Debug, Eq, PartialEq)]
+pub enum MacTxDetachOutcome<T> {
+    /// The requested collision/timeout edge was not pending.
+    NoEvent,
+    /// The edge existed, but queue disable/invalid readback did not converge.
+    Failed,
+    /// Queue ownership was returned and the callback consumed its proof.
+    Detached(T),
+}
+
+/// Non-forgeable proof that one hardware queue no longer owns its TX chain.
+///
+/// The value borrows the register owner, so it cannot be retained while that
+/// same owner starts another queue transaction. Its fields and target
+/// constructor remain private to this crate; safe target code can obtain it
+/// only from [`RadioRegisters::with_detached_mac_tx`].
+pub struct MacTxQueueDetached<'registers> {
+    descriptor_address_low: u32,
+    _registers: PhantomData<&'registers mut RadioRegisters>,
+}
+
+impl MacTxQueueDetached<'_> {
+    fn from_control_word(control_word: u32) -> Self {
+        Self {
+            descriptor_address_low: control_word & DESCRIPTOR_ADDRESS_LOW_MASK,
+            _registers: PhantomData,
+        }
+    }
+
+    /// Check that the detached queue referenced this descriptor chain.
+    pub const fn confirms_descriptor_head(&self, descriptor_head: u32) -> bool {
+        self.descriptor_address_low == descriptor_head & DESCRIPTOR_ADDRESS_LOW_MASK
+    }
+
+    /// Construct a detach edge in a native model with no asynchronous DMA.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub const fn new_model(descriptor_head: u32) -> Self {
+        Self {
+            descriptor_address_low: descriptor_head & DESCRIPTOR_ADDRESS_LOW_MASK,
+            _registers: PhantomData,
+        }
+    }
 }
 
 const fn physical_bank(queue: u8) -> usize {
@@ -732,59 +787,60 @@ impl RadioRegisters {
         true
     }
 
-    pub fn finish_mac_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
+    /// Execute one detach transaction and consume its proof before allowing
+    /// this register owner to be borrowed for another queue operation.
+    pub fn with_detached_mac_tx<'registers, R>(
+        &'registers mut self,
+        queue: u8,
+        reason: MacTxDetachReason,
+        detached: impl FnOnce(MacTxQueueDetached<'registers>) -> R,
+    ) -> MacTxDetachOutcome<R> {
         assert!(queue < ORDINARY_QUEUE_COUNT);
-        let timeout_mask = 1_u32 << (16 + queue);
         let common = &self.peripherals.wifi_mac_tx_common;
-        if common.queue_state().read().bits() & timeout_mask == 0 {
-            return None;
-        }
-
         let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
-        let queue = u32::from(queue);
-        let was_valid = mac_tx_queue::queue_valid(queue_control, queue);
-        let _ = mac_tx_queue::invalidate_queue(queue_control, queue);
-        let _ = mac_tx_queue::set_cca_force(common, 0);
-        if was_valid {
-            let _ = mac_tx_queue::disable_queue(queue_control, queue);
+        let bank = physical_bank(queue);
+        let control_word = queue_control.control(bank).read().bits();
+        let queue_index = u32::from(queue);
+        match reason {
+            MacTxDetachReason::Collision => {
+                let collision_mask = 1_u32 << queue;
+                if common.queue_state().read().bits() & collision_mask == 0 {
+                    return MacTxDetachOutcome::NoEvent;
+                }
+                // SOURCE: complete `libpp.a[lmac.o]::lmacProcessCollisions`
+                // reaches disable before clearing the collision edge.
+                let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+                device_fence();
+                super::svd::full_register_write::mac_tx_queue_state_clear(common, collision_mask);
+            }
+            MacTxDetachReason::Timeout => {
+                let timeout_mask = 1_u32 << (16 + queue);
+                if common.queue_state().read().bits() & timeout_mask == 0 {
+                    return MacTxDetachOutcome::NoEvent;
+                }
+                let was_valid = mac_tx_queue::queue_valid(queue_control, queue_index);
+                let _ = mac_tx_queue::invalidate_queue(queue_control, queue_index);
+                let _ = mac_tx_queue::set_cca_force(common, 0);
+                if was_valid {
+                    let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+                }
+                super::svd::full_register_write::mac_tx_queue_state_clear(common, timeout_mask);
+            }
+            MacTxDetachReason::Completed => {
+                // A completion edge was consumed separately before this
+                // transaction. Disable is still required even if hardware
+                // already cleared ENABLE|VALID while completing the PPDU.
+                let _ = mac_tx_queue::disable_queue(queue_control, queue_index);
+            }
         }
-        super::svd::full_register_write::mac_tx_queue_state_clear(common, timeout_mask);
         device_fence();
-        Some(
-            !mac_tx_queue::queue_enabled(queue_control, queue)
-                && !mac_tx_queue::queue_valid(queue_control, queue),
-        )
-    }
-
-    /// Disable and acknowledge one ordinary-queue collision edge.
-    ///
-    /// SOURCE: complete `libpp.a[lmac.o]::lmacProcessCollisions`
-    /// reaches `hal_mac_txq_disable` before `hal_mac_clr_txq_state(0, q)`.
-    /// The recovered strict runtime additionally proves the low-nibble queue
-    /// bitmap and the absence of the MPLEN branch for an ordinary MPDU.
-    pub fn abort_mac_tx_collision(&mut self, queue: u8) -> bool {
-        assert!(queue < ORDINARY_QUEUE_COUNT);
-        let collision_mask = 1_u32 << queue;
-        let common = &self.peripherals.wifi_mac_tx_common;
-        if common.queue_state().read().bits() & collision_mask == 0 {
-            return false;
+        if mac_tx_queue::queue_enabled(queue_control, queue_index)
+            || mac_tx_queue::queue_valid(queue_control, queue_index)
+        {
+            return MacTxDetachOutcome::Failed;
         }
-
-        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
-        let _ = mac_tx_queue::disable_queue(queue_control, u32::from(queue));
-        device_fence();
-        super::svd::full_register_write::mac_tx_queue_state_clear(common, collision_mask);
-        device_fence();
-        !mac_tx_queue::queue_enabled(queue_control, u32::from(queue))
-            && !mac_tx_queue::queue_valid(queue_control, u32::from(queue))
-    }
-
-    pub fn detach_completed_mac_tx(&mut self, queue: u8) -> bool {
-        assert!(queue < ORDINARY_QUEUE_COUNT);
-        let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
-        let _ = mac_tx_queue::disable_queue(queue_control, u32::from(queue));
-        device_fence();
-        !mac_tx_queue::queue_enabled(queue_control, u32::from(queue))
-            && !mac_tx_queue::queue_valid(queue_control, u32::from(queue))
+        MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::from_control_word(
+            control_word,
+        )))
     }
 }

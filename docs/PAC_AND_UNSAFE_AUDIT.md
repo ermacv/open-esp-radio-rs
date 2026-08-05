@@ -108,6 +108,16 @@ validate that PLCP0 names the retained chain. Completion, abort and detach
 return backing through lower state transitions; any impossible sequence or
 failed detach quarantines it.
 
+Backing reuse no longer trusts a boolean returned by a safely implementable
+hardware trait. `RadioRegisters::with_detached_mac_tx` creates a private
+`MacTxQueueDetached` proof only after queue disable/invalid readback and lends
+it to a callback for the duration of its exclusive register borrow. Ordinary
+TX consumes that proof in the lower DMA owner; the transitional A-MPDU owner
+checks the same proof against its published descriptor head. Native mocks can
+construct model proofs only on non-32-bit hosts, where no asynchronous DMA
+actor exists. A target-side safe mock therefore cannot claim that DMA stopped
+and make live backing reusable.
+
 TX as a whole has not yet reached that boundary. `HtAmpduTxStorage` still
 retains descriptor arrays and buffers in safe LMAC, and the raw HT/HE
 `TxHardware`/`RadioRegisters` prepare and start methods remain public for that

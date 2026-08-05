@@ -206,6 +206,7 @@ mod tests {
 
     use open_esp_radio_esp32s31_registers::{
         MacHeTxProgram, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
+        MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_lmac::{
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
@@ -269,16 +270,21 @@ mod tests {
             false
         }
 
-        fn finish_tx_timeout_abort(&mut self, _queue: u8) -> Option<bool> {
-            None
-        }
-
-        fn abort_tx_collision(&mut self, _queue: u8) -> bool {
-            false
-        }
-
-        fn detach_completed_tx(&mut self, _queue: u8) -> bool {
-            true
+        fn with_tx_queue_detached<R>(
+            &mut self,
+            _queue: u8,
+            expected_descriptor_head: u32,
+            reason: MacTxDetachReason,
+            detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+        ) -> MacTxDetachOutcome<R> {
+            match reason {
+                MacTxDetachReason::Completed => MacTxDetachOutcome::Detached(detached(
+                    MacTxQueueDetached::new_model(expected_descriptor_head),
+                )),
+                MacTxDetachReason::Collision | MacTxDetachReason::Timeout => {
+                    MacTxDetachOutcome::NoEvent
+                }
+            }
         }
     }
 

@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionRegisters, Register32,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+    Register32,
     mac::{self, init as mac_init},
 };
 use open_esp_radio_esp32s31_wifi_lmac::{
@@ -801,46 +802,52 @@ impl TxHardware for MockMmio {
         true
     }
 
-    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        queue: u8,
+        expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
         let index = usize::from(queue);
-        let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
-        if self.read32(TX_STATE) & timeout_mask == 0 {
-            return None;
-        }
         let control = self.read32(mac::TX_Q_CONTROL[index]);
-        let was_valid = control & (1 << 30) != 0;
-        self.write32(mac::TX_Q_CONTROL[index], control & !(1 << 30));
-        let cca = self.read32(TX_CCA_CONTROL);
-        self.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
-        if was_valid {
-            let invalid = self.read32(mac::TX_Q_CONTROL[index]);
-            self.write32(mac::TX_Q_CONTROL[index], invalid & !(1 << 31));
+        match reason {
+            MacTxDetachReason::Collision => {
+                let collision_mask = 1_u32 << queue;
+                if self.read32(TX_STATE) & collision_mask == 0 {
+                    return MacTxDetachOutcome::NoEvent;
+                }
+                self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
+                Mmio::fence(self);
+                self.write32(TX_STATE_CLEAR, collision_mask);
+            }
+            MacTxDetachReason::Timeout => {
+                let timeout_mask = 1_u32 << (TX_TIMEOUT_SHIFT + u32::from(queue));
+                if self.read32(TX_STATE) & timeout_mask == 0 {
+                    return MacTxDetachOutcome::NoEvent;
+                }
+                let was_valid = control & (1 << 30) != 0;
+                self.write32(mac::TX_Q_CONTROL[index], control & !(1 << 30));
+                let cca = self.read32(TX_CCA_CONTROL);
+                self.write32(TX_CCA_CONTROL, cca & !TX_CCA_FORCE_MASK);
+                if was_valid {
+                    let invalid = self.read32(mac::TX_Q_CONTROL[index]);
+                    self.write32(mac::TX_Q_CONTROL[index], invalid & !(1 << 31));
+                }
+                self.write32(TX_STATE_CLEAR, timeout_mask);
+            }
+            MacTxDetachReason::Completed => {
+                self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
+            }
         }
-        self.write32(TX_STATE_CLEAR, timeout_mask);
         Mmio::fence(self);
-        Some(self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID == 0)
-    }
-
-    fn abort_tx_collision(&mut self, queue: u8) -> bool {
-        let index = usize::from(queue);
-        let collision_mask = 1_u32 << queue;
-        if self.read32(TX_STATE) & collision_mask == 0 {
-            return false;
+        if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
+            MacTxDetachOutcome::Failed
+        } else {
+            MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
+                expected_descriptor_head,
+            )))
         }
-        let control = self.read32(mac::TX_Q_CONTROL[index]);
-        self.write32(mac::TX_Q_CONTROL[index], control & !TX_Q_ENABLE_VALID);
-        Mmio::fence(self);
-        self.write32(TX_STATE_CLEAR, collision_mask);
-        Mmio::fence(self);
-        self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID == 0
-    }
-
-    fn detach_completed_tx(&mut self, queue: u8) -> bool {
-        let control = mac::TX_Q_CONTROL[usize::from(queue)];
-        let image = self.read32(control);
-        self.write32(control, image & !TX_Q_ENABLE_VALID);
-        Mmio::fence(self);
-        self.read32(control) & TX_Q_ENABLE_VALID == 0
     }
 }
 

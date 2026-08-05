@@ -13,7 +13,7 @@ use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionRegisters,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi_lmac::{
     crypto::CcmpKeyHardware,
@@ -179,16 +179,20 @@ impl TxHardware for CooperativeTxHardware<'_, '_> {
         TxHardware::begin_tx_timeout_abort(&mut **self.registers.borrow_mut(), queue)
     }
 
-    fn finish_tx_timeout_abort(&mut self, queue: u8) -> Option<bool> {
-        TxHardware::finish_tx_timeout_abort(&mut **self.registers.borrow_mut(), queue)
-    }
-
-    fn abort_tx_collision(&mut self, queue: u8) -> bool {
-        TxHardware::abort_tx_collision(&mut **self.registers.borrow_mut(), queue)
-    }
-
-    fn detach_completed_tx(&mut self, queue: u8) -> bool {
-        TxHardware::detach_completed_tx(&mut **self.registers.borrow_mut(), queue)
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        queue: u8,
+        expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
+        TxHardware::with_tx_queue_detached(
+            &mut **self.registers.borrow_mut(),
+            queue,
+            expected_descriptor_head,
+            reason,
+            detached,
+        )
     }
 }
 

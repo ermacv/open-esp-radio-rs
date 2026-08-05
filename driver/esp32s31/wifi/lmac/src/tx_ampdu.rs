@@ -18,9 +18,21 @@ use open_esp_radio_esp32s31_registers::{
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorageError;
 use pin_project::pin_project;
 
+#[cfg(not(target_pointer_width = "32"))]
+mod model;
 mod owner;
 mod request;
 
+#[cfg(not(target_pointer_width = "32"))]
+pub use model::{
+    BasicHtAmpduAssemblyError, BasicHtAmpduAssemblyInput, BasicHtAmpduAssemblyOutput,
+    BasicHtAmpduCompletionInput, BasicHtAmpduCompletionOutput, basic_ht_ampdu_assembly,
+    basic_ht_ampdu_completion,
+};
+#[cfg(test)]
+pub(crate) use model::{
+    TX_BUFFER_END_BIT, TX_DESCRIPTOR_HE_BIT, basic_ht_ampdu_protection_spacing,
+};
 pub use owner::{HtAmpduTxResources, RetainedDmaAmpduTx};
 pub use request::{AmpduFrameLayout, HeAmpduFrameRequest, HtAmpduFrameRequest};
 
@@ -29,8 +41,6 @@ use crate::tx::{
     LegacyTxQueue, TxCompletion, TxCookie, TxHardware, TxSlotState, decode_tx_completion,
 };
 
-#[cfg(test)]
-use crate::tx::HtProtectionSpacing;
 #[cfg(test)]
 use open_esp_radio_esp32s31_registers::{MacTxDetachOutcome, MacTxDetachReason};
 
@@ -45,14 +55,6 @@ pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
 const HARDWARE_HE_CONTROL_LENGTH: u16 = 4;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
-const BASIC_HT_RATE_MIN: u8 = 16;
-const BASIC_HT_RATE_MAX: u8 = 35;
-const TX_DESCRIPTOR_HE_BIT: u32 = 0x8000_0000;
-const TX_DESCRIPTOR_BAR_BIT: u32 = 0x0020_0000;
-const TX_DESCRIPTOR_AMPDU_BIT: u32 = 0x0040_0000;
-const TX_DESCRIPTOR_AMPDU_FIRST_BITS: u32 = 0x0048_0000;
-const TX_BUFFER_END_BIT: u32 = 0x4000_0000;
-const FIRST_MPDU_RETRY_HEADER_BIT: u32 = 0x0100_0000;
 const HT_MPDU_LENGTH_MASK: u32 = 0x3fff;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -2043,132 +2045,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> Default
     fn default() -> Self {
         Self::new()
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BasicHtAmpduAssemblyError {
-    AggregateShorterThanHeader,
-    UnsupportedRate(u8),
-    UnsupportedDescriptor(u32),
-    TailAlreadyTerminated(u32),
-}
-
-/// Inputs consumed by the finite HT `ppAssembleAMPDU` leaf.
-///
-/// This value form keeps the recovered bit transition host-testable without
-/// exposing the vendor ESF pointer layout to the owned TX path.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BasicHtAmpduAssemblyInput {
-    pub aggregate_length: u16,
-    pub first_header_length: u16,
-    pub first_payload_word: u32,
-    pub first_descriptor_flags: u32,
-    pub first_descriptor_word1: u32,
-    pub first_rate: u8,
-    pub tail_buffer_flags: u32,
-    pub tail_timestamp: u32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BasicHtAmpduAssemblyOutput {
-    pub first_remaining_length: u16,
-    pub first_payload_word: u32,
-    pub first_descriptor_flags: u32,
-    pub first_descriptor_word1: u32,
-    pub tail_buffer_flags: u32,
-    pub first_timestamp: u32,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BasicHtAmpduCompletionInput {
-    pub descriptor_flags: u32,
-    pub descriptor_queue_word: u32,
-    pub frame_control: u16,
-    pub acknowledged: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct BasicHtAmpduCompletionOutput {
-    pub descriptor_flags: u32,
-    pub descriptor_queue_word: u32,
-    pub frame_control: u16,
-}
-
-/// Reproduce the per-MPDU markers observed around `ppResortTxAMPDU` after the
-/// aggregate topology has been detached.
-///
-/// Acknowledged MPDUs retain the aggregate marker so the later TX-done stage
-/// skips duplicate per-frame rate control and gain bit 24 in the descriptor
-/// queue word. A missing MPDU remains a normal detached descriptor and gains
-/// only the IEEE 802.11 Retry bit; its CCMP-ready payload is reused unchanged.
-#[inline(always)]
-pub const fn basic_ht_ampdu_completion(
-    input: BasicHtAmpduCompletionInput,
-) -> BasicHtAmpduCompletionOutput {
-    if input.acknowledged {
-        BasicHtAmpduCompletionOutput {
-            descriptor_flags: input.descriptor_flags | TX_DESCRIPTOR_AMPDU_BIT,
-            descriptor_queue_word: input.descriptor_queue_word | 0x0100_0000,
-            frame_control: input.frame_control,
-        }
-    } else {
-        BasicHtAmpduCompletionOutput {
-            descriptor_flags: input.descriptor_flags,
-            descriptor_queue_word: input.descriptor_queue_word,
-            frame_control: input.frame_control | 0x0800,
-        }
-    }
-}
-
-/// Reproduce the `ni + 0x82` protection-spacing value written by the pinned
-/// `rcUpdateAMPDUParam` body from the peer's HT A-MPDU Parameters byte.
-///
-/// Bits 2..=4 encode the IEEE 802.11 minimum MPDU start spacing. The hardware
-/// consumes the recovered finite value in all three 10-bit protection fields.
-#[cfg(test)]
-pub(crate) const fn basic_ht_ampdu_protection_spacing(parameters: u8) -> u16 {
-    HtProtectionSpacing::from_ampdu_parameters(parameters).hardware_value()
-}
-
-/// Reproduce the mutation made by the pinned non-HE `ppAssembleAMPDU` body.
-///
-/// There is no allocation, callback, lock, timer, retry or pointer access in
-/// this value-level operation.
-#[inline(always)]
-pub const fn basic_ht_ampdu_assembly(
-    input: BasicHtAmpduAssemblyInput,
-) -> Result<BasicHtAmpduAssemblyOutput, BasicHtAmpduAssemblyError> {
-    if input.aggregate_length < input.first_header_length {
-        return Err(BasicHtAmpduAssemblyError::AggregateShorterThanHeader);
-    }
-    if input.first_rate < BASIC_HT_RATE_MIN || input.first_rate > BASIC_HT_RATE_MAX {
-        return Err(BasicHtAmpduAssemblyError::UnsupportedRate(input.first_rate));
-    }
-    if input.first_descriptor_flags
-        & (TX_DESCRIPTOR_HE_BIT | TX_DESCRIPTOR_BAR_BIT | TX_DESCRIPTOR_AMPDU_BIT)
-        != 0
-    {
-        return Err(BasicHtAmpduAssemblyError::UnsupportedDescriptor(
-            input.first_descriptor_flags,
-        ));
-    }
-    if input.tail_buffer_flags & TX_BUFFER_END_BIT != 0 {
-        return Err(BasicHtAmpduAssemblyError::TailAlreadyTerminated(
-            input.tail_buffer_flags,
-        ));
-    }
-    Ok(BasicHtAmpduAssemblyOutput {
-        first_remaining_length: input
-            .aggregate_length
-            .wrapping_sub(input.first_header_length),
-        first_payload_word: input.first_payload_word & !FIRST_MPDU_RETRY_HEADER_BIT,
-        first_descriptor_flags: (input.first_descriptor_flags & !TX_BUFFER_END_BIT)
-            | TX_DESCRIPTOR_AMPDU_FIRST_BITS,
-        // The ROM leaf performs one byte load followed by a word store.
-        first_descriptor_word1: input.first_descriptor_word1 & 0xff,
-        tail_buffer_flags: input.tail_buffer_flags | TX_BUFFER_END_BIT,
-        first_timestamp: input.tail_timestamp,
-    })
 }
 
 const BA_PARAMETER_AMSDU: u16 = 1;

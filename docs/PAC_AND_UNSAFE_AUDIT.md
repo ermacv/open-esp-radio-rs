@@ -153,6 +153,11 @@ operations; the corresponding register methods are private helpers behind
 capability-bound calls. The public TX hardware API is therefore
 capability-closed for legacy, HT and HE.
 
+The recovered `BasicHtAmpdu*` descriptor transformations are qualification
+models, not runtime capabilities. They now live in a native-only `model`
+module together with their raw descriptor constants and are absent from the
+32-bit production API.
+
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 

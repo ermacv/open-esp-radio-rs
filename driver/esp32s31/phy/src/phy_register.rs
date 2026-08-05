@@ -724,9 +724,7 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Prelude(PreludeStep::ForceSecond)
-            }
+            ) => Phase::Prelude(PreludeStep::ForceSecond),
             (Phase::Prelude(PreludeStep::ForceSecond), PhyRegisterCompletion::Mmio(completed))
                 if completed.action
                     == (PhyRegisterMmioAction::ConfigureForceTxRx {
@@ -746,9 +744,7 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Prelude(PreludeStep::FrequencyReset)
-            }
+            ) => Phase::Prelude(PreludeStep::FrequencyReset),
             (
                 Phase::Prelude(PreludeStep::FrequencyReset),
                 PhyRegisterCompletion::Mmio(completed),
@@ -916,9 +912,7 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Tail(TailStep::ReleaseSecond)
-            }
+            ) => Phase::Tail(TailStep::ReleaseSecond),
             (Phase::Tail(TailStep::ReleaseSecond), PhyRegisterCompletion::Mmio(completed))
                 if completed.action
                     == (PhyRegisterMmioAction::ConfigureForceTxRx {
@@ -938,12 +932,10 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Complete(PhyRegisterOutcome {
-                    full_calibration_performed: self.calibration_path.full_calibration_performed(),
-                    calibration_path: self.calibration_path,
-                })
-            }
+            ) => Phase::Complete(PhyRegisterOutcome {
+                full_calibration_performed: self.calibration_path.full_calibration_performed(),
+                calibration_path: self.calibration_path,
+            }),
             (
                 Phase::Cleanup {
                     step: TailStep::CalibrationClockOff,
@@ -1016,12 +1008,10 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Cleanup {
-                    step: TailStep::ReleaseSecond,
-                    failure,
-                }
-            }
+            ) => Phase::Cleanup {
+                step: TailStep::ReleaseSecond,
+                failure,
+            },
             (
                 Phase::Cleanup {
                     step: TailStep::ReleaseSecond,
@@ -1052,9 +1042,7 @@ impl PhyRegisterTransition {
                         },
                     micros: 1,
                 },
-            ) => {
-                Phase::Failed(failure)
-            }
+            ) => Phase::Failed(failure),
             (Phase::Complete(outcome), _) => {
                 self.phase = Some(Phase::Complete(outcome));
                 return Err(PhyRegisterTransitionError::AlreadyComplete);

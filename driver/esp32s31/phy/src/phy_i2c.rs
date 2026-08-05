@@ -2470,10 +2470,11 @@ impl PhyRfInitPrefixTransition {
                     filter_dcap,
                 },
                 PhyRfInitPrefixCompletion::Parameter18eRead {
-                    address: PhyI2cAddress {
-                    block: 0x62,
-                    register: 0x0f,
-                    },
+                    address:
+                        PhyI2cAddress {
+                            block: 0x62,
+                            register: 0x0f,
+                        },
                     value,
                 },
             ) => {

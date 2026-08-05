@@ -19,12 +19,12 @@ use open_esp_radio::esp32s31::wifi::sta::attempt::{
     Esp32s31StaAttempt, Esp32s31StaAttemptObserver, Esp32s31StaAttemptOutcome,
     Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
 };
-use open_esp_radio::esp32s31::wifi::sta::scan::{
-    Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError,
-};
 use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
 use open_esp_radio::esp32s31::wifi::sta::cold_start::{
     Esp32s31ColdStartConfig, start_esp32s31_station_radio,
+};
+use open_esp_radio::esp32s31::wifi::sta::scan::{
+    Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError,
 };
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
@@ -51,13 +51,13 @@ use open_esp_radio::{
             EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError,
             Esp32s31ScanPortParts, Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
         },
+        scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
+        scan_target::Esp32s31ColdScanTx,
+        scan_tx::Esp32s31RunningScanTx,
         sta_attempt_target::{
             Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
             Esp32s31StaAttemptTargetPort,
         },
-        scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
-        scan_tx::Esp32s31RunningScanTx,
-        scan_target::Esp32s31ColdScanTx,
         sta_tx_epoch::Esp32s31StaTxEpochExt,
         station::{
             Esp32s31Station, Esp32s31StationCommand, Esp32s31StationCommandReceiver,

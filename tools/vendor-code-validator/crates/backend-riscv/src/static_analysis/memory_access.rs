@@ -1,0 +1,424 @@
+//! Structural load/store effects over MMIO, ELF memory and ABI-owned RAM.
+
+use super::state::StructuralTraceState;
+use super::*;
+
+pub(super) fn apply_memory_instruction(
+    decoded: artifact::DecodedInstruction,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    pointer_context: &StructuralPointerContext,
+    svd: &MmioRegisterMap,
+    state: &mut StructuralTraceState,
+) -> bool {
+    let pc = decoded.address;
+    let instruction = decoded.instruction;
+    match instruction {
+        Inst::Lb { offset, dest, base }
+        | Inst::Lbu { offset, dest, base }
+        | Inst::Lh { offset, dest, base }
+        | Inst::Lhu { offset, dest, base }
+        | Inst::Lw { offset, dest, base } => {
+            let width = match instruction {
+                Inst::Lb { .. } | Inst::Lbu { .. } => 8,
+                Inst::Lh { .. } | Inst::Lhu { .. } => 16,
+                _ => 32,
+            };
+            let signed = matches!(instruction, Inst::Lb { .. } | Inst::Lh { .. });
+            let relocated_pointer = symbol
+                .relocation(pc as u32, artifact::RelocationKind::Lo12I)
+                .and_then(|relocation| {
+                    (relocation.addend == 0 && offset.as_i32() == 0)
+                        .then(|| {
+                            pointer_context
+                                .relocated_pointer_symbols
+                                .get(&relocation.symbol)
+                                .cloned()
+                        })
+                        .flatten()
+                });
+            let address = if relocated_pointer.is_some() {
+                None
+            } else {
+                match complete_low_relocation(
+                    symbol,
+                    pc as u32,
+                    artifact::RelocationKind::Lo12I,
+                    &state.values[usize::from(base.0)],
+                    offset.as_i32(),
+                ) {
+                    Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
+                    Ok(None) => structural_effective_address(&state.values, base, offset.as_i32()),
+                    Err(error) => {
+                        state
+                            .reference_blockers
+                            .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                        structural_set(&mut state.values, dest, SymbolicValue::Unknown);
+                        return true;
+                    }
+                }
+            };
+            let value = match (relocated_pointer, address) {
+                (Some(value), _) if width == 32 => value,
+                (_, Some(StructuralAddress::Absolute(address)))
+                    if width == 32
+                        && pointer_context
+                            .external_pointer_cells
+                            .contains_key(&address) =>
+                {
+                    SymbolicValue::ExternalTable(pointer_context.external_pointer_cells[&address])
+                }
+                (_, Some(StructuralAddress::Absolute(address)))
+                    if width == 32
+                        && pointer_context
+                            .function_pointer_cells
+                            .contains_key(&address) =>
+                {
+                    SymbolicValue::FunctionTable(pointer_context.function_pointer_cells[&address])
+                }
+                (_, Some(StructuralAddress::Absolute(address)))
+                    if width == 32 && pointer_context.data_pointer_cells.contains_key(&address) =>
+                {
+                    pointer_context.data_pointer_cells[&address].clone()
+                }
+                (_, Some(StructuralAddress::ExternalTableSlot(table, offset))) if width == 32 => {
+                    let Ok(offset) = u32::try_from(offset) else {
+                        state.reference_blockers.push(format!(
+                            "negative-external-abi-slot at {pc:#x}: {instruction}"
+                        ));
+                        structural_set(&mut state.values, dest, SymbolicValue::Unknown);
+                        return true;
+                    };
+                    match table.function_at(offset) {
+                        Some(function) => SymbolicValue::ExternalFunction { table, function },
+                        None => {
+                            state.reference_blockers.push(format!(
+                                "unregistered-external-abi-slot at {pc:#x}: {}+{offset:#x}",
+                                table.spec().id
+                            ));
+                            SymbolicValue::Unknown
+                        }
+                    }
+                }
+                (_, Some(StructuralAddress::FunctionTableSlot(table, offset))) if width == 32 => {
+                    let Ok(offset) = u32::try_from(offset) else {
+                        state.reference_blockers.push(format!(
+                            "negative-function-table-slot at {pc:#x}: {instruction}"
+                        ));
+                        structural_set(&mut state.values, dest, SymbolicValue::Unknown);
+                        return true;
+                    };
+                    match pointer_context.function_table_slots.get(&(table, offset)) {
+                        Some(target) => SymbolicValue::FunctionPointer {
+                            table,
+                            target: *target,
+                        },
+                        None => {
+                            state.reference_blockers.push(format!(
+                                "unregistered-function-table-slot at {pc:#x}: {}+{offset:#x}",
+                                table.id()
+                            ));
+                            SymbolicValue::Unknown
+                        }
+                    }
+                }
+                (_, Some(StructuralAddress::PrivateStack(offset))) => {
+                    if state.private_stack_may_be_modified_by_call {
+                        let token = state.next_private_stack_read_token;
+                        state.next_private_stack_read_token += 1;
+                        state
+                            .reference_events
+                            .push(DraftReferenceEvent::PrivateStackLoad {
+                                token,
+                                offset,
+                                width,
+                                signed,
+                            });
+                        SymbolicValue::private_stack_read(token, width, signed)
+                    } else {
+                        state.stack.load(offset, width, signed).unwrap_or_else(|| {
+                            state.reference_blockers.push(format!(
+                                "uninitialized-private-stack-load at {pc:#x}: {instruction}"
+                            ));
+                            SymbolicValue::Unknown
+                        })
+                    }
+                }
+                (_, Some(StructuralAddress::CallerMemory(address))) => {
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address,
+                        region: "caller-owned ABI argument RAM".to_owned(),
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
+                (_, Some(StructuralAddress::SymbolMemory(address))) => {
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        region: address.canonical(),
+                        address,
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
+                (_, Some(StructuralAddress::Absolute(address))) if svd.contains_mmio(address) => {
+                    let read_token = state.next_mmio_read_token;
+                    state.next_mmio_read_token += 1;
+                    let event = ObservableEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address,
+                        register: svd.register_name(address),
+                        value: None,
+                    };
+                    state.events.push(event.clone());
+                    state
+                        .reference_events
+                        .push(DraftReferenceEvent::Observable(event));
+                    SymbolicValue::register_read(read_token, address, width, signed)
+                }
+                (_, Some(StructuralAddress::Absolute(address)))
+                    if symbol.memory_region(address, width).is_some() =>
+                {
+                    let region = symbol.memory_region(address, width).unwrap();
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address: SymbolicValue::Constant(address),
+                        region: region.name.clone(),
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
+                _ => {
+                    if let Some((address, domain)) =
+                        structural_indexed_mmio_address(&state.values, base, offset.as_i32(), svd)
+                    {
+                        let read_token = state.next_mmio_read_token;
+                        state.next_mmio_read_token += 1;
+                        state
+                            .reference_events
+                            .push(DraftReferenceEvent::IndexedMmio {
+                                access: MemoryAccess::Read,
+                                width,
+                                address,
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: None,
+                            });
+                        SymbolicValue::indexed_register_read(read_token, width, signed)
+                    } else if let Some((address, region)) =
+                        structural_indexed_read_only_memory_address(
+                            &state.values,
+                            base,
+                            offset.as_i32(),
+                            width,
+                            symbol,
+                            &state.reference_events,
+                        )
+                    {
+                        let read_token = state.next_memory_read_token;
+                        state.next_memory_read_token += 1;
+                        state.reference_events.push(DraftReferenceEvent::Memory {
+                            access: MemoryAccess::Read,
+                            width,
+                            address,
+                            region,
+                            value: None,
+                        });
+                        SymbolicValue::memory_read(read_token, width, signed)
+                    } else if state.values[usize::from(base.0)].is_resolved()
+                        && state.values[usize::from(base.0)].depends_on_private_stack_read()
+                    {
+                        let read_token = state.next_memory_read_token;
+                        state.next_memory_read_token += 1;
+                        state.reference_events.push(DraftReferenceEvent::Memory {
+                            access: MemoryAccess::Read,
+                            width,
+                            address: state.values[usize::from(base.0)]
+                                .clone()
+                                .add_constant(offset.as_u32()),
+                            region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
+                            value: None,
+                        });
+                        SymbolicValue::memory_read(read_token, width, signed)
+                    } else {
+                        state.reference_blockers.push(format!(
+                            "unmodeled-memory-load at {pc:#x}: {instruction}{}; base {} = {}",
+                            if symbol.addresses_resolved {
+                                ""
+                            } else {
+                                " (relocatable addresses)"
+                            },
+                            base,
+                            state.values[usize::from(base.0)].canonical(),
+                        ));
+                        SymbolicValue::Unknown
+                    }
+                }
+            };
+            structural_set(&mut state.values, dest, value);
+        }
+        Inst::Sb { offset, src, base }
+        | Inst::Sh { offset, src, base }
+        | Inst::Sw { offset, src, base } => {
+            let width = match instruction {
+                Inst::Sb { .. } => 8,
+                Inst::Sh { .. } => 16,
+                _ => 32,
+            };
+            let value = state.values[usize::from(src.0)].clone();
+            let address = match complete_low_relocation(
+                symbol,
+                pc as u32,
+                artifact::RelocationKind::Lo12S,
+                &state.values[usize::from(base.0)],
+                offset.as_i32(),
+            ) {
+                Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
+                Ok(None) => structural_effective_address(&state.values, base, offset.as_i32()),
+                Err(error) => {
+                    state
+                        .reference_blockers
+                        .push(format!("malformed-data-relocation at {pc:#x}: {error}"));
+                    return true;
+                }
+            };
+            match address {
+                Some(StructuralAddress::PrivateStack(offset)) => {
+                    state.stack.store(offset, width, &value);
+                    state
+                        .reference_events
+                        .push(DraftReferenceEvent::PrivateStackStore {
+                            offset,
+                            width,
+                            value,
+                        });
+                }
+                Some(StructuralAddress::CallerMemory(address)) => {
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address,
+                        region: "caller-owned ABI argument RAM".to_owned(),
+                        value: Some(value),
+                    });
+                }
+                Some(StructuralAddress::SymbolMemory(address)) => {
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        region: address.canonical(),
+                        address,
+                        value: Some(value),
+                    });
+                }
+                Some(StructuralAddress::Absolute(address)) if svd.contains_mmio(address) => {
+                    if !value.is_resolved() {
+                        state.blockers.push(format!(
+                            "unresolved MMIO write value at {pc:#x}: {instruction}"
+                        ));
+                    }
+                    let event = ObservableEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address,
+                        register: svd.register_name(address),
+                        value: Some(value),
+                    };
+                    state.events.push(event.clone());
+                    state
+                        .reference_events
+                        .push(DraftReferenceEvent::Observable(event));
+                }
+                Some(StructuralAddress::Absolute(address))
+                    if symbol.memory_region(address, width).is_some() =>
+                {
+                    let region = symbol.memory_region(address, width).unwrap();
+                    if !region.writable {
+                        state.reference_blockers.push(format!(
+                            "read-only-memory-store at {pc:#x}: {instruction} ({})",
+                            region.name
+                        ));
+                    }
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address: SymbolicValue::Constant(address),
+                        region: region.name.clone(),
+                        value: Some(value),
+                    });
+                }
+                _ => {
+                    if let Some((address, domain)) =
+                        structural_indexed_mmio_address(&state.values, base, offset.as_i32(), svd)
+                    {
+                        if !value.is_resolved() {
+                            state.reference_blockers.push(format!(
+                                "unresolved indexed MMIO write value at {pc:#x}: {instruction}"
+                            ));
+                        }
+                        state
+                            .reference_events
+                            .push(DraftReferenceEvent::IndexedMmio {
+                                access: MemoryAccess::Write,
+                                width,
+                                address,
+                                registers: domain.registers,
+                                guard: domain.guard,
+                                value: Some(value),
+                            });
+                    } else if state.values[usize::from(base.0)].is_resolved()
+                        && state.values[usize::from(base.0)].depends_on_private_stack_read()
+                    {
+                        state.reference_events.push(DraftReferenceEvent::Memory {
+                            access: MemoryAccess::Write,
+                            width,
+                            address: state.values[usize::from(base.0)]
+                                .clone()
+                                .add_constant(offset.as_u32()),
+                            region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
+                            value: Some(value),
+                        });
+                    } else {
+                        state.reference_blockers.push(format!(
+                            "unmodeled-memory-store at {pc:#x}: {instruction}{}; base {} = {}",
+                            if symbol.addresses_resolved {
+                                ""
+                            } else {
+                                " (relocatable addresses)"
+                            },
+                            base,
+                            state.values[usize::from(base.0)].canonical(),
+                        ));
+                    }
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}

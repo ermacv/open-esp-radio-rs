@@ -66,8 +66,8 @@ line count alone is not an architectural boundary.
 
 The first responsibility-driven source split is also implemented:
 `static_analysis` is separated into analysis context, memory/relocations,
-stack ABI, register-only ALU semantics, polling recovery and trace
-orchestration; symbolic values are
+load/store effects, stack ABI, register-only ALU semantics, polling recovery,
+shared trace state and trace orchestration; symbolic values are
 separated into construction, rewriting, operations and inspection; codegen is
 separated into event rendering, control-flow rendering and runtime scaffold.
 The large structural and ESP32-S31 oracle tests follow the same functional

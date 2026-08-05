@@ -86,21 +86,24 @@ match the reviewed symbol metadata and body/schema constraints they declare.
 ## RISC-V structural-analysis layout
 
 `backend-riscv/src/static_analysis/mod.rs` owns the fail-closed instruction
-walk, state lifetime, and dispatch order. Its supporting modules own semantic
-units that do not need to control that walk:
+walk and dispatch order. Its supporting modules own state and semantic units
+that do not need to control that walk:
 
 | Module | Responsibility |
 | --- | --- |
 | `alu.rs` | Register-only RV32 integer semantics and ALU-related relocations |
 | `context.rs` | Relocated calls, pointer cells, tables, and harness summary context |
-| `memory.rs` | Effective addresses, data relocations, indexed MMIO, and bounded memory intrinsics |
+| `memory.rs` | Effective addresses, data relocations, indexed-memory proofs, and bounded memory intrinsics |
+| `memory_access.rs` | Load/store effects over MMIO, ELF memory, caller RAM, and private stack |
 | `poll.rs` | Structural polling-loop recognition and checkpoint validation |
 | `stack.rs` | Symbolic private stack and RV32 call-argument recovery |
+| `state.rs` | Register file, effect streams, blockers, tokens, checkpoints, and trace finalization |
 
-ALU evaluation cannot emit effects or change instruction traversal. Poll
-recovery consumes immutable trace prefixes plus an explicit checkpoint. The
-orchestrator remains the owner of token allocation, register/stack lifetime,
-calls, memory effects, and control-flow decisions.
+ALU evaluation cannot emit effects or change instruction traversal. Memory
+dispatch mutates one `StructuralTraceState` and cannot select the next PC.
+Poll recovery consumes immutable trace prefixes plus an explicit checkpoint,
+which the state owner restores atomically. The orchestrator retains only call
+and control-flow decisions plus instruction traversal.
 
 ## RISC-V reference-analysis layout
 
@@ -165,10 +168,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
-  small; the next justified extraction is a shared state owner for memory and
-  call dispatch, rather than passing many independent mutable references into
-  instruction helpers.
+- `backend-riscv/src/static_analysis/mod.rs`: move relocated, direct, table,
+  and external call dispatch behind the shared trace state while keeping PC
+  traversal and branch selection in the orchestrator.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

@@ -5,7 +5,7 @@
 //! retry must retain the last hardware-valid frontier. This owner contains no
 //! board storage addresses or protocol policy.
 
-#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+#![forbid(unsafe_code)]
 
 use core::{future::Future, marker::PhantomData};
 
@@ -184,20 +184,45 @@ where
     }
 
     /// Start RX using the production DMA storage bound to this ring.
-    pub fn start_with_storage<'operation, M, const DMA_STORAGE_SIZE: usize>(
-        &'operation mut self,
-        hardware: &'operation mut M,
+    pub async fn start_with_storage<M, const DMA_STORAGE_SIZE: usize>(
+        &mut self,
+        hardware: &mut M,
         storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    ) -> impl Future<Output = Result<(), Esp32s31PreconnectedRxError>> + 'operation
+    ) -> Result<(), Esp32s31PreconnectedRxError>
     where
         M: RxDma,
-        'storage: 'operation,
     {
-        self.start(hardware, move |index| {
-            // SAFETY: the halted ring invokes this only after DMA released
-            // the matching buffer and immediately before descriptor rearm.
-            unsafe { storage.buffers()[index].prepare_for_recycle() }
-        })
+        let state = core::mem::replace(&mut self.state, Esp32s31PreconnectedRxState::Vacant);
+        let prepared = match state {
+            Esp32s31PreconnectedRxState::Halted(halted) => {
+                match storage.prepare_halted(halted, hardware) {
+                    Ok(prepared) => prepared,
+                    Err((halted, error)) => {
+                        self.state = Esp32s31PreconnectedRxState::Halted(halted);
+                        return Err(error.into());
+                    }
+                }
+            }
+            Esp32s31PreconnectedRxState::Prepared(prepared) => prepared,
+            live @ Esp32s31PreconnectedRxState::Live(_) => {
+                self.state = live;
+                return Err(Esp32s31PreconnectedRxError::AlreadyStarted);
+            }
+            Esp32s31PreconnectedRxState::Vacant => {
+                return Err(Esp32s31PreconnectedRxError::OwnerUnavailable);
+            }
+        };
+        D::after_micros(ESP32S31_RX_WALKER_ENABLE_SETTLE_US).await;
+        match prepared.try_start(hardware) {
+            Ok(live) => {
+                self.state = Esp32s31PreconnectedRxState::Live(live);
+                Ok(())
+            }
+            Err((prepared, error)) => {
+                self.state = Esp32s31PreconnectedRxState::Prepared(prepared);
+                Err(error.into())
+            }
+        }
     }
 
     pub fn stop<M: RxDma>(&mut self, hardware: &mut M) -> Result<(), Esp32s31PreconnectedRxError> {
@@ -247,31 +272,17 @@ where
         let ring = self.live_mut()?;
         let mut progress = Esp32s31PreconnectedRxProgress::default();
         for index in 0..COUNT {
-            let Some(completed) = ring.take_completed(index) else {
+            let Some(completed) = storage.take_completed(ring, index)? else {
                 continue;
             };
             progress.completed = progress.completed.saturating_add(1);
-            let segment = RxSegment {
-                descriptor_address: completed.descriptor_address(),
-                descriptor_word0: completed.word0(),
-                buffer: unsafe {
-                    // SAFETY: taking the completed descriptor transferred the
-                    // matching buffer from DMA to this unique live owner.
-                    storage.buffers()[index].completed()
-                },
-                next_descriptor_address: completed.next_descriptor_address(),
-            };
-            if observe(segment) == Esp32s31PreconnectedRxDirective::Stop {
+            if observe(completed.segment()) == Esp32s31PreconnectedRxDirective::Stop {
                 progress.stopped = true;
                 return Ok(progress);
             }
         }
 
-        ring.recycle_completed_half(hardware, |index| {
-            // SAFETY: the live ring invokes this only for a detached completed
-            // half immediately before republishing it to DMA.
-            unsafe { storage.buffers()[index].prepare_for_recycle() }
-        })?;
+        storage.recycle_completed_half(ring, hardware)?;
         if ring.all_observed() {
             return Err(Esp32s31PreconnectedRxError::Ring(RxRingError::Corrupt));
         }

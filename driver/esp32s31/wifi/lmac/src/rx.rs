@@ -1250,6 +1250,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.descriptor_base
     }
 
+    pub(crate) const fn descriptors(&self) -> &'a [Descriptor; COUNT] {
+        self.descriptors
+    }
+
+    pub(crate) const fn buffer_addresses(&self) -> &'a [u32; COUNT] {
+        self.buffer_addresses
+    }
+
     /// Stop the DMA walker and consume the live frontier authority.
     ///
     /// A failed hardware confirmation returns the complete live owner. This

@@ -5,20 +5,20 @@
 //! This module owns that DMA lifecycle and management-frame observation only;
 //! scan policy and active-probe TX live in their respective modules.
 
-#![allow(unsafe_code, reason = "RX DMA ownership transition")]
+#![forbid(unsafe_code)]
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_lmac::rx::{
     RxDma, RxIngressConfig, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive,
-    RxRingStopped, RxSegment, extract_management,
+    RxRingStopped, extract_management,
 };
 use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 
 use crate::{
     embassy_rx::RxReloadDelay,
     rx_backend::{
-        ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaBuffer, Esp32s31RxDmaStorage,
-        Esp32s31RxEpochResources, Esp32s31StoppedRx,
+        ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
+        Esp32s31StoppedRx,
     },
 };
 
@@ -146,7 +146,7 @@ pub struct Esp32s31ScanRx<
     const DMA_STORAGE_SIZE: usize,
 > {
     state: Esp32s31ScanRxState<'storage, COUNT>,
-    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
 
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
@@ -162,32 +162,21 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         if DMA_BUFFER_SIZE > u32::MAX as usize {
             return Err(RxRingError::Size);
         }
-        let ring = RxRingStopped::prepare(
-            hardware,
-            storage.descriptors(),
-            descriptor_base,
-            buffer_addresses,
-            DMA_BUFFER_SIZE as u32,
-            |index| {
-                // SAFETY: `prepare` first confirms that the walker is stopped
-                // and transfers each matching buffer to this closure.
-                unsafe { storage.buffers()[index].prepare_for_recycle() }
-            },
-        )?;
+        let ring = storage.prepare_ring(hardware, descriptor_base, buffer_addresses)?;
         Ok(Self {
             state: Esp32s31ScanRxState::Prepared(ring),
-            buffers: storage.buffers(),
+            storage,
         })
     }
 
     /// Reuse a hardware-confirmed halted ring for a running rescan.
     pub const fn from_halted(
         ring: RxRingHalted<'storage, COUNT>,
-        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     ) -> Self {
         Self {
             state: Esp32s31ScanRxState::Halted(ring),
-            buffers,
+            storage,
         }
     }
 
@@ -260,22 +249,13 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
             ring.poll_pending_reload(hardware)? == RxReloadObservation::Pending;
 
         for index in 0..COUNT {
-            let Some(completed) = ring.take_completed(index) else {
+            let Some(completed) = self.storage.take_completed(ring, index)? else {
                 continue;
             };
             progress.completed_descriptors = progress.completed_descriptors.saturating_add(1);
-            let buffer = unsafe {
-                // The live ring transferred this completed descriptor and its
-                // matching buffer to the unique scan owner.
-                self.buffers[completed.index()].completed()
-            };
+            let segment = completed.segment();
+            let buffer = segment.buffer;
             let rssi = buffer[0] as i8;
-            let segment = RxSegment {
-                descriptor_address: completed.descriptor_address(),
-                descriptor_word0: completed.word0(),
-                buffer,
-                next_descriptor_address: completed.next_descriptor_address(),
-            };
             match extract_management(
                 core::slice::from_ref(&segment),
                 RxIngressConfig {
@@ -312,12 +292,9 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         }
 
         if !progress.reload_pending
-            && let Some(append) =
-                ring.recycle_completed_prefix::<COUNT, _, _>(hardware, |index| {
-                    // SAFETY: the live ring invokes this only for an observed
-                    // descriptor immediately before republishing it to DMA.
-                    unsafe { self.buffers[index].prepare_for_recycle() }
-                })?
+            && let Some(append) = self
+                .storage
+                .recycle_completed_prefix::<COUNT, _>(ring, hardware)?
         {
             progress.recycled_descriptors = append.descriptor_count as u32;
         }
@@ -356,10 +333,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                 actual,
             });
         };
-        match ring.prepare(hardware, DMA_BUFFER_SIZE as u32, |index| {
-            // SAFETY: the halted ring proves that DMA released this buffer.
-            unsafe { self.buffers[index].prepare_for_recycle() }
-        }) {
+        match self.storage.prepare_halted(ring, hardware) {
             Ok(ring) => {
                 self.state = Esp32s31ScanRxState::Prepared(ring);
                 Ok(())
@@ -377,7 +351,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
             Esp32s31ScanRxState::Prepared(ring) => Ok(ring.into_halted()),
             state => Err(Self {
                 state,
-                buffers: self.buffers,
+                storage: self.storage,
             }),
         }
     }
@@ -462,7 +436,7 @@ impl<
         >,
     ) -> Self {
         let (ring, resources) = stopped.into_epoch_parts();
-        let scan = Esp32s31ScanRx::from_halted(ring, resources.buffers());
+        let scan = Esp32s31ScanRx::from_halted(ring, resources.storage());
         Self { scan, resources }
     }
 
@@ -667,15 +641,16 @@ mod tests {
         }
     }
 
-    fn complete_test_beacon(
-        storage: &Esp32s31RxDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
+    fn write_test_beacon(
+        storage: &mut Esp32s31RxDmaStorage<
+            RX_TEST_COUNT,
+            RX_TEST_BUFFER_SIZE,
+            RX_TEST_STORAGE_SIZE,
+        >,
     ) {
-        use open_esp_radio_esp32s31_wifi_lmac::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
-
         const FRAME_LENGTH: usize = 43;
         const SIGNAL_LENGTH: usize = FRAME_LENGTH + 4;
         const FRAME_OFFSET: usize = 0x40;
-        const RECEIVED_LENGTH: usize = FRAME_OFFSET + SIGNAL_LENGTH;
 
         let mut bytes = [0_u8; RX_TEST_BUFFER_SIZE];
         bytes[0] = (-42_i8) as u8;
@@ -689,12 +664,22 @@ mod tests {
         frame[32..34].copy_from_slice(&100_u16.to_le_bytes());
         frame[36..40].copy_from_slice(&[0, 2, b'a', b'p']);
         frame[40..43].copy_from_slice(&[3, 1, 6]);
-        // SAFETY: this fixture owns the halted ring and no DMA writer is
-        // active. The shared completed view ends before the raw copy starts.
-        unsafe {
-            let destination = storage.buffers()[0].completed().as_ptr().cast_mut();
-            core::ptr::copy_nonoverlapping(bytes.as_ptr(), destination, bytes.len());
-        }
+        storage
+            .buffer_mut(0)
+            .expect("test RX buffer exists")
+            .copy_from_slice(&bytes);
+    }
+
+    fn complete_test_beacon(
+        storage: &Esp32s31RxDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
+    ) {
+        use open_esp_radio_esp32s31_wifi_lmac::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+
+        const FRAME_LENGTH: usize = 43;
+        const SIGNAL_LENGTH: usize = FRAME_LENGTH + 4;
+        const FRAME_OFFSET: usize = 0x40;
+        const RECEIVED_LENGTH: usize = FRAME_OFFSET + SIGNAL_LENGTH;
+
         storage.descriptors()[0].write_word0(
             RX_TEST_BUFFER_SIZE as u32 | (RECEIVED_LENGTH as u32) << LENGTH_SHIFT | BIT_30 | BIT_31,
         );
@@ -702,8 +687,9 @@ mod tests {
 
     #[test]
     fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
-        let storage =
+        let mut storage =
             Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+        write_test_beacon(&mut storage);
         let mut hardware = MockRxDma::default();
         let mut rx = Esp32s31ScanRx::prepare_initial(
             &mut hardware,
@@ -826,7 +812,7 @@ mod tests {
         let queue =
             Esp32s31StagedRxQueue::<NoopRawMutex, STAGE_SLOTS, STAGE_CAPACITY, STAGE_SLOTS>::new();
         let (sender, _receiver) = queue.split();
-        let connected = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, TestDelay, sender);
+        let connected = Esp32s31ConnectedRx::new(ring, &storage, &pool, TestDelay, sender);
         let stopped = connected
             .try_stop(&mut hardware)
             .unwrap_or_else(|_| panic!("mock connected ring must stop"));

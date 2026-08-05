@@ -64,7 +64,7 @@ pub struct Esp32s31ConnectedRx<
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingLive<'storage, COUNT>,
-    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames:
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
@@ -92,7 +92,7 @@ pub struct Esp32s31StoppedRx<
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingHalted<'storage, COUNT>,
-    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames:
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
@@ -121,7 +121,7 @@ pub struct Esp32s31RxEpochResources<
     const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
-    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames:
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
@@ -148,7 +148,7 @@ pub struct Esp32s31PreparedRx<
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > {
     ring: RxRingStopped<'storage, COUNT>,
-    buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+    storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
     frames:
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
@@ -190,7 +190,13 @@ impl<
     pub const fn buffers(
         &self,
     ) -> &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT] {
-        self.buffers
+        self.storage.buffers()
+    }
+
+    pub const fn storage(
+        &self,
+    ) -> &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE> {
+        self.storage
     }
 
     pub const fn pool(&self) -> &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY> {
@@ -235,7 +241,7 @@ impl<
     ) {
         let Self {
             ring,
-            buffers,
+            storage,
             pool,
             frames,
             delay,
@@ -244,7 +250,7 @@ impl<
         (
             ring,
             Esp32s31RxEpochResources {
-                buffers,
+                storage,
                 pool,
                 frames,
                 delay,
@@ -283,21 +289,16 @@ impl<
         }
         let Self {
             ring,
-            buffers,
+            storage,
             pool,
             frames,
             delay,
             pipeline_observer,
         } = self;
-        match ring.prepare(hardware, DMA_BUFFER_SIZE as u32, |index| {
-            // SAFETY: `RxRingHalted` proved the walker is off and the prepare
-            // transaction owns each matching descriptor before this closure
-            // restores its buffer-side DMA guards.
-            unsafe { buffers[index].prepare_for_recycle() }
-        }) {
+        match storage.prepare_halted(ring, hardware) {
             Ok(ring) => Ok(Esp32s31PreparedRx {
                 ring,
-                buffers,
+                storage,
                 pool,
                 frames,
                 delay,
@@ -306,7 +307,7 @@ impl<
             Err((ring, error)) => Err((
                 Self {
                     ring,
-                    buffers,
+                    storage,
                     pool,
                     frames,
                     delay,
@@ -348,7 +349,7 @@ impl<
     /// Bind board-allocated DMA/staging resources before the first connected
     /// epoch. Later epochs recover this same owner from [`Esp32s31StoppedRx`].
     pub fn new(
-        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         frames: Sender<
             'queue,
@@ -359,7 +360,7 @@ impl<
         delay: D,
     ) -> Self {
         Self {
-            buffers,
+            storage,
             pool,
             frames,
             delay,
@@ -375,7 +376,13 @@ impl<
     pub const fn buffers(
         &self,
     ) -> &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT] {
-        self.buffers
+        self.storage.buffers()
+    }
+
+    pub const fn storage(
+        &self,
+    ) -> &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE> {
+        self.storage
     }
 
     pub fn delay_mut(&mut self) -> &mut D {
@@ -405,7 +412,7 @@ impl<
     > {
         Esp32s31StoppedRx {
             ring,
-            buffers: self.buffers,
+            storage: self.storage,
             pool: self.pool,
             frames: self.frames,
             delay: self.delay,
@@ -433,7 +440,7 @@ impl<
     > {
         Esp32s31ConnectedRx {
             ring,
-            buffers: self.buffers,
+            storage: self.storage,
             pool: self.pool,
             frames: self.frames,
             delay: self.delay,
@@ -506,7 +513,7 @@ impl<
     {
         let Self {
             ring,
-            buffers,
+            storage,
             pool,
             frames,
             mut delay,
@@ -518,7 +525,7 @@ impl<
         match ring.try_start(hardware) {
             Ok(ring) => Ok(Esp32s31ConnectedRx {
                 ring,
-                buffers,
+                storage,
                 pool,
                 frames,
                 delay,
@@ -527,7 +534,7 @@ impl<
             Err((ring, error)) => Err((
                 Self {
                     ring,
-                    buffers,
+                    storage,
                     pool,
                     frames,
                     delay,
@@ -568,7 +575,7 @@ impl<
 {
     pub fn new(
         ring: RxRingLive<'storage, COUNT>,
-        buffers: &'storage [Esp32s31RxDmaBuffer<DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>; COUNT],
+        storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         pool: &'pool RxStagePool<STAGE_SLOTS, STAGE_CAPACITY>,
         delay: D,
         frames: Sender<
@@ -580,7 +587,7 @@ impl<
     ) -> Self {
         Self {
             ring,
-            buffers,
+            storage,
             pool,
             frames,
             delay,
@@ -627,7 +634,7 @@ impl<
     > {
         let Self {
             ring,
-            buffers,
+            storage,
             pool,
             frames,
             delay,
@@ -636,7 +643,7 @@ impl<
         match ring.try_stop(hardware) {
             Ok(ring) => Ok(Esp32s31StoppedRx {
                 ring,
-                buffers,
+                storage,
                 pool,
                 frames,
                 delay,
@@ -645,7 +652,7 @@ impl<
             Err((ring, error)) => Err((
                 Self {
                     ring,
-                    buffers,
+                    storage,
                     pool,
                     frames,
                     delay,
@@ -709,7 +716,7 @@ where
                 // different from the recycle sentinel proves that DMA has
                 // begun consuming this non-terminal buffer; ownership is not
                 // transferred until a later terminal descriptor is visible.
-                self.buffers[index].leading_guard_overwritten()
+                self.storage.buffers()[index].leading_guard_overwritten()
             });
             let frontier = frontier_snapshot.unit_count;
             let pool_credits = self.pool.available_slots();
@@ -737,7 +744,7 @@ where
                         // segment through its terminal descriptor. The copy
                         // completes before the recycle closure can publish any
                         // of those buffers back to DMA.
-                        let source = unsafe { self.buffers[index].completed() };
+                        let source = unsafe { self.storage.buffers()[index].completed() };
                         let source = source
                             .get(..destination.len())
                             .ok_or(RxStageError::SourceTooShort)?;
@@ -749,7 +756,7 @@ where
                     |recycled| {
                         // SAFETY: the ring invokes this only for its owned
                         // completed prefix immediately before publication.
-                        unsafe { self.buffers[recycled].prepare_for_recycle() }
+                        unsafe { self.storage.buffers()[recycled].prepare_for_recycle() }
                     },
                 );
                 let pending = match pending {
@@ -777,7 +784,7 @@ where
                             .recycle_completed_unit(hardware, unit_descriptor_count, |recycled| {
                                 // SAFETY: this is the same uniquely observed
                                 // descriptor rejected before staging copied it.
-                                unsafe { self.buffers[recycled].prepare_for_recycle() }
+                                unsafe { self.storage.buffers()[recycled].prepare_for_recycle() }
                             })
                             .map_err(RxStageTransactionError::Ring)?
                             .ok_or(RxStageTransactionError::Ring(RxRingError::Busy))?;
@@ -990,7 +997,7 @@ mod tests {
         let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
         let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
         let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
         let mut protocol = Esp32s31ConnectedRxProtocol::new(
             receiver,
             &irq,
@@ -1050,7 +1057,7 @@ mod tests {
             STAGED_DEPTH,
         >::new();
         let (sender, _receiver) = queue.split();
-        let service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
         assert!(hardware.walker);
 
         let stopped = match service.try_stop(&mut hardware) {
@@ -1155,7 +1162,7 @@ mod tests {
             Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, STAGE_CAPACITY, STAGED_DEPTH>::new(
             );
         let (sender, receiver) = queue.split();
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
 
         assert_eq!(
             embassy_futures::block_on(service.service(&mut hardware)),
@@ -1243,7 +1250,7 @@ mod tests {
         let mut mpdu = [0; STAGE_CAPACITY];
         let mut ethernet = [0; STAGE_CAPACITY];
         let mut reorder_scratch = [0; STAGE_CAPACITY];
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
         let mut protocol = Esp32s31ConnectedRxProtocol::new(
             receiver,
             &irq,
@@ -1307,7 +1314,7 @@ mod tests {
         let observer = RecordingRxObserver::default();
         let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
         let (sender, receiver) = queue.split();
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender)
+        let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender)
             .with_pipeline_observer(&observer);
 
         assert_eq!(
@@ -1365,7 +1372,7 @@ mod tests {
         let pool = RxStagePool::<VENDOR_LARGE_RX_SLOT_COUNT, WIDE_STAGE_CAPACITY>::new();
         let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH, WIDE_STAGE_CAPACITY>::new();
         let (sender, receiver) = queue.split();
-        let mut service = Esp32s31ConnectedRx::new(ring, storage.buffers(), &pool, NoDelay, sender);
+        let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
 
         assert_eq!(
             embassy_futures::block_on(service.service(&mut hardware)),

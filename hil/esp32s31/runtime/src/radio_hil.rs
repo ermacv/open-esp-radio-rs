@@ -4068,7 +4068,7 @@ async fn run_connected_network<'fixture, 'security>(
                 }
             };
             let rx = Esp32s31RxEpochResources::new(
-                rx_storage.buffers(),
+                rx_storage,
                 &OPEN_RADIO_RX_STAGE_POOL,
                 staged_rx_sender,
                 OpenRadioRxReloadDelay,

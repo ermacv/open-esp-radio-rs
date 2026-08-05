@@ -469,7 +469,7 @@ pub async fn run_connected(
                 .await
                 .unwrap_or_else(|failure| panic!("connected RX arm failed: {:?}", failure.error));
             let rx = Esp32s31RxEpochResources::new(
-                rx_storage.buffers(),
+                rx_storage,
                 &RX_STAGE_POOL,
                 staged_sender,
                 EmbassyEsp32s31RxReloadDelay,

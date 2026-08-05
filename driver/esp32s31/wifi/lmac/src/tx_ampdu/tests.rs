@@ -1,6 +1,7 @@
 //! Host/oracle tests for A-MPDU protocol, formatting and ownership.
 
 use super::*;
+use crate::tx::TxHardware;
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacLegacyTxProgram,

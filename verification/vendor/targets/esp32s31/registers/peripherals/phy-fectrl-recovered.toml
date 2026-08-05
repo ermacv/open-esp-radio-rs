@@ -1,0 +1,66 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_FECTRL_RECOVERED"
+description = "Sparse FECTRL antenna words absent from the public platform PAC."
+baseAddress = 0x20100800
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ANTENNA_CONFIG_WORD_0_OPAQUE"
+description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x34
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ANTENNA_CONFIG_WORD_1_OPAQUE"
+description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x38
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ANTENNA_CONFIG_WORD_2_OPAQUE"
+description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x3C
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ANTENNA_CONFIG_WORD_3_OPAQUE"
+description = "Read-modify-written by complete antenna configuration functions and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x40
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_FECTRL_RECOVERED"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_0_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_1_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_2_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_3_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

@@ -19,7 +19,15 @@ svd = ["registers/vendor.svd", "registers/reviewed.svd"]
 
 [registers]
 facts = "generated/findings/mmio.json"
-overlay = "registers/reviewed.toml"
+model = "registers/device.toml"
+
+[registers.svd]
+output = "generated/svd/device.svd"
+
+[registers.pac]
+output = "generated/pac/src/lib.rs"
+target = "none"
+edition = "2024"
 
 [interfaces]
 facts = "generated/findings/interfaces.json"
@@ -32,6 +40,11 @@ semantic-catalogs = [
 `target-spec` selects the architecture and ABI. A target may omit `harness`
 for generic artifact and MMIO discovery; commands that use reviewed platform
 semantics reject that target with a capability error.
+
+A target spec may provide a `memory-map` fallback for direct `--target-spec`
+invocations. A project-level `memory-map` takes precedence. This keeps MMIO
+classification independent from clean SVD register names in both invocation
+forms.
 
 `run-spec` may be included when the project itself is private. Public projects
 normally omit it and use an untracked override:
@@ -46,6 +59,11 @@ Explicit `--run-spec` and `--svd` arguments override project defaults. The old
 `--target-spec` invocation remains supported, but it cannot be combined with
 `--project` because that would create two configuration roots.
 
+If the project omits the top-level `svd` key, target-spec SVD catalogs remain
+the fallback. An explicit `svd = []` disables that fallback. This is useful
+when the schema-2 register model is the complete catalog; non-empty entries
+are additional read-only catalogs merged with that model.
+
 When neither option is present, the validator searches the current directory
 and its parents for the nearest `vendor-validator.toml`. An explicit
 `--project` remains preferable in CI because it makes the configuration root
@@ -53,9 +71,12 @@ visible in the command itself.
 
 The optional `[registers]` table establishes a generated/reviewed register
 workspace. Its `facts` path becomes the default JSON destination of
-`mmio discover`; `overlay` is never generated again after
-`registers init-overlay`. See [register workspace](register-workspace.md) for
-the overlay schema, validation rules, and SVD export.
+`mmio discover`; `model` is a versioned multi-file hardware description.
+`registers init-model` bootstraps it from discovery ranges and
+`registers import-svd` migrates an existing catalog. Configured SVD and PAC
+outputs let export/check commands run without repeating paths. See
+[register workspace](register-workspace.md) for the model schema, provenance
+boundary and generation workflow.
 
 The optional `[interfaces]` table names the generated structural report from
 `interfaces discover`, an optional reviewed `pack`, and zero or more reusable
@@ -84,9 +105,10 @@ harness, or an artifact with no named symbols is reported as a warning or an
 unavailable optional capability.
 
 If `[registers]` is configured, the doctor also distinguishes facts that have
-not been generated, an overlay that has not been initialized, an invalid/stale
-overlay, and a ready workspace. Coverage reports reviewed, ignored, manual and
-unreviewed registers plus reviewed fields.
+not been generated, a model that has not been initialized, an invalid model,
+legacy schema 1 overlays, and a ready schema 2 workspace. Coverage reports
+reviewed, ignored, manual and unreviewed registers plus reviewed fields and
+configured SVD/PAC outputs.
 
 If `[interfaces]` is configured, the doctor distinguishes missing facts, a
 pack that has not been initialized, invalid or stale review, and a ready
@@ -175,7 +197,7 @@ Commands now request the knowledge they actually consume:
 | `symbols inventory` | yes | no | no |
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
-| `registers init-overlay` / `validate` / `export-svd` | no | no | no |
+| `registers init-model` / `import-svd` / `validate` / `export-svd` / `generate-pac` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
 | execute/compare | yes | yes | no |

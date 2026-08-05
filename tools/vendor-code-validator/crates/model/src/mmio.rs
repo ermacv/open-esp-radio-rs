@@ -28,7 +28,11 @@ pub struct MmioRegisterMap {
 impl MmioRegisterMap {
     pub fn load(path: &Path) -> Result<Self> {
         let xml = fs::read_to_string(path)?;
-        let document = roxmltree::Document::parse(&xml)?;
+        Self::parse(&xml)
+    }
+
+    pub fn parse(xml: &str) -> Result<Self> {
+        let document = roxmltree::Document::parse(xml)?;
         let mut registers = Vec::new();
         for peripheral in document
             .descendants()
@@ -72,20 +76,22 @@ impl MmioRegisterMap {
             windows: Vec::new(),
         };
         for path in paths {
-            let map = Self::load(path)?;
-            combined.registers.extend(map.registers);
-            combined.windows.extend(map.windows);
+            combined.merge(Self::load(path)?)?;
         }
-        combined
-            .registers
-            .sort_by_key(|register| (register.address, register.name.clone()));
-        combined.registers.dedup();
-        reject_register_collisions(&combined.registers)?;
-        combined
-            .windows
-            .sort_by_key(|window| (window.start, window.end));
-        combined.windows.dedup();
         Ok(combined)
+    }
+
+    pub fn merge(&mut self, other: Self) -> Result<()> {
+        self.registers.extend(other.registers);
+        self.windows.extend(other.windows);
+        self.registers
+            .sort_by_key(|register| (register.address, register.name.clone()));
+        self.registers.dedup();
+        reject_register_collisions(&self.registers)?;
+        self.windows
+            .sort_by_key(|window| (window.start, window.end));
+        self.windows.dedup();
+        Ok(())
     }
 
     pub fn contains_mmio(&self, address: u32) -> bool {

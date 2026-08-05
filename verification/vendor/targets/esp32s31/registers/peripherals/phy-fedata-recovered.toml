@@ -1,0 +1,40 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_FEDATA_RECOVERED"
+description = "Sparse FEDATA words absent from the public platform PAC."
+baseAddress = 0x20100400
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RX_FILTER_MODE_OPAQUE"
+description = "Complete phy_rx_filter_mode performs a read-modify-write; individual fields remain unnamed."
+addressOffset = 0x30
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "TX_RX_RESET_OPAQUE"
+description = "Complete phy_fe_txrx_reset performs a read-modify-write; individual fields remain unnamed."
+addressOffset = 0x40
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_FEDATA_RECOVERED"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_FEDATA_RECOVERED.RX_FILTER_MODE_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_FEDATA_RECOVERED.TX_RX_RESET_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

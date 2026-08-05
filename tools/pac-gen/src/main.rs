@@ -387,6 +387,10 @@ fn child_text<'a>(node: Node<'a, 'a>, name: &str) -> Result<&'a str, Box<dyn Err
         .ok_or_else(|| format!("{} has no {name}", node.tag_name().name()).into())
 }
 
+fn child_u64(node: Node<'_, '_>, name: &str) -> Result<u64, Box<dyn Error>> {
+    parse_u64(child_text(node, name)?, name)
+}
+
 fn optional_child_text<'a>(node: Node<'a, 'a>, name: &str) -> Option<&'a str> {
     node.children()
         .find(|child| child.is_element() && child.tag_name().name() == name)
@@ -1017,6 +1021,27 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
     Ok(())
 }
 
+fn validate_model_review_sources(
+    document: &Document<'_>,
+    review_sources: &BTreeSet<String>,
+) -> Result<(), Box<dyn Error>> {
+    let definitions = document
+        .descendants()
+        .filter(|node| node.has_tag_name("source"))
+        .filter_map(|node| node.attribute("id"))
+        .collect::<BTreeSet<_>>();
+    if let Some(source) = review_sources
+        .iter()
+        .find(|source| !definitions.contains(source.as_str()))
+    {
+        return Err(format!(
+            "register model review references undefined PAC add-on provenance source {source}"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 fn validate_confidence(input: &str) -> Result<(), Box<dyn Error>> {
     let allowed = ALLOWED_CONFIDENCE_VALUES
         .iter()
@@ -1136,13 +1161,13 @@ fn parse_interrupt_snapshots(
         let clear = direct_named_child(registers, "register", clear_name).ok_or_else(|| {
             format!("interrupt snapshot {name} references unknown clear register {clear_name}")
         })?;
-        if child_text(status, "size")? != "32" || child_text(status, "access")? != "read-only" {
+        if child_u64(status, "size")? != 32 || child_text(status, "access")? != "read-only" {
             return Err(format!(
                 "interrupt snapshot {name} status must be a 32-bit read-only register"
             )
             .into());
         }
-        if child_text(clear, "size")? != "32"
+        if child_u64(clear, "size")? != 32
             || child_text(clear, "modifiedWriteValues")? != "oneToClear"
         {
             return Err(format!(
@@ -1160,9 +1185,7 @@ fn parse_interrupt_snapshots(
                     "interrupt snapshot {name} references unknown clear field {clear_field_name}"
                 )
             })?;
-        if child_text(clear_field, "bitOffset")? != "0"
-            || child_text(clear_field, "bitWidth")? != "32"
-        {
+        if child_u64(clear_field, "bitOffset")? != 0 || child_u64(clear_field, "bitWidth")? != 32 {
             return Err(format!(
                 "interrupt snapshot {name} clear field must cover the complete 32-bit register"
             )
@@ -1412,7 +1435,7 @@ fn parse_full_register_writes(
                 format!("full-register write {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(
                 format!("full-register write {name} requires a writable 32-bit register").into(),
             );
@@ -1435,7 +1458,7 @@ fn parse_full_register_writes(
         let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
             format!("full-register write {name} references unknown field {field_name}")
         })?;
-        if child_text(field, "bitOffset")? != "0" || child_text(field, "bitWidth")? != "32" {
+        if child_u64(field, "bitOffset")? != 0 || child_u64(field, "bitWidth")? != 32 {
             return Err(format!(
                 "full-register write {name} field must cover the complete 32-bit register"
             )
@@ -1562,7 +1585,7 @@ fn parse_fixed_register_writes(
                 format!("fixed-register write {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(
                 format!("fixed-register write {name} requires a writable 32-bit register").into(),
             );
@@ -1585,7 +1608,7 @@ fn parse_fixed_register_writes(
         let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
             format!("fixed-register write {name} references unknown field {field_name}")
         })?;
-        if child_text(field, "bitOffset")? != "0" || child_text(field, "bitWidth")? != "32" {
+        if child_u64(field, "bitOffset")? != 0 || child_u64(field, "bitWidth")? != 32 {
             return Err(format!(
                 "fixed-register write {name} field must cover the complete 32-bit register"
             )
@@ -1717,7 +1740,7 @@ fn parse_fixed_register_images(
                 format!("fixed-register image {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(
                 format!("fixed-register image {name} requires a writable 32-bit register").into(),
             );
@@ -1842,7 +1865,7 @@ fn parse_register_image_writes(
                 format!("register-image write {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(
                 format!("register-image write {name} requires a writable 32-bit register").into(),
             );
@@ -1990,7 +2013,7 @@ fn parse_zero_based_field_writes(
                 format!("zero-based field write {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(format!(
                 "zero-based field write {name} requires a writable 32-bit register"
             )
@@ -2215,7 +2238,7 @@ fn parse_zero_register_writes(
                 format!("zero-register write {name} references unknown register {register_name}")
             })?;
         let access = child_text(register, "access")?;
-        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+        if child_u64(register, "size")? != 32 || !matches!(access, "write-only" | "read-write") {
             return Err(
                 format!("zero-register write {name} requires a writable 32-bit register").into(),
             );
@@ -2358,8 +2381,7 @@ fn parse_masked_register_modifies(
             direct_named_child(registers, "register", register_name).ok_or_else(|| {
                 format!("masked-register modify {name} references unknown register {register_name}")
             })?;
-        if child_text(register, "size")? != "32" || child_text(register, "access")? != "read-write"
-        {
+        if child_u64(register, "size")? != 32 || child_text(register, "access")? != "read-write" {
             return Err(format!(
                 "masked-register modify {name} requires a read-write 32-bit register"
             )
@@ -2742,16 +2764,17 @@ fn validate_register_aliases(input: &str) -> Result<(), Box<dyn Error>> {
                     .expect("address map entries are nonempty"),
             )
             .ok_or("SVD register end address overflow")?;
-        if let Some((previous_start, previous_end, previous_identity)) = &previous_range {
-            if address < *previous_end && address != *previous_start {
-                return Err(format!(
-                    "physical register ranges overlap: {previous_identity} at \
+        if let Some((previous_start, previous_end, previous_identity)) = &previous_range
+            && address < *previous_end
+            && address != *previous_start
+        {
+            return Err(format!(
+                "physical register ranges overlap: {previous_identity} at \
                      0x{previous_start:08x}..0x{previous_end:08x} and {} at \
                      0x{address:08x}..0x{end:08x}",
-                    registers[0].identity
-                )
-                .into());
-            }
+                registers[0].identity
+            )
+            .into());
         }
         previous_range = Some((address, end, registers[0].identity.clone()));
         validate_alias_group(address, &registers)?;
@@ -2852,11 +2875,20 @@ fn run() -> Result<(), Box<dyn Error>> {
     let root = repository_root();
     let output_path = root.join("driver/chips/esp32s31/pac/src/lib.rs");
     let binding_index_path = root.join("svd/esp32s31-radio.bindings");
-    let assembled = radio_svd::assemble(&root)?;
-    radio_svd::synchronize_aggregate(&assembled, check)?;
-    let svd_path = assembled.aggregate_path;
-    let input = assembled.contents;
-    let windows = validate_structure(&input)?;
+    let materialized = radio_svd::materialize(&root)?;
+    radio_svd::synchronize_aggregate(&materialized, check)?;
+    let svd_path = materialized.aggregate_path;
+    let input = materialized.contents;
+    let generation_input = radio_svd::attach_pac_addon(&input, &materialized.addon_contents)
+        .map_err(|error| {
+            format!(
+                "cannot apply target PAC add-on {}: {error}",
+                materialized.addon_path.display()
+            )
+        })?;
+    let windows = validate_structure(&generation_input)?;
+    let generation_document = Document::parse(&generation_input)?;
+    validate_model_review_sources(&generation_document, &materialized.review_sources)?;
     validate_mmio_windows(&input, &windows)?;
     let platform_svd_path = root.join("svd/esp32s31-platform-radio-deps.svd");
     let platform_input = fs::read_to_string(&platform_svd_path)?;
@@ -2871,16 +2903,15 @@ fn run() -> Result<(), Box<dyn Error>> {
     config.edition = RustEdition::E2024;
     config.target = Target::None;
     config.strict = true;
-    let document = Document::parse(&input)?;
-    let interrupt_snapshot_api = generate_interrupt_snapshot_api(&document)?;
-    let peripheral_ownership_api = generate_peripheral_ownership_api(&document)?;
-    let full_register_write_api = generate_full_register_write_api(&document)?;
-    let fixed_register_write_api = generate_fixed_register_write_api(&document)?;
-    let fixed_register_image_api = generate_fixed_register_image_api(&document)?;
-    let register_image_write_api = generate_register_image_write_api(&document)?;
-    let zero_based_field_write_api = generate_zero_based_field_write_api(&document)?;
-    let zero_register_write_api = generate_zero_register_write_api(&document)?;
-    let masked_register_modify_api = generate_masked_register_modify_api(&document)?;
+    let interrupt_snapshot_api = generate_interrupt_snapshot_api(&generation_document)?;
+    let peripheral_ownership_api = generate_peripheral_ownership_api(&generation_document)?;
+    let full_register_write_api = generate_full_register_write_api(&generation_document)?;
+    let fixed_register_write_api = generate_fixed_register_write_api(&generation_document)?;
+    let fixed_register_image_api = generate_fixed_register_image_api(&generation_document)?;
+    let register_image_write_api = generate_register_image_write_api(&generation_document)?;
+    let zero_based_field_write_api = generate_zero_based_field_write_api(&generation_document)?;
+    let zero_register_write_api = generate_zero_register_write_api(&generation_document)?;
+    let masked_register_modify_api = generate_masked_register_modify_api(&generation_document)?;
     let generated = format_generated(&format!(
         "{}{}{}{}{}{}{}{}{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
@@ -2953,9 +2984,11 @@ mod tests {
         parse_mmio_windows, parse_register_image_writes, parse_zero_based_field_writes,
         parse_zero_register_writes, type_binding_name, validate_alias_group, validate_confidence,
         validate_dimension_order, validate_evidence_ranges, validate_names, validate_provenance,
-        validate_register_aliases, validate_register_layout, validate_write_semantics,
+        validate_model_review_sources, validate_register_aliases, validate_register_layout,
+        validate_write_semantics,
     };
     use roxmltree::Document;
+    use std::collections::BTreeSet;
     use svd_parser::svd::Access;
 
     fn windows() -> [MmioWindow; 1] {
@@ -3413,6 +3446,16 @@ mod tests {
                      <openEspRadioAddressWindows source=\"WINDOWS\"/></root>";
         let document = Document::parse(input).unwrap();
         assert!(validate_provenance(&document, input).is_err());
+    }
+
+    #[test]
+    fn rejects_a_model_review_source_missing_from_the_target_addon() {
+        let document = Document::parse(
+            "<root><source id=\"KNOWN\">defined</source></root>",
+        )
+        .unwrap();
+        let sources = BTreeSet::from(["KNOWN".to_owned(), "MISSING".to_owned()]);
+        assert!(validate_model_review_sources(&document, &sources).is_err());
     }
 
     #[test]

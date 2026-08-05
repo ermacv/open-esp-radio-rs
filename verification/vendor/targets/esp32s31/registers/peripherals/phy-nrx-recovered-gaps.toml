@@ -1,0 +1,66 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_NRX_RECOVERED_GAPS"
+description = "Sparse NRX words absent from the public platform PAC."
+baseAddress = 0x20107800
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "FFT_SCALE_CONTROL_OPAQUE"
+description = "Complete phy_fft_scale_force read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "BACKUP_WORD_0C_OPAQUE"
+description = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."
+addressOffset = 0xC
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+description = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x98
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CHANNEL_FILTER_CONTROL_OPAQUE"
+description = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."
+addressOffset = 0x104
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.FFT_SCALE_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.BACKUP_WORD_0C_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.CHANNEL_FILTER_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

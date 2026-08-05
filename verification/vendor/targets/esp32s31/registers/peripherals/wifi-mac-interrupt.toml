@@ -1,0 +1,214 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_INTERRUPT"
+description = """
+Wi-Fi MAC interrupt mask, masked status and write-to-clear aperture.
+        The two complete hal_mac leaves independently prove the status and
+        clear addresses. The recovered common FIQ and cold initializer prove
+        the event-bit mapping and mask transaction used by the open ISR."""
+baseAddress = 0x20104C40
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ENABLE"
+description = "Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "EVENT_MASK"
+description = "One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RAW"
+description = "Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."
+addressOffset = 0x4
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "STATUS"
+description = "Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf."
+addressOffset = 0x8
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "RX_ASSOCIATED_AUXILIARY_5"
+description = "Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."
+bitOffset = 5
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_COMPLETE"
+description = "At least one hardware TX queue completed."
+bitOffset = 7
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "BSS_COLOR_COLLISION"
+description = "HE BSS-color collision event."
+bitOffset = 8
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "WATCHDOG"
+description = "MAC watchdog event cleared by the complete dedicated leaf."
+bitOffset = 11
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_SUCCESS"
+description = "Successfully received frame is ready for the RX completion path."
+bitOffset = 14
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TX_TIMEOUT"
+description = "Hardware TX queue timeout/abort event."
+bitOffset = 19
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "RX_ASSOCIATED_AUXILIARY_24"
+description = "Enabled by the cold MAC mask 0x19a879e0 and observed asserted with RX_SUCCESS throughout sustained HE20 receive traffic. Complete wDev_ProcessFiq acknowledges this bit as part of the full STATUS image but does not dispatch independent work for it. Its hardware meaning and independent transition rules remain unknown; software must not treat it as RX ownership or work multiplicity."
+bitOffset = 24
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CLEAR"
+description = "Full event snapshot written by the complete clear leaf to acknowledge pending MAC events."
+addressOffset = 0xC
+size = 32
+access = "write-only"
+modifiedWriteValues = "oneToClear"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+description = "Ones acknowledge the corresponding event bits."
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
+    "BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT",
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+    "BLOB_LIBPP_HAL_ENABLE_MAC",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE"
+sources = [
+    "BLOB_LIBPP_HAL_ENABLE_MAC",
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.ENABLE.EVENT_MASK"
+sources = [
+    "BLOB_LIBPP_HAL_ENABLE_MAC",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.RAW"
+sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT",
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.RX_ASSOCIATED_AUXILIARY_5"
+sources = [
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+    "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03",
+]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.TX_COMPLETE"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.BSS_COLOR_COLLISION"
+sources = [
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+    "BLOB_LIBPP_HAL_MAC_COLOR_COLLISION_ISR",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.WATCHDOG"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_WATCHDOG"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.RX_SUCCESS"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.TX_TIMEOUT"
+sources = ["BLOB_LIBPP_WDEV_PROCESS_FIQ"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.STATUS.RX_ASSOCIATED_AUXILIARY_24"
+sources = [
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+    "HIL_OPEN_MAC_IRQ_STATUS_CLASSIFICATION_2026_08_03",
+]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.CLEAR"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT",
+    "BLOB_LIBPP_WDEV_PROCESS_FIQ",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_INTERRUPT.CLEAR.EVENTS"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
+confidence = "instruction-exact"

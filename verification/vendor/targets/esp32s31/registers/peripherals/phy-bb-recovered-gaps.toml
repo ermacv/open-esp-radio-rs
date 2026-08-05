@@ -1,0 +1,51 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_BB_RECOVERED_GAPS"
+description = "Sparse BB words absent from the public platform PAC."
+baseAddress = 0x20107C00
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CCA_COUNTER_CONTROL_OPAQUE"
+description = "Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x58
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CCA_COUNTER_STATUS_0_OPAQUE"
+description = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."
+addressOffset = 0x5C
+size = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CCA_COUNTER_STATUS_1_OPAQUE"
+description = "Complete phy_get_cca_cnt reads this word; hardware access semantics remain unknown."
+addressOffset = 0x60
+size = 32
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_0_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_1_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

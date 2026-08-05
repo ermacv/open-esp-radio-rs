@@ -19,6 +19,7 @@ members = [
     "driver/chips/esp32s31/pac",
     "hil/host/runner",
     "tools/qualification-check",
+    "tools/register-model",
     "tools/pac-gen",
     "tools/vendor-code-validator",
     "tools/vendor-code-validator/crates/backend-riscv",

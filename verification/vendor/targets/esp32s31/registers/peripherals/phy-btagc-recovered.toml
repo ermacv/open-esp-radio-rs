@@ -1,0 +1,53 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_BTAGC_RECOVERED"
+description = "Sparse BTAGC words absent from the public platform PAC."
+baseAddress = 0x20102800
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RX_GAIN_FORCE_OPAQUE"
+description = "Complete phy_rx_gain_force read-modify-writes this word on its Bluetooth branch."
+addressOffset = 0x40
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "GAIN_OFFSET_WORD_0_OPAQUE"
+description = "Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x48
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "GAIN_OFFSET_WORD_1_OPAQUE"
+description = "Complete phy_bt_gain_offset read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x68
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.RX_GAIN_FORCE_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_0_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_BTAGC_RECOVERED.GAIN_OFFSET_WORD_1_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

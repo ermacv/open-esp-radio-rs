@@ -1,10 +1,10 @@
 //! Deterministic CMSIS-SVD materialization from facts plus reviewed metadata.
 
-use std::{collections::BTreeMap, fmt::Write as _, fs, path::Path};
+use std::{collections::BTreeMap, fmt::Write as _, path::Path};
 
 use super::{
     FactRange, FieldOverlay, RegisterFact, RegisterFacts, RegisterOverlay, RegisterOverlayFile,
-    RegisterStatus, identifier_from, validate_identifier,
+    RegisterStatus, SvdExportSummary, identifier_from, validate_identifier,
 };
 use crate::Result;
 
@@ -26,10 +26,18 @@ pub(crate) struct RegisterWorkspaceSummary {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct SvdExportSummary {
-    pub(crate) peripherals: usize,
-    pub(crate) registers: usize,
-    pub(crate) fields: usize,
+pub(crate) enum SvdExportProfile {
+    Audit,
+    Release,
+}
+
+impl SvdExportProfile {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Audit => "audit",
+            Self::Release => "release",
+        }
+    }
 }
 
 impl RegisterWorkspace {
@@ -37,7 +45,7 @@ impl RegisterWorkspace {
         let facts = RegisterFacts::load(facts_path)?;
         let overlay = RegisterOverlayFile::load(overlay_path, &facts)?;
         let workspace = Self { facts, overlay };
-        workspace.materialize(false)?;
+        workspace.materialize(SvdExportProfile::Audit)?;
         Ok(workspace)
     }
 
@@ -80,8 +88,11 @@ impl RegisterWorkspace {
         }
     }
 
-    pub(crate) fn write_svd(&self, path: &Path, reviewed_only: bool) -> Result<SvdExportSummary> {
-        let peripherals = self.materialize(reviewed_only)?;
+    pub(crate) fn render_svd(
+        &self,
+        profile: SvdExportProfile,
+    ) -> Result<(String, SvdExportSummary)> {
+        let peripherals = self.materialize(profile)?;
         if peripherals.is_empty() {
             return Err("SVD export selected no registers".into());
         }
@@ -131,14 +142,7 @@ impl RegisterWorkspace {
             write_peripheral(&mut output, peripheral);
         }
         output.push_str("  </peripherals>\n</device>\n");
-        if let Some(parent) = path
-            .parent()
-            .filter(|parent| !parent.as_os_str().is_empty())
-        {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(path, output)?;
-        Ok(SvdExportSummary {
+        let summary = SvdExportSummary {
             peripherals: peripherals.len(),
             registers: peripherals
                 .iter()
@@ -149,10 +153,11 @@ impl RegisterWorkspace {
                 .flat_map(|peripheral| &peripheral.registers)
                 .map(|register| register.fields.len())
                 .sum(),
-        })
+        };
+        Ok((output, summary))
     }
 
-    fn materialize(&self, reviewed_only: bool) -> Result<Vec<OutputPeripheral<'_>>> {
+    fn materialize(&self, profile: SvdExportProfile) -> Result<Vec<OutputPeripheral<'_>>> {
         let peripheral_overlays = self
             .overlay
             .peripherals
@@ -197,11 +202,12 @@ impl RegisterWorkspace {
                 description: peripheral_overlays
                     .get(range.name.as_str())
                     .and_then(|overlay| overlay.description.clone())
-                    .unwrap_or_else(|| {
-                        format!(
+                    .or_else(|| match profile {
+                        SvdExportProfile::Audit => Some(format!(
                             "MMIO discovery range {:#010x}..{:#010x}",
                             range.start, range.end
-                        )
+                        )),
+                        SvdExportProfile::Release => None,
                     }),
                 registers: Vec::new(),
             })
@@ -210,7 +216,7 @@ impl RegisterWorkspace {
         for fact in &self.facts.registers {
             let overlay = register_overlays.get(&(fact.address, fact.width)).copied();
             if overlay.is_some_and(|overlay| overlay.status == RegisterStatus::Ignored)
-                || reviewed_only
+                || profile == SvdExportProfile::Release
                     && !overlay.is_some_and(|overlay| overlay.status == RegisterStatus::Reviewed)
             {
                 continue;
@@ -225,7 +231,7 @@ impl RegisterWorkspace {
                 .expect("every fact range has an output peripheral");
             peripheral
                 .registers
-                .push(materialize_register(range, fact, overlay));
+                .push(materialize_register(range, fact, overlay, profile));
         }
         for overlay in self
             .overlay
@@ -243,7 +249,7 @@ impl RegisterWorkspace {
                 .expect("every fact range has an output peripheral");
             peripheral
                 .registers
-                .push(materialize_manual_register(overlay));
+                .push(materialize_manual_register(overlay, profile));
         }
         for peripheral in &mut output {
             peripheral
@@ -268,7 +274,7 @@ impl RegisterWorkspace {
 struct OutputPeripheral<'a> {
     range: &'a FactRange,
     name: String,
-    description: String,
+    description: Option<String>,
     registers: Vec<OutputRegister<'a>>,
 }
 
@@ -276,7 +282,7 @@ struct OutputRegister<'a> {
     address: u32,
     width: u8,
     name: String,
-    description: String,
+    description: Option<String>,
     access: Option<&'a str>,
     reset_value: Option<u32>,
     reset_mask: Option<u32>,
@@ -287,6 +293,7 @@ fn materialize_register<'a>(
     range: &FactRange,
     fact: &RegisterFact,
     overlay: Option<&'a RegisterOverlay>,
+    profile: SvdExportProfile,
 ) -> OutputRegister<'a> {
     let name = overlay
         .and_then(|overlay| overlay.name.clone())
@@ -297,11 +304,12 @@ fn materialize_register<'a>(
         name,
         description: overlay
             .and_then(|overlay| overlay.description.clone())
-            .unwrap_or_else(|| {
-                format!(
+            .or_else(|| match profile {
+                SvdExportProfile::Audit => Some(format!(
                     "Unreviewed MMIO observation; reads={}, writes={}",
                     fact.reads, fact.writes
-                )
+                )),
+                SvdExportProfile::Release => None,
             }),
         access: overlay.and_then(|overlay| overlay.access.as_deref()),
         reset_value: overlay.and_then(|overlay| overlay.reset_value),
@@ -310,7 +318,10 @@ fn materialize_register<'a>(
     }
 }
 
-fn materialize_manual_register(overlay: &RegisterOverlay) -> OutputRegister<'_> {
+fn materialize_manual_register(
+    overlay: &RegisterOverlay,
+    profile: SvdExportProfile,
+) -> OutputRegister<'_> {
     OutputRegister {
         address: overlay.address,
         width: overlay.width,
@@ -318,10 +329,9 @@ fn materialize_manual_register(overlay: &RegisterOverlay) -> OutputRegister<'_> 
             .name
             .clone()
             .expect("validated manual register has a name"),
-        description: overlay
-            .description
-            .clone()
-            .unwrap_or_else(|| "Manually added register".to_owned()),
+        description: overlay.description.clone().or_else(|| {
+            (profile == SvdExportProfile::Audit).then(|| "Manually added register".to_owned())
+        }),
         access: overlay.access.as_deref(),
         reset_value: overlay.reset_value,
         reset_mask: overlay.reset_mask,
@@ -344,7 +354,7 @@ fn fact_name(range: &FactRange, fact: &RegisterFact) -> String {
 fn write_peripheral(output: &mut String, peripheral: &OutputPeripheral<'_>) {
     output.push_str("    <peripheral>\n");
     element(output, 3, "name", Some(&peripheral.name));
-    element(output, 3, "description", Some(&peripheral.description));
+    element(output, 3, "description", peripheral.description.as_deref());
     element(
         output,
         3,
@@ -355,7 +365,7 @@ fn write_peripheral(output: &mut String, peripheral: &OutputPeripheral<'_>) {
     for register in &peripheral.registers {
         output.push_str("        <register>\n");
         element(output, 5, "name", Some(&register.name));
-        element(output, 5, "description", Some(&register.description));
+        element(output, 5, "description", register.description.as_deref());
         element(
             output,
             5,

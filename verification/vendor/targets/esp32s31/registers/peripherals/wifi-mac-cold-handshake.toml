@@ -1,0 +1,53 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_COLD_HANDSHAKE"
+description = "Cold MAC initialization request/ready handshake at the complete hal_init prefix."
+baseAddress = 0x20104DE0
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CONTROL"
+description = "Software sets REQUEST with a fresh-read RMW, then polls READY before touching the remaining MAC state."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "READY"
+description = "Polled until asserted after REQUEST."
+bitOffset = 0
+bitWidth = 1
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "REQUEST"
+description = "Set before the READY polling loop."
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "UNKNOWN"
+bitOffset = 2
+bitWidth = 30
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE"
+sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL"
+sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.READY"
+sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.REQUEST"
+sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
+confidence = "instruction-exact"

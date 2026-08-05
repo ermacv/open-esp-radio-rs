@@ -1,0 +1,39 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_FECOEX_RECOVERED"
+description = "Sparse FECOEX words absent from the public platform PAC."
+baseAddress = 0x20100000
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RF_FREQUENCY_CONTROL_OPAQUE"
+description = "Complete phy_read_rf_freq_mem performs a read-modify-write of bit 16; all other semantics remain unknown."
+addressOffset = 0x20
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RF_FREQUENCY_RESULT_OPAQUE"
+description = "Complete phy_read_rf_freq_mem reads this word; hardware access semantics remain unknown."
+addressOffset = 0x40
+size = 32
+
+[[review]]
+entity = "PHY_FECOEX_RECOVERED"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_RESULT_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

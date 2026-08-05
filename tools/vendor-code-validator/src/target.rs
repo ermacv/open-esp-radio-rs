@@ -97,6 +97,7 @@ pub(crate) struct TargetSpec {
     pub(crate) endianness: Endianness,
     pub(crate) pointer_width: u8,
     pub(crate) rust_target: String,
+    pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) pac_bindings: Option<PathBuf>,
     pub(crate) profiles: Option<PathBuf>,
@@ -115,6 +116,7 @@ impl TargetSpec {
         let mut endianness = None;
         let mut pointer_width = None;
         let mut rust_target = None;
+        let mut memory_map = None;
         let mut svd_paths = Vec::new();
         let mut pac_bindings = None;
         let mut profiles = None;
@@ -180,6 +182,12 @@ impl TargetSpec {
                 "rust-target" => {
                     set_token(&mut rust_target, value, directive, line_number)?;
                 }
+                "memory-map" => set_once(
+                    &mut memory_map,
+                    resolve_path(base, value),
+                    directive,
+                    line_number,
+                )?,
                 "svd" => svd_paths.push(resolve_path(base, value)),
                 "pac-bindings" => set_once(
                     &mut pac_bindings,
@@ -226,6 +234,7 @@ impl TargetSpec {
             endianness: endianness.ok_or("target spec has no endianness")?,
             pointer_width: pointer_width.ok_or("target spec has no pointer-width")?,
             rust_target: rust_target.ok_or("target spec has no rust-target")?,
+            memory_map,
             svd_paths,
             pac_bindings,
             profiles,
@@ -337,6 +346,20 @@ mod tests {
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
         target.require_available_backend().unwrap();
+    }
+
+    #[test]
+    fn resolves_an_optional_target_memory_map() {
+        let path = write_spec(
+            "memory-map",
+            "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\nmemory-map maps/device.toml\n",
+        );
+        let target = TargetSpec::load(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            target.memory_map,
+            Some(path.parent().unwrap().join("maps/device.toml"))
+        );
     }
 
     #[test]

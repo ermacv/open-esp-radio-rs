@@ -1,0 +1,233 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_TXRX_PREFIX"
+description = "Eighteen direct fresh-read RMW edges before the first external HE callback in complete mac_txrx_init; complete hal_init later repeats the bit-28 set edge."
+baseAddress = 0x201040FC
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 4
+dimIncrement = 0x4
+dimIndex = "0,1,2,3"
+name = "RX_QUEUE_DEFAULT%s"
+description = "Four queue words have their high half cleared independently; queue zero and one then receive separate bit-24 and bit-26 set edges."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_23_16_UNKNOWN"
+bitOffset = 16
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_BIT_24_UNKNOWN"
+bitOffset = 24
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_BIT_25_UNKNOWN"
+bitOffset = 25
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "QUEUE_BIT_26_UNKNOWN"
+bitOffset = 26
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_31_27_UNKNOWN"
+bitOffset = 27
+bitWidth = 5
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x1F
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CONTROL_EDGES"
+description = "Complete prefix sets bit 0, then bit 4 through a second fresh-read RMW."
+addressOffset = 0x18
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "FIRST_ENABLE_UNKNOWN"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SECOND_ENABLE_UNKNOWN"
+bitOffset = 4
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "TIMING_CONTROL"
+description = "Complete prefix sets bit 31, then replaces bits 27:20 with 0x1b in a separate RMW."
+addressOffset = 0x1C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "TIMING_IMAGE_UNKNOWN"
+bitOffset = 20
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE_UNKNOWN"
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "FEATURE_EDGES"
+description = "Four separately ordered prefix updates: first set bits 31,23,15,13 together; set bit 12; set bit 28; later set bit 9 after queue defaults. Complete hal_init repeats the bit-28 set after antenna initialization."
+addressOffset = 0xB90
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LATE_ENABLE_UNKNOWN"
+bitOffset = 9
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "SECOND_ENABLE_UNKNOWN"
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FIRST_GROUP_BIT_13_UNKNOWN"
+bitOffset = 13
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FIRST_GROUP_BIT_15_UNKNOWN"
+bitOffset = 15
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FIRST_GROUP_BIT_23_UNKNOWN"
+bitOffset = 23
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "THIRD_ENABLE_UNKNOWN"
+description = "Set once in mac_txrx_init and again at hal_init offset 0xe2 after the interrupt-mask store."
+bitOffset = 28
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "FIRST_GROUP_BIT_31_UNKNOWN"
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "MODE_CONTROL"
+description = "Canonical multifunction word. Complete mac_txrx prefix clears bit 3; the HE init suffix independently sets bit 2."
+addressOffset = 0xB9C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "HE_ENABLE_UNKNOWN"
+description = "Complete HE init suffix sets bit 2."
+bitOffset = 2
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "INIT_CLEAR_UNKNOWN"
+bitOffset = 3
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "SHARED_ENABLE_CONTROL"
+description = "Final prefix RMW sets bits 1:0 together immediately before the first HE callback."
+addressOffset = 0xBA4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE_GROUP_UNKNOWN"
+bitOffset = 0
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX"
+sources = [
+    "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.RX_QUEUE_DEFAULT%s"
+sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.CONTROL_EDGES"
+sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.TIMING_CONTROL"
+sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.FEATURE_EDGES"
+sources = [
+    "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.FEATURE_EDGES.THIRD_ENABLE_UNKNOWN"
+sources = [
+    "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
+    "BLOB_LIBPP_HAL_INIT_TAIL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.MODE_CONTROL"
+sources = [
+    "BLOB_LIBPP_MAC_TXRX_INIT_PREFIX",
+    "BLOB_LIBPP_HAL_HE_INIT_SUFFIX",
+]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.MODE_CONTROL.HE_ENABLE_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TXRX_PREFIX.SHARED_ENABLE_CONTROL"
+sources = ["BLOB_LIBPP_MAC_TXRX_INIT_PREFIX"]
+confidence = "instruction-exact-semantics-unknown"

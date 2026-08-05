@@ -1,0 +1,27 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_BRX_RECOVERED_GAPS"
+description = "Sparse BRX words absent from the public platform PAC."
+baseAddress = 0x20108000
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+description = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."
+addressOffset = 0x50
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_BRX_RECOVERED_GAPS"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_BRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

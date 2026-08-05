@@ -1,0 +1,94 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_CONTROL"
+description = "Shared MAC run/stop control. The cold open-RX frontier publishes zero; the complete vendor channel-switch chain requests quiescence here and later restarts the no-power-save profile."
+baseAddress = 0x20104CAC
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CONTROL"
+description = "Cold promiscuous initialization writes zero. hal_mac_deinit records bits 13 and 14 as TX/RX activity and sets bit 12 plus bits 23:16; hal_mac_init with WIFI_PS_NONE clears that same stop-request mask."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LOW_CONTROL_UNKNOWN"
+bitOffset = 0
+bitWidth = 12
+
+[[peripherals.registers.register.fields]]
+name = "NO_RETENTION_STOP_REQUEST"
+description = "Included in the MAC stop request and cleared by hal_mac_init for the WIFI_PS_NONE all-ones retention mask."
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "ACTIVE_STATE"
+description = "Three-bit activity state polled until zero before PHY retuning. hal_mac_deinit independently records bit 13 as TX active and bit 14 as RX active; bit 15 remains unnamed."
+bitOffset = 13
+bitWidth = 3
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "TX_BLOCK_STOP_REQUEST"
+description = "Eight stop-request bits selected from the WIFI_PS_NONE TX-block retention mask by hal_mac_deinit and cleared by hal_mac_init."
+bitOffset = 16
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "RUN_ALL"
+description = "Clear every no-power-save TX block stop request."
+value = 0
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "STOP_ALL"
+description = "Request every no-power-save TX block to stop before retuning."
+value = 255
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_CONTROL_UNKNOWN"
+bitOffset = 24
+bitWidth = 8
+
+[[review]]
+entity = "WIFI_MAC_CONTROL"
+sources = [
+    "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
+    "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL"
+sources = [
+    "OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER",
+    "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.NO_RETENTION_STOP_REQUEST"
+sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.ACTIVE_STATE"
+sources = [
+    "BLOB_LIBPP_MAC_CHANNEL_SWITCH",
+    "MIGRATION_CHANNEL_SWITCH",
+]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_CONTROL.CONTROL.TX_BLOCK_STOP_REQUEST"
+sources = ["BLOB_LIBPP_MAC_CHANNEL_SWITCH"]
+confidence = "instruction-exact"

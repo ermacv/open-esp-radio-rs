@@ -1,0 +1,150 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_CRYPTO_CONTROL"
+description = """
+Per-interface hardware-crypto controls, shared policy mask and key
+        validity bitmap recovered from complete libpp hal_crypto leaves."""
+baseAddress = 0x20104800
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 3
+dimIncrement = 0x4
+dimIndex = "0,1,2"
+name = "INTERFACE_CONTROL%s"
+description = "STA, AP and NAN interface controls selected by hal_crypto_enable. The open STA CCMP path writes the complete image 0x00030103, then clears bits 31:30."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_LOW_UNKNOWN"
+description = "Algorithm, enable and management-frame policy fields composed by the complete leaf; individual electrical meanings remain partly unknown."
+bitOffset = 0
+bitWidth = 30
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3FFFFFFF
+
+[[peripherals.registers.register.fields]]
+name = "MODE_HIGH_UNKNOWN"
+description = "Complete ordinary enable clears both high bits; one algorithm branch sets bit 31."
+bitOffset = 30
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "POLICY_CONTROL"
+description = "Shared policy word. The ordinary non-algorithm-four enable path preserves bits 31:22 and 5:0 while clearing bits 21:6."
+addressOffset = 0x10
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LOW_POLICY_UNKNOWN"
+bitOffset = 0
+bitWidth = 6
+
+[[peripherals.registers.register.fields]]
+name = "ORDINARY_ENABLE_CLEAR_UNKNOWN"
+description = "Cleared by the reachable STA CCMP enable transaction."
+bitOffset = 6
+bitWidth = 16
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFF
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_POLICY_UNKNOWN"
+bitOffset = 22
+bitWidth = 10
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "INIT_AUX_UNKNOWN"
+description = "Fourth full-word cold-init store, cleared by complete hal_crypto_init. Its algorithm-specific meaning is not yet recovered."
+addressOffset = 0xC
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE_UNKNOWN"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "KEY_VALID_BITMAP"
+description = "One validity bit per one of the 25 evidenced hardware key entries."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "VALID_ENTRIES"
+description = "Bits 24:0 correspond to key-table entries 24:0; complete validity writes publish zero to reserved bits 31:25."
+bitOffset = 0
+bitWidth = 25
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x1FFFFFF
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL"
+sources = [
+    "BLOB_LIBPP_HAL_CRYPTO",
+    "BLOB_LIBPP_HAL_CRYPTO_INIT",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.CONTROL_LOW_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INTERFACE_CONTROL%s.MODE_HIGH_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.POLICY_CONTROL"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.POLICY_CONTROL.ORDINARY_ENABLE_CLEAR_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.INIT_AUX_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_CRYPTO_INIT"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_CRYPTO_CONTROL.KEY_VALID_BITMAP.VALID_ENTRIES"
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+confidence = "instruction-exact"

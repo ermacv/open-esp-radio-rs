@@ -75,6 +75,7 @@ calling-convention riscv-ilp32
 endianness little
 pointer-width 32
 rust-target riscv32imafc-unknown-none-elf
+memory-map memory.toml
 svd esp32s31-radio.svd
 svd esp32s31-platform-radio-deps.svd
 ```
@@ -104,3 +105,9 @@ the caller has authenticated the complete input artifact.
 The concrete project and memory-map schemas, precedence rules, and command
 capabilities are documented in
 [`project-workspace.md`](../../tools/vendor-code-validator/docs/project-workspace.md).
+The project may additionally own an editable schema-2 register model. It is
+loaded directly by generic analysis and derives clean SVD/PAC outputs; target
+extensions that generate chip-specific safe APIs remain outside the generic
+model and generator. The register workflow and migration boundary are
+documented in
+[`register-workspace.md`](../../tools/vendor-code-validator/docs/register-workspace.md).

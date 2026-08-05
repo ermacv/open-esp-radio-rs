@@ -1,0 +1,83 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_TSF_TIMER"
+description = "Four-entry TSF timer bank recovered from all complete target, wakeup and enable/disable leaves. Each entry consists of one control word followed by its 32-bit target. The public index is guarded to zero through three by the target and timer-enable leaves; the dedicated wakeup leaves do not contain their own range check."
+baseAddress = 0x2010D87C
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 4
+dimIncrement = 0x8
+dimIndex = "0,1,2,3"
+name = "CONTROL%s"
+description = "Per-timer control word at 0x2010d87c + index*8. Complete target accessors replace and return the low three bits; the exact semantics of that field remain unknown. Dedicated leaves set or clear wakeup bit 30, while the timer enable/disable leaves set or clear bit 31."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "LOW_CONTROL_UNKNOWN"
+description = "Complete hal_tsf_timer_set_target replaces these bits from its third argument and hal_tsf_timer_get_target returns them through its second output pointer."
+bitOffset = 0
+bitWidth = 3
+
+[[peripherals.registers.register.fields]]
+name = "WAKEUP_ENABLE"
+description = "Set by hal_enable_tsf_timer_wakeup and cleared by hal_disable_tsf_timer_wakeup."
+bitOffset = 30
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TIMER_ENABLE"
+description = "Set by hal_enable_tsf_timer and cleared by hal_disable_tsf_timer."
+bitOffset = 31
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 4
+dimIncrement = 0x8
+dimIndex = "0,1,2,3"
+name = "TARGET%s"
+description = "Full 32-bit timer target written by hal_tsf_timer_set_target and returned through the first output pointer by hal_tsf_timer_get_target."
+addressOffset = 0x4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+bitOffset = 0
+bitWidth = 32
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.LOW_CONTROL_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.WAKEUP_ENABLE"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.CONTROL%s.TIMER_ENABLE"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TSF_TIMER.TARGET%s"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+confidence = "instruction-exact"

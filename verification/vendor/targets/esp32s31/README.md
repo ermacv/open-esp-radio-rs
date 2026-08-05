@@ -24,6 +24,43 @@ cargo vendor-code-validator project doctor
 
 The missing run spec is a readiness warning rather than a configuration error.
 
+## Register project
+
+The checked `registers/device.toml` and its peripheral fragments are the
+validator's editable ESP32-S31 radio register model. The validator loads this
+model directly; generated XML is not required before MMIO discovery, IR
+export, or verification. The separate
+`../../../../svd/esp32s31-platform-radio-deps.svd` project input contributes
+official platform registers used by the radio call graph without transferring
+their runtime ownership to this project.
+
+Inspect the model and configured outputs with:
+
+```console
+cargo vendor-code-validator registers validate \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+
+cargo vendor-code-validator registers export-svd \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check
+
+cargo pac-gen --check
+```
+
+The clean SVD is written to `svd/esp32s31-radio.svd`. Discovery evidence
+remains in the ignored `generated/findings/mmio.json`; users edit reviewed
+names, fields, access rules, reset values and enumerations in
+`registers/peripherals/*.toml`.
+
+`cargo pac-gen` reads the same model through `tools/register-model` and applies
+`registers/pac-addon.xml` only while generating the production PAC. The add-on
+owns ESP32-S31 safe compound transactions, ownership helpers and evidence
+metadata; none of these semantics enter the generic register model or clean
+SVD. `registers generate-pac` remains available when an architecture-neutral
+plain svd2rust output is useful for inspection; supply an explicit `--output`
+because this target intentionally configures only the production `pac-gen`
+pipeline.
+
 The project also configures the generic interface workspace. Generate facts
 from a caller-owned run spec, initialize the reviewed pack once, and validate
 it after edits or vendor updates:

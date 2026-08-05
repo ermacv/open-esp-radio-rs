@@ -8,8 +8,11 @@ use crate::Result;
 pub(crate) enum Command {
     ProjectDoctor,
     RegisterInitOverlay,
+    RegisterInitModel,
+    RegisterImportSvd,
     RegisterValidate,
     RegisterExportSvd,
+    RegisterGeneratePac,
     SymbolInventory,
     InterfaceDiscover,
     InterfaceInitPack,
@@ -43,6 +46,14 @@ impl Command {
                 remaining.remove(0);
                 Self::RegisterInitOverlay
             }
+            ("registers", Some("init-model")) => {
+                remaining.remove(0);
+                Self::RegisterInitModel
+            }
+            ("registers", Some("import-svd")) => {
+                remaining.remove(0);
+                Self::RegisterImportSvd
+            }
             ("registers", Some("validate")) => {
                 remaining.remove(0);
                 Self::RegisterValidate
@@ -50,6 +61,10 @@ impl Command {
             ("registers", Some("export-svd")) => {
                 remaining.remove(0);
                 Self::RegisterExportSvd
+            }
+            ("registers", Some("generate-pac")) => {
+                remaining.remove(0);
+                Self::RegisterGeneratePac
             }
             ("symbols", Some("inventory")) => {
                 remaining.remove(0);
@@ -192,8 +207,11 @@ impl Command {
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
+                | Self::RegisterInitModel
+                | Self::RegisterImportSvd
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
+                | Self::RegisterGeneratePac
         )
     }
 
@@ -204,8 +222,11 @@ impl Command {
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
+                | Self::RegisterInitModel
+                | Self::RegisterImportSvd
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
+                | Self::RegisterGeneratePac
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -218,10 +239,13 @@ impl Command {
         !matches!(
             self,
             Self::RegisterInitOverlay
+                | Self::RegisterInitModel
+                | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
+                | Self::RegisterGeneratePac
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -232,10 +256,13 @@ impl Command {
         !matches!(
             self,
             Self::RegisterInitOverlay
+                | Self::RegisterInitModel
+                | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
+                | Self::RegisterGeneratePac
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -248,8 +275,11 @@ impl Command {
             Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
+                | Self::RegisterInitModel
+                | Self::RegisterImportSvd
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
+                | Self::RegisterGeneratePac
         )
     }
 
@@ -259,8 +289,11 @@ impl Command {
             | Self::InterfaceInitPack
             | Self::InterfaceValidate
             | Self::RegisterInitOverlay
+            | Self::RegisterInitModel
+            | Self::RegisterImportSvd
             | Self::RegisterValidate
             | Self::RegisterExportSvd
+            | Self::RegisterGeneratePac
             | Self::SymbolInventory
             | Self::InterfaceDiscover => false,
             Self::DiscoverMmio => role
@@ -509,8 +542,11 @@ mod tests {
     fn parses_register_workspace_commands() {
         for (name, command) in [
             ("init-overlay", Command::RegisterInitOverlay),
+            ("init-model", Command::RegisterInitModel),
+            ("import-svd", Command::RegisterImportSvd),
             ("validate", Command::RegisterValidate),
             ("export-svd", Command::RegisterExportSvd),
+            ("generate-pac", Command::RegisterGeneratePac),
         ] {
             let invocation = Invocation::parse([
                 "registers".to_owned(),

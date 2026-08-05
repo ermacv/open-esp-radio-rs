@@ -1,0 +1,111 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_POWER_INTERRUPT"
+description = "WDEVPWR interrupt bank named by complete print_isr_regs. Complete hal_pwr_interrupt_get_event and hal_pwr_interrupt_clr_event independently prove the masked STATUS read and full-width CLEAR acknowledgement transaction. Complete TSF timer enable/disable leaves update the timer interrupt masks in ENABLE and clear stale events through CLEAR."
+baseAddress = 0x2010D8B4
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ENABLE"
+description = "WDEVPWR_ENABLE diagnostic snapshot and writable event mask. hal_enable_tsf_timer sets bit 7-index and hal_disable_tsf_timer clears the same bit for guarded timer indices zero through three."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "EVENT_MASK"
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint]
+useEnumeratedValues = true
+
+[[peripherals.registers.register.fields.enumeratedValues]]
+usage = "write"
+
+[[peripherals.registers.register.fields.enumeratedValues.values]]
+name = "MASKED"
+description = "Mask every qualified WDEVPWR event during ownership handoff."
+value = 0
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RAW"
+description = "WDEVPWR_RAW diagnostic snapshot."
+addressOffset = 0x4
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "STATUS"
+description = "Masked WDEVPWR event image returned by complete hal_pwr_interrupt_get_event."
+addressOffset = 0x8
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CLEAR"
+description = "Full event image stored by complete hal_pwr_interrupt_clr_event to acknowledge WDEVPWR events. hal_enable_tsf_timer performs a fresh-read RMW which asserts bit 7-index here before enabling the selected timer."
+addressOffset = 0xC
+size = 32
+access = "read-write"
+modifiedWriteValues = "oneToClear"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT"
+sources = [
+    "BLOB_LIBPP_ISR_REGISTER_DUMP",
+    "BLOB_LIBPP_HAL_PWR_INTERRUPT",
+    "BLOB_LIBPP_HAL_TSF_TIMER",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.ENABLE"
+sources = [
+    "BLOB_LIBPP_ISR_REGISTER_DUMP",
+    "BLOB_LIBPP_HAL_TSF_TIMER",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.STATUS"
+sources = [
+    "BLOB_LIBPP_ISR_REGISTER_DUMP",
+    "BLOB_LIBPP_HAL_PWR_INTERRUPT",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_POWER_INTERRUPT.CLEAR"
+sources = [
+    "BLOB_LIBPP_HAL_PWR_INTERRUPT",
+    "BLOB_LIBPP_HAL_TSF_TIMER",
+]
+confidence = "instruction-exact"

@@ -1,0 +1,196 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_TX_COMMON"
+description = "Shared Wi-Fi CCA, timeout and completion state used by MAC transmit queues and the PHY-owned Wi-Fi CCA gate."
+baseAddress = 0x20104C5C
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CCA_CONTROL"
+description = "Global Wi-Fi TX CCA control; complete PHY enable/disable leaves update the high two fields through separate fresh reads."
+addressOffset = 0x0
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_LOW_UNKNOWN"
+bitOffset = 0
+bitWidth = 28
+
+[[peripherals.registers.register.fields]]
+name = "PHY_AUX_FORCE"
+description = "Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."
+bitOffset = 28
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers.register.fields]]
+name = "FORCE"
+description = "Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."
+bitOffset = 30
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "QUEUE_STATE_CLEAR"
+description = "Queue collision/timeout state acknowledgement."
+addressOffset = 0x54
+size = 32
+access = "write-only"
+
+[[peripherals.registers.register.fields]]
+name = "EVENTS"
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "QUEUE_STATE"
+description = "Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero."
+addressOffset = 0x58
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "LOW_STATE_UNKNOWN"
+bitOffset = 0
+bitWidth = 16
+
+[[peripherals.registers.register.fields]]
+name = "TIMEOUT"
+description = "Bits 16..19 correspond to ordinary queues 0..3."
+bitOffset = 16
+bitWidth = 4
+
+[[peripherals.registers.register.fields]]
+name = "MIDDLE_STATE_UNKNOWN"
+bitOffset = 20
+bitWidth = 4
+
+[[peripherals.registers.register.fields]]
+name = "TRIGGER_FLOW"
+description = "Complete hal_mac_get_txq_in_trig_flow_state returns bits 31:24 as an eight-bit queue bitmap. Complete lmacProcessTxComplete shifts that bitmap by the completed queue index and tests bit zero; its bounded dispatcher proves queue bits zero through four. The meaning of the remaining physically returned bits is not narrowed beyond queue-state bitmap."
+bitOffset = 24
+bitWidth = 8
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "COMPLETE_CLEAR"
+description = "Preserved-image acknowledgement for ordinary queue completion bits."
+addressOffset = 0x5C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "STATE"
+bitOffset = 0
+bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "COMPLETE_STATE"
+description = "Low four bits report completed ordinary queues 0..3."
+addressOffset = 0x60
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "ORDINARY_QUEUES"
+bitOffset = 0
+bitWidth = 4
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
+    "MIGRATION_LMAC_TX",
+    "ROM_REV0_PHY_CCA_CONTROL",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "ROM_REV0_PHY_CCA_CONTROL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL.PHY_AUX_FORCE"
+sources = ["ROM_REV0_PHY_CCA_CONTROL"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.CCA_CONTROL.FORCE"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "MIGRATION_LMAC_TX",
+    "ROM_REV0_PHY_CCA_CONTROL",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE_CLEAR"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
+    "MIGRATION_LMAC_TX",
+]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TIMEOUT"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.QUEUE_STATE.TRIGGER_FLOW"
+sources = [
+    "BLOB_LIBPP_HAL_TX_TRIGGER_FLOW",
+    "MIGRATION_LMAC_TX",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.COMPLETE_CLEAR"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "MIGRATION_LMAC_TX",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_TX_COMMON.COMPLETE_STATE"
+sources = [
+    "BLOB_LIBPP_HAL_MAC_TX",
+    "MIGRATION_LMAC_TX",
+]
+confidence = "instruction-exact"

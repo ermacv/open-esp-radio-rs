@@ -122,6 +122,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ec182b0ca2f35d8fc196cf3404988fd8b8c739a4d270ff118a398feb0cbec1ca"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1250,6 +1259,7 @@ version = "0.1.0"
 name = "open-esp-radio-pac-gen"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-register-model",
  "roxmltree",
  "svd-parser",
  "svd2rust",
@@ -1258,6 +1268,16 @@ dependencies = [
 [[package]]
 name = "open-esp-radio-qualification-check"
 version = "0.1.0"
+
+[[package]]
+name = "open-esp-radio-register-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "svd-encoder",
+ "svd-rs",
+ "toml_edit",
+]
 
 [[package]]
 name = "open-esp-radio-wifi-softmac"
@@ -1298,6 +1318,7 @@ dependencies = [
 name = "open-radio-vendor-code-validator"
 version = "0.1.0"
 dependencies = [
+ "open-esp-radio-register-model",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-harness-esp32s31-semantic",
@@ -1305,6 +1326,9 @@ dependencies = [
  "open-radio-vendor-validator-semantic",
  "serde_json",
  "sha2",
+ "svd-parser",
+ "svd-rs",
+ "svd2rust",
  "toml_edit",
 ]
 
@@ -1663,6 +1687,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "serde_yaml"
 version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1794,6 +1827,18 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "svd-encoder"
+version = "0.14.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f0961dac31cc1ce3e673918792e826d6bdf5e4005b197acb996b793cfc732f83"
+dependencies = [
+ "convert_case",
+ "svd-rs",
+ "thiserror 1.0.69",
+ "xmltree",
+]
 
 [[package]]
 name = "svd-parser"
@@ -1946,6 +1991,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
 dependencies = [
  "indexmap",
+ "serde_core",
+ "serde_spanned",
  "toml_datetime",
  "toml_parser",
  "toml_writer",
@@ -1993,6 +2040,12 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "unicode-segmentation"
+version = "1.13.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6f5d3c3b1bf09027a88a6bc961fc00497d651009560b5463668dc81b0fa87a8"
 
 [[package]]
 name = "unsafe-libyaml"
@@ -2148,6 +2201,22 @@ name = "writeable"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
+
+[[package]]
+name = "xml-rs"
+version = "0.8.28"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ae8337f8a065cfc972643663ea4279e04e7256de865aa66fe25cec5fb912d3f"
+
+[[package]]
+name = "xmltree"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b619f8c85654798007fb10afa5125590b43b088c225a25fc2fec100a9fad0fc6"
+dependencies = [
+ "indexmap",
+ "xml-rs",
+]
 
 [[package]]
 name = "xtensa-lx"

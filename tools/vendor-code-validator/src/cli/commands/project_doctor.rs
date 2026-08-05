@@ -7,7 +7,7 @@ use crate::{
     interfaces::{InterfaceFacts, InterfaceWorkspace},
     memory_map::{MemoryMap, MemoryRegionKind},
     project::ProjectSpec,
-    registers::{RegisterFacts, RegisterWorkspace},
+    registers::{ProjectRegisterWorkspace, RegisterFacts, RegisterModel},
     run_spec::RunSpec,
 };
 
@@ -88,15 +88,19 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
         println!("CAPABILITY\tmemory-map\tnot-configured");
     }
 
-    if context.svd_paths.is_empty() {
+    let project_model = context.project.registers.as_ref().is_some_and(|paths| {
+        paths.model.is_file() && RegisterModel::is_model_file(&paths.model).unwrap_or(false)
+    });
+    if context.svd_paths.is_empty() && !project_model {
         println!(
             "CAPABILITY\tregister-catalog\tnot-configured\tregisters=0\tlegacy-windows={}",
             context.svd.windows.len()
         );
     } else {
         println!(
-            "CAPABILITY\tregister-catalog\tavailable\tfiles={}\tregisters={}\tcombined-mmio-windows={}",
+            "CAPABILITY\tregister-catalog\tavailable\tfiles={}\tproject-model={}\tregisters={}\tcombined-mmio-windows={}",
             context.svd_paths.len(),
+            if project_model { "yes" } else { "no" },
             context.svd.registers.len(),
             context.svd.windows.len()
         );
@@ -107,23 +111,70 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
 
     match &context.project.registers {
         None => println!("CAPABILITY\tregister-workspace\tnot-configured"),
+        Some(paths) if paths.model.is_file() => {
+            let is_model_v2 = RegisterModel::is_model_file(&paths.model);
+            if matches!(is_model_v2, Ok(false)) && !paths.facts.is_file() {
+                warnings += 1;
+                println!(
+                    "CAPABILITY\tregister-workspace\tnot-generated\tformat=legacy-overlay-v1\tfacts={}\tmodel={}",
+                    paths.facts.display(),
+                    paths.model.display()
+                );
+            } else {
+                match ProjectRegisterWorkspace::load(&paths.facts, &paths.model)
+                    .and_then(|workspace| Ok((workspace.summary()?, workspace.format_label())))
+                {
+                    Ok((summary, format)) => {
+                        println!(
+                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\tsvd-output={}\tpac-output={}",
+                            format,
+                            summary.ranges,
+                            summary.observed,
+                            summary.reviewed,
+                            summary.ignored,
+                            summary.manual,
+                            summary.unreviewed,
+                            summary.fields,
+                            paths.facts.display(),
+                            paths.model.display(),
+                            paths
+                                .svd_output
+                                .as_deref()
+                                .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
+                            paths.pac.as_ref().map_or_else(
+                                || "-".to_owned(),
+                                |pac| pac.output.display().to_string()
+                            )
+                        );
+                    }
+                    Err(error) => {
+                        errors += 1;
+                        println!(
+                            "CAPABILITY\tregister-workspace\tinvalid\tfacts={}\tmodel={}\terror={error}",
+                            paths.facts.display(),
+                            paths.model.display()
+                        );
+                    }
+                }
+            }
+        }
         Some(paths) if !paths.facts.is_file() => {
             warnings += 1;
             println!(
-                "CAPABILITY\tregister-workspace\tnot-generated\tfacts={}\toverlay={}",
+                "CAPABILITY\tregister-workspace\tnot-generated\tfacts={}\tmodel={}",
                 paths.facts.display(),
-                paths.overlay.display()
+                paths.model.display()
             );
         }
-        Some(paths) if !paths.overlay.is_file() => match RegisterFacts::load(&paths.facts) {
+        Some(paths) => match RegisterFacts::load(&paths.facts) {
             Ok(facts) => {
                 warnings += 1;
                 println!(
-                    "CAPABILITY\tregister-workspace\toverlay-not-initialized\tranges={}\tobserved={}\tfacts={}\toverlay={}",
+                    "CAPABILITY\tregister-workspace\tmodel-not-initialized\tranges={}\tobserved={}\tfacts={}\tmodel={}",
                     facts.ranges.len(),
                     facts.registers.len(),
                     paths.facts.display(),
-                    paths.overlay.display()
+                    paths.model.display()
                 );
             }
             Err(error) => {
@@ -131,31 +182,6 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 println!(
                     "CAPABILITY\tregister-workspace\tinvalid-facts\tfacts={}\terror={error}",
                     paths.facts.display()
-                );
-            }
-        },
-        Some(paths) => match RegisterWorkspace::load(&paths.facts, &paths.overlay) {
-            Ok(workspace) => {
-                let summary = workspace.summary();
-                println!(
-                    "CAPABILITY\tregister-workspace\tavailable\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\toverlay={}",
-                    summary.ranges,
-                    summary.observed,
-                    summary.reviewed,
-                    summary.ignored,
-                    summary.manual,
-                    summary.unreviewed,
-                    summary.fields,
-                    paths.facts.display(),
-                    paths.overlay.display()
-                );
-            }
-            Err(error) => {
-                errors += 1;
-                println!(
-                    "CAPABILITY\tregister-workspace\tinvalid\tfacts={}\toverlay={}\terror={error}",
-                    paths.facts.display(),
-                    paths.overlay.display()
                 );
             }
         },

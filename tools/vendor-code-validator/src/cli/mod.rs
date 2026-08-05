@@ -15,7 +15,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-overlay | validate | export-svd\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
@@ -40,8 +40,11 @@ pub(crate) fn run() -> Result<bool> {
             | Command::InterfaceInitPack
             | Command::InterfaceValidate
             | Command::RegisterInitOverlay
+            | Command::RegisterInitModel
+            | Command::RegisterImportSvd
             | Command::RegisterValidate
             | Command::RegisterExportSvd
+            | Command::RegisterGeneratePac
     ) && project.is_none()
     {
         return Err("project and reviewed workspace commands require a project manifest".into());
@@ -98,8 +101,8 @@ pub(crate) fn run() -> Result<bool> {
     if svd_paths.is_empty() {
         svd_paths = project
             .as_ref()
+            .filter(|project| project.svd_configured)
             .map(|project| project.svd_paths.clone())
-            .filter(|paths| !paths.is_empty())
             .unwrap_or_else(|| target.svd_paths.clone());
     }
     if command == Command::VerifyAll {
@@ -116,11 +119,13 @@ pub(crate) fn run() -> Result<bool> {
         );
     }
     let memory_map = if command.uses_memory_map() {
-        project
+        let project_memory_map = project
             .as_ref()
-            .map(ProjectSpec::load_memory_map)
+            .and_then(|project| project.memory_map.as_deref());
+        project_memory_map
+            .or(target.memory_map.as_deref())
+            .map(MemoryMap::load)
             .transpose()?
-            .flatten()
     } else {
         None
     };
@@ -158,6 +163,17 @@ pub(crate) fn run() -> Result<bool> {
     } else {
         MmioRegisterMap::load_all(&[])?
     };
+    if command.uses_register_catalog()
+        && let Some(paths) = project
+            .as_ref()
+            .and_then(|project| project.registers.as_ref())
+        && paths.model.is_file()
+        && crate::registers::RegisterModel::is_model_file(&paths.model)?
+    {
+        let model = crate::registers::RegisterModel::load(&paths.model)?;
+        let (model_svd, _) = model.render_svd()?;
+        svd.merge(MmioRegisterMap::parse(&model_svd)?)?;
+    }
     if let Some(memory_map) = &memory_map {
         svd.windows.extend(memory_map.mmio_windows()?);
         svd.windows.sort_by_key(|window| (window.start, window.end));
@@ -213,7 +229,12 @@ pub(crate) fn run() -> Result<bool> {
     }
     if matches!(
         command,
-        Command::RegisterInitOverlay | Command::RegisterValidate | Command::RegisterExportSvd
+        Command::RegisterInitOverlay
+            | Command::RegisterInitModel
+            | Command::RegisterImportSvd
+            | Command::RegisterValidate
+            | Command::RegisterExportSvd
+            | Command::RegisterGeneratePac
     ) {
         return commands::run_register_command(
             command,

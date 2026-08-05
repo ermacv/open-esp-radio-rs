@@ -17,7 +17,7 @@ remain valid findings named `UNMAPPED`.
 When the project has a `[registers]` table, its `facts` path is also the
 default JSON destination. That report feeds the editable
 [register workspace and SVD export](register-workspace.md); names and hardware
-semantics stay in the reviewed overlay rather than this generated file.
+semantics stay in the reviewed register model rather than this generated file.
 
 `mmio discover` is a best-effort, artifact-wide inventory for reverse
 engineering register blocks. It accepts multiple ELF/ar inputs and explicit

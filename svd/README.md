@@ -1,39 +1,40 @@
-# ESP32-S31 radio register source
+# ESP32-S31 radio register outputs
 
-The editable radio-register source is split by physical ESP32-S31 modem block
-under `esp32s31-radio/peripherals/`. `esp32s31-radio/manifest.xml` pins each
-fragment to the corresponding half-open address window, while
-`esp32s31-radio/device.svd.in` retains device metadata, provenance and the
-stable peripheral order. The current partition is:
+The editable source is the schema-2 project model under
+`verification/vendor/targets/esp32s31/registers/`. It is split into one TOML
+fragment per logical peripheral and keeps provenance in structured `[[review]]`
+records. The same model is loaded directly by the vendor validator and by the
+production PAC generator through the shared `tools/register-model` crate.
 
-| Fragment | Physical window | Source of the boundary |
-|---|---:|---|
-| `fe.xml` | `0x2010_0000..0x2010_4000` | ESP-IDF `DR_REG_FE_BASE` to `DR_REG_WIFI_MAC_BASE` |
-| `wifi-mac.xml` | `0x2010_4000..0x2010_7000` | ESP-IDF Wi-Fi MAC window |
-| `wifi-bb.xml` | `0x2010_7000..0x2010_8000` | ESP-IDF Wi-Fi baseband window |
-| `wifi-bb-brx.xml` | `0x2010_8000..0x2010_8400` | ESP-IDF BRX window |
-| `wdev-pwr.xml` | `0x2010_d800..0x2010_d900` | instruction-evidenced WDEVPWR aperture inside `MODEM_PWR_BASE` |
-| `i2c-ana-mst-mem.xml` | `0x2010_fc00..0x2011_0000` | ESP-IDF `DR_REG_I2C_ANA_MST_MEM_BASE` |
-
-`esp32s31-radio.svd` is a generated compatibility aggregate for svd2rust and
-tools that accept one SVD file. Do not edit it directly. Run:
+`esp32s31-radio.svd` is the generated, portable CMSIS-SVD representation. It
+contains hardware names and semantics, but no validator provenance tags,
+discovery paths or target code-generation extensions. Do not edit it directly.
+Run:
 
 ```console
 cargo pac-gen
 ```
 
-This deterministically assembles the aggregate and generates
-`driver/chips/esp32s31/pac/src/lib.rs`. `cargo pac-gen --check` verifies both files,
-checks that every template reference has exactly one fragment definition, and
-rejects a peripheral whose base address is outside its declared physical
-window. A direct edit of either generated file therefore fails CI.
+This materializes the SVD from the project model, applies the reviewed
+ESP32-S31 add-on only in memory, and generates
+`driver/chips/esp32s31/pac/src/lib.rs`. `cargo pac-gen --check` verifies the
+SVD, PAC and binding index and rejects invalid or stale add-on references. A
+direct edit of a generated file therefore fails CI.
 `driver/chips/esp32s31/registers/src/power.rs` is the shrinking compatibility
 facade for code not yet moved to the generated API; it must not acquire
 official system peripherals already delegated to `esp-hal`.
 
+`verification/vendor/targets/esp32s31/registers/pac-addon.xml` is target-owned
+and is not CMSIS-SVD. It describes safe compound transactions, constrained
+register-image helpers, ownership partitions, MMIO evidence windows and the
+provenance catalog. `pac-gen` validates every add-on register/field reference
+against the generic model before emitting Rust. Generic validator and SVD
+code therefore contain no ESP32-S31 helper semantics.
+
 `esp32s31-platform-radio-deps.svd` is a separate, validator-only catalog for
-official-PAC registers reached from the vendor radio call graph. The trace
-tool loads it together with `esp32s31-radio.svd`; it is not an input to
+official-PAC registers reached from the vendor radio call graph. A project
+run loads it together with the schema-2 radio model; direct legacy target-spec
+invocations load it together with `esp32s31-radio.svd`. It is not an input to
 `cargo pac-gen`, generates no runtime crate, and creates no second peripheral
 owner. Its definitions are pinned to the same `esp-pacs` revision as the
 workspace lockfile. In particular, it now mirrors all 23 contiguous
@@ -43,8 +44,9 @@ identities instead of merely falling inside a broad MMIO window.
 
 ## Evidence policy
 
-Descriptions use `SOURCE[...]` and `CONFIDENCE[...]` tags. The generator
-accepts only the following confidence vocabulary:
+Model `[[review]]` records use `sources` and `confidence`; source definitions
+and target helper bindings live in `pac-addon.xml`. The generator accepts only
+the following confidence vocabulary:
 
 - `block-exact-register-semantics-opaque`: the containing S31 block and word
   address are exact, while the word's hardware semantics remain unnamed;
@@ -74,11 +76,11 @@ block/register/data layout.
 
 | Source ID | Basis |
 |---|---|
-| `ESP_IDF_ESP32S31_MODEM_REG_BASE` | Official ESP-IDF S31 modem partition map pinned to the commit and SHA-256 recorded in the SVD |
+| `ESP_IDF_ESP32S31_MODEM_REG_BASE` | Official ESP-IDF S31 modem partition map pinned to the commit and SHA-256 recorded in the add-on provenance catalog |
 | `HIL_OPEN_HE_RATE_CONTROL_ACK_SNR_2026_07_30` | Open HE20 MCS9/LDPC A-MPDU completion, typed ACK-SNR decode, DHCP and zero-loss ICMP qualification on ESP32-S31 rev0 |
-| `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the SVD |
-| `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the SVD |
-| `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the SVD, plus local hashed copies in `esp-wifi-sys` |
+| `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the add-on provenance catalog |
+| `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the add-on provenance catalog |
+| `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the add-on provenance catalog, plus local hashed copies in `esp-wifi-sys` |
 | `S31_ESP_PACS_SVD` | `ermacv/esp-pacs` commit `d0fb94ef3` (the S31 platform work, evidenced PMU access corrections and qualified radio-field write constraints), ESP32-S31 generated SVD |
 | `ROM_REV0_PHY_OPEN_FE_BB_CLK` | Complete 0x38-byte rev0 ROM body at `0x2f823ec0` |
 | `ROM_REV0_PHY_FE_REG_INIT` | Complete 0xf6-byte rev0 ROM `phy_fe_reg_init` body at `0x2f827740` |

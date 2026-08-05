@@ -1,0 +1,129 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_AGC_RECOVERED_GAPS"
+description = "Sparse AGC words absent from the public platform PAC."
+baseAddress = 0x20107000
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RX_SENSE_WORD_0_OPAQUE"
+description = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x10
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RX_SENSE_WORD_1_OPAQUE"
+description = "Read-modify-written by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CCA_CONTROL_OPAQUE"
+description = "Read and written by complete CCA accessors and saved/restored by complete phy_dig_reg_backup; fields remain unnamed."
+addressOffset = 0x1C
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "NOISE_FLOOR_STATUS_OPAQUE"
+description = "Complete phy_get_noise_floor reads this word; hardware access semantics remain unknown."
+addressOffset = 0x50
+size = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RSSI_STATUS_OPAQUE"
+description = "Complete phy_get_rssi reads this word; hardware access semantics remain unknown."
+addressOffset = 0x6C
+size = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CHANNEL_FILTER_CONTROL_OPAQUE"
+description = "Complete phy_chan_filt_set read-modify-writes this word and complete phy_dig_reg_backup saves/restores it."
+addressOffset = 0x74
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "BACKUP_WORD_CC_OPAQUE"
+description = "Complete phy_dig_reg_backup saves and restores this word; all field semantics remain unknown."
+addressOffset = 0xCC
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RIFS_MODE_CONTROL_OPAQUE"
+description = "Complete phy_wifi_rifs_mode_en read-modify-writes bit zero; all other fields remain unknown."
+addressOffset = 0xF4
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "RX_SENSE_BACKUP_WORD_OPAQUE"
+description = "Read by complete phy_rx_sense_set and saved/restored by complete phy_dig_reg_backup; field semantics remain unknown."
+addressOffset = 0x108
+size = 32
+access = "read-write"
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS"
+sources = [
+    "ESP_IDF_25FE69F_S31_PHY_RETENTION",
+    "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
+]
+confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.RX_SENSE_WORD_0_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.RX_SENSE_WORD_1_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.CCA_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.NOISE_FLOOR_STATUS_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.RSSI_STATUS_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.CHANNEL_FILTER_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.BACKUP_WORD_CC_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.RIFS_MODE_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+
+[[review]]
+entity = "PHY_AGC_RECOVERED_GAPS.RX_SENSE_BACKUP_WORD_OPAQUE"
+sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]

@@ -69,6 +69,8 @@ The first two boundary slices are complete:
 - `open-radio-vendor-validator-model` owns architecture-neutral symbolic
   values, observable/reference IR, indexed-MMIO proofs and the SVD-derived
   register catalog;
+- `open-esp-radio-register-model` owns the target-neutral editable register
+  schema and clean SVD encoder used by both validator projects and `pac-gen`;
 - `open-radio-vendor-harness-esp32s31` depends only on core and owns the OSI
   table version/layout and mutable PHY lifecycle entry contracts;
 - architecture-neutral effect-contract, driver-adapter and evidence-source
@@ -110,6 +112,7 @@ tools/vendor-code-validator/
   src/cli/                     command hierarchy and run manifests
   src/orchestration/           cross-layer compile/prove workflows
   src/harnesses/               thin harness registry
+tools/register-model/          editable hardware schema + clean SVD encoder
 ```
 
 These may initially be workspace crates below one directory. Compile-time
@@ -130,6 +133,9 @@ facade/cli -> orchestration + registries
 HIL code, a repository-relative path or a platform target pack. Backends must
 not depend on platform harnesses. A harness may depend on the production
 driver because comparing its typed state is the harness's purpose.
+The register-model crate has the same target-neutral restriction. Target PAC
+add-ons may depend on its output schema, but target helper semantics must not
+flow back into the generic model.
 
 ## Detailed documents
 

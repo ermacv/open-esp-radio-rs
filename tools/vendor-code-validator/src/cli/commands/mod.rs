@@ -77,8 +77,11 @@ pub(super) fn run(
         | Command::InterfaceInitPack
         | Command::InterfaceValidate
         | Command::RegisterInitOverlay
+        | Command::RegisterInitModel
+        | Command::RegisterImportSvd
         | Command::RegisterValidate
         | Command::RegisterExportSvd
+        | Command::RegisterGeneratePac
         | Command::SymbolInventory
         | Command::InterfaceDiscover => {
             unreachable!("project, workspace and discovery commands use specialized dispatch")

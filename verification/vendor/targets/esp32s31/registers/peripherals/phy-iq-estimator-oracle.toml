@@ -1,0 +1,248 @@
+schema = 2
+
+[[peripherals]]
+name = "PHY_IQ_ESTIMATOR_ORACLE"
+description = """
+DC/IQ estimator configuration, signed result and activity registers
+        recovered from complete S31 rev0 ROM bodies and the complete pinned
+        phy_check_rx_sat blob leaf. Unknown electrical roles remain explicit."""
+baseAddress = 0x20100000
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ESTIMATOR_CONFIG"
+description = "Complete phy_iq_est_enable replaces bits 27:26 with encoding one before each measurement."
+addressOffset = 0x44C
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "CONFIG_MODE_UNKNOWN"
+description = "Two-bit field set to encoding one by phy_iq_est_enable."
+bitOffset = 26
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ESTIMATOR_CONTROL"
+description = "Complete phy_iq_est_enable publishes the caller control word and starts both measurement phases; complete phy_iq_est_disable clears them in reverse order around a one-microsecond delay."
+addressOffset = 0x450
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "START_ENABLE"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "MEASUREMENT_ENABLE"
+bitOffset = 1
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "CONTROL_WINDOW_UNKNOWN"
+description = "Fifteen-bit caller value shifted left by two."
+bitOffset = 2
+bitWidth = 15
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x7FFF
+
+[[peripherals.registers.register.fields]]
+name = "MODE_UNKNOWN"
+description = "Complete phy_iq_est_enable replaces the field with encoding two."
+bitOffset = 19
+bitWidth = 2
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0x3
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "SIGNAL_POWER_SUM_I"
+description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr."
+addressOffset = 0x454
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "SIGNAL_POWER_DIFFERENCE_I"
+description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr."
+addressOffset = 0x458
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "SIGNAL_POWER_DIFFERENCE_Q"
+description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr."
+addressOffset = 0x45C
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "SIGNAL_POWER_SUM_Q"
+description = "Signed result consumed by complete phy_rxiq_get_mis and phy_get_rx_sig_pwr."
+addressOffset = 0x460
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "DC_I_ACCUMULATOR"
+description = "First signed accumulator read by complete phy_dc_iq_est."
+addressOffset = 0x464
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "DC_Q_ACCUMULATOR"
+description = "Second signed accumulator read by complete phy_dc_iq_est."
+addressOffset = 0x468
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "POWER_ACCUMULATOR"
+description = "Signed power accumulator consumed by complete phy_dc_iq_est, phy_rxiq_get_mis and phy_set_rx_gain_cal_iq."
+addressOffset = 0x46C
+size = 32
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ESTIMATOR_READY_STATUS"
+description = "Complete phy_iq_est_enable tests bit 16 before leaving its readiness loop."
+addressOffset = 0x47C
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "READY"
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "ESTIMATOR_ACTIVITY_STATUS"
+description = "Complete phy_iq_est_enable counts nonzero bits 21:20 while waiting; complete phy_check_rx_sat samples the same field exactly 100 times."
+addressOffset = 0x8D0
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "ACTIVITY_UNKNOWN"
+description = "Nonzero is treated as IQ-estimator activity and as an RX-saturation sample."
+bitOffset = 20
+bitWidth = 2
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE"
+sources = [
+    "ROM_REV0_PHY_IQ_ESTIMATOR",
+    "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
+]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONFIG.CONFIG_MODE_UNKNOWN"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.CONTROL_WINDOW_UNKNOWN"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_CONTROL.MODE_UNKNOWN"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_I"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_I"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_DIFFERENCE_Q"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.SIGNAL_POWER_SUM_Q"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_I_ACCUMULATOR"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.DC_Q_ACCUMULATOR"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.POWER_ACCUMULATOR"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_READY_STATUS"
+sources = ["ROM_REV0_PHY_IQ_ESTIMATOR"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS"
+sources = [
+    "ROM_REV0_PHY_IQ_ESTIMATOR",
+    "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
+]
+confidence = "instruction-exact-partial"
+
+[[review]]
+entity = "PHY_IQ_ESTIMATOR_ORACLE.ESTIMATOR_ACTIVITY_STATUS.ACTIVITY_UNKNOWN"
+sources = [
+    "ROM_REV0_PHY_IQ_ESTIMATOR",
+    "BLOB_LIBPHY_PHY_CHECK_RX_SAT",
+]
+confidence = "instruction-exact-semantics-unknown"

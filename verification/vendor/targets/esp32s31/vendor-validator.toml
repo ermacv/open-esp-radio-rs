@@ -4,6 +4,14 @@ schema = 1
 id = "esp32s31-radio-rev0"
 target-spec = "target.spec"
 memory-map = "memory.toml"
+svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
+
+[registers]
+facts = "generated/findings/mmio.json"
+model = "registers/device.toml"
+
+[registers.svd]
+output = "../../../../svd/esp32s31-radio.svd"
 
 [interfaces]
 facts = "generated/findings/interfaces.json"

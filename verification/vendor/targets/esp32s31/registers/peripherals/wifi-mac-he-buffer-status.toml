@@ -1,0 +1,155 @@
+schema = 2
+
+[[peripherals]]
+name = "WIFI_MAC_HE_BUFFER_STATUS"
+description = "Eight interleaved hardware/software Buffer Status Report values and their shared control. Complete dbg_read_bsr_info names every exposed field. Complete hal_he_get_hw_txq_bsr independently proves the eight-byte stride and low twenty-bit hardware value. The independent blob and ROM mac_tx_set_tb bodies prove the write-side scheduler interpretation: for logical queues zero through three they replace the corresponding software BSR low twenty bits with the sum of every linked frame-state halfword at offset 0x22, then OR the queue bit into CONTROL[7:0]. Complete dbg_read_tx_ppdu independently names that exact halfword msdu_len, proving that this is an original-MSDU byte sum rather than MPDU, PSDU or encoded A-MPDU length. Complete HE BlockAck response/deletion paths separately select and clear TID_BITMAP bits through hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap. Open HE HIL observed TID_BITMAP=1 immediately after the successful TID0 AddBA transition while sustained DCM A-MPDU remained clean. A later rev0 HIL reproduced the complete ROM write order with a 47104-byte TID0 queue: CONTROL validity read back one while SOFTWARE_BSR already read zero. This qualifies the write-side address and validity edge but leaves the zero as a live-update/read-latch ambiguity until a real AP Trigger is observed."
+baseAddress = 0x20104D74
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 8
+dimIncrement = 0x8
+dimIndex = "0,1,2,3,4,5,6,7"
+name = "HARDWARE_BSR%s"
+description = "WDEVTXQBSR_HW[0-7]."
+addressOffset = 0x0
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+bitOffset = 0
+bitWidth = 20
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_UNKNOWN"
+bitOffset = 20
+bitWidth = 12
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+dim = 8
+dimIncrement = 0x8
+dimIndex = "0,1,2,3,4,5,6,7"
+name = "SOFTWARE_BSR%s"
+description = "WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected."
+addressOffset = 0x4
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+description = "Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."
+bitOffset = 0
+bitWidth = 20
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFF
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_UNKNOWN"
+bitOffset = 20
+bitWidth = 12
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CONTROL"
+description = "WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1<<logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD[0-7], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence."
+addressOffset = 0x44
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "VALID_BITMAP"
+description = "WDEVTXQBSR_VD[0-7]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."
+bitOffset = 0
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "AC_EMPTY_SOFTWARE_TID"
+description = "TID used when AC_EMPTY_USE_SW_TID is set."
+bitOffset = 8
+bitWidth = 4
+
+[[peripherals.registers.register.fields]]
+name = "AC_EMPTY_USE_SOFTWARE_TID"
+bitOffset = 12
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TID_BITMAP"
+description = "Trigger-based TIDs enabled by successful HE BlockAck setup."
+bitOffset = 13
+bitWidth = 8
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFF
+
+[[peripherals.registers.register.fields]]
+name = "BASIC_SPECIAL_BSR_SEQUENCE"
+bitOffset = 21
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "TID_LIMIT_ZERO_BSR_SEQUENCE"
+bitOffset = 22
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_UNKNOWN"
+bitOffset = 23
+bitWidth = 9
+
+[[review]]
+entity = "WIFI_MAC_HE_BUFFER_STATUS"
+sources = [
+    "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
+    "BLOB_LIBPP_HAL_HE_BSR_STATUS",
+    "BLOB_LIBPP_MAC_TX_SET_TB",
+    "BLOB_LIBPP_DBG_READ_TX_PPDU",
+    "ROM_REV0_MAC_TX_SET_TB",
+    "BLOB_LIBNET80211_HE_TID_BITMAP",
+    "HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29",
+    "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_HE_BUFFER_STATUS.HARDWARE_BSR%s"
+sources = [
+    "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
+    "BLOB_LIBPP_HAL_HE_BSR_STATUS",
+]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_HE_BUFFER_STATUS.SOFTWARE_BSR%s"
+sources = [
+    "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
+    "BLOB_LIBPP_MAC_TX_SET_TB",
+    "BLOB_LIBPP_DBG_READ_TX_PPDU",
+    "ROM_REV0_MAC_TX_SET_TB",
+    "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
+]
+confidence = "instruction-exact-hil-qualified"
+
+[[review]]
+entity = "WIFI_MAC_HE_BUFFER_STATUS.CONTROL"
+sources = [
+    "BLOB_LIBPP_HAL_HE_BSR_DEBUG",
+    "BLOB_LIBPP_MAC_TX_SET_TB",
+    "ROM_REV0_MAC_TX_SET_TB",
+    "BLOB_LIBNET80211_HE_TID_BITMAP",
+    "HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29",
+    "HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30",
+]
+confidence = "instruction-exact-hil-qualified"

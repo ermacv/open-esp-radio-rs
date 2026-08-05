@@ -104,6 +104,12 @@ closure identity, and conservative branch-coverage inventory. They share one
 relocation-aware image model, so this source split changes neither CLI behavior
 nor fail-closed handling of unresolved reachable data.
 
+Concrete RISC-V execution likewise keeps `Machine` as the single state owner
+while placing memory/MMIO policy, event/call accounting, and instruction-step
+dispatch in separate modules. The top-level executor still owns scenario
+validation, response-consumption checks, and result assembly; ordered trace
+semantics and the CLI surface are unchanged.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

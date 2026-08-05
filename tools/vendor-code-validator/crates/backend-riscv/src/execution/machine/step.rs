@@ -1,0 +1,461 @@
+//! One-step RV32 instruction and call dispatch.
+
+use rv_asm::{AmoOp, Inst, Reg};
+
+use super::super::{ExecutionEvent, IndirectCall, RETURN_SENTINEL};
+use super::Machine;
+use crate::{Result, artifact::andi_immediate};
+
+pub(in crate::execution) fn atomic_word_result(operation: AmoOp, current: u32, source: u32) -> u32 {
+    match operation {
+        AmoOp::Swap => source,
+        AmoOp::Add => current.wrapping_add(source),
+        AmoOp::Xor => current ^ source,
+        AmoOp::And => current & source,
+        AmoOp::Or => current | source,
+        AmoOp::Min => {
+            if (current as i32) < (source as i32) {
+                current
+            } else {
+                source
+            }
+        }
+        AmoOp::Max => {
+            if (current as i32) > (source as i32) {
+                current
+            } else {
+                source
+            }
+        }
+        AmoOp::Minu => current.min(source),
+        AmoOp::Maxu => current.max(source),
+    }
+}
+
+impl Machine<'_> {
+    pub(in crate::execution) fn step(&mut self) -> Result<bool> {
+        if self.steps == self.max_steps {
+            let context = self
+                .ordered_calls
+                .iter()
+                .rev()
+                .take(6)
+                .map(|call| {
+                    format!(
+                        "{}({:#x},{:#x},{:#x},{:#x})",
+                        call.symbol,
+                        call.arguments[0],
+                        call.arguments[1],
+                        call.arguments[2],
+                        call.arguments[3]
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(" <- ");
+            return Err(format!(
+                "execution exceeded {} steps at pc={:#010x}; recent calls: {}",
+                self.max_steps,
+                self.pc,
+                if context.is_empty() {
+                    "<entry>"
+                } else {
+                    &context
+                }
+            )
+            .into());
+        }
+        self.steps += 1;
+
+        if let Some(symbol) = self.image.symbol_at(self.pc)
+            && symbol == "ets_delay_us"
+        {
+            self.record_event(ExecutionEvent::DelayMicros(self.register(Reg::A0)));
+            let return_address = self.register(Reg::RA);
+            if return_address == RETURN_SENTINEL {
+                return Ok(false);
+            }
+            self.pc = return_address;
+            return Ok(true);
+        }
+        if let Some(call) = self.image.relocated_call_at(self.pc).cloned() {
+            let link = self.image.relocated_call_link_register(self.pc)?;
+            let continuation = self.pc.wrapping_add(8);
+            if let Some(result) = self.modeled_call_result(&call.name, self.pc)? {
+                self.record_call(self.pc, call.name);
+                self.set_register(Reg::A0, result);
+                if link == Reg::ZERO {
+                    let return_address = self.register(Reg::RA);
+                    if return_address == RETURN_SENTINEL {
+                        return Ok(false);
+                    }
+                    self.pc = return_address;
+                } else {
+                    self.set_register(link, continuation);
+                    self.pc = continuation;
+                }
+                return Ok(true);
+            }
+            if link != Reg::ZERO {
+                self.set_register(link, continuation);
+            }
+            if let Some(target) = call.target {
+                self.record_call(self.pc, call.name);
+                self.pc = target;
+            } else {
+                return Err(format!(
+                    "execution reached unresolved external call {} at {:#010x}",
+                    call.name, self.pc
+                )
+                .into());
+            }
+            return Ok(true);
+        }
+
+        let (instruction, width) = self.image.instruction(self.pc)?;
+        let next = self.pc.wrapping_add(width);
+        match instruction {
+            Inst::Lui { uimm, dest } => self.set_register(dest, uimm.as_u32()),
+            Inst::Auipc { uimm, dest } => {
+                self.set_register(dest, self.pc.wrapping_add(uimm.as_u32()));
+            }
+            Inst::Addi { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1).wrapping_add(imm.as_u32()));
+            }
+            Inst::Andi { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1) & andi_immediate(imm, width as u8));
+            }
+            Inst::Ori { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1) | imm.as_u32());
+            }
+            Inst::Xori { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1) ^ imm.as_u32());
+            }
+            Inst::Slli { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1) << (imm.as_u32() & 31));
+            }
+            Inst::Srli { imm, dest, src1 } => {
+                self.set_register(dest, self.register(src1) >> (imm.as_u32() & 31));
+            }
+            Inst::Srai { imm, dest, src1 } => self.set_register(
+                dest,
+                ((self.register(src1) as i32) >> (imm.as_u32() & 31)) as u32,
+            ),
+            Inst::Slti { imm, dest, src1 } => {
+                self.set_register(dest, u32::from((self.register(src1) as i32) < imm.as_i32()));
+            }
+            Inst::Sltiu { imm, dest, src1 } => {
+                self.set_register(dest, u32::from(self.register(src1) < imm.as_u32()));
+            }
+            Inst::Add { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1).wrapping_add(self.register(src2)))
+            }
+            Inst::Sub { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1).wrapping_sub(self.register(src2)))
+            }
+            Inst::And { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1) & self.register(src2));
+            }
+            Inst::Or { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1) | self.register(src2));
+            }
+            Inst::Xor { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1) ^ self.register(src2));
+            }
+            Inst::Sll { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1) << (self.register(src2) & 31));
+            }
+            Inst::Srl { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1) >> (self.register(src2) & 31));
+            }
+            Inst::Sra { dest, src1, src2 } => self.set_register(
+                dest,
+                ((self.register(src1) as i32) >> (self.register(src2) & 31)) as u32,
+            ),
+            Inst::Slt { dest, src1, src2 } => self.set_register(
+                dest,
+                u32::from((self.register(src1) as i32) < (self.register(src2) as i32)),
+            ),
+            Inst::Sltu { dest, src1, src2 } => {
+                self.set_register(dest, u32::from(self.register(src1) < self.register(src2)));
+            }
+            Inst::Mul { dest, src1, src2 } => {
+                self.set_register(dest, self.register(src1).wrapping_mul(self.register(src2)))
+            }
+            Inst::Mulh { dest, src1, src2 } => self.set_register(
+                dest,
+                (((self.register(src1) as i32 as i64) * (self.register(src2) as i32 as i64)) >> 32)
+                    as u32,
+            ),
+            Inst::Mulhsu { dest, src1, src2 } => self.set_register(
+                dest,
+                (((self.register(src1) as i32 as i64) * i64::from(self.register(src2))) >> 32)
+                    as u32,
+            ),
+            Inst::Mulhu { dest, src1, src2 } => self.set_register(
+                dest,
+                ((u64::from(self.register(src1)) * u64::from(self.register(src2))) >> 32) as u32,
+            ),
+            Inst::Div { dest, src1, src2 } => {
+                let left = self.register(src1) as i32;
+                let right = self.register(src2) as i32;
+                self.set_register(
+                    dest,
+                    if right == 0 {
+                        u32::MAX
+                    } else if left == i32::MIN && right == -1 {
+                        i32::MIN as u32
+                    } else {
+                        (left / right) as u32
+                    },
+                );
+            }
+            Inst::Divu { dest, src1, src2 } => {
+                let right = self.register(src2);
+                self.set_register(
+                    dest,
+                    self.register(src1).checked_div(right).unwrap_or(u32::MAX),
+                );
+            }
+            Inst::Rem { dest, src1, src2 } => {
+                let left = self.register(src1) as i32;
+                let right = self.register(src2) as i32;
+                self.set_register(
+                    dest,
+                    if right == 0 {
+                        left as u32
+                    } else if left == i32::MIN && right == -1 {
+                        0
+                    } else {
+                        (left % right) as u32
+                    },
+                );
+            }
+            Inst::Remu { dest, src1, src2 } => {
+                let right = self.register(src2);
+                self.set_register(
+                    dest,
+                    if right == 0 {
+                        self.register(src1)
+                    } else {
+                        self.register(src1) % right
+                    },
+                );
+            }
+            Inst::Lb { offset, dest, base } => {
+                let address = self.register(base).wrapping_add(offset.as_u32());
+                let value = (self.read(address, 8)? as u8 as i8 as i32) as u32;
+                self.set_register(dest, value);
+            }
+            Inst::Lbu { offset, dest, base } => {
+                let address = self.register(base).wrapping_add(offset.as_u32());
+                let value = self.read(address, 8)? & 0xff;
+                self.set_register(dest, value);
+            }
+            Inst::Lh { offset, dest, base } => {
+                let address = self.register(base).wrapping_add(offset.as_u32());
+                let value = (self.read(address, 16)? as u16 as i16 as i32) as u32;
+                self.set_register(dest, value);
+            }
+            Inst::Lhu { offset, dest, base } => {
+                let address = self.register(base).wrapping_add(offset.as_u32());
+                let value = self.read(address, 16)? & 0xffff;
+                self.set_register(dest, value);
+            }
+            Inst::Lw { offset, dest, base } => {
+                let address = self.register(base).wrapping_add(offset.as_u32());
+                let value = self.read(address, 32)?;
+                self.set_register(dest, value);
+            }
+            Inst::Sb { offset, src, base } => {
+                self.write(
+                    self.register(base).wrapping_add(offset.as_u32()),
+                    8,
+                    self.register(src),
+                )?;
+            }
+            Inst::Sh { offset, src, base } => {
+                self.write(
+                    self.register(base).wrapping_add(offset.as_u32()),
+                    16,
+                    self.register(src),
+                )?;
+            }
+            Inst::Sw { offset, src, base } => {
+                self.write(
+                    self.register(base).wrapping_add(offset.as_u32()),
+                    32,
+                    self.register(src),
+                )?;
+            }
+            Inst::AmoW {
+                order: _,
+                op,
+                dest,
+                addr,
+                src,
+            } => {
+                let address = self.register(addr);
+                if address & 3 != 0 {
+                    return Err(format!(
+                        "misaligned atomic word access at {address:#010x} from pc={:#010x}",
+                        self.pc
+                    )
+                    .into());
+                }
+                if self.svd.contains_mmio(address) {
+                    return Err(format!(
+                        "atomic word access to MMIO at {address:#010x} requires an explicit peripheral model"
+                    )
+                    .into());
+                }
+                let source = self.register(src);
+                let previous = self.read(address, 32)?;
+                self.write(address, 32, atomic_word_result(op, previous, source))?;
+                self.set_register(dest, previous);
+            }
+            Inst::Beq { offset, src1, src2 } => {
+                self.branch(
+                    self.register(src1) == self.register(src2),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Bne { offset, src1, src2 } => {
+                self.branch(
+                    self.register(src1) != self.register(src2),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Blt { offset, src1, src2 } => {
+                self.branch(
+                    (self.register(src1) as i32) < (self.register(src2) as i32),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Bge { offset, src1, src2 } => {
+                self.branch(
+                    (self.register(src1) as i32) >= (self.register(src2) as i32),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Bltu { offset, src1, src2 } => {
+                self.branch(
+                    self.register(src1) < self.register(src2),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Bgeu { offset, src1, src2 } => {
+                self.branch(
+                    self.register(src1) >= self.register(src2),
+                    offset.as_i32(),
+                    width,
+                );
+                return Ok(true);
+            }
+            Inst::Jal { offset, dest } => {
+                let target = self.pc.wrapping_add(offset.as_u32());
+                if let Some(symbol) = self.image.symbol_at(target)
+                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                {
+                    self.record_call(self.pc, symbol.to_owned());
+                    self.set_register(Reg::A0, result);
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
+                self.set_register(dest, next);
+                let leaves_call_trampoline =
+                    self.image.call_trampoline_addresses.contains(&self.pc);
+                if !leaves_call_trampoline && let Some(symbol) = self.image.symbol_at(target) {
+                    self.record_call(self.pc, symbol.to_owned());
+                }
+                self.pc = target;
+                return Ok(true);
+            }
+            Inst::Jalr { offset, base, dest } => {
+                let target = self.register(base).wrapping_add(offset.as_u32()) & !1;
+                if let Some(symbol) = self.image.symbol_at(target)
+                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                {
+                    self.record_call(self.pc, symbol.to_owned());
+                    self.indirect_calls.insert(IndirectCall {
+                        site: self.pc,
+                        symbol: symbol.to_owned(),
+                        arguments: core::array::from_fn(|index| {
+                            self.registers[usize::from(Reg::A0.0) + index]
+                        }),
+                    });
+                    self.set_register(Reg::A0, result);
+                    if dest == Reg::ZERO {
+                        let return_address = self.register(Reg::RA);
+                        if return_address == RETURN_SENTINEL {
+                            return Ok(false);
+                        }
+                        self.pc = return_address;
+                    } else {
+                        self.set_register(dest, next);
+                        self.pc = next;
+                    }
+                    return Ok(true);
+                }
+                self.set_register(dest, next);
+                if target == RETURN_SENTINEL {
+                    return Ok(false);
+                }
+                if let Some(symbol) = self.image.symbol_at(target) {
+                    let is_return = dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0;
+                    if !is_return {
+                        self.record_call(self.pc, symbol.to_owned());
+                        self.indirect_calls.insert(IndirectCall {
+                            site: self.pc,
+                            symbol: symbol.to_owned(),
+                            arguments: core::array::from_fn(|index| {
+                                self.registers[usize::from(Reg::A0.0) + index]
+                            }),
+                        });
+                    }
+                }
+                self.pc = target;
+                return Ok(true);
+            }
+            Inst::Fence { fence } => {
+                let encode = |set: rv_asm::FenceSet| {
+                    u8::from(set.device_input) << 3
+                        | u8::from(set.device_output) << 2
+                        | u8::from(set.memory_read) << 1
+                        | u8::from(set.memory_write)
+                };
+                self.record_event(ExecutionEvent::Fence {
+                    fm: fence.fm,
+                    predecessor: encode(fence.pred),
+                    successor: encode(fence.succ),
+                });
+            }
+            _ => {
+                return Err(
+                    format!("unsupported instruction at {:#x}: {instruction}", self.pc).into(),
+                );
+            }
+        }
+        self.pc = next;
+        self.registers[0] = 0;
+        Ok(true)
+    }
+}

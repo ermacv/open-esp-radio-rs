@@ -144,6 +144,24 @@ does not choose either identity or coverage policy. Both analyses consume the
 same relocation-aware access facade, so an unresolved reachable relocation is
 rejected consistently. The public `ExecutableImage` API remains unchanged.
 
+## RISC-V concrete-execution layout
+
+`backend-riscv/src/execution/machine.rs` owns `Machine` state, scenario
+initialization, and the top-level `execute` completion checks. Mutations of
+that state are grouped by execution concern:
+
+| Module | Responsibility |
+| --- | --- |
+| `machine/memory.rs` | MMIO and normal-memory access, ownership checks, observed changes, and persistent-memory projection |
+| `machine/events.rs` | Ordered branch, call, modeled-return, and observable-event accounting |
+| `machine/step.rs` | Step budget, call interception, RV32 instruction dispatch, and PC/register progression |
+
+The state owner constructs the machine and consumes its final result, while
+the dispatcher reaches memory and timeline mutation only through their
+methods. Memory policy is therefore reusable from focused execution tests and
+does not depend on individual instruction encodings. The public `execute`
+facade and scenario/result types are unchanged.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -189,9 +207,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/execution/machine.rs`: separate execution memory and
-  event/call accounting from instruction dispatch while retaining `Machine`
-  as the state owner.
+- `backend-riscv/src/codegen/events.rs`: separate event-family lowering and
+  expression bindings from the ordered renderer without creating multiple
+  owners for output order or temporary-name allocation.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

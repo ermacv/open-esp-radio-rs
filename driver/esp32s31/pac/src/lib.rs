@@ -3771,11 +3771,12 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `CHANNEL_INDEX` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_chan_en_sw replaces the low byte with the caller's frequency-table index."]
         pub type ChannelIndexR = crate::FieldReader;
         #[doc = "Field `CHANNEL_INDEX` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_chan_en_sw replaces the low byte with the caller's frequency-table index."]
-        pub type ChannelIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ChannelIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `MEMORY_ADDRESS_LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Low ten bits of the eleven-bit address selected by phy_freq_i2c_mem_write."]
         pub type MemoryAddressLowUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `MEMORY_ADDRESS_LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Low ten bits of the eleven-bit address selected by phy_freq_i2c_mem_write."]
-        pub type MemoryAddressLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type MemoryAddressLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. High address bit during frequency-memory writes; independently cleared then set by complete phy_freq_module_resetn."]
         pub type MemoryAddressHighOrModuleResetUnknownR = crate::BitReader;
         #[doc = "Field `MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-partial\\]. High address bit during frequency-memory writes; independently cleared then set by complete phy_freq_module_resetn."]
@@ -3791,7 +3792,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `REGISTER_MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_freq_reg_init replaces bits 29:22 with its two input nibbles; the electrical encoding is unknown."]
         pub type RegisterModeUnknownR = crate::FieldReader;
         #[doc = "Field `REGISTER_MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_freq_reg_init replaces bits 29:22 with its two input nibbles; the electrical encoding is unknown."]
-        pub type RegisterModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type RegisterModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `MODULE_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_reg_init sets bit 30."]
         pub type ModuleEnableUnknownR = crate::BitReader;
         #[doc = "Field `MODULE_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_freq_reg_init sets bit 30."]
@@ -3919,7 +3920,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Register `FREQUENCY_PARAMETER_0_OPAQUE` writer"]
         pub type W = crate::W<FrequencyParameter0OpaqueSpec>;
         #[doc = "Field `OPAQUE_VALUE` writer - "]
-        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -3934,7 +3935,7 @@ pub mod phy_frequency_channel_oracle {
         }
         #[doc = "`write(|w| ..)` method takes [`frequency_parameter_0_opaque::W`](W) writer structure"]
         impl crate::Writable for FrequencyParameter0OpaqueSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "FREQUENCY_PARAMETER_1_STATUS (rw) register accessor: SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_freq_reg_init writes 0x25824e58; phy_bb_init replaces the low baseband-mode field, and the open channel state machine samples bit 8 for the evidenced ready edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_parameter_1_status::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_1_status::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@frequency_parameter_1_status`] module"]
@@ -3950,19 +3951,37 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `BASEBAND_MODE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup."]
         pub type BasebandModeUnknownR = crate::FieldReader;
         #[doc = "Field `BASEBAND_MODE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup."]
-        pub type BasebandModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BasebandModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
+        #[doc = "Field `INIT_LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 7:2 of the complete initialization image."]
+        pub type InitLowUnknownR = crate::FieldReader;
+        #[doc = "Field `INIT_LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 7:2 of the complete initialization image."]
+        pub type InitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `FREQUENCY_READY` reader - SOURCE\\[BLOB_LIBPHY_PHY_RFPLL_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. The complete channel parent samples bit 8 after the frequency-switch delay and branches on its asserted edge."]
         pub type FrequencyReadyR = crate::BitReader;
+        #[doc = "Field `INIT_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:9 of the complete initialization image."]
+        pub type InitHighUnknownR = crate::FieldReader<u32>;
+        #[doc = "Field `INIT_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:9 of the complete initialization image."]
+        pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 23, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1 - SOURCE\\[BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup."]
             #[inline(always)]
             pub fn baseband_mode_unknown(&self) -> BasebandModeUnknownR {
                 BasebandModeUnknownR::new((self.bits & 3) as u8)
             }
+            #[doc = "Bits 2:7 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 7:2 of the complete initialization image."]
+            #[inline(always)]
+            pub fn init_low_unknown(&self) -> InitLowUnknownR {
+                InitLowUnknownR::new(((self.bits >> 2) & 0x3f) as u8)
+            }
             #[doc = "Bit 8 - SOURCE\\[BLOB_LIBPHY_PHY_RFPLL_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. The complete channel parent samples bit 8 after the frequency-switch delay and branches on its asserted edge."]
             #[inline(always)]
             pub fn frequency_ready(&self) -> FrequencyReadyR {
                 FrequencyReadyR::new(((self.bits >> 8) & 1) != 0)
+            }
+            #[doc = "Bits 9:31 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:9 of the complete initialization image."]
+            #[inline(always)]
+            pub fn init_high_unknown(&self) -> InitHighUnknownR {
+                InitHighUnknownR::new((self.bits >> 9) & 0x007f_ffff)
             }
         }
         impl W {
@@ -3972,6 +3991,20 @@ pub mod phy_frequency_channel_oracle {
                 &mut self,
             ) -> BasebandModeUnknownW<'_, FrequencyParameter1StatusSpec> {
                 BasebandModeUnknownW::new(self, 0)
+            }
+            #[doc = "Bits 2:7 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 7:2 of the complete initialization image."]
+            #[inline(always)]
+            pub fn init_low_unknown(
+                &mut self,
+            ) -> InitLowUnknownW<'_, FrequencyParameter1StatusSpec> {
+                InitLowUnknownW::new(self, 2)
+            }
+            #[doc = "Bits 9:31 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:9 of the complete initialization image."]
+            #[inline(always)]
+            pub fn init_high_unknown(
+                &mut self,
+            ) -> InitHighUnknownW<'_, FrequencyParameter1StatusSpec> {
+                InitHighUnknownW::new(self, 9)
             }
         }
         #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact-partial\\]. Complete phy_freq_reg_init writes 0x25824e58; phy_bb_init replaces the low baseband-mode field, and the open channel state machine samples bit 8 for the evidenced ready edge.\n\nYou can [`read`](crate::Reg::read) this register and get [`frequency_parameter_1_status::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`frequency_parameter_1_status::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
@@ -3994,9 +4027,9 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Register `FREQUENCY_MEMORY_DATA` writer"]
         pub type W = crate::W<FrequencyMemoryDataSpec>;
         #[doc = "Field `DATA` writer - "]
-        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         #[doc = "Field `MODE` writer - "]
-        pub type ModeW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ModeW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl W {
             #[doc = "Bits 0:23"]
             #[inline(always)]
@@ -4031,11 +4064,11 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `NUMBER_ADDRESS_0_UNKNOWN` reader - "]
         pub type NumberAddress0UnknownR = crate::FieldReader;
         #[doc = "Field `NUMBER_ADDRESS_0_UNKNOWN` writer - "]
-        pub type NumberAddress0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_1_UNKNOWN` reader - "]
         pub type NumberAddress1UnknownR = crate::FieldReader;
         #[doc = "Field `NUMBER_ADDRESS_1_UNKNOWN` writer - "]
-        pub type NumberAddress1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 8:12"]
             #[inline(always)]
@@ -4084,17 +4117,19 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Register `I2C_NUMBER_WORD%s` writer"]
         pub type W = crate::W<I2cNumberWordSpec>;
         #[doc = "Field `NUMBER_ADDRESS_0_UNKNOWN` writer - "]
-        pub type NumberAddress0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress0UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_1_UNKNOWN` writer - "]
-        pub type NumberAddress1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress1UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_2_UNKNOWN` writer - "]
-        pub type NumberAddress2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress2UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_3_UNKNOWN` writer - "]
-        pub type NumberAddress3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress3UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_4_UNKNOWN` writer - "]
-        pub type NumberAddress4UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress4UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `NUMBER_ADDRESS_5_UNKNOWN` writer - "]
-        pub type NumberAddress5UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type NumberAddress5UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
+        #[doc = "Field `HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. High two bits of the complete caller-prepared word; the recovered producer normally leaves them zero."]
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl W {
             #[doc = "Bits 0:4"]
             #[inline(always)]
@@ -4138,6 +4173,11 @@ pub mod phy_frequency_channel_oracle {
             ) -> NumberAddress5UnknownW<'_, I2cNumberWordSpec> {
                 NumberAddress5UnknownW::new(self, 25)
             }
+            #[doc = "Bits 30:31 - SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. High two bits of the complete caller-prepared word; the recovered producer normally leaves them zero."]
+            #[inline(always)]
+            pub fn high_unknown(&mut self) -> HighUnknownW<'_, I2cNumberWordSpec> {
+                HighUnknownW::new(self, 30)
+            }
         }
         #[doc = "SOURCE\\[ROM_REV0_PHY_FREQUENCY_CHANNEL\\]; CONFIDENCE\\[instruction-exact\\]. Six consecutive five-bit PHY-I2C number addresses packed by complete phy_freq_num_get_data; unused slots are zero.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`i2c_number_word::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct I2cNumberWordSpec;
@@ -4165,7 +4205,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `FBW_SELECT_MID_UNKNOWN` reader - "]
         pub type FbwSelectMidUnknownR = crate::FieldReader;
         #[doc = "Field `FBW_SELECT_MID_UNKNOWN` writer - "]
-        pub type FbwSelectMidUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type FbwSelectMidUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `FBW_CLEAR_HIGH_UNKNOWN` reader - "]
         pub type FbwClearHighUnknownR = crate::BitReader;
         #[doc = "Field `FBW_CLEAR_HIGH_UNKNOWN` writer - "]
@@ -4173,7 +4213,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `FBW_SELECT_HIGH_UNKNOWN` reader - "]
         pub type FbwSelectHighUnknownR = crate::FieldReader;
         #[doc = "Field `FBW_SELECT_HIGH_UNKNOWN` writer - "]
-        pub type FbwSelectHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type FbwSelectHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `BT_FILTER_LOW_UNKNOWN` reader - "]
         pub type BtFilterLowUnknownR = crate::BitReader;
         #[doc = "Field `BT_FILTER_LOW_UNKNOWN` writer - "]
@@ -4181,7 +4221,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `BT_FILTER_MODE_UNKNOWN` reader - "]
         pub type BtFilterModeUnknownR = crate::FieldReader;
         #[doc = "Field `BT_FILTER_MODE_UNKNOWN` writer - "]
-        pub type BtFilterModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BtFilterModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `BT_FILTER_ENABLE_UNKNOWN` reader - "]
         pub type BtFilterEnableUnknownR = crate::BitReader;
         #[doc = "Field `BT_FILTER_ENABLE_UNKNOWN` writer - "]
@@ -4299,7 +4339,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `CHANNEL_OFFSET_UNKNOWN` reader - "]
         pub type ChannelOffsetUnknownR = crate::FieldReader;
         #[doc = "Field `CHANNEL_OFFSET_UNKNOWN` writer - "]
-        pub type ChannelOffsetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type ChannelOffsetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `MINIMUM_POWER_INDEX` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
         pub type MinimumPowerIndexR = crate::FieldReader;
         #[doc = "Field `MINIMUM_POWER_INDEX` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
@@ -4372,15 +4412,17 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN` reader - "]
         pub type FrequencyQuotientOrInitLowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN` writer - "]
-        pub type FrequencyQuotientOrInitLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 24, u32>;
+        pub type FrequencyQuotientOrInitLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 24, u32, crate::Safe>;
         #[doc = "Field `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN` reader - "]
         pub type ShiftLowOrInitHighUnknownR = crate::FieldReader;
         #[doc = "Field `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN` writer - "]
-        pub type ShiftLowOrInitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type ShiftLowOrInitHighUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `SHIFT_HIGH_UNKNOWN` reader - "]
         pub type ShiftHighUnknownR = crate::FieldReader;
         #[doc = "Field `SHIFT_HIGH_UNKNOWN` writer - "]
-        pub type ShiftHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type ShiftHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:23"]
             #[inline(always)]
@@ -4445,7 +4487,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `CBW_LOW_UNKNOWN` reader - "]
         pub type CbwLowUnknownR = crate::FieldReader;
         #[doc = "Field `CBW_LOW_UNKNOWN` writer - "]
-        pub type CbwLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type CbwLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:1"]
             #[inline(always)]
@@ -4484,11 +4526,11 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `CBW_LOW_UNKNOWN` reader - "]
         pub type CbwLowUnknownR = crate::FieldReader;
         #[doc = "Field `CBW_LOW_UNKNOWN` writer - "]
-        pub type CbwLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type CbwLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `CBW_HIGH_UNKNOWN` reader - "]
         pub type CbwHighUnknownR = crate::FieldReader;
         #[doc = "Field `CBW_HIGH_UNKNOWN` writer - "]
-        pub type CbwHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type CbwHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `VHT_SUPPORT` reader - "]
         pub type VhtSupportR = crate::BitReader;
         #[doc = "Field `VHT_SUPPORT` writer - "]
@@ -31142,6 +31184,19 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.opaque_data().set(value));
         }
     }
+
+    /// Write every bit of `PHY_FREQUENCY_CHANNEL_ORACLE`.`FREQUENCY_PARAMETER_0_OPAQUE` through its full-width field.
+    #[inline]
+    pub fn frequency_parameter_0(registers: &crate::PhyFrequencyChannelOracle, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .frequency_parameter_0_opaque()
+                .write_with_zero(|writer| writer.opaque_value().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -31632,6 +31687,110 @@ pub mod zero_based_field_write {
                     .set(rate_2m_short_preamble_value)
                     .high_unknown()
                     .set(high_unknown_value)
+            });
+        }
+    }
+
+    /// Write `BASEBAND_MODE_UNKNOWN`, `INIT_LOW_UNKNOWN`, `INIT_HIGH_UNKNOWN` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`FREQUENCY_PARAMETER_1_STATUS` while publishing zero to every other register bit.
+    #[inline]
+    pub fn frequency_parameter_1_initialization(
+        registers: &crate::PhyFrequencyChannelOracle,
+        baseband_mode_unknown_value: u8,
+        init_low_unknown_value: u8,
+        init_high_unknown_value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .frequency_parameter_1_status()
+                .write_with_zero(|writer| {
+                    writer
+                        .baseband_mode_unknown()
+                        .set(baseband_mode_unknown_value)
+                        .init_low_unknown()
+                        .set(init_low_unknown_value)
+                        .init_high_unknown()
+                        .set(init_high_unknown_value)
+                });
+        }
+    }
+
+    /// Write `DATA`, `MODE` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`FREQUENCY_MEMORY_DATA` while publishing zero to every other register bit.
+    #[inline]
+    pub fn frequency_memory_data(
+        registers: &crate::PhyFrequencyChannelOracle,
+        data_value: u32,
+        mode_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .frequency_memory_data()
+                .write_with_zero(|writer| writer.data().set(data_value).mode().set(mode_value));
+        }
+    }
+
+    /// Write `NUMBER_ADDRESS_0_UNKNOWN`, `NUMBER_ADDRESS_1_UNKNOWN`, `NUMBER_ADDRESS_2_UNKNOWN`, `NUMBER_ADDRESS_3_UNKNOWN`, `NUMBER_ADDRESS_4_UNKNOWN`, `NUMBER_ADDRESS_5_UNKNOWN`, `HIGH_UNKNOWN` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`I2C_NUMBER_WORD%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn frequency_i2c_number_word(
+        registers: &crate::PhyFrequencyChannelOracle,
+        index: usize,
+        number_address_0_unknown_value: u8,
+        number_address_1_unknown_value: u8,
+        number_address_2_unknown_value: u8,
+        number_address_3_unknown_value: u8,
+        number_address_4_unknown_value: u8,
+        number_address_5_unknown_value: u8,
+        high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.i2c_number_word(index).write_with_zero(|writer| {
+                writer
+                    .number_address_0_unknown()
+                    .set(number_address_0_unknown_value)
+                    .number_address_1_unknown()
+                    .set(number_address_1_unknown_value)
+                    .number_address_2_unknown()
+                    .set(number_address_2_unknown_value)
+                    .number_address_3_unknown()
+                    .set(number_address_3_unknown_value)
+                    .number_address_4_unknown()
+                    .set(number_address_4_unknown_value)
+                    .number_address_5_unknown()
+                    .set(number_address_5_unknown_value)
+                    .high_unknown()
+                    .set(high_unknown_value)
+            });
+        }
+    }
+
+    /// Write `FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN`, `SHIFT_LOW_OR_INIT_HIGH_UNKNOWN`, `SHIFT_HIGH_UNKNOWN` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`NRX_FREQUENCY_CONTROL` while publishing zero to every other register bit.
+    #[inline]
+    pub fn nrx_frequency_image(
+        registers: &crate::PhyFrequencyChannelOracle,
+        frequency_quotient_or_init_low_unknown_value: u32,
+        shift_low_or_init_high_unknown_value: u8,
+        shift_high_unknown_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.nrx_frequency_control().write_with_zero(|writer| {
+                writer
+                    .frequency_quotient_or_init_low_unknown()
+                    .set(frequency_quotient_or_init_low_unknown_value)
+                    .shift_low_or_init_high_unknown()
+                    .set(shift_low_or_init_high_unknown_value)
+                    .shift_high_unknown()
+                    .set(shift_high_unknown_value)
             });
         }
     }

@@ -1,5 +1,7 @@
 //! Ownership-bound frequency-memory and channel-switch leaves.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,11 +66,10 @@ impl RadioRegisters {
     /// Select the recovered two-bit baseband mode.
     pub fn set_frequency_baseband_mode(&mut self, mode: u8) {
         assert!(mode <= 3, "baseband mode must fit two bits");
-        // SAFETY: the assertion proves mode fits the generated field.
         self.peripherals
             .phy_frequency_channel_oracle
             .frequency_parameter_1_status()
-            .modify(|_, w| unsafe { w.baseband_mode_unknown().bits(mode) });
+            .modify(|_, w| w.baseband_mode_unknown().set(mode));
     }
 
     /// Pulse the frequency-module reset/release bit through two fresh RMWs.
@@ -101,21 +102,14 @@ impl RadioRegisters {
         frequency
             .frequency_control()
             .modify(|_, w| w.module_enable_unknown().set_bit());
-        // SAFETY: both complete branch images fit the generated eight-bit
-        // field.
-        frequency.frequency_control().modify(|_, w| unsafe {
+        frequency.frequency_control().modify(|_, w| {
             w.register_mode_unknown()
-                .bits(if parameter_override { 0x20 } else { 0x42 })
+                .set(if parameter_override { 0x20 } else { 0x42 })
         });
-        // SAFETY: both values are complete full-word stores from the ROM.
-        unsafe {
-            frequency
-                .frequency_parameter_0_opaque()
-                .write_with_zero(|w| w.opaque_value().bits(0x1980_0249));
-            frequency
-                .frequency_parameter_1_status()
-                .write_with_zero(|w| w.bits(0x2582_4e58));
-        }
+        super::svd::full_register_write::frequency_parameter_0(frequency, 0x1980_0249);
+        super::svd::zero_based_field_write::frequency_parameter_1_initialization(
+            frequency, 0, 0x16, 0x12c127,
+        );
     }
 
     /// Apply complete rev0 ROM `phy_freq_i2c_mem_write`.
@@ -129,21 +123,13 @@ impl RadioRegisters {
             "frequency-memory data must fit 24 bits"
         );
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
-        // SAFETY: both address components are masked or shifted into their
-        // generated ten- and one-bit fields.
-        frequency.frequency_control().modify(|_, w| unsafe {
+        frequency.frequency_control().modify(|_, w| {
             w.memory_address_low_unknown()
-                .bits(address & 0x03ff)
+                .set(address & 0x03ff)
                 .memory_address_high_or_module_reset_unknown()
                 .bit(address & 0x0400 != 0)
         });
-        // SAFETY: value is assertion-bounded to 24 bits and mode is exactly
-        // the generated eight-bit argument type.
-        unsafe {
-            frequency
-                .frequency_memory_data()
-                .write_with_zero(|w| w.data().bits(value).mode().bits(mode));
-        }
+        super::svd::zero_based_field_write::frequency_memory_data(frequency, value, mode);
         frequency
             .frequency_control()
             .modify(|_, w| w.memory_write_pulse().set_bit());
@@ -161,25 +147,24 @@ impl RadioRegisters {
         let frequency = &self.peripherals.phy_frequency_channel_oracle;
         let address_0 = ((control_field >> 8) & 0x1f) as u8;
         let address_1 = ((control_field >> 13) & 0x1f) as u8;
-        // SAFETY: both decoded values are masked to five bits.
-        frequency.i2c_number_control().modify(|_, w| unsafe {
+        frequency.i2c_number_control().modify(|_, w| {
             w.number_address_0_unknown()
-                .bits(address_0)
+                .set(address_0)
                 .number_address_1_unknown()
-                .bits(address_1)
+                .set(address_1)
         });
-        // SAFETY: the complete ROM body publishes the three caller-prepared
-        // packed words in full and in this exact order.
-        unsafe {
-            frequency
-                .i2c_number_word(0)
-                .write_with_zero(|w| w.bits(words[0]));
-            frequency
-                .i2c_number_word(1)
-                .write_with_zero(|w| w.bits(words[1]));
-            frequency
-                .i2c_number_word(2)
-                .write_with_zero(|w| w.bits(words[2]));
+        for (index, word) in words.into_iter().enumerate() {
+            super::svd::zero_based_field_write::frequency_i2c_number_word(
+                frequency,
+                index,
+                (word & 0x1f) as u8,
+                ((word >> 5) & 0x1f) as u8,
+                ((word >> 10) & 0x1f) as u8,
+                ((word >> 15) & 0x1f) as u8,
+                ((word >> 20) & 0x1f) as u8,
+                ((word >> 25) & 0x1f) as u8,
+                (word >> 30) as u8,
+            );
         }
     }
 
@@ -189,9 +174,7 @@ impl RadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .frequency_control();
-        // SAFETY: frequency_index is exactly the generated eight-bit field
-        // argument.
-        control.modify(|_, w| unsafe { w.channel_index().bits(frequency_index) });
+        control.modify(|_, w| w.channel_index().set(frequency_index));
         control.modify(|_, w| w.channel_switch_pulse().set_bit());
     }
 
@@ -225,11 +208,12 @@ impl RadioRegisters {
         let shift_source = register.read().bits();
         let previous = register.read().bits();
         let image = nrx_frequency_image(shift_source, previous, frequency);
-        // SAFETY: `image` is the complete instruction-derived register image:
-        // the second sample's high byte plus the masked RV32 signed quotient.
-        unsafe {
-            register.write_with_zero(|w| w.bits(image));
-        }
+        super::svd::zero_based_field_write::nrx_frequency_image(
+            &self.peripherals.phy_frequency_channel_oracle,
+            image & 0x00ff_ffff,
+            ((image >> 24) & 0x1f) as u8,
+            (image >> 29) as u8,
+        );
     }
 
     /// Apply the two NRX writes inside complete rev0 ROM `phy_bb_reg_init`.
@@ -238,23 +222,19 @@ impl RadioRegisters {
             .peripherals
             .phy_frequency_channel_oracle
             .nrx_frequency_control();
-        // SAFETY: the complete ROM body replaces the generated twenty-four
-        // bit multifunction field with this bounded initialization image.
-        register
-            .modify(|_, w| unsafe { w.frequency_quotient_or_init_low_unknown().bits(0x0004_33af) });
-        // SAFETY: 0x17 fits the generated five-bit field.
-        register.modify(|_, w| unsafe { w.shift_low_or_init_high_unknown().bits(0x17) });
+        // The complete ROM body replaces the generated twenty-four-bit
+        // multifunction field with this bounded initialization image.
+        register.modify(|_, w| w.frequency_quotient_or_init_low_unknown().set(0x0004_33af));
+        register.modify(|_, w| w.shift_low_or_init_high_unknown().set(0x17));
     }
 
     /// Publish the channel-offset prefix of complete `phy_bb_bss_cbw40`.
     pub fn configure_bss_cbw_prefix(&mut self, cbw: u8) {
         let value = bss_tx_offset(cbw);
-        // SAFETY: the branch-derived value is in 0..=2 and therefore fits
-        // the generated four-bit field.
         self.peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
-            .modify(|_, w| unsafe { w.channel_offset_unknown().bits(value) });
+            .modify(|_, w| w.channel_offset_unknown().set(value));
     }
 
     /// Publish the three FBW suffix edges of complete `phy_bb_bss_cbw40`.
@@ -269,10 +249,8 @@ impl RadioRegisters {
                 .fbw_clear_high_unknown()
                 .clear_bit()
         });
-        // SAFETY: a Boolean encoding fits both generated two-bit fields.
-        register.modify(|_, w| unsafe { w.fbw_select_mid_unknown().bits(u8::from(cbw != 0)) });
-        // SAFETY: a Boolean encoding fits both generated two-bit fields.
-        register.modify(|_, w| unsafe { w.fbw_select_high_unknown().bits(u8::from(cbw != 0)) });
+        register.modify(|_, w| w.fbw_select_mid_unknown().set(u8::from(cbw != 0)));
+        register.modify(|_, w| w.fbw_select_high_unknown().set(u8::from(cbw != 0)));
     }
 
     /// Apply the four fresh-read replacements of complete `phy_bb_cbw_chan_cfg`.
@@ -284,26 +262,20 @@ impl RadioRegisters {
         // six-bit minimum-power field, so both generated fields participate in
         // this single fresh-read RMW.
         frequency.channel_tx_offset_control().modify(|r, w| {
-            // SAFETY: the first value is nibble-masked. The second preserves
-            // generated field bits 5:4 and replaces only bits 3:0.
-            unsafe {
-                w.channel_offset_unknown()
-                    .bits(fields.tx_offset & 0x0f)
-                    .minimum_power_index()
-                    .bits((r.minimum_power_index().bits() & 0x30) | (fields.tx_offset >> 4))
-            }
+            w.channel_offset_unknown()
+                .set(fields.tx_offset & 0x0f)
+                .minimum_power_index()
+                .set((r.minimum_power_index().bits() & 0x30) | (fields.tx_offset >> 4))
         });
-        // SAFETY: the remaining values are masked or branch-bounded to their
-        // generated two-, three-, and two-bit field widths.
         frequency
             .channel_cbw_control_0()
-            .modify(|_, w| unsafe { w.cbw_low_unknown().bits(fields.control_0) });
+            .modify(|_, w| w.cbw_low_unknown().set(fields.control_0));
         frequency
             .channel_cbw_control_1()
-            .modify(|_, w| unsafe { w.cbw_high_unknown().bits(fields.control_1_high) });
+            .modify(|_, w| w.cbw_high_unknown().set(fields.control_1_high));
         frequency
             .channel_cbw_control_1()
-            .modify(|_, w| unsafe { w.cbw_low_unknown().bits(fields.control_1_low) });
+            .modify(|_, w| w.cbw_low_unknown().set(fields.control_1_low));
     }
 
     /// Apply the three fresh-read updates of complete `phy_bt_filter_reg`.
@@ -314,20 +286,18 @@ impl RadioRegisters {
             .fbw_bt_filter_control();
         register.modify(|_, w| w.bt_filter_enable_unknown().set_bit());
         register.modify(|_, w| w.bt_filter_low_unknown().clear_bit());
-        // SAFETY: zero fits the generated two-bit field.
-        register.modify(|_, w| unsafe { w.bt_filter_mode_unknown().bits(0) });
+        register.modify(|_, w| w.bt_filter_mode_unknown().set(0));
     }
 
     /// Publish the TX-cap readback into command-memory entry one.
     pub fn publish_frequency_tx_cap(&mut self, value: u8) {
-        // SAFETY: the complete ROM leaf publishes the three generated
-        // eight-bit fields as one write-only command word.
-        unsafe {
-            self.peripherals
-                .phy_i2c_command_ram
-                .command_memory(1)
-                .write_with_zero(|w| w.block().bits(0x6b).register().bits(2).data().bits(value));
-        }
+        super::svd::zero_based_field_write::phy_i2c_command_memory(
+            &self.peripherals.phy_i2c_command_ram,
+            1,
+            0x6b,
+            2,
+            value,
+        );
     }
 }
 

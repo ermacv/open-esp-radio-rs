@@ -184,6 +184,11 @@
              register="DATA_2"
              field="OPAQUE_DATA"
              source="ROM_REV0_PHY_WRITE_GAIN_MEM"/>
+      <write name="frequency_parameter_0"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_PARAMETER_0_OPAQUE"
+             field="OPAQUE_VALUE"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
       <write name="open_frontend_clock_gates"
@@ -318,6 +323,26 @@
              register="CTS_CCK_RATE_TABLE"
              fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
              source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="frequency_parameter_1_initialization"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_PARAMETER_1_STATUS"
+             fields="BASEBAND_MODE_UNKNOWN,INIT_LOW_UNKNOWN,INIT_HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="frequency_memory_data"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_MEMORY_DATA"
+             fields="DATA,MODE"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="frequency_i2c_number_word"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="I2C_NUMBER_WORD%s"
+             fields="NUMBER_ADDRESS_0_UNKNOWN,NUMBER_ADDRESS_1_UNKNOWN,NUMBER_ADDRESS_2_UNKNOWN,NUMBER_ADDRESS_3_UNKNOWN,NUMBER_ADDRESS_4_UNKNOWN,NUMBER_ADDRESS_5_UNKNOWN,HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="nrx_frequency_image"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="NRX_FREQUENCY_CONTROL"
+             fields="FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN,SHIFT_LOW_OR_INIT_HIGH_UNKNOWN,SHIFT_HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

@@ -281,11 +281,13 @@
               <name>CHANNEL_INDEX</name>
               <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. Complete phy_freq_chan_en_sw replaces the low byte with the caller's frequency-table index.</description>
               <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>MEMORY_ADDRESS_LOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. Low ten bits of the eleven-bit address selected by phy_freq_i2c_mem_write.</description>
               <bitOffset>8</bitOffset><bitWidth>10</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>MEMORY_ADDRESS_HIGH_OR_MODULE_RESET_UNKNOWN</name>
@@ -306,6 +308,7 @@
               <name>REGISTER_MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_freq_reg_init replaces bits 29:22 with its two input nibbles; the electrical encoding is unknown.</description>
               <bitOffset>22</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>MODULE_ENABLE_UNKNOWN</name>
@@ -323,7 +326,7 @@
           <name>FREQUENCY_PARAMETER_0_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_freq_reg_init writes the full constant 0x19800249; no constituent electrical fields are public.</description>
           <addressOffset>0x0024</addressOffset><size>32</size><access>write-only</access>
-          <fields><field><name>OPAQUE_VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>OPAQUE_VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>FREQUENCY_PARAMETER_1_STATUS</name>
@@ -334,12 +337,15 @@
               <name>BASEBAND_MODE_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_BB_INIT]; CONFIDENCE[instruction-exact]. Complete phy_bb_init writes encoding two before calibration and zero after the initial channel setup.</description>
               <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
+            <field><name>INIT_LOW_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 7:2 of the complete initialization image.</description><bitOffset>2</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
             <field>
               <name>FREQUENCY_READY</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_RFPLL_CHANNEL]; CONFIDENCE[instruction-exact]. The complete channel parent samples bit 8 after the frequency-switch delay and branches on its asserted edge.</description>
               <bitOffset>8</bitOffset><bitWidth>1</bitWidth><access>read-only</access>
             </field>
+            <field><name>INIT_HIGH_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 31:9 of the complete initialization image.</description><bitOffset>9</bitOffset><bitWidth>23</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7fffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -347,8 +353,8 @@
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. Data/mode word published by complete phy_freq_i2c_mem_write.</description>
           <addressOffset>0x002c</addressOffset><size>32</size><access>write-only</access>
           <fields>
-            <field><name>DATA</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field>
-            <field><name>MODE</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>DATA</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffff</maximum></range></writeConstraint></field>
+            <field><name>MODE</name><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -356,8 +362,8 @@
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. First two five-bit PHY-I2C number addresses packed by complete phy_freq_i2c_num_addr.</description>
           <addressOffset>0x0030</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>8</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>13</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -366,12 +372,13 @@
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. Six consecutive five-bit PHY-I2C number addresses packed by complete phy_freq_num_get_data; unused slots are zero.</description>
           <addressOffset>0x0034</addressOffset><size>32</size><access>write-only</access>
           <fields>
-            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_2_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_3_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_4_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>NUMBER_ADDRESS_5_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>5</bitWidth></field>
+            <field><name>NUMBER_ADDRESS_0_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_1_UNKNOWN</name><bitOffset>5</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_2_UNKNOWN</name><bitOffset>10</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_3_UNKNOWN</name><bitOffset>15</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_4_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>NUMBER_ADDRESS_5_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>HIGH_UNKNOWN</name><description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-semantics-unknown]. High two bits of the complete caller-prepared word; the recovered producer normally leaves them zero.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -380,11 +387,11 @@
           <addressOffset>0x0874</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>FBW_CLEAR_LOW_UNKNOWN</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>FBW_SELECT_MID_UNKNOWN</name><bitOffset>17</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>FBW_SELECT_MID_UNKNOWN</name><bitOffset>17</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>FBW_CLEAR_HIGH_UNKNOWN</name><bitOffset>19</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>FBW_SELECT_HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>FBW_SELECT_HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>BT_FILTER_LOW_UNKNOWN</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>BT_FILTER_MODE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BT_FILTER_MODE_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>BT_FILTER_ENABLE_UNKNOWN</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -392,31 +399,31 @@
           <name>CHANNEL_TX_OFFSET_CONTROL</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact-partial]. Canonical multifunction PHY/MAC word. Complete phy_mac_tx_chan_offset and phy_bb_cbw_chan_cfg update the low channel-offset field; complete hal_set_tx_min_pwr updates bits 9:4 and the HE init parent independently sets bit 17.</description>
           <addressOffset>0x4400</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>CHANNEL_OFFSET_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field><field><name>MINIMUM_POWER_INDEX</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35.</description><bitOffset>4</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field><field><name>HE_PARENT_ENABLE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. The complete HE init parent sets bit 17 through a separate fresh-read RMW.</description><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field></fields>
+          <fields><field><name>CHANNEL_OFFSET_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field><field><name>MINIMUM_POWER_INDEX</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35.</description><bitOffset>4</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field><field><name>HE_PARENT_ENABLE_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX]; CONFIDENCE[instruction-exact-semantics-unknown]. The complete HE init parent sets bit 17 through a separate fresh-read RMW.</description><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field></fields>
         </register>
         <register>
           <name>NRX_FREQUENCY_CONTROL</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact-partial]. NRX initialization and frequency quotient word. Complete phy_nrx_freq_set samples and preserves the high byte and writes a twenty-four-bit quotient. Initialization writes the same complete low twenty-four-bit region with its own image.</description>
           <addressOffset>0x7848</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth></field>
-            <field><name>SHIFT_LOW_OR_INIT_HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>SHIFT_HIGH_UNKNOWN</name><bitOffset>29</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>24</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffff</maximum></range></writeConstraint></field>
+            <field><name>SHIFT_LOW_OR_INIT_HIGH_UNKNOWN</name><bitOffset>24</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>SHIFT_HIGH_UNKNOWN</name><bitOffset>29</bitOffset><bitWidth>3</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
           <name>CHANNEL_CBW_CONTROL_0</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]; CONFIDENCE[instruction-exact]. Complete phy_bb_cbw_chan_cfg replaces the low two-bit CBW-derived field.</description>
           <addressOffset>0x7ce0</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field></fields>
+          <fields><field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>CHANNEL_CBW_CONTROL_1</name>
           <description>SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL,ROM_REV0_PHY_CBW_FEATURE_WATCHDOG]; CONFIDENCE[instruction-exact]. Complete phy_bb_cbw_chan_cfg performs two fresh-read CBW-derived replacements; complete phy_vht_support independently replaces bit five.</description>
           <addressOffset>0x7ce4</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>CBW_HIGH_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>3</bitWidth></field>
+            <field><name>CBW_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>CBW_HIGH_UNKNOWN</name><bitOffset>2</bitOffset><bitWidth>3</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint></field>
             <field><name>VHT_SUPPORT</name><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
         </register>
@@ -4211,6 +4218,11 @@
              register="DATA_2"
              field="OPAQUE_DATA"
              source="ROM_REV0_PHY_WRITE_GAIN_MEM"/>
+      <write name="frequency_parameter_0"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_PARAMETER_0_OPAQUE"
+             field="OPAQUE_VALUE"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
       <write name="open_frontend_clock_gates"
@@ -4345,6 +4357,26 @@
              register="CTS_CCK_RATE_TABLE"
              fields="RATE_1M,RATE_2M,RATE_2M_SHORT_PREAMBLE,HIGH_UNKNOWN"
              source="BLOB_LIBPP_MAC_TXRX_CALLBACKS"/>
+      <write name="frequency_parameter_1_initialization"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_PARAMETER_1_STATUS"
+             fields="BASEBAND_MODE_UNKNOWN,INIT_LOW_UNKNOWN,INIT_HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="frequency_memory_data"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="FREQUENCY_MEMORY_DATA"
+             fields="DATA,MODE"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="frequency_i2c_number_word"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="I2C_NUMBER_WORD%s"
+             fields="NUMBER_ADDRESS_0_UNKNOWN,NUMBER_ADDRESS_1_UNKNOWN,NUMBER_ADDRESS_2_UNKNOWN,NUMBER_ADDRESS_3_UNKNOWN,NUMBER_ADDRESS_4_UNKNOWN,NUMBER_ADDRESS_5_UNKNOWN,HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="nrx_frequency_image"
+             peripheral="PHY_FREQUENCY_CHANNEL_ORACLE"
+             register="NRX_FREQUENCY_CONTROL"
+             fields="FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN,SHIFT_LOW_OR_INIT_HIGH_UNKNOWN,SHIFT_HIGH_UNKNOWN"
+             source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

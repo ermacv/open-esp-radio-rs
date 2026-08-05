@@ -21,8 +21,8 @@ use open_esp_radio_esp32s31_wifi_lmac::{
         TxPhyRate, TxSlotState,
     },
     tx_ampdu::{
-        AmpduFrameLayout, HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware,
-        HtAmpduTxError, HtAmpduTxResources, RetainedDmaAmpduTx,
+        AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
+        HtAmpduHardware, HtAmpduTxError, HtAmpduTxResources, RetainedDmaAmpduTx,
     },
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
@@ -549,6 +549,7 @@ where
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
         let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(self.ampdu.can_fit_fresh_referenced_ht_frame(
@@ -558,12 +559,13 @@ where
                 maximum_aggregate_bytes,
                 dma_capacity,
             )?),
-            TxPhyRate::He(rate) => Ok(self.ampdu.can_fit_fresh_referenced_he_frame_with_txop(
-                frame_length,
-                hardware_mic_length,
-                rate,
-                self.ordinary.policy().ht_ampdu().density(),
-                self.config.he_txop_limit,
+            TxPhyRate::He(rate) => Ok(self.ampdu.can_fit_fresh_referenced_he_frame(
+                frame_size,
+                HeAmpduPolicy::new(
+                    rate,
+                    self.ordinary.policy().ht_ampdu().density(),
+                    self.config.he_txop_limit,
+                ),
                 maximum_aggregate_bytes,
                 dma_capacity,
             )?),
@@ -684,6 +686,7 @@ where
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
         let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(self.ampdu.can_commit_referenced_ht_frame(
                 cookie,
@@ -693,13 +696,14 @@ where
                 rate,
                 dma_capacity,
             )?),
-            TxPhyRate::He(rate) => Ok(self.ampdu.can_commit_referenced_he_frame_with_txop(
+            TxPhyRate::He(rate) => Ok(self.ampdu.can_commit_referenced_he_frame(
                 cookie,
-                frame_length,
-                hardware_mic_length,
-                rate,
-                self.ordinary.policy().ht_ampdu().density(),
-                self.config.he_txop_limit,
+                frame_size,
+                HeAmpduPolicy::new(
+                    rate,
+                    self.ordinary.policy().ht_ampdu().density(),
+                    self.config.he_txop_limit,
+                ),
                 dma_capacity,
             )?),
             TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
@@ -736,7 +740,8 @@ where
         )?;
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
-        let layout = AmpduFrameLayout::new(dma_offset, encoded.length, hardware_mic_length).ok_or(
+        let frame_size = AmpduFrameSize::new(encoded.length, hardware_mic_length);
+        let layout = AmpduFrameLayout::new(dma_offset, frame_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {
                 encoded_offset: encoded.offset,
                 metadata_size,
@@ -752,9 +757,11 @@ where
                 frame,
                 HeAmpduFrameRequest::new(
                     layout,
-                    rate,
-                    self.ordinary.policy().ht_ampdu().density(),
-                    self.config.he_txop_limit,
+                    HeAmpduPolicy::new(
+                        rate,
+                        self.ordinary.policy().ht_ampdu().density(),
+                        self.config.he_txop_limit,
+                    ),
                 ),
             )?,
             TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),

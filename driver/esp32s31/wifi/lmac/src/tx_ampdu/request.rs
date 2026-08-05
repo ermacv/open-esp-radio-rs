@@ -2,6 +2,30 @@
 
 use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtRate};
 
+/// Encoded MPDU bytes and the trailer bytes appended by hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduFrameSize {
+    mpdu_length: usize,
+    hardware_mic_length: u8,
+}
+
+impl AmpduFrameSize {
+    pub const fn new(mpdu_length: usize, hardware_mic_length: u8) -> Self {
+        Self {
+            mpdu_length,
+            hardware_mic_length,
+        }
+    }
+
+    pub const fn mpdu_length(self) -> usize {
+        self.mpdu_length
+    }
+
+    pub const fn hardware_mic_length(self) -> u8 {
+        self.hardware_mic_length
+    }
+}
+
 /// Geometry of one encoded MPDU inside a retained DMA backing.
 ///
 /// The offset points at the private A-MPDU metadata prefix immediately before
@@ -13,23 +37,17 @@ use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtRate};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduFrameLayout {
     dma_offset: usize,
-    mpdu_length: usize,
-    hardware_mic_length: u8,
+    frame_size: AmpduFrameSize,
 }
 
 impl AmpduFrameLayout {
-    pub const fn new(
-        dma_offset: usize,
-        mpdu_length: usize,
-        hardware_mic_length: u8,
-    ) -> Option<Self> {
+    pub const fn new(dma_offset: usize, frame_size: AmpduFrameSize) -> Option<Self> {
         if dma_offset & 3 != 0 {
             return None;
         }
         Some(Self {
             dma_offset,
-            mpdu_length,
-            hardware_mic_length,
+            frame_size,
         })
     }
 
@@ -38,11 +56,15 @@ impl AmpduFrameLayout {
     }
 
     pub const fn mpdu_length(self) -> usize {
-        self.mpdu_length
+        self.frame_size.mpdu_length()
     }
 
     pub const fn hardware_mic_length(self) -> u8 {
-        self.hardware_mic_length
+        self.frame_size.hardware_mic_length()
+    }
+
+    pub const fn frame_size(self) -> AmpduFrameSize {
+        self.frame_size
     }
 }
 
@@ -76,32 +98,21 @@ impl HtAmpduFrameRequest {
     }
 }
 
-/// Complete policy required to append one retained HE MPDU.
+/// Rate, delimiter-density and duration policy for one HE aggregate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct HeAmpduFrameRequest {
-    layout: AmpduFrameLayout,
+pub struct HeAmpduPolicy {
     rate: HeRate,
     density: HtAmpduDensity,
     txop_limit: HeEdcaTxopLimit,
 }
 
-impl HeAmpduFrameRequest {
-    pub const fn new(
-        layout: AmpduFrameLayout,
-        rate: HeRate,
-        density: HtAmpduDensity,
-        txop_limit: HeEdcaTxopLimit,
-    ) -> Self {
+impl HeAmpduPolicy {
+    pub const fn new(rate: HeRate, density: HtAmpduDensity, txop_limit: HeEdcaTxopLimit) -> Self {
         Self {
-            layout,
             rate,
             density,
             txop_limit,
         }
-    }
-
-    pub const fn layout(self) -> AmpduFrameLayout {
-        self.layout
     }
 
     pub const fn rate(self) -> HeRate {
@@ -114,5 +125,26 @@ impl HeAmpduFrameRequest {
 
     pub const fn txop_limit(self) -> HeEdcaTxopLimit {
         self.txop_limit
+    }
+}
+
+/// Complete request required to append one retained HE MPDU.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HeAmpduFrameRequest {
+    layout: AmpduFrameLayout,
+    policy: HeAmpduPolicy,
+}
+
+impl HeAmpduFrameRequest {
+    pub const fn new(layout: AmpduFrameLayout, policy: HeAmpduPolicy) -> Self {
+        Self { layout, policy }
+    }
+
+    pub const fn layout(self) -> AmpduFrameLayout {
+        self.layout
+    }
+
+    pub const fn policy(self) -> HeAmpduPolicy {
+        self.policy
     }
 }

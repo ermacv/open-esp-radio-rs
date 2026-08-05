@@ -87,7 +87,11 @@ fn frame_layout(
     mpdu_length: usize,
     hardware_mic_length: u8,
 ) -> AmpduFrameLayout {
-    AmpduFrameLayout::new(dma_offset, mpdu_length, hardware_mic_length).unwrap()
+    AmpduFrameLayout::new(
+        dma_offset,
+        AmpduFrameSize::new(mpdu_length, hardware_mic_length),
+    )
+    .unwrap()
 }
 
 fn ht_frame_request(
@@ -106,8 +110,12 @@ fn ht_frame_request(
 
 #[test]
 fn ampdu_frame_layout_rejects_unaligned_dma_prefix() {
-    assert_eq!(AmpduFrameLayout::new(1, 32, 8), None);
-    assert_eq!(AmpduFrameLayout::new(4, 32, 8).unwrap().dma_offset(), 4);
+    let frame_size = AmpduFrameSize::new(32, 8);
+    assert_eq!(AmpduFrameLayout::new(1, frame_size), None);
+    assert_eq!(
+        AmpduFrameLayout::new(4, frame_size).unwrap().dma_offset(),
+        4
+    );
 }
 
 #[test]
@@ -315,9 +323,11 @@ fn referenced_he_commit_uses_external_capacity_with_descriptor_only_storage() {
                 external,
                 HeAmpduFrameRequest::new(
                     frame_layout(0, 16, 8),
-                    rate,
-                    HtAmpduDensity::SixteenMicroseconds,
-                    HeEdcaTxopLimit::DEFAULT,
+                    HeAmpduPolicy::new(
+                        rate,
+                        HtAmpduDensity::SixteenMicroseconds,
+                        HeEdcaTxopLimit::DEFAULT,
+                    ),
                 ),
             )
             .unwrap();

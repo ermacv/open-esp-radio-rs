@@ -9520,19 +9520,68 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<HccfrControlSpec>;
         #[doc = "Register `HCCFR_CONTROL` writer"]
         pub type W = crate::W<HccfrControlSpec>;
-        #[doc = "Field `ENABLE` reader - "]
-        pub type EnableR = crate::BitReader;
-        #[doc = "Field `ENABLE` writer - "]
-        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum HccfrEnable {
+            #[doc = "0: Disable HCCFR processing."]
+            Disabled = 0,
+            #[doc = "1: Enable HCCFR processing."]
+            Enabled = 1,
+        }
+        impl From<HccfrEnable> for bool {
+            #[inline(always)]
+            fn from(variant: HccfrEnable) -> Self {
+                variant as u8 != 0
+            }
+        }
+        #[doc = "Field `ENABLE` reader - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it."]
+        pub type EnableR = crate::BitReader<HccfrEnable>;
+        impl EnableR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> HccfrEnable {
+                match self.bits {
+                    false => HccfrEnable::Disabled,
+                    true => HccfrEnable::Enabled,
+                }
+            }
+            #[doc = "Disable HCCFR processing."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == HccfrEnable::Disabled
+            }
+            #[doc = "Enable HCCFR processing."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == HccfrEnable::Enabled
+            }
+        }
+        #[doc = "Field `ENABLE` writer - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it."]
+        pub type EnableW<'a, REG> = crate::BitWriter<'a, REG, HccfrEnable>;
+        impl<'a, REG> EnableW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+        {
+            #[doc = "Disable HCCFR processing."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(HccfrEnable::Disabled)
+            }
+            #[doc = "Enable HCCFR processing."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(HccfrEnable::Enabled)
+            }
+        }
         impl R {
-            #[doc = "Bit 22"]
+            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it."]
             #[inline(always)]
             pub fn enable(&self) -> EnableR {
                 EnableR::new(((self.bits >> 22) & 1) != 0)
             }
         }
         impl W {
-            #[doc = "Bit 22"]
+            #[doc = "Bit 22 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it."]
             #[inline(always)]
             pub fn enable(&mut self) -> EnableW<'_, HccfrControlSpec> {
                 EnableW::new(self, 22)
@@ -9559,19 +9608,19 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<HccfrValueSpec>;
         #[doc = "Register `HCCFR_VALUE` writer"]
         pub type W = crate::W<HccfrValueSpec>;
-        #[doc = "Field `VALUE` reader - "]
+        #[doc = "Field `VALUE` reader - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
         pub type ValueR = crate::FieldReader<u16>;
-        #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `VALUE` writer - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
-            #[doc = "Bits 0:11"]
+            #[doc = "Bits 0:11 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
                 ValueR::new((self.bits & 0x0fff) as u16)
             }
         }
         impl W {
-            #[doc = "Bits 0:11"]
+            #[doc = "Bits 0:11 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_config_hccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
             #[inline(always)]
             pub fn value(&mut self) -> ValueW<'_, HccfrValueSpec> {
                 ValueW::new(self, 0)
@@ -9598,14 +9647,63 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<IccfrForceControlSpec>;
         #[doc = "Register `ICCFR_FORCE_CONTROL` writer"]
         pub type W = crate::W<IccfrForceControlSpec>;
-        #[doc = "Field `FORCE_ENABLE` reader - "]
-        pub type ForceEnableR = crate::BitReader;
-        #[doc = "Field `FORCE_ENABLE` writer - "]
-        pub type ForceEnableW<'a, REG> = crate::BitWriter<'a, REG>;
-        #[doc = "Field `FORCE_VALUE` reader - "]
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum IccfrForceEnable {
+            #[doc = "0: Use the ordinary ICCFR value path."]
+            Disabled = 0,
+            #[doc = "1: Use the forced ICCFR value."]
+            Enabled = 1,
+        }
+        impl From<IccfrForceEnable> for bool {
+            #[inline(always)]
+            fn from(variant: IccfrForceEnable) -> Self {
+                variant as u8 != 0
+            }
+        }
+        #[doc = "Field `FORCE_ENABLE` reader - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it."]
+        pub type ForceEnableR = crate::BitReader<IccfrForceEnable>;
+        impl ForceEnableR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> IccfrForceEnable {
+                match self.bits {
+                    false => IccfrForceEnable::Disabled,
+                    true => IccfrForceEnable::Enabled,
+                }
+            }
+            #[doc = "Use the ordinary ICCFR value path."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == IccfrForceEnable::Disabled
+            }
+            #[doc = "Use the forced ICCFR value."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == IccfrForceEnable::Enabled
+            }
+        }
+        #[doc = "Field `FORCE_ENABLE` writer - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it."]
+        pub type ForceEnableW<'a, REG> = crate::BitWriter<'a, REG, IccfrForceEnable>;
+        impl<'a, REG> ForceEnableW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+        {
+            #[doc = "Use the ordinary ICCFR value path."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(IccfrForceEnable::Disabled)
+            }
+            #[doc = "Use the forced ICCFR value."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(IccfrForceEnable::Enabled)
+            }
+        }
+        #[doc = "Field `FORCE_VALUE` reader - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
         pub type ForceValueR = crate::FieldReader<u16>;
-        #[doc = "Field `FORCE_VALUE` writer - "]
-        pub type ForceValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        #[doc = "Field `FORCE_VALUE` writer - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
+        pub type ForceValueW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         #[doc = "Field `FORCE_MODE_LOW` reader - "]
         pub type ForceModeLowR = crate::BitReader;
         #[doc = "Field `FORCE_MODE_LOW` writer - "]
@@ -9619,12 +9717,12 @@ pub mod phy_baseband_config_oracle {
         #[doc = "Field `FORCE_TRIGGER` writer - "]
         pub type ForceTriggerW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it."]
             #[inline(always)]
             pub fn force_enable(&self) -> ForceEnableR {
                 ForceEnableR::new((self.bits & 1) != 0)
             }
-            #[doc = "Bits 1:12"]
+            #[doc = "Bits 1:12 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
             #[inline(always)]
             pub fn force_value(&self) -> ForceValueR {
                 ForceValueR::new(((self.bits >> 1) & 0x0fff) as u16)
@@ -9646,12 +9744,12 @@ pub mod phy_baseband_config_oracle {
             }
         }
         impl W {
-            #[doc = "Bit 0"]
+            #[doc = "Bit 0 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it."]
             #[inline(always)]
             pub fn force_enable(&mut self) -> ForceEnableW<'_, IccfrForceControlSpec> {
                 ForceEnableW::new(self, 0)
             }
-            #[doc = "Bits 1:12"]
+            #[doc = "Bits 1:12 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_iccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf."]
             #[inline(always)]
             pub fn force_value(&mut self) -> ForceValueW<'_, IccfrForceControlSpec> {
                 ForceValueW::new(self, 1)
@@ -9693,19 +9791,75 @@ pub mod phy_baseband_config_oracle {
         pub type R = crate::R<IccfrEnableControlSpec>;
         #[doc = "Register `ICCFR_ENABLE_CONTROL` writer"]
         pub type W = crate::W<IccfrEnableControlSpec>;
-        #[doc = "Field `GATE` reader - "]
-        pub type GateR = crate::FieldReader;
-        #[doc = "Field `GATE` writer - "]
-        pub type GateW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum IccfrGate {
+            #[doc = "0: Enable ICCFR through the recovered zero gate image."]
+            Enabled = 0,
+            #[doc = "3: Disable ICCFR through the recovered all-ones gate image."]
+            Disabled = 3,
+        }
+        impl From<IccfrGate> for u8 {
+            #[inline(always)]
+            fn from(variant: IccfrGate) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for IccfrGate {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for IccfrGate {}
+        #[doc = "Field `GATE` reader - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced."]
+        pub type GateR = crate::FieldReader<IccfrGate>;
+        impl GateR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<IccfrGate> {
+                match self.bits {
+                    0 => Some(IccfrGate::Enabled),
+                    3 => Some(IccfrGate::Disabled),
+                    _ => None,
+                }
+            }
+            #[doc = "Enable ICCFR through the recovered zero gate image."]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == IccfrGate::Enabled
+            }
+            #[doc = "Disable ICCFR through the recovered all-ones gate image."]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == IccfrGate::Disabled
+            }
+        }
+        #[doc = "Field `GATE` writer - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced."]
+        pub type GateW<'a, REG> = crate::FieldWriter<'a, REG, 2, IccfrGate>;
+        impl<'a, REG> GateW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "Enable ICCFR through the recovered zero gate image."]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(IccfrGate::Enabled)
+            }
+            #[doc = "Disable ICCFR through the recovered all-ones gate image."]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(IccfrGate::Disabled)
+            }
+        }
         impl R {
-            #[doc = "Bits 25:26"]
+            #[doc = "Bits 25:26 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced."]
             #[inline(always)]
             pub fn gate(&self) -> GateR {
                 GateR::new(((self.bits >> 25) & 3) as u8)
             }
         }
         impl W {
-            #[doc = "Bits 25:26"]
+            #[doc = "Bits 25:26 - SOURCE\\[BLOB_LIBPHY_PHY_CFR_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced."]
             #[inline(always)]
             pub fn gate(&mut self) -> GateW<'_, IccfrEnableControlSpec> {
                 GateW::new(self, 25)

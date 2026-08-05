@@ -200,43 +200,6 @@ impl RadioRegisters {
             .modify(|_, w| unsafe { w.track_value_0_unknown().bits(0xe6) });
     }
 
-    /// Publish both fields of complete pinned `phy_config_hccfr` in order.
-    pub fn configure_hccfr(&mut self, enabled: u32, value: u32) {
-        let bb = &self.peripherals.phy_baseband_config_oracle;
-        bb.hccfr_control()
-            .modify(|_, w| w.enable().bit(low_bit(enabled)));
-        // SAFETY: the input is explicitly retained to the generated 12-bit
-        // field, matching the complete RV32 body.
-        bb.hccfr_value()
-            .modify(|_, w| unsafe { w.value().bits(value as u16 & 0x0fff) });
-    }
-
-    /// Apply either complete branch of pinned `phy_iccfr_en`.
-    pub fn configure_iccfr_gate(&mut self, input: u32) {
-        let gate = if input == 0 { 3 } else { 0 };
-        // SAFETY: both branch images fit the generated two-bit field.
-        self.peripherals
-            .phy_baseband_config_oracle
-            .iccfr_enable_control()
-            .modify(|_, w| unsafe { w.gate().bits(gate) });
-    }
-
-    /// Publish all five fields and the tail gate of pinned `phy_force_iccfr`.
-    pub fn configure_forced_iccfr(&mut self, mode: u32, enabled: u32, value: u32) {
-        let control = self
-            .peripherals
-            .phy_baseband_config_oracle
-            .iccfr_force_control();
-        control.modify(|_, w| w.force_mode_high().bit(low_bit(mode)));
-        control.modify(|_, w| w.force_enable().bit(low_bit(enabled)));
-        control.modify(|_, w| w.force_trigger().set_bit());
-        control.modify(|_, w| w.force_mode_low().bit(low_bit(mode)));
-        // SAFETY: the input is explicitly retained to the generated 12-bit
-        // field, matching the complete RV32 body.
-        control.modify(|_, w| unsafe { w.force_value().bits(value as u16 & 0x0fff) });
-        self.configure_iccfr_gate(enabled);
-    }
-
     /// Apply complete rev0 ROM `phy_btbb_wifi_bb_cfg2`.
     pub fn configure_bt_wifi_baseband(&mut self) {
         self.peripherals

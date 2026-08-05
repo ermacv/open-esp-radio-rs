@@ -4,8 +4,10 @@
 //! complete rev0 ROM and pinned `libphy.a` bodies while delegating register
 //! layout and legal field images to the generated PAC.
 
+#![forbid(unsafe_code)]
+
 #[cfg(target_arch = "riscv32")]
-use open_esp_radio_esp32s31_registers::RadioRegisters;
+use open_esp_radio_esp32s31_registers::{CfrValue, RadioRegisters};
 
 /// Enable the two IQ-correction modes selected by PHY initialization.
 ///
@@ -46,19 +48,24 @@ pub fn configure_tx_power_tracking(registers: &mut RadioRegisters, enabled: bool
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_config_hccfr`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_hccfr(registers: &mut RadioRegisters, enabled: u32, value: u32) {
+pub fn configure_hccfr(registers: &mut RadioRegisters, enabled: bool, value: CfrValue) {
     registers.configure_hccfr(enabled, value);
 }
 
 /// Apply either complete branch of pinned `libphy.a[phy_reg.o]::phy_iccfr_en`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_iccfr_gate(registers: &mut RadioRegisters, input: u32) {
-    registers.configure_iccfr_gate(input);
+pub fn configure_iccfr_gate(registers: &mut RadioRegisters, enabled: bool) {
+    registers.configure_iccfr_gate(enabled);
 }
 
 /// Apply complete pinned `libphy.a[phy_reg.o]::phy_force_iccfr`.
 #[cfg(target_arch = "riscv32")]
-pub fn configure_forced_iccfr(registers: &mut RadioRegisters, mode: u32, enabled: u32, value: u32) {
+pub fn configure_forced_iccfr(
+    registers: &mut RadioRegisters,
+    mode: bool,
+    enabled: bool,
+    value: CfrValue,
+) {
     registers.configure_forced_iccfr(mode, enabled, value);
 }
 

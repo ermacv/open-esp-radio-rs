@@ -1427,7 +1427,18 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_config_hccfr replaces bit 22 with the low bit of its first argument.</description>
           <addressOffset>0x7468</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>ENABLE</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
+            <field>
+              <name>ENABLE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_config_hccfr writes zero to disable HCCFR and one to enable it.</description>
+              <bitOffset>22</bitOffset><bitWidth>1</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues>
+                <name>HccfrEnable</name>
+                <usage>read-write</usage>
+                <enumeratedValue><name>DISABLED</name><description>Disable HCCFR processing.</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>ENABLED</name><description>Enable HCCFR processing.</description><value>1</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
           </fields>
         </register>
         <register>
@@ -1435,7 +1446,12 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_config_hccfr replaces the low twelve bits with its second argument.</description>
           <addressOffset>0x746c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field>
+            <field>
+              <name>VALUE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_config_hccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf.</description>
+              <bitOffset>0</bitOffset><bitWidth>12</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint>
+            </field>
           </fields>
         </register>
         <register>
@@ -1443,8 +1459,24 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_force_iccfr publishes five fields through five separately ordered fresh-read RMWs.</description>
           <addressOffset>0x7478</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>FORCE_ENABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>FORCE_VALUE</name><bitOffset>1</bitOffset><bitWidth>12</bitWidth></field>
+            <field>
+              <name>FORCE_ENABLE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_force_iccfr writes zero to disable the forced ICCFR value and one to enable it.</description>
+              <bitOffset>0</bitOffset><bitWidth>1</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues>
+                <name>IccfrForceEnable</name>
+                <usage>read-write</usage>
+                <enumeratedValue><name>DISABLED</name><description>Use the ordinary ICCFR value path.</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>ENABLED</name><description>Use the forced ICCFR value.</description><value>1</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+            <field>
+              <name>FORCE_VALUE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_force_iccfr retains the caller value to this twelve-bit field; every representable field image is accepted by the recovered leaf.</description>
+              <bitOffset>1</bitOffset><bitWidth>12</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint>
+            </field>
             <field><name>FORCE_MODE_LOW</name><bitOffset>13</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>FORCE_MODE_HIGH</name><bitOffset>14</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>FORCE_TRIGGER</name><bitOffset>15</bitOffset><bitWidth>1</bitWidth></field>
@@ -1455,7 +1487,18 @@
           <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_iccfr_en writes three to bits 26:25 for a zero argument and clears them for a nonzero argument.</description>
           <addressOffset>0x747c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>GATE</name><bitOffset>25</bitOffset><bitWidth>2</bitWidth></field>
+            <field>
+              <name>GATE</name>
+              <description>SOURCE[BLOB_LIBPHY_PHY_CFR_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_iccfr_en writes zero for a nonzero enable input and three for a zero input; the other two encodings are not evidenced.</description>
+              <bitOffset>25</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues>
+                <name>IccfrGate</name>
+                <usage>read-write</usage>
+                <enumeratedValue><name>ENABLED</name><description>Enable ICCFR through the recovered zero gate image.</description><value>0</value></enumeratedValue>
+                <enumeratedValue><name>DISABLED</name><description>Disable ICCFR through the recovered all-ones gate image.</description><value>3</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
           </fields>
         </register>
         <register>

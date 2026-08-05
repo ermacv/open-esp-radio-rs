@@ -1,0 +1,194 @@
+#!/bin/sh
+set -eu
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+HOSTAPD=/usr/local/libexec/open-radio-hostapd
+HOSTAPD_PID=/run/open-radio-hostapd.pid
+DNSMASQ_PID=/run/open-radio-dnsmasq.pid
+CTRL_DIR=/run/open-radio-hostapd
+STATE_DIR=/run/open-radio-net
+PHY_STATE="$STATE_DIR/phy"
+MAC_STATE="$STATE_DIR/mac"
+
+usage() {
+    echo "usage: open-radio-net {start-ht40|start-he20|monitor|monitor-1|monitor-6|monitor-11|managed|stop|status|usb-reset|kernel-log}" >&2
+    exit 64
+}
+
+test "$#" -eq 1 || usage
+
+stop_pidfile() {
+    pidfile=$1
+    if test ! -f "$pidfile"; then
+        return
+    fi
+    pid=$(/bin/cat "$pidfile")
+    case "$pid" in
+        ''|*[!0-9]*) ;;
+        *) /bin/kill "$pid" 2>/dev/null || true ;;
+    esac
+    /bin/rm -f "$pidfile"
+}
+
+stop_radio_services() {
+    stop_pidfile "$DNSMASQ_PID"
+    stop_pidfile "$HOSTAPD_PID"
+    # Remove the names used by the pre-helper HIL scripts during the one-time
+    # transition. Both files live in root-owned /run.
+    stop_pidfile /run/open-radio-perf-dnsmasq.pid
+    stop_pidfile /run/open-radio-perf-hostapd.pid
+    /usr/bin/iw dev mon0 del 2>/dev/null || true
+    /usr/bin/wpa_cli -g /run/wpa_supplicant/global interface_remove wlan0 \
+        >/dev/null 2>&1 || true
+    /usr/bin/ip link set wlan0 down 2>/dev/null || true
+    /usr/bin/ip address flush dev wlan0 2>/dev/null || true
+}
+
+take_network_manager_ownership() {
+    # A reconnect between `ip link set down` and the nl80211 type/channel
+    # transaction produces EBUSY and leaves a nominal monitor interface
+    # without a channel context. The HIL helper, rather than a background
+    # desktop policy, owns wlan0 until the explicit `managed` action.
+    /usr/bin/nmcli device set wlan0 managed no 2>/dev/null || true
+}
+
+remember_wifi_identity() {
+    if test ! -e /sys/class/net/wlan0/phy80211; then
+        return
+    fi
+    phy=$(/usr/bin/basename "$(/usr/bin/readlink /sys/class/net/wlan0/phy80211)")
+    mac=$(/bin/cat /sys/class/net/wlan0/address)
+    /bin/mkdir -p "$STATE_DIR"
+    /usr/bin/printf '%s\n' "$phy" >"$PHY_STATE"
+    /usr/bin/printf '%s\n' "$mac" >"$MAC_STATE"
+}
+
+restore_managed_interface() {
+    if test -e /sys/class/net/wlan0; then
+        /usr/bin/iw dev wlan0 set type managed
+        return
+    fi
+    test -s "$PHY_STATE"
+    test -s "$MAC_STATE"
+    phy=$(/bin/cat "$PHY_STATE")
+    mac=$(/bin/cat "$MAC_STATE")
+    test -e "/sys/class/ieee80211/$phy"
+    /usr/bin/iw phy "$phy" interface add wlan0 type managed addr "$mac"
+}
+
+start_ap() {
+    config=$1
+    expected_width=$2
+    take_network_manager_ownership
+    remember_wifi_identity
+    stop_radio_services
+    restore_managed_interface
+    /usr/bin/ip link set wlan0 up
+    /bin/rm -rf "$CTRL_DIR"
+    /bin/mkdir -m 0750 "$CTRL_DIR"
+    /bin/chown root:network "$CTRL_DIR"
+    "$HOSTAPD" -B -P "$HOSTAPD_PID" "$config"
+    attempts=0
+    while test "$attempts" -lt 50; do
+        if /usr/bin/iw dev wlan0 info 2>/dev/null \
+            | /usr/bin/grep -Fq "width: $expected_width MHz"
+        then
+            break
+        fi
+        attempts=$((attempts + 1))
+        /bin/sleep 0.1
+    done
+    if test "$attempts" -eq 50; then
+        echo "open-radio-net: AP did not enter the required $expected_width MHz channel width" >&2
+        if test "$expected_width" -eq 40; then
+            echo "open-radio-net: HT40 may have been rejected by 20/40 BSS coexistence; do not qualify this run as HT40" >&2
+        fi
+        /usr/bin/iw dev wlan0 info >&2 2>/dev/null || true
+        stop_radio_services
+        exit 1
+    fi
+    /usr/bin/ip address add 10.42.0.1/24 dev wlan0
+    /usr/bin/dnsmasq \
+        --conf-file=/dev/null \
+        --interface=wlan0 \
+        --bind-interfaces \
+        --dhcp-range=10.42.0.10,10.42.0.254,255.255.255.0,1h \
+        --pid-file="$DNSMASQ_PID"
+}
+
+start_monitor() {
+    frequency=$1
+    take_network_manager_ownership
+    remember_wifi_identity
+    stop_radio_services
+    phy=$(/bin/cat "$PHY_STATE")
+    mac=$(/bin/cat "$MAC_STATE")
+    # iwlwifi kept a firmware channel context owned by the managed wdev even
+    # after changing wlan0's type. That made both DOWN-before-frequency and
+    # UP-before-frequency sequences fail with EBUSY. Destroy the managed wdev
+    # and create a genuine standalone monitor wdev instead. PHY/MAC identity
+    # is retained in root-owned /run so `managed` can always recreate wlan0.
+    /usr/bin/iw dev wlan0 del
+    /usr/bin/iw phy "$phy" interface add mon0 type monitor addr "$mac"
+    # The standalone iwlwifi wdev acquires its firmware channel context when
+    # it becomes UP. Unlike a type-converted managed wdev, frequency selection
+    # after this transition is no longer rejected as busy.
+    /usr/bin/ip link set mon0 up
+    /usr/bin/iw dev mon0 set freq "$frequency" HT20
+}
+
+restore_managed() {
+    take_network_manager_ownership
+    remember_wifi_identity
+    stop_radio_services
+    restore_managed_interface
+    /usr/bin/nmcli device set wlan0 managed yes
+}
+
+case "$1" in
+    start-ht40)
+        start_ap /etc/open-radio/hostapd-ht40.conf 40
+        ;;
+    start-he20)
+        start_ap /etc/open-radio/hostapd-he20.conf 20
+        ;;
+    monitor)
+        # Compatibility mode: retain an associated/AP wlan0 and add a monitor
+        # view on its existing channel.
+        /usr/bin/iw dev mon0 del 2>/dev/null || true
+        phy=$(/usr/bin/basename "$(/usr/bin/readlink /sys/class/net/wlan0/phy80211)")
+        test -n "$phy"
+        /usr/bin/iw phy "$phy" interface add mon0 type monitor
+        /usr/bin/ip link set mon0 up
+        ;;
+    monitor-1)
+        start_monitor 2412
+        ;;
+    monitor-6)
+        start_monitor 2437
+        ;;
+    monitor-11)
+        start_monitor 2462
+        ;;
+    managed)
+        restore_managed
+        ;;
+    stop)
+        stop_radio_services
+        ;;
+    status)
+        /usr/bin/iw dev
+        /usr/bin/ip -brief address show wlan0 2>/dev/null || true
+        /usr/bin/ip -brief address show mon0 2>/dev/null || true
+        ;;
+    usb-reset)
+        /usr/bin/usbreset 303a:1001
+        ;;
+    kernel-log)
+        /usr/bin/journalctl --dmesg --no-pager --lines=300
+        ;;
+    *)
+        usage
+        ;;
+esac

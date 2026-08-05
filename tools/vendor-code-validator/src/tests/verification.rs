@@ -30,7 +30,7 @@ fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/baselines/phy.evidence");
+    let path = root.join("verification/vendor/targets/esp32s31/baselines/phy.evidence");
     let expected = load_evidence_baseline(&path).unwrap();
     assert_eq!(expected.len(), 104);
     assert!(check_evidence_baseline(&expected, &expected));
@@ -53,9 +53,10 @@ fn profile_evidence_is_bound_to_scenario_contents() {
         .ancestors()
         .nth(2)
         .expect("validator facade remains under tools");
-    let profiles =
-        profiles::load(&root.join("validation/esp32s31/profiles/compiled-equivalence.profile"))
-            .unwrap();
+    let profiles = profiles::load(
+        &root.join("verification/vendor/targets/esp32s31/profiles/compiled-equivalence.profile"),
+    )
+    .unwrap();
     let mut modified = profiles[0].clone();
     let original = profile_evidence(&modified);
     modified.scenarios[0].scenario.max_steps =
@@ -93,7 +94,7 @@ fn semantic_evidence_is_bound_to_validator_sources() {
     assert_ne!(original, weakened);
     assert_ne!(original, other_contract);
     assert!(
-        semantic_contract_evidence("esp32s31-phy-v1", "esp32s31-channel")
+        semantic_contract_evidence("esp32s31-radio-v1", "esp32s31-channel")
             .starts_with("composition-state-scenario/esp32s31-channel/sha256:")
     );
 }
@@ -148,7 +149,8 @@ fn verification_json_report_contains_reproducible_inputs() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let target = TargetSpec::load(&root.join("validation/esp32s31/target.spec")).unwrap();
+    let target =
+        TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.spec")).unwrap();
     let path = env::temp_dir().join(format!(
         "vendor-code-validator-report-{}.json",
         std::process::id()

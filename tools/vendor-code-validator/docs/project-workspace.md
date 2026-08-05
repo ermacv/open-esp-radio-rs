@@ -38,7 +38,7 @@ normally omit it and use an untracked override:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -70,7 +70,7 @@ Run the doctor before a long analysis:
 
 ```console
 cargo vendor-code-validator project doctor \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -156,7 +156,7 @@ the primary source of address classification.
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report generated/findings/mmio.json
 ```

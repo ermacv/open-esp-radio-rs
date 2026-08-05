@@ -12,9 +12,9 @@ pub mod wifi {
     pub use open_esp_radio_wpa2 as wpa2;
 }
 
-#[cfg(any(feature = "integration-embassy-net", feature = "esp32s31-wifi-embassy"))]
-pub mod integration {
-    #[cfg(feature = "integration-embassy-net")]
+#[cfg(any(feature = "adapter-embassy-net", feature = "esp32s31-wifi-embassy"))]
+pub mod adapters {
+    #[cfg(feature = "adapter-embassy-net")]
     pub mod network {
         pub use open_esp_radio_embassy_net as embassy_net;
     }
@@ -23,6 +23,13 @@ pub mod integration {
     pub mod esp32s31 {
         pub use open_esp_radio_esp32s31_wifi_embassy as wifi_embassy;
     }
+}
+
+/// Compatibility exports for the former adapter namespace.
+#[cfg(any(feature = "adapter-embassy-net", feature = "esp32s31-wifi-embassy"))]
+#[doc(hidden)]
+pub mod integration {
+    pub use crate::adapters::*;
 }
 
 #[cfg(feature = "esp32s31")]

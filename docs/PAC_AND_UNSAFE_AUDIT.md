@@ -38,7 +38,7 @@ ownership. LMAC and runtime/network composition receive only typed leases.
 | generated `esp32s31/pac` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
 | `driver/dma` | pinned TX/RX storage behind `UnsafeCell`, state-specific leases and stable-address capability construction | the atomic state machine admits exactly one owner; a live radio lease retains a non-moving, non-aliased allocation |
 | `esp32s31/wifi/dma` | volatile RX buffer ownership and target linker placement for qualified hot code | completed/recycle tokens follow descriptor ownership; `.rwtext.*` maps to aligned executable internal SRAM |
-| `integration/esp32s31/embassy-runtime` | executor polling, software-interrupt adoption and exported Embassy ABI/linker symbols | application supplies the unique interrupt/timer resources; exported names and sections match the board runtime/linker contract |
+| `adapters/esp32s31/embassy-runtime` | executor polling, software-interrupt adoption and exported Embassy ABI/linker symbols | application supplies the unique interrupt/timer resources; exported names and sections match the board runtime/linker contract |
 
 Rust 2024 also requires `unsafe(...)` around attributes such as
 `link_section`. Those attributes control target placement but are not pointer

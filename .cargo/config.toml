@@ -1,7 +1,5 @@
 [alias]
 pac-gen = "run --quiet -p open-esp-radio-pac-gen --"
 hil = "run --quiet -p open-esp-radio-hil-runner --"
-capability-ledger = "run --quiet -p open-esp-radio-capability-ledger --"
+qualification = "run --quiet -p open-esp-radio-qualification-check --"
 vendor-code-validator = "run --quiet -p open-radio-vendor-code-validator --"
-# Transitional compatibility alias; new documentation uses vendor-code-validator.
-phy-trace = "run --quiet -p open-radio-vendor-code-validator --"

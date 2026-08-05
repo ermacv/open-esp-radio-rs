@@ -42,7 +42,7 @@ use open_esp_radio::{
             tx::TxSlot,
         },
     },
-    integration::esp32s31::wifi_embassy::{
+    adapters::esp32s31::wifi_embassy::{
         control_tx::Esp32s31ControlTx,
         phy_delay::EmbassyEsp32s31PhyDelay,
         preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
@@ -118,7 +118,7 @@ type ControlTx = Esp32s31ControlTx<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    open_esp_radio::integration::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
+    open_esp_radio::adapters::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = Esp32s31StaTxEpoch<ControlTx>;
@@ -993,7 +993,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         tx_slot,
         phy.tx_target_power_profile(),
         tx_entropy as fn() -> u32,
-        open_esp_radio::integration::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
+        open_esp_radio::adapters::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
         ControlTxConfig {
             unicast_attempt_limit: 4,
             completion_timeout_us: TX_COMPLETION_TIMEOUT_US,

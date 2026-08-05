@@ -7,20 +7,20 @@ missing probes as uncovered work:
 
 ```console
 cargo vendor-code-validator verify source \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --rust-artifact \
-    hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
-open-esp-radio-hil-esp32s31-trace-probes-elf
+    target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/\
+open-esp-radio-verification-esp32s31-probes-elf
 ```
 
 Generate the authoritative combined report for both vendor sources:
 
 ```console
-# First copy validation/esp32s31/run.spec.example to an untracked local file
+# First copy verification/vendor/targets/esp32s31/run.spec.example to an untracked local file
 # and replace its placeholder paths with authenticated inputs.
 cargo vendor-code-validator verify inventory \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --run-spec /path/to/local-esp32s31.run \
   --gate regression --match-floor 104 \
   --json-report oracle-regression.json

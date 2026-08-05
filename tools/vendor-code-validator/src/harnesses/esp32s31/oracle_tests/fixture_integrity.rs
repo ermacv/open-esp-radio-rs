@@ -205,7 +205,7 @@ fn generated_reference_survives_compile_and_reextract_for_selected_target() {
     let vendor = extract(&input, &svd).unwrap();
     let proof = generated_reference::generate_compile_and_prove_exact_mmio_leaf(
         &svd,
-        "esp32s31-phy-v1",
+        "esp32s31-radio-v1",
         "riscv32imafc-unknown-none-elf",
         &input,
         &[],

@@ -43,7 +43,7 @@ fn main() -> ! {
         peripherals.I2C_ANA_MST,
     );
 
-    let executor = EXECUTOR.init(Executor::new(software_interrupts.software_interrupt0));
+    let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
     executor.run(|spawner| {
         let task = station_task(spawner, radio, trng, trng_source)
             .expect("station task storage must be available once");

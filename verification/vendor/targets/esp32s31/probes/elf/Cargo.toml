@@ -1,0 +1,15 @@
+[package]
+name = "open-esp-radio-verification-esp32s31-probes-elf"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+description = "Linked ESP32-S31 Rust probe image for compiled vendor verification"
+
+[dependencies]
+open-esp-radio-verification-esp32s31-probes = { path = "../library" }
+
+[lints.rust]
+unexpected_cfgs = "allow"

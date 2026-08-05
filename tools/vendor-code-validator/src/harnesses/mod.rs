@@ -9,19 +9,19 @@ pub(crate) use open_radio_vendor_validator_semantic::{
 };
 
 pub(crate) fn is_available(harness: &str) -> bool {
-    harness == "esp32s31-phy-v1"
+    harness == "esp32s31-radio-v1"
 }
 
 pub(crate) fn contracts(harness: &str) -> crate::Result<&'static crate::HarnessContractSpec> {
     match harness {
-        "esp32s31-phy-v1" => Ok(&esp32s31::CONTRACTS),
+        "esp32s31-radio-v1" => Ok(&esp32s31::CONTRACTS),
         _ => Err(format!("unavailable platform harness {harness:?}").into()),
     }
 }
 
 pub(crate) fn riscv(harness: &str) -> crate::Result<&'static crate::RiscvHarnessSpec> {
     match harness {
-        "esp32s31-phy-v1" => Ok(&esp32s31::RISCV_HARNESS),
+        "esp32s31-radio-v1" => Ok(&esp32s31::RISCV_HARNESS),
         _ => Err(format!("harness {harness:?} has no RISC-V adapter").into()),
     }
 }
@@ -53,7 +53,7 @@ pub(crate) fn qualify_driver_adapter(
     request: &DriverAdapterRequest<'_>,
 ) -> crate::Result<Option<DriverAdapterQualification>> {
     match harness {
-        "esp32s31-phy-v1" => esp32s31::qualify_driver_adapter(request),
+        "esp32s31-radio-v1" => esp32s31::qualify_driver_adapter(request),
         _ => Err(format!("unavailable platform harness {harness:?}").into()),
     }
 }
@@ -63,7 +63,7 @@ pub(crate) fn qualify_semantic_contract(
     request: &SemanticContractRequest<'_>,
 ) -> crate::Result<Option<bool>> {
     match harness {
-        "esp32s31-phy-v1" => esp32s31::qualify_semantic_contract(request),
+        "esp32s31-radio-v1" => esp32s31::qualify_semantic_contract(request),
         _ => Err(format!("unavailable platform harness {harness:?}").into()),
     }
 }
@@ -73,7 +73,7 @@ pub(crate) fn driver_adapter_evidence_sources(
     id: &str,
 ) -> Option<DriverAdapterEvidenceSources> {
     match harness {
-        "esp32s31-phy-v1" => esp32s31::driver_adapter_evidence_sources(id),
+        "esp32s31-radio-v1" => esp32s31::driver_adapter_evidence_sources(id),
         _ => None,
     }
 }
@@ -83,7 +83,7 @@ pub(crate) fn semantic_contract_evidence_sources(
     id: &str,
 ) -> Option<SemanticContractEvidenceSources> {
     match harness {
-        "esp32s31-phy-v1" => esp32s31::semantic_contract_evidence_sources(id),
+        "esp32s31-radio-v1" => esp32s31::semantic_contract_evidence_sources(id),
         _ => None,
     }
 }
@@ -95,7 +95,7 @@ pub(crate) fn qualify_named_contract(
     vendor_artifact: &std::path::Path,
     vendor_companion: &std::path::Path,
 ) -> crate::Result<bool> {
-    if harness != "esp32s31-phy-v1" {
+    if harness != "esp32s31-radio-v1" {
         return Err(format!("unavailable platform harness {harness:?}").into());
     }
     match name {

@@ -38,4 +38,5 @@ test for any scope outside that rule; it must not be hidden in prose.
 The chip/protocol boundary is documented in
 [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), register provenance in
 [`docs/esp32s31-radio-register-provenance.md`](../esp32s31-radio-register-provenance.md),
-and hardware results under [`docs/hil/`](../hil/README.md).
+and hardware results under the
+[ESP32-S31 qualification records](../../qualification/targets/esp32s31/records/README.md).

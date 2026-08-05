@@ -69,7 +69,7 @@ A checked target pack contains public validation knowledge:
 ```text
 schema 1
 target esp32s31-rev0
-harness esp32s31-phy-v1
+harness esp32s31-radio-v1
 architecture riscv32
 calling-convention riscv-ilp32
 endianness little

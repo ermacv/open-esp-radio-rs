@@ -9,13 +9,15 @@ provenance, not instructions.
 
 - [Architecture](ARCHITECTURE.md) — crate boundaries, protocol/chip scope,
   dependency direction and the separate test-harness layer.
+- [Naming and repository layout](NAMING_AND_LAYOUT.md) — canonical layer
+  vocabulary, target directory tree and migration rules.
 - [Public source policy](SOURCE_POLICY.md) — allowed and excluded inputs.
 - [PAC/MMIO/unsafe audit](PAC_AND_UNSAFE_AUDIT.md) — current register and
   memory-ownership boundary.
 
 ## Current status and backlog
 
-- [Capability progress ledger](../capabilities/README.md) — machine-checked
+- [Qualification progress ledger](../qualification/README.md) — machine-checked
   production ownership, host/vendor/HIL proof and async readiness for the ten
   supported STA capability roots.
 - [ESP32-S31 Wi-Fi feature status](ESP32S31_WIFI_FEATURE_STATUS.md) — canonical
@@ -40,8 +42,8 @@ change; do not append completed chronology to a live backlog.
   basis and confidence for recovered register descriptions.
 - [Debug oracles](esp32s31-debug-oracles.md) records comparison-only symbol and
   descriptor evidence, including evidence relevant to future radio protocols.
-- [`hil/`](hil/README.md) contains dated, immutable hardware qualification
-  records and their reproduction contracts.
+- [ESP32-S31 qualification records](../qualification/targets/esp32s31/records/README.md)
+  contain dated, immutable hardware results and their reproduction contracts.
 
 Historical paths inside an evidence record describe the tested revision. If a
 current path is needed, add a clearly marked note rather than rewriting the

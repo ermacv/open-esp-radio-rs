@@ -26,7 +26,7 @@ artifacts:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -34,7 +34,7 @@ Create a minimal overlay once:
 
 ```console
 cargo vendor-code-validator registers init-overlay \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 ```
 
 The command refuses to overwrite an existing overlay. Use `--output PATH` to
@@ -45,14 +45,14 @@ After editing, validate identities and provenance:
 
 ```console
 cargo vendor-code-validator registers validate \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 ```
 
 Finally export a merged SVD:
 
 ```console
 cargo vendor-code-validator registers export-svd \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --output generated/svd/vendor-radio.svd
 ```
 

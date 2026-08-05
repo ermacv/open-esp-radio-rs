@@ -3,9 +3,9 @@ members = [
     "hil/protocol",
     "driver/dma",
     "driver/radio",
-    "driver/integration/network/embassy-net",
-    "driver/integration/esp32s31/wifi-embassy",
-    "driver/integration/esp32s31/wifi-esp-hal",
+    "driver/adapters/network/embassy-net",
+    "driver/adapters/esp32s31/wifi-embassy",
+    "driver/adapters/esp32s31/wifi-esp-hal",
     "driver/wifi/sta",
     "driver/wifi/ieee80211",
     "driver/wifi/lmac",
@@ -17,8 +17,8 @@ members = [
     "driver/esp32s31/registers",
     "driver/esp32s31/phy",
     "driver/esp32s31/pac",
-    "tools/hil-runner",
-    "tools/capability-ledger",
+    "hil/host/runner",
+    "tools/qualification-check",
     "tools/pac-gen",
     "tools/vendor-code-validator",
     "tools/vendor-code-validator/crates/backend-riscv",
@@ -29,10 +29,11 @@ members = [
     "tools/vendor-code-validator/crates/semantic",
 ]
 exclude = [
-    "driver/integration/esp32s31/embassy-runtime",
+    "driver/adapters/esp32s31/embassy-runtime",
     "examples/esp32s31-station",
-    "hil/esp32s31",
-    "hil/vendor-oracle/esp32s31",
+    "hil/targets/esp32s31",
+    "verification/vendor/targets/esp32s31/oracle-firmware",
+    "verification/vendor/targets/esp32s31/probes",
 ]
 resolver = "3"
 

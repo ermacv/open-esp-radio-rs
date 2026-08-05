@@ -29,7 +29,7 @@ use open_esp_radio::{
             tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
         },
     },
-    integration::{
+    adapters::{
         esp32s31::wifi_embassy::{
             connected_runner::ConnectedRunner,
             connected_sta_port::{

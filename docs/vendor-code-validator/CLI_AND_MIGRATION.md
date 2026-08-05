@@ -55,7 +55,7 @@ boundaries, so the IR report makes no completeness claim.
    in the neutral model crate; verification reports remain in orchestration
    until their platform adapter callbacks are separated.
 7. Add the hierarchical CLI and run manifest, retain old command aliases for
-   one migration window, then remove `phy-trace`.
+   one migration window, then remove `phy-trace`. **Completed.**
 8. Add a synthetic second backend conformance fixture before claiming the
    core API is architecture-neutral. ARM Thumb is the preferred first proof;
    Xtensa follows once both required calling conventions are modeled.

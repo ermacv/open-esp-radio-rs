@@ -13,7 +13,7 @@ and harness-known external function-table calls:
 
 ```console
 cargo vendor-code-validator ir export \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_LIBPHY_ARCHIVE" \
   --symbol-prefix phy_ \
   --include-reachable \
@@ -37,7 +37,7 @@ inputs in one report. Multiple inputs must have stable source names:
 
 ```console
 cargo vendor-code-validator ir export \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --artifact libpp="$ESP32S31_LIBPP_ARCHIVE" \

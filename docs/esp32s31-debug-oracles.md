@@ -101,9 +101,9 @@ A-MPDU containment is separately protocol-validated from the PPDU format,
 because IEEE defines their S-MPDU as the sole MPDU in an A-MPDU; it is not
 misreported as another hardware field. A forced HT20/MCS7/SGI downlink observed the direct
 bit set for all 78,127 benchmark records with zero unavailable provenance.
-See the [S-MPDU qualification](hil/2026-08-04-esp32s31-rx-s-mpdu-metadata.md)
-and the [direct HT aggregation qualification](hil/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md).
-A separate [HE containment qualification](hil/2026-08-04-esp32s31-he-rx-ampdu-containment.md)
+See the [S-MPDU qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md)
+and the [direct HT aggregation qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md).
+A separate [HE containment qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md)
 proved 117,190 protocol-sourced true values with zero hardware or unavailable
 classification.
 

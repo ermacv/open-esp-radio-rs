@@ -21,14 +21,14 @@ driver/
 │       ├── dma/            audited DMA representation and chip placement
 │       ├── lmac/           safe Wi-Fi LMAC: IRQ, queues and TX/RX policy
 │       └── sta/            executor-independent S31 station composition
-└── integration/            reusable runtime and ecosystem adapters
+└── adapters/               reusable runtime and ecosystem adapters
 ```
 
 Dependencies point down this list of responsibilities:
 
 ```text
 application
-    -> facade / integration
+    -> facade / adapters
     -> portable Wi-Fi policy and chip Wi-Fi LMAC
     -> chip PHY and semantic hardware operations
     -> register transactions
@@ -106,14 +106,14 @@ peers of `wifi`. Shared RF power, clocks, calibration and radio arbitration
 may be extracted only from concrete common behaviour. Wi-Fi, BLE and
 IEEE 802.15.4 timing/MAC semantics remain separate.
 
-`hil/`, `validation/` and `tools/` may depend on this tree. The driver must not
+`hil/`, `verification/` and `tools/` may depend on this tree. The driver must not
 depend on them. In particular, HIL UART commands, raw telemetry strings,
 benchmark limits, board credentials, vendor artifacts and artifact hashes are
 not driver API.
 
 ## Next extraction order
 
-The remaining large `integration/esp32s31/wifi-embassy` crate is not yet a
+The remaining large `adapters/esp32s31/wifi-embassy` crate is not yet a
 clean adapter. Continue with dependency cuts, not bulk file moves:
 
 1. split the large connected adapter files by mechanism: aggregation,
@@ -125,18 +125,18 @@ clean adapter. Continue with dependency cuts, not bulk file moves:
 3. add AP MLME as a peer of `wifi/sta`, and monitor as a non-blocking LMAC tap.
 
 The WPA2 deadline/key-publication runner now lives in portable `wifi/wpa2`.
-`integration/esp32s31/wifi-embassy` retains only the Embassy clock plus the
+`adapters/esp32s31/wifi-embassy` retains only the Embassy clock plus the
 concrete retained-RX and control-TX adapters; WPA2 replay, timeout and rollback
 semantics no longer acquire an executor dependency through their source path.
 
 Authentication/Association timing and retry sequencing now live in portable
-`wifi/sta::join`; the integration crate contributes only its Embassy clock and
+`wifi/sta::join`; the Embassy adapter contributes only its clock and
 the concrete S31 RX/TX port. The complete S31 pre-connected attempt ordering,
 inputs and value-only report live in `esp32s31/wifi/sta::attempt`.
 
 The complete S31 scan ordering and cleanup contract now lives in
 `esp32s31/wifi/sta::scan`. Its dwell unit is executor-neutral; the Embassy
-integration supplies the one-millisecond timer plus concrete PHY, RX-DMA and
+the Embassy adapter supplies the one-millisecond timer plus concrete PHY, RX-DMA and
 probe-TX owners. Host tests of mandatory RX stop and owner return therefore no
 longer compile through the runtime adapter.
 The concrete adapter is now explicit rather than hidden behind aliases:
@@ -164,7 +164,7 @@ instead of defining privileged mock allocations.
 RX qualification now follows that boundary: `wifi-embassy` defines typed
 `RxPipelineObservation` events and an optional observer interface, while the
 atomic counters, IRQ correlation and report snapshots live only in
-`hil/esp32s31/telemetry`. Attaching no observer performs no diagnostic clock
+`hil/targets/esp32s31/telemetry`. Attaching no observer performs no diagnostic clock
 reads and keeps qualification policy out of the shipping driver graph.
 
 ESP32-C5 should be introduced as a peer backend before extracting any claimed

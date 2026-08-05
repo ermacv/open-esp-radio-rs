@@ -19,7 +19,7 @@ Then run:
 
 ```console
 cargo vendor-code-validator interfaces discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report generated/findings/interfaces.json
 ```

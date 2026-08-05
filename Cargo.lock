@@ -1108,10 +1108,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-capability-ledger"
-version = "0.1.0"
-
-[[package]]
 name = "open-esp-radio-dma"
 version = "0.1.0"
 
@@ -1242,7 +1238,6 @@ dependencies = [
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
  "serialport",
- "sha2",
  "zeroize",
 ]
 
@@ -1258,6 +1253,10 @@ dependencies = [
  "svd-parser",
  "svd2rust",
 ]
+
+[[package]]
+name = "open-esp-radio-qualification-check"
+version = "0.1.0"
 
 [[package]]
 name = "open-esp-radio-wifi-lmac"

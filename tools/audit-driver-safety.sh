@@ -11,7 +11,7 @@ generated_unsafe_leaf="driver/esp32s31/pac"
 audited_unsafe_leaves=(
     "driver/dma"
     "driver/esp32s31/wifi/dma"
-    "driver/integration/esp32s31/embassy-runtime"
+    "driver/adapters/esp32s31/embassy-runtime"
 )
 
 is_audited_unsafe_leaf() {

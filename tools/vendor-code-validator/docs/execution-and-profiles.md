@@ -5,8 +5,9 @@
 Build the Rust comparison probes first:
 
 ```console
-cargo build --manifest-path hil/esp32s31/Cargo.toml \
-  -p open-esp-radio-hil-esp32s31-trace-probes-elf \
+CARGO_TARGET_DIR="$PWD/target/verification/esp32s31-probes" \
+cargo build --manifest-path verification/vendor/targets/esp32s31/probes/Cargo.toml \
+  -p open-esp-radio-verification-esp32s31-probes-elf \
   --target riscv32imafc-unknown-none-elf --release
 ```
 
@@ -14,7 +15,7 @@ cargo build --manifest-path hil/esp32s31/Cargo.toml \
 are relocatable. Build the isolated whole-archive oracle ELF as well:
 
 ```console
-cargo build --manifest-path hil/vendor-oracle/esp32s31/Cargo.toml \
+cargo build --manifest-path verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml \
   -p open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --target riscv32imafc-unknown-none-elf --release
 ```
@@ -38,7 +39,7 @@ scenario:
 
 ```console
 cargo vendor-code-validator execute run \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_ROM_ELF" \
   --symbol phy_freq_band_reg_set --arg 1 \
   --mmio 0x20107030=0xffffffff --mmio 0x20107ce4=0
@@ -94,12 +95,12 @@ Compare linked vendor and Rust implementations under the same scenarios:
 
 ```console
 cargo vendor-code-validator execute compare \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --vendor-symbol phy_freq_band_reg_set \
   --rust-artifact \
-    hil/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
-open-esp-radio-hil-esp32s31-trace-probes-elf \
+    target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/\
+open-esp-radio-verification-esp32s31-probes-elf \
   --rust-symbol open_phy_trace_freq_band_reg_set \
   --case disabled --arg 0 \
     --mmio 0x20107030=0xffffffff --mmio 0x20107ce4=0xffffffff \
@@ -201,16 +202,16 @@ loop:
 
 ```console
 cargo vendor-code-validator verify contract channel \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --vendor-artifact \
-    hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
+    verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
 cargo vendor-code-validator verify contract rf-init \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --vendor-artifact \
-    hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
+    verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 ```

@@ -4,7 +4,7 @@ With a project memory map, SVD and explicit ranges are optional:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report /tmp/radio-mmio.json
 ```
@@ -26,7 +26,7 @@ SVD register name:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --range phy=0x20100000..0x20110000 \

@@ -6,7 +6,7 @@ recovery, MMIO analysis, or platform semantics are applied.
 
 ```console
 cargo vendor-code-validator symbols inventory \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report generated/facts/symbols.json
 ```

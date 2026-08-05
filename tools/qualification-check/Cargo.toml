@@ -1,0 +1,12 @@
+[package]
+name = "open-esp-radio-qualification-check"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Fail-closed qualification manifest checker for the open radio driver"
+
+[lints]
+workspace = true

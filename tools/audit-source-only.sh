@@ -98,7 +98,7 @@ for package in "${production_packages[@]}"; do
         --edges normal,build \
         --prefix none >"$audit_dir/dependencies-$package"
     if rg \
-        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|hil-(protocol|.*telemetry)|.*trace-probes|.*vendor-oracle))' \
+        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
         "$audit_dir/dependencies-$package"
     then
         echo "qualification dependency survived in production package $package" >&2
@@ -132,7 +132,7 @@ fi
 
 # Production documentation names stable evidence IDs and public symbols. Local
 # oracle paths, artifact digests and paths into an earlier private firmware
-# tree are qualification policy and must stay under validation/HIL.
+# tree are qualification policy and must stay under verification/HIL.
 if rg -n '(?i)(_oracles/|sha-?256|[0-9a-f]{64}|esp32s31_rust/|firmware/esp32s31/)' \
     driver --glob '*.rs' --glob '*.md' --glob '*.toml'
 then
@@ -154,7 +154,7 @@ test -f "$runtime_elf"
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
 cargo vendor-code-validator image audit-targets \
-    --target-spec validation/esp32s31/target.spec \
+    --target-spec verification/vendor/targets/esp32s31/target.spec \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \
     --forbid 'esp32s31-eco0-radio-body=0x2f823c12..0x2f83e6d0'

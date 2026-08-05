@@ -15,7 +15,7 @@ Repeated analysis should use a project manifest:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -25,7 +25,7 @@ Direct target selection remains available for compatibility:
 
 ```console
 cargo vendor-code-validator <workflow> <command> \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   ...
 ```
 
@@ -64,7 +64,7 @@ Start by recording artifact and linkage facts:
 
 ```console
 cargo vendor-code-validator symbols inventory \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report /tmp/esp32s31-symbols.json
 ```
@@ -73,7 +73,7 @@ Then find structurally recoverable callback/function-table use:
 
 ```console
 cargo vendor-code-validator interfaces discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run \
   --json-report /tmp/esp32s31-interfaces.json
 ```
@@ -87,17 +87,17 @@ Initialize and validate the separate reviewed layer after configuring
 
 ```console
 cargo vendor-code-validator interfaces init-pack \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 
 cargo vendor-code-validator interfaces validate \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 ```
 
 Then build an address inventory:
 
 ```console
 cargo vendor-code-validator mmio discover \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --range phy=0x20100000..0x20110000 \
@@ -108,7 +108,7 @@ Then export the functions and reachable internal callees:
 
 ```console
 cargo vendor-code-validator ir export \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --symbol-prefix phy_ \
   --include-reachable \
@@ -129,7 +129,7 @@ statically resolved `JAL`/`JALR` targets inside forbidden half-open ranges:
 
 ```console
 cargo vendor-code-validator image audit-targets \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact target/path/to/runtime-elf \
   --forbid 'radio-api=0x2f800bf0..0x2f8016bc' \
   --forbid 'radio-body=0x2f823c12..0x2f83e6d0'

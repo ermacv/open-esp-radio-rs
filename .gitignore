@@ -1,7 +1,6 @@
 /target/
+**/target/
 **/*.swp
 **/*.swo
 /_oracles/
-hil/esp32s31/target
 /oracle-regression.json
-examples/**/target

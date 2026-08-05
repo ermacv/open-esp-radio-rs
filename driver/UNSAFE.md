@@ -11,7 +11,7 @@ Four implementation foundations are exceptions:
   pinned storage;
 - `esp32s31/wifi/dma` owns the chip descriptor layout, live RX ring and TX
   publication tokens;
-- `integration/esp32s31/embassy-runtime` owns the linker sections, exported
+- `adapters/esp32s31/embassy-runtime` owns the linker sections, exported
   Embassy ABI symbols and reserved software interrupt used by the executor.
 
 The three handwritten foundations use `#![deny(unsafe_code)]`. They may reopen

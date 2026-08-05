@@ -4,7 +4,9 @@
 > 2026-07-31 and is not the current implementation backlog. Paths, completion
 > claims and next steps below describe different points within that transfer.
 > See [`../../INTEGRATION_BACKLOG.md`](../../INTEGRATION_BACKLOG.md) for current
-> work and [`../../hil/README.md`](../../hil/README.md) for immutable HIL records.
+> work and the
+> [ESP32-S31 record set](../../../qualification/targets/esp32s31/records/README.md)
+> for immutable HIL records.
 
 Audit date: 2026-07-31.
 

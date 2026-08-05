@@ -34,7 +34,7 @@ Generate facts from local vendor inputs:
 
 ```console
 cargo vendor-code-validator interfaces discover \
-  --project validation/esp32s31/vendor-validator.toml \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -42,7 +42,7 @@ Create a pack once:
 
 ```console
 cargo vendor-code-validator interfaces init-pack \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 ```
 
 `init-pack` creates exact, `status = "unreviewed"` anchors and slots for the
@@ -58,7 +58,7 @@ After editing, validate the complete workspace:
 
 ```console
 cargo vendor-code-validator interfaces validate \
-  --project validation/esp32s31/vendor-validator.toml
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
 ```
 
 The command prints every resolved reviewed binding with its layout version,

@@ -1,6 +1,6 @@
 # Integration backlog
 
-Verified against `hil/esp32s31/runtime/src/radio_hil.rs` on 2026-08-04.
+Verified against `hil/targets/esp32s31/runtime/src/radio_hil.rs` on 2026-08-04.
 
 Composition roots own board clocks and boot, memory placement, the executor,
 credentials and concrete `embassy-net` services. The normal root is
@@ -401,7 +401,7 @@ The first reconnect seam is now production-owned:
   implementation and `RadioHilColdScanOwner` are now deleted. Runtime CRC32
   `d4b41d11` completed the initial scan with 13 successful Probe Requests,
   then three controlled reconnect cycles; see the
-  [shared scan-port qualification](hil/2026-08-04-esp32s31-cold-scan-port.md).
+  [shared scan-port qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-cold-scan-port.md).
   The controlled reconnect fixture also
   assembles the persistent PHY, production running RX/TX sub-owners and its
   scan table into a concrete running `Esp32s31StaScanPort`. The same backend
@@ -427,7 +427,7 @@ The first reconnect seam is now production-owned:
   former `RadioHilStaJoinBackend` and auth/association TX helpers are removed.
   Runtime CRC32 `080db958` subsequently completed three controlled reconnect
   cycles through this port; see the
-  [join-port qualification](hil/2026-08-04-esp32s31-sta-join-port.md).
+  [join-port qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-sta-join-port.md).
   WPA2 now follows the same production boundary. `Esp32s31Wpa2HandshakePort`
   owns retained-RX EAPOL extraction/restart plus M2, while
   `Esp32s31Wpa2KeyPort` owns atomic PTK/GTK installation, M4 and rollback. HIL
@@ -436,7 +436,7 @@ The first reconnect seam is now production-owned:
   protected traffic already belongs to the production connected runner.
   Runtime CRC32 `9e080a3b` completed three cycles without that artificial
   gate; see the
-  [WPA2-port qualification](hil/2026-08-04-esp32s31-wpa2-port.md).
+  [WPA2-port qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-wpa2-port.md).
   Association-time peer programming now follows the same boundary.
   `Esp32s31StaPeerPort` installs scan-time HT/WMM/HE policy, consumes an opaque
   prepared token plus the successful Association Response, programs HE
@@ -445,7 +445,7 @@ The first reconnect seam is now production-owned:
   owner; the duplicate policy/programming blocks and private HIL connected-link
   type are gone. Runtime CRC32 `bf8e8ead` completed three cycles with a stable
   descriptor base and empty returned queues; see the
-  [peer-port qualification](hil/2026-08-04-esp32s31-sta-peer-port.md).
+  [peer-port qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-sta-peer-port.md).
   `RadioHilStaLifecycleOwner::RunningScan` is now a distinct outer owner:
   generation 1 entered it only with `refresh_candidate=1`, and the successful
   transaction produced the separate `Reconnect` owner.
@@ -458,14 +458,14 @@ distinct `Stopped` outcome. HIL protocol v7 advertises this capability and
 `cargo hil station reconnect` requests it without calling the stop a beacon
 loss. The 2026-08-04 ESP32-S31 run completed the first teardown, a second
 Association, WPA2 M1--M4 and entry into the second connected epoch; see the
-[qualification report](hil/2026-08-04-esp32s31-station-reconnect.md).
+[qualification report](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-reconnect.md).
 
 Controlled reconnect deliberately remains distinct from automatic peer-loss
 recovery. The separate `cargo hil station ap-loss` cell now removes the local
 HE20 AP, observes protocol-v6 `BeaconLoss`, returns the complete connected
 epoch, performs a multi-channel rescan and feeds the restored candidate
 through fresh Authentication, Association and WPA2 into generation one. See
-the [AP-loss qualification](hil/2026-08-04-esp32s31-station-ap-loss.md).
+the [AP-loss qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-loss.md).
 The production `Esp32s31StaAttempt` and application-facing
 `Esp32s31Station` facade now own the shared pre-connected transaction and
 outer lifecycle. The prolonged-absence cell closes the bounded no-peer policy:
@@ -474,7 +474,7 @@ protocol v7 observed `BeaconLoss`, three exact `NoCandidate` attempts and
 owner with an empty queue and zero Probe TX failures. Lifecycle publication
 now waits until the exact typed edge has been serialized, rather than merely
 admitted to the UART queue. See the
-[AP-absence qualification](hil/2026-08-04-esp32s31-station-ap-absence.md).
+[AP-absence qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-absence.md).
 The next slices, in order, are:
 
 1. add the complementary deterministic RX failure cell without conflating a
@@ -483,14 +483,14 @@ The next slices, in order, are:
    Aggregation bit is qualified on an actual HT20/MCS7/SGI downlink:
    78,127 benchmark observations were A-MPDU with zero unavailable
    provenance; see the
-   [HT RX aggregation record](hil/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md). The prior
+   [HT RX aggregation record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md). The prior
    tentative inversion of `cur_single_mpdu` was rejected: Espressif defines it
    as IEEE S-MPDU status, and real HE20 data, ARP and Beacon management frames
    all carried a clear value. Its exact propagation is now board-qualified,
    while HE PPDU format now supplies `ProtocolValidated(true)` containment
    rather than pretending to be another hardware field; see the
-   [S-MPDU record](hil/2026-08-04-esp32s31-rx-s-mpdu-metadata.md) and
-   [HE containment record](hil/2026-08-04-esp32s31-he-rx-ampdu-containment.md);
+   [S-MPDU record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md) and
+   [HE containment record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md);
 2. split the remaining HIL facade by fixture responsibility (station
    qualification, connected traffic, diagnostics and board bootstrap) while
    keeping only scenario policy, task placement, static storage and reporting.
@@ -502,7 +502,7 @@ or aggregate `require_reset` path; typed evidence is published only after the
 runner, executor tasks and RX DMA have returned while the TX owner remains
 quarantined. The host then cold-resets the same image and proves a fresh
 network-ready epoch. See the
-[TX fault qualification](hil/2026-08-04-esp32s31-station-tx-fault.md). This
+[TX fault qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-tx-fault.md). This
 does not close the separate in-place platform reset or RX fault gaps.
 
 The RX failure classes are no longer conceptually merged. Host coverage now

@@ -6,7 +6,8 @@ fn checked_in_profile_parses() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/profiles/compiled-equivalence.profile");
+    let path =
+        root.join("verification/vendor/targets/esp32s31/profiles/compiled-equivalence.profile");
     let profiles = load(&path).unwrap();
     assert_eq!(profiles.len(), 41);
     assert!(profiles.iter().all(|profile| !profile.scenarios.is_empty()));
@@ -34,7 +35,7 @@ fn libpp_tx_dma_profiles_cover_all_four_queue_selectors() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/profiles/libpp-tx-dma.profile");
+    let path = root.join("verification/vendor/targets/esp32s31/profiles/libpp-tx-dma.profile");
     let profiles = load(&path).unwrap();
 
     assert_eq!(profiles.len(), 4);
@@ -69,7 +70,8 @@ fn libpp_sta_tsf_wakeup_profile_closes_the_bool_domain() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/profiles/libpp-sta-tsf-wakeup.profile");
+    let path =
+        root.join("verification/vendor/targets/esp32s31/profiles/libpp-sta-tsf-wakeup.profile");
     let profiles = load(&path).unwrap();
 
     assert_eq!(profiles.len(), 1);
@@ -95,7 +97,8 @@ fn rom_sta_tsf_snapshot_profile_closes_both_pointer_branches() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/profiles/rom-sta-tsf-snapshot.profile");
+    let path =
+        root.join("verification/vendor/targets/esp32s31/profiles/rom-sta-tsf-snapshot.profile");
     let profiles = load(&path).unwrap();
 
     assert_eq!(profiles.len(), 1);

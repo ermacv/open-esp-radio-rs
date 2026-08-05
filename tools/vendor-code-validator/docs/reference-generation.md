@@ -21,17 +21,17 @@ trace engine:
 
 ```console
 cargo vendor-code-validator inspect analyze \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_ROM_ELF"
 
 cargo vendor-code-validator inspect analyze \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_LIBPHY_ARCHIVE" --symbol-prefix ''
 
 cargo vendor-code-validator inspect analyze \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact \
-    hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/\
+    verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --companion "$ESP32S31_ROM_ELF" \
   --entry-contract esp32s31-phy-registered \
@@ -67,7 +67,7 @@ Generate a safe, executable Rust reference for a supported symbol:
 
 ```console
 cargo vendor-code-validator reference generate \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_ROM_ELF" \
   --symbol phy_disable_agc \
   --output /tmp/phy_disable_agc_reference.rs
@@ -323,7 +323,7 @@ over the `_rand` callback at offset `0xbc`:
 
 ```console
 cargo vendor-code-validator reference generate \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_LIBPP_ARCHIVE" \
   --member hal_mac.o \
   --symbol hal_random \
@@ -347,9 +347,9 @@ inventory as a machine-readable work queue:
 
 ```console
 cargo vendor-code-validator reference generate-batch \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_ROM_ELF" \
-  --companion hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+  --companion verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --symbol-prefix phy_ \
   --source-name rom \
   --entry-contract esp32s31-phy-registered \
@@ -371,7 +371,7 @@ bit; its enabled arm sets that bit and publishes the low 18 calibration bits:
 
 ```console
 cargo vendor-code-validator reference generate \
-  --target-spec validation/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.spec \
   --artifact "$ESP32S31_LIBPP_ARCHIVE" \
   --member hal_tsf.o \
   --symbol hal_timer_update_by_rtc \

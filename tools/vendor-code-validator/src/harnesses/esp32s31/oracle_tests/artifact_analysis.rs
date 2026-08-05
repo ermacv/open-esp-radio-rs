@@ -9,7 +9,7 @@ fn structural_polling_recognizes_real_rom_backedges() {
         .expect("validator facade remains under tools");
     let artifact = private_input("OPEN_ESP_RADIO_ESP32S31_ROM_ELF").unwrap_or_default();
     let companion = root.join(
-        "hil/vendor-oracle/esp32s31/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf",
+        "verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf",
     );
     if !artifact.exists() || !companion.exists() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");

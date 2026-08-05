@@ -20,7 +20,7 @@ The implementation is split by responsibility:
 - `verification` owns profiles, dispositions, evidence and comparisons;
 - `harnesses::esp32s31` is a thin registry facade over the two ESP32-S31
   harness crates;
-- `validation/esp32s31` owns the checked target/profile/disposition data;
+- `verification/vendor/targets/esp32s31` owns the checked target/profile/disposition data;
 - `cli` parses a typed top-level command and dispatches it to those services.
 
 The backend depends only on the neutral core/model crates. Chip-specific

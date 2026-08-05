@@ -43,8 +43,8 @@ changing dependencies would preserve the architectural problem.
 
 The first two boundary slices are complete:
 
-- the package and primary CLI are named `vendor-code-validator`; `phy-trace`
-  is only a compatibility alias;
+- the package and primary CLI are named `vendor-code-validator`; the obsolete
+  `phy-trace` compatibility alias has been removed;
 - commands have hierarchical workflow spellings while legacy flat spellings
   remain accepted;
 - every invocation loads an explicit target spec and validates the
@@ -54,7 +54,7 @@ The first two boundary slices are complete:
   putting those paths in the target pack or command history;
 - the ESP32-S31 target spec supplies SVD, profile, disposition and baseline
   defaults, substantially reducing repeated CLI arguments;
-- profiles, dispositions and baselines live under `validation/esp32s31`, not
+- profiles, dispositions and baselines live under `verification/vendor/targets/esp32s31`, not
   inside the tool;
 - artifact paths in private tests come only from explicit environment
   variables; validator source contains no `_oracles` path;
@@ -94,9 +94,9 @@ depends on the facade, production driver or a platform harness.
 
 ## Target layout
 
-The final user-facing command is named `vendor-code-validator`. During the
-migration the `phy-trace` command remains as a compatibility facade and emits
-the same results.
+The user-facing command is named `vendor-code-validator`. The earlier
+`phy-trace` compatibility facade has completed its migration window and is no
+longer part of the workspace command surface.
 
 ```text
 tools/vendor-code-validator/

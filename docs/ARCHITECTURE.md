@@ -1,7 +1,7 @@
 # Architecture
 
 The physical product boundary is [`driver/`](../driver/README.md). It separates
-chip-independent protocols from hardware ownership. `hil/`, `validation/` and
+chip-independent protocols from hardware ownership. `hil/`, `verification/` and
 `tools/` are consumers of the driver, never dependencies of it. Dependencies
 point toward lower-level capabilities; executor and board policy stay outside
 the core driver layers.
@@ -19,18 +19,18 @@ open-esp-radio (facade)
     │                       └──> registers ──> generated PAC
     └── phy ──> hal ───────────> registers ──> generated PAC
 
-Reusable integration
+Reusable adapters
 ├── embassy-net adapter ──> embassy-net-driver + embassy-sync
 ├── S31 Wi-Fi/Embassy   ──> adapter + S31 Wi-Fi LMAC/HAL/registers
 └── S31 Wi-Fi/esp-hal   ──> S31 Wi-Fi LMAC/PHY/HAL + esp-hal
 
 Production application
 └── examples/esp32s31-station
-    └──> facade + reusable integration + Embassy executor/net
+    └──> facade + reusable adapters + Embassy executor/net
 
 Test harness (HIL)
 └── board + clocks + PSRAM/flash + executor + embassy-net/smoltcp
-    ├──> facade + reusable integration
+    ├──> facade + reusable adapters
     └──> S31 telemetry observer implementations
 ```
 
@@ -48,13 +48,13 @@ Test harness (HIL)
 | `wifi/lmac` | Portable VIF/channel-context identity, capability profile and normalized TX/RX contracts | DMA, IRQ, chip registers or executor scheduling |
 | `wifi/sta` | Portable STA MLME, scan/reconnect, beacon-loss and power-save decisions | Chip registers, DMA, executor timers or AP policy |
 | `wpa2` | Portable WPA2-Personal state, transaction runners and key material | Radio hardware or an executor |
-| `integration/network/embassy-net` | Bounded `embassy-net-driver` ownership adapter | A concrete chip or full network stack |
-| `integration/esp32s31/wifi-embassy` | Wi-Fi DMA epochs/network leases, async TX and IRQ wakeups | Chip DMA memory representation, board startup or network policy |
-| `integration/esp32s31/wifi-esp-hal` | `esp-hal` singleton binding for the ESP32-S31 Wi-Fi backend | Board, PSRAM/flash or executor policy |
+| `adapters/network/embassy-net` | Bounded `embassy-net-driver` ownership adapter | A concrete chip or full network stack |
+| `adapters/esp32s31/wifi-embassy` | Wi-Fi DMA epochs/network leases, async TX and IRQ wakeups | Chip DMA memory representation, board startup or network policy |
+| `adapters/esp32s31/wifi-esp-hal` | `esp-hal` singleton binding for the ESP32-S31 Wi-Fi backend | Board, PSRAM/flash or executor policy |
 | `radio` | Public composition and re-exports | Board/bootstrap policy |
 | `examples/esp32s31-station` | Normal board allocation, executor, credentials and application network services | HIL commands, benchmark policy or reusable radio behavior |
-| `hil/esp32s31` | Test board clocks, boot, memory placement, executor, real `embassy-net`/smoltcp scenarios | Reusable radio implementation |
-| `hil/esp32s31/telemetry` | Atomic counters, IRQ correlation and qualification report snapshots for typed S31 observer events | Driver scheduling, ownership or protocol decisions |
+| `hil/targets/esp32s31` | Test board clocks, boot, memory placement, executor, real `embassy-net`/smoltcp scenarios | Reusable radio implementation |
+| `hil/targets/esp32s31/telemetry` | Atomic counters, IRQ correlation and qualification report snapshots for typed S31 observer events | Driver scheduling, ownership or protocol decisions |
 
 ## Wi-Fi split-MAC boundary
 
@@ -178,13 +178,13 @@ and is reusable by non-test firmware. The separate Wi-Fi/Embassy crate owns
 executor-specific radio composition. Neither adapter is a composition root.
 Normal firmware chooses board memory, tasks and network policy in
 `examples/esp32s31-station`; HIL chooses its own board placement, traffic and
-reporting policy under `hil/esp32s31`. Only the HIL root may own qualification
+reporting policy under `hil/targets/esp32s31`. Only the HIL target may own qualification
 commands, fault injection or benchmark telemetry.
 
 Observation follows the same dependency direction. Production integration
 defines typed events at semantic RX boundaries and accepts an optional
 object-safe observer. The concrete atomics, clock source, IRQ correlation and
-snapshot/delta format live in `hil/esp32s31/telemetry`. With no observer
+snapshot/delta format live in `hil/targets/esp32s31/telemetry`. With no observer
 attached, the driver does not read a diagnostic clock; the remaining cost is
 only the explicit optional branch at each observation site.
 
@@ -199,26 +199,26 @@ behavior.
 
 The facade features preserve those boundaries. `wifi` selects only portable
 802.11/WPA2 code, `esp32s31-wifi` adds the hardware Wi-Fi backend,
-`integration-embassy-net` adds only the generic network adapter, and
+`adapter-embassy-net` adds only the generic network adapter, and
 `esp32s31-wifi-embassy` opts into the complete S31 Wi-Fi/Embassy composition.
 
 The S31 STA TX boundary follows the same split. `esp32s31/wifi/sta::tx`
 defines entropy, calibrated-power and monotonic-time ports plus the resource
-bundle and finite pre-connected policy. The Embassy integration implements
+bundle and finite pre-connected policy. The Embassy adapter implements
 only the time port in `tx_time`; board code supplies entropy and the owned PHY
 calibration profile. Association PHY and HE power fields are derived in
 `esp32s31/wifi/sta::association`, not in the executor adapter.
 The station-wide unique control-TX owner follows the same rule: its epoch
-state is in `esp32s31/wifi/sta::tx_epoch`; the integration crate contributes
+state is in `esp32s31/wifi/sta::tx_epoch`; the Embassy adapter contributes
 only the extension which constructs `Esp32s31ControlTx` from a runtime-owned
 descriptor slot and later reconstructs it from returned resources.
 The persistent `PhyColdState`/platform/observer owner used for cold scan,
 running scan and reconnect is similarly defined in
-`esp32s31/wifi/sta::channel`; integration modules only implement their scan
+`esp32s31/wifi/sta::channel`; adapter modules only implement their scan
 and attempt traits for that owner.
 The finite scan transaction and mandatory RX cleanup order live in
 `esp32s31/wifi/sta::scan`. It expresses dwell in abstract ticks; only the
-integration maps those ticks to an executor clock and binds the concrete
+the Embassy adapter maps those ticks to an executor clock and binds the concrete
 RX-DMA and probe-TX owners.
 
 ## Transitional debt

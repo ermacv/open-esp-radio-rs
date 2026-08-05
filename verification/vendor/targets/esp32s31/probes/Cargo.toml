@@ -1,0 +1,28 @@
+[workspace]
+resolver = "3"
+members = ["library", "elf"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97.1"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+embassy-futures = "0.1.2"
+open-esp-radio-esp32s31-hal = { path = "../../../../../driver/esp32s31/hal" }
+open-esp-radio-esp32s31-registers = { path = "../../../../../driver/esp32s31/registers", features = ["validation-probes"] }
+open-esp-radio-esp32s31-phy = { path = "../../../../../driver/esp32s31/phy" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/esp32s31/wifi-embassy" }
+open-esp-radio-esp32s31-wifi-lmac = { path = "../../../../../driver/esp32s31/wifi/lmac", features = ["validation-raw-dma"] }
+open-esp-radio-ieee80211 = { path = "../../../../../driver/wifi/ieee80211" }
+open-esp-radio-wifi-sta = { path = "../../../../../driver/wifi/sta" }
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+opt-level = 3
+debug = true
+panic = "abort"
+strip = false

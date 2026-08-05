@@ -7,7 +7,7 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let path = root.join("validation/esp32s31/dispositions/phy.disposition");
+    let path = root.join("verification/vendor/targets/esp32s31/dispositions/phy.disposition");
     let manifest = Manifest::load(&path).unwrap();
     assert_eq!(manifest.entries().count(), 9);
 
@@ -131,9 +131,10 @@ fn libpp_interrupt_bindings_require_exact_return_values() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest =
-        Manifest::load(&root.join("validation/esp32s31/dispositions/libpp-interrupt.disposition"))
-            .unwrap();
+    let manifest = Manifest::load(
+        &root.join("verification/vendor/targets/esp32s31/dispositions/libpp-interrupt.disposition"),
+    )
+    .unwrap();
 
     for symbol in ["hal_mac_interrupt_get_event", "hal_mac_interrupt_clr_event"] {
         let binding = manifest
@@ -163,9 +164,9 @@ fn libpp_power_interrupt_manifest_keeps_status_and_clear_disjoint() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest = Manifest::load(
-        &root.join("validation/esp32s31/dispositions/libpp-power-interrupt.disposition"),
-    )
+    let manifest = Manifest::load(&root.join(
+        "verification/vendor/targets/esp32s31/dispositions/libpp-power-interrupt.disposition",
+    ))
     .unwrap();
 
     assert_eq!(manifest.entries().count(), 2);
@@ -208,9 +209,10 @@ fn libpp_tx_dma_manifest_covers_every_ordinary_queue_register() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest =
-        Manifest::load(&root.join("validation/esp32s31/dispositions/libpp-tx-dma.disposition"))
-            .unwrap();
+    let manifest = Manifest::load(
+        &root.join("verification/vendor/targets/esp32s31/dispositions/libpp-tx-dma.disposition"),
+    )
+    .unwrap();
 
     assert_eq!(manifest.entries().count(), 7);
     for symbol in [
@@ -261,9 +263,10 @@ fn libpp_rx_dma_manifest_covers_the_finite_ring_register_boundary() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest =
-        Manifest::load(&root.join("validation/esp32s31/dispositions/libpp-rx-dma.disposition"))
-            .unwrap();
+    let manifest = Manifest::load(
+        &root.join("verification/vendor/targets/esp32s31/dispositions/libpp-rx-dma.disposition"),
+    )
+    .unwrap();
 
     assert_eq!(manifest.entries().count(), 9);
     for symbol in [
@@ -342,10 +345,11 @@ fn libpp_modem_wakeup_manifest_closes_each_selected_register_leaf() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest = Manifest::load(
-        &root.join("validation/esp32s31/dispositions/libpp-modem-wakeup.disposition"),
-    )
-    .unwrap();
+    let manifest =
+        Manifest::load(&root.join(
+            "verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.disposition",
+        ))
+        .unwrap();
 
     let leaves = [
         ("pwr_hal_set_mac_modem_beacon_miss_timeout", 0x2010_d854),
@@ -422,9 +426,9 @@ fn libpp_sta_tsf_wakeup_manifest_requires_both_register_rmws() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest = Manifest::load(
-        &root.join("validation/esp32s31/dispositions/libpp-sta-tsf-wakeup.disposition"),
-    )
+    let manifest = Manifest::load(&root.join(
+        "verification/vendor/targets/esp32s31/dispositions/libpp-sta-tsf-wakeup.disposition",
+    ))
     .unwrap();
 
     assert_eq!(manifest.entries().count(), 1);
@@ -466,9 +470,9 @@ fn rom_sta_tsf_snapshot_manifest_names_the_complete_coherent_transaction() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest = Manifest::load(
-        &root.join("validation/esp32s31/dispositions/rom-sta-tsf-snapshot.disposition"),
-    )
+    let manifest = Manifest::load(&root.join(
+        "verification/vendor/targets/esp32s31/dispositions/rom-sta-tsf-snapshot.disposition",
+    ))
     .unwrap();
 
     assert_eq!(manifest.entries().count(), 1);
@@ -503,9 +507,9 @@ fn libnet80211_sta_join_manifest_is_an_explicit_architectural_replacement() {
         .ancestors()
         .nth(2)
         .expect("validator remains under tools");
-    let manifest = Manifest::load(
-        &root.join("validation/esp32s31/dispositions/libnet80211-sta-join.disposition"),
-    )
+    let manifest = Manifest::load(&root.join(
+        "verification/vendor/targets/esp32s31/dispositions/libnet80211-sta-join.disposition",
+    ))
     .unwrap();
 
     assert_eq!(manifest.entries().count(), 1);

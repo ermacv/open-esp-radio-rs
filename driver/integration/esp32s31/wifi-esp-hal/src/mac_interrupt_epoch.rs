@@ -1,7 +1,11 @@
 //! ESP-HAL routing and stable ISR storage for finite MAC interrupt epochs.
 
-use core::sync::atomic::{AtomicPtr, Ordering};
+#![forbid(unsafe_code)]
 
+use core::cell::RefCell;
+
+use crate::EspHalRadioPeripheral;
+use critical_section::Mutex;
 use esp_hal::interrupt::InterruptHandler;
 use open_esp_radio_esp32s31_registers::{
     MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters,
@@ -9,22 +13,13 @@ use open_esp_radio_esp32s31_registers::{
 use open_esp_radio_esp32s31_wifi_lmac::irq::{
     IrqSink, MacInterruptRoute, PowerIrqSink, handle_mac_irq, handle_power_irq,
 };
-use static_cell::StaticCell;
-
-use crate::EspHalRadioPeripheral;
 
 const MAX_ISR_SNAPSHOTS: u8 = 32;
 
-static MAC_INTERRUPT_REGISTERS: StaticCell<MacInterruptRegisters> = StaticCell::new();
-static MAC_INTERRUPT_STORAGE_PTR: AtomicPtr<MacInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static MAC_INTERRUPT_ACTIVE_PTR: AtomicPtr<MacInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static POWER_INTERRUPT_REGISTERS: StaticCell<MacPowerInterruptRegisters> = StaticCell::new();
-static POWER_INTERRUPT_STORAGE_PTR: AtomicPtr<MacPowerInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
-static POWER_INTERRUPT_ACTIVE_PTR: AtomicPtr<MacPowerInterruptRegisters> =
-    AtomicPtr::new(core::ptr::null_mut());
+static MAC_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacInterruptRegisters>>> =
+    Mutex::new(RefCell::new(None));
+static POWER_INTERRUPT_REGISTERS: Mutex<RefCell<Option<MacPowerInterruptRegisters>>> =
+    Mutex::new(RefCell::new(None));
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EspHalMacInterruptRouteError {
@@ -67,25 +62,15 @@ impl EspHalMacInterruptRoute {
         }
     }
 
-    fn storage_state(
-        &self,
-    ) -> Result<
-        (*mut MacInterruptRegisters, *mut MacPowerInterruptRegisters),
-        EspHalMacInterruptRouteError,
-    > {
-        let mac_storage = MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
-        let power_storage = POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire);
-        let mac_active = MAC_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-        let power_active = POWER_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-        let storage_is_cold = mac_storage.is_null() && power_storage.is_null();
-        let storage_is_reusable = !mac_storage.is_null() && !power_storage.is_null();
-        if (!storage_is_cold && !storage_is_reusable)
-            || !mac_active.is_null()
-            || !power_active.is_null()
-        {
-            return Err(EspHalMacInterruptRouteError::StorageInvariant);
-        }
-        Ok((mac_storage, power_storage))
+    fn storage_is_empty(&self) -> bool {
+        critical_section::with(|critical_section| {
+            MAC_INTERRUPT_REGISTERS
+                .borrow_ref(critical_section)
+                .is_none()
+                && POWER_INTERRUPT_REGISTERS
+                    .borrow_ref(critical_section)
+                    .is_none()
+        })
     }
 }
 
@@ -103,29 +88,14 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
         if self.active {
             return Err((EspHalMacInterruptRouteError::AlreadyActive, setup));
         }
-        let (mac_storage, power_storage) = match self.storage_state() {
-            Ok(storage) => storage,
-            Err(error) => return Err((error, setup)),
-        };
+        if !self.storage_is_empty() {
+            return Err((EspHalMacInterruptRouteError::StorageInvariant, setup));
+        }
         let (mac, power) = setup.activate(event_mask);
-        let (mac_storage, power_storage) = if mac_storage.is_null() {
-            let mac_storage = MAC_INTERRUPT_REGISTERS.init(mac) as *mut _;
-            let power_storage = POWER_INTERRUPT_REGISTERS.init(power) as *mut _;
-            MAC_INTERRUPT_STORAGE_PTR.store(mac_storage, Ordering::Release);
-            POWER_INTERRUPT_STORAGE_PTR.store(power_storage, Ordering::Release);
-            (mac_storage, power_storage)
-        } else {
-            // SAFETY: both active pointers are null and the CPU routes remain
-            // disabled after the previous quiescence. That transition moved
-            // both values out of these exact stable locations.
-            unsafe {
-                mac_storage.write(mac);
-                power_storage.write(power);
-            }
-            (mac_storage, power_storage)
-        };
-        MAC_INTERRUPT_ACTIVE_PTR.store(mac_storage, Ordering::Release);
-        POWER_INTERRUPT_ACTIVE_PTR.store(power_storage, Ordering::Release);
+        critical_section::with(|critical_section| {
+            *MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section) = Some(mac);
+            *POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section) = Some(power);
+        });
         platform.bind_interrupts(self.mac_handler, self.power_handler);
         self.active = true;
         Ok(())
@@ -139,24 +109,18 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
         // disabled, an earlier same-core handler has returned and no new one
         // can begin while the PAC values are recovered.
         platform.disable_interrupts();
-        let mac = MAC_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-        let power = POWER_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-        if mac.is_null()
-            || power.is_null()
-            || mac != MAC_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
-            || power != POWER_INTERRUPT_STORAGE_PTR.load(Ordering::Acquire)
-        {
-            return Err(EspHalMacInterruptRouteError::StorageInvariant);
-        }
-        let recovered_mac = MAC_INTERRUPT_ACTIVE_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
-        let recovered_power =
-            POWER_INTERRUPT_ACTIVE_PTR.swap(core::ptr::null_mut(), Ordering::AcqRel);
-        debug_assert_eq!(recovered_mac, mac);
-        debug_assert_eq!(recovered_power, power);
-        // SAFETY: CPU routing is disabled, active pointers are null and these
-        // stable locations contain the unique values published by `activate`.
-        let mac = unsafe { recovered_mac.read() };
-        let power = unsafe { recovered_power.read() };
+        let (mac, power) = critical_section::with(|critical_section| {
+            let mut mac = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            let mut power = POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+            match (mac.take(), power.take()) {
+                (Some(mac), Some(power)) => Ok((mac, power)),
+                (mac_value, power_value) => {
+                    *mac = mac_value;
+                    *power = power_value;
+                    Err(EspHalMacInterruptRouteError::StorageInvariant)
+                }
+            }
+        })?;
         let setup = mac.deactivate(power);
         self.active = false;
         Ok(setup)
@@ -167,47 +131,44 @@ impl MacInterruptRoute for EspHalMacInterruptRoute {
 /// until the status bank is empty or the finite ISR budget is exhausted.
 #[inline]
 pub fn service_mac_interrupt<S: IrqSink>(sink: &S) -> EspHalMacInterruptServiceReport {
-    let registers = MAC_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-    if registers.is_null() {
-        return EspHalMacInterruptServiceReport::default();
-    }
-    // SAFETY: the epoch publishes this unique PAC owner before CPU routing.
-    // Task-side recovery first disables the same-core route and cannot overlap
-    // this handler invocation.
-    let interrupt = unsafe { &mut *registers };
-    let mut report = EspHalMacInterruptServiceReport::default();
-    for _ in 0..MAX_ISR_SNAPSHOTS {
-        let (_, snapshot) = handle_mac_irq(&mut *interrupt, sink);
-        if snapshot.status == 0 {
-            break;
+    critical_section::with(|critical_section| {
+        let mut registers = MAC_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+        let Some(interrupt) = registers.as_mut() else {
+            return EspHalMacInterruptServiceReport::default();
+        };
+        let mut report = EspHalMacInterruptServiceReport::default();
+        for _ in 0..MAX_ISR_SNAPSHOTS {
+            let (_, snapshot) = handle_mac_irq(interrupt, sink);
+            if snapshot.status == 0 {
+                break;
+            }
+            if report.nonzero_snapshots == 0 {
+                report.first_status = snapshot.status;
+            }
+            report.observed_status |= snapshot.status;
+            report.nonzero_snapshots += 1;
         }
-        if report.nonzero_snapshots == 0 {
-            report.first_status = snapshot.status;
-        }
-        report.observed_status |= snapshot.status;
-        report.nonzero_snapshots += 1;
-    }
-    report
+        report
+    })
 }
 
 /// Service the active power-interrupt bank with the same finite ISR budget.
 #[inline]
 pub fn service_power_interrupt<S: PowerIrqSink>(sink: &S) -> EspHalPowerInterruptServiceReport {
-    let registers = POWER_INTERRUPT_ACTIVE_PTR.load(Ordering::Acquire);
-    if registers.is_null() {
-        return EspHalPowerInterruptServiceReport::default();
-    }
-    // SAFETY: both ISR capabilities are published before either route opens;
-    // quiescence disables the same-core route before moving this value out.
-    let interrupt = unsafe { &mut *registers };
-    let mut report = EspHalPowerInterruptServiceReport::default();
-    for _ in 0..MAX_ISR_SNAPSHOTS {
-        let (_, snapshot) = handle_power_irq(interrupt, sink);
-        if snapshot.status == 0 {
-            break;
+    critical_section::with(|critical_section| {
+        let mut registers = POWER_INTERRUPT_REGISTERS.borrow_ref_mut(critical_section);
+        let Some(interrupt) = registers.as_mut() else {
+            return EspHalPowerInterruptServiceReport::default();
+        };
+        let mut report = EspHalPowerInterruptServiceReport::default();
+        for _ in 0..MAX_ISR_SNAPSHOTS {
+            let (_, snapshot) = handle_power_irq(interrupt, sink);
+            if snapshot.status == 0 {
+                break;
+            }
+            report.observed_status |= snapshot.status;
+            report.nonzero_snapshots += 1;
         }
-        report.observed_status |= snapshot.status;
-        report.nonzero_snapshots += 1;
-    }
-    report
+        report
+    })
 }

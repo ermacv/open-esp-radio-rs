@@ -6,8 +6,6 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
-#![allow(unsafe_code, reason = "pinned A-MPDU DMA storage boundary")]
-
 use core::{marker::PhantomPinned, mem, ops::Deref, pin::Pin};
 
 use open_esp_radio_dma::StableDmaBacking;
@@ -572,6 +570,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The returned slice excludes the private eight-byte DMA metadata prefix
     /// and the hardware-generated MIC/FCS trailer. Sequence Control and CCMP
     /// header are retained exactly as originally submitted.
+    #[allow(
+        unsafe_code,
+        reason = "completed state retains the backing behind stored DMA addresses"
+    )]
     pub fn completed_frame(
         &self,
         cookie: TxCookie,
@@ -624,6 +626,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `lmacProcessLongRetryFail` writes four immediately before entering the
     /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
     /// EDCA backoff are expected to change before republication.
+    #[allow(
+        unsafe_code,
+        reason = "detached state returns retained DMA backing to software ownership"
+    )]
     pub fn retain_for_ampdu_retry(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1138,21 +1144,16 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `dma_storage[8..8 + frame_length]`. This is the descriptor half of the
     /// vendor cache-TX/type-nine ESF path and performs no payload copy.
     ///
-    /// # Safety
-    ///
-    /// The caller must retain exclusive ownership of the same allocation at
-    /// the same address until this batch has completed, detached, processed
-    /// BlockAck/retries and reached [`Self::release_completed`] or
-    /// [`Self::cancel`]. It must not mutate the allocation while hardware owns
-    /// the batch. The public [`RetainedDmaAmpduTx`] wrapper enforces this by
-    /// owning every pinned frame lease beside this storage.
+    /// The private entry is reachable only through [`RetainedDmaAmpduTx`],
+    /// which retains exclusive ownership of the same stable allocation until
+    /// this batch has completed, detached and released or cancelled.
     ///
     /// SOURCE: complete `libnet80211.a[ieee80211_output.o]::
     /// ieee80211_alloc_tx_buf` cache-TX/type-nine branch retains the netstack
     /// buffer through `s_netstack_ref`; complete `libpp.a[pp.o]::
     /// ppAssembleAMPDU` links the existing ESF descriptors without copying
     /// their payloads.
-    unsafe fn commit_referenced_frame(
+    fn commit_referenced_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
@@ -1216,11 +1217,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Commit one referenced HT MPDU under the exact rate-dependent ceiling.
     ///
-    /// # Safety
-    ///
-    /// The caller must uphold the same pinned allocation invariant as
+    /// The retained owner upholds the same stable-allocation invariant as
     /// [`Self::commit_referenced_frame`].
-    unsafe fn commit_referenced_ht_frame(
+    fn commit_referenced_ht_frame(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
@@ -1239,17 +1238,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )? {
             return Err(HtAmpduTxError::AggregateFull);
         }
-        // SAFETY: the caller supplied the external allocation invariant, and
-        // the complete HT rate ceiling was checked above.
-        unsafe {
-            self.as_mut().commit_referenced_frame(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                empty_delimiters,
-            )
-        }
+        self.as_mut().commit_referenced_frame(
+            cookie,
+            dma_storage,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+        )
     }
 
     fn commit_frame_with_hardware_he_control(
@@ -1386,11 +1381,9 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// and `libpp.a[pp.o]::ppAssembleAMPDU` retain and link the
     /// cache-TX allocation instead of copying it into aggregate storage.
     ///
-    /// # Safety
-    ///
-    /// The caller must retain exclusive ownership of `dma_storage` at its
-    /// current address until the batch is detached and released or cancelled.
-    unsafe fn commit_referenced_he_frame_with_txop(
+    /// The retained owner keeps `dma_storage` at its current address until the
+    /// batch is detached and released or cancelled.
+    fn commit_referenced_he_frame_with_txop(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
@@ -1420,17 +1413,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         let empty_delimiters = rate
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        // SAFETY: the caller supplied the external allocation invariant, and
-        // the complete HE policy was checked before forwarding the commit.
-        unsafe {
-            self.as_mut().commit_referenced_frame(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                empty_delimiters,
-            )
-        }
+        self.as_mut().commit_referenced_frame(
+            cookie,
+            dma_storage,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+        )
     }
 
     /// Commit one HE MPDU with a hardware-inserted HE-Control field.
@@ -1826,6 +1815,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The PP blob gives HE single MPDU its own DMA-metadata and HE-SIG-A2
     /// layout, even though both paths reuse the same pinned descriptor and
     /// eight-byte private metadata storage.
+    #[allow(
+        unsafe_code,
+        reason = "committed backing remains pinned until the hardware transaction ends"
+    )]
     pub fn submit_he_smpdu<H: HtAmpduHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
@@ -2359,19 +2352,14 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             .as_mut_slice()
             .get_mut(dma_offset..)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        // SAFETY: `StableDmaBacking` proves address stability. This owner
-        // retains `backing` immediately after the atomic software commit and
-        // releases it only after the storage returns to Free.
-        unsafe {
-            self.as_mut().commit_referenced_ht_frame(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                empty_delimiters,
-                rate,
-            )?;
-        }
+        self.as_mut().commit_referenced_ht_frame(
+            cookie,
+            dma_storage,
+            frame_length,
+            hardware_mic_length,
+            empty_delimiters,
+            rate,
+        )?;
         drop(region);
         self.backings[self.held] = Some(backing);
         self.held += 1;
@@ -2398,19 +2386,15 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             .as_mut_slice()
             .get_mut(dma_offset..)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        // SAFETY: identical retained-backing invariant to `commit_ht`; the HE
-        // implementation additionally validates the complete APEP/TXOP gate.
-        unsafe {
-            self.as_mut().commit_referenced_he_frame_with_txop(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                rate,
-                density,
-                txop_limit,
-            )?;
-        }
+        self.as_mut().commit_referenced_he_frame_with_txop(
+            cookie,
+            dma_storage,
+            frame_length,
+            hardware_mic_length,
+            rate,
+            density,
+            txop_limit,
+        )?;
         drop(region);
         self.backings[self.held] = Some(backing);
         self.held += 1;
@@ -3388,6 +3372,10 @@ const fn next_vendor_block_ack_dialog_token(current: u8) -> u8 {
 }
 
 #[cfg(test)]
+#[allow(
+    unsafe_code,
+    reason = "test fixtures model retained stable DMA allocations"
+)]
 mod tests {
     use core::cell::Cell;
 
@@ -3572,12 +3560,10 @@ mod tests {
         external[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 100].fill(0x5a);
         let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
-        unsafe {
-            storage
-                .as_mut()
-                .commit_referenced_frame(cookie, &mut external, 100, 8, 0)
-                .unwrap();
-        }
+        storage
+            .as_mut()
+            .commit_referenced_frame(cookie, &mut external, 100, 8, 0)
+            .unwrap();
 
         assert_eq!(
             storage.prepared_aggregate(cookie).unwrap(),
@@ -3614,20 +3600,18 @@ mod tests {
         let mut storage = core::pin::pin!(storage);
         let cookie = storage.as_mut().begin().unwrap();
         for external in [&mut first, &mut second] {
-            unsafe {
-                storage
-                    .as_mut()
-                    .commit_referenced_he_frame_with_txop(
-                        cookie,
-                        external,
-                        16,
-                        8,
-                        rate,
-                        HtAmpduDensity::SixteenMicroseconds,
-                        HeEdcaTxopLimit::DEFAULT,
-                    )
-                    .unwrap();
-            }
+            storage
+                .as_mut()
+                .commit_referenced_he_frame_with_txop(
+                    cookie,
+                    external,
+                    16,
+                    8,
+                    rate,
+                    HtAmpduDensity::SixteenMicroseconds,
+                    HeEdcaTxopLimit::DEFAULT,
+                )
+                .unwrap();
         }
 
         assert_eq!(storage.empty_delimiters[..2], [1, 1]);
@@ -3662,12 +3646,10 @@ mod tests {
         let cookie = storage.as_mut().begin().unwrap();
 
         for frame in external.iter_mut().take(6) {
-            unsafe {
-                storage
-                    .as_mut()
-                    .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs0_sgi)
-                    .unwrap();
-            }
+            storage
+                .as_mut()
+                .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs0_sgi)
+                .unwrap();
         }
         assert_eq!(
             storage.prepared_aggregate(cookie).unwrap(),
@@ -3682,16 +3664,14 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(
-            unsafe {
-                storage.as_mut().commit_referenced_ht_frame(
-                    cookie,
-                    &mut external[6],
-                    1_500,
-                    8,
-                    0,
-                    mcs0_sgi,
-                )
-            },
+            storage.as_mut().commit_referenced_ht_frame(
+                cookie,
+                &mut external[6],
+                1_500,
+                8,
+                0,
+                mcs0_sgi,
+            ),
             Err(HtAmpduTxError::AggregateFull)
         );
         assert_eq!(storage.frame_count(), 6);
@@ -3707,12 +3687,10 @@ mod tests {
         );
         let cookie = storage.as_mut().begin().unwrap();
         for frame in external.iter_mut().take(7) {
-            unsafe {
-                storage
-                    .as_mut()
-                    .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs7_sgi)
-                    .unwrap();
-            }
+            storage
+                .as_mut()
+                .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs7_sgi)
+                .unwrap();
         }
         assert_eq!(storage.frame_count(), 7);
         storage.as_mut().cancel(cookie).unwrap();

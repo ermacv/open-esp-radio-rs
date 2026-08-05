@@ -4,8 +4,6 @@
 //! payload capacity and placement policy are selected by the board or runtime
 //! composition and remain const-generic here.
 
-#![allow(unsafe_code, reason = "RX DMA storage boundary")]
-
 use core::cell::UnsafeCell;
 
 use crate::{
@@ -29,7 +27,7 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
         Self(UnsafeCell::new([0; STORAGE_SIZE]))
     }
 
-    pub fn dma_address(&self) -> Result<u32, RxDmaStorageError> {
+    pub(crate) fn dma_address(&self) -> Result<u32, RxDmaStorageError> {
         u32::try_from(self.0.get().addr()).map_err(|_| RxDmaStorageError::AddressWidth)
     }
 
@@ -42,16 +40,22 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
             .expect("the selected RX DMA prefix has the exact declared size")
     }
 
+    /// # Safety
+    ///
     /// The caller must own the matching completed descriptor. The returned
     /// view must not survive descriptor recycle.
-    pub unsafe fn completed(&self) -> &[u8; BUFFER_SIZE] {
+    #[allow(unsafe_code, reason = "completed descriptor proves CPU ownership")]
+    pub(crate) unsafe fn completed(&self) -> &[u8; BUFFER_SIZE] {
         // SAFETY: the type guarantees a prefix of exactly this size.
         unsafe { &*self.0.get().cast::<[u8; BUFFER_SIZE]>() }
     }
 
+    /// # Safety
+    ///
     /// The caller must own the matching completed descriptor and invoke this
     /// only from the ring's rearm closure.
-    pub unsafe fn prepare_for_recycle(&self) -> Result<(), RxRingError> {
+    #[allow(unsafe_code, reason = "ring rearm owns the DMA buffer transition")]
+    pub(crate) unsafe fn prepare_for_recycle(&self) -> Result<(), RxRingError> {
         // SAFETY: ring ownership makes this the only CPU or DMA writer.
         unsafe { prepare_recycled_buffer(&mut *self.0.get(), BUFFER_SIZE) }
     }
@@ -61,7 +65,11 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     /// This is observation only: it never transfers buffer ownership. It is
     /// used together with a later terminal descriptor to distinguish a full
     /// non-terminal segment from an untouched armed descriptor.
-    pub fn leading_guard_overwritten(&self) -> bool {
+    #[allow(
+        unsafe_code,
+        reason = "volatile read observes the asynchronous DMA writer"
+    )]
+    pub(crate) fn leading_guard_overwritten(&self) -> bool {
         // SAFETY: volatile access models the asynchronous DMA writer. The
         // result is only evidence for a subsequent descriptor observation.
         unsafe { self.0.get().cast::<u32>().read_volatile() != RX_BUFFER_SENTINEL }
@@ -96,6 +104,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.descriptor.index()
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "completed descriptor token retains the live ring"
+    )]
     pub fn segment(&self) -> RxSegment<'_> {
         // SAFETY: the unforgeable descriptor token retains the live ring's
         // mutable borrow, and `validate_live_ring` matched this buffer arena
@@ -146,6 +158,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         &self.unit
     }
 
+    #[allow(unsafe_code, reason = "completed unit token retains every segment")]
     pub fn segment(&self, step: usize) -> Option<&[u8]> {
         let length = self.unit.segment_length(step)?;
         let index = self
@@ -160,6 +173,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         unsafe { buffer.completed().get(..length) }
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "consuming completed unit owns the rearm transition"
+    )]
     pub(crate) fn recycle<M: RxDma>(
         self,
         mmio: &mut M,
@@ -224,6 +241,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 
     /// Prepare the first stopped ring while binding its descriptors and DMA
     /// addresses to this exact storage arena.
+    #[allow(
+        unsafe_code,
+        reason = "stopped ring exclusively owns initial buffer rearm"
+    )]
     pub fn prepare_ring<'storage, M: RxDma>(
         &'storage self,
         mmio: &mut M,
@@ -248,6 +269,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     }
 
     /// Rebuild a halted ring only when it belongs to this storage arena.
+    #[allow(unsafe_code, reason = "halted ring exclusively owns buffer rearm")]
     pub fn prepare_halted<'storage, M: RxDma>(
         &'storage self,
         ring: RxRingHalted<'storage, COUNT>,
@@ -293,6 +315,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         }))
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "live ring proves its completed half is CPU-owned"
+    )]
     pub fn recycle_completed_half<M: RxDma>(
         &self,
         ring: &mut RxRingLive<'_, COUNT>,
@@ -306,6 +332,10 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         })
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "live ring proves its completed prefix is CPU-owned"
+    )]
     pub fn recycle_completed_prefix<const MAX_BATCH: usize, M: RxDma>(
         &self,
         ring: &mut RxRingLive<'_, COUNT>,
@@ -412,6 +442,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(unsafe_code, reason = "host fixture has no DMA walker")]
     fn arena_initializes_in_its_final_location_and_recycles_one_buffer() {
         let storage = RxDmaStorage::<2, 16, 20>::new();
 

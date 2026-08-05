@@ -25,7 +25,8 @@ only opt-in exception.
 | `driver/esp32s31/registers` | Handwritten typed radio register transactions |
 | `driver/esp32s31/hal` | Finite hardware operations and async boundaries |
 | `driver/esp32s31/phy` | PHY initialization and calibration state machines |
-| `driver/esp32s31/wifi/lmac` | ESP32-S31 Wi-Fi LMAC, DMA, IRQ, RX/TX and rate control |
+| `driver/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
+| `driver/esp32s31/wifi/lmac` | Safe ESP32-S31 Wi-Fi LMAC, IRQ, RX/TX policy and rate control |
 | `driver/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
 | `hil/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
 | `hil/esp32s31/telemetry` | ESP32-S31 HIL counter and report implementations for production observation events |

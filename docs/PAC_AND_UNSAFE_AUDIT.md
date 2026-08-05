@@ -1,6 +1,6 @@
 # PAC, MMIO and unsafe ownership audit
 
-Verified against the workspace on 2026-07-31.
+Verified against the workspace on 2026-08-05.
 
 This document records the current ownership boundary. It is deliberately not
 a chronological migration report. The completed PAC migration narrative is
@@ -27,34 +27,42 @@ field catalog for decoding vendor ELF traces; it is not passed to `svd2rust`
 and does not weaken the single-owner runtime rule above.
 
 Wi-Fi DMA descriptors are SRAM shared with the MAC DMA engine, not MMIO. Their
-memory-safety proof therefore belongs to the Wi-Fi MAC and integration layers,
-separately from peripheral singleton ownership.
+memory-safety proof therefore terminates in the portable DMA-ownership crate
+and the ESP32-S31 Wi-Fi DMA leaf, separately from peripheral singleton
+ownership. LMAC and runtime/network composition receive only typed leases.
 
 ## Current unsafe boundaries
 
 | Owner | Why unsafe is required | Required invariant |
 | --- | --- | --- |
 | generated `esp32s31/pac` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
-| `esp32s31/registers` | bounded `svd2rust` field writes whose safe API cannot express recovered numeric encodings | each value is masked or range-bounded and its source is recorded in SVD/PAC comments |
-| `esp32s31/hal::Radio` | initial singleton claim and explicit adoption after an external comparison oracle initialized the radio | the integration token is unique and no vendor/open driver accesses the peripheral concurrently |
-| `esp32s31/wifi/lmac` | volatile DMA descriptors, intrusive RX ownership, pinned TX/A-MPDU storage and referenced buffers | DMA-visible storage does not move or alias; ownership changes only at the documented descriptor/completion edges |
-| `integration/network/embassy-net` | pinned copy-free network slots stored behind `UnsafeCell` | atomic slot state gives exactly one network or radio owner and acquire/release publication brackets byte access |
-| `integration/esp32s31/wifi-embassy` | joins pinned network leases to S31 TX DMA storage | a lease outlives hardware ownership and is released only after completion and detach |
-| `integration/esp32s31/wifi-esp-hal` | official PAC raw field writers and volatile PHY-I2C command access | encodings fit the official fields; singleton tokens retained by `EspHalRadioPeripheral` prove exclusive access |
+| `driver/dma` | pinned TX/RX storage behind `UnsafeCell`, state-specific leases and stable-address capability construction | the atomic state machine admits exactly one owner; a live radio lease retains a non-moving, non-aliased allocation |
+| `esp32s31/wifi/dma` | volatile RX buffer ownership and target linker placement for qualified hot code | completed/recycle tokens follow descriptor ownership; `.rwtext.*` maps to aligned executable internal SRAM |
+| `integration/esp32s31/embassy-runtime` | executor polling, software-interrupt adoption and exported Embassy ABI/linker symbols | application supplies the unique interrupt/timer resources; exported names and sections match the board runtime/linker contract |
 
 Rust 2024 also requires `unsafe(...)` around attributes such as
 `link_section`. Those attributes control target placement but are not pointer
 or aliasing operations. They still require review because changing placement
 can break the HIL timing and memory contract.
 
-Portable WPA2 code no longer uses unsafe volatile erasure. Secret-bearing
-types use safe zeroization. Portable IEEE 802.11 files contain placement
-attributes for hot target code, but no raw descriptor ownership boundary.
+Every other driver crate forbids unsafe code at its crate root. In particular,
+register transactions, HAL, PHY, chip LMAC/STA, portable Wi-Fi, Embassy Wi-Fi
+composition, the network adapter and the `esp-hal` adapter are safe consumers
+of these boundaries. LMAC hot-path section placement is requested through a
+macro owned by the chip DMA leaf; LMAC does not locally waive its prohibition.
+
+Portable WPA2 code uses safe zeroization for secret-bearing types. No portable
+protocol or role layer owns a volatile register, DMA pointer or target linker
+attribute.
 
 ## Layer rules
 
-- PHY is compiled with `#![forbid(unsafe_code)]`. Hardware sequencing is
-  expressed through actions and an exclusive `RadioRegisters` borrow.
+- All crates above the three audited leaves are compiled with
+  `#![forbid(unsafe_code)]`. Hardware sequencing is expressed through actions,
+  typed leases and exclusive semantic owners.
+- Audited leaves use crate-level `#![deny(unsafe_code)]` and narrow, reasoned
+  allowances at the exact operation or target-binding module. Do not add a
+  fourth leaf merely to make a local implementation convenient.
 - New register identities must enter through the SVD and PAC, with source and
   confidence metadata. Do not extend the temporary raw-register facade.
 - Safe upper layers must not manufacture PAC singletons or retain raw MMIO

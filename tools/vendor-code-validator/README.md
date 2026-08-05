@@ -86,9 +86,19 @@ cargo vendor-code-validator ir export \
   --target-spec validation/esp32s31/target.spec \
   --artifact "$ESP32S31_LIBPHY_ARCHIVE" \
   --symbol-prefix phy_ \
+  --include-reachable \
   --pseudo-rust /tmp/libphy.pseudo.rs \
   --json-report /tmp/libphy.ir.json
 ```
+
+By default the prefix selects only report roots. `--include-reachable` also
+exports the transitive internal callees recovered from those roots within the
+same primary artifact. Each function is marked `symbol-prefix-root` or
+`reachable-internal`, and schema v17 records the selection mode plus root and
+included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
+resolved internal edges enqueue a callee, exploration limits remain visible as
+blockers, and companion or independently named primary definitions are not
+silently imported into the closure.
 
 A project inventory can aggregate several independently linked or relocatable
 inputs in one report. Multiple inputs must have stable source names:
@@ -106,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v16 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v17 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -134,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v16 records
+symbolic states. Schema v17 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The

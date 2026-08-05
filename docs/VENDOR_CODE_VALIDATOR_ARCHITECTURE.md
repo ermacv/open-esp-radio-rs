@@ -177,6 +177,15 @@ boundary explicit. A linked ELF with companions remains the mode for genuine
 cross-image address and relocation resolution; resolving undefined symbols
 across independent static archives requires a later project linker layer.
 
+Function selection is separate from call resolution. A symbol prefix selects
+explicit roots; an opt-in reachable mode follows only recovered internal edges
+to other code definitions in the same primary resolver. Selected functions
+retain root-versus-reachable provenance in every report view. Closure discovery
+uses the same bounded exploratory call graph, so an unresolved edge or exhausted
+state limit remains a blocker rather than causing a guessed callee to enter the
+report. Companion definitions and unique cross-primary project associations are
+not closure-selection authority.
+
 As a narrower navigation aid, project IR associates an unresolved call
 relocation with a callee only when one exported definition exists across all
 named inputs. It ignores local definitions and leaves duplicate global/weak

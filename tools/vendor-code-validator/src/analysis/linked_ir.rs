@@ -266,6 +266,7 @@ pub(crate) struct LinkedDiagnostic {
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
+    pub(crate) selection: &'static str,
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     pub(crate) binding: &'static str,
@@ -391,6 +392,7 @@ fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> SymbolKey {
 struct IrIdentityCatalog {
     symbols: BTreeMap<SymbolKey, String>,
     targets: BTreeMap<u32, String>,
+    selectable_symbols: BTreeMap<String, artifact::ArtifactSymbolDefinition>,
 }
 
 impl IrIdentityCatalog {
@@ -437,7 +439,24 @@ impl IrIdentityCatalog {
                 )
             })
             .collect();
-        Self { symbols, targets }
+        let selectable_symbols = resolver
+            .symbols
+            .iter()
+            .map(|symbol| {
+                (
+                    symbols
+                        .get(&symbol_key(symbol))
+                        .expect("primary symbol is present in IR identity catalog")
+                        .clone(),
+                    symbol.clone(),
+                )
+            })
+            .collect();
+        Self {
+            symbols,
+            targets,
+            selectable_symbols,
+        }
     }
 
     fn symbol(&self, symbol: &artifact::ArtifactSymbolDefinition) -> String {
@@ -452,6 +471,10 @@ impl IrIdentityCatalog {
             .get(&target)
             .cloned()
             .unwrap_or_else(|| format!("sub_{target:08x}"))
+    }
+
+    fn selectable_symbol(&self, identity: &str) -> Option<&artifact::ArtifactSymbolDefinition> {
+        self.selectable_symbols.get(identity)
     }
 }
 
@@ -2268,16 +2291,30 @@ pub(crate) fn build_linked_ir_for_source(
     svd: &MmioRegisterMap,
     source: &str,
     namespace_identities: bool,
+    include_reachable: bool,
 ) -> LinkedIrReport {
     let mut functions = Vec::new();
     let identities = IrIdentityCatalog::new(resolver, namespace_identities.then_some(source));
+    let mut scheduled = BTreeSet::<SymbolKey>::new();
+    let mut pending = VecDeque::new();
     for symbol in resolver
         .symbols
         .iter()
         .filter(|symbol| symbol.name.starts_with(symbol_prefix))
     {
-        let function_identity = identities.symbol(symbol);
-        let binding = if resolver.symbol_is_exported(symbol) {
+        if scheduled.insert(symbol_key(symbol)) {
+            pending.push_back(symbol.clone());
+        }
+    }
+
+    while let Some(symbol) = pending.pop_front() {
+        let selection = if symbol.name.starts_with(symbol_prefix) {
+            "symbol-prefix-root"
+        } else {
+            "reachable-internal"
+        };
+        let function_identity = identities.symbol(&symbol);
+        let binding = if resolver.symbol_is_exported(&symbol) {
             "global-or-weak"
         } else {
             "local"
@@ -2285,11 +2322,21 @@ pub(crate) fn build_linked_ir_for_source(
         let DirectCallGraph {
             calls: direct_calls,
             blockers,
-        } = explore_direct_calls(symbol, resolver, &identities, svd);
+        } = explore_direct_calls(&symbol, resolver, &identities, svd);
+        if include_reachable {
+            for call in direct_calls.iter().filter(|call| call.kind == "internal") {
+                let Some(callee) = identities.selectable_symbol(&call.target) else {
+                    continue;
+                };
+                if scheduled.insert(symbol_key(callee)) {
+                    pending.push_back(callee.clone());
+                }
+            }
+        }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
         let call_graph_blockers = rendered_diagnostics(&call_graph_diagnostics);
-        match resolver.trace_symbol(symbol, svd) {
+        match resolver.trace_symbol(&symbol, svd) {
             Ok(trace) => {
                 let context_accesses = context_accesses_for_trace(&trace);
                 let context_fields = context_fields_for_accesses(&context_accesses);
@@ -2322,6 +2369,7 @@ pub(crate) fn build_linked_ir_for_source(
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
+                    selection,
                     member: symbol.member.clone(),
                     symbol: symbol.name.clone(),
                     binding,
@@ -2364,6 +2412,7 @@ pub(crate) fn build_linked_ir_for_source(
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
+                    selection,
                     member: symbol.member.clone(),
                     symbol: symbol.name.clone(),
                     binding,
@@ -3398,6 +3447,7 @@ mod tests {
         LinkedIrFunction {
             source: source.to_owned(),
             identity: format!("{source}::{symbol}"),
+            selection: "symbol-prefix-root",
             member: None,
             symbol: symbol.to_owned(),
             binding,
@@ -3489,6 +3539,25 @@ mod tests {
                 offset: 0,
                 expression: "arg0".to_owned(),
             }
+        );
+
+        let roots_only =
+            build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, false);
+        assert_eq!(roots_only.functions.len(), 1);
+        assert_eq!(roots_only.functions[0].symbol, "vendor_parent");
+
+        let report =
+            build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, true);
+        assert_eq!(
+            report
+                .functions
+                .iter()
+                .map(|function| (function.symbol.as_str(), function.selection))
+                .collect::<Vec<_>>(),
+            [
+                ("vendor_child", "reachable-internal"),
+                ("vendor_parent", "symbol-prefix-root"),
+            ]
         );
     }
 
@@ -3939,7 +4008,8 @@ mod tests {
             windows: Vec::new(),
         };
 
-        let report = build_linked_ir_for_source(&resolver, "private_", &map, "primary", false);
+        let report =
+            build_linked_ir_for_source(&resolver, "private_", &map, "primary", false, false);
 
         assert_eq!(report.exported_functions, 0);
         assert_eq!(report.local_functions, 2);
@@ -3956,8 +4026,8 @@ mod tests {
         );
 
         let project_report = merge_linked_ir(vec![
-            build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true),
-            build_linked_ir_for_source(&resolver, "private_", &map, "rom", true),
+            build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true, false),
+            build_linked_ir_for_source(&resolver, "private_", &map, "rom", true, false),
         ]);
         assert_eq!(project_report.functions.len(), 4);
         assert_eq!(

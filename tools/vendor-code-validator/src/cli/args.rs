@@ -276,6 +276,7 @@ mod tests {
             "target.spec".to_owned(),
             "--artifact".to_owned(),
             "vendor.a".to_owned(),
+            "--include-reachable".to_owned(),
             "--pseudo-rust".to_owned(),
             "vendor.pseudo.rs".to_owned(),
         ])
@@ -286,6 +287,7 @@ mod tests {
             [
                 "--artifact",
                 "vendor.a",
+                "--include-reachable",
                 "--pseudo-rust",
                 "vendor.pseudo.rs"
             ]

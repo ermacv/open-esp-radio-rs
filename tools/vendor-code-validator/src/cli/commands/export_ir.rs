@@ -75,9 +75,9 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
     Ok(artifacts.len() > 1 || artifacts[0].explicitly_named)
 }
 
-fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
+fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -87,6 +87,11 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             "unique-exported-symbol-only"
         } else {
             "primary-resolver"
+        },
+        if include_reachable {
+            "symbol-prefix-with-reachable-internal-callees"
+        } else {
+            "symbol-prefix-only"
         },
         artifacts.len()
     );
@@ -109,8 +114,9 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             |address| format!("{address:#010x}"),
         );
         println!(
-            "FUNCTION\t{}\tbinding={}\taddress={}\tobject-offset={:#010x}\tsize={}\tflow={}\tcomplete={}\texact={}\tcalls={}\tcall-argument-shapes={}",
+            "FUNCTION\t{}\tselection={}\tbinding={}\taddress={}\tobject-offset={:#010x}\tsize={}\tflow={}\tcomplete={}\texact={}\tcalls={}\tcall-argument-shapes={}",
             function.identity,
+            function.selection,
             function.binding,
             address,
             function.object_offset,
@@ -455,10 +461,18 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             );
         }
     }
+    let root_functions = report
+        .functions
+        .iter()
+        .filter(|function| function.selection == "symbol-prefix-root")
+        .count();
+    let included_reachable_functions = report.functions.len() - root_functions;
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}",
         artifacts.len(),
         report.functions.len(),
+        root_functions,
+        included_reachable_functions,
         report.exported_functions,
         report.local_functions,
         report.mmio_registers.len(),
@@ -488,7 +502,12 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
     );
 }
 
-fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrReport) -> Result<()> {
+fn write_pseudo(
+    path: &Path,
+    artifacts: &[IrArtifactInput],
+    report: &LinkedIrReport,
+    include_reachable: bool,
+) -> Result<()> {
     let mut output = String::new();
     output.push_str("// Best-effort vendor-code pseudo-Rust generated from:\n");
     for artifact in artifacts {
@@ -505,10 +524,22 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
             "// Named primary artifacts use independent address spaces; unique exported-symbol edges provide reachable inventories, and only recovered affine call bindings project context fields.\n",
         );
     }
+    writeln!(
+        output,
+        "// Selection: {}.",
+        if include_reachable {
+            "symbol-prefix roots plus reachable internal callees from each primary artifact"
+        } else {
+            "symbol-prefix roots only"
+        }
+    )
+    .expect("writing to String cannot fail");
     output
         .push_str("// This is analysis IR, not compilable Rust and not a completeness claim.\n\n");
     for function in &report.functions {
         let summary = &function.effect_summary;
+        writeln!(output, "// SELECTION: {}", function.selection)
+            .expect("writing to String cannot fail");
         writeln!(
             output,
             "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
@@ -690,9 +721,10 @@ fn write_json_report(
     symbol_prefix: &str,
     entry_contract: EntryContractRef,
     report: &LinkedIrReport,
+    include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 16,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 17,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -713,6 +745,17 @@ fn write_json_report(
         },
     );
     output.push_str(",\n");
+    output.push_str("  \"selection_mode\": ");
+    write_string(
+        &mut output,
+        if include_reachable {
+            "symbol-prefix-with-reachable-internal-callees"
+        } else {
+            "symbol-prefix-only"
+        },
+    );
+    writeln!(output, ",\n  \"include_reachable\": {include_reachable},")
+        .expect("writing to String cannot fail");
     output.push_str("  \"effect_summary_mode\": \"reachable-inventory-origin-preserving\",\n");
     output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
     output.push_str("  \"diagnostic_compaction_mode\": \"exact-semicolon-fragment-inventory\",\n");
@@ -740,11 +783,19 @@ fn write_json_report(
     write_string(&mut output, symbol_prefix);
     output.push_str(",\n  \"entry_contract\": ");
     write_string(&mut output, entry_contract.id());
+    let root_functions = report
+        .functions
+        .iter()
+        .filter(|function| function.selection == "symbol-prefix-root")
+        .count();
+    let included_reachable_functions = report.functions.len() - root_functions;
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"root_functions\": {}, \"included_reachable_functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}}},",
         artifacts.len(),
         report.functions.len(),
+        root_functions,
+        included_reachable_functions,
         report.exported_functions,
         report.local_functions,
         report.mmio_registers.len(),
@@ -883,6 +934,8 @@ fn write_json_report(
         write_string(&mut output, &function.source);
         output.push_str(", \"identity\": ");
         write_string(&mut output, &function.identity);
+        output.push_str(", \"selection\": ");
+        write_string(&mut output, function.selection);
         output.push_str(", \"member\": ");
         write_optional_string(&mut output, function.member.as_deref());
         output.push_str(", \"symbol\": ");
@@ -1297,6 +1350,7 @@ pub(super) fn run(
     let mut artifacts = Vec::new();
     let mut companions = Vec::new();
     let mut symbol_prefix = String::new();
+    let mut include_reachable = false;
     let mut pseudo_path = None;
     let mut json_report = None;
     let riscv_harness = harnesses::riscv(&target.harness)?;
@@ -1320,6 +1374,7 @@ pub(super) fn run(
             "--symbol-prefix" => {
                 symbol_prefix = take_value(&mut arguments, "--symbol-prefix")?;
             }
+            "--include-reachable" => include_reachable = true,
             "--entry-contract" => {
                 entry_contract = harnesses::entry_contract(
                     &target.harness,
@@ -1350,6 +1405,7 @@ pub(super) fn run(
             svd,
             &artifact.source,
             namespace_identities,
+            include_reachable,
         ));
     }
     if artifacts.len() > 1 {
@@ -1363,9 +1419,9 @@ pub(super) fn run(
         .into());
     }
 
-    print_report(&artifacts, &report);
+    print_report(&artifacts, &report, include_reachable);
     if let Some(path) = pseudo_path.as_deref() {
-        write_pseudo(path, &artifacts, &report)?;
+        write_pseudo(path, &artifacts, &report, include_reachable)?;
     }
     if let Some(path) = json_report.as_deref() {
         write_json_report(
@@ -1375,6 +1431,7 @@ pub(super) fn run(
             &symbol_prefix,
             entry_contract,
             &report,
+            include_reachable,
         )?;
     }
     Ok(true)

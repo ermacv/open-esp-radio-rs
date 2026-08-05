@@ -95,38 +95,44 @@ There is no standalone raw target walker-enable entry point.
 
 ## TX ownership frontier
 
-TX has not yet reached the same capability boundary. Ordinary `TxSlot` and
-`HtAmpduTxStorage` retain their descriptors and buffers in safe LMAC, while
-`MacLegacyTxProgram`, `MacHtTxProgram` and `MacHeTxProgram` carry a PLCP0 word
-whose low bits encode the descriptor-chain head. The production compositions
-allocate these owners statically, but the public types do not carry that proof
-to `TxHardware` or to the safe `RadioRegisters` prepare/start methods. A raw
-but DMA-range-valid PLCP0 can therefore still bypass the intended TX owner.
+Ordinary TX now reaches the phased capability boundary. Its descriptor and
+buffer live in `esp32s31/wifi/dma::tx_storage::TxDmaStorage`; production
+compositions pin that lower allocation in static SRAM and give LMAC only the
+movable `PinnedTxDmaStorage` owner. `TxSlot::new_model` exists solely in native
+models with no asynchronous DMA actor and is absent on 32-bit targets.
+
+Queue preparation receives `PreparedTxDma`, while the final ENABLE|VALID edge
+receives the distinct `HardwareOwnedTxDma` token created only after the lower
+owner records its state transition. Both `TxHardware` and `RadioRegisters`
+validate that PLCP0 names the retained chain. Completion, abort and detach
+return backing through lower state transitions; any impossible sequence or
+failed detach quarantines it.
+
+TX as a whole has not yet reached that boundary. `HtAmpduTxStorage` still
+retains descriptor arrays and buffers in safe LMAC, and the legacy raw
+`TxHardware`/`RadioRegisters` prepare and start methods remain public for that
+path. A raw but DMA-range-valid A-MPDU PLCP0 can therefore still bypass the
+intended TX owner.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 
-1. move the ordinary pinned descriptor/buffer owner into
-   `esp32s31/wifi/dma` and make it return a non-forgeable `TxDmaBinding`;
-2. keep queue selection, rate/PLCP formatting, retry policy and completion
-   semantics in LMAC over that lower storage lease;
-3. require the binding at both `TxHardware` and `RadioRegisters`, validating
-   that the PLCP0 head belongs to the retained descriptor range;
-4. apply the same owner to A-MPDU descriptor arrays and every separately
-   retained zero-copy backing before closing the public register escape hatch.
+1. move A-MPDU descriptor arrays and every separately retained zero-copy
+   backing into the chip DMA leaf;
+2. give aggregate prepare/start the same distinct phased capabilities;
+3. remove the legacy raw `TxHardware` and `RadioRegisters` submission methods
+   once no production or validation caller depends on them;
+4. add a recoverable reset authority only after the complete MAC/DMA shutdown
+   order is qualified; until then quarantine remains terminal.
 
 The reset-required/quarantine rule remains unchanged during this extraction:
 no backing becomes reusable merely because its Rust queue owner was dropped.
 
-The first extraction primitive now exists as
-`esp32s31/wifi/dma::tx_storage`: `TxDmaStorage::pin_static` consumes a unique
-static descriptor/buffer allocation and returns a movable owner carrying two
-private `StableDmaRange` values. Its publication token records
-`HardwareOwned` before it exposes the start-only callback token, and completed
-or aborted backing remains unavailable until an explicit release transition.
-This does not yet close the TX escape hatch: ordinary `TxSlot`, A-MPDU storage,
-`TxHardware` and `RadioRegisters` still need to be migrated onto that owner in
-the order above.
+The application facade exposes this lower composition layer explicitly as
+`esp32s31::wifi::dma`, alongside `lmac` and `sta`; it is not re-exported as if
+DMA allocation were LMAC policy. This does not yet close the TX escape hatch:
+A-MPDU storage and the temporary raw submission methods remain in the order
+above.
 
 ## Layer rules
 

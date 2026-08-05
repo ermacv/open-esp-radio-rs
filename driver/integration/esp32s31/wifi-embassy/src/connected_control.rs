@@ -1025,7 +1025,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.queue_initial_tx_block_ack();
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1063,7 +1063,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         )
         .with_rx_reorder_commands(reorder_sender);
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1150,7 +1150,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         )
         .with_rx_reorder_commands(reorder_sender);
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1217,7 +1217,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.queue_initial_tx_block_ack();
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1276,7 +1276,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1309,7 +1309,7 @@ mod tests {
             true,
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1416,7 +1416,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_beacon_loss(StaBeaconLossConfig::new(100, 3).unwrap());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -1456,7 +1456,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_power_save(power_save_policy());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             station_tsf: 1_000_100,
             prepare: true,
@@ -1515,7 +1515,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_power_save(power_save_policy());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             station_tsf: 1_000_100,
             prepare: true,
@@ -1552,7 +1552,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_power_save(power_save_policy());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             station_tsf: 1_000_100,
             prepare: true,
@@ -1595,7 +1595,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_power_save(power_save_policy());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             station_tsf: 1_000_100,
             prepare: true,
@@ -1665,7 +1665,7 @@ mod tests {
             StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
         );
         control.enable_power_save(power_save_policy());
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             station_tsf: 1_000_100,
             prepare: true,

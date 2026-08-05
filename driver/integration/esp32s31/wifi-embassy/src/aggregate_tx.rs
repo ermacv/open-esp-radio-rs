@@ -1381,7 +1381,7 @@ mod tests {
     #[test]
     fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let tx = Esp32s31ConnectedTx::<
@@ -1425,7 +1425,7 @@ mod tests {
         send_frame(&mut device, 1);
         let first = network.try_receive_tx().unwrap();
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let counters = AggregateTxCounters::new();
@@ -1485,7 +1485,7 @@ mod tests {
         }
         let first = network.try_receive_tx().unwrap();
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<2_048>::new());
+        let mut slot = core::pin::pin!(TxSlot::<2_048>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let counters = AggregateTxCounters::new();
@@ -1521,7 +1521,7 @@ mod tests {
         send_frame(&mut device, 2);
         let first = network.try_receive_tx().unwrap();
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
@@ -1586,7 +1586,7 @@ mod tests {
         }
         let first = network.try_receive_tx().unwrap();
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(
@@ -1658,7 +1658,7 @@ mod tests {
         send_frame(&mut device, 2);
         let first = network.try_receive_tx().unwrap();
         let mut hardware = Hardware::default();
-        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new());
+        let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
         let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
         let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
         let mut tx = Esp32s31ConnectedTx::new(

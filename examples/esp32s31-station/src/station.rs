@@ -4,7 +4,7 @@
 //! transition is supplied by a PAC-backed driver or reusable integration
 //! owner; no HIL protocol, telemetry or benchmark configuration is linked.
 
-use core::{future::Future, marker::PhantomData};
+use core::{future::Future, marker::PhantomData, pin::Pin};
 
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
@@ -14,6 +14,7 @@ use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::{Rng, Trng},
 };
+use open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage;
 use open_esp_radio::esp32s31::wifi::sta::attempt::{
     Esp32s31StaAttempt, Esp32s31StaAttemptObserver, Esp32s31StaAttemptOutcome,
     Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
@@ -158,7 +159,8 @@ type ReconnectedStationAttemptOwner<'hardware, 'transmit, 'state, 'scratch, 'sec
 
 static RX_DMA_STORAGE: StaticCell<RxStorage> = StaticCell::new();
 static RX_BUFFER_ADDRESSES: StaticCell<[u32; RX_DESCRIPTOR_COUNT]> = StaticCell::new();
-static TX_DMA_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
+static TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
+static TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static TX_STATE: StaticCell<TxStorage> = StaticCell::new();
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
 static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
@@ -984,7 +986,9 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
     let descriptor_base = rx_storage
         .dma_layout(buffer_addresses)
         .expect("RX DMA storage must be addressable by ESP32-S31");
-    let tx_slot = TxSlot::pin_static(TxSlot::init_in_place(TX_DMA_STORAGE.uninit()));
+    let tx_dma = TxDmaStorage::pin_static(TX_DMA_STORAGE.init_with(TxDmaStorage::new))
+        .expect("TX DMA storage must be addressable by ESP32-S31");
+    let tx_slot = Pin::static_mut(TX_SLOT_STORAGE.init(TxSlot::from_dma(tx_dma)));
     let tx_storage = TX_STATE.init(TxStorage::from_slot(
         tx_slot,
         phy.tx_target_power_profile(),

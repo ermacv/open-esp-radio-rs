@@ -678,7 +678,7 @@ mod tests {
 
     #[test]
     fn completion_releases_the_slot_and_network_lease_boundary() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn idle_connected_owner_returns_descriptor_key_and_sequences_for_teardown() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware::default();
         let tx = make_tx(slot.as_mut(), &mut hardware, 4);
         let key_index = tx.key.hardware_index();
@@ -734,7 +734,7 @@ mod tests {
 
     #[test]
     fn active_connected_owner_rejects_teardown_without_losing_transaction() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -765,7 +765,7 @@ mod tests {
 
     #[test]
     fn connected_action_uses_the_shared_slot_as_plaintext_voice_tx() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -806,7 +806,7 @@ mod tests {
 
     #[test]
     fn power_save_null_uses_shared_retried_tx_and_exact_pm_bit() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -856,7 +856,7 @@ mod tests {
 
     #[test]
     fn ack_timeout_republishes_the_same_encoded_mpdu_with_retry_bit() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -904,7 +904,7 @@ mod tests {
 
     #[test]
     fn timeout_waits_sixteen_micros_and_uses_the_bounded_retry_budget() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -939,7 +939,7 @@ mod tests {
 
     #[test]
     fn collision_retries_without_marking_an_untransmitted_mpdu_as_retry() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -976,7 +976,7 @@ mod tests {
 
     #[test]
     fn executor_deadline_without_hardware_state_requires_radio_reset() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -996,7 +996,7 @@ mod tests {
 
     #[test]
     fn queue_rejection_cancels_the_unpublished_descriptor() {
-        let mut slot = core::pin::pin!(TxSlot::<512>::new());
+        let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
         let mut hardware = Hardware::default();
         let mut tx = make_tx(slot.as_mut(), &mut hardware, 2);
 

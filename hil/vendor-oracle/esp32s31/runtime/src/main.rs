@@ -5,6 +5,7 @@ mod console;
 
 use core::{
     cell::UnsafeCell,
+    pin::Pin,
     sync::atomic::{AtomicU32, Ordering},
 };
 
@@ -58,6 +59,7 @@ use open_esp_radio::esp32s31::{
         },
     },
 };
+use open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage;
 use open_esp_radio::wifi::ieee80211::station::{
     OpenAuthenticationRequest, parse_open_authentication_response,
 };
@@ -484,7 +486,8 @@ impl RxStorage {
 }
 
 static RX_STORAGE: StaticCell<RxStorage> = StaticCell::new();
-static TX_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
+static TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
+static TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 fn read_diagnostic_mmio(address: usize) -> u32 {
     // SAFETY: diagnostic-only oracle reads; the open MAC path itself accepts
@@ -970,7 +973,9 @@ async fn run_open_mac_rx(
     }
     emergency_log(format_args!("OPEN_RADIO_ORACLE_HIL stage=open-tx-power"));
     log_phy_mmio_page_hashes("vendor-phy-open-mac");
-    let mut tx = TxSlot::pin_static(TxSlot::init_in_place(TX_STORAGE.uninit()));
+    let tx_dma = TxDmaStorage::pin_static(TX_DMA_STORAGE.init_with(TxDmaStorage::new))
+        .expect("TX DMA storage must be addressable by ESP32-S31");
+    let mut tx = Pin::static_mut(TX_SLOT_STORAGE.init(TxSlot::from_dma(tx_dma)));
     let frame_length = {
         let buffer = tx.as_mut().buffer_mut().unwrap();
         OpenAuthenticationRequest {

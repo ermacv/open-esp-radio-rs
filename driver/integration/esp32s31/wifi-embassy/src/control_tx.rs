@@ -541,7 +541,7 @@ mod tests {
 
     #[test]
     fn authentication_is_encoded_and_completed_by_the_shared_owner() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             completions: [Some(completion(0)), None],
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn ack_timeout_reuses_sequence_and_marks_the_retry_bit() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             completions: [Some(completion(5)), Some(completion(0))],
@@ -603,7 +603,7 @@ mod tests {
 
     #[test]
     fn eapol_uses_the_recovered_voice_data_priority() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             completions: [Some(completion(0)), None],
@@ -631,7 +631,7 @@ mod tests {
 
     #[test]
     fn missing_hardware_timeout_edge_quarantines_the_slot_at_deadline() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -669,7 +669,7 @@ mod tests {
 
     #[test]
     fn connected_handoff_preserves_the_descriptor_and_association_policy() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware::default();
         let mut tx = make_tx(slot.as_mut());
         tx.install_he_bss_color(37);
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn active_handoff_returns_tx_and_crypto_resources_for_later_retry() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new());
+        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()

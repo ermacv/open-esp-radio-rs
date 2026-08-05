@@ -34,6 +34,7 @@ pub mod esp32s31 {
 
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
+        pub use open_esp_radio_esp32s31_wifi_dma as dma;
         pub use open_esp_radio_esp32s31_wifi_lmac as lmac;
         pub use open_esp_radio_esp32s31_wifi_sta as sta;
 

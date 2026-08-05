@@ -359,7 +359,7 @@ mod tests {
 
     #[test]
     fn running_scan_tx_returns_the_control_owner_after_a_probe() {
-        let mut slot = pin!(TxSlot::<256>::new());
+        let mut slot = pin!(TxSlot::<256>::new_model());
         let mut hardware = ScanTxHardware {
             completion: Some(scan_tx_completion(0)),
             ..ScanTxHardware::default()
@@ -392,7 +392,7 @@ mod tests {
 
     #[test]
     fn failed_running_probe_disables_further_active_attempts() {
-        let mut slot = pin!(TxSlot::<256>::new());
+        let mut slot = pin!(TxSlot::<256>::new_model());
         let mut hardware = ScanTxHardware {
             completion: Some(scan_tx_completion(1)),
             ..ScanTxHardware::default()

@@ -25,6 +25,7 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
+use open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage;
 use open_esp_radio::esp32s31::wifi::sta::association::Esp32s31StaAssociationProfile;
 use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
 use open_esp_radio::esp32s31::wifi::sta::cold_start::{
@@ -840,7 +841,8 @@ static OPEN_RADIO_RX_DMA_STORAGE: StaticCell<RxStorage> = StaticCell::new();
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx")]
-static OPEN_RADIO_TX_DMA_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
+static OPEN_RADIO_TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
+static OPEN_RADIO_TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static OPEN_RADIO_TX_STATE: StaticCell<TxStorage> = StaticCell::new();
 // The cold owner is moved here only after scan/authentication has consumed
 // every polling-only MAC transition. Connected Embassy tasks may then borrow
@@ -5586,7 +5588,11 @@ async fn run_promiscuous_rx_hil(
     let platform = &mut platform;
     let mmio = &mut cold_mmio;
     let storage = OPEN_RADIO_RX_DMA_STORAGE.init_with(RxStorage::new);
-    let tx_slot = TxSlot::pin_static(TxSlot::init_in_place(OPEN_RADIO_TX_DMA_STORAGE.uninit()));
+    let tx_dma = TxDmaStorage::pin_static(
+        OPEN_RADIO_TX_DMA_STORAGE.init_with(TxDmaStorage::new),
+    )
+    .expect("TX DMA storage must be addressable by ESP32-S31");
+    let tx_slot = Pin::static_mut(OPEN_RADIO_TX_SLOT_STORAGE.init(TxSlot::from_dma(tx_dma)));
     let tx_storage = OPEN_RADIO_TX_STATE.init(TxStorage::from_slot(
         tx_slot,
         state

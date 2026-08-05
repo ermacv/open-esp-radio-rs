@@ -2,16 +2,23 @@
 
 #![forbid(unsafe_code)]
 
-use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
+use core::pin::Pin;
 
-use pin_project::pin_project;
+#[cfg(not(target_pointer_width = "32"))]
+extern crate alloc;
+#[cfg(not(target_pointer_width = "32"))]
+use alloc::boxed::Box;
 
+use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
     RadioRegisters,
 };
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
+#[cfg(not(target_pointer_width = "32"))]
+use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
+use open_esp_radio_esp32s31_wifi_dma::tx_storage::{PinnedTxDmaStorage, TxDmaStorageError};
 use open_esp_radio_ieee80211::he::HeDcmConstellation;
 pub use open_esp_radio_ieee80211::trigger::HeResourceUnit;
 use open_esp_radio_ieee80211::trigger::{
@@ -21,7 +28,7 @@ use open_esp_radio_ieee80211::trigger::{
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
 use crate::{
-    descriptor::{Descriptor, descriptor_address_valid, tx_owned_word},
+    descriptor::descriptor_address_valid,
     rate_control::dot11g_schedule_for_legacy_rate,
     rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx_plcp::{
@@ -172,6 +179,51 @@ pub trait TxHardware {
     fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool;
     fn start_he_tx(&mut self, queue: u8, plcp0: u32);
+
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_legacy_tx(queue, program)
+    }
+
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        assert_tx_dma_head(dma.descriptor_head(), plcp0);
+        self.start_legacy_tx(queue, plcp0);
+    }
+
+    fn prepare_bound_ht_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_ht_tx(queue, program)
+    }
+
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        assert_tx_dma_head(dma.descriptor_head(), plcp0);
+        self.start_ht_tx(queue, plcp0);
+    }
+
+    fn prepare_bound_he_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHeTxProgram,
+    ) -> bool {
+        assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_he_tx(queue, program)
+    }
+
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        assert_tx_dma_head(dma.descriptor_head(), plcp0);
+        self.start_he_tx(queue, plcp0);
+    }
     /// Copy a submitted HE vector when the backend exposes typed readback.
     ///
     /// Pure software test backends may leave this unsupported.
@@ -185,6 +237,10 @@ pub trait TxHardware {
         false
     }
     fn detach_completed_tx(&mut self, queue: u8) -> bool;
+}
+
+fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
+    assert_eq!(authority_head & 0x000f_ffff, plcp0 & 0x000f_ffff);
 }
 
 impl TxHardware for RadioRegisters {
@@ -210,6 +266,45 @@ impl TxHardware for RadioRegisters {
 
     fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
         self.start_he_mac_tx(queue, plcp0);
+    }
+
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        self.prepare_bound_legacy_mac_tx(dma, queue, program)
+    }
+
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
+        self.start_bound_mac_tx(dma, queue);
+    }
+
+    fn prepare_bound_ht_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        self.prepare_bound_ht_mac_tx(dma, queue, program)
+    }
+
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
+        self.start_bound_mac_tx(dma, queue);
+    }
+
+    fn prepare_bound_he_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHeTxProgram,
+    ) -> bool {
+        self.prepare_bound_he_mac_tx(dma, queue, program)
+    }
+
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, _plcp0: u32) {
+        self.start_bound_mac_tx(dma, queue);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
@@ -260,6 +355,45 @@ impl TxHardware for ColdRadioRegisters {
 
     fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
         TxHardware::start_he_tx(&mut **self, queue, plcp0);
+    }
+
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_legacy_tx(&mut **self, dma, queue, program)
+    }
+
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_legacy_tx(&mut **self, dma, queue, plcp0);
+    }
+
+    fn prepare_bound_ht_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_ht_tx(&mut **self, dma, queue, program)
+    }
+
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_ht_tx(&mut **self, dma, queue, plcp0);
+    }
+
+    fn prepare_bound_he_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHeTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_he_tx(&mut **self, dma, queue, program)
+    }
+
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_he_tx(&mut **self, dma, queue, plcp0);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
@@ -2674,87 +2808,70 @@ pub const fn legacy_q0_image(
     })
 }
 
-#[repr(C, align(16))]
-struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
-
-impl<const BUFFER_SIZE: usize> TxDmaBuffer<BUFFER_SIZE> {
-    fn bytes_mut(self: Pin<&mut Self>) -> &mut [u8; BUFFER_SIZE] {
-        &mut self.get_mut().0
-    }
-}
-
-/// Permanently pinned storage for one ordinary legacy/HT MPDU.
+/// LMAC policy owner for one lower, permanently located TX DMA allocation.
 ///
-/// The descriptor and its source buffer deliberately share one owner. Once
-/// [`pin_static`](Self::pin_static) is called, safe code can neither move the
-/// published descriptor nor move/drop the DMA buffer independently while the
-/// hardware owns it.
-#[pin_project]
+/// Descriptor and buffer storage live in the audited chip-DMA leaf. This
+/// upper owner retains only the queue, generation and completion policy and
+/// cannot manufacture a DMA address or final queue-start capability.
 pub struct TxSlot<const BUFFER_SIZE: usize> {
-    #[pin]
-    descriptor: Descriptor,
-    #[pin]
-    buffer: TxDmaBuffer<BUFFER_SIZE>,
-    state: TxSlotState,
+    dma: PinnedTxDmaStorage<BUFFER_SIZE>,
     generation_cursor: u32,
     active: TxCookie,
     queue: LegacyTxQueue,
-    #[pin]
-    _pin: PhantomPinned,
 }
 
 impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
-    pub const fn new() -> Self {
+    /// Attach LMAC policy to a statically pinned lower DMA allocation.
+    pub fn from_dma(dma: PinnedTxDmaStorage<BUFFER_SIZE>) -> Self {
         Self {
-            descriptor: Descriptor::new(),
-            buffer: TxDmaBuffer([0; BUFFER_SIZE]),
-            state: TxSlotState::Free,
+            dma,
             generation_cursor: 0,
             active: TxCookie(0),
             queue: LegacyTxQueue::Voice,
-            _pin: PhantomPinned,
         }
     }
 
-    /// Initialize the descriptor and source buffer in their final allocation.
+    /// Construct a native model with no asynchronous DMA actor.
     ///
-    /// `MaybeUninit::write` constructs one valid owner directly into the
-    /// caller-provided final allocation without raw field projection.
-    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        storage.write(Self::new())
-    }
-
-    /// Consume a unique static owner and permanently pin its DMA addresses.
-    pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
-        Pin::static_mut(storage)
+    /// Existing host tests use this convenience constructor. The leaked
+    /// allocation intentionally models permanently retained target SRAM; it
+    /// is unavailable in 32-bit production builds.
+    #[cfg(not(target_pointer_width = "32"))]
+    pub fn new_model() -> Self {
+        const MODEL_DESCRIPTOR_ADDRESS: u32 = 0x2f00_5000;
+        const MODEL_BUFFER_ADDRESS: u32 = 0x2f04_0000;
+        let storage = Box::leak(Box::new(TxDmaStorage::new()));
+        let dma =
+            TxDmaStorage::pin_static_model(storage, MODEL_DESCRIPTOR_ADDRESS, MODEL_BUFFER_ADDRESS)
+                .expect("native TX model addresses cover the complete allocation");
+        Self::from_dma(dma)
     }
 
     pub fn state(&self) -> TxSlotState {
-        self.state
+        self.dma.state()
     }
 
     /// Borrow the complete source buffer while software exclusively owns it.
     pub fn buffer_mut(self: Pin<&mut Self>) -> Result<&mut [u8; BUFFER_SIZE], TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Free {
-            return Err(TxError::Busy);
-        }
-        Ok(slot.buffer.bytes_mut())
+        self.get_mut()
+            .dma
+            .buffer_mut()
+            .map_err(map_dma_storage_error)
     }
 
     /// Current descriptor ownership word for bounded diagnostics.
     pub fn descriptor_word0(&self) -> u32 {
-        self.descriptor.word0()
+        self.dma.descriptor_word0()
     }
 
-    /// Stable descriptor address after this owner has been pinned.
+    /// Stable descriptor address retained by the lower DMA owner.
     pub fn descriptor_address(self: Pin<&Self>) -> u32 {
-        core::ptr::addr_of!(self.get_ref().descriptor).addr() as u32
+        self.get_ref().dma.binding().descriptor_address()
     }
 
-    /// Stable source-buffer address after this owner has been pinned.
+    /// Stable source-buffer address retained by the lower DMA owner.
     pub fn buffer_address(self: Pin<&Self>) -> u32 {
-        self.get_ref().buffer.0.as_ptr().addr() as u32
+        self.get_ref().dma.binding().buffer_address()
     }
 
     pub fn reserve(
@@ -2762,44 +2879,21 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         buffer_capacity: u32,
         transfer_length: u32,
     ) -> Result<TxCookie, TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Free {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Free {
             return Err(TxError::Busy);
         }
-        if buffer_capacity == 0
-            || buffer_capacity as usize > BUFFER_SIZE
-            || transfer_length == 0
-            || transfer_length > buffer_capacity
-        {
-            return Err(TxError::Invalid);
-        }
-        let buffer_address = slot.buffer.as_ref().get_ref().0.as_ptr().addr() as u32;
-        #[cfg(target_arch = "riscv32")]
-        {
-            let descriptor_address =
-                core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
-            if !descriptor_address_valid(descriptor_address)
-                || !crate::descriptor::dma_range_valid(buffer_address, buffer_capacity)
-            {
-                return Err(TxError::Invalid);
-            }
-        }
-        // The low field retains allocation capacity while the high field
-        // publishes the populated transfer length. They remain distinct even
-        // for a direct buffer without an ESF-private prefix.
-        let word0 = tx_owned_word(buffer_capacity, transfer_length).ok_or(TxError::Invalid)?;
-        let generation = (*slot.generation_cursor)
+        let generation = slot
+            .generation_cursor
             .checked_add(1)
             .ok_or(TxError::ResetRequired)?;
-        *slot.generation_cursor = generation;
-        *slot.active = TxCookie(generation);
-        *slot.queue = LegacyTxQueue::Voice;
-        slot.descriptor
-            .as_ref()
-            .get_ref()
-            .publish(word0, buffer_address, 0);
-        *slot.state = TxSlotState::Reserved;
-        Ok(*slot.active)
+        slot.dma
+            .reserve(buffer_capacity, transfer_length)
+            .map_err(map_dma_storage_error)?;
+        slot.generation_cursor = generation;
+        slot.active = TxCookie(generation);
+        slot.queue = LegacyTxQueue::Voice;
+        Ok(slot.active)
     }
 
     /// Cancel a descriptor that has not been published to an ordinary queue.
@@ -2810,13 +2904,14 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// edge makes that pre-publication failure recoverable without inventing
     /// a hardware detach transaction.
     pub fn cancel_reservation(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        slot.descriptor.as_ref().get_ref().publish(0, 0, 0);
-        *slot.active = TxCookie(0);
-        *slot.state = TxSlotState::Free;
+        slot.dma
+            .cancel_reservation()
+            .map_err(map_dma_storage_error)?;
+        slot.active = TxCookie(0);
         Ok(())
     }
 
@@ -2841,13 +2936,12 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         queue: LegacyTxQueue,
         config: LegacyTxConfig,
     ) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let actual_address = core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
-        let hardware_address = hardware.tx_descriptor_address(actual_address);
-        let image = legacy_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
+        let image = legacy_q0_image(slot.dma.binding().descriptor_address(), config)
+            .ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacLegacyTxProgram {
             plcp0: image.plcp0,
@@ -2862,15 +2956,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             contention_window: config.contention_window,
             interface: config.interface,
         };
-        if !hardware.prepare_legacy_tx(index, program) {
+        let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        if !hardware.prepare_bound_legacy_tx(&publication, index, program) {
             return Err(TxError::QueueActive);
         }
 
-        // Publish the software owner before the final hardware edge. A fast
-        // completion can therefore never observe the old Reserved state.
-        *slot.queue = queue;
-        *slot.state = TxSlotState::HardwareOwned;
-        hardware.start_legacy_tx(index, image.plcp0);
+        slot.queue = queue;
+        publication.commit(|start| {
+            hardware.start_bound_legacy_tx(start, index, image.plcp0);
+        });
         Ok(())
     }
 
@@ -2887,13 +2981,12 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         queue: LegacyTxQueue,
         config: HtTxConfig,
     ) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        let actual_address = core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
-        let hardware_address = hardware.tx_descriptor_address(actual_address);
-        let image = ht_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
+        let image =
+            ht_q0_image(slot.dma.binding().descriptor_address(), config).ok_or(TxError::Invalid)?;
         let index = queue.index();
         let program = MacHtTxProgram {
             plcp0: image.plcp0,
@@ -2913,13 +3006,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             contention_window: config.contention_window,
             interface: config.interface,
         };
-        if !hardware.prepare_ht_tx(index, program) {
+        let publication = slot.dma.publication().map_err(map_dma_storage_error)?;
+        if !hardware.prepare_bound_ht_tx(&publication, index, program) {
             return Err(TxError::QueueActive);
         }
 
-        *slot.queue = queue;
-        *slot.state = TxSlotState::HardwareOwned;
-        hardware.start_ht_tx(index, image.plcp0);
+        slot.queue = queue;
+        publication.commit(|start| {
+            hardware.start_bound_ht_tx(start, index, image.plcp0);
+        });
         Ok(())
     }
 
@@ -2927,12 +3022,16 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// TX layer performs its final q0 ENABLE|VALID write under MAC-IRQ
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
     /// method intentionally performs no incomplete hardware submission.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn mark_hardware_owned(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Reserved || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        *slot.state = TxSlotState::HardwareOwned;
+        slot.dma
+            .publication()
+            .map_err(map_dma_storage_error)?
+            .commit(|_| {});
         Ok(())
     }
 
@@ -2951,18 +3050,18 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
-        let slot = self.project();
+        let slot = self.get_mut();
         let index = slot.queue.index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
 
-        if *slot.state != TxSlotState::HardwareOwned {
-            *slot.state = TxSlotState::ResetRequired;
+        if slot.dma.state() != TxSlotState::HardwareOwned {
+            slot.dma.quarantine();
             return Err(TxError::Stale);
         }
-        *slot.state = TxSlotState::Completed;
-        Ok(Some(decode_tx_completion(*slot.active, registers)))
+        slot.dma.mark_completed().map_err(map_dma_storage_error)?;
+        Ok(Some(decode_tx_completion(slot.active, registers)))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -2975,8 +3074,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.begin_tx_timeout_abort(slot.queue.index()) {
@@ -2992,11 +3091,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// in that state. The caller returns control to the unique radio lifecycle
     /// owner, which performs a full reset before reconstructing TX storage.
     pub fn require_reset(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
-        *slot.state = TxSlotState::ResetRequired;
+        slot.dma.require_reset().map_err(map_dma_storage_error)?;
         Ok(())
     }
 
@@ -3006,16 +3105,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.abort_tx_collision(slot.queue.index()) {
             return Ok(false);
         }
-        slot.descriptor.as_ref().get_ref().publish(0, 0, 0);
-        *slot.active = TxCookie(0);
-        *slot.state = TxSlotState::Free;
+        slot.dma.release_aborted().map_err(map_dma_storage_error)?;
+        slot.active = TxCookie(0);
         Ok(true)
     }
 
@@ -3030,19 +3128,19 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::HardwareOwned || cookie != slot.active {
             return Err(TxError::Stale);
         }
         let Some(detached) = hardware.finish_tx_timeout_abort(slot.queue.index()) else {
             return Err(TxError::TimeoutNotPending);
         };
         if !detached {
-            *slot.state = TxSlotState::ResetRequired;
+            slot.dma.quarantine();
             return Err(TxError::DetachFailed);
         }
-        *slot.active = TxCookie(0);
-        *slot.state = TxSlotState::Free;
+        slot.dma.release_aborted().map_err(map_dma_storage_error)?;
+        slot.active = TxCookie(0);
         Ok(())
     }
 
@@ -3054,22 +3152,26 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        let slot = self.project();
-        if *slot.state != TxSlotState::Completed || cookie != *slot.active {
+        let slot = self.get_mut();
+        if slot.dma.state() != TxSlotState::Completed || cookie != slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.detach_completed_tx(slot.queue.index()) {
-            *slot.state = TxSlotState::ResetRequired;
+            slot.dma.quarantine();
             return Err(TxError::DetachFailed);
         }
-        *slot.active = TxCookie(0);
-        *slot.state = TxSlotState::Free;
+        slot.dma
+            .release_completed()
+            .map_err(map_dma_storage_error)?;
+        slot.active = TxCookie(0);
         Ok(())
     }
 }
 
-impl<const BUFFER_SIZE: usize> Default for TxSlot<BUFFER_SIZE> {
-    fn default() -> Self {
-        Self::new()
+fn map_dma_storage_error(error: TxDmaStorageError) -> TxError {
+    match error {
+        TxDmaStorageError::Address | TxDmaStorageError::InvalidLength => TxError::Invalid,
+        TxDmaStorageError::Busy => TxError::Busy,
+        TxDmaStorageError::State => TxError::Stale,
     }
 }

@@ -110,9 +110,23 @@ fn provenance_summary(report: &LinkedIrReport) -> (usize, usize, usize, usize) {
     )
 }
 
+fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize) {
+    let registers = report
+        .mmio_registers
+        .iter()
+        .filter(|register| !register.field_candidates.is_empty())
+        .count();
+    let candidates = report
+        .mmio_registers
+        .iter()
+        .map(|register| register.field_candidates.len())
+        .sum();
+    (registers, candidates)
+}
+
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-mmio-linkage=direct-producer-return-bit-intersection\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-mmio-linkage=direct-producer-return-bit-intersection\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -290,7 +304,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
             };
             println!(
-                "MMIO\t{}\tordinal={}\t{:#010x}\twidth={}\tregister={}\taccess={}\tmode={}\tpath={}\taddress-expression={}\tguard={}\tvalue={}\tmodified={}\tpreserved={}\tinverted={}\tforced-zero={}\tforced-one={}\tread-derived={}\tdynamic={}",
+                "MMIO\t{}\tordinal={}\t{:#010x}\twidth={}\tregister={}\taccess={}\tmode={}\tpath={}\taddress-expression={}\tguard={}\tpredicate-mask={}\tpredicate-expected={}\tvalue={}\tmodified={}\tpreserved={}\tinverted={}\tforced-zero={}\tforced-one={}\tread-derived={}\tdynamic={}",
                 function.identity,
                 access.ordinal,
                 access.address,
@@ -301,6 +315,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 access.path,
                 access.address_expression.as_deref().unwrap_or("-"),
                 access.guard.as_deref().unwrap_or("-"),
+                mask(access.predicate_mask),
+                mask(access.predicate_expected),
                 access.value.as_deref().unwrap_or("-"),
                 mask(access.modified_mask),
                 mask(access.preserved_mask),
@@ -581,22 +597,59 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
             })
             .collect::<Vec<_>>()
             .join("|");
+        let predicate_masks = register
+            .predicate_masks
+            .iter()
+            .map(|mask| format!("{mask:#010x}"))
+            .collect::<Vec<_>>()
+            .join("|");
+        let poll_masks = register
+            .poll_masks
+            .iter()
+            .map(|mask| format!("{mask:#010x}"))
+            .collect::<Vec<_>>()
+            .join("|");
         println!(
-            "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tstatic-shapes={}\tindexed-candidates={}\twhole-register-writes={}\trmw-writes={}\twrite-masks={}\tcandidate-bit-ranges={}\tfunctions={}",
+            "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tpredicate-shapes={}\tstatic-shapes={}\tindexed-candidates={}\twhole-register-writes={}\twhole-register-predicates={}\twhole-register-polls={}\trmw-writes={}\twrite-masks={}\tpredicate-masks={}\tpoll-masks={}\tcandidate-bit-ranges={}\tfield-candidates={}\tfunctions={}",
             register.address,
             register.width,
             register.names.join("|"),
             register.read_shapes,
             register.write_shapes,
             register.poll_shapes,
+            register.predicate_shapes,
             register.static_shapes,
             register.indexed_candidate_shapes,
             register.whole_register_write_shapes,
+            register.whole_register_predicate_shapes,
+            register.whole_register_poll_shapes,
             register.read_modify_write_shapes,
             write_masks,
+            predicate_masks,
+            poll_masks,
             candidate_bit_ranges,
+            register.field_candidates.len(),
             register.functions.join(","),
         );
+        for candidate in &register.field_candidates {
+            println!(
+                "MMIO-FIELD-CANDIDATE\t{:#010x}\twidth={}\tregisters={}\tbits={}-{}\tmask={:#010x}\twrite-shapes={}\tpredicate-shapes={}\tpoll-shapes={}\tfunctions={}\taccess-functions={}\tpredicate-functions={}\tsemantic-operations={}\tsemantic-roots={}",
+                register.address,
+                register.width,
+                register.names.join("|"),
+                candidate.least_significant_bit,
+                candidate.most_significant_bit,
+                candidate.mask,
+                candidate.write_shapes,
+                candidate.predicate_shapes,
+                candidate.poll_shapes,
+                candidate.functions.join(","),
+                candidate.access_functions.join(","),
+                candidate.predicate_functions.join(","),
+                candidate.semantic_operations.join("|"),
+                candidate.semantic_roots.join(","),
+            );
+        }
     }
     for boundary in &report.semantic_boundaries {
         println!(
@@ -650,8 +703,9 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
     let included_reachable_functions = report.functions.len() - root_functions;
     let (exact_return_functions, return_source_ranges, mmio_return_sources, guard_mmio_links) =
         provenance_summary(report);
+    let (mmio_field_candidate_registers, mmio_field_candidates) = field_candidate_summary(report);
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -661,6 +715,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
         report.mmio_registers.len(),
         report.mmio_functions,
         report.mmio_access_shapes,
+        mmio_field_candidate_registers,
+        mmio_field_candidates,
         report.delay_functions,
         report.delay_shapes,
         report.context_functions,
@@ -723,6 +779,45 @@ fn write_pseudo(
     .expect("writing to String cannot fail");
     output
         .push_str("// This is analysis IR, not compilable Rust and not a completeness claim.\n\n");
+    for register in &report.mmio_registers {
+        for candidate in &register.field_candidates {
+            writeln!(
+                output,
+                "// MMIO-FIELD-CANDIDATE: {:#010x} [{}] bits={}-{} mask={:#010x} writes={} predicates={} polls={}",
+                register.address,
+                register.names.join(" | "),
+                candidate.least_significant_bit,
+                candidate.most_significant_bit,
+                candidate.mask,
+                candidate.write_shapes,
+                candidate.predicate_shapes,
+                candidate.poll_shapes,
+            )
+            .expect("writing to String cannot fail");
+            writeln!(
+                output,
+                "//   FUNCTIONS: {}",
+                candidate.functions.join(" | ")
+            )
+            .expect("writing to String cannot fail");
+            if !candidate.semantic_operations.is_empty() {
+                writeln!(
+                    output,
+                    "//   GUARDED-SEMANTICS: {} (roots: {})",
+                    candidate.semantic_operations.join(" | "),
+                    candidate.semantic_roots.join(" | ")
+                )
+                .expect("writing to String cannot fail");
+            }
+        }
+    }
+    if report
+        .mmio_registers
+        .iter()
+        .any(|register| !register.field_candidates.is_empty())
+    {
+        output.push('\n');
+    }
     for function in &report.functions {
         let summary = &function.effect_summary;
         writeln!(output, "// SELECTION: {}", function.selection)
@@ -1280,7 +1375,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 23,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 24,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1334,6 +1429,10 @@ fn write_json_report(
     output.push_str(
         "  \"cfg_guard_mmio_linkage_mode\": \"direct-producer-return-bit-intersection\",\n",
     );
+    output.push_str(
+        "  \"mmio_field_candidate_mode\": \"contiguous-subregister-write-poll-and-direct-guard-evidence\",\n",
+    );
+    output.push_str("  \"mmio_field_semantics_claim\": false,\n");
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
@@ -1366,9 +1465,10 @@ fn write_json_report(
     let included_reachable_functions = report.functions.len() - root_functions;
     let (exact_return_functions, return_source_ranges, mmio_return_sources, guard_mmio_links) =
         provenance_summary(report);
+    let (mmio_field_candidate_registers, mmio_field_candidates) = field_candidate_summary(report);
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"root_functions\": {}, \"included_reachable_functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}, \"exact_return_functions\": {}, \"return_source_ranges\": {}, \"mmio_return_sources\": {}, \"guard_mmio_links\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"root_functions\": {}, \"included_reachable_functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"mmio_field_candidate_registers\": {}, \"mmio_field_candidates\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"trampoline_slots\": {}, \"trampoline_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"call_argument_shapes\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}, \"exact_return_functions\": {}, \"return_source_ranges\": {}, \"mmio_return_sources\": {}, \"guard_mmio_links\": {}}},",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -1378,6 +1478,8 @@ fn write_json_report(
         report.mmio_registers.len(),
         report.mmio_functions,
         report.mmio_access_shapes,
+        mmio_field_candidate_registers,
+        mmio_field_candidates,
         report.delay_functions,
         report.delay_shapes,
         report.context_functions,
@@ -1419,17 +1521,34 @@ fn write_json_report(
         write_strings(&mut output, &register.names);
         write!(
             output,
-            ", \"read_shapes\": {}, \"write_shapes\": {}, \"poll_shapes\": {}, \"static_shapes\": {}, \"indexed_candidate_shapes\": {}, \"whole_register_write_shapes\": {}, \"read_modify_write_shapes\": {}, \"write_masks\": [",
+            ", \"read_shapes\": {}, \"write_shapes\": {}, \"poll_shapes\": {}, \"predicate_shapes\": {}, \"static_shapes\": {}, \"indexed_candidate_shapes\": {}, \"whole_register_write_shapes\": {}, \"whole_register_predicate_shapes\": {}, \"whole_register_poll_shapes\": {}, \"read_modify_write_shapes\": {}, \"write_masks\": [",
             register.read_shapes,
             register.write_shapes,
             register.poll_shapes,
+            register.predicate_shapes,
             register.static_shapes,
             register.indexed_candidate_shapes,
             register.whole_register_write_shapes,
+            register.whole_register_predicate_shapes,
+            register.whole_register_poll_shapes,
             register.read_modify_write_shapes,
         )
         .expect("writing to String cannot fail");
         for (mask_index, mask) in register.write_masks.iter().enumerate() {
+            if mask_index != 0 {
+                output.push_str(", ");
+            }
+            write_string(&mut output, &format!("{mask:#010x}"));
+        }
+        output.push_str("], \"predicate_masks\": [");
+        for (mask_index, mask) in register.predicate_masks.iter().enumerate() {
+            if mask_index != 0 {
+                output.push_str(", ");
+            }
+            write_string(&mut output, &format!("{mask:#010x}"));
+        }
+        output.push_str("], \"poll_masks\": [");
+        for (mask_index, mask) in register.poll_masks.iter().enumerate() {
             if mask_index != 0 {
                 output.push_str(", ");
             }
@@ -1450,6 +1569,33 @@ fn write_json_report(
             )
             .expect("writing to String cannot fail");
             write_strings(&mut output, &range.functions);
+            output.push('}');
+        }
+        output.push_str("], \"field_candidates\": [");
+        for (candidate_index, candidate) in register.field_candidates.iter().enumerate() {
+            if candidate_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"least_significant_bit\": {}, \"most_significant_bit\": {}, \"mask\": \"{:#010x}\", \"write_shapes\": {}, \"predicate_shapes\": {}, \"poll_shapes\": {}, \"functions\": ",
+                candidate.least_significant_bit,
+                candidate.most_significant_bit,
+                candidate.mask,
+                candidate.write_shapes,
+                candidate.predicate_shapes,
+                candidate.poll_shapes,
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &candidate.functions);
+            output.push_str(", \"access_functions\": ");
+            write_strings(&mut output, &candidate.access_functions);
+            output.push_str(", \"predicate_functions\": ");
+            write_strings(&mut output, &candidate.predicate_functions);
+            output.push_str(", \"semantic_operations\": ");
+            write_strings(&mut output, &candidate.semantic_operations);
+            output.push_str(", \"semantic_roots\": ");
+            write_strings(&mut output, &candidate.semantic_roots);
             output.push('}');
         }
         output.push_str("], \"functions\": ");
@@ -1648,6 +1794,10 @@ fn write_json_report(
             write_optional_string(&mut output, access.address_expression.as_deref());
             output.push_str(", \"guard\": ");
             write_optional_string(&mut output, access.guard.as_deref());
+            output.push_str(", \"predicate_mask\": ");
+            write_optional_hex(&mut output, access.predicate_mask);
+            output.push_str(", \"predicate_expected\": ");
+            write_optional_hex(&mut output, access.predicate_expected);
             output.push_str(", \"value\": ");
             write_optional_string(&mut output, access.value.as_deref());
             for (name, value) in [

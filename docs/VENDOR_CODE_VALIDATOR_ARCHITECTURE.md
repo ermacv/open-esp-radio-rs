@@ -290,6 +290,17 @@ contiguous candidate bit ranges linked back to their producing functions.
 Whole-register and read-modify-write shapes are counted separately, without
 promoting those mechanical masks to a peripheral-semantics claim.
 
+The project-wide index also forms conservative field candidates by joining
+equal contiguous subregister masks from writes, poll predicates and exact
+direct guard-result links to an MMIO-backed producer return. Evidence classes
+retain separate shape counts. Candidates link access and predicate functions;
+when a guarded semantic action is reachable, they also link its operation and
+effect-summary root for navigation in generated pseudo-source. Full-register
+masks remain separate counters and do not become fields. Guard evidence is
+accepted only for an address with one observed access width. This join does not
+infer register or field names, merge adjacent hardware fields, recover W1C or
+reset semantics, or guess through arithmetic and transitive return calls.
+
 ### Shared model
 
 - observable effect IR: memory, MMIO, calls, delays, fences and state ranges;

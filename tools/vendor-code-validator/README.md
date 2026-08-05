@@ -54,9 +54,12 @@ address, names known SVD registers, assigns stable `RANGE.REG_ADDRESS`
 candidate names to unknown addresses, and lists every artifact/member/function
 that used each register. For writes it reports output-bit provenance as
 preserved, inverted, forced zero, forced one, derived from a register read, or
-dynamic. `modified_mask` and `candidate_bit_ranges` are mechanical data-flow
-facts; they do not claim field names, reset values, W1C semantics or any other
-peripheral behavior.
+dynamic. `modified_mask`, `candidate_bit_ranges` and `field_candidates` are
+mechanical data-flow facts; they do not claim field names, reset values, W1C
+semantics or any other peripheral behavior. Field candidates combine partial
+write masks, poll masks and MMIO-backed branch predicates, and link the
+resulting bit ranges to access functions and guarded semantic actions for
+manual analysis.
 
 Discovery deliberately retains events recovered before unsupported control
 flow and emits per-function diagnostics without failing the run. Its JSON says
@@ -94,7 +97,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v23 records the selection mode plus root and
+`reachable-internal`, and schema v24 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +119,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v23 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v24 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +147,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v23 records
+symbolic states. Schema v24 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -262,9 +265,26 @@ claim that every candidate is touched in one invocation.
 For writes, the register index retains every distinct `write_mask`, counts
 whole-register and read-modify-write shapes, and splits modified masks into
 contiguous `candidate_bit_ranges`. Each range lists the functions that produced
-it. These ranges are mechanical field candidates only; adjacent fields may be
-merged and no access policy such as W1C, reset value or semantic name is
-inferred.
+it. This write-only inventory remains available for compatibility.
+
+Schema v24 additionally exposes `field_candidates`. It merges equal contiguous
+subregister ranges recovered from three independent evidence classes: write
+masks, poll predicates and direct guard-result links to a producer function's
+MMIO-backed return bits. Every candidate keeps separate shape counts, the
+functions that accessed or tested it, and semantic operations and report roots
+whose recovered call paths are guarded by it. A semantic operation is therefore
+a navigation link, not a proposed register-field name or behavior.
+
+Zero and whole-register masks never create field candidates; whole-register
+writes, predicates and polls have separate counters. Discontiguous masks become
+separate contiguous candidates, so adjacent hardware fields can still be merged
+and one logical field can still be split. Guard evidence is indexed only when
+the address has one unambiguous observed access width, and currently follows
+the exact direct producer-return linkage described below rather than guessing
+through arithmetic or transitive calls. No access policy such as W1C, reset
+value, field name or peripheral semantics is inferred. The JSON records this
+scope with `mmio_field_candidate_mode` and
+`mmio_field_semantics_claim: false`.
 
 External ABI slots carry a harness-owned semantic overlay: an opaque operation
 name, typed/named input/output arguments, return type and optional replacement

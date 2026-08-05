@@ -182,6 +182,8 @@ pub(crate) struct LinkedMmioAccess {
     pub(crate) path: String,
     pub(crate) address_expression: Option<String>,
     pub(crate) guard: Option<String>,
+    pub(crate) predicate_mask: Option<u32>,
+    pub(crate) predicate_expected: Option<u32>,
     pub(crate) value: Option<String>,
     pub(crate) modified_mask: Option<u32>,
     pub(crate) preserved_mask: Option<u32>,
@@ -202,6 +204,21 @@ pub(crate) struct LinkedMmioBitRange {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedMmioFieldCandidate {
+    pub(crate) least_significant_bit: u8,
+    pub(crate) most_significant_bit: u8,
+    pub(crate) mask: u32,
+    pub(crate) write_shapes: usize,
+    pub(crate) predicate_shapes: usize,
+    pub(crate) poll_shapes: usize,
+    pub(crate) functions: Vec<String>,
+    pub(crate) access_functions: Vec<String>,
+    pub(crate) predicate_functions: Vec<String>,
+    pub(crate) semantic_operations: Vec<String>,
+    pub(crate) semantic_roots: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedMmioRegister {
     pub(crate) address: u32,
     pub(crate) width: u8,
@@ -209,12 +226,18 @@ pub(crate) struct LinkedMmioRegister {
     pub(crate) read_shapes: usize,
     pub(crate) write_shapes: usize,
     pub(crate) poll_shapes: usize,
+    pub(crate) predicate_shapes: usize,
     pub(crate) static_shapes: usize,
     pub(crate) indexed_candidate_shapes: usize,
     pub(crate) whole_register_write_shapes: usize,
+    pub(crate) whole_register_predicate_shapes: usize,
+    pub(crate) whole_register_poll_shapes: usize,
     pub(crate) read_modify_write_shapes: usize,
     pub(crate) write_masks: Vec<u32>,
+    pub(crate) predicate_masks: Vec<u32>,
+    pub(crate) poll_masks: Vec<u32>,
     pub(crate) candidate_bit_ranges: Vec<LinkedMmioBitRange>,
+    pub(crate) field_candidates: Vec<LinkedMmioFieldCandidate>,
     pub(crate) functions: Vec<String>,
 }
 
@@ -2343,6 +2366,8 @@ fn push_mmio_access(output: &mut Vec<LinkedMmioAccess>, draft: MmioAccessDraft<'
         path: path.to_owned(),
         address_expression,
         guard,
+        predicate_mask: None,
+        predicate_expected: None,
         value: value.map(pseudo_value),
         modified_mask,
         preserved_mask,
@@ -2439,6 +2464,8 @@ fn collect_mmio_access_from_event(
                     path: path.to_owned(),
                     address_expression: address_expression.clone(),
                     guard: Some(guard.clone()),
+                    predicate_mask: Some(*mask),
+                    predicate_expected: Some(*expected),
                     value: None,
                     modified_mask: None,
                     preserved_mask: None,
@@ -4114,17 +4141,35 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
 }
 
 #[derive(Default)]
+struct MmioFieldCandidateAccumulator {
+    write_shapes: usize,
+    predicate_shapes: usize,
+    poll_shapes: usize,
+    functions: BTreeSet<String>,
+    access_functions: BTreeSet<String>,
+    predicate_functions: BTreeSet<String>,
+    semantic_operations: BTreeSet<String>,
+    semantic_roots: BTreeSet<String>,
+}
+
+#[derive(Default)]
 struct MmioRegisterAccumulator {
     names: BTreeSet<String>,
     read_shapes: usize,
     write_shapes: usize,
     poll_shapes: usize,
+    predicate_shapes: usize,
     static_shapes: usize,
     indexed_candidate_shapes: usize,
     whole_register_write_shapes: usize,
+    whole_register_predicate_shapes: usize,
+    whole_register_poll_shapes: usize,
     read_modify_write_shapes: usize,
     write_masks: BTreeSet<u32>,
+    predicate_masks: BTreeSet<u32>,
+    poll_masks: BTreeSet<u32>,
     candidate_bit_ranges: BTreeMap<(u8, u8, u32), (usize, BTreeSet<String>)>,
+    field_candidates: BTreeMap<(u8, u8, u32), MmioFieldCandidateAccumulator>,
     functions: BTreeSet<String>,
 }
 
@@ -4152,6 +4197,110 @@ fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
         bit += 1;
     }
     output
+}
+
+fn record_access_field_mask(
+    entry: &mut MmioRegisterAccumulator,
+    mask: u32,
+    width: u8,
+    function: &str,
+    access: &'static str,
+) {
+    let full_mask = width_mask(width);
+    let mask = mask & full_mask;
+    if mask == 0 || mask == full_mask {
+        return;
+    }
+    for range in candidate_bit_ranges(mask, width) {
+        let candidate = entry.field_candidates.entry(range).or_default();
+        match access {
+            "write" => candidate.write_shapes += 1,
+            "poll" => candidate.poll_shapes += 1,
+            _ => unreachable!("field access evidence has a closed vocabulary"),
+        }
+        candidate.functions.insert(function.to_owned());
+        candidate.access_functions.insert(function.to_owned());
+    }
+}
+
+fn record_predicate_field_mask(
+    entry: &mut MmioRegisterAccumulator,
+    mask: u32,
+    width: u8,
+    predicate_function: &str,
+    producer: Option<&str>,
+) {
+    let full_mask = width_mask(width);
+    let mask = mask & full_mask;
+    if mask == 0 || mask == full_mask {
+        return;
+    }
+    for range in candidate_bit_ranges(mask, width) {
+        let candidate = entry.field_candidates.entry(range).or_default();
+        candidate.predicate_shapes += 1;
+        candidate.functions.insert(predicate_function.to_owned());
+        candidate
+            .predicate_functions
+            .insert(predicate_function.to_owned());
+        if let Some(producer) = producer {
+            candidate.functions.insert(producer.to_owned());
+            candidate.access_functions.insert(producer.to_owned());
+        }
+    }
+}
+
+struct SemanticFieldEvidence<'a> {
+    mask: u32,
+    width: u8,
+    operation: &'a str,
+    root: &'a str,
+    predicate_function: &'a str,
+    producer: Option<&'a str>,
+}
+
+fn record_semantic_field_link(
+    entry: &mut MmioRegisterAccumulator,
+    evidence: SemanticFieldEvidence<'_>,
+) {
+    let full_mask = width_mask(evidence.width);
+    let mask = evidence.mask & full_mask;
+    if mask == 0 || mask == full_mask {
+        return;
+    }
+    for range in candidate_bit_ranges(mask, evidence.width) {
+        let candidate = entry.field_candidates.entry(range).or_default();
+        candidate
+            .semantic_operations
+            .insert(evidence.operation.to_owned());
+        candidate.semantic_roots.insert(evidence.root.to_owned());
+        candidate
+            .predicate_functions
+            .insert(evidence.predicate_function.to_owned());
+        candidate
+            .functions
+            .insert(evidence.predicate_function.to_owned());
+        if let Some(producer) = evidence.producer {
+            candidate.functions.insert(producer.to_owned());
+            candidate.access_functions.insert(producer.to_owned());
+        }
+    }
+}
+
+fn unique_mmio_widths(
+    index: &BTreeMap<(u32, u8), MmioRegisterAccumulator>,
+) -> BTreeMap<u32, Option<u8>> {
+    let mut widths = BTreeMap::new();
+    for &(address, width) in index.keys() {
+        widths
+            .entry(address)
+            .and_modify(|known| {
+                if *known != Some(width) {
+                    *known = None;
+                }
+            })
+            .or_insert(Some(width));
+    }
+    widths
 }
 
 fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
@@ -4195,8 +4344,31 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                         candidate.0 += 1;
                         candidate.1.insert(function.identity.clone());
                     }
+                    record_access_field_mask(
+                        entry,
+                        modified_mask,
+                        access.width,
+                        &function.identity,
+                        "write",
+                    );
                 }
-                "poll" => entry.poll_shapes += 1,
+                "poll" => {
+                    entry.poll_shapes += 1;
+                    let predicate_mask = access
+                        .predicate_mask
+                        .expect("poll MMIO access has a structured predicate mask")
+                        & width_mask(access.width);
+                    entry.poll_masks.insert(predicate_mask);
+                    entry.whole_register_poll_shapes +=
+                        usize::from(predicate_mask == width_mask(access.width));
+                    record_access_field_mask(
+                        entry,
+                        predicate_mask,
+                        access.width,
+                        &function.identity,
+                        "poll",
+                    );
+                }
                 _ => unreachable!("linked MMIO access has a closed access vocabulary"),
             }
             match access.mode {
@@ -4207,6 +4379,104 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             entry.functions.insert(function.identity.clone());
         }
     }
+    let unique_widths = unique_mmio_widths(&mmio_index);
+    let mut predicate_evidence = BTreeSet::new();
+    for function in &functions {
+        for call in &function.calls {
+            let Some(paths) = call.guard_paths.as_deref() else {
+                continue;
+            };
+            for path in paths {
+                for guard in &path.guards {
+                    for source in &guard.result_sources {
+                        let producer = source
+                            .target
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_owned());
+                        for mmio in &source.mmio_sources {
+                            predicate_evidence.insert((
+                                function.identity.clone(),
+                                guard.site,
+                                producer.clone(),
+                                mmio.clone(),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (predicate_function, _site, producer, mmio) in predicate_evidence {
+        let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
+            continue;
+        };
+        let entry = mmio_index
+            .get_mut(&(mmio.address, width))
+            .expect("unique MMIO width comes from the register index");
+        let predicate_mask = mmio.register_bits & width_mask(width);
+        entry.predicate_shapes += 1;
+        entry.predicate_masks.insert(predicate_mask);
+        entry.whole_register_predicate_shapes += usize::from(predicate_mask == width_mask(width));
+        entry.functions.insert(predicate_function.clone());
+        if producer != "unknown" {
+            entry.functions.insert(producer.clone());
+        }
+        record_predicate_field_mask(
+            entry,
+            predicate_mask,
+            width,
+            &predicate_function,
+            (producer != "unknown").then_some(producer.as_str()),
+        );
+    }
+    let mut semantic_evidence = BTreeSet::new();
+    for function in &functions {
+        for action in &function.effect_summary.semantic_actions {
+            let Some(scopes) = action.guard_scopes.as_deref() else {
+                continue;
+            };
+            for scope in scopes {
+                for path in &scope.paths {
+                    for guard in &path.guards {
+                        for source in &guard.result_sources {
+                            let producer = source
+                                .target
+                                .clone()
+                                .unwrap_or_else(|| "unknown".to_owned());
+                            for mmio in &source.mmio_sources {
+                                semantic_evidence.insert((
+                                    function.identity.clone(),
+                                    action.operation.clone(),
+                                    scope.function.clone(),
+                                    producer.clone(),
+                                    mmio.clone(),
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (root, operation, predicate_function, producer, mmio) in semantic_evidence {
+        let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
+            continue;
+        };
+        let entry = mmio_index
+            .get_mut(&(mmio.address, width))
+            .expect("unique MMIO width comes from the register index");
+        record_semantic_field_link(
+            entry,
+            SemanticFieldEvidence {
+                mask: mmio.register_bits,
+                width,
+                operation: &operation,
+                root: &root,
+                predicate_function: &predicate_function,
+                producer: (producer != "unknown").then_some(producer.as_str()),
+            },
+        );
+    }
     let mmio_registers = mmio_index
         .into_iter()
         .map(|((address, width), entry)| LinkedMmioRegister {
@@ -4216,11 +4486,16 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             read_shapes: entry.read_shapes,
             write_shapes: entry.write_shapes,
             poll_shapes: entry.poll_shapes,
+            predicate_shapes: entry.predicate_shapes,
             static_shapes: entry.static_shapes,
             indexed_candidate_shapes: entry.indexed_candidate_shapes,
             whole_register_write_shapes: entry.whole_register_write_shapes,
+            whole_register_predicate_shapes: entry.whole_register_predicate_shapes,
+            whole_register_poll_shapes: entry.whole_register_poll_shapes,
             read_modify_write_shapes: entry.read_modify_write_shapes,
             write_masks: entry.write_masks.into_iter().collect(),
+            predicate_masks: entry.predicate_masks.into_iter().collect(),
+            poll_masks: entry.poll_masks.into_iter().collect(),
             candidate_bit_ranges: entry
                 .candidate_bit_ranges
                 .into_iter()
@@ -4234,6 +4509,33 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
                         mask,
                         write_shapes,
                         functions: functions.into_iter().collect(),
+                    },
+                )
+                .collect(),
+            field_candidates: entry
+                .field_candidates
+                .into_iter()
+                .map(
+                    |((least_significant_bit, most_significant_bit, mask), candidate)| {
+                        LinkedMmioFieldCandidate {
+                            least_significant_bit,
+                            most_significant_bit,
+                            mask,
+                            write_shapes: candidate.write_shapes,
+                            predicate_shapes: candidate.predicate_shapes,
+                            poll_shapes: candidate.poll_shapes,
+                            functions: candidate.functions.into_iter().collect(),
+                            access_functions: candidate.access_functions.into_iter().collect(),
+                            predicate_functions: candidate
+                                .predicate_functions
+                                .into_iter()
+                                .collect(),
+                            semantic_operations: candidate
+                                .semantic_operations
+                                .into_iter()
+                                .collect(),
+                            semantic_roots: candidate.semantic_roots.into_iter().collect(),
+                        }
                     },
                 )
                 .collect(),
@@ -5144,9 +5446,70 @@ mod tests {
             .find(|access| access.access == "poll")
             .unwrap();
         assert_eq!(poll.mode, "static");
+        assert_eq!(poll.predicate_mask, Some(1));
+        assert_eq!(poll.predicate_expected, Some(1));
         assert_eq!(
             poll.guard.as_deref(),
             Some("value & 0x00000001 == 0x00000001")
+        );
+    }
+
+    #[test]
+    fn field_candidates_separate_evidence_and_exclude_whole_register_masks() {
+        let mut register = MmioRegisterAccumulator::default();
+        record_access_field_mask(&mut register, 0x30, 32, "writer", "write");
+        record_access_field_mask(&mut register, 0x30, 32, "poller", "poll");
+        record_predicate_field_mask(&mut register, 0x30, 32, "dispatcher", Some("reader"));
+        record_semantic_field_link(
+            &mut register,
+            SemanticFieldEvidence {
+                mask: 0x30,
+                width: 32,
+                operation: "rtos.event.post",
+                root: "irq_handler",
+                predicate_function: "dispatcher",
+                producer: Some("reader"),
+            },
+        );
+        record_access_field_mask(&mut register, u32::MAX, 32, "whole_writer", "write");
+        record_predicate_field_mask(&mut register, u32::MAX, 32, "whole_dispatcher", None);
+
+        assert_eq!(register.field_candidates.len(), 1);
+        let candidate = register
+            .field_candidates
+            .get(&(4, 5, 0x30))
+            .expect("partial mask creates one contiguous candidate");
+        assert_eq!(candidate.write_shapes, 1);
+        assert_eq!(candidate.poll_shapes, 1);
+        assert_eq!(candidate.predicate_shapes, 1);
+        assert_eq!(
+            candidate.functions,
+            BTreeSet::from([
+                "dispatcher".to_owned(),
+                "poller".to_owned(),
+                "reader".to_owned(),
+                "writer".to_owned(),
+            ])
+        );
+        assert_eq!(
+            candidate.access_functions,
+            BTreeSet::from([
+                "poller".to_owned(),
+                "reader".to_owned(),
+                "writer".to_owned()
+            ])
+        );
+        assert_eq!(
+            candidate.predicate_functions,
+            BTreeSet::from(["dispatcher".to_owned()])
+        );
+        assert_eq!(
+            candidate.semantic_operations,
+            BTreeSet::from(["rtos.event.post".to_owned()])
+        );
+        assert_eq!(
+            candidate.semantic_roots,
+            BTreeSet::from(["irq_handler".to_owned()])
         );
     }
 
@@ -5356,6 +5719,8 @@ mod tests {
             path: "entry".to_owned(),
             address_expression: None,
             guard: None,
+            predicate_mask: None,
+            predicate_expected: None,
             value: Some("const:0x00000001".to_owned()),
             modified_mask: Some(u32::MAX),
             preserved_mask: None,

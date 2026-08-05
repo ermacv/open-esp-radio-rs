@@ -273,6 +273,16 @@
              register="ENTRY_WORD%s"
              field="VALUE"
              source="BLOB_LIBPP_HAL_CRYPTO"/>
+      <write name="mac_he_trigger_queue_control"
+             peripheral="WIFI_MAC_HE_INIT_SUFFIX"
+             register="QUEUE_CONTROL%s"
+             fields="QOS_NULL_TO_TRANSLATED_BSS,TRIGGER_BASED_ENABLE,MU_EDCA_TIMER_SELECT,MPDU_LENGTH_LINK_ADDRESS,TID"
+             source="BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB"/>
+      <write name="mac_he_obss_narrow_band_ru_disable_bitmap"
+             peripheral="WIFI_MAC_HE_OBSS_NARROW_BAND_RU"
+             register="DISABLE_BITMAP"
+             field="VALUE"
+             source="BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

@@ -15314,7 +15314,7 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `LINK_INDEX` reader - "]
         pub type LinkIndexR = crate::FieldReader;
         #[doc = "Field `LINK_INDEX` writer - "]
-        pub type LinkIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type LinkIndexW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:6"]
             #[inline(always)]
@@ -17329,7 +17329,7 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `VALUE` reader - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
         pub type ValueR = crate::FieldReader<u32>;
         #[doc = "Field `VALUE` writer - Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths."]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
@@ -17382,7 +17382,7 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `VALID_BITMAP` reader - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
         pub type ValidBitmapR = crate::FieldReader;
         #[doc = "Field `VALID_BITMAP` writer - WDEVTXQBSR_VD\\[0-7\\]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity."]
-        pub type ValidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type ValidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` reader - TID used when AC_EMPTY_USE_SW_TID is set."]
         pub type AcEmptySoftwareTidR = crate::FieldReader;
         #[doc = "Field `AC_EMPTY_SOFTWARE_TID` writer - TID used when AC_EMPTY_USE_SW_TID is set."]
@@ -17394,7 +17394,7 @@ pub mod wifi_mac_he_buffer_status {
         #[doc = "Field `TID_BITMAP` reader - Trigger-based TIDs enabled by successful HE BlockAck setup."]
         pub type TidBitmapR = crate::FieldReader;
         #[doc = "Field `TID_BITMAP` writer - Trigger-based TIDs enabled by successful HE BlockAck setup."]
-        pub type TidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type TidBitmapW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `BASIC_SPECIAL_BSR_SEQUENCE` reader - "]
         pub type BasicSpecialBsrSequenceR = crate::BitReader;
         #[doc = "Field `BASIC_SPECIAL_BSR_SEQUENCE` writer - "]
@@ -18591,7 +18591,7 @@ pub mod wifi_mac_he_obss_narrow_band_ru {
         #[doc = "Field `VALUE` reader - "]
         pub type ValueR = crate::FieldReader<u32>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 20, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:19"]
             #[inline(always)]
@@ -18634,7 +18634,7 @@ pub mod wifi_mac_he_obss_narrow_band_ru {
         #[doc = "Field `CLASS_DISABLE` reader - Approximate functional name for the five bits toggled together by hal_he_disable_obss_narrow_bw_ru."]
         pub type ClassDisableR = crate::FieldReader;
         #[doc = "Field `CLASS_DISABLE` writer - Approximate functional name for the five bits toggled together by hal_he_disable_obss_narrow_bw_ru."]
-        pub type ClassDisableW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type ClassDisableW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -20419,15 +20419,15 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `MU_EDCA_TIMER_SELECT` reader - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
         pub type MuEdcaTimerSelectR = crate::FieldReader;
         #[doc = "Field `MU_EDCA_TIMER_SELECT` writer - Complete mac_tx_set_tb copies the two-bit logical queue number here."]
-        pub type MuEdcaTimerSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type MuEdcaTimerSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` reader - First seven-bit link returned by complete mac_tx_set_mplen."]
         pub type MpduLengthLinkAddressR = crate::FieldReader;
         #[doc = "Field `MPDU_LENGTH_LINK_ADDRESS` writer - First seven-bit link returned by complete mac_tx_set_mplen."]
-        pub type MpduLengthLinkAddressW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type MpduLengthLinkAddressW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `TID` reader - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
         pub type TidR = crate::FieldReader;
         #[doc = "Field `TID` writer - Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb."]
-        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `MINIMUM_TX_POWER` reader - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
         pub type MinimumTxPowerR = crate::FieldReader;
         #[doc = "Field `MINIMUM_TX_POWER` writer - Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name."]
@@ -20552,11 +20552,11 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `MPDU_LENGTH` reader - "]
         pub type MpduLengthR = crate::FieldReader<u16>;
         #[doc = "Field `MPDU_LENGTH` writer - "]
-        pub type MpduLengthW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16>;
+        pub type MpduLengthW<'a, REG> = crate::FieldWriter<'a, REG, 14, u16, crate::Safe>;
         #[doc = "Field `NEXT_LINK` reader - "]
         pub type NextLinkR = crate::FieldReader;
         #[doc = "Field `NEXT_LINK` writer - "]
-        pub type NextLinkW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type NextLinkW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
@@ -31435,6 +31435,53 @@ pub mod zero_based_field_write {
         unsafe {
             registers
                 .entry_word(index)
+                .write_with_zero(|writer| writer.value().set(value));
+        }
+    }
+
+    /// Write `QOS_NULL_TO_TRANSLATED_BSS`, `TRIGGER_BASED_ENABLE`, `MU_EDCA_TIMER_SELECT`, `MPDU_LENGTH_LINK_ADDRESS`, `TID` in `WIFI_MAC_HE_INIT_SUFFIX`.`QUEUE_CONTROL%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_he_trigger_queue_control(
+        registers: &crate::WifiMacHeInitSuffix,
+        index: usize,
+        qos_null_to_translated_bss_value: bool,
+        trigger_based_enable_value: bool,
+        mu_edca_timer_select_value: u8,
+        mpdu_length_link_address_value: u8,
+        tid_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.queue_control(index).write_with_zero(|writer| {
+                writer
+                    .qos_null_to_translated_bss()
+                    .bit(qos_null_to_translated_bss_value)
+                    .trigger_based_enable()
+                    .bit(trigger_based_enable_value)
+                    .mu_edca_timer_select()
+                    .set(mu_edca_timer_select_value)
+                    .mpdu_length_link_address()
+                    .set(mpdu_length_link_address_value)
+                    .tid()
+                    .set(tid_value)
+            });
+        }
+    }
+
+    /// Write `VALUE` in `WIFI_MAC_HE_OBSS_NARROW_BAND_RU`.`DISABLE_BITMAP` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_he_obss_narrow_band_ru_disable_bitmap(
+        registers: &crate::WifiMacHeObssNarrowBandRu,
+        value: u32,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .disable_bitmap()
                 .write_with_zero(|writer| writer.value().set(value));
         }
     }

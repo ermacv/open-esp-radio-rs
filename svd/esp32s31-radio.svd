@@ -2331,7 +2331,7 @@
           <name>HE_MPDU_LENGTH_TAIL%s</name>
           <description>SOURCE[BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact]. Complete mac_tx_set_mplen writes the final allocated seven-bit HE MPDU-length link index at 0x201054fc-q*0x7c when it reaches the DMA descriptor whose word zero bit 30 marks the tail. Bits 31:7 are preserved. Complete mac_tx_set_tb calls that leaf for every frame before making the queue Trigger-eligible.</description>
           <addressOffset>0x24</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LINK_INDEX</name><bitOffset>0</bitOffset><bitWidth>7</bitWidth></field></fields>
+          <fields><field><name>LINK_INDEX</name><bitOffset>0</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex><name>POWER%s</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX]; CONFIDENCE[instruction-exact-partial]. Packed data/RTS PHY gain-table indices, not dBm.</description><addressOffset>0x28</addressOffset><size>32</size><access>read-write</access><fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields></register>
         <register><dim>4</dim><dimIncrement>0x7c</dimIncrement><dimIndex>0-3</dimIndex>
@@ -2562,17 +2562,17 @@
           <name>SOFTWARE_BSR%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,BLOB_LIBPP_DBG_READ_TX_PPDU,ROM_REV0_MAC_TX_SET_TB,HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. WDEVTXQBSR_SW[0-7]. The debug decoder reads all eight low-twenty-bit values. Complete blob and ROM mac_tx_set_tb independently prove write semantics for logical queues zero through three: preserve bits 31:20 and replace VALUE with the sum of linked frame-state +0x22 halfwords before publishing the queue-ready bit. Complete dbg_read_tx_ppdu names that halfword msdu_len. Rev0 open HIL programmed 47104 for logical queue two with the exact ROM sequence, then observed VALUE zero immediately after validity became visible. Treat reads as live hardware state rather than durable software-write readback until a Trigger HIL resolves whether the value was consumed or rejected.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>VALUE</name><description>Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths.</description><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
+          <fields><field><name>VALUE</name><description>Software BSR value. On the recovered Trigger-based TX path this is the low-twenty-bit sum of the original MSDU lengths from linked frame-state +0x22, not the encoded MPDU/PSDU lengths.</description><bitOffset>0</bitOffset><bitWidth>20</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfffff</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>20</bitOffset><bitWidth>12</bitWidth></field></fields>
         </register>
         <register>
           <name>CONTROL</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_BSR_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBNET80211_HE_TID_BITMAP,HIL_OPEN_HE_BSR_TID_LIFECYCLE_2026_07_29,HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. WDEVTXQBSR_CTRL. Complete dbg_read_bsr_info decodes all fields below. Complete blob and ROM mac_tx_set_tb perform a fresh-read RMW that ORs 1&lt;&lt;logical_queue into bits 7:0 after the queue configuration and software BSR value are visible; the debug function names these bits WDEVTXQBSR_VD[0-7], so the neutral validity name is retained. Complete hal_he_set_tid_bitmap and hal_he_clr_tid_bitmap independently update TID_BITMAP through two fresh reads followed by one write. Open HE HIL qualified the TID0 set edge after successful AddBA and later read back logical queue two validity immediately after the exact ROM publication sequence.</description>
           <addressOffset>0x44</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>VALID_BITMAP</name><description>WDEVTXQBSR_VD[0-7]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>VALID_BITMAP</name><description>WDEVTXQBSR_VD[0-7]. Complete mac_tx_set_tb proves that bits zero through three are also the write-side Trigger-ready bits selected by logical queue number; no source yet proves whether hardware subsequently translates those queue bits into per-TID validity.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>AC_EMPTY_SOFTWARE_TID</name><description>TID used when AC_EMPTY_USE_SW_TID is set.</description><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
             <field><name>AC_EMPTY_USE_SOFTWARE_TID</name><bitOffset>12</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>TID_BITMAP</name><description>Trigger-based TIDs enabled by successful HE BlockAck setup.</description><bitOffset>13</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>TID_BITMAP</name><description>Trigger-based TIDs enabled by successful HE BlockAck setup.</description><bitOffset>13</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>BASIC_SPECIAL_BSR_SEQUENCE</name><bitOffset>21</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>TID_LIMIT_ZERO_BSR_SEQUENCE</name><bitOffset>22</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>HIGH_UNKNOWN</name><bitOffset>23</bitOffset><bitWidth>9</bitWidth></field>
@@ -2689,13 +2689,13 @@
           <name>DISABLE_BITMAP</name>
           <description>Twenty-bit OBSS narrow-band RU disable bitmap written as 0xfffff when disabled and zero when enabled.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth></field></fields>
+          <fields><field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>20</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>CONTROL</name>
           <description>The complete leaf updates CLASS_DISABLE bits first and GLOBAL_DISABLE second through independent fresh-read RMWs.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>GLOBAL_DISABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>CLASS_DISABLE</name><description>Approximate functional name for the five bits toggled together by hal_he_disable_obss_narrow_bw_ru.</description><bitOffset>4</bitOffset><bitWidth>5</bitWidth></field></fields>
+          <fields><field><name>GLOBAL_DISABLE</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field><field><name>CLASS_DISABLE</name><description>Approximate functional name for the five bits toggled together by hal_he_disable_obss_narrow_bw_ru.</description><bitOffset>4</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -2842,13 +2842,13 @@
           <name>QUEUE_CONTROL%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB,BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HE_QUEUE_SCHEDULING_BASELINE_2026_07_29]; CONFIDENCE[instruction-exact-hil-qualified]. Canonical WDEVTXQ_CONF1. Eight physical queue words are addressed in reverse logical order: physical array index seven is logical queue zero. Complete multi-BSSID clear independently clears bit two. Complete blob and ROM mac_tx_set_tb construct the logical-queue-zero-through-three word from only the preserved bit two, TB_ENA, logical queue as MU-EDCA selection, first MPDU-link index and frame TID; all other bits are cleared. The legacy PPDU formatter clears bit 3 of physical entries four through seven, which is the same TB_ENA field rather than an independent PPDU-control register. An open ordinary-SU HE pre-port baseline read all eight logical queues with TB_ENA=0 and the decoded TID, MU-EDCA selection, MPDU-length-link and minimum-power fields zero; Trigger/TB hardware counters also remained zero.</description>
           <addressOffset>0xcd8</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>LOW_CLEARED_BY_TB_SETUP</name><description>Bits zero and one are cleared by complete mac_tx_set_tb.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>QOS_NULL_TO_TRANSLATED_BSS</name><description>The sole pre-existing bit preserved by complete mac_tx_set_tb.</description><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TRIGGER_BASED_ENABLE</name><description>Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it.</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>MU_EDCA_TIMER_SELECT</name><description>Complete mac_tx_set_tb copies the two-bit logical queue number here.</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth></field><field><name>MPDU_LENGTH_LINK_ADDRESS</name><description>First seven-bit link returned by complete mac_tx_set_mplen.</description><bitOffset>6</bitOffset><bitWidth>7</bitWidth></field><field><name>TID</name><description>Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb.</description><bitOffset>13</bitOffset><bitWidth>4</bitWidth></field><field><name>MINIMUM_TX_POWER</name><description>Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name.</description><bitOffset>17</bitOffset><bitWidth>5</bitWidth></field><field><name>HIGH_CLEARED_BY_TB_SETUP</name><description>Bits 31:22 are cleared by complete mac_tx_set_tb.</description><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field></fields>
+          <fields><field><name>LOW_CLEARED_BY_TB_SETUP</name><description>Bits zero and one are cleared by complete mac_tx_set_tb.</description><bitOffset>0</bitOffset><bitWidth>2</bitWidth></field><field><name>QOS_NULL_TO_TRANSLATED_BSS</name><description>The sole pre-existing bit preserved by complete mac_tx_set_tb.</description><bitOffset>2</bitOffset><bitWidth>1</bitWidth></field><field><name>TRIGGER_BASED_ENABLE</name><description>Complete dbg_read_txq_conf1 names bit 3 TB_ENA; complete mac_tx_set_tb sets it.</description><bitOffset>3</bitOffset><bitWidth>1</bitWidth></field><field><name>MU_EDCA_TIMER_SELECT</name><description>Complete mac_tx_set_tb copies the two-bit logical queue number here.</description><bitOffset>4</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field><field><name>MPDU_LENGTH_LINK_ADDRESS</name><description>First seven-bit link returned by complete mac_tx_set_mplen.</description><bitOffset>6</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field><field><name>TID</name><description>Low four bits of the QoS descriptor state selected by complete mac_tx_set_tb.</description><bitOffset>13</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field><field><name>MINIMUM_TX_POWER</name><description>Cleared by complete mac_tx_set_tb; the earlier debug decoder supplies the field name.</description><bitOffset>17</bitOffset><bitWidth>5</bitWidth></field><field><name>HIGH_CLEARED_BY_TB_SETUP</name><description>Bits 31:22 are cleared by complete mac_tx_set_tb.</description><bitOffset>22</bitOffset><bitWidth>10</bitWidth></field></fields>
         </register>
         <register><dim>120</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-119</dimIndex>
           <name>HE_SCRATCH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_DBG_READ_TX_MPLEN,BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB]; CONFIDENCE[instruction-exact]. Parent clears 120 consecutive words from 0x201055f0 through 0x201057cc. Complete dbg_read_tx_mplen reads the same aperture as the hardware TX MPDU-length link table and names bits 13:0 MPDU_LEN and bits 20:14 NEXT. Complete mac_tx_set_mplen preserves bits 31:21, writes the fourteen-bit DMA metadata length (plus four when metadata word one bit 28 is set), and links contiguous allocated entries; the terminal entry uses NEXT=0x7f.</description>
           <addressOffset>0x15d0</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>MPDU_LENGTH</name><bitOffset>0</bitOffset><bitWidth>14</bitWidth></field><field><name>NEXT_LINK</name><bitOffset>14</bitOffset><bitWidth>7</bitWidth></field><field><name>HIGH_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field></fields>
+          <fields><field><name>MPDU_LENGTH</name><bitOffset>0</bitOffset><bitWidth>14</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3fff</maximum></range></writeConstraint></field><field><name>NEXT_LINK</name><bitOffset>14</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field><field><name>HIGH_UNKNOWN</name><bitOffset>21</bitOffset><bitWidth>11</bitWidth></field></fields>
         </register>
       </registers>
     </peripheral>
@@ -4296,6 +4296,16 @@
              register="ENTRY_WORD%s"
              field="VALUE"
              source="BLOB_LIBPP_HAL_CRYPTO"/>
+      <write name="mac_he_trigger_queue_control"
+             peripheral="WIFI_MAC_HE_INIT_SUFFIX"
+             register="QUEUE_CONTROL%s"
+             fields="QOS_NULL_TO_TRANSLATED_BSS,TRIGGER_BASED_ENABLE,MU_EDCA_TIMER_SELECT,MPDU_LENGTH_LINK_ADDRESS,TID"
+             source="BLOB_LIBPP_MAC_TX_SET_TB,ROM_REV0_MAC_TX_SET_TB"/>
+      <write name="mac_he_obss_narrow_band_ru_disable_bitmap"
+             peripheral="WIFI_MAC_HE_OBSS_NARROW_BAND_RU"
+             register="DISABLE_BITMAP"
+             field="VALUE"
+             source="BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
       <write name="clear_rx_block_ack_bitmap_low_load"

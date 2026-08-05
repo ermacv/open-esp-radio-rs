@@ -1,5 +1,7 @@
 //! Typed HE trigger/OFDMA control and best-effort hardware diagnostics.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
@@ -433,12 +435,12 @@ impl RadioRegisters {
             let next = reservation.next(position).unwrap();
             suffix
                 .he_scratch(usize::from(index))
-                .modify(|_, w| unsafe { w.mpdu_length().bits(length).next_link().bits(next) });
+                .modify(|_, w| w.mpdu_length().set(length).next_link().set(next));
             if next == MPDU_LENGTH_LINK_END {
                 self.peripherals
                     .wifi_mac_tx_queue_vector
                     .he_mpdu_length_tail(vector_bank)
-                    .modify(|_, w| unsafe { w.link_index().bits(index) });
+                    .modify(|_, w| w.link_index().set(index));
             }
         };
 
@@ -448,23 +450,15 @@ impl RadioRegisters {
         // constructs every other named field from the current frame/queue.
         let queue_control = suffix.queue_control(physical_queue);
         let qos_null_to_translated_bss = queue_control.read().qos_null_to_translated_bss().bit();
-        // SAFETY: complete blob and ROM setters intentionally replace the
-        // full word with exactly this bounded image; zero is not assumed to
-        // be the peripheral reset value.
-        unsafe {
-            queue_control.write_with_zero(|w| {
-                w.qos_null_to_translated_bss()
-                    .bit(qos_null_to_translated_bss)
-                    .trigger_based_enable()
-                    .set_bit()
-                    .mu_edca_timer_select()
-                    .bits(queue)
-                    .mpdu_length_link_address()
-                    .bits(reservation.first)
-                    .tid()
-                    .bits(tid.value())
-            });
-        }
+        super::svd::zero_based_field_write::mac_he_trigger_queue_control(
+            suffix,
+            physical_queue,
+            qos_null_to_translated_bss,
+            true,
+            queue,
+            reservation.first,
+            tid.value(),
+        );
 
         for (position, length) in mpdu_lengths.iter().enumerate().skip(1) {
             write_link(position as u8, *length);
@@ -473,7 +467,7 @@ impl RadioRegisters {
         self.peripherals
             .wifi_mac_he_buffer_status
             .software_bsr(usize::from(queue))
-            .modify(|_, w| unsafe { w.value().bits(queued_msdu_bytes) });
+            .modify(|_, w| w.value().set(queued_msdu_bytes));
         // Do not add a fence or diagnostic read here. The complete blob and
         // ROM sequence is exactly SW(BSR), LW(CONTROL), SW(CONTROL). BSR
         // hardware update is live, so lengthening the interval before the
@@ -481,10 +475,7 @@ impl RadioRegisters {
         self.peripherals
             .wifi_mac_he_buffer_status
             .control()
-            .modify(|r, w| unsafe {
-                w.valid_bitmap()
-                    .bits(r.valid_bitmap().bits() | (1 << queue))
-            });
+            .modify(|r, w| w.valid_bitmap().set(r.valid_bitmap().bits() | (1 << queue)));
         let mut snapshot = self.he_trigger_based_queue_snapshot(reservation);
         snapshot.programmed_msdu_bytes = queued_msdu_bytes;
         Ok(snapshot)
@@ -571,8 +562,7 @@ impl RadioRegisters {
             old_bitmap & !tid.mask()
         };
 
-        // SAFETY: the bounded TID newtype makes `bitmap` exactly eight bits.
-        control.modify(|_, w| unsafe { w.tid_bitmap().bits(bitmap) });
+        control.modify(|_, w| w.tid_bitmap().set(bitmap));
     }
 
     /// Read all eight interleaved hardware/software BSR values and control.
@@ -722,16 +712,13 @@ impl RadioRegisters {
     /// identities remain approximate and are marked as such in the SVD.
     pub fn set_he_obss_narrow_band_ru_disabled(&mut self, disabled: bool) {
         let registers = &self.peripherals.wifi_mac_he_obss_narrow_band_ru;
-        // SAFETY: both complete images fit the generated twenty-bit field.
-        unsafe {
-            registers
-                .disable_bitmap()
-                .write_with_zero(|w| w.value().bits(if disabled { 0x000f_ffff } else { 0 }));
-        }
-        // SAFETY: both complete images fit the generated five-bit field.
+        super::svd::zero_based_field_write::mac_he_obss_narrow_band_ru_disable_bitmap(
+            registers,
+            if disabled { 0x000f_ffff } else { 0 },
+        );
         registers
             .control()
-            .modify(|_, w| unsafe { w.class_disable().bits(if disabled { 0x1f } else { 0 }) });
+            .modify(|_, w| w.class_disable().set(if disabled { 0x1f } else { 0 }));
         registers
             .control()
             .modify(|_, w| w.global_disable().bit(disabled));

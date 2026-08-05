@@ -310,6 +310,7 @@ field 0x20104020 WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL HE_BSSID_ENABLE he_
 register 0x20104028 32 read-write WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH WIFI_MAC_HE_INIT_SUFFIX WifiMacHeInitSuffix wifi_mac_he_init_suffix - multi_bssid_high - -
 field 0x20104028 WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH HIGH_ADDRESS_UNKNOWN high_address_unknown - 16 8 read-write
 register 0x20104038 32 read-write WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW WIFI_MAC_HE_INIT_SUFFIX WifiMacHeInitSuffix wifi_mac_he_init_suffix - broadcast_ru_low - -
+field 0x20104038 WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW ASSOCIATION_ID association_id - 0 11 read-write
 field 0x20104038 WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW VALUE value - 11 11 read-write
 field 0x20104038 WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW ENABLE enable - 22 1 read-write
 register 0x2010403c 32 read-write WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_HIGH WIFI_MAC_HE_INIT_SUFFIX WifiMacHeInitSuffix wifi_mac_he_init_suffix - broadcast_ru_high - -

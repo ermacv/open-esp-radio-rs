@@ -11997,11 +11997,12 @@ pub mod wifi_mac_bssid_policy {
         #[doc = "Field `ASSOCIATION_ID` reader - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Eleven-bit AID printed by dbg_read_rx_misc."]
         pub type AssociationIdR = crate::FieldReader<u16>;
         #[doc = "Field `ASSOCIATION_ID` writer - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Eleven-bit AID printed by dbg_read_rx_misc."]
-        pub type AssociationIdW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type AssociationIdW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `MINIMUM_MPDU_START_SPACING` reader - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Three-bit MMSS value printed by dbg_read_rx_misc."]
         pub type MinimumMpduStartSpacingR = crate::FieldReader;
         #[doc = "Field `MINIMUM_MPDU_START_SPACING` writer - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Three-bit MMSS value printed by dbg_read_rx_misc."]
-        pub type MinimumMpduStartSpacingW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type MinimumMpduStartSpacingW<'a, REG> =
+            crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `INTERFACE_IS_SOFT_AP` reader - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
         pub type InterfaceIsSoftApR = crate::BitReader;
         #[doc = "Field `INTERFACE_IS_SOFT_AP` writer - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_RX_POLICY\\]; CONFIDENCE\\[instruction-exact\\]. Cleared for interface zero by the associated-STA policy-five transaction."]
@@ -16116,7 +16117,7 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `BITMAP_CONTROL` reader - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
         pub type BitmapControlR = crate::FieldReader;
         #[doc = "Field `BITMAP_CONTROL` writer - Complete dbg_read_color_collision prints this two-bit value as BITMAP and separately prints its low bit as COLOR_BITMAP_CLR. COLOR_BITMAP_CLR is therefore a semantic view of BITMAP_CONTROL\\[0\\], not a second overlapping SVD field."]
-        pub type BitmapControlW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BitmapControlW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `TIMEOUT_SECONDS` reader - "]
         pub type TimeoutSecondsR = crate::FieldReader;
         #[doc = "Field `TIMEOUT_SECONDS` writer - "]
@@ -19212,7 +19213,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `BSS_COLOR` reader - "]
         pub type BssColorR = crate::FieldReader;
         #[doc = "Field `BSS_COLOR` writer - "]
-        pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type BssColorW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `BSS_COLOR_ENABLE` reader - "]
         pub type BssColorEnableR = crate::BitReader;
         #[doc = "Field `BSS_COLOR_ENABLE` writer - "]
@@ -19224,7 +19225,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `BSSID_SELECT` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
         pub type BssidSelectR = crate::FieldReader;
         #[doc = "Field `BSSID_SELECT` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init clears both selector bits for interface zero after enabling HE BSSID matching; dbg_read_rx_misc names the two-bit field HE_BSSID_IDX."]
-        pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BssidSelectW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `HE_BSSID_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
         pub type HeBssidEnableR = crate::BitReader;
         #[doc = "Field `HE_BSSID_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSSID_LIFECYCLE,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_he_bssid_init sets bit 31 for interface zero before clearing BSSID_SELECT; hal_he_bssid_deinit clears it, and dbg_read_rx_misc names it HE_BSSID_EN."]
@@ -19395,15 +19396,24 @@ pub mod wifi_mac_he_init_suffix {
         pub type R = crate::R<BroadcastRuLowSpec>;
         #[doc = "Register `BROADCAST_RU_LOW` writer"]
         pub type W = crate::W<BroadcastRuLowSpec>;
+        #[doc = "Field `ASSOCIATION_ID` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID\\]; CONFIDENCE\\[instruction-exact\\]. Interface-zero AID copied into the low eleven bits by the complete association leaf."]
+        pub type AssociationIdR = crate::FieldReader<u16>;
+        #[doc = "Field `ASSOCIATION_ID` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID\\]; CONFIDENCE\\[instruction-exact\\]. Interface-zero AID copied into the low eleven bits by the complete association leaf."]
+        pub type AssociationIdW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `VALUE` reader - "]
         pub type ValueR = crate::FieldReader<u16>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `ENABLE` reader - "]
         pub type EnableR = crate::BitReader;
         #[doc = "Field `ENABLE` writer - "]
         pub type EnableW<'a, REG> = crate::BitWriter<'a, REG>;
         impl R {
+            #[doc = "Bits 0:10 - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID\\]; CONFIDENCE\\[instruction-exact\\]. Interface-zero AID copied into the low eleven bits by the complete association leaf."]
+            #[inline(always)]
+            pub fn association_id(&self) -> AssociationIdR {
+                AssociationIdR::new((self.bits & 0x07ff) as u16)
+            }
             #[doc = "Bits 11:21"]
             #[inline(always)]
             pub fn value(&self) -> ValueR {
@@ -19416,6 +19426,11 @@ pub mod wifi_mac_he_init_suffix {
             }
         }
         impl W {
+            #[doc = "Bits 0:10 - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID\\]; CONFIDENCE\\[instruction-exact\\]. Interface-zero AID copied into the low eleven bits by the complete association leaf."]
+            #[inline(always)]
+            pub fn association_id(&mut self) -> AssociationIdW<'_, BroadcastRuLowSpec> {
+                AssociationIdW::new(self, 0)
+            }
             #[doc = "Bits 11:21"]
             #[inline(always)]
             pub fn value(&mut self) -> ValueW<'_, BroadcastRuLowSpec> {
@@ -19451,7 +19466,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `LOW_VALUE` reader - "]
         pub type LowValueR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_VALUE` writer - "]
-        pub type LowValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type LowValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `LOW_ENABLE` reader - "]
         pub type LowEnableR = crate::BitReader;
         #[doc = "Field `LOW_ENABLE` writer - "]
@@ -19459,7 +19474,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `HIGH_VALUE` reader - "]
         pub type HighValueR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_VALUE` writer - "]
-        pub type HighValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type HighValueW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `HIGH_ENABLE` reader - "]
         pub type HighEnableR = crate::BitReader;
         #[doc = "Field `HIGH_ENABLE` writer - "]
@@ -19926,23 +19941,23 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `BPSK_DURATION` reader - "]
         pub type BpskDurationR = crate::FieldReader;
         #[doc = "Field `BPSK_DURATION` writer - "]
-        pub type BpskDurationW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type BpskDurationW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QPSK_DURATION` reader - "]
         pub type QpskDurationR = crate::FieldReader;
         #[doc = "Field `QPSK_DURATION` writer - "]
-        pub type QpskDurationW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type QpskDurationW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QAM16_DURATION` reader - "]
         pub type Qam16DurationR = crate::FieldReader;
         #[doc = "Field `QAM16_DURATION` writer - "]
-        pub type Qam16DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type Qam16DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QAM64_DURATION` reader - "]
         pub type Qam64DurationR = crate::FieldReader;
         #[doc = "Field `QAM64_DURATION` writer - "]
-        pub type Qam64DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type Qam64DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QAM256_DURATION` reader - "]
         pub type Qam256DurationR = crate::FieldReader;
         #[doc = "Field `QAM256_DURATION` writer - "]
-        pub type Qam256DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type Qam256DurationW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:4"]
             #[inline(always)]
@@ -20021,7 +20036,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `DEFAULT_PE_DURATION` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_DEFAULT_PE,BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR\\]; CONFIDENCE\\[instruction-exact\\]. Three-bit Default Packet Extension duration copied from HE Operation Parameters byte zero."]
         pub type DefaultPeDurationR = crate::FieldReader;
         #[doc = "Field `DEFAULT_PE_DURATION` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_SET_DEFAULT_PE,BLOB_LIBNET80211_IEEE80211_PARSE_HEOPR\\]; CONFIDENCE\\[instruction-exact\\]. Three-bit Default Packet Extension duration copied from HE Operation Parameters byte zero."]
-        pub type DefaultPeDurationW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type DefaultPeDurationW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `MPDU_LENGTH_OFFSET` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
         pub type MpduLengthOffsetR = crate::FieldReader<u16>;
         #[doc = "Field `MPDU_LENGTH_OFFSET` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
@@ -31152,6 +31167,33 @@ pub mod fixed_register_write {
 
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
+
+    /// Write `RATE_0`, `RATE_1`, `RATE_2`, `RATE_3` in `WIFI_MAC_HE_INIT_SUFFIX`.`ERSU_ACK_RATE` while publishing zero to every other register bit.
+    #[inline]
+    pub fn ersu_ack_rate_baseline(
+        registers: &crate::WifiMacHeInitSuffix,
+        rate_0_value: u8,
+        rate_1_value: u8,
+        rate_2_value: u8,
+        rate_3_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.ersu_ack_rate().write_with_zero(|writer| {
+                writer
+                    .rate_0()
+                    .set(rate_0_value)
+                    .rate_1()
+                    .set(rate_1_value)
+                    .rate_2()
+                    .set(rate_2_value)
+                    .rate_3()
+                    .set(rate_3_value)
+            });
+        }
+    }
 
     /// Write `PEER_ADDRESS_HEAD` in `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_PEER_HEAD` while publishing zero to every other register bit.
     #[inline]

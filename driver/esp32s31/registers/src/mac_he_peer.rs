@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the finite HE20 peer/association leaves.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// Hardware-visible subset of one parsed HE20 peer.
@@ -44,7 +46,7 @@ impl RadioRegisters {
             .multi_bssid_control();
         // Keep the four fresh-read RMW edges distinct and in blob order.
         control.modify(|_, w| w.he_bssid_enable().set_bit());
-        control.modify(|_, w| unsafe { w.bssid_select().bits(0) });
+        control.modify(|_, w| w.bssid_select().set(0));
 
         let power_save = self.peripherals.wifi_mac_rx_power_save.control();
         power_save.modify(|_, w| w.intra_ppdu_ps_enable().set_bit());
@@ -69,46 +71,41 @@ impl RadioRegisters {
         let init = &self.peripherals.wifi_mac_he_init_suffix;
         let color_information = config.bss_color_information;
         if color_information & 0xbf != 0 {
-            let color = u32::from(color_information & 0x3f);
+            let color = color_information & 0x3f;
             let partial = color_information & 0x40 != 0;
             let disabled = color_information & 0x80 != 0;
             let register = init.multi_bssid_control();
-            let mut image = register.read().bits();
-            image &= !(0x0800_0000 | 0x07e0_0000 | 0x1000_0000);
-            if !disabled {
-                image |= 0x0800_0000 | (color << 21);
-            }
-            if partial {
-                image |= 0x1000_0000;
-            }
-            // SAFETY: this is the complete instruction-exact RMW image for
-            // the recovered register; all unrelated bits came from the read.
-            // SAFETY: the SVD marks the register writable, and `image`
-            // preserves every field outside the recovered transform.
-            unsafe { register.write_with_zero(|w| w.bits(image)) };
+            register.modify(|_, w| {
+                w.bss_color()
+                    .set(if disabled { 0 } else { color })
+                    .bss_color_enable()
+                    .bit(!disabled)
+                    .partial_bss_color_enable()
+                    .bit(partial)
+            });
         }
 
         self.peripherals
             .wifi_mac_he_init_prefix
             .rx_field_control()
-            .modify(|r, w| unsafe { w.bitmap_control().bits(r.bitmap_control().bits() | 1) });
-        init.he_default_control().modify(|_, w| unsafe {
+            .modify(|r, w| w.bitmap_control().set(r.bitmap_control().bits() | 1));
+        init.he_default_control().modify(|_, w| {
             w.default_pe_duration()
-                .bits((config.operation_parameters & 0x07) as u8)
+                .set((config.operation_parameters & 0x07) as u8)
         });
 
         let duration = (config.packet_padding_eight_us << 3) & 0x1f;
-        init.he_packet_padding().modify(|_, w| unsafe {
+        init.he_packet_padding().modify(|_, w| {
             w.bpsk_duration()
-                .bits(duration)
+                .set(duration)
                 .qpsk_duration()
-                .bits(duration)
+                .set(duration)
                 .qam16_duration()
-                .bits(duration)
+                .set(duration)
                 .qam64_duration()
-                .bits(duration)
+                .set(duration)
                 .qam256_duration()
-                .bits(duration)
+                .set(duration)
         });
 
         let queues = &self.peripherals.wifi_mac_tx_queue_vector;
@@ -125,11 +122,9 @@ impl RadioRegisters {
         if !config.extended_range_single_user_disabled {
             // The complete ER-SU-permitted leaf writes all four baseline
             // ACK-rate bytes to 0x80.
-            // SAFETY: the complete recovered leaf publishes this whole word.
-            unsafe {
-                init.ersu_ack_rate()
-                    .write_with_zero(|w| w.bits(0x8080_8080));
-            }
+            open_esp_radio_esp32s31_pac::zero_based_field_write::ersu_ack_rate_baseline(
+                init, 0x80, 0x80, 0x80, 0x80,
+            );
         }
         Ok(())
     }
@@ -149,32 +144,35 @@ impl RadioRegisters {
         self.peripherals
             .wifi_mac_bssid_policy
             .bssid_high(0)
-            .modify(|_, w| unsafe {
+            .modify(|_, w| {
                 w.minimum_mpdu_start_spacing()
-                    .bits(minimum_mpdu_start_spacing & 0x07)
+                    .set(minimum_mpdu_start_spacing & 0x07)
                     .association_id()
-                    .bits(association_id)
+                    .set(association_id)
             });
 
         let init = &self.peripherals.wifi_mac_he_init_suffix;
         let broadcast_low = init.broadcast_ru_low();
-        let mut low = broadcast_low.read().bits();
-        low = (low & !0x0000_07ff) | u32::from(association_id);
-        low |= 0x0040_0000;
-        low = (low & !0x003f_f800) | (u32::from(bssid_index) << 11);
-        // SAFETY: the SVD marks the register writable, and `low` is an RMW
-        // image preserving all fields outside the complete recovered leaf.
-        unsafe { broadcast_low.write_with_zero(|w| w.bits(low)) };
+        broadcast_low.modify(|_, w| {
+            w.association_id()
+                .set(association_id)
+                .enable()
+                .set_bit()
+                .value()
+                .set(u16::from(bssid_index))
+        });
 
         let broadcast_high = init.broadcast_ru_high();
-        let mut high = broadcast_high.read().bits();
-        high |= 0x0000_0800;
-        high &= !0x0000_07ff;
-        high |= 0x0080_0000;
-        high &= !0x007f_f000;
-        // SAFETY: the SVD marks the register writable, and `high` is an RMW
-        // image preserving all fields outside the complete recovered leaf.
-        unsafe { broadcast_high.write_with_zero(|w| w.bits(high)) };
+        broadcast_high.modify(|_, w| {
+            w.low_enable()
+                .set_bit()
+                .low_value()
+                .set(0)
+                .high_enable()
+                .set_bit()
+                .high_value()
+                .set(0)
+        });
         Ok(())
     }
 }

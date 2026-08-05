@@ -203,6 +203,11 @@
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
     <openEspRadioZeroBasedFieldWrites>
+      <write name="ersu_ack_rate_baseline"
+             peripheral="WIFI_MAC_HE_INIT_SUFFIX"
+             register="ERSU_ACK_RATE"
+             fields="RATE_0,RATE_1,RATE_2,RATE_3"
+             source="BLOB_LIBPP_HAL_BF_CONFIG"/>
       <write name="rx_block_ack_peer_head"
              peripheral="WIFI_MAC_RX_DMA"
              register="RX_BLOCK_ACK_ENTRY%s_PEER_HEAD"

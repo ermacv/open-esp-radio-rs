@@ -22,6 +22,46 @@ pub use pinned_tx::{
 };
 pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 
+/// Authority to prepare registers for one retained, software-owned TX chain.
+///
+/// This trait deliberately exposes only the chain head, not its underlying
+/// [`StableDmaRange`]. Register adapters can therefore validate a TX control
+/// image without treating the same authority as an RX-walker allocation.
+///
+/// # Safety
+///
+/// Implementations must retain a complete, initialized DMA descriptor chain
+/// and all of its referenced backing at stable addresses. Hardware must not
+/// own the chain while a value implementing this trait exists. Safe code must
+/// not be able to construct an implementation independently of that owner.
+#[allow(
+    unsafe_code,
+    reason = "TX prepare authority is implemented only by audited DMA owners"
+)]
+pub unsafe trait PreparedTxDma {
+    fn descriptor_head(&self) -> u32;
+}
+
+/// Start authority for one TX chain already recorded as hardware-owned.
+///
+/// This is intentionally a separate trait rather than a subtype of
+/// [`PreparedTxDma`]: a prepare token must not be accepted at the final queue
+/// doorbell, and a start token no longer grants CPU mutation of descriptors.
+///
+/// # Safety
+///
+/// Before exposing an implementation, the owner must record that hardware
+/// owns the complete descriptor chain and backing allocation. It must retain
+/// or quarantine that allocation until completion, a proven abort, or a full
+/// reset stops the DMA actor. Safe code must not be able to forge the token.
+#[allow(
+    unsafe_code,
+    reason = "TX start authority is implemented only by audited DMA owners"
+)]
+pub unsafe trait HardwareOwnedTxDma {
+    fn descriptor_head(&self) -> u32;
+}
+
 /// Non-forgeable proof that one address range remains valid for DMA.
 ///
 /// The value deliberately exposes observation but no safe constructor. A

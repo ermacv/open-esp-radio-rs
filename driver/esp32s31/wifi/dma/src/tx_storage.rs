@@ -7,7 +7,7 @@
 
 use core::{marker::PhantomPinned, pin::Pin};
 
-use open_esp_radio_dma::StableDmaRange;
+use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
 use pin_project::pin_project;
 
 use crate::descriptor::{
@@ -175,6 +175,16 @@ impl TxDmaStart<'_> {
     }
 }
 
+#[allow(
+    unsafe_code,
+    reason = "start token is exposed only after the owner records hardware ownership"
+)]
+unsafe impl HardwareOwnedTxDma for TxDmaStart<'_> {
+    fn descriptor_head(&self) -> u32 {
+        self.binding.descriptor_address
+    }
+}
+
 /// Unique movable owner of one permanently located TX DMA allocation.
 pub struct PinnedTxDmaStorage<const BUFFER_SIZE: usize> {
     storage: Pin<&'static mut TxDmaStorage<BUFFER_SIZE>>,
@@ -306,6 +316,16 @@ impl<const BUFFER_SIZE: usize> TxDmaPublication<'_, BUFFER_SIZE> {
     }
 }
 
+#[allow(
+    unsafe_code,
+    reason = "publication token retains the initialized software-owned descriptor"
+)]
+unsafe impl<const BUFFER_SIZE: usize> PreparedTxDma for TxDmaPublication<'_, BUFFER_SIZE> {
+    fn descriptor_head(&self) -> u32 {
+        self.owner.binding.descriptor_address
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -324,6 +344,14 @@ mod tests {
         .unwrap()
     }
 
+    fn prepared_head(authority: &dyn PreparedTxDma) -> u32 {
+        authority.descriptor_head()
+    }
+
+    fn hardware_owned_head(authority: &dyn HardwareOwnedTxDma) -> u32 {
+        authority.descriptor_head()
+    }
+
     #[test]
     fn publication_records_hardware_owner_before_start_token() {
         let mut storage = storage();
@@ -331,8 +359,10 @@ mod tests {
         storage.reserve(64, 4).unwrap();
 
         let mut start_address = 0;
-        storage.publication().unwrap().commit(|start| {
-            start_address = start.binding().descriptor_address();
+        let publication = storage.publication().unwrap();
+        assert_eq!(prepared_head(&publication), DESCRIPTOR_ADDRESS);
+        publication.commit(|start| {
+            start_address = hardware_owned_head(start);
         });
 
         assert_eq!(start_address, DESCRIPTOR_ADDRESS);

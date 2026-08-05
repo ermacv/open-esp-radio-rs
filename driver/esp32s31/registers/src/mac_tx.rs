@@ -2,10 +2,21 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
+
 use super::{RadioRegisters, device_fence, mac_tx_queue};
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
 const ENABLE_VALID_MASK: u32 = 0xc000_0000;
+const DESCRIPTOR_ADDRESS_LOW_MASK: u32 = 0x000f_ffff;
+
+fn assert_tx_descriptor_head(authority_head: u32, control_word: u32) {
+    assert_eq!(
+        control_word & DESCRIPTOR_ADDRESS_LOW_MASK,
+        authority_head & DESCRIPTOR_ADDRESS_LOW_MASK,
+        "TX control word does not reference the retained DMA chain",
+    );
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct MacLegacyTxProgram {
@@ -132,6 +143,52 @@ const fn physical_bank(queue: u8) -> usize {
 }
 
 impl RadioRegisters {
+    /// Prepare one legacy queue whose descriptor chain is retained by `dma`.
+    pub fn prepare_bound_legacy_mac_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_legacy_mac_tx(queue, program)
+    }
+
+    /// Prepare one HT queue whose descriptor chain is retained by `dma`.
+    pub fn prepare_bound_ht_mac_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_ht_mac_tx(queue, program)
+    }
+
+    /// Prepare one HE queue whose descriptor chain is retained by `dma`.
+    pub fn prepare_bound_he_mac_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHeTxProgram,
+    ) -> bool {
+        assert_tx_descriptor_head(dma.descriptor_head(), program.plcp0);
+        self.prepare_he_mac_tx(queue, program)
+    }
+
+    /// Publish the final ENABLE|VALID edge for a hardware-owned TX chain.
+    pub fn start_bound_mac_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8) {
+        assert!(queue < ORDINARY_QUEUE_COUNT);
+        let control_word = self
+            .peripherals
+            .wifi_mac_tx_queue_control
+            .control(physical_bank(queue))
+            .read()
+            .bits();
+        assert_tx_descriptor_head(dma.descriptor_head(), control_word);
+        self.start_prepared_mac_tx(queue, control_word);
+    }
+
     /// Apply complete rev0 ROM `phy_enable_cca` or `phy_disable_cca` to the
     /// two Wi-Fi MAC CCA fields through separate fresh-read updates.
     pub fn set_phy_wifi_cca_enabled(&mut self, enabled: bool) {

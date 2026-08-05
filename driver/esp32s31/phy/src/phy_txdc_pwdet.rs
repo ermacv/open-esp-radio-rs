@@ -549,6 +549,10 @@ enum RootTerminal {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the allocation-free calibration root retains one bounded search transition"
+)]
 enum RootStep {
     Capture,
     ClockOn,

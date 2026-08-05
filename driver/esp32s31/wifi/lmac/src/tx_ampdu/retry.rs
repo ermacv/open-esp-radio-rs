@@ -149,7 +149,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         }
 
         let mut locations = [None; SLOTS];
-        for source in 0..old_count {
+        for (source, location) in locations.iter_mut().enumerate().take(old_count) {
             if retry_mask & (1_u32 << source) == 0 {
                 continue;
             }
@@ -159,7 +159,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                     index: source as u8,
                 });
             }
-            locations[source] = Some(RetryFrameLocation {
+            *location = Some(RetryFrameLocation {
                 index: source,
                 buffer_address: storage.buffer_addresses[source],
                 capacity,

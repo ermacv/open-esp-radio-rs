@@ -8,6 +8,6 @@ pub trait MacColdAntennaHardware {
 
 impl MacColdAntennaHardware for ColdRadioRegisters {
     fn initialize_mac_antenna(&mut self) {
-        RadioRegisters::initialize_mac_antenna(&mut **self);
+        RadioRegisters::initialize_mac_antenna(self);
     }
 }

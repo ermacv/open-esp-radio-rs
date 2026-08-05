@@ -201,6 +201,10 @@ enum TailStep {
     ReleaseSecondDelay,
 }
 
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the heap-free registration owner retains exactly one complete calibration phase"
+)]
 enum Phase {
     Prelude(PreludeStep),
     Rf(crate::phy_cold::PhyRfColdInit),
@@ -345,6 +349,10 @@ impl PhyRegisterTransition {
         })
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "failure must return the unique allocation-free registration owner"
+    )]
     pub fn into_state(mut self) -> Result<crate::phy_cold::PhyColdState, Self> {
         match self.phase {
             Some(Phase::Complete(_)) | Some(Phase::Failed(_)) => {
@@ -708,13 +716,15 @@ impl PhyRegisterTransition {
             }
             (
                 Phase::Prelude(PreludeStep::ForceFirstDelay),
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: true,
-                    completed_phase: 0,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: true,
+                            completed_phase: 0,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Prelude(PreludeStep::ForceSecond)
             }
             (Phase::Prelude(PreludeStep::ForceSecond), PhyRegisterCompletion::Mmio(completed))
@@ -728,13 +738,15 @@ impl PhyRegisterTransition {
             }
             (
                 Phase::Prelude(PreludeStep::ForceSecondDelay),
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: true,
-                    completed_phase: 1,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: true,
+                            completed_phase: 1,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Prelude(PreludeStep::FrequencyReset)
             }
             (
@@ -896,13 +908,15 @@ impl PhyRegisterTransition {
             }
             (
                 Phase::Tail(TailStep::ReleaseFirstDelay),
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: false,
-                    completed_phase: 0,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: false,
+                            completed_phase: 0,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Tail(TailStep::ReleaseSecond)
             }
             (Phase::Tail(TailStep::ReleaseSecond), PhyRegisterCompletion::Mmio(completed))
@@ -916,13 +930,15 @@ impl PhyRegisterTransition {
             }
             (
                 Phase::Tail(TailStep::ReleaseSecondDelay),
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: false,
-                    completed_phase: 1,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: false,
+                            completed_phase: 1,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Complete(PhyRegisterOutcome {
                     full_calibration_performed: self.calibration_path.full_calibration_performed(),
                     calibration_path: self.calibration_path,
@@ -992,13 +1008,15 @@ impl PhyRegisterTransition {
                     step: TailStep::ReleaseFirstDelay,
                     failure,
                 },
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: false,
-                    completed_phase: 0,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: false,
+                            completed_phase: 0,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Cleanup {
                     step: TailStep::ReleaseSecond,
                     failure,
@@ -1026,13 +1044,15 @@ impl PhyRegisterTransition {
                     step: TailStep::ReleaseSecondDelay,
                     failure,
                 },
-                PhyRegisterCompletion::DelayElapsed { phase, micros: 1 },
-            ) if phase
-                == (PhyRegisterDelayPhase::ForceTxRx {
-                    enabled: false,
-                    completed_phase: 1,
-                }) =>
-            {
+                PhyRegisterCompletion::DelayElapsed {
+                    phase:
+                        PhyRegisterDelayPhase::ForceTxRx {
+                            enabled: false,
+                            completed_phase: 1,
+                        },
+                    micros: 1,
+                },
+            ) => {
                 Phase::Failed(failure)
             }
             (Phase::Complete(outcome), _) => {

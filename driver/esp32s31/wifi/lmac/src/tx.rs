@@ -1513,7 +1513,7 @@ impl HeRate {
         let density_us = density.vendor_integer_microseconds();
         let rate_100_kbps = self.nominal_kbps() / 100;
         let truncated_byte_rate = rate_100_kbps * density_us as u32 / 8;
-        let bytes = truncated_byte_rate / 10 + (truncated_byte_rate % 10 != 0) as u32;
+        let bytes = truncated_byte_rate / 10 + (!truncated_byte_rate.is_multiple_of(10)) as u32;
         bytes as u16
     }
 
@@ -1538,7 +1538,7 @@ impl HeRate {
         if current >= minimum {
             return Some(0);
         }
-        let delimiters = (minimum - current + 3) / 4;
+        let delimiters = (minimum - current).div_ceil(4);
         if delimiters > u8::MAX as u32 {
             None
         } else {

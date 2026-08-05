@@ -54,6 +54,11 @@ The hardware directory names now follow their responsibilities:
 - `wifi/ieee80211` contains portable code, but still combines frame codecs and
   some common HMAC mechanisms.
 
+The executable unsafe-code policy is documented in [`UNSAFE.md`](UNSAFE.md).
+All protocol and hardware-policy crates forbid unsafe code. Generated MMIO,
+pinned/DMA ownership and the minimal Embassy executor runtime are explicit
+audited foundations rather than implicit exceptions in upper layers.
+
 TX BlockAck now demonstrates the intended boundary: `wifi/ieee80211::block_ack`
 owns the action codec and one generic agreement state machine, while
 `esp32s31/wifi/lmac::tx_ampdu::block_ack` owns the vendor STA TID order, S31

@@ -8,6 +8,6 @@ pub trait MacColdRxPolicyHardware {
 
 impl MacColdRxPolicyHardware for ColdRadioRegisters {
     fn initialize_cold_receive_policy(&mut self) {
-        RadioRegisters::initialize_cold_receive_policy(&mut **self);
+        RadioRegisters::initialize_cold_receive_policy(self);
     }
 }

@@ -436,6 +436,7 @@ pub enum PhyBbBasebandMode {
 }
 
 impl PhyBbBasebandMode {
+    #[cfg(target_arch = "riscv32")]
     const fn register_value(self) -> u8 {
         match self {
             Self::Idle => 0,
@@ -451,6 +452,7 @@ pub enum PhyRfRxSaturationPhase {
 }
 
 impl PhyRfRxSaturationPhase {
+    #[cfg(target_arch = "riscv32")]
     const fn enabled(self) -> bool {
         match self {
             Self::PrepareCheck => false,
@@ -786,6 +788,10 @@ pub enum PhyBbInitTransitionError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the allocation-free PHY transition owns exactly one recovered child phase"
+)]
 enum PhyBbInitStep {
     EnableInitialization,
     SetCalibrationMode,

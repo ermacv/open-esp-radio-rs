@@ -936,7 +936,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 }
 
 fn validate_live_ring_geometry<const COUNT: usize>() -> Result<(), RxRingError> {
-    if COUNT < 2 || COUNT > 64 || COUNT % 2 != 0 {
+    if COUNT < 2 || COUNT > 64 || !COUNT.is_multiple_of(2) {
         Err(RxRingError::Count)
     } else {
         Ok(())

@@ -97,7 +97,7 @@ struct ScheduleArena<const BYTES: usize>([u8; BYTES]);
 
 impl<const BYTES: usize> ScheduleArena<BYTES> {
     const fn indexed(mut bytes: [u8; BYTES]) -> Self {
-        assert!(BYTES % RATE_SCHEDULE_RECORD_SIZE == 0);
+        assert!(BYTES.is_multiple_of(RATE_SCHEDULE_RECORD_SIZE));
         let mut record = 0;
         while record < BYTES / RATE_SCHEDULE_RECORD_SIZE {
             bytes[record * RATE_SCHEDULE_RECORD_SIZE + 0x0a] = record as u8;

@@ -923,12 +923,11 @@ fn extract_mpdu_allowing_consumed_trailer(
         {
             return Err(RxError::Chain);
         }
-        if let Some(next) = segments.get(index + 1) {
-            if rx_done(segment.descriptor_word0)
-                || segment.next_descriptor_address != next.descriptor_address
-            {
-                return Err(RxError::Chain);
-            }
+        if let Some(next) = segments.get(index + 1)
+            && (rx_done(segment.descriptor_word0)
+                || segment.next_descriptor_address != next.descriptor_address)
+        {
+            return Err(RxError::Chain);
         }
     }
     if !rx_done(segments.last().unwrap().descriptor_word0) {

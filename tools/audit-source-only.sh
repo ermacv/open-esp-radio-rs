@@ -8,6 +8,8 @@ trap 'rm -rf -- "$audit_dir"' EXIT
 
 cd "$repo_root"
 
+tools/audit-driver-safety.sh
+
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
 cargo pac-gen --check

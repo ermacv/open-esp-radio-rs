@@ -738,6 +738,10 @@ pub enum PhyRxGainInitTransitionError {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the allocation-free RX-gain owner retains one bounded child transition"
+)]
 enum InitStep {
     CaptureDcControl,
     Dc {

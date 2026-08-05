@@ -82,7 +82,7 @@ pub async fn run_phy_register<P: PhyRegisterPort>(
 #[cfg(test)]
 mod tests {
     use core::{
-        future::{Future, Ready, ready},
+        future::{Future, ready},
         task::{Context, Poll, Waker},
     };
     use std::{sync::Arc, task::Wake};
@@ -122,7 +122,7 @@ mod tests {
         fn complete(
             &mut self,
             binding: PhyRegisterExternalBinding,
-        ) -> Ready<Result<PhyRegisterCompletion, Self::Error>> {
+        ) -> impl Future<Output = Result<PhyRegisterCompletion, Self::Error>> + '_ {
             self.calls += 1;
             if self.calls != 1 {
                 return ready(Err(self.calls));

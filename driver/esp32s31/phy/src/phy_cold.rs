@@ -3391,6 +3391,7 @@ impl PhyColdObservationBinding {
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn phy_sdm_deadline_expired(
     started_at_cycle: u32,
     current_cycle: u32,

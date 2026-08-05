@@ -113,6 +113,7 @@ pub(crate) fn configure_phy_rx_table(
     enable_phy_agc(registers);
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn tx_baseband_gain_index(gain: u16) -> usize {
     match gain {
         0x0080 => 1,
@@ -123,6 +124,7 @@ const fn tx_baseband_gain_index(gain: u16) -> usize {
     }
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn encode_phy_gain_memory_words(
     gain_72: u16,
     gain_64: u16,

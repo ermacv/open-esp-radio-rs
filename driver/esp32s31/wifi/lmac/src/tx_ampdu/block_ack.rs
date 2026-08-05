@@ -500,6 +500,10 @@ impl TxAmpduBatch {
         self.count as usize
     }
 
+    pub const fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+
     pub const fn is_idle(&self) -> bool {
         matches!(self.phase, TxAmpduBatchPhase::Idle)
     }

@@ -77,6 +77,7 @@ const PHY_I2C_BUSY: u32 = 1 << 25;
 const PHY_I2C_READ: u32 = 1 << 26;
 #[cfg(test)]
 const PHY_I2C_WRITE: u32 = 1 << 24 | 1 << 26;
+#[cfg(any(target_arch = "riscv32", test))]
 const PHY_I2C_MASTER_COMMAND_COUNT: usize = 45;
 const PHY_I2C_SDM_STABLE_VALUE: u8 = 0x5b;
 const PHY_I2C_SDM_DEADLINE_CYCLES: u32 = 9_999;
@@ -240,6 +241,7 @@ pub const fn phy_byte_to_word(bytes: &[u8; 4]) -> u32 {
     u32::from_le_bytes(*bytes)
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 const fn encode_master_command(block: u8, register: u8, value: u8) -> u32 {
     phy_encode_i2c_master(block as u32, register as u32, value as u32)
 }
@@ -247,6 +249,7 @@ const fn encode_master_command(block: u8, register: u8, value: u8) -> u32 {
 // Complete command order recovered from
 // `libphy.a[phy_i2c.o]::phy_i2c_master_cmd_mem_init`. Values which depend on
 // the explicit PHY parameter image are replaced in `master_command`.
+#[cfg(any(target_arch = "riscv32", test))]
 const PHY_I2C_MASTER_TEMPLATE: [(u8, u8, u8); PHY_I2C_MASTER_COMMAND_COUNT] = [
     (0x67, 0x02, 0x07),
     (0x6b, 0x01, 0x01),
@@ -295,6 +298,7 @@ const PHY_I2C_MASTER_TEMPLATE: [(u8, u8, u8); PHY_I2C_MASTER_COMMAND_COUNT] = [
     (0x6a, 0x01, 0x7f),
 ];
 
+#[cfg(any(target_arch = "riscv32", test))]
 const PHY_I2C_MASTER_DYNAMIC_INDICES: [usize; 19] = [
     20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41,
 ];
@@ -307,6 +311,7 @@ fn master_dynamic_values(parameter: &[u8; PHY_PARAM_LEN]) -> [u8; 19] {
     ))
 }
 
+#[cfg(any(target_arch = "riscv32", test))]
 fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) -> [u8; 19] {
     let filter = parameter.filter_dcap();
     let high_filter = saturate_phy_value(filter.parameter_ed as i32 + 6, 0x3c, 2);
@@ -2464,13 +2469,14 @@ impl PhyRfInitPrefixTransition {
                     bbpll_register_snapshot,
                     filter_dcap,
                 },
-                PhyRfInitPrefixCompletion::Parameter18eRead { address, value },
-            ) if address
-                == (PhyI2cAddress {
+                PhyRfInitPrefixCompletion::Parameter18eRead {
+                    address: PhyI2cAddress {
                     block: 0x62,
                     register: 0x0f,
-                }) =>
-            {
+                    },
+                    value,
+                },
+            ) => {
                 let parameter = PhyRfInitParameterSnapshot::new(filter_dcap, value);
                 PhyRfInitPrefixStep::I2cInit1 {
                     transition: I2cInit1Transition::new(parameter),

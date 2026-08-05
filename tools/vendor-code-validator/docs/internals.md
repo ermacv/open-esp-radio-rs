@@ -61,6 +61,28 @@ exports while delegating to:
 The comparator consumes `EffectPolicy` through its public query methods.
 Parser and comparison logic do not access the policy's internal rule map.
 
+## ESP32-S31 reviewed-summary layout
+
+`harness-esp32s31-semantic/src/reviewed_summaries.rs` is the single registry
+facade used by the backend hooks. It applies reviewed recognizers in an
+explicit order and delegates exact identity checks and trace construction to
+subsystem modules:
+
+| Module | Responsibility |
+| --- | --- |
+| `body_identity.rs` | Shared exact name, address, and body-size identity predicate |
+| `direct_semantic.rs` | Direct semantic overlay for the reviewed `pp_post` body and relocation schema |
+| `intrinsics.rs` | Bounded `memcpy`/`memset` effects and the reviewed wide signed divide intrinsic |
+| `rf.rs` | RFPLL calibration, frequency-offset scratch, and IQ-estimator traces |
+| `i2c.rs` | Analog-I2C register access and host-table summaries |
+| `tests.rs` | Fail-closed identity and generated-trace regression tests |
+
+The subsystem modules do not form independent registries. The facade remains
+the auditable selection point, while each module owns the exact identities,
+constants, and semantic trace builders for one domain. Artifact
+authentication remains a caller-owned precondition; these summaries only
+match the reviewed symbol metadata and body/schema constraints they declare.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -109,8 +131,6 @@ Line count is only a signal, but the next useful responsibility reviews are:
 - `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
   small and move any remaining decoding/control-flow policy into its existing
   phase modules;
-- `harness-esp32s31-semantic/src/reviewed_summaries.rs`: group reviewed
-  summaries by subsystem while retaining one explicit registry;
 - `backend-riscv/src/reference_analysis/mod.rs`: keep CFG orchestration apart
   from resolution/composition rules.
 

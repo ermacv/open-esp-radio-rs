@@ -85,6 +85,12 @@ behind the unchanged `ir::*` façade. Effect Contract follows the same rule:
 its closed data model, textual parser and vendor/Rust comparator are separate,
 and the comparator uses policy query methods rather than its backing map.
 
+ESP32-S31 reviewed summaries are split by semantic domain as well: exact body
+identity, direct semantic overlays, generic intrinsics, RF calibration, and
+analog-I2C/host-table traces have separate modules. A small facade retains the
+single explicit recognition order required for auditing and backend hooks, so
+the split does not create competing registries or change summary selection.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

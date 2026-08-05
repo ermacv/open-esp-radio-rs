@@ -1,6 +1,5 @@
 #![no_std]
-#![cfg_attr(not(test), forbid(unsafe_code))]
-#![cfg_attr(test, deny(unsafe_code))]
+#![forbid(unsafe_code)]
 
 //! Source-owned ESP32-S31 Wi-Fi MAC building blocks.
 //!

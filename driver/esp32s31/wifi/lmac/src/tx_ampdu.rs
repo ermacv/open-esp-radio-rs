@@ -6,7 +6,7 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
-#![cfg_attr(not(test), forbid(unsafe_code))]
+#![forbid(unsafe_code)]
 
 use core::{marker::PhantomPinned, mem, ops::Deref, pin::Pin};
 
@@ -3605,15 +3605,9 @@ const fn next_vendor_block_ack_dialog_token(current: u8) -> u8 {
 }
 
 #[cfg(test)]
-#[allow(
-    unsafe_code,
-    reason = "test fixtures model retained stable DMA allocations"
-)]
 mod tests {
-    use core::cell::Cell;
-
     use super::*;
-    use open_esp_radio_dma::StableDmaRegion;
+    use open_esp_radio_dma::PinnedDmaTxPool;
     use open_esp_radio_esp32s31_registers::{
         MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters,
     };
@@ -3693,34 +3687,16 @@ mod tests {
         }
     }
 
-    struct TestStableBacking<'a> {
-        bytes: &'a mut [u8],
-        drops: &'a Cell<u8>,
-    }
-
-    // SAFETY: the backing is a borrowed allocation outside this movable
-    // handle and remains exclusively borrowed until the handle is dropped.
-    unsafe impl StableDmaBacking for TestStableBacking<'_> {
-        fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
-            // SAFETY: `bytes` cannot move or be aliased for the lifetime of
-            // this retained test handle.
-            unsafe { StableDmaRegion::new(self.bytes) }
-        }
-    }
-
-    impl Drop for TestStableBacking<'_> {
-        fn drop(&mut self) {
-            self.drops.set(self.drops.get() + 1);
-        }
-    }
-
     #[test]
     fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
         let storage = HtAmpduTxStorage::<2, 0>::new();
         let mut storage = core::pin::pin!(storage);
-        let mut bytes = [0_u8; 256];
-        bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
-        let drops = Cell::new(0);
+        let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+        let network = pool.claim_network(0);
+        let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |bytes| {
+            bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
+        });
+        let backing = pool.claim_radio(index);
 
         {
             let mut owner = RetainedDmaAmpduTx::new(storage.as_mut());
@@ -3728,10 +3704,7 @@ mod tests {
             owner
                 .commit_ht(
                     cookie,
-                    TestStableBacking {
-                        bytes: &mut bytes,
-                        drops: &drops,
-                    },
+                    backing,
                     0,
                     32,
                     8,
@@ -3744,11 +3717,10 @@ mod tests {
                 )
                 .unwrap();
             assert_eq!(owner.held_backing_count(), 1);
-            assert_eq!(drops.get(), 0);
         }
 
-        assert_eq!(drops.get(), 1);
         assert_eq!(storage.state(), TxSlotState::Free);
+        assert_eq!(pool.claim_network(0).release(), 0);
     }
 
     const CONFIG: TxBlockAckConfig = TxBlockAckConfig {
@@ -4262,20 +4234,14 @@ mod tests {
         assert_eq!(aggregate.subframes, 2);
         assert_eq!(storage.frame_count(), 2);
         assert_eq!(storage.state(), TxSlotState::Reserved);
-        unsafe {
-            let storage = storage.as_ref().get_ref();
-            let first = core::slice::from_raw_parts(
-                storage.buffer_addresses[0] as *const u8,
-                usize::from(storage.descriptor_capacities[0]),
-            );
-            let second = core::slice::from_raw_parts(
-                storage.buffer_addresses[1] as *const u8,
-                usize::from(storage.descriptor_capacities[1]),
-            );
-            assert_eq!(first[TX_AMPDU_METADATA_SIZE], 1);
-            assert_eq!(second[TX_AMPDU_METADATA_SIZE], 3);
-            assert_eq!(first[TX_AMPDU_METADATA_SIZE + 1], 0x49);
-            assert_eq!(second[TX_AMPDU_METADATA_SIZE + 1], 0x49);
+        {
+            let view = storage.as_ref().get_ref();
+            assert_eq!(view.buffer_addresses[0], view.buffers[1].0.as_ptr().addr());
+            assert_eq!(view.buffer_addresses[1], view.buffers[3].0.as_ptr().addr());
+            assert_eq!(view.buffers[1].0[TX_AMPDU_METADATA_SIZE], 1);
+            assert_eq!(view.buffers[3].0[TX_AMPDU_METADATA_SIZE], 3);
+            assert_eq!(view.buffers[1].0[TX_AMPDU_METADATA_SIZE + 1], 0x49);
+            assert_eq!(view.buffers[3].0[TX_AMPDU_METADATA_SIZE + 1], 0x49);
         }
         storage.as_mut().cancel(cookie).unwrap();
     }

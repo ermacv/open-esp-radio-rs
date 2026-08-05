@@ -121,11 +121,11 @@ qualified large-RX dimensions and owns the asynchronous ring/staging epoch;
 bounded semantic-event handoff. The RX backend no longer defines the chip DMA
 memory representation or unrelated consumers.
 
-Non-test `esp32s31/wifi/lmac` code forbids `unsafe`. Necessary pointer and
-linker invariants terminate in the audited chip DMA leaf (or, below it, in the
-generated PAC/runtime); safe ownership leases and typed descriptors cross the
-boundary upward. Test-only raw DMA fixtures remain visible as the next cleanup
-target and are not part of a firmware build.
+The complete `esp32s31/wifi/lmac` crate, including its tests, forbids `unsafe`.
+Necessary pointer and linker invariants terminate in the audited chip DMA leaf
+(or, below it, in the generated PAC/runtime); safe ownership leases and typed
+descriptors cross the boundary upward. LMAC tests use those same safe leases
+instead of defining privileged mock allocations.
 
 RX qualification now follows that boundary: `wifi-embassy` defines typed
 `RxPipelineObservation` events and an optional observer interface, while the

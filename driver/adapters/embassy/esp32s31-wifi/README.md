@@ -103,6 +103,13 @@ This is still an Embassy integration component because it retains pinned
 `embassy-net` leases. Register programming and descriptor state remain in the
 chip MAC/DMA crates; the module split does not introduce another MAC layer.
 
+Interrupt integration has the same boundary. `embassy_irq::mac_runtime`
+coalesces classified MAC work into RX/TX executor wakes,
+`power_runtime` preserves an opaque acknowledged power-event image, and
+`epoch` owns activation/quiescence of the platform route plus stale-wake
+draining. Hardware status reads, acknowledgement and classification remain in
+the chip MAC crate.
+
 Connected-station control has a similarly explicit integration seam.
 `open_esp_radio_esp32s31_wifi_sta::connected_control` owns the complete
 association-scoped BlockAck, beacon-loss and power-save state machine plus its
@@ -140,19 +147,32 @@ time, retained DMA RX and control-TX bindings.
 Open Authentication/Association deadlines and retry sequencing live in
 `open_esp_radio_wifi_sta::join`. Its ESP32-S31 RX, control-TX, observer and
 error contracts live in `open_esp_radio_esp32s31_wifi_sta::join`; the local
-`sta_join_port` module only binds them to retained DMA RX and the concrete
-control transmitter. Likewise the complete finite S31 attempt transaction and
+`sta_join_port` facade only binds them to retained DMA RX and the concrete
+control transmitter. Internally `rx` owns the pre-connected DMA adapter,
+`resources` names borrowed radio/storage/station policy, `owner` owns their
+return boundary, and `service` implements only `StaJoinBackend` sequencing.
+Likewise the complete finite S31 attempt transaction and
 its value-only input/report types live in
 `open_esp_radio_esp32s31_wifi_sta::attempt`; private `join_time` plus the
-concrete target module retain only Embassy time and the DMA/TX owner graph.
+concrete target facade retain only Embassy time and the DMA/TX owner graph.
+Inside `sta_attempt_target`, `channel` binds channel switching, `resources`
+names the caller-supplied owners, `owner` retains mutable attempt state, `port`
+is the stateless trait handle, and `service` implements the finite attempt
+phases.
+
+The RX frontier shared by Authentication, Association and WPA2 is exposed by
+the `preconnected_rx` facade. `time` contains only the Embassy settle-delay
+adapter, `state` defines the halted/prepared/live/vacant owner vocabulary, and
+`lifecycle` performs the finite DMA transitions and connected promotion.
 
 The application-facing station entry points are in `station`:
 
-- `Esp32s31Station` owns the finite scan/join/connected/reconnect lifecycle;
-- `Esp32s31StationController` publishes ordered reconnect/disconnect/stop
-  requests;
-- `run_esp32s31_connected_station_epoch` stops the radio only at a safe
-  transaction boundary;
+- `station::command` owns the severity-ordered reconnect/disconnect/stop
+  mailbox and its single consumer;
+- `station::connected_epoch` coalesces those commands with peer loss only at a
+  transaction-safe connected-runner boundary;
+- `station::lifecycle` owns the outer finite scan/join/connected/reconnect
+  service and always returns its exact hardware owner;
 - `stop_esp32s31_connected_task_group` returns all spawned-task ownership or a
   distinct reset-required outcome under one deadline.
 

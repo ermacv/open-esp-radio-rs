@@ -246,6 +246,26 @@ The scan adapter mirrors this split: `scan_rx::ring` owns only the finite DMA
 phase machine, `scan_rx::running` preserves connected-epoch resources, and
 `scan_port::{owner,service,bindings}` separates owner composition from scan
 sequencing and concrete RX/TX adapters.
+The application-facing `station` facade is only a stable export surface.
+`station::command` owns command publication, `station::connected_epoch` owns
+the cancellation-safe edge between application commands and peer loss, and
+`station::lifecycle` owns the outer reconnect service and terminal owner
+return.
+Interrupt delivery is similarly layered. Chip MAC code reads, acknowledges
+and classifies interrupt snapshots; `embassy_irq::mac_runtime` and
+`power_runtime` only publish executor wakes, while `embassy_irq::epoch` owns
+the recoverable platform-route capability across connected epochs.
+Pre-connected Authentication/Association follows the same rule. The
+`sta_join_port` facade exports stable names while `rx` adapts the retained DMA
+owner, `resources` names borrowed inputs, `owner` exposes the return boundary,
+and `service` alone implements join sequencing.
+The adjacent `sta_attempt_target` composes those joins without becoming a
+second protocol owner: `channel` is the PHY binding, `resources` are caller
+inputs, `owner` is the mutable attempt state, `port` is stateless, and
+`service` implements the ordered candidate/channel/join/peer/WPA2 transitions.
+The shared `preconnected_rx` owner is split by concern as well: `state` defines
+the hardware-valid frontier, `lifecycle` owns its finite DMA transitions and
+connected promotion, and `time` supplies only the executor settle edge.
 The persistent `PhyColdState`/platform/observer owner used for cold scan,
 running scan and reconnect is similarly defined in
 `chips/esp32s31/wifi/sta::channel`; adapter modules only implement their scan

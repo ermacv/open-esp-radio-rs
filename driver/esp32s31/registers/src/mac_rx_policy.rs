@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for finite receive-policy transitions.
 
+#![forbid(unsafe_code)]
+
 use super::{RadioRegisters, device_fence};
 
 impl RadioRegisters {
@@ -56,11 +58,11 @@ impl RadioRegisters {
                 }
                 filter.modify(|_, w| w.dump_management_not_check_bssid().clear_bit());
                 bssid.modify(|_, w| w.address_check_enable().clear_bit());
-                // SAFETY: zero is the complete low-half replacement performed
-                // by the mode-zero cold leaf; high policy bits are preserved.
+                // Zero is the complete low-half replacement performed by the
+                // mode-zero cold leaf; high policy bits are preserved.
                 interfaces
                     .address_high(queue)
-                    .modify(|_, w| unsafe { w.bytes_4_5().bits(0) });
+                    .modify(|_, w| w.bytes_4_5().set(0));
             }
         }
     }
@@ -78,8 +80,8 @@ impl RadioRegisters {
     pub fn apply_sta_link_receive_policy(&mut self, bssid_address: [u8; 6]) {
         let sniffer = self.peripherals.wifi_mac_rx_filter.policy(3);
         let filter = self.peripherals.wifi_mac_rx_filter.policy(0);
-        let bssid_low = self.peripherals.wifi_mac_bssid_policy.bssid_low(0);
-        let bssid = self.peripherals.wifi_mac_bssid_policy.bssid_high(0);
+        let bssids = &self.peripherals.wifi_mac_bssid_policy;
+        let bssid = bssids.bssid_high(0);
         let interface = self.peripherals.wifi_mac_interface_address.address_high(0);
 
         // Complete `hal_sniffer_disable`, size 0x44. Preserve its seven
@@ -108,22 +110,20 @@ impl RadioRegisters {
         // SOURCE: complete pinned `libpp.a[hal_mac.o]`
         // `hal_mac_set_bssid`, size 0x5a.
         bssid.modify(|_, w| w.address_check_enable().clear_bit());
-        // SAFETY: the full low word and low sixteen-bit high-address field are
-        // exactly the values assembled by the recovered blob leaf.
-        unsafe {
-            bssid_low.write_with_zero(|w| {
-                w.bytes_0_3().bits(u32::from_le_bytes([
-                    bssid_address[0],
-                    bssid_address[1],
-                    bssid_address[2],
-                    bssid_address[3],
-                ]))
-            });
-            bssid.modify(|_, w| {
-                w.bssid_high()
-                    .bits(u16::from_le_bytes([bssid_address[4], bssid_address[5]]))
-            });
-        }
+        open_esp_radio_esp32s31_pac::zero_based_field_write::mac_bssid_address_low(
+            bssids,
+            0,
+            u32::from_le_bytes([
+                bssid_address[0],
+                bssid_address[1],
+                bssid_address[2],
+                bssid_address[3],
+            ]),
+        );
+        bssid.modify(|_, w| {
+            w.bssid_high()
+                .set(u16::from_le_bytes([bssid_address[4], bssid_address[5]]))
+        });
         bssid.modify(|_, w| w.address_check_enable().set_bit());
 
         // `ic_set_rx_policy(0, mode=0, control=1, management=1)`.

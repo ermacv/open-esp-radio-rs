@@ -215,14 +215,14 @@
           <name>BSSID_LOW%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID]; CONFIDENCE[instruction-exact]. BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>BSSID_HIGH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID,BLOB_LIBPP_RX_POLICY,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION]; CONFIDENCE[instruction-exact]. Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>BSSID_HIGH</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>BSSID_HIGH</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>ASSOCIATION_ID</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact]. Eleven-bit AID printed by dbg_read_rx_misc.</description><bitOffset>16</bitOffset><bitWidth>11</bitWidth></field>
             <field><name>MINIMUM_MPDU_START_SPACING</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact]. Three-bit MMSS value printed by dbg_read_rx_misc.</description><bitOffset>27</bitOffset><bitWidth>3</bitWidth></field>
             <field><name>INTERFACE_IS_SOFT_AP</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact]. Cleared for interface zero by the associated-STA policy-five transaction.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>

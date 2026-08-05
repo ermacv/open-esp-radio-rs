@@ -1657,6 +1657,7 @@
               <name>CONFIG_MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field set to encoding one by phy_iq_est_enable.</description>
               <bitOffset>26</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -1671,11 +1672,13 @@
               <name>CONTROL_WINDOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Fifteen-bit caller value shifted left by two.</description>
               <bitOffset>2</bitOffset><bitWidth>15</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7fff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_iq_est_enable replaces the field with encoding two.</description>
               <bitOffset>19</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -1801,6 +1804,18 @@
           <name>FE_CLOCK_GATE_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes 0x1e7 to open and the blob writes zero to close.</description>
           <addressOffset>0x0400</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field>
+              <name>STATE</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete observed front-end clock-gate images; constituent gate meanings remain unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>0x1e7</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TABLE_MEMORY_INDEX_SOURCE</name>
@@ -1833,6 +1848,11 @@
               <name>ROM_FE_BB_ENABLE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit open/close mask; individual meanings are unknown.</description>
               <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>3</value></enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>PHY_CALIBRATION_CLOCK_UNKNOWN</name>
@@ -1845,6 +1865,18 @@
           <name>BB_CLOCK_GATE_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes all ones to open and the blob writes zero to close.</description>
           <addressOffset>0x7c80</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field>
+              <name>STATE</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete observed baseband clock-gate images; constituent gate meanings remain unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>0xffffffff</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
         </register>
       </registers>
     </peripheral>
@@ -1923,14 +1955,14 @@
           <name>BSSID_LOW%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID]; CONFIDENCE[instruction-exact]. BSSID bytes 0..3 for interfaces 0..3; hal_mac_set_bssid publishes a complete full-word store.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field></fields>
+          <fields><field><name>BYTES_0_3</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>4</dim><dimIncrement>0x8</dimIncrement><dimIndex>0-3</dimIndex>
           <name>BSSID_HIGH%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_SET_BSSID,BLOB_LIBPP_RX_POLICY,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION]; CONFIDENCE[instruction-exact]. Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.</description>
           <addressOffset>0x04</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>BSSID_HIGH</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
+            <field><name>BSSID_HIGH</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
             <field><name>ASSOCIATION_ID</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact]. Eleven-bit AID printed by dbg_read_rx_misc.</description><bitOffset>16</bitOffset><bitWidth>11</bitWidth></field>
             <field><name>MINIMUM_MPDU_START_SPACING</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG]; CONFIDENCE[instruction-exact]. Three-bit MMSS value printed by dbg_read_rx_misc.</description><bitOffset>27</bitOffset><bitWidth>3</bitWidth></field>
             <field><name>INTERFACE_IS_SOFT_AP</name><description>SOURCE[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_RX_POLICY]; CONFIDENCE[instruction-exact]. Cleared for interface zero by the associated-STA policy-five transaction.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
@@ -4158,6 +4190,30 @@
              source="ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
+      <write name="open_frontend_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="FE_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="OPEN"
+             source="ROM_REV0_PHY_OPEN_FE_BB_CLK"/>
+      <write name="close_frontend_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="FE_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="CLOSED"
+             source="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"/>
+      <write name="open_baseband_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="BB_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="OPEN"
+             source="ROM_REV0_PHY_OPEN_FE_BB_CLK"/>
+      <write name="close_baseband_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="BB_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="CLOSED"
+             source="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"/>
       <write name="mask_mac_power_interrupts"
              peripheral="WIFI_MAC_POWER_INTERRUPT"
              register="ENABLE"
@@ -4166,6 +4222,11 @@
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
     <openEspRadioZeroBasedFieldWrites>
+      <write name="mac_bssid_address_low"
+             peripheral="WIFI_MAC_BSSID_POLICY"
+             register="BSSID_LOW%s"
+             field="BYTES_0_3"
+             source="BLOB_LIBPP_HAL_MAC_SET_BSSID"/>
       <write name="mac_interface_address_low"
              peripheral="WIFI_MAC_INTERFACE_ADDRESS"
              register="ADDRESS_LOW%s"

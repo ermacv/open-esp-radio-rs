@@ -5,6 +5,8 @@
 //! `esp-hal` clock implementation. The complete cold-boot
 //! ordering intentionally remains in the HAL crate.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -25,31 +27,18 @@ impl RadioRegisters {
     /// operations in the complete ROM body. Its fourth PMU operation belongs
     /// to the official platform PAC and is sequenced by the HAL.
     pub fn open_frontend_baseband_internal_clocks(&mut self) {
-        // SAFETY: 0x1e7 is the instruction-exact full register value written
-        // by the cited ROM leaf; the SVD deliberately marks the register
-        // write-only because no field semantics have been inferred.
-        unsafe {
-            self.peripherals
-                .phy_clock_oracle
-                .fe_clock_gate_opaque()
-                .write_with_zero(|w| w.bits(0x1e7));
-        }
+        open_esp_radio_esp32s31_pac::fixed_register_write::open_frontend_clock_gates(
+            &self.peripherals.phy_clock_oracle,
+        );
 
-        // SAFETY: value three fits the recovered two-bit field and reproduces
-        // the ROM OR mask without assigning meanings to its constituent bits.
         self.peripherals
             .phy_clock_oracle
             .fe_bb_clock_control_opaque()
-            .modify(|_, w| unsafe { w.rom_fe_bb_enable_unknown().bits(3) });
+            .modify(|_, w| w.rom_fe_bb_enable_unknown().open());
 
-        // SAFETY: all ones is the instruction-exact full register value
-        // written by the cited ROM leaf to this write-only opaque gate.
-        unsafe {
-            self.peripherals
-                .phy_clock_oracle
-                .bb_clock_gate_opaque()
-                .write_with_zero(|w| w.bits(u32::MAX));
-        }
+        open_esp_radio_esp32s31_pac::fixed_register_write::open_baseband_clock_gates(
+            &self.peripherals.phy_clock_oracle,
+        );
     }
 
     /// Close the recovered front-end and baseband clock gates.
@@ -58,28 +47,17 @@ impl RadioRegisters {
     /// three-operation blob leaf. It intentionally leaves PMU power policy to
     /// the surrounding lifecycle owner, matching the source.
     pub fn close_frontend_baseband_clocks(&mut self) {
-        // SAFETY: zero is the complete blob value for this write-only opaque
-        // gate register.
-        unsafe {
-            self.peripherals
-                .phy_clock_oracle
-                .fe_clock_gate_opaque()
-                .write_with_zero(|w| w.bits(0));
-        }
+        open_esp_radio_esp32s31_pac::fixed_register_write::close_frontend_clock_gates(
+            &self.peripherals.phy_clock_oracle,
+        );
 
-        // SAFETY: zero fits the recovered two-bit field.
         self.peripherals
             .phy_clock_oracle
             .fe_bb_clock_control_opaque()
-            .modify(|_, w| unsafe { w.rom_fe_bb_enable_unknown().bits(0) });
+            .modify(|_, w| w.rom_fe_bb_enable_unknown().closed());
 
-        // SAFETY: zero is the complete blob value for this write-only opaque
-        // gate register.
-        unsafe {
-            self.peripherals
-                .phy_clock_oracle
-                .bb_clock_gate_opaque()
-                .write_with_zero(|w| w.bits(0));
-        }
+        open_esp_radio_esp32s31_pac::fixed_register_write::close_baseband_clock_gates(
+            &self.peripherals.phy_clock_oracle,
+        );
     }
 }

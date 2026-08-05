@@ -1445,6 +1445,7 @@
               <name>CONFIG_MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit field set to encoding one by phy_iq_est_enable.</description>
               <bitOffset>26</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -1459,11 +1460,13 @@
               <name>CONTROL_WINDOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Fifteen-bit caller value shifted left by two.</description>
               <bitOffset>2</bitOffset><bitWidth>15</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7fff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_IQ_ESTIMATOR]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_iq_est_enable replaces the field with encoding two.</description>
               <bitOffset>19</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -1561,6 +1564,18 @@
           <name>FE_CLOCK_GATE_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes 0x1e7 to open and the blob writes zero to close.</description>
           <addressOffset>0x0400</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field>
+              <name>STATE</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete observed front-end clock-gate images; constituent gate meanings remain unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>0x1e7</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
         </register>
         <register>
           <name>TABLE_MEMORY_INDEX_SOURCE</name>
@@ -1593,6 +1608,11 @@
               <name>ROM_FE_BB_ENABLE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Two-bit open/close mask; individual meanings are unknown.</description>
               <bitOffset>0</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>3</value></enumeratedValue>
+              </enumeratedValues>
             </field>
             <field>
               <name>PHY_CALIBRATION_CLOCK_UNKNOWN</name>
@@ -1605,6 +1625,18 @@
           <name>BB_CLOCK_GATE_OPAQUE</name>
           <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. ROM writes all ones to open and the blob writes zero to close.</description>
           <addressOffset>0x7c80</addressOffset><size>32</size><access>write-only</access>
+          <fields>
+            <field>
+              <name>STATE</name>
+              <description>SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete observed baseband clock-gate images; constituent gate meanings remain unknown.</description>
+              <bitOffset>0</bitOffset><bitWidth>32</bitWidth>
+              <writeConstraint><useEnumeratedValues>true</useEnumeratedValues></writeConstraint>
+              <enumeratedValues><usage>write</usage>
+                <enumeratedValue><name>CLOSED</name><value>0</value></enumeratedValue>
+                <enumeratedValue><name>OPEN</name><value>0xffffffff</value></enumeratedValue>
+              </enumeratedValues>
+            </field>
+          </fields>
         </register>
       </registers>
     </peripheral>

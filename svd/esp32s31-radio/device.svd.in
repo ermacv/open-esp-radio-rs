@@ -171,6 +171,30 @@
              source="ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
+      <write name="open_frontend_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="FE_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="OPEN"
+             source="ROM_REV0_PHY_OPEN_FE_BB_CLK"/>
+      <write name="close_frontend_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="FE_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="CLOSED"
+             source="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"/>
+      <write name="open_baseband_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="BB_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="OPEN"
+             source="ROM_REV0_PHY_OPEN_FE_BB_CLK"/>
+      <write name="close_baseband_clock_gates"
+             peripheral="PHY_CLOCK_ORACLE"
+             register="BB_CLOCK_GATE_OPAQUE"
+             field="STATE"
+             variant="CLOSED"
+             source="BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"/>
       <write name="mask_mac_power_interrupts"
              peripheral="WIFI_MAC_POWER_INTERRUPT"
              register="ENABLE"
@@ -179,6 +203,11 @@
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
     <openEspRadioZeroBasedFieldWrites>
+      <write name="mac_bssid_address_low"
+             peripheral="WIFI_MAC_BSSID_POLICY"
+             register="BSSID_LOW%s"
+             field="BYTES_0_3"
+             source="BLOB_LIBPP_HAL_MAC_SET_BSSID"/>
       <write name="mac_interface_address_low"
              peripheral="WIFI_MAC_INTERFACE_ADDRESS"
              register="ADDRESS_LOW%s"

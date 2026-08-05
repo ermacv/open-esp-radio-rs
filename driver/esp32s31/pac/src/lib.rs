@@ -10833,7 +10833,7 @@ pub mod phy_iq_estimator_oracle {
         #[doc = "Field `CONFIG_MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field set to encoding one by phy_iq_est_enable."]
         pub type ConfigModeUnknownR = crate::FieldReader;
         #[doc = "Field `CONFIG_MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field set to encoding one by phy_iq_est_enable."]
-        pub type ConfigModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ConfigModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 26:27 - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit field set to encoding one by phy_iq_est_enable."]
             #[inline(always)]
@@ -10880,11 +10880,11 @@ pub mod phy_iq_estimator_oracle {
         #[doc = "Field `CONTROL_WINDOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fifteen-bit caller value shifted left by two."]
         pub type ControlWindowUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `CONTROL_WINDOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Fifteen-bit caller value shifted left by two."]
-        pub type ControlWindowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16>;
+        pub type ControlWindowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 15, u16, crate::Safe>;
         #[doc = "Field `MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_iq_est_enable replaces the field with encoding two."]
         pub type ModeUnknownR = crate::FieldReader;
         #[doc = "Field `MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_IQ_ESTIMATOR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_iq_est_enable replaces the field with encoding two."]
-        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bit 0"]
             #[inline(always)]
@@ -11298,12 +11298,50 @@ pub mod phy_clock_oracle {
     pub mod fe_clock_gate_opaque {
         #[doc = "Register `FE_CLOCK_GATE_OPAQUE` writer"]
         pub type W = crate::W<FeClockGateOpaqueSpec>;
-        impl core::fmt::Debug for crate::generic::Reg<FeClockGateOpaqueSpec> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "(not readable)")
+        #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed front-end clock-gate images; constituent gate meanings remain unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum State {
+            #[doc = "0: `0`"]
+            Closed = 0,
+            #[doc = "487: `111100111`"]
+            Open = 487,
+        }
+        impl From<State> for u32 {
+            #[inline(always)]
+            fn from(variant: State) -> Self {
+                variant as _
             }
         }
-        impl W {}
+        impl crate::FieldSpec for State {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for State {}
+        #[doc = "Field `STATE` writer - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed front-end clock-gate images; constituent gate meanings remain unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, State>;
+        impl<'a, REG> StateW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn closed(self) -> &'a mut crate::W<REG> {
+                self.variant(State::Closed)
+            }
+            #[doc = "`111100111`"]
+            #[inline(always)]
+            pub fn open(self) -> &'a mut crate::W<REG> {
+                self.variant(State::Open)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed front-end clock-gate images; constituent gate meanings remain unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, FeClockGateOpaqueSpec> {
+                StateW::new(self, 0)
+            }
+        }
         #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. ROM writes 0x1e7 to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`fe_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct FeClockGateOpaqueSpec;
         impl crate::RegisterSpec for FeClockGateOpaqueSpec {
@@ -11396,10 +11434,67 @@ pub mod phy_clock_oracle {
         pub type R = crate::R<FeBbClockControlOpaqueSpec>;
         #[doc = "Register `FE_BB_CLOCK_CONTROL_OPAQUE` writer"]
         pub type W = crate::W<FeBbClockControlOpaqueSpec>;
+        #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit open/close mask; individual meanings are unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum RomFeBbEnableUnknown {
+            #[doc = "0: `0`"]
+            Closed = 0,
+            #[doc = "3: `11`"]
+            Open = 3,
+        }
+        impl From<RomFeBbEnableUnknown> for u8 {
+            #[inline(always)]
+            fn from(variant: RomFeBbEnableUnknown) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for RomFeBbEnableUnknown {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for RomFeBbEnableUnknown {}
         #[doc = "Field `ROM_FE_BB_ENABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit open/close mask; individual meanings are unknown."]
-        pub type RomFeBbEnableUnknownR = crate::FieldReader;
+        pub type RomFeBbEnableUnknownR = crate::FieldReader<RomFeBbEnableUnknown>;
+        impl RomFeBbEnableUnknownR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<RomFeBbEnableUnknown> {
+                match self.bits {
+                    0 => Some(RomFeBbEnableUnknown::Closed),
+                    3 => Some(RomFeBbEnableUnknown::Open),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_closed(&self) -> bool {
+                *self == RomFeBbEnableUnknown::Closed
+            }
+            #[doc = "`11`"]
+            #[inline(always)]
+            pub fn is_open(&self) -> bool {
+                *self == RomFeBbEnableUnknown::Open
+            }
+        }
         #[doc = "Field `ROM_FE_BB_ENABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Two-bit open/close mask; individual meanings are unknown."]
-        pub type RomFeBbEnableUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type RomFeBbEnableUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, RomFeBbEnableUnknown>;
+        impl<'a, REG> RomFeBbEnableUnknownW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn closed(self) -> &'a mut crate::W<REG> {
+                self.variant(RomFeBbEnableUnknown::Closed)
+            }
+            #[doc = "`11`"]
+            #[inline(always)]
+            pub fn open(self) -> &'a mut crate::W<REG> {
+                self.variant(RomFeBbEnableUnknown::Open)
+            }
+        }
         #[doc = "Field `PHY_CALIBRATION_CLOCK_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The phy_bb_init parent sets bit 2 before calibration; the individual hardware meaning remains unknown."]
         pub type PhyCalibrationClockUnknownR = crate::BitReader;
         #[doc = "Field `PHY_CALIBRATION_CLOCK_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_BB_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The phy_bb_init parent sets bit 2 before calibration; the individual hardware meaning remains unknown."]
@@ -11451,12 +11546,50 @@ pub mod phy_clock_oracle {
     pub mod bb_clock_gate_opaque {
         #[doc = "Register `BB_CLOCK_GATE_OPAQUE` writer"]
         pub type W = crate::W<BbClockGateOpaqueSpec>;
-        impl core::fmt::Debug for crate::generic::Reg<BbClockGateOpaqueSpec> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "(not readable)")
+        #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed baseband clock-gate images; constituent gate meanings remain unknown."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum State {
+            #[doc = "0: `0`"]
+            Closed = 0,
+            #[doc = "4294967295: `11111111111111111111111111111111`"]
+            Open = 4294967295,
+        }
+        impl From<State> for u32 {
+            #[inline(always)]
+            fn from(variant: State) -> Self {
+                variant as _
             }
         }
-        impl W {}
+        impl crate::FieldSpec for State {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for State {}
+        #[doc = "Field `STATE` writer - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed baseband clock-gate images; constituent gate meanings remain unknown."]
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, State>;
+        impl<'a, REG> StateW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn closed(self) -> &'a mut crate::W<REG> {
+                self.variant(State::Closed)
+            }
+            #[doc = "`11111111111111111111111111111111`"]
+            #[inline(always)]
+            pub fn open(self) -> &'a mut crate::W<REG> {
+                self.variant(State::Open)
+            }
+        }
+        impl W {
+            #[doc = "Bits 0:31 - SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete observed baseband clock-gate images; constituent gate meanings remain unknown."]
+            #[inline(always)]
+            pub fn state(&mut self) -> StateW<'_, BbClockGateOpaqueSpec> {
+                StateW::new(self, 0)
+            }
+        }
         #[doc = "SOURCE\\[ROM_REV0_PHY_OPEN_FE_BB_CLK,BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. ROM writes all ones to open and the blob writes zero to close.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bb_clock_gate_opaque::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct BbClockGateOpaqueSpec;
         impl crate::RegisterSpec for BbClockGateOpaqueSpec {
@@ -11821,7 +11954,7 @@ pub mod wifi_mac_bssid_policy {
         #[doc = "Field `BYTES_0_3` reader - "]
         pub type Bytes0_3R = crate::FieldReader<u32>;
         #[doc = "Field `BYTES_0_3` writer - "]
-        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type Bytes0_3W<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -11845,7 +11978,7 @@ pub mod wifi_mac_bssid_policy {
         impl crate::Readable for BssidLowSpec {}
         #[doc = "`write(|w| ..)` method takes [`bssid_low::W`](W) writer structure"]
         impl crate::Writable for BssidLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "BSSID_HIGH (rw) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_SET_BSSID,BLOB_LIBPP_RX_POLICY,BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_SET_MMSS_AND_AID,MIGRATION_HE20_ASSOCIATION\\]; CONFIDENCE\\[instruction-exact\\]. Canonical high BSSID, association identity and interface policy word for interfaces 0..3. Complete dbg_read_rx_misc independently decodes every field; the HE association leaf updates the MMSS/AID fields of interface zero rather than defining a second register identity.\n\nYou can [`read`](crate::Reg::read) this register and get [`bssid_high::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`bssid_high::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@bssid_high`] module"]
@@ -11860,7 +11993,7 @@ pub mod wifi_mac_bssid_policy {
         #[doc = "Field `BSSID_HIGH` reader - "]
         pub type BssidHighR = crate::FieldReader<u16>;
         #[doc = "Field `BSSID_HIGH` writer - "]
-        pub type BssidHighW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type BssidHighW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `ASSOCIATION_ID` reader - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Eleven-bit AID printed by dbg_read_rx_misc."]
         pub type AssociationIdR = crate::FieldReader<u16>;
         #[doc = "Field `ASSOCIATION_ID` writer - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Eleven-bit AID printed by dbg_read_rx_misc."]
@@ -30942,6 +31075,54 @@ pub mod full_register_write {
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
 pub mod fixed_register_write {
 
+    /// Write the `OPEN` variant to every bit of `PHY_CLOCK_ORACLE`.`FE_CLOCK_GATE_OPAQUE`.
+    #[inline]
+    pub fn open_frontend_clock_gates(registers: &crate::PhyClockOracle) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .fe_clock_gate_opaque()
+                .write_with_zero(|writer| writer.state().open());
+        }
+    }
+
+    /// Write the `CLOSED` variant to every bit of `PHY_CLOCK_ORACLE`.`FE_CLOCK_GATE_OPAQUE`.
+    #[inline]
+    pub fn close_frontend_clock_gates(registers: &crate::PhyClockOracle) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .fe_clock_gate_opaque()
+                .write_with_zero(|writer| writer.state().closed());
+        }
+    }
+
+    /// Write the `OPEN` variant to every bit of `PHY_CLOCK_ORACLE`.`BB_CLOCK_GATE_OPAQUE`.
+    #[inline]
+    pub fn open_baseband_clock_gates(registers: &crate::PhyClockOracle) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .bb_clock_gate_opaque()
+                .write_with_zero(|writer| writer.state().open());
+        }
+    }
+
+    /// Write the `CLOSED` variant to every bit of `PHY_CLOCK_ORACLE`.`BB_CLOCK_GATE_OPAQUE`.
+    #[inline]
+    pub fn close_baseband_clock_gates(registers: &crate::PhyClockOracle) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .bb_clock_gate_opaque()
+                .write_with_zero(|writer| writer.state().closed());
+        }
+    }
+
     /// Write the `MASKED` variant to every bit of `WIFI_MAC_POWER_INTERRUPT`.`ENABLE`.
     #[inline]
     pub fn mask_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
@@ -30957,6 +31138,19 @@ pub mod fixed_register_write {
 
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
+
+    /// Write `WIFI_MAC_BSSID_POLICY`.`BSSID_LOW%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn mac_bssid_address_low(registers: &crate::WifiMacBssidPolicy, index: usize, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves the field accepts
+        // every value representable by the public argument type.
+        unsafe {
+            registers
+                .bssid_low(index)
+                .write_with_zero(|writer| writer.bytes_0_3().set(value));
+        }
+    }
 
     /// Write `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_LOW%s` while publishing zero to every other register bit.
     #[inline]

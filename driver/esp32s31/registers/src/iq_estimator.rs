@@ -1,5 +1,7 @@
 //! Ownership-bound DC/IQ estimator operations.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 const fn truncate_control_window(control: u16) -> u16 {
@@ -13,23 +15,20 @@ impl RadioRegisters {
     /// operations in this order. Bit 15 of `control` is discarded by the ROM
     /// shift/mask sequence and therefore is deliberately truncated here.
     pub fn configure_iq_estimator(&mut self, control: u16) {
-        // SAFETY: one is representable by the SVD-described two-bit field.
         self.peripherals
             .phy_iq_estimator_oracle
             .estimator_config()
-            .modify(|_, w| unsafe { w.config_mode_unknown().bits(1) });
-        // SAFETY: two is representable by the SVD-described two-bit field.
+            .modify(|_, w| w.config_mode_unknown().set(1));
         self.peripherals
             .phy_iq_estimator_oracle
             .estimator_control()
-            .modify(|_, w| unsafe { w.mode_unknown().bits(2) });
-        // SAFETY: truncation proves the value fits the fifteen-bit field.
+            .modify(|_, w| w.mode_unknown().set(2));
         self.peripherals
             .phy_iq_estimator_oracle
             .estimator_control()
-            .modify(|_, w| unsafe {
+            .modify(|_, w| {
                 w.control_window_unknown()
-                    .bits(truncate_control_window(control))
+                    .set(truncate_control_window(control))
             });
     }
 

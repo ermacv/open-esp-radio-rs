@@ -44,6 +44,7 @@ field 0x2010003c PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD2 NUMBER_ADDRESS_4_
 field 0x2010003c PHY_FREQUENCY_CHANNEL_ORACLE.I2C_NUMBER_WORD2 NUMBER_ADDRESS_5_UNKNOWN number_address_5_unknown - 25 5 write-only
 register 0x20100040 32 unspecified PHY_FECOEX_RECOVERED.RF_FREQUENCY_RESULT_OPAQUE PHY_FECOEX_RECOVERED PhyFecoexRecovered phy_fecoex_recovered - rf_frequency_result_opaque - -
 register 0x20100400 32 write-only PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE PHY_CLOCK_ORACLE PhyClockOracle phy_clock_oracle - fe_clock_gate_opaque - -
+field 0x20100400 PHY_CLOCK_ORACLE.FE_CLOCK_GATE_OPAQUE STATE state - 0 32 write-only
 register 0x20100408 32 read-write PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE PHY_CLOCK_ORACLE PhyClockOracle phy_clock_oracle - table_memory_index_source - -
 field 0x20100408 PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE FORCED_POWER_INDEX forced_power_index - 17 6 read-write
 field 0x20100408 PHY_CLOCK_ORACLE.TABLE_MEMORY_INDEX_SOURCE FORCE_POWER_ENABLE force_power_enable - 23 1 read-write
@@ -3227,6 +3228,7 @@ register 0x20107c5c 32 unspecified PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_0_OP
 register 0x20107c60 32 unspecified PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_1_OPAQUE PHY_BB_RECOVERED_GAPS PhyBbRecoveredGaps phy_bb_recovered_gaps - cca_counter_status_1_opaque - -
 register 0x20107c6c 32 write-only PHY_BASEBAND_CONFIG_ORACLE.TX_PA_TABLE_OPAQUE PHY_BASEBAND_CONFIG_ORACLE PhyBasebandConfigOracle phy_baseband_config_oracle - tx_pa_table_opaque - -
 register 0x20107c80 32 write-only PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE PHY_CLOCK_ORACLE PhyClockOracle phy_clock_oracle - bb_clock_gate_opaque - -
+field 0x20107c80 PHY_CLOCK_ORACLE.BB_CLOCK_GATE_OPAQUE STATE state - 0 32 write-only
 register 0x20107ca8 32 read-write PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8 PHY_BASEBAND_CONFIG_ORACLE PhyBasebandConfigOracle phy_baseband_config_oracle - baseband_init_7ca8 - -
 field 0x20107ca8 PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CA8 INIT_ENABLE_UNKNOWN init_enable_unknown - 20 1 read-write
 register 0x20107cd0 32 read-write PHY_BASEBAND_CONFIG_ORACLE.BASEBAND_INIT_7CD0 PHY_BASEBAND_CONFIG_ORACLE PhyBasebandConfigOracle phy_baseband_config_oracle - baseband_init_7cd0 - -

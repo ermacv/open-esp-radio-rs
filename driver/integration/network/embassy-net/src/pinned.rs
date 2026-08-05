@@ -1,9 +1,8 @@
 //! Permanently located RX/TX slots for bounded, copy-minimal network ownership.
 
 use core::{
-    cell::UnsafeCell,
     pin::Pin,
-    sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
     task::{Context, Poll},
 };
 
@@ -14,96 +13,10 @@ use embassy_sync::{
 };
 use open_esp_radio_dma::{
     DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
-    ReturningStableDmaBacking,
+    ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease,
 };
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
-
-const SLOT_FREE: u8 = 0;
-const SLOT_NETWORK: u8 = 1;
-const SLOT_READY: u8 = 2;
-const SLOT_RADIO: u8 = 3;
-
-#[repr(C, align(16))]
-struct PinnedRxSlot<const FRAME_CAPACITY: usize> {
-    bytes: UnsafeCell<[u8; FRAME_CAPACITY]>,
-    length: AtomicUsize,
-    state: AtomicU8,
-}
-
-impl<const FRAME_CAPACITY: usize> PinnedRxSlot<FRAME_CAPACITY> {
-    const fn new() -> Self {
-        Self {
-            bytes: UnsafeCell::new([0; FRAME_CAPACITY]),
-            length: AtomicUsize::new(0),
-            state: AtomicU8::new(SLOT_FREE),
-        }
-    }
-
-    fn claim_radio(&self) {
-        assert_eq!(
-            self.state
-                .compare_exchange(SLOT_FREE, SLOT_RADIO, Ordering::AcqRel, Ordering::Acquire),
-            Ok(SLOT_FREE),
-            "free-channel entry did not name a free pinned RX slot"
-        );
-    }
-
-    fn publish_ready(&self, length: usize) {
-        self.length.store(length, Ordering::Relaxed);
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_RADIO,
-                SLOT_READY,
-                Ordering::Release,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_RADIO),
-            "only the radio publisher may publish a pinned RX slot"
-        );
-    }
-
-    fn claim_network(&self) {
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_READY,
-                SLOT_NETWORK,
-                Ordering::Acquire,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_READY),
-            "ready-channel entry did not name a ready pinned RX slot"
-        );
-    }
-
-    fn release_network(&self) {
-        self.length.store(0, Ordering::Relaxed);
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_NETWORK,
-                SLOT_FREE,
-                Ordering::AcqRel,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_NETWORK),
-            "only the network receive token may return this RX slot"
-        );
-    }
-
-    fn length(&self) -> usize {
-        self.length.load(Ordering::Acquire)
-    }
-
-    fn storage_mut_ptr(&self) -> *mut u8 {
-        self.bytes.get().cast::<u8>()
-    }
-}
-
-// SAFETY: the state machine and the free/ready index channels transfer unique
-// ownership of `bytes` between one radio publisher and one network token.
-// Acquire/release transitions publish the initialized length and contents.
-#[allow(unsafe_code, reason = "RX slot state machine is its Sync boundary")]
-unsafe impl<const FRAME_CAPACITY: usize> Sync for PinnedRxSlot<FRAME_CAPACITY> {}
 
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
 ///
@@ -126,7 +39,7 @@ pub struct SplitPinnedResources<
 > {
     free_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
     ready_rx: Channel<M, u8, RX_QUEUE_DEPTH>,
-    rx_slots: [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    rx_pool: RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Channel<M, u8, TX_QUEUE_DEPTH>,
     link: SharedLinkState<M>,
@@ -167,7 +80,7 @@ impl<
         Self {
             free_rx: Channel::new(),
             ready_rx: Channel::new(),
-            rx_slots: [const { PinnedRxSlot::new() }; RX_QUEUE_DEPTH],
+            rx_pool: RxHandoffPool::new(),
             free_tx: Channel::new(),
             ready_tx: Channel::new(),
             link: SharedLinkState::new(),
@@ -232,7 +145,7 @@ impl<
             SplitPinnedDevice {
                 ready_rx: resources.ready_rx.receiver(),
                 free_rx: resources.free_rx.sender(),
-                rx_slots: &resources.rx_slots,
+                rx_pool: &resources.rx_pool,
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.sender(),
@@ -246,7 +159,7 @@ impl<
                 free_rx: resources.free_rx.receiver(),
                 free_rx_return: resources.free_rx.sender(),
                 ready_rx: resources.ready_rx.sender(),
-                rx_slots: &resources.rx_slots,
+                rx_pool: &resources.rx_pool,
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
                 tx_pool: pool,
@@ -282,7 +195,7 @@ pub struct SplitPinnedDevice<
 > {
     ready_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
     free_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
-    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
@@ -368,29 +281,20 @@ pub struct PinnedReceiveToken<
     const QUEUE_DEPTH: usize,
 > {
     free_rx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; QUEUE_DEPTH],
-    index: Option<u8>,
+    lease: Option<RxNetworkLease<'resources, FRAME_CAPACITY>>,
 }
 
 impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> embassy_net_driver::RxToken
     for PinnedReceiveToken<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
-    #[allow(
-        unsafe_code,
-        reason = "consuming the unique RX token lends its network-owned slot"
-    )]
-    fn consume<R, F>(self, f: F) -> R
+    fn consume<R, F>(mut self, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
-        let index = self.index.expect("live pinned RX token");
-        let slot = &self.slots[usize::from(index)];
-        let length = slot.length();
-        // SAFETY: this token is the unique SLOT_NETWORK owner selected by the
-        // ready queue. The slot is returned only when `self` is dropped after
-        // `f` completes.
-        let frame = unsafe { core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), length) };
-        f(frame)
+        self.lease
+            .as_mut()
+            .expect("live pinned RX token")
+            .with_frame(f)
     }
 }
 
@@ -398,8 +302,8 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
     for PinnedReceiveToken<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn drop(&mut self) {
-        if let Some(index) = self.index.take() {
-            self.slots[usize::from(index)].release_network();
+        if let Some(lease) = self.lease.take() {
+            let index = lease.release();
             if let Err(TrySendError::Full(_)) = self.free_rx.try_send(index) {
                 unreachable!("network RX token returns its unique pinned index");
             }
@@ -529,12 +433,11 @@ impl<
             Poll::Ready(index) => index,
             Poll::Pending => return None,
         };
-        self.rx_slots[usize::from(index)].claim_network();
+        let lease = self.rx_pool.claim_network(index);
         Some((
             PinnedReceiveToken {
                 free_rx: self.free_rx,
-                slots: self.rx_slots,
-                index: Some(index),
+                lease: Some(lease),
             },
             self.take_tx_token(),
         ))
@@ -575,12 +478,12 @@ pub struct PinnedRxPublisher<
     free_rx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
     free_rx_return: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_rx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; QUEUE_DEPTH],
+    rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, QUEUE_DEPTH>,
     reserved_rx: Option<u8>,
 }
 
-impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
-    PinnedRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
+impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
+    PinnedRxPublisher<'resources, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn validate_length(length: usize) -> Result<(), FrameLengthError> {
         if length < ETHERNET_HEADER_LEN {
@@ -592,7 +495,9 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         }
     }
 
-    fn try_claim_slot(&mut self) -> Result<u8, RxEnqueueError> {
+    fn try_claim_slot(
+        &mut self,
+    ) -> Result<RxRadioLease<'resources, FRAME_CAPACITY>, RxEnqueueError> {
         let index = if let Some(index) = self.reserved_rx.take() {
             index
         } else {
@@ -600,39 +505,29 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
                 .try_receive()
                 .map_err(|TryReceiveError::Empty| RxEnqueueError::QueueFull)?
         };
-        self.slots[usize::from(index)].claim_radio();
-        Ok(index)
+        Ok(self.rx_pool.claim_radio(index))
     }
 
-    fn publish(&self, index: u8, length: usize) {
-        self.slots[usize::from(index)].publish_ready(length);
+    fn publish<R>(
+        &self,
+        lease: RxRadioLease<'resources, FRAME_CAPACITY>,
+        length: usize,
+        write: impl FnOnce(&mut [u8]) -> R,
+    ) -> R {
+        let (index, result) = lease.publish(length, write);
         if let Err(TrySendError::Full(_)) = self.ready_rx.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned RX slot");
         }
+        result
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "claimed RX slot is exclusively radio-owned until publication"
-    )]
     pub fn try_send(&mut self, frame: &[u8]) -> Result<(), RxEnqueueError> {
         Self::validate_length(frame.len()).map_err(RxEnqueueError::InvalidLength)?;
-        let index = self.try_claim_slot()?;
-        let slot = &self.slots[usize::from(index)];
-        // SAFETY: `try_claim_slot` changed this index to SLOT_RADIO, giving
-        // this publisher exclusive access until `publish`.
-        unsafe {
-            core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), frame.len())
-                .copy_from_slice(frame);
-        }
-        self.publish(index, frame.len());
+        let lease = self.try_claim_slot()?;
+        self.publish(lease, frame.len(), |storage| storage.copy_from_slice(frame));
         Ok(())
     }
 
-    #[allow(
-        unsafe_code,
-        reason = "claimed RX slot is exclusively radio-owned until publication"
-    )]
     pub fn try_send_parts(
         &mut self,
         destination: [u8; 6],
@@ -644,15 +539,13 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
             .checked_add(payload.len())
             .ok_or(RxEnqueueError::InvalidLength(FrameLengthError::TooLong))?;
         Self::validate_length(length).map_err(RxEnqueueError::InvalidLength)?;
-        let index = self.try_claim_slot()?;
-        let slot = &self.slots[usize::from(index)];
-        // SAFETY: `try_claim_slot` gave this publisher exclusive ownership.
-        let frame = unsafe { core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), length) };
-        frame[..6].copy_from_slice(&destination);
-        frame[6..12].copy_from_slice(&source);
-        frame[12..14].copy_from_slice(&ether_type.to_be_bytes());
-        frame[14..].copy_from_slice(payload);
-        self.publish(index, length);
+        let lease = self.try_claim_slot()?;
+        self.publish(lease, length, |frame| {
+            frame[..6].copy_from_slice(&destination);
+            frame[6..12].copy_from_slice(&source);
+            frame[12..14].copy_from_slice(&ether_type.to_be_bytes());
+            frame[14..].copy_from_slice(payload);
+        });
         Ok(())
     }
 
@@ -708,7 +601,7 @@ pub struct SplitPinnedRadioRunner<
     free_rx: Receiver<'resources, M, u8, RX_QUEUE_DEPTH>,
     free_rx_return: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
     ready_rx: Sender<'resources, M, u8, RX_QUEUE_DEPTH>,
-    rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
+    rx_pool: &'resources RxHandoffPool<FRAME_CAPACITY, RX_QUEUE_DEPTH>,
     free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
@@ -760,7 +653,7 @@ impl<
             free_rx: self.free_rx,
             free_rx_return: self.free_rx_return,
             ready_rx: self.ready_rx,
-            slots: self.rx_slots,
+            rx_pool: self.rx_pool,
             reserved_rx: None,
         }
     }

@@ -1,20 +1,22 @@
 #![no_std]
 #![deny(unsafe_code)]
 
-//! Minimal ownership contract for memory whose address remains stable while a
-//! radio transaction retains its backing owner.
+//! Audited storage primitives for radio pipelines.
 //!
 //! This crate deliberately does not know about a chip, executor, network
-//! stack, descriptor layout or allocator. A concrete pinned pool implements
-//! [`StableDmaBacking`] at its own audited memory boundary; chip LMAC code can
-//! then retain that owner instead of relying on an external lifetime comment.
+//! stack, descriptor layout or allocator. [`StableDmaBacking`] proves that a
+//! retained TX allocation cannot move, while [`RxHandoffPool`] transfers one
+//! final receive buffer through finite state-specific leases. Higher protocol
+//! and integration crates use only these safe capabilities.
 
 mod pinned_tx;
+mod rx_handoff;
 
 pub use pinned_tx::{
     DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
     PinnedDmaTxRadioLease, ReturningStableDmaBacking,
 };
+pub use rx_handoff::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 
 /// Exclusive view of one DMA-capable region at its stable address.
 ///

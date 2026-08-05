@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v8 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v9 records `"linkage_mode": "independent-artifacts"` and does not claim
 that unresolved calls between separate archives were linked. Use one linked
 ELF primary plus `--companion` inputs when cross-image addresses and relocations
 belong to one executable address space.
@@ -118,6 +118,17 @@ external ABI calls. External call records include the table version, slot,
 argument count and reviewed return model. Unsupported instructions and
 incomplete control flow remain adjacent `DIRECT-BLOCKER` or
 `REFERENCE-BLOCKER` comments instead of being guessed.
+
+Linked IR connects code and register analysis directly. Every function has
+`mmio_accesses` records containing the exact or candidate address, SVD name,
+width, read/write/poll kind, branch/call path, symbolic address and value, and
+write-bit provenance masks. Their `ordinal` preserves recovered flow traversal
+order, including repeated accesses; mutually exclusive paths remain identified
+by `path`. The top-level `mmio_registers` index groups these
+facts by `(address, width)` and lists all using functions. Counts are explicitly
+access *shapes*, not runtime execution counts. An indexed candidate records one
+possible register selected by a proven bounded address expression; it is not a
+claim that every candidate is touched in one invocation.
 
 External ABI slots carry a harness-owned semantic overlay: an opaque operation
 name, typed/named input/output arguments, return type and optional replacement

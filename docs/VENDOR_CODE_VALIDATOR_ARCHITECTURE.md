@@ -165,6 +165,12 @@ boundary explicit. A linked ELF with companions remains the mode for genuine
 cross-image address and relocation resolution; resolving undefined symbols
 across independent static archives requires a later project linker layer.
 
+The linked report also projects reference-flow MMIO into per-function access
+shapes and a project-wide `(address, width)` register index. Static accesses,
+bounded indexed candidates and poll shapes retain path, address-expression and
+write-bit provenance. This connects the manual pseudo-source to the register
+inventory without treating candidate sets as dynamic occurrence counts.
+
 ### Shared model
 
 - observable effect IR: memory, MMIO, calls, delays, fences and state ranges;

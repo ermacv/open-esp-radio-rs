@@ -144,6 +144,32 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 );
             }
         }
+        for access in &function.mmio_accesses {
+            let mask = |value: Option<u32>| {
+                value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
+            };
+            println!(
+                "MMIO\t{}\tordinal={}\t{:#010x}\twidth={}\tregister={}\taccess={}\tmode={}\tpath={}\taddress-expression={}\tguard={}\tvalue={}\tmodified={}\tpreserved={}\tinverted={}\tforced-zero={}\tforced-one={}\tread-derived={}\tdynamic={}",
+                function.identity,
+                access.ordinal,
+                access.address,
+                access.width,
+                access.register,
+                access.access,
+                access.mode,
+                access.path,
+                access.address_expression.as_deref().unwrap_or("-"),
+                access.guard.as_deref().unwrap_or("-"),
+                access.value.as_deref().unwrap_or("-"),
+                mask(access.modified_mask),
+                mask(access.preserved_mask),
+                mask(access.inverted_mask),
+                mask(access.forced_zero_mask),
+                mask(access.forced_one_mask),
+                mask(access.read_derived_mask),
+                mask(access.dynamic_mask),
+            );
+        }
         for field in &function.context_fields {
             println!(
                 "CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\tpaths={}\tvalues={}",
@@ -190,6 +216,20 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             );
         }
     }
+    for register in &report.mmio_registers {
+        println!(
+            "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tstatic-shapes={}\tindexed-candidates={}\tfunctions={}",
+            register.address,
+            register.width,
+            register.names.join("|"),
+            register.read_shapes,
+            register.write_shapes,
+            register.poll_shapes,
+            register.static_shapes,
+            register.indexed_candidate_shapes,
+            register.functions.join(","),
+        );
+    }
     for boundary in &report.semantic_boundaries {
         println!(
             "SEMANTIC\t{}\tcall-shapes={}\tfunctions={}\ttargets={}\treplacements={}",
@@ -201,11 +241,14 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         );
     }
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tunresolved-calls={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tunresolved-calls={}",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
         report.local_functions,
+        report.mmio_registers.len(),
+        report.mmio_functions,
+        report.mmio_access_shapes,
         report.context_functions,
         report.context_fields,
         report.context_accesses,
@@ -255,6 +298,14 @@ fn write_optional_string(output: &mut String, value: Option<&str>) {
     }
 }
 
+fn write_optional_hex(output: &mut String, value: Option<u32>) {
+    if let Some(value) = value {
+        write_string(output, &format!("{value:#010x}"));
+    } else {
+        output.push_str("null");
+    }
+}
+
 fn write_json_report(
     path: &Path,
     artifacts: &[IrArtifactInput],
@@ -264,7 +315,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 8,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 9,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -300,11 +351,14 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"unresolved_calls\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"unresolved_calls\": {}}},",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
         report.local_functions,
+        report.mmio_registers.len(),
+        report.mmio_functions,
+        report.mmio_access_shapes,
         report.context_functions,
         report.context_fields,
         report.context_accesses,
@@ -317,6 +371,32 @@ fn write_json_report(
         report.unresolved_calls,
     )
     .expect("writing to String cannot fail");
+    output.push_str("  \"mmio_registers\": [");
+    for (index, register) in report.mmio_registers.iter().enumerate() {
+        if index != 0 {
+            output.push_str(", ");
+        }
+        write!(
+            output,
+            "{{\"address\": \"{:#010x}\", \"width\": {}, \"names\": ",
+            register.address, register.width
+        )
+        .expect("writing to String cannot fail");
+        write_strings(&mut output, &register.names);
+        write!(
+            output,
+            ", \"read_shapes\": {}, \"write_shapes\": {}, \"poll_shapes\": {}, \"static_shapes\": {}, \"indexed_candidate_shapes\": {}, \"functions\": ",
+            register.read_shapes,
+            register.write_shapes,
+            register.poll_shapes,
+            register.static_shapes,
+            register.indexed_candidate_shapes,
+        )
+        .expect("writing to String cannot fail");
+        write_strings(&mut output, &register.functions);
+        output.push('}');
+    }
+    output.push_str("],\n");
     output.push_str("  \"semantic_boundaries\": [");
     for (index, boundary) in report.semantic_boundaries.iter().enumerate() {
         if index != 0 {
@@ -417,6 +497,44 @@ fn write_json_report(
                 output.push('}');
             }
             output.push(']');
+            output.push('}');
+        }
+        output.push_str("], \"mmio_accesses\": [");
+        for (access_index, access) in function.mmio_accesses.iter().enumerate() {
+            if access_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"ordinal\": {}, \"address\": \"{:#010x}\", \"width\": {}, \"register\": ",
+                access.ordinal, access.address, access.width
+            )
+            .expect("writing to String cannot fail");
+            write_string(&mut output, &access.register);
+            output.push_str(", \"access\": ");
+            write_string(&mut output, access.access);
+            output.push_str(", \"mode\": ");
+            write_string(&mut output, access.mode);
+            output.push_str(", \"path\": ");
+            write_string(&mut output, &access.path);
+            output.push_str(", \"address_expression\": ");
+            write_optional_string(&mut output, access.address_expression.as_deref());
+            output.push_str(", \"guard\": ");
+            write_optional_string(&mut output, access.guard.as_deref());
+            output.push_str(", \"value\": ");
+            write_optional_string(&mut output, access.value.as_deref());
+            for (name, value) in [
+                ("modified_mask", access.modified_mask),
+                ("preserved_mask", access.preserved_mask),
+                ("inverted_mask", access.inverted_mask),
+                ("forced_zero_mask", access.forced_zero_mask),
+                ("forced_one_mask", access.forced_one_mask),
+                ("read_derived_mask", access.read_derived_mask),
+                ("dynamic_mask", access.dynamic_mask),
+            ] {
+                write!(output, ", \"{name}\": ").expect("writing to String cannot fail");
+                write_optional_hex(&mut output, value);
+            }
             output.push('}');
         }
         output.push_str("], \"context_fields\": [");

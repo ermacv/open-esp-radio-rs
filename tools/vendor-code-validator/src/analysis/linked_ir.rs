@@ -65,6 +65,40 @@ pub(crate) struct ContextField {
     pub(crate) write_values: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedMmioAccess {
+    pub(crate) ordinal: usize,
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) register: String,
+    pub(crate) access: &'static str,
+    pub(crate) mode: &'static str,
+    pub(crate) path: String,
+    pub(crate) address_expression: Option<String>,
+    pub(crate) guard: Option<String>,
+    pub(crate) value: Option<String>,
+    pub(crate) modified_mask: Option<u32>,
+    pub(crate) preserved_mask: Option<u32>,
+    pub(crate) inverted_mask: Option<u32>,
+    pub(crate) forced_zero_mask: Option<u32>,
+    pub(crate) forced_one_mask: Option<u32>,
+    pub(crate) read_derived_mask: Option<u32>,
+    pub(crate) dynamic_mask: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedMmioRegister {
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) names: Vec<String>,
+    pub(crate) read_shapes: usize,
+    pub(crate) write_shapes: usize,
+    pub(crate) poll_shapes: usize,
+    pub(crate) static_shapes: usize,
+    pub(crate) indexed_candidate_shapes: usize,
+    pub(crate) functions: Vec<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SemanticBoundary {
     pub(crate) operation: String,
@@ -90,6 +124,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) return_value: String,
     pub(crate) dependencies: Vec<String>,
     pub(crate) calls: Vec<LinkedCall>,
+    pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,
     pub(crate) context_accesses: Vec<ContextAccess>,
     pub(crate) context_fields: Vec<ContextField>,
     pub(crate) call_graph_blockers: Vec<String>,
@@ -101,6 +136,9 @@ pub(crate) struct LinkedIrFunction {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedIrReport {
     pub(crate) functions: Vec<LinkedIrFunction>,
+    pub(crate) mmio_registers: Vec<LinkedMmioRegister>,
+    pub(crate) mmio_functions: usize,
+    pub(crate) mmio_access_shapes: usize,
     pub(crate) semantic_boundaries: Vec<SemanticBoundary>,
     pub(crate) semantic_calls: usize,
     pub(crate) exported_functions: usize,
@@ -878,6 +916,264 @@ fn context_fields_for_accesses(accesses: &[ContextAccess]) -> Vec<ContextField> 
     fields.into_values().collect()
 }
 
+fn mmio_write_masks(
+    access: MemoryAccess,
+    address: u32,
+    width: u8,
+    value: Option<&SymbolicValue>,
+) -> [Option<u32>; 7] {
+    if access != MemoryAccess::Write {
+        return [None; 7];
+    }
+    let pattern = super::mmio_discovery::classify_write_bits(value, address, width);
+    [
+        Some(pattern.modified_mask(width)),
+        Some(pattern.preserved_mask),
+        Some(pattern.inverted_mask),
+        Some(pattern.forced_zero_mask),
+        Some(pattern.forced_one_mask),
+        Some(pattern.read_derived_mask),
+        Some(pattern.dynamic_mask),
+    ]
+}
+
+struct MmioAccessDraft<'a> {
+    address: u32,
+    width: u8,
+    register: &'a str,
+    access: MemoryAccess,
+    mode: &'static str,
+    path: &'a str,
+    address_expression: Option<String>,
+    guard: Option<String>,
+    value: Option<&'a SymbolicValue>,
+}
+
+fn push_mmio_access(output: &mut Vec<LinkedMmioAccess>, draft: MmioAccessDraft<'_>) {
+    let MmioAccessDraft {
+        address,
+        width,
+        register,
+        access,
+        mode,
+        path,
+        address_expression,
+        guard,
+        value,
+    } = draft;
+    let [
+        modified_mask,
+        preserved_mask,
+        inverted_mask,
+        forced_zero_mask,
+        forced_one_mask,
+        read_derived_mask,
+        dynamic_mask,
+    ] = mmio_write_masks(access, address, width, value);
+    output.push(LinkedMmioAccess {
+        ordinal: output.len(),
+        address,
+        width,
+        register: register.to_owned(),
+        access: match access {
+            MemoryAccess::Read => "read",
+            MemoryAccess::Write => "write",
+        },
+        mode,
+        path: path.to_owned(),
+        address_expression,
+        guard,
+        value: value.map(pseudo_value),
+        modified_mask,
+        preserved_mask,
+        inverted_mask,
+        forced_zero_mask,
+        forced_one_mask,
+        read_derived_mask,
+        dynamic_mask,
+    });
+}
+
+fn collect_mmio_access_from_event(
+    event: &DraftReferenceEvent,
+    path: &str,
+    output: &mut Vec<LinkedMmioAccess>,
+) {
+    match event {
+        DraftReferenceEvent::Observable(ObservableEvent::Memory {
+            access,
+            width,
+            address,
+            register,
+            value,
+        }) => push_mmio_access(
+            output,
+            MmioAccessDraft {
+                address: *address,
+                width: *width,
+                register,
+                access: *access,
+                mode: "static",
+                path,
+                address_expression: None,
+                guard: None,
+                value: value.as_ref(),
+            },
+        ),
+        DraftReferenceEvent::IndexedMmio {
+            access,
+            width,
+            address,
+            registers,
+            guard,
+            value,
+        } => {
+            let address_expression = Some(pseudo_value(address));
+            let guard = guard
+                .as_ref()
+                .map(|guard| format!("{} < {}", pseudo_value(&guard.selector), guard.maximum));
+            for register in registers {
+                push_mmio_access(
+                    output,
+                    MmioAccessDraft {
+                        address: register.address,
+                        width: *width,
+                        register: &register.name,
+                        access: *access,
+                        mode: "indexed-candidate",
+                        path,
+                        address_expression: address_expression.clone(),
+                        guard: guard.clone(),
+                        value: value.as_ref(),
+                    },
+                );
+            }
+        }
+        DraftReferenceEvent::PollMmio {
+            width,
+            address,
+            registers,
+            guard,
+            mask,
+            expected,
+        } => {
+            let address_expression = Some(pseudo_value(address));
+            let guard = guard.as_ref().map_or_else(
+                || format!("value & {mask:#010x} == {expected:#010x}"),
+                |guard| {
+                    format!(
+                        "{} < {}; value & {mask:#010x} == {expected:#010x}",
+                        pseudo_value(&guard.selector),
+                        guard.maximum
+                    )
+                },
+            );
+            for register in registers {
+                let mut access = LinkedMmioAccess {
+                    ordinal: output.len(),
+                    address: register.address,
+                    width: *width,
+                    register: register.name.clone(),
+                    access: "poll",
+                    mode: "indexed-candidate",
+                    path: path.to_owned(),
+                    address_expression: address_expression.clone(),
+                    guard: Some(guard.clone()),
+                    value: None,
+                    modified_mask: None,
+                    preserved_mask: None,
+                    inverted_mask: None,
+                    forced_zero_mask: None,
+                    forced_one_mask: None,
+                    read_derived_mask: None,
+                    dynamic_mask: None,
+                };
+                if registers.len() == 1 && address.as_constant() == Some(register.address) {
+                    access.mode = "static";
+                    access.address_expression = None;
+                }
+                output.push(access);
+            }
+        }
+        DraftReferenceEvent::BoundedPoll {
+            body, on_exhausted, ..
+        } => {
+            collect_mmio_access_from_flow(body, &nested_path(path, "bounded-poll"), output);
+            if let Some(event) = on_exhausted.as_deref() {
+                collect_mmio_access_from_event(event, &nested_path(path, "poll-exhausted"), output);
+            }
+        }
+        DraftReferenceEvent::PollFlow { body, .. } => {
+            collect_mmio_access_from_flow(body, &nested_path(path, "poll"), output);
+        }
+        DraftReferenceEvent::SymmetricCalibrationSearch {
+            initial_read,
+            setup,
+            write_candidate,
+            sample,
+            ..
+        } => {
+            for (scope, flow) in [
+                ("calibration-initial-read", initial_read),
+                ("calibration-setup", setup),
+                ("calibration-write-candidate", write_candidate),
+                ("calibration-sample", sample),
+            ] {
+                collect_mmio_access_from_flow(flow, &nested_path(path, scope), output);
+            }
+        }
+        DraftReferenceEvent::ComposedCall { symbol, flow, .. }
+        | DraftReferenceEvent::ComposedCallWithScratch { symbol, flow, .. } => {
+            collect_mmio_access_from_flow(
+                flow,
+                &nested_path(path, &format!("call {symbol}")),
+                output,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn collect_mmio_access_from_flow(
+    flow: &DraftReferenceFlow,
+    path: &str,
+    output: &mut Vec<LinkedMmioAccess>,
+) {
+    for event in &flow.events {
+        collect_mmio_access_from_event(event, path, output);
+    }
+    if let DraftReferenceTerminator::Branch {
+        condition,
+        taken,
+        not_taken,
+    } = &flow.terminator
+    {
+        let condition = branch_expression(condition);
+        collect_mmio_access_from_flow(
+            taken,
+            &nested_path(path, &format!("if {condition}")),
+            output,
+        );
+        collect_mmio_access_from_flow(
+            not_taken,
+            &nested_path(path, &format!("if !({condition})")),
+            output,
+        );
+    }
+}
+
+fn mmio_accesses_for_trace(trace: &FunctionAnalysis) -> Vec<LinkedMmioAccess> {
+    let mut output = Vec::new();
+    if let Some(flow) = trace.reference_flow.as_ref() {
+        collect_mmio_access_from_flow(flow, "entry", &mut output);
+    } else {
+        for event in &trace.reference_events {
+            collect_mmio_access_from_event(event, "entry", &mut output);
+        }
+    }
+    output
+}
+
 #[derive(Clone, Default)]
 struct RenderState {
     mmio_reads: u32,
@@ -1416,6 +1712,7 @@ pub(crate) fn build_linked_ir_for_source(
             Ok(trace) => {
                 let context_accesses = context_accesses_for_trace(&trace);
                 let context_fields = context_fields_for_accesses(&context_accesses);
+                let mmio_accesses = mmio_accesses_for_trace(&trace);
                 let calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
@@ -1455,6 +1752,7 @@ pub(crate) fn build_linked_ir_for_source(
                         })
                         .collect(),
                     calls,
+                    mmio_accesses,
                     context_accesses,
                     context_fields,
                     call_graph_blockers,
@@ -1478,6 +1776,7 @@ pub(crate) fn build_linked_ir_for_source(
                 return_value: "unknown".to_owned(),
                 dependencies: Vec::new(),
                 calls: direct_calls.into_iter().collect(),
+                mmio_accesses: Vec::new(),
                 context_accesses: Vec::new(),
                 context_fields: Vec::new(),
                 call_graph_blockers,
@@ -1502,8 +1801,62 @@ pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {
     summarize_linked_ir(functions)
 }
 
+#[derive(Default)]
+struct MmioRegisterAccumulator {
+    names: BTreeSet<String>,
+    read_shapes: usize,
+    write_shapes: usize,
+    poll_shapes: usize,
+    static_shapes: usize,
+    indexed_candidate_shapes: usize,
+    functions: BTreeSet<String>,
+}
+
 fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
     functions.sort_by(|left, right| left.identity.cmp(&right.identity));
+    let mmio_functions = functions
+        .iter()
+        .filter(|function| !function.mmio_accesses.is_empty())
+        .count();
+    let mmio_access_shapes = functions
+        .iter()
+        .map(|function| function.mmio_accesses.len())
+        .sum();
+    let mut mmio_index = BTreeMap::<(u32, u8), MmioRegisterAccumulator>::new();
+    for function in &functions {
+        for access in &function.mmio_accesses {
+            let entry = mmio_index
+                .entry((access.address, access.width))
+                .or_default();
+            entry.names.insert(access.register.clone());
+            match access.access {
+                "read" => entry.read_shapes += 1,
+                "write" => entry.write_shapes += 1,
+                "poll" => entry.poll_shapes += 1,
+                _ => unreachable!("linked MMIO access has a closed access vocabulary"),
+            }
+            match access.mode {
+                "static" => entry.static_shapes += 1,
+                "indexed-candidate" => entry.indexed_candidate_shapes += 1,
+                _ => unreachable!("linked MMIO access has a closed address-mode vocabulary"),
+            }
+            entry.functions.insert(function.identity.clone());
+        }
+    }
+    let mmio_registers = mmio_index
+        .into_iter()
+        .map(|((address, width), entry)| LinkedMmioRegister {
+            address,
+            width,
+            names: entry.names.into_iter().collect(),
+            read_shapes: entry.read_shapes,
+            write_shapes: entry.write_shapes,
+            poll_shapes: entry.poll_shapes,
+            static_shapes: entry.static_shapes,
+            indexed_candidate_shapes: entry.indexed_candidate_shapes,
+            functions: entry.functions.into_iter().collect(),
+        })
+        .collect();
     let exported_functions = functions
         .iter()
         .filter(|function| function.binding == "global-or-weak")
@@ -1583,6 +1936,9 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
 
     LinkedIrReport {
         functions,
+        mmio_registers,
+        mmio_functions,
+        mmio_access_shapes,
         semantic_boundaries,
         semantic_calls,
         exported_functions,
@@ -1881,6 +2237,103 @@ mod tests {
         assert!(
             pseudo.contains("ctx2.write32(+0x4, ((ramread0 & 0xffffffdf) | 0x00000020));"),
             "{pseudo}"
+        );
+    }
+
+    #[test]
+    fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
+        let address = 0x2010_7030;
+        let write_value = SymbolicValue::register_read(0, address, 32, false)
+            .and(0xffff_fff0)
+            .or(0x5);
+        let trace = FunctionAnalysis {
+            symbol: "touch_registers".to_owned(),
+            events: Vec::new(),
+            reference_events: Vec::new(),
+            reference_dependencies: Vec::new(),
+            blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            return_value: SymbolicValue::Constant(0),
+            reference_flow: Some(DraftReferenceFlow {
+                events: vec![
+                    DraftReferenceEvent::Observable(ObservableEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width: 32,
+                        address,
+                        register: "AGC.CONTROL".to_owned(),
+                        value: Some(write_value),
+                    }),
+                    DraftReferenceEvent::IndexedMmio {
+                        access: MemoryAccess::Read,
+                        width: 32,
+                        address: SymbolicValue::input(0).shift_left(2).add_constant(address),
+                        registers: vec![
+                            crate::IndexedMmioRegister {
+                                address,
+                                name: "AGC.CONTROL".to_owned(),
+                            },
+                            crate::IndexedMmioRegister {
+                                address: address + 4,
+                                name: "AGC.STATUS".to_owned(),
+                            },
+                        ],
+                        guard: Some(crate::IndexedMmioGuard {
+                            selector: SymbolicValue::input(0),
+                            maximum: 2,
+                        }),
+                        value: None,
+                    },
+                    DraftReferenceEvent::PollMmio {
+                        width: 32,
+                        address: SymbolicValue::Constant(address + 4),
+                        registers: vec![crate::IndexedMmioRegister {
+                            address: address + 4,
+                            name: "AGC.STATUS".to_owned(),
+                        }],
+                        guard: None,
+                        mask: 1,
+                        expected: 1,
+                    },
+                ],
+                terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+            }),
+            unresolved_branch: None,
+        };
+
+        let accesses = mmio_accesses_for_trace(&trace);
+
+        assert_eq!(accesses.len(), 4);
+        assert_eq!(
+            accesses
+                .iter()
+                .map(|access| access.ordinal)
+                .collect::<Vec<_>>(),
+            [0, 1, 2, 3]
+        );
+        let write = accesses
+            .iter()
+            .find(|access| access.access == "write")
+            .unwrap();
+        assert_eq!(write.mode, "static");
+        assert_eq!(write.modified_mask, Some(0xf));
+        assert_eq!(write.preserved_mask, Some(0xffff_fff0));
+        assert_eq!(write.forced_zero_mask, Some(0xa));
+        assert_eq!(write.forced_one_mask, Some(0x5));
+        assert_eq!(
+            accesses
+                .iter()
+                .filter(|access| access.mode == "indexed-candidate")
+                .count(),
+            2
+        );
+        let poll = accesses
+            .iter()
+            .find(|access| access.access == "poll")
+            .unwrap();
+        assert_eq!(poll.mode, "static");
+        assert_eq!(
+            poll.guard.as_deref(),
+            Some("value & 0x00000001 == 0x00000001")
         );
     }
 

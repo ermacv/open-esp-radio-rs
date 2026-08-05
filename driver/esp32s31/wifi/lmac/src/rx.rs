@@ -1,7 +1,5 @@
 //! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
-#![allow(unsafe_code, reason = "qualified hot-path placement attributes")]
-
 use crate::descriptor::{
     BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
     descriptor_address_valid, dma_range_valid, length as descriptor_length, rx_armed_word, rx_done,
@@ -1464,6 +1462,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// executing the complete poll/copy path from PSRAM capped useful UDP RX
     /// near 65 Mbit/s.
     #[inline(never)]
+    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
     #[cfg_attr(
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -1499,6 +1498,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// during reload, the exact ROM base-repair rule is applied before the new
     /// tail becomes accepted.
     #[inline(never)]
+    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
     #[cfg_attr(
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -1527,6 +1527,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// successful append. This deliberately preserves the ROM doorbell/base
     /// repair ordering without hiding a wait in this finite operation.
     #[inline(never)]
+    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
     #[cfg_attr(
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -1568,6 +1569,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// variable-size reclaim policy is software, not automatic DMA recycling.
     /// `MAX_BATCH` bounds one append transaction without imposing a minimum.
     #[inline(never)]
+    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
     #[cfg_attr(
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -2095,6 +2097,7 @@ pub fn first_segment_layout(
 }
 
 #[inline(never)]
+#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
 #[cfg_attr(
     target_arch = "riscv32",
     unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -2288,6 +2291,7 @@ pub fn extract_data(
 /// `ccmp_decap` invariant: only bytes after the logical payload boundary may
 /// be absent. Unprotected extraction remains strict.
 #[inline(never)]
+#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
 #[cfg_attr(
     target_arch = "riscv32",
     unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -2310,6 +2314,7 @@ pub fn extract_ccmp_data(
 /// units must continue through the copying extractor so no non-contiguous
 /// bytes can escape as a slice.
 #[inline(never)]
+#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
 #[cfg_attr(
     target_arch = "riscv32",
     unsafe(link_section = ".rwtext.open_radio_rx_hot")

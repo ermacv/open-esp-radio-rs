@@ -1713,35 +1713,38 @@ fn parse_zero_based_field_writes(
                 .into());
             }
             let width = parse_u64(child_text(field, "bitWidth")?, "field width")?;
-            if !(2..=32).contains(&width) {
+            if !(1..=32).contains(&width) {
                 return Err(format!(
-                    "zero-based field write {name} requires field {field_name} to be between 2 and 32 bits"
+                    "zero-based field write {name} requires field {field_name} to be between 1 and 32 bits"
                 )
                 .into());
             }
-            let constraint = field
-                .children()
-                .find(|node| node.has_tag_name("writeConstraint"))
-                .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
-                .ok_or_else(|| {
-                    format!(
-                        "zero-based field write {name} field {field_name} has no range constraint"
+            if width != 1 {
+                let constraint = field
+                    .children()
+                    .find(|node| node.has_tag_name("writeConstraint"))
+                    .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
+                    .ok_or_else(|| {
+                        format!(
+                            "zero-based field write {name} field {field_name} has no range constraint"
+                        )
+                    })?;
+                let maximum = if width == 32 {
+                    u64::from(u32::MAX)
+                } else {
+                    (1_u64 << width) - 1
+                };
+                if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
+                    || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != maximum
+                {
+                    return Err(format!(
+                        "zero-based field write {name} field {field_name} must accept every representable value"
                     )
-                })?;
-            let maximum = if width == 32 {
-                u64::from(u32::MAX)
-            } else {
-                (1_u64 << width) - 1
-            };
-            if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
-                || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != maximum
-            {
-                return Err(format!(
-                    "zero-based field write {name} field {field_name} must accept every representable value"
-                )
-                .into());
+                    .into());
+                }
             }
             let value_type = match width {
+                1 => "bool",
                 2..=8 => "u8",
                 9..=16 => "u16",
                 17..=32 => "u32",
@@ -1790,10 +1793,13 @@ fn generate_zero_based_field_write_api(document: &Document<'_>) -> Result<String
             .join(", ");
         let (value_parameters, field_writes) = if binding.fields.len() == 1 {
             let field = &binding.fields[0];
-            (
-                format!("value: {}", field.value_type),
-                format!("writer.{}().set(value)", member_binding_name(&field.name)),
-            )
+            let field_name = member_binding_name(&field.name);
+            let write = if field.value_type == "bool" {
+                format!("writer.{field_name}().bit(value)")
+            } else {
+                format!("writer.{field_name}().set(value)")
+            };
+            (format!("value: {}", field.value_type), write)
         } else {
             let parameters = binding
                 .fields
@@ -1811,8 +1817,13 @@ fn generate_zero_based_field_write_api(document: &Document<'_>) -> Result<String
                 .fields
                 .iter()
                 .map(|field| {
-                    let field = member_binding_name(&field.name);
-                    format!(".{field}().set({field}_value)")
+                    let field_name = member_binding_name(&field.name);
+                    let method = if field.value_type == "bool" {
+                        "bit"
+                    } else {
+                        "set"
+                    };
+                    format!(".{field_name}().{method}({field_name}_value)")
                 })
                 .collect::<String>();
             (parameters, format!("writer{writes}"))
@@ -2740,18 +2751,22 @@ mod tests {
              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range>\
              </writeConstraint></field><field><name>DATA</name><bitOffset>16</bitOffset>\
              <bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum>\
-             <maximum>0xff</maximum></range></writeConstraint></field></fields></register>\
+             <maximum>0xff</maximum></range></writeConstraint></field>\
+             <field><name>ENABLE</name><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>\
+             </fields></register>\
              </registers></peripheral></peripherals><vendorExtensions>\
              <openEspRadioZeroBasedFieldWrites><write name=\"port_command\" peripheral=\"PORT\" \
-             register=\"COMMAND\" fields=\"BLOCK,DATA\" source=\"TEST\"/>\
+             register=\"COMMAND\" fields=\"BLOCK,DATA,ENABLE\" source=\"TEST\"/>\
              </openEspRadioZeroBasedFieldWrites></vendorExtensions></device>",
         )
         .unwrap();
         let generated = generate_zero_based_field_write_api(&multiple).unwrap();
         assert!(generated.contains(
-            "pub fn port_command(registers: &crate::Port, block_value: u8, data_value: u8)"
+            "pub fn port_command(registers: &crate::Port, block_value: u8, data_value: u8, enable_value: bool)"
         ));
-        assert!(generated.contains("writer.block().set(block_value).data().set(data_value)"));
+        assert!(generated.contains(
+            "writer.block().set(block_value).data().set(data_value).enable().bit(enable_value)"
+        ));
 
         let partial_range = Document::parse(
             "<device><peripherals><peripheral><name>PORT</name><registers>\

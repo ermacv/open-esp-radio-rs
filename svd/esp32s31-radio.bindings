@@ -577,6 +577,7 @@ field 0x2010417c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_PEER_TAIL_AND_POLICY PEER_A
 field 0x2010417c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x2010417c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x20104180 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 0 -
+field 0x20104180 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x20104184 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 0 -
 field 0x20104184 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x20104188 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY7_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 0 -
@@ -595,6 +596,7 @@ field 0x201041a0 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_PEER_TAIL_AND_POLICY PEER_A
 field 0x201041a0 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x201041a0 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x201041a4 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 1 -
+field 0x201041a4 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x201041a8 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 1 -
 field 0x201041a8 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x201041ac 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY6_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 1 -
@@ -613,6 +615,7 @@ field 0x201041c4 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_PEER_TAIL_AND_POLICY PEER_A
 field 0x201041c4 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x201041c4 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x201041c8 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 2 -
+field 0x201041c8 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x201041cc 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 2 -
 field 0x201041cc WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x201041d0 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY5_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 2 -
@@ -631,6 +634,7 @@ field 0x201041e8 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_PEER_TAIL_AND_POLICY PEER_A
 field 0x201041e8 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x201041e8 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x201041ec 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 3 -
+field 0x201041ec WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x201041f0 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 3 -
 field 0x201041f0 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x201041f4 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY4_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 3 -
@@ -649,6 +653,7 @@ field 0x2010420c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_PEER_TAIL_AND_POLICY PEER_A
 field 0x2010420c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x2010420c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x20104210 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 4 -
+field 0x20104210 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x20104214 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 4 -
 field 0x20104214 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x20104218 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY3_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 4 -
@@ -667,6 +672,7 @@ field 0x20104230 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_PEER_TAIL_AND_POLICY PEER_A
 field 0x20104230 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x20104230 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x20104234 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 5 -
+field 0x20104234 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x20104238 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 5 -
 field 0x20104238 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x2010423c 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY2_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 5 -
@@ -685,6 +691,7 @@ field 0x20104254 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_PEER_TAIL_AND_POLICY PEER_A
 field 0x20104254 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x20104254 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x20104258 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 6 -
+field 0x20104258 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x2010425c 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 6 -
 field 0x2010425c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x20104260 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY1_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 6 -
@@ -703,6 +710,7 @@ field 0x20104278 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_PEER_TAIL_AND_POLICY PEER_A
 field 0x20104278 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_PEER_TAIL_AND_POLICY INTERFACE interface - 16 2 read-write
 field 0x20104278 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_PEER_TAIL_AND_POLICY WINDOW window - 18 7 read-write
 register 0x2010427c 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_PEER_HEAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_peer_head 7 -
+field 0x2010427c WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_PEER_HEAD PEER_ADDRESS_HEAD peer_address_head - 0 32 read-write
 register 0x20104280 32 read-only WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_CURRENT_SEQUENCE WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_current_sequence 7 -
 field 0x20104280 WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_CURRENT_SEQUENCE SEQUENCE sequence - 0 12 read-only
 register 0x20104284 32 read-write WIFI_MAC_RX_DMA.RX_BLOCK_ACK_ENTRY0_START_SEQUENCE_LOAD WIFI_MAC_RX_DMA WifiMacRxDma wifi_mac_rx_dma - rx_block_ack_entry_start_sequence_load 7 -

@@ -203,6 +203,21 @@
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
     <openEspRadioZeroBasedFieldWrites>
+      <write name="rx_block_ack_peer_head"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_PEER_HEAD"
+             field="PEER_ADDRESS_HEAD"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
+      <write name="rx_block_ack_peer_tail_and_policy"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY"
+             fields="PEER_ADDRESS_TAIL,INTERFACE,WINDOW"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
+      <write name="rx_block_ack_active_control"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_CONTROL"
+             fields="ENABLE,TID,WRITE,VALID"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
       <write name="phy_i2c_command_memory"
              peripheral="PHY_I2C_COMMAND_RAM"
              register="COMMAND_MEMORY%s"
@@ -225,6 +240,18 @@
              source="BLOB_LIBPP_HAL_MAC_SET_ADDR"/>
     </openEspRadioZeroBasedFieldWrites>
     <openEspRadioZeroRegisterWrites>
+      <write name="clear_rx_block_ack_bitmap_low_load"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
+      <write name="clear_rx_block_ack_bitmap_high_load"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
+      <write name="clear_rx_block_ack_entry_control"
+             peripheral="WIFI_MAC_RX_DMA"
+             register="RX_BLOCK_ACK_ENTRY%s_CONTROL"
+             source="BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"/>
       <write name="open_mac_control_cold"
              peripheral="WIFI_MAC_CONTROL"
              register="CONTROL"

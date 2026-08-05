@@ -1877,7 +1877,7 @@
           <addressOffset>0x0178</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>ENABLE</name><description>Complete add sets this bit in every installed ordinary receive BlockAck entry.</description><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>TID</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven.</description><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TID</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven.</description><bitOffset>12</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
             <field><name>WRITE</name><description>Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration.</description><bitOffset>30</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>VALID</name><description>Marks an installed entry. Complete delete clears and reasserts it around bitmap clearing before zeroing the entry.</description><bitOffset>31</bitOffset><bitWidth>1</bitWidth></field>
           </fields>
@@ -1887,15 +1887,16 @@
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Peer MAC bytes four and five, interface number and receive reorder-window size in one reverse-addressed ordinary receive BlockAck bank. Complete vendor ampdu_rx_start limits the protocol agreement by the peer request and configured receive window; its ordinary hardware-activation branch independently passes the constant 64 to ic_add_rx_ba. Complete hal_agreement_add_rx_ba then stores that value in WINDOW.</description>
           <addressOffset>0x017c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth></field>
-            <field><name>INTERFACE</name><bitOffset>16</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>WINDOW</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64.</description><bitOffset>18</bitOffset><bitWidth>7</bitWidth></field>
+            <field><name>PEER_ADDRESS_TAIL</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffff</maximum></range></writeConstraint></field>
+            <field><name>INTERFACE</name><bitOffset>16</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>WINDOW</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK]; CONFIDENCE[instruction-exact]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64.</description><bitOffset>18</bitOffset><bitWidth>7</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
           <name>RX_BLOCK_ACK_ENTRY%s_PEER_HEAD</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank.</description>
           <addressOffset>0x0180</addressOffset><size>32</size><access>read-write</access>
+          <fields><field><name>PEER_ADDRESS_HEAD</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
           <name>RX_BLOCK_ACK_ENTRY%s_CURRENT_SEQUENCE</name>
@@ -1907,7 +1908,7 @@
           <name>RX_BLOCK_ACK_ENTRY%s_START_SEQUENCE_LOAD</name>
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Twelve-bit starting sequence written by complete add/reset/restore leaves. This is the software load word paired with the adjacent hardware-maintained CURRENT_SEQUENCE word.</description>
           <addressOffset>0x0188</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth></field></fields>
+          <fields><field><name>SEQUENCE</name><bitOffset>0</bitOffset><bitWidth>12</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xfff</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>8</dim><dimIncrement>0x24</dimIncrement><dimIndex>7,6,5,4,3,2,1,0</dimIndex>
           <name>RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_STATUS</name>
@@ -1934,7 +1935,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30]; CONFIDENCE[instruction-exact-hil-qualified]. Ordinary add/reset sets one of bits zero through seven for the corresponding direct bank. The independent extra-SoftAP staging path pulses bit eight to commit and uses bit nine to latch a selected entry for readback.</description>
           <addressOffset>0x0298</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>ORDINARY_ENTRY_UPDATE</name><description>One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>ORDINARY_ENTRY_UPDATE</name><description>One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
             <field><name>EXTRA_SOFTAP_COMMIT</name><description>Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words.</description><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>EXTRA_SOFTAP_READBACK_LATCH</name><description>Complete extra-SoftAP diagnostics, reset and delete set this bit while reading the entry selected in the staging control and clear it afterwards.</description><bitOffset>9</bitOffset><bitWidth>1</bitWidth></field>
           </fields>

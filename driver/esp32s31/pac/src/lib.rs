@@ -28532,7 +28532,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `TID` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
         pub type TidR = crate::FieldReader;
         #[doc = "Field `TID` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Traffic identifier passed to complete hal_agreement_add_rx_ba without the extra staging path's index transform. The field is four bits wide, while complete ht_recv_action_ba_addba_request rejects values with bit three set and therefore admits TIDs zero through seven."]
-        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type TidW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `WRITE` reader - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
         pub type WriteR = crate::BitReader;
         #[doc = "Field `WRITE` writer - Complete add sets this bit together with ENABLE and VALID when publishing the entry configuration."]
@@ -28610,15 +28610,15 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `PEER_ADDRESS_TAIL` reader - "]
         pub type PeerAddressTailR = crate::FieldReader<u16>;
         #[doc = "Field `PEER_ADDRESS_TAIL` writer - "]
-        pub type PeerAddressTailW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type PeerAddressTailW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `INTERFACE` reader - "]
         pub type InterfaceR = crate::FieldReader;
         #[doc = "Field `INTERFACE` writer - "]
-        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `WINDOW` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
         pub type WindowR = crate::FieldReader;
         #[doc = "Field `WINDOW` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,BLOB_LIBNET80211_RX_BLOCK_ACK\\]; CONFIDENCE\\[instruction-exact\\]. Seven-bit hardware receive BlockAck window. The normal vendor ordinary-STA activation path publishes 64."]
-        pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type WindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -28677,12 +28677,26 @@ pub mod wifi_mac_rx_dma {
         pub type R = crate::R<RxBlockAckEntryPeerHeadSpec>;
         #[doc = "Register `RX_BLOCK_ACK_ENTRY%s_PEER_HEAD` writer"]
         pub type W = crate::W<RxBlockAckEntryPeerHeadSpec>;
-        impl core::fmt::Debug for R {
-            fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-                write!(f, "{}", self.bits())
+        #[doc = "Field `PEER_ADDRESS_HEAD` reader - "]
+        pub type PeerAddressHeadR = crate::FieldReader<u32>;
+        #[doc = "Field `PEER_ADDRESS_HEAD` writer - "]
+        pub type PeerAddressHeadW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl R {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn peer_address_head(&self) -> PeerAddressHeadR {
+                PeerAddressHeadR::new(self.bits)
             }
         }
-        impl W {}
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn peer_address_head(
+                &mut self,
+            ) -> PeerAddressHeadW<'_, RxBlockAckEntryPeerHeadSpec> {
+                PeerAddressHeadW::new(self, 0)
+            }
+        }
         #[doc = "SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Peer MAC bytes zero through three in little-endian order in one reverse-addressed ordinary receive BlockAck bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_peer_head::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rx_block_ack_entry_peer_head::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RxBlockAckEntryPeerHeadSpec;
         impl crate::RegisterSpec for RxBlockAckEntryPeerHeadSpec {
@@ -28692,7 +28706,7 @@ pub mod wifi_mac_rx_dma {
         impl crate::Readable for RxBlockAckEntryPeerHeadSpec {}
         #[doc = "`write(|w| ..)` method takes [`rx_block_ack_entry_peer_head::W`](W) writer structure"]
         impl crate::Writable for RxBlockAckEntryPeerHeadSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RX_BLOCK_ACK_ENTRY_CURRENT_SEQUENCE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK,HIL_OPEN_RX_BLOCK_ACK_DIRECT_BANK_2026_07_30\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Hardware-maintained twelve-bit receive/reorder sequence state. Complete hal_ba_session_store snapshots this word and complete hal_ba_session_restore copies its saved low twelve bits into START_SEQUENCE_LOAD.\n\nYou can [`read`](crate::Reg::read) this register and get [`rx_block_ack_entry_current_sequence::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rx_block_ack_entry_current_sequence`] module"]
@@ -28733,7 +28747,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `SEQUENCE` reader - "]
         pub type SequenceR = crate::FieldReader<u16>;
         #[doc = "Field `SEQUENCE` writer - "]
-        pub type SequenceW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type SequenceW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -28871,7 +28885,7 @@ pub mod wifi_mac_rx_dma {
         #[doc = "Field `ORDINARY_ENTRY_UPDATE` reader - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
         pub type OrdinaryEntryUpdateR = crate::FieldReader;
         #[doc = "Field `ORDINARY_ENTRY_UPDATE` writer - One update bit per reverse-addressed ordinary receive BlockAck bank. Complete add/reset performs a fresh-read OR with one shifted by the logical hardware index."]
-        pub type OrdinaryEntryUpdateW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type OrdinaryEntryUpdateW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `EXTRA_SOFTAP_COMMIT` reader - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
         pub type ExtraSoftapCommitR = crate::BitReader;
         #[doc = "Field `EXTRA_SOFTAP_COMMIT` writer - Complete extra-SoftAP add/reset/delete pulses this bit high then low after filling the shared staging words."]
@@ -31139,6 +31153,76 @@ pub mod fixed_register_write {
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
 
+    /// Write `PEER_ADDRESS_HEAD` in `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_PEER_HEAD` while publishing zero to every other register bit.
+    #[inline]
+    pub fn rx_block_ack_peer_head(registers: &crate::WifiMacRxDma, index: usize, value: u32) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .rx_block_ack_entry_peer_head(index)
+                .write_with_zero(|writer| writer.peer_address_head().set(value));
+        }
+    }
+
+    /// Write `PEER_ADDRESS_TAIL`, `INTERFACE`, `WINDOW` in `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY` while publishing zero to every other register bit.
+    #[inline]
+    pub fn rx_block_ack_peer_tail_and_policy(
+        registers: &crate::WifiMacRxDma,
+        index: usize,
+        peer_address_tail_value: u16,
+        interface_value: u8,
+        window_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .rx_block_ack_entry_peer_tail_and_policy(index)
+                .write_with_zero(|writer| {
+                    writer
+                        .peer_address_tail()
+                        .set(peer_address_tail_value)
+                        .interface()
+                        .set(interface_value)
+                        .window()
+                        .set(window_value)
+                });
+        }
+    }
+
+    /// Write `ENABLE`, `TID`, `WRITE`, `VALID` in `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_CONTROL` while publishing zero to every other register bit.
+    #[inline]
+    pub fn rx_block_ack_active_control(
+        registers: &crate::WifiMacRxDma,
+        index: usize,
+        enable_value: bool,
+        tid_value: u8,
+        write_value: bool,
+        valid_value: bool,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers
+                .rx_block_ack_entry_control(index)
+                .write_with_zero(|writer| {
+                    writer
+                        .enable()
+                        .bit(enable_value)
+                        .tid()
+                        .set(tid_value)
+                        .write()
+                        .bit(write_value)
+                        .valid()
+                        .bit(valid_value)
+                });
+        }
+    }
+
     /// Write `BLOCK`, `REGISTER`, `DATA` in `PHY_I2C_COMMAND_RAM`.`COMMAND_MEMORY%s` while publishing zero to every other register bit.
     #[inline]
     pub fn phy_i2c_command_memory(
@@ -31214,6 +31298,42 @@ pub mod zero_based_field_write {
 
 /// Safe, SVD-declared complete-register zero writes.
 pub mod zero_register_write {
+
+    /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD`.
+    #[inline]
+    pub fn clear_rx_block_ack_bitmap_low_load(registers: &crate::WifiMacRxDma, index: usize) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .rx_block_ack_entry_bitmap_low_load(index)
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD`.
+    #[inline]
+    pub fn clear_rx_block_ack_bitmap_high_load(registers: &crate::WifiMacRxDma, index: usize) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .rx_block_ack_entry_bitmap_high_load(index)
+                .write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_CONTROL`.
+    #[inline]
+    pub fn clear_rx_block_ack_entry_control(registers: &crate::WifiMacRxDma, index: usize) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers
+                .rx_block_ack_entry_control(index)
+                .write_with_zero(|writer| writer);
+        }
+    }
 
     /// Publish zero to every bit of `WIFI_MAC_CONTROL`.`CONTROL`.
     #[inline]

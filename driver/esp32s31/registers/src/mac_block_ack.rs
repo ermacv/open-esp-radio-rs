@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the finite MAC BlockAck register leaves.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// Result sampled for one completed TX hardware queue.
@@ -117,54 +119,47 @@ impl RadioRegisters {
         let images = rx_block_ack_images(interface, peer, tid, window);
         let peer_tail = images.peer_tail_and_policy as u16;
 
-        // SAFETY: the complete recovered leaf publishes this whole peer word.
-        unsafe {
-            block
-                .rx_block_ack_entry_peer_head(register_index)
-                .write_with_zero(|w| w.bits(images.peer_head));
-        }
-        // SAFETY: validation above proves every value fits its generated field.
-        unsafe {
-            block
-                .rx_block_ack_entry_peer_tail_and_policy(register_index)
-                .write_with_zero(|w| {
-                    w.peer_address_tail()
-                        .bits(peer_tail)
-                        .interface()
-                        .bits(interface)
-                        .window()
-                        .bits(window as u8)
-                });
-            block
-                .rx_block_ack_entry_start_sequence_load(register_index)
-                .modify(|_, w| w.sequence().bits(starting_sequence));
-        }
+        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_peer_head(
+            block,
+            register_index,
+            images.peer_head,
+        );
+        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_peer_tail_and_policy(
+            block,
+            register_index,
+            peer_tail,
+            interface,
+            window as u8,
+        );
+        block
+            .rx_block_ack_entry_start_sequence_load(register_index)
+            .modify(|_, w| w.sequence().set(starting_sequence));
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        // SAFETY: complete add clears both software-load bitmap words.
-        unsafe {
-            block
-                .rx_block_ack_entry_bitmap_low_load(register_index)
-                .write_with_zero(|w| w.bits(0));
-            block
-                .rx_block_ack_entry_bitmap_high_load(register_index)
-                .write_with_zero(|w| w.bits(0));
-        }
+        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_low_load(
+            block,
+            register_index,
+        );
+        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_high_load(
+            block,
+            register_index,
+        );
         let update_bit = 1_u8 << hardware_index;
-        // SAFETY: `hardware_index < 8`, so the OR result fits the eight-bit
-        // generated field. This preserves the blob's fresh-read OR operation.
-        block.rx_block_ack_agreement_update().modify(|r, w| unsafe {
+        // The checked index keeps the OR result inside the eight-bit field.
+        // This preserves the blob's fresh-read OR operation.
+        block.rx_block_ack_agreement_update().modify(|r, w| {
             w.ordinary_entry_update()
-                .bits(r.ordinary_entry_update().bits() | update_bit)
+                .set(r.ordinary_entry_update().bits() | update_bit)
         });
-        // SAFETY: `rx_block_ack_images` constructs exactly the complete blob's
-        // full control image from the validated four-bit TID.
-        unsafe {
-            block
-                .rx_block_ack_entry_control(register_index)
-                .write_with_zero(|w| w.bits(images.active_control));
-        }
+        open_esp_radio_esp32s31_pac::zero_based_field_write::rx_block_ack_active_control(
+            block,
+            register_index,
+            true,
+            tid,
+            true,
+            true,
+        );
     }
 
     /// Delete one ordinary receive BlockAck entry.
@@ -178,26 +173,22 @@ impl RadioRegisters {
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().clear_bit());
-        // SAFETY: complete delete clears both software-load bitmap words.
-        unsafe {
-            block
-                .rx_block_ack_entry_bitmap_low_load(register_index)
-                .write_with_zero(|w| w.bits(0));
-            block
-                .rx_block_ack_entry_bitmap_high_load(register_index)
-                .write_with_zero(|w| w.bits(0));
-        }
+        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_low_load(
+            block,
+            register_index,
+        );
+        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_bitmap_high_load(
+            block,
+            register_index,
+        );
         block
             .rx_block_ack_entry_control(register_index)
             .modify(|_, w| w.valid().set_bit());
         // The final full-word zero is a distinct observable edge in the blob.
-        // SAFETY: zero is the complete value written by the recovered delete
-        // leaf; it does not assert any undocumented control bit.
-        unsafe {
-            block
-                .rx_block_ack_entry_control(register_index)
-                .write_with_zero(|w| w);
-        }
+        open_esp_radio_esp32s31_pac::zero_register_write::clear_rx_block_ack_entry_control(
+            block,
+            register_index,
+        );
     }
 
     /// Sample both hardware-maintained and software-load words of one entry.

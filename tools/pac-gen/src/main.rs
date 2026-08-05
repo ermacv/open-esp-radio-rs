@@ -65,6 +65,15 @@ struct ExpandedField {
     access: Option<Access>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct InterruptSnapshotBinding {
+    name: String,
+    peripheral: String,
+    status_register: String,
+    clear_register: String,
+    clear_field: String,
+}
+
 const fn inherited_properties(
     parent: RegisterProperties,
     child: RegisterProperties,
@@ -812,6 +821,26 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             return Err(format!("{extension} references undefined provenance id {source}").into());
         }
     }
+    if let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioInterruptSnapshots"))
+    {
+        for snapshot in extension
+            .children()
+            .filter(|node| node.has_tag_name("snapshot"))
+        {
+            let sources = required_attribute(snapshot, "source")?;
+            for source in sources.split(',').map(str::trim) {
+                if source.is_empty() || !definitions.contains(source) {
+                    return Err(format!(
+                        "interrupt snapshot {} references undefined provenance source {source:?}",
+                        required_attribute(snapshot, "name")?
+                    )
+                    .into());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -858,6 +887,182 @@ fn type_binding_name(value: &str) -> String {
         }
     }
     output
+}
+
+fn required_attribute<'a>(node: Node<'a, 'a>, name: &str) -> Result<&'a str, Box<dyn Error>> {
+    node.attribute(name)
+        .ok_or_else(|| format!("{} has no {name} attribute", node.tag_name().name()).into())
+}
+
+fn direct_named_child<'a>(parent: Node<'a, 'a>, tag: &str, name: &str) -> Option<Node<'a, 'a>> {
+    parent.children().find(|node| {
+        node.has_tag_name(tag)
+            && optional_child_text(*node, "name").is_some_and(|value| value == name)
+    })
+}
+
+fn parse_interrupt_snapshots(
+    document: &Document<'_>,
+) -> Result<Vec<InterruptSnapshotBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioInterruptSnapshots"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioInterruptSnapshots"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioInterruptSnapshots extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for snapshot in extension
+        .children()
+        .filter(|node| node.has_tag_name("snapshot"))
+    {
+        let name = required_attribute(snapshot, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(format!("interrupt snapshot name {name:?} is not lower snake case").into());
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate interrupt snapshot name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(snapshot, "peripheral")?;
+        let status_name = required_attribute(snapshot, "statusRegister")?;
+        let clear_name = required_attribute(snapshot, "clearRegister")?;
+        let clear_field_name = required_attribute(snapshot, "clearField")?;
+        required_attribute(snapshot, "source")?;
+
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!("interrupt snapshot {name} references unknown peripheral {peripheral_name}")
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let status = direct_named_child(registers, "register", status_name).ok_or_else(|| {
+            format!("interrupt snapshot {name} references unknown status register {status_name}")
+        })?;
+        let clear = direct_named_child(registers, "register", clear_name).ok_or_else(|| {
+            format!("interrupt snapshot {name} references unknown clear register {clear_name}")
+        })?;
+        if child_text(status, "size")? != "32" || child_text(status, "access")? != "read-only" {
+            return Err(format!(
+                "interrupt snapshot {name} status must be a 32-bit read-only register"
+            )
+            .into());
+        }
+        if child_text(clear, "size")? != "32"
+            || child_text(clear, "modifiedWriteValues")? != "oneToClear"
+        {
+            return Err(format!(
+                "interrupt snapshot {name} clear must be a 32-bit one-to-clear register"
+            )
+            .into());
+        }
+        let fields = clear
+            .children()
+            .find(|node| node.has_tag_name("fields"))
+            .ok_or_else(|| format!("interrupt snapshot {name} clear has no fields"))?;
+        let clear_field =
+            direct_named_child(fields, "field", clear_field_name).ok_or_else(|| {
+                format!(
+                    "interrupt snapshot {name} references unknown clear field {clear_field_name}"
+                )
+            })?;
+        if child_text(clear_field, "bitOffset")? != "0"
+            || child_text(clear_field, "bitWidth")? != "32"
+        {
+            return Err(format!(
+                "interrupt snapshot {name} clear field must cover the complete 32-bit register"
+            )
+            .into());
+        }
+
+        bindings.push(InterruptSnapshotBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            status_register: status_name.to_owned(),
+            clear_register: clear_name.to_owned(),
+            clear_field: clear_field_name.to_owned(),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_interrupt_snapshot_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_interrupt_snapshots(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared read-and-acknowledge interrupt transactions.\n\
+         pub mod interrupt_snapshot {\n",
+    );
+    for binding in bindings {
+        let snapshot_type = format!("{}Snapshot", type_binding_name(&binding.name));
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let status = member_binding_name(&binding.status_register);
+        let clear = member_binding_name(&binding.clear_register);
+        let clear_field = member_binding_name(&binding.clear_field);
+        output.push_str(&format!(
+            "\n    /// Opaque event image sampled from `{}`.`{}`.\n\
+             #[must_use = \"an interrupt snapshot must be inspected and acknowledged\"]\n\
+             #[derive(Debug)]\n\
+             pub struct {snapshot_type}(u32);\n\
+             impl {snapshot_type} {{\n\
+                 /// Complete masked event image observed by the status read.\n\
+                 #[inline]\n\
+                 pub const fn bits(&self) -> u32 {{ self.0 }}\n\
+             }}\n\
+             /// Sample the complete masked event image.\n\
+             #[inline]\n\
+             pub fn sample_{}(registers: &crate::{peripheral_type}) -> {snapshot_type} {{\n\
+                 {snapshot_type}(registers.{status}().read().bits())\n\
+             }}\n\
+             /// Acknowledge exactly the event image returned by the paired sample.\n\
+             #[inline]\n\
+             pub fn acknowledge_{}(\n\
+                 registers: &crate::{peripheral_type},\n\
+                 snapshot: {snapshot_type},\n\
+             ) {{\n\
+                 // SAFETY: the opaque value can only be constructed by the paired\n\
+                 // STATUS read (or in a validation-only build) and CLEAR is an\n\
+                 // SVD-validated full-width write-one-to-clear register.\n\
+                 unsafe {{\n\
+                     registers.{clear}().write_with_zero(|writer|\n\
+                         writer.{clear_field}().bits(snapshot.0)\n\
+                     );\n\
+                 }}\n\
+             }}\n\
+             #[cfg(feature = \"validation-probes\")]\n\
+             #[doc(hidden)]\n\
+             pub const fn {}_for_validation(bits: u32) -> {snapshot_type} {{\n\
+                 {snapshot_type}(bits)\n\
+             }}\n",
+            binding.peripheral, binding.status_register, binding.name, binding.name, binding.name,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
 }
 
 fn expanded_register_addresses(
@@ -1257,6 +1462,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     let windows = parse_mmio_windows(&document)?;
     validate_evidence_ranges(&document, &windows)?;
     validate_register_aliases(input)?;
+    parse_interrupt_snapshots(&document)?;
     Ok(windows)
 }
 
@@ -1289,7 +1495,13 @@ fn run() -> Result<(), Box<dyn Error>> {
     config.edition = RustEdition::E2024;
     config.target = Target::None;
     config.strict = true;
-    let generated = format_generated(&svd2rust::generate(&input, &config)?.lib_rs)?;
+    let document = Document::parse(&input)?;
+    let interrupt_snapshot_api = generate_interrupt_snapshot_api(&document)?;
+    let generated = format_generated(&format!(
+        "{}{}",
+        svd2rust::generate(&input, &config)?.lib_rs,
+        interrupt_snapshot_api
+    ))?;
     let binding_index = generate_binding_index(&input)?;
 
     if check {
@@ -1338,10 +1550,11 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
-        member_binding_name, mmio_window, parse_mmio_windows, type_binding_name,
-        validate_alias_group, validate_confidence, validate_dimension_order,
-        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
-        validate_register_layout, validate_write_semantics,
+        generate_interrupt_snapshot_api, member_binding_name, mmio_window,
+        parse_interrupt_snapshots, parse_mmio_windows, type_binding_name, validate_alias_group,
+        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
+        validate_provenance, validate_register_aliases, validate_register_layout,
+        validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -1461,6 +1674,47 @@ mod tests {
         )
         .unwrap();
         assert!(validate_write_semantics(&enumeration).is_err());
+    }
+
+    #[test]
+    fn interrupt_snapshot_api_is_opaque_and_consumes_the_sample() {
+        let document = Document::parse(
+            "<device><peripherals><peripheral><name>IRQ_BANK</name><registers>\
+             <register><name>STATUS</name><size>32</size><access>read-only</access></register>\
+             <register><name>CLEAR</name><size>32</size><access>write-only</access>\
+             <modifiedWriteValues>oneToClear</modifiedWriteValues><fields><field>\
+             <name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth>\
+             </field></fields></register></registers></peripheral></peripherals>\
+             <vendorExtensions><openEspRadioInterruptSnapshots>\
+             <snapshot name=\"irq_bank\" peripheral=\"IRQ_BANK\" statusRegister=\"STATUS\" \
+             clearRegister=\"CLEAR\" clearField=\"EVENTS\" source=\"TEST\"/>\
+             </openEspRadioInterruptSnapshots></vendorExtensions></device>",
+        )
+        .unwrap();
+
+        assert_eq!(parse_interrupt_snapshots(&document).unwrap().len(), 1);
+        let generated = generate_interrupt_snapshot_api(&document).unwrap();
+        assert!(generated.contains("pub struct IrqBankSnapshot(u32)"));
+        assert!(generated.contains("snapshot: IrqBankSnapshot"));
+        assert!(!generated.contains("acknowledge_irq_bank(\n                 registers: &crate::IrqBank,\n                 bits: u32"));
+    }
+
+    #[test]
+    fn interrupt_snapshot_rejects_a_non_w1c_clear_register() {
+        let document = Document::parse(
+            "<device><peripherals><peripheral><name>IRQ_BANK</name><registers>\
+             <register><name>STATUS</name><size>32</size><access>read-only</access></register>\
+             <register><name>CLEAR</name><size>32</size><access>write-only</access>\
+             <fields><field><name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth>\
+             </field></fields></register></registers></peripheral></peripherals>\
+             <vendorExtensions><openEspRadioInterruptSnapshots>\
+             <snapshot name=\"irq_bank\" peripheral=\"IRQ_BANK\" statusRegister=\"STATUS\" \
+             clearRegister=\"CLEAR\" clearField=\"EVENTS\" source=\"TEST\"/>\
+             </openEspRadioInterruptSnapshots></vendorExtensions></device>",
+        )
+        .unwrap();
+
+        assert!(parse_interrupt_snapshots(&document).is_err());
     }
 
     #[test]

@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Handwritten typed ESP32-S31 radio register transactions"
 
 [features]
-validation-probes = []
+validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
 
 [dependencies]
 open-esp-radio-esp32s31-pac = { path = "../pac" }

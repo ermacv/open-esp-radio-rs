@@ -6,8 +6,6 @@
 
 pub(crate) mod hal_get_sta_tsf;
 pub(crate) mod hal_mac_get_txq_in_trig_flow_state;
-pub(crate) mod hal_mac_interrupt_clr_event;
-pub(crate) mod hal_mac_interrupt_get_event;
 pub(crate) mod hal_mac_is_txq_enabled;
 pub(crate) mod hal_mac_is_txq_valid;
 pub(crate) mod hal_mac_rx_disable;
@@ -22,8 +20,6 @@ pub(crate) mod hal_mac_set_txq_invalid;
 pub(crate) mod hal_mac_tx_set_cca;
 pub(crate) mod hal_mac_txq_disable;
 pub(crate) mod hal_mac_txq_enable_register_slice;
-pub(crate) mod hal_pwr_interrupt_clr_event;
-pub(crate) mod hal_pwr_interrupt_get_event;
 pub(crate) mod pwr_hal_set_mac_modem_beacon_miss_limit;
 pub(crate) mod pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable;
 pub(crate) mod pwr_hal_set_mac_modem_beacon_miss_timeout;

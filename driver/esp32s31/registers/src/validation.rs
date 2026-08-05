@@ -27,22 +27,30 @@ pub unsafe fn mac_interrupt_registers() -> MacInterruptRegisters {
 
 #[inline(always)]
 pub fn hal_mac_interrupt_get_event(registers: &svd::WifiMacInterrupt) -> u32 {
-    generated::hal_mac_interrupt_get_event::generated_hal_mac_interrupt_get_event(registers)
+    svd::interrupt_snapshot::sample_mac_interrupt(registers).bits()
 }
 
 #[inline(always)]
 pub fn hal_mac_interrupt_clr_event(registers: &svd::WifiMacInterrupt, events: u32) -> u32 {
-    generated::hal_mac_interrupt_clr_event::generated_hal_mac_interrupt_clr_event(registers, events)
+    svd::interrupt_snapshot::acknowledge_mac_interrupt(
+        registers,
+        svd::interrupt_snapshot::mac_interrupt_for_validation(events),
+    );
+    events
 }
 
 #[inline(always)]
 pub fn hal_pwr_interrupt_get_event(registers: &svd::WifiMacPowerInterrupt) -> u32 {
-    generated::hal_pwr_interrupt_get_event::generated_hal_pwr_interrupt_get_event(registers)
+    svd::interrupt_snapshot::sample_mac_power_interrupt(registers).bits()
 }
 
 #[inline(always)]
 pub fn hal_pwr_interrupt_clr_event(registers: &svd::WifiMacPowerInterrupt, events: u32) -> u32 {
-    generated::hal_pwr_interrupt_clr_event::generated_hal_pwr_interrupt_clr_event(registers, events)
+    svd::interrupt_snapshot::acknowledge_mac_power_interrupt(
+        registers,
+        svd::interrupt_snapshot::mac_power_interrupt_for_validation(events),
+    );
+    events
 }
 
 #[inline(always)]

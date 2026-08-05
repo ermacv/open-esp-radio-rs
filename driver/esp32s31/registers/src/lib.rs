@@ -82,6 +82,9 @@ pub use mac_tx_power_init::{
     MacTxPowerTable,
 };
 pub use open_esp_radio_esp32s31_pac as svd;
+pub use open_esp_radio_esp32s31_pac::interrupt_snapshot::{
+    MacInterruptSnapshot, MacPowerInterruptSnapshot,
+};
 pub use table_memory::{PbusMemoryGroupBoundary, PhyMemoryError};
 
 #[inline]

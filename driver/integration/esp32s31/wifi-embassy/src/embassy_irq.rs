@@ -516,12 +516,14 @@ mod tests {
     }
 
     impl MacInterrupt for Interrupt {
-        fn status(&mut self) -> u32 {
+        type Snapshot = u32;
+
+        fn status(&mut self) -> Self::Snapshot {
             self.status
         }
 
-        fn acknowledge(&mut self, events: u32) {
-            self.acknowledged.set(Some(events));
+        fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+            self.acknowledged.set(Some(snapshot));
         }
     }
 
@@ -566,12 +568,14 @@ mod tests {
     }
 
     impl MacPowerInterrupt for PowerInterrupt {
-        fn status(&mut self) -> u32 {
+        type Snapshot = u32;
+
+        fn status(&mut self) -> Self::Snapshot {
             self.status
         }
 
-        fn acknowledge(&mut self, events: u32) {
-            self.acknowledged.set(Some(events));
+        fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+            self.acknowledged.set(Some(snapshot));
         }
     }
 

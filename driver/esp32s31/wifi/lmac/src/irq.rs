@@ -2,7 +2,10 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_registers::{MacInterruptRegisters, MacPowerInterruptRegisters};
+use open_esp_radio_esp32s31_registers::{
+    MacInterruptRegisters, MacInterruptSnapshot, MacPowerInterruptRegisters,
+    MacPowerInterruptSnapshot,
+};
 
 /// Platform route which lends both interrupt-register capabilities to hard
 /// handlers for one finite connected epoch.
@@ -44,20 +47,47 @@ pub const MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK: u32 =
 
 /// Finite MAC interrupt capability used by the hard ISR.
 ///
-/// Production delegates both operations to generated PAC registers. Tests
-/// can model the same ordering without receiving arbitrary MMIO identities.
+/// Production delegates both operations to generated PAC registers. Its
+/// associated snapshot is opaque and can only be acknowledged once. Tests
+/// can model the same ordering with a plain value and no MMIO identity.
+pub trait InterruptStatusSnapshot {
+    fn bits(&self) -> u32;
+}
+
+impl InterruptStatusSnapshot for u32 {
+    fn bits(&self) -> u32 {
+        *self
+    }
+}
+
+impl InterruptStatusSnapshot for MacInterruptSnapshot {
+    fn bits(&self) -> u32 {
+        MacInterruptSnapshot::bits(self)
+    }
+}
+
+impl InterruptStatusSnapshot for MacPowerInterruptSnapshot {
+    fn bits(&self) -> u32 {
+        MacPowerInterruptSnapshot::bits(self)
+    }
+}
+
 pub trait MacInterrupt {
-    fn status(&mut self) -> u32;
-    fn acknowledge(&mut self, events: u32);
+    type Snapshot: InterruptStatusSnapshot;
+
+    fn status(&mut self) -> Self::Snapshot;
+    fn acknowledge(&mut self, snapshot: Self::Snapshot);
 }
 
 impl MacInterrupt for MacInterruptRegisters {
-    fn status(&mut self) -> u32 {
+    type Snapshot = MacInterruptSnapshot;
+
+    fn status(&mut self) -> Self::Snapshot {
         self.mac_interrupt_status()
     }
 
-    fn acknowledge(&mut self, events: u32) {
-        self.acknowledge_mac_interrupts(events);
+    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+        self.acknowledge_mac_interrupts(snapshot);
     }
 }
 
@@ -68,17 +98,21 @@ impl MacInterrupt for MacInterruptRegisters {
 /// acknowledgement; policy code must not infer sleep semantics from an
 /// unqualified bit number.
 pub trait MacPowerInterrupt {
-    fn status(&mut self) -> u32;
-    fn acknowledge(&mut self, events: u32);
+    type Snapshot: InterruptStatusSnapshot;
+
+    fn status(&mut self) -> Self::Snapshot;
+    fn acknowledge(&mut self, snapshot: Self::Snapshot);
 }
 
 impl MacPowerInterrupt for MacPowerInterruptRegisters {
-    fn status(&mut self) -> u32 {
+    type Snapshot = MacPowerInterruptSnapshot;
+
+    fn status(&mut self) -> Self::Snapshot {
         self.power_interrupt_status()
     }
 
-    fn acknowledge(&mut self, events: u32) {
-        self.acknowledge_power_interrupts(events);
+    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+        self.acknowledge_power_interrupts(snapshot);
     }
 }
 
@@ -297,7 +331,8 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
     interrupt: &mut M,
     sink: &S,
 ) -> (IrqDisposition, IrqSnapshot) {
-    let status = interrupt.status();
+    let status_snapshot = interrupt.status();
+    let status = status_snapshot.bits();
     let handled = status & HANDLED_MAC_MASK;
     let auxiliary = status & MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK;
     let unhandled = status & !(HANDLED_MAC_MASK | MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK);
@@ -313,7 +348,7 @@ pub fn handle_mac_irq<M: MacInterrupt, S: IrqSink>(
         return (IrqDisposition::Spurious, snapshot);
     }
 
-    interrupt.acknowledge(status);
+    interrupt.acknowledge(status_snapshot);
     // Avoid an atomic RMW on every qualified RX interrupt. The two observed
     // auxiliary bits are acknowledged above but neither they nor a wholly
     // known work image need to mutate unknown-event telemetry.
@@ -337,13 +372,14 @@ pub fn handle_power_irq<P: MacPowerInterrupt, S: PowerIrqSink>(
     interrupt: &mut P,
     sink: &S,
 ) -> (PowerIrqDisposition, PowerIrqSnapshot) {
-    let status = interrupt.status();
+    let status_snapshot = interrupt.status();
+    let status = status_snapshot.bits();
     let snapshot = PowerIrqSnapshot { status };
     if status == 0 {
         return (PowerIrqDisposition::Spurious, snapshot);
     }
 
-    interrupt.acknowledge(status);
+    interrupt.acknowledge(status_snapshot);
     sink.post_power(status);
     (PowerIrqDisposition::Posted, snapshot)
 }

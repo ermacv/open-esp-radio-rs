@@ -177,14 +177,16 @@ impl RxDma for MockMmio {
 }
 
 impl MacInterrupt for MockMmio {
-    fn status(&mut self) -> u32 {
+    type Snapshot = u32;
+
+    fn status(&mut self) -> Self::Snapshot {
         self.operations.push(Operation::ReadInterruptStatus);
         self.interrupt_status
     }
 
-    fn acknowledge(&mut self, events: u32) {
-        self.operations.push(Operation::ClearInterrupt(events));
-        self.interrupt_status &= !events;
+    fn acknowledge(&mut self, snapshot: Self::Snapshot) {
+        self.operations.push(Operation::ClearInterrupt(snapshot));
+        self.interrupt_status &= !snapshot;
         Mmio::fence(self);
     }
 }

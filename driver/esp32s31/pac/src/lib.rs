@@ -30179,3 +30179,83 @@ impl Peripherals {
         }
     }
 }
+
+/// Safe, SVD-declared read-and-acknowledge interrupt transactions.
+pub mod interrupt_snapshot {
+
+    /// Opaque event image sampled from `WIFI_MAC_INTERRUPT`.`STATUS`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct MacInterruptSnapshot(u32);
+    impl MacInterruptSnapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_mac_interrupt(registers: &crate::WifiMacInterrupt) -> MacInterruptSnapshot {
+        MacInterruptSnapshot(registers.status().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_mac_interrupt(
+        registers: &crate::WifiMacInterrupt,
+        snapshot: MacInterruptSnapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.events().bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn mac_interrupt_for_validation(bits: u32) -> MacInterruptSnapshot {
+        MacInterruptSnapshot(bits)
+    }
+
+    /// Opaque event image sampled from `WIFI_MAC_POWER_INTERRUPT`.`STATUS`.
+    #[must_use = "an interrupt snapshot must be inspected and acknowledged"]
+    #[derive(Debug)]
+    pub struct MacPowerInterruptSnapshot(u32);
+    impl MacPowerInterruptSnapshot {
+        /// Complete masked event image observed by the status read.
+        #[inline]
+        pub const fn bits(&self) -> u32 {
+            self.0
+        }
+    }
+    /// Sample the complete masked event image.
+    #[inline]
+    pub fn sample_mac_power_interrupt(
+        registers: &crate::WifiMacPowerInterrupt,
+    ) -> MacPowerInterruptSnapshot {
+        MacPowerInterruptSnapshot(registers.status().read().bits())
+    }
+    /// Acknowledge exactly the event image returned by the paired sample.
+    #[inline]
+    pub fn acknowledge_mac_power_interrupt(
+        registers: &crate::WifiMacPowerInterrupt,
+        snapshot: MacPowerInterruptSnapshot,
+    ) {
+        // SAFETY: the opaque value can only be constructed by the paired
+        // STATUS read (or in a validation-only build) and CLEAR is an
+        // SVD-validated full-width write-one-to-clear register.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.events().bits(snapshot.0));
+        }
+    }
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    pub const fn mac_power_interrupt_for_validation(bits: u32) -> MacPowerInterruptSnapshot {
+        MacPowerInterruptSnapshot(bits)
+    }
+}

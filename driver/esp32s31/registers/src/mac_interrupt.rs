@@ -1,6 +1,9 @@
 //! Generated-PAC ownership for the finite MAC interrupt transaction.
 
-use super::{device_fence, generated, svd};
+use super::{
+    MacInterruptSnapshot, MacPowerInterruptSnapshot, device_fence,
+    svd::{self, interrupt_snapshot},
+};
 
 /// Task-side setup token for one MAC interrupt handoff epoch.
 ///
@@ -75,21 +78,16 @@ impl MacPowerInterruptRegisters {
     ///
     /// SOURCE: complete `libpp.a[hal_tsf.o]::
     /// hal_pwr_interrupt_get_event` reads `0x2010_d8bc`.
-    pub fn power_interrupt_status(&self) -> u32 {
-        generated::hal_pwr_interrupt_get_event::generated_hal_pwr_interrupt_get_event(
-            &self.peripheral,
-        )
+    pub fn power_interrupt_status(&self) -> MacPowerInterruptSnapshot {
+        interrupt_snapshot::sample_mac_power_interrupt(&self.peripheral)
     }
 
     /// Acknowledge the complete sampled WDEVPWR event image.
     ///
     /// SOURCE: complete `libpp.a[hal_tsf.o]::
     /// hal_pwr_interrupt_clr_event` stores its argument to `0x2010_d8c0`.
-    pub fn acknowledge_power_interrupts(&mut self, events: u32) {
-        let _ = generated::hal_pwr_interrupt_clr_event::generated_hal_pwr_interrupt_clr_event(
-            &self.peripheral,
-            events,
-        );
+    pub fn acknowledge_power_interrupts(&mut self, snapshot: MacPowerInterruptSnapshot) {
+        interrupt_snapshot::acknowledge_mac_power_interrupt(&self.peripheral, snapshot);
         device_fence();
     }
 }
@@ -110,23 +108,16 @@ impl MacInterruptRegisters {
     /// status address and complete `wDev_ProcessFiq` consumes exactly this
     /// status image. The runtime mask is configured before IRQ activation and
     /// is not sampled by the vendor FIQ transaction.
-    pub fn mac_interrupt_status(&self) -> u32 {
-        generated::hal_mac_interrupt_get_event::generated_hal_mac_interrupt_get_event(
-            &self.peripheral,
-        )
+    pub fn mac_interrupt_status(&self) -> MacInterruptSnapshot {
+        interrupt_snapshot::sample_mac_interrupt(&self.peripheral)
     }
 
     /// Acknowledge the complete sampled event image, then order the ISR edge.
     ///
     /// SOURCE: complete `libpp.a::hal_mac_interrupt_clr_event` is one
     /// full-width store to the generated write-to-clear register.
-    pub fn acknowledge_mac_interrupts(&mut self, events: u32) {
-        // SAFETY: all 32 bits are the evidenced write-to-clear event bitmap;
-        // writing back the sampled image is the complete recovered leaf.
-        let _ = generated::hal_mac_interrupt_clr_event::generated_hal_mac_interrupt_clr_event(
-            &self.peripheral,
-            events,
-        );
+    pub fn acknowledge_mac_interrupts(&mut self, snapshot: MacInterruptSnapshot) {
+        interrupt_snapshot::acknowledge_mac_interrupt(&self.peripheral, snapshot);
         device_fence();
     }
 

@@ -5104,7 +5104,7 @@ pub mod phy_i2c_command_ram {
         }
         impl crate::IsEnum for Block {}
         #[doc = "Field `BLOCK` writer - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 \\[0,7), ULP host 1 \\[0,11), RFPLL host 1 \\[0,22), RFPLL_SDM host 1 \\[0,7), BBPLL host 0 \\[0,11), BBTOP host 1 \\[0,57), PERIF host 0 \\[0,13), BIAS host 1 \\[0,4), TXRF host 1 \\[1,22), DIG_REG host 0 \\[0,15)."]
-        pub type BlockW<'a, REG> = crate::FieldWriter<'a, REG, 8, Block>;
+        pub type BlockW<'a, REG> = crate::FieldWriter<'a, REG, 8, Block, crate::Safe>;
         impl<'a, REG> BlockW<'a, REG>
         where
             REG: crate::Writable + crate::RegisterSpec,
@@ -5162,9 +5162,9 @@ pub mod phy_i2c_command_ram {
             }
         }
         #[doc = "Field `REGISTER` writer - "]
-        pub type RegisterW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type RegisterW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `DATA` writer - "]
-        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type DataW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl W {
             #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPHY_PHY_DEBUG_I2C\\]; CONFIDENCE\\[instruction-exact\\]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 \\[0,7), ULP host 1 \\[0,11), RFPLL host 1 \\[0,22), RFPLL_SDM host 1 \\[0,7), BBPLL host 0 \\[0,11), BBTOP host 1 \\[0,57), PERIF host 0 \\[0,13), BIAS host 1 \\[0,4), TXRF host 1 \\[1,22), DIG_REG host 0 \\[0,15)."]
             #[inline(always)]
@@ -31139,12 +31139,37 @@ pub mod fixed_register_write {
 /// Safe, SVD-declared field writes based on an all-zero register image.
 pub mod zero_based_field_write {
 
-    /// Write `WIFI_MAC_BSSID_POLICY`.`BSSID_LOW%s` while publishing zero to every other register bit.
+    /// Write `BLOCK`, `REGISTER`, `DATA` in `PHY_I2C_COMMAND_RAM`.`COMMAND_MEMORY%s` while publishing zero to every other register bit.
+    #[inline]
+    pub fn phy_i2c_command_memory(
+        registers: &crate::PhyI2cCommandRam,
+        index: usize,
+        block_value: u8,
+        register_value: u8,
+        data_value: u8,
+    ) {
+        // SAFETY: the SVD extension explicitly qualifies the zero-based
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
+        unsafe {
+            registers.command_memory(index).write_with_zero(|writer| {
+                writer
+                    .block()
+                    .set(block_value)
+                    .register()
+                    .set(register_value)
+                    .data()
+                    .set(data_value)
+            });
+        }
+    }
+
+    /// Write `BYTES_0_3` in `WIFI_MAC_BSSID_POLICY`.`BSSID_LOW%s` while publishing zero to every other register bit.
     #[inline]
     pub fn mac_bssid_address_low(registers: &crate::WifiMacBssidPolicy, index: usize, value: u32) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves the field accepts
-        // every value representable by the public argument type.
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
         unsafe {
             registers
                 .bssid_low(index)
@@ -31152,7 +31177,7 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_LOW%s` while publishing zero to every other register bit.
+    /// Write `BYTES_0_3` in `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_LOW%s` while publishing zero to every other register bit.
     #[inline]
     pub fn mac_interface_address_low(
         registers: &crate::WifiMacInterfaceAddress,
@@ -31160,8 +31185,8 @@ pub mod zero_based_field_write {
         value: u32,
     ) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves the field accepts
-        // every value representable by the public argument type.
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
         unsafe {
             registers
                 .address_low(index)
@@ -31169,7 +31194,7 @@ pub mod zero_based_field_write {
         }
     }
 
-    /// Write `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_HIGH%s` while publishing zero to every other register bit.
+    /// Write `BYTES_4_5` in `WIFI_MAC_INTERFACE_ADDRESS`.`ADDRESS_HIGH%s` while publishing zero to every other register bit.
     #[inline]
     pub fn mac_interface_address_high(
         registers: &crate::WifiMacInterfaceAddress,
@@ -31177,8 +31202,8 @@ pub mod zero_based_field_write {
         value: u16,
     ) {
         // SAFETY: the SVD extension explicitly qualifies the zero-based
-        // transaction, and generator validation proves the field accepts
-        // every value representable by the public argument type.
+        // transaction, and generator validation proves every selected field
+        // accepts every value representable by its public argument type.
         unsafe {
             registers
                 .address_high(index)

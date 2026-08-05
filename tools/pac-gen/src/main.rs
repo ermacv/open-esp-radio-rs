@@ -96,9 +96,14 @@ struct ZeroBasedFieldWriteBinding {
     name: String,
     peripheral: String,
     register: String,
-    field: String,
-    value_type: &'static str,
+    fields: Vec<ZeroBasedFieldBinding>,
     register_is_array: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ZeroBasedFieldBinding {
+    name: String,
+    value_type: &'static str,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1640,7 +1645,30 @@ fn parse_zero_based_field_writes(
 
         let peripheral_name = required_attribute(write, "peripheral")?;
         let register_name = required_attribute(write, "register")?;
-        let field_name = required_attribute(write, "field")?;
+        let field_names = match (write.attribute("field"), write.attribute("fields")) {
+            (Some(field), None) => vec![field],
+            (None, Some(fields)) => {
+                let names = fields.split(',').map(str::trim).collect::<Vec<_>>();
+                if names.is_empty() || names.iter().any(|field| field.is_empty()) {
+                    return Err(
+                        format!("zero-based field write {name} has an empty fields list").into(),
+                    );
+                }
+                names
+            }
+            (Some(_), Some(_)) => {
+                return Err(format!(
+                    "zero-based field write {name} must use either field or fields, not both"
+                )
+                .into());
+            }
+            (None, None) => {
+                return Err(format!(
+                    "zero-based field write {name} requires a field or fields attribute"
+                )
+                .into());
+            }
+        };
         required_attribute(write, "source")?;
         let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
             .ok_or_else(|| {
@@ -1667,50 +1695,69 @@ fn parse_zero_based_field_writes(
             .children()
             .find(|node| node.has_tag_name("fields"))
             .ok_or_else(|| format!("zero-based field write {name} register has no fields"))?;
-        let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
-            format!("zero-based field write {name} references unknown field {field_name}")
-        })?;
-        if optional_child_text(field, "access") == Some("read-only") {
-            return Err(format!("zero-based field write {name} field is read-only").into());
+        let mut selected_names = BTreeSet::new();
+        let mut selected_fields = Vec::new();
+        for field_name in field_names {
+            if !selected_names.insert(field_name) {
+                return Err(
+                    format!("zero-based field write {name} repeats field {field_name}").into(),
+                );
+            }
+            let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
+                format!("zero-based field write {name} references unknown field {field_name}")
+            })?;
+            if optional_child_text(field, "access") == Some("read-only") {
+                return Err(format!(
+                    "zero-based field write {name} field {field_name} is read-only"
+                )
+                .into());
+            }
+            let width = parse_u64(child_text(field, "bitWidth")?, "field width")?;
+            if !(2..=32).contains(&width) {
+                return Err(format!(
+                    "zero-based field write {name} requires field {field_name} to be between 2 and 32 bits"
+                )
+                .into());
+            }
+            let constraint = field
+                .children()
+                .find(|node| node.has_tag_name("writeConstraint"))
+                .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
+                .ok_or_else(|| {
+                    format!(
+                        "zero-based field write {name} field {field_name} has no range constraint"
+                    )
+                })?;
+            let maximum = if width == 32 {
+                u64::from(u32::MAX)
+            } else {
+                (1_u64 << width) - 1
+            };
+            if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
+                || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != maximum
+            {
+                return Err(format!(
+                    "zero-based field write {name} field {field_name} must accept every representable value"
+                )
+                .into());
+            }
+            let value_type = match width {
+                2..=8 => "u8",
+                9..=16 => "u16",
+                17..=32 => "u32",
+                _ => unreachable!(),
+            };
+            selected_fields.push(ZeroBasedFieldBinding {
+                name: field_name.to_owned(),
+                value_type,
+            });
         }
-        let width = parse_u64(child_text(field, "bitWidth")?, "field width")?;
-        if !(2..=32).contains(&width) {
-            return Err(format!(
-                "zero-based field write {name} requires a field between 2 and 32 bits"
-            )
-            .into());
-        }
-        let constraint = field
-            .children()
-            .find(|node| node.has_tag_name("writeConstraint"))
-            .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
-            .ok_or_else(|| format!("zero-based field write {name} has no range constraint"))?;
-        let maximum = if width == 32 {
-            u64::from(u32::MAX)
-        } else {
-            (1_u64 << width) - 1
-        };
-        if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
-            || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != maximum
-        {
-            return Err(format!(
-                "zero-based field write {name} field must accept every representable value"
-            )
-            .into());
-        }
-        let value_type = match width {
-            2..=8 => "u8",
-            9..=16 => "u16",
-            17..=32 => "u32",
-            _ => unreachable!(),
-        };
 
         bindings.push(ZeroBasedFieldWriteBinding {
             name: name.to_owned(),
             peripheral: peripheral_name.to_owned(),
             register: register_name.to_owned(),
-            field: field_name.to_owned(),
-            value_type,
+            fields: selected_fields,
             register_is_array: register.children().any(|node| node.has_tag_name("dim")),
         });
     }
@@ -1730,26 +1777,60 @@ fn generate_zero_based_field_write_api(document: &Document<'_>) -> Result<String
     for binding in bindings {
         let peripheral_type = type_binding_name(&binding.peripheral);
         let register = member_binding_name(&binding.register);
-        let field = member_binding_name(&binding.field);
         let (index_parameter, index_argument) = if binding.register_is_array {
             ("index: usize, ", "index")
         } else {
             ("", "")
         };
+        let field_list = binding
+            .fields
+            .iter()
+            .map(|field| format!("`{}`", field.name))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (value_parameters, field_writes) = if binding.fields.len() == 1 {
+            let field = &binding.fields[0];
+            (
+                format!("value: {}", field.value_type),
+                format!("writer.{}().set(value)", member_binding_name(&field.name)),
+            )
+        } else {
+            let parameters = binding
+                .fields
+                .iter()
+                .map(|field| {
+                    format!(
+                        "{}_value: {}",
+                        member_binding_name(&field.name),
+                        field.value_type
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            let writes = binding
+                .fields
+                .iter()
+                .map(|field| {
+                    let field = member_binding_name(&field.name);
+                    format!(".{field}().set({field}_value)")
+                })
+                .collect::<String>();
+            (parameters, format!("writer{writes}"))
+        };
         output.push_str(&format!(
-            "\n    /// Write `{}`.`{}` while publishing zero to every other register bit.\n\
+            "\n    /// Write {field_list} in `{}`.`{}` while publishing zero to every other register bit.\n\
              #[inline]\n\
-             pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}value: {}) {{\n\
+             pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{value_parameters}) {{\n\
                  // SAFETY: the SVD extension explicitly qualifies the zero-based\n\
-                 // transaction, and generator validation proves the field accepts\n\
-                 // every value representable by the public argument type.\n\
+                 // transaction, and generator validation proves every selected field\n\
+                 // accepts every value representable by its public argument type.\n\
                  unsafe {{\n\
                      registers.{register}({index_argument}).write_with_zero(|writer|\n\
-                         writer.{field}().set(value)\n\
+                         {field_writes}\n\
                      );\n\
                  }}\n\
              }}\n",
-            binding.peripheral, binding.register, binding.name, binding.value_type,
+            binding.peripheral, binding.register, binding.name,
         ));
     }
     output.push_str("}\n");
@@ -2651,6 +2732,26 @@ mod tests {
         ));
         assert!(generated.contains("registers.address(index).write_with_zero"));
         assert!(generated.contains("writer.high().set(value)"));
+
+        let multiple = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>COMMAND</name><size>32</size><access>write-only</access><fields>\
+             <field><name>BLOCK</name><bitOffset>0</bitOffset><bitWidth>8</bitWidth>\
+             <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range>\
+             </writeConstraint></field><field><name>DATA</name><bitOffset>16</bitOffset>\
+             <bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum>\
+             <maximum>0xff</maximum></range></writeConstraint></field></fields></register>\
+             </registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioZeroBasedFieldWrites><write name=\"port_command\" peripheral=\"PORT\" \
+             register=\"COMMAND\" fields=\"BLOCK,DATA\" source=\"TEST\"/>\
+             </openEspRadioZeroBasedFieldWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        let generated = generate_zero_based_field_write_api(&multiple).unwrap();
+        assert!(generated.contains(
+            "pub fn port_command(registers: &crate::Port, block_value: u8, data_value: u8)"
+        ));
+        assert!(generated.contains("writer.block().set(block_value).data().set(data_value)"));
 
         let partial_range = Document::parse(
             "<device><peripherals><peripheral><name>PORT</name><registers>\

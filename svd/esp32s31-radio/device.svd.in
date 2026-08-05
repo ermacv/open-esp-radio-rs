@@ -203,6 +203,11 @@
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
     <openEspRadioZeroBasedFieldWrites>
+      <write name="phy_i2c_command_memory"
+             peripheral="PHY_I2C_COMMAND_RAM"
+             register="COMMAND_MEMORY%s"
+             fields="BLOCK,REGISTER,DATA"
+             source="ESP_IDF_ESP32S31_MODEM_REG_BASE,BLOB_LIBPHY_PHY_I2C"/>
       <write name="mac_bssid_address_low"
              peripheral="WIFI_MAC_BSSID_POLICY"
              register="BSSID_LOW%s"

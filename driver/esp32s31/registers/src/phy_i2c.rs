@@ -3,6 +3,8 @@
 //! The chip-level `I2C_ANA_MST` register block is owned by the platform PAC.
 //! Only the undocumented command-memory window remains in this radio PAC.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -15,20 +17,13 @@ impl RadioRegisters {
             return false;
         }
         let bytes = command.to_le_bytes();
-        // SAFETY: each input is one byte and therefore exactly fits its field.
-        unsafe {
-            self.peripherals
-                .phy_i2c_command_ram
-                .command_memory(index)
-                .write_with_zero(|w| {
-                    w.block()
-                        .bits(bytes[0])
-                        .register()
-                        .bits(bytes[1])
-                        .data()
-                        .bits(bytes[2])
-                });
-        }
+        open_esp_radio_esp32s31_pac::zero_based_field_write::phy_i2c_command_memory(
+            &self.peripherals.phy_i2c_command_ram,
+            index,
+            bytes[0],
+            bytes[1],
+            bytes[2],
+        );
         true
     }
 }

@@ -23,6 +23,7 @@
               <name>BLOCK</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_DEBUG_I2C]; CONFIDENCE[instruction-exact]. Logical PHY-I2C block ID. The bank host and valid half-open register-index ranges are: SAR1 host 0 [0,7), ULP host 1 [0,11), RFPLL host 1 [0,22), RFPLL_SDM host 1 [0,7), BBPLL host 0 [0,11), BBTOP host 1 [0,57), PERIF host 0 [0,13), BIAS host 1 [0,4), TXRF host 1 [1,22), DIG_REG host 0 [0,15).</description>
               <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
               <enumeratedValues>
                 <enumeratedValue><name>SAR1</name><value>0x10</value></enumeratedValue>
                 <enumeratedValue><name>ULP</name><value>0x61</value></enumeratedValue>
@@ -36,8 +37,8 @@
                 <enumeratedValue><name>DIG_REG</name><value>0x6d</value></enumeratedValue>
               </enumeratedValues>
             </field>
-            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field>
-            <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field>
+            <field><name>REGISTER</name><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
+            <field><name>DATA</name><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field>
           </fields>
         </register>
       </registers>

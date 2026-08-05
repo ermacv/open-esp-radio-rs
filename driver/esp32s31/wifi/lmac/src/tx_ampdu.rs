@@ -6,6 +6,8 @@
 //! fixed management-frame pool and programs `TxBlockAckAlarm::deadline_us`
 //! into a Rust async timer.
 
+#![cfg_attr(not(test), forbid(unsafe_code))]
+
 use core::{marker::PhantomPinned, mem, ops::Deref, pin::Pin};
 
 use open_esp_radio_dma::StableDmaBacking;
@@ -1901,38 +1903,56 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The PP blob gives HE single MPDU its own DMA-metadata and HE-SIG-A2
     /// layout, even though both paths reuse the same pinned descriptor and
     /// eight-byte private metadata storage.
-    #[allow(
-        unsafe_code,
-        reason = "committed backing remains pinned until the hardware transaction ends"
-    )]
     pub fn submit_he_smpdu<H: HtAmpduHardware>(
-        self: Pin<&mut Self>,
+        mut self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
         queue: LegacyTxQueue,
         config: HeSmpduTxConfig,
     ) -> Result<(), HtAmpduTxError> {
-        let storage = self.as_ref().get_ref();
-        if storage.state != TxSlotState::Reserved || storage.active != cookie {
-            return Err(HtAmpduTxError::Stale);
-        }
-        if storage.count != 1
-            || storage.frame_lengths[0] != config.mpdu_length
-            || storage.hardware_mic_lengths[0] != 0
-        {
-            return Err(HtAmpduTxError::RegisterImageMismatch);
-        }
-
-        let descriptor_address = hardware
-            .tx_descriptor_address(core::ptr::addr_of!(storage.descriptors[0]).addr() as u32);
-        let buffer_address = u32::try_from(storage.buffer_addresses[0]).unwrap_or(u32::MAX);
-        // HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29 captured the complete
-        // vendor DMA word c0090040: capacity 64 and used length 36. Preserve
-        // that bounded single-MPDU allocation geometry even though the
-        // statically owned Rust buffer is larger.
-        let capacity =
-            u32::from(storage.descriptor_capacities[0]).max(HE_SMPDU_VENDOR_DMA_CAPACITY);
-        let transfer_length = (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[0]);
+        let (
+            descriptor_address,
+            buffer_address,
+            descriptor_capacity,
+            capacity,
+            transfer_length,
+            metadata_length,
+        ) = {
+            let storage = self.as_ref().get_ref();
+            if storage.state != TxSlotState::Reserved || storage.active != cookie {
+                return Err(HtAmpduTxError::Stale);
+            }
+            if storage.count != 1
+                || storage.frame_lengths[0] != config.mpdu_length
+                || storage.hardware_mic_lengths[0] != 0
+            {
+                return Err(HtAmpduTxError::RegisterImageMismatch);
+            }
+            let descriptor_capacity = usize::from(storage.descriptor_capacities[0]);
+            let internal = &storage.buffers[0].0;
+            if storage.buffer_addresses[0] != internal.as_ptr().addr()
+                || descriptor_capacity > internal.len()
+            {
+                return Err(HtAmpduTxError::BackingUnavailable { index: 0 });
+            }
+            let descriptor_address = hardware
+                .tx_descriptor_address(core::ptr::addr_of!(storage.descriptors[0]).addr() as u32);
+            let buffer_address = u32::try_from(storage.buffer_addresses[0]).unwrap_or(u32::MAX);
+            // HIL_VENDOR_HE20_MCS0_DCM_RAW_2026_07_29 captured the complete
+            // vendor DMA word c0090040: capacity 64 and used length 36.
+            let capacity =
+                u32::from(storage.descriptor_capacities[0]).max(HE_SMPDU_VENDOR_DMA_CAPACITY);
+            let metadata_length = u32::from(storage.psdu_lengths[0]);
+            let transfer_length = (TX_AMPDU_METADATA_SIZE as u32) + metadata_length;
+            (
+                descriptor_address,
+                buffer_address,
+                descriptor_capacity,
+                capacity,
+                transfer_length,
+                metadata_length,
+            )
+        };
         #[cfg(target_arch = "riscv32")]
         {
             if !descriptor_address_valid(descriptor_address)
@@ -1950,15 +1970,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         // trailing hardware-FCS bytes. The live vendor S-MPDU buffer started
         // with 0x0100_001c for a 24-byte frame: retain length 28, set metadata
         // bit 24, keep empty delimiters and byte-seven's optional term zero.
-        // SAFETY: the committed backing is pinned by this storage or by the
-        // referenced-frame owner required by `commit_referenced_frame`.
-        let buffer = unsafe {
-            core::slice::from_raw_parts_mut(
-                storage.buffer_addresses[0] as *mut u8,
-                usize::from(storage.descriptor_capacities[0]),
-            )
-        };
-        let metadata_length = u32::from(storage.psdu_lengths[0]);
+        let storage = self.as_mut().project();
+        let buffer = &mut storage.buffers[0].0[..descriptor_capacity];
         buffer[..4].copy_from_slice(&(metadata_length | 0x0100_0000).to_le_bytes());
         buffer[4] = 0;
         buffer[7] = 0;
@@ -1999,7 +2012,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         if !hardware.prepare_he_tx(queue_index, program) {
             return Err(HtAmpduTxError::QueueActive);
         }
-        let storage = self.project();
         *storage.queue = queue;
         *storage.aggregate_length = config.apep_length();
         *storage.detached = false;

@@ -10,6 +10,9 @@ svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
 
+[registers.review]
+output = "generated/reports/register-review.md"
+
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"
 

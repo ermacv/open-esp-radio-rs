@@ -1,0 +1,314 @@
+//! Human-oriented bridge from immutable MMIO facts to the reviewed model.
+
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+    path::Path,
+};
+
+use super::{
+    RegisterFacts, RegisterModel, ReviewAnnotation,
+    review_draft::{candidate_fields, inferred_access, write_draft},
+};
+use crate::Result;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RegisterReviewSummary {
+    pub(crate) observed: usize,
+    pub(crate) reviewed: usize,
+    pub(crate) unreviewed: usize,
+    pub(crate) model_only: usize,
+    pub(crate) field_candidates: usize,
+}
+
+pub(crate) fn render_register_review(
+    facts: &RegisterFacts,
+    model: &RegisterModel,
+    facts_path: &Path,
+    model_path: &Path,
+) -> Result<(String, RegisterReviewSummary)> {
+    render_report(
+        facts,
+        &model.register_identities()?,
+        model.review(),
+        facts_path,
+        model_path,
+    )
+}
+
+fn render_report(
+    facts: &RegisterFacts,
+    identities: &BTreeMap<(u64, u32), String>,
+    annotations: &[ReviewAnnotation],
+    facts_path: &Path,
+    model_path: &Path,
+) -> Result<(String, RegisterReviewSummary)> {
+    let fact_keys = facts
+        .registers
+        .iter()
+        .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
+        .collect::<BTreeSet<_>>();
+    let reviewed = fact_keys
+        .iter()
+        .filter(|identity| identities.contains_key(identity))
+        .count();
+    let model_only = identities
+        .keys()
+        .filter(|identity| !fact_keys.contains(identity))
+        .count();
+    let field_candidates = facts
+        .registers
+        .iter()
+        .map(candidate_fields)
+        .map(|fields| fields.len())
+        .sum();
+    let summary = RegisterReviewSummary {
+        observed: facts.registers.len(),
+        reviewed,
+        unreviewed: facts.registers.len() - reviewed,
+        model_only,
+        field_candidates,
+    };
+
+    let mut output = String::new();
+    output.push_str("# Register review report\n\n");
+    writeln!(
+        output,
+        "Generated from `{}` and compared with `{}`.",
+        markdown_code(&facts_path.display().to_string()),
+        markdown_code(&model_path.display().to_string())
+    )
+    .expect("writing to String cannot fail");
+    output.push_str(
+        "This file is derived evidence, not the register database. Edit the model fragments, then regenerate this report. Candidate names, access modes and bit ranges are mechanical starting points; they do not assert hardware semantics, reset values, W1C behavior or completeness.\n\n",
+    );
+    output.push_str("## Summary\n\n");
+    writeln!(output, "- Observed register widths: {}", summary.observed)
+        .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Matched by the reviewed model: {}",
+        summary.reviewed
+    )
+    .expect("writing to String cannot fail");
+    writeln!(output, "- Awaiting review: {}", summary.unreviewed)
+        .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Model-only register widths: {}",
+        summary.model_only
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Mechanical field candidates: {}",
+        summary.field_candidates
+    )
+    .expect("writing to String cannot fail");
+
+    let annotation_map = annotations
+        .iter()
+        .map(|annotation| (annotation.entity.as_str(), annotation))
+        .collect::<BTreeMap<_, _>>();
+    let mut ranges = facts.ranges.iter().collect::<Vec<_>>();
+    ranges.sort_by_key(|range| (range.start, range.end, range.name.as_str()));
+    for range in ranges {
+        writeln!(
+            output,
+            "\n## Range `{}` (`{:#010x}..{:#010x}`)\n",
+            markdown_code(&range.name),
+            range.start,
+            range.end
+        )
+        .expect("writing to String cannot fail");
+        output.push_str("| Address | Offset | Width | State | Model identity | Catalog name | Reads | Writes | Modified masks |\n");
+        output.push_str("| --- | --- | ---: | --- | --- | --- | ---: | ---: | --- |\n");
+        let mut registers = facts
+            .registers
+            .iter()
+            .filter(|fact| range.contains(fact.address))
+            .collect::<Vec<_>>();
+        registers.sort_by_key(|fact| (fact.address, fact.width));
+        for fact in &registers {
+            let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let masks = fact
+                .candidate_masks
+                .iter()
+                .map(|mask| format!("`{mask:#010x}`"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            writeln!(
+                output,
+                "| `{:#010x}` | `{:#x}` | {} | {} | {} | `{}` | {} | {} | {} |",
+                fact.address,
+                fact.address - range.start,
+                fact.width,
+                if identity.is_some() {
+                    "reviewed"
+                } else {
+                    "unreviewed"
+                },
+                identity.map_or_else(
+                    || "-".to_owned(),
+                    |value| format!("`{}`", markdown_code(value))
+                ),
+                markdown_code(&fact.catalog_name),
+                fact.reads,
+                fact.writes,
+                if masks.is_empty() { "-" } else { &masks },
+            )
+            .expect("writing to String cannot fail");
+        }
+
+        for fact in registers {
+            let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            writeln!(
+                output,
+                "\n### `{:#010x}/{}` — {}\n",
+                fact.address,
+                fact.width,
+                identity.map_or("unreviewed", String::as_str)
+            )
+            .expect("writing to String cannot fail");
+            writeln!(
+                output,
+                "Mechanical access: `{}`. Read users: {}. Write users: {}.",
+                inferred_access(fact),
+                function_list(&fact.read_functions),
+                function_list(&fact.write_functions)
+            )
+            .expect("writing to String cannot fail");
+            if let Some(identity) = identity
+                && let Some(annotation) = annotation_map.get(identity.as_str())
+            {
+                if let Some(confidence) = &annotation.confidence {
+                    writeln!(
+                        output,
+                        "Review confidence: `{}`.",
+                        markdown_code(confidence)
+                    )
+                    .expect("writing to String cannot fail");
+                }
+                if !annotation.sources.is_empty() {
+                    writeln!(
+                        output,
+                        "Review sources: {}.",
+                        annotation
+                            .sources
+                            .iter()
+                            .map(|source| format!("`{}`", markdown_code(source)))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )
+                    .expect("writing to String cannot fail");
+                }
+            }
+            for (index, pattern) in fact.write_patterns.iter().enumerate() {
+                writeln!(
+                    output,
+                    "- Write pattern {}: occurrences={}, modified=`{:#010x}`, preserved=`{:#010x}`, inverted=`{:#010x}`, forced-zero=`{:#010x}`, forced-one=`{:#010x}`, read-derived=`{:#010x}`, dynamic=`{:#010x}`; functions: {}.",
+                    index + 1,
+                    pattern.occurrences,
+                    pattern.modified_mask,
+                    pattern.preserved_mask,
+                    pattern.inverted_mask,
+                    pattern.forced_zero_mask,
+                    pattern.forced_one_mask,
+                    pattern.read_derived_mask,
+                    pattern.dynamic_mask,
+                    function_list(&pattern.functions)
+                )
+                .expect("writing to String cannot fail");
+            }
+            if identity.is_none() {
+                write_draft(&mut output, fact, range.start);
+            }
+        }
+    }
+
+    if model_only != 0 {
+        output.push_str("\n## Model-only registers\n\n");
+        output.push_str("These entries are valid model data but were not observed in the current best-effort discovery facts. Absence is not proof that vendor code never accesses them.\n\n");
+        output.push_str("| Address | Width | Model identity |\n| --- | ---: | --- |\n");
+        for ((address, width), identity) in identities {
+            if !fact_keys.contains(&(*address, *width)) {
+                writeln!(
+                    output,
+                    "| `{address:#010x}` | {width} | `{}` |",
+                    markdown_code(identity)
+                )
+                .expect("writing to String cannot fail");
+            }
+        }
+    }
+
+    Ok((output, summary))
+}
+
+fn function_list(functions: &BTreeSet<String>) -> String {
+    if functions.is_empty() {
+        return "-".to_owned();
+    }
+    functions
+        .iter()
+        .map(|function| format!("`{}`", markdown_code(function)))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn markdown_code(value: &str) -> String {
+    value.replace('`', "'").replace('|', "\\|")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registers::{FactRange, RegisterFact, RegisterWritePatternFact};
+
+    #[test]
+    fn report_links_functions_and_emits_safe_unreviewed_drafts() {
+        let facts = RegisterFacts {
+            ranges: vec![FactRange {
+                name: "radio".to_owned(),
+                start: 0x1000,
+                end: 0x2000,
+            }],
+            registers: vec![RegisterFact {
+                address: 0x1010,
+                width: 32,
+                catalog_name: "UNMAPPED".to_owned(),
+                reads: 1,
+                writes: 2,
+                read_functions: ["rom:read_status".to_owned()].into(),
+                write_functions: ["lib:member.o:enable".to_owned()].into(),
+                write_patterns: vec![RegisterWritePatternFact {
+                    occurrences: 2,
+                    modified_mask: 0x33,
+                    preserved_mask: !0x33,
+                    inverted_mask: 0,
+                    forced_zero_mask: 0,
+                    forced_one_mask: 0x1,
+                    read_derived_mask: 0,
+                    dynamic_mask: 0x32,
+                    functions: ["lib:member.o:enable".to_owned()].into(),
+                }],
+                candidate_masks: vec![0x33],
+            }],
+        };
+        let (report, summary) = render_report(
+            &facts,
+            &BTreeMap::new(),
+            &[],
+            Path::new("mmio.json"),
+            Path::new("device.toml"),
+        )
+        .unwrap();
+        assert_eq!(summary.unreviewed, 1);
+        assert_eq!(summary.field_candidates, 2);
+        assert!(report.contains("`rom:read_status`"));
+        assert!(report.contains("name = \"REG_00000010_W32\""));
+        assert!(report.contains("name = \"FIELD_1_0\""));
+        assert!(report.contains("name = \"FIELD_5_4\""));
+        assert!(report.contains("Candidate names, access modes and bit ranges are mechanical"));
+    }
+}

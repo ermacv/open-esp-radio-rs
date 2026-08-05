@@ -11,6 +11,7 @@ pub(crate) enum Command {
     RegisterInitModel,
     RegisterImportSvd,
     RegisterValidate,
+    RegisterReview,
     RegisterExportSvd,
     RegisterGeneratePac,
     SymbolInventory,
@@ -57,6 +58,10 @@ impl Command {
             ("registers", Some("validate")) => {
                 remaining.remove(0);
                 Self::RegisterValidate
+            }
+            ("registers", Some("review")) => {
+                remaining.remove(0);
+                Self::RegisterReview
             }
             ("registers", Some("export-svd")) => {
                 remaining.remove(0);
@@ -210,6 +215,7 @@ impl Command {
                 | Self::RegisterInitModel
                 | Self::RegisterImportSvd
                 | Self::RegisterValidate
+                | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
         )
@@ -225,6 +231,7 @@ impl Command {
                 | Self::RegisterInitModel
                 | Self::RegisterImportSvd
                 | Self::RegisterValidate
+                | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
                 | Self::SymbolInventory
@@ -244,6 +251,7 @@ impl Command {
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterValidate
+                | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
                 | Self::SymbolInventory
@@ -261,6 +269,7 @@ impl Command {
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterValidate
+                | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
                 | Self::SymbolInventory
@@ -278,6 +287,7 @@ impl Command {
                 | Self::RegisterInitModel
                 | Self::RegisterImportSvd
                 | Self::RegisterValidate
+                | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
         )
@@ -292,6 +302,7 @@ impl Command {
             | Self::RegisterInitModel
             | Self::RegisterImportSvd
             | Self::RegisterValidate
+            | Self::RegisterReview
             | Self::RegisterExportSvd
             | Self::RegisterGeneratePac
             | Self::SymbolInventory
@@ -545,6 +556,7 @@ mod tests {
             ("init-model", Command::RegisterInitModel),
             ("import-svd", Command::RegisterImportSvd),
             ("validate", Command::RegisterValidate),
+            ("review", Command::RegisterReview),
             ("export-svd", Command::RegisterExportSvd),
             ("generate-pac", Command::RegisterGeneratePac),
         ] {

@@ -15,6 +15,7 @@ pub(crate) const DEFAULT_PROJECT_MANIFEST: &str = "vendor-validator.toml";
 pub(crate) struct RegisterWorkspacePaths {
     pub(crate) facts: PathBuf,
     pub(crate) model: PathBuf,
+    pub(crate) review_output: Option<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,
     pub(crate) pac: Option<PacOutputSpec>,
 }
@@ -112,6 +113,7 @@ impl ProjectSpec {
                         );
                     }
                 };
+                let review_output = nested_output_path(table, base, "review")?;
                 let svd_output = nested_output_path(table, base, "svd")?;
                 let pac = table
                     .get("pac")
@@ -162,6 +164,7 @@ impl ProjectSpec {
                             .ok_or("project registers requires string \"facts\"")?,
                     ),
                     model: resolve_path(base, model),
+                    review_output,
                     svd_output,
                     pac,
                 })
@@ -304,6 +307,9 @@ svd = ["registers/base.svd"]
 facts = "generated/mmio.json"
 model = "registers/reviewed.toml"
 
+[registers.review]
+output = "generated/register-review.md"
+
 [registers.svd]
 output = "generated/device.svd"
 
@@ -333,6 +339,7 @@ semantic-catalogs = ["interfaces/embedded-semantics.toml"]
             Some(RegisterWorkspacePaths {
                 facts: directory.join("generated/mmio.json"),
                 model: directory.join("registers/reviewed.toml"),
+                review_output: Some(directory.join("generated/register-review.md")),
                 svd_output: Some(directory.join("generated/device.svd")),
                 pac: Some(PacOutputSpec {
                     output: directory.join("generated/pac/src/lib.rs"),

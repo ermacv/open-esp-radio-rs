@@ -45,7 +45,7 @@ callers authenticate inputs and pass them directly or through a local
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
 | `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
-| `registers init-model` / `import-svd` / `validate` / `export-svd` / `generate-pac` | Maintain the reviewed register model and derive clean SVD/PAC outputs | [Register workspace](docs/register-workspace.md) |
+| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC outputs | [Register workspace](docs/register-workspace.md) |
 | `ir export` | Produce linked JSON and pseudo-Rust IR for manual analysis | [Linked function IR](docs/linked-ir.md) |
 | `execute run` / `execute compare` | Execute deterministic scenarios and compare ordered effects | [Execution and profiles](docs/execution-and-profiles.md) |
 | `reference generate` / `generate-batch` | Generate fail-closed Rust reference programs | [Reference generation](docs/reference-generation.md) |

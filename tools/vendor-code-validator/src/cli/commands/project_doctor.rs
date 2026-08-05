@@ -126,7 +126,7 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 {
                     Ok((summary, format)) => {
                         println!(
-                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\tsvd-output={}\tpac-output={}",
+                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\tsvd-output={}\tpac-output={}",
                             format,
                             summary.ranges,
                             summary.observed,
@@ -137,6 +137,10 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                             summary.fields,
                             paths.facts.display(),
                             paths.model.display(),
+                            paths
+                                .review_output
+                                .as_deref()
+                                .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
                             paths
                                 .svd_output
                                 .as_deref()

@@ -18,6 +18,9 @@ provenance annotations.
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
 
+[registers.review]
+output = "generated/reports/register-review.md"
+
 [registers.svd]
 output = "generated/svd/device.svd"
 
@@ -29,7 +32,8 @@ edition = "2024"
 
 All paths are relative to `vendor-validator.toml`. PAC target is `none` or
 `riscv`; edition is `2021` or `2024`. Command-line `--output`, `--target` and
-`--edition` override these defaults.
+`--edition` override these defaults. Review reports are generated and should
+normally stay under an ignored `generated/` directory.
 
 The old `overlay = "..."` spelling remains accepted for schema 1 projects,
 but new projects should use `model` and schema 2.
@@ -80,6 +84,30 @@ cargo vendor-code-validator registers init-model \
 Facts are not copied into the reviewed model. A discovered address remains
 unreviewed until a user gives it a hardware identity in a fragment. This avoids
 turning a generated placeholder name into an accidental public PAC API.
+
+Generate the manual review queue after discovery and whenever facts or model
+fragments change:
+
+```console
+cargo vendor-code-validator registers review \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+```
+
+The deterministic Markdown report joins each observed address and width to its
+current model identity, read/write counts, catalog name, read users, write
+users and full write-pattern bit provenance. Every unmatched observation gets
+a copyable TOML register draft. Draft field ranges are the non-overlapping
+partition induced by observed partial-write masks; whole-register writes do
+not fabricate a field. These ranges are explicitly candidates, not claims
+about names, reset state, W1C behavior or hardware completeness. Copy the
+relevant draft into the correct `registers/peripherals/*.toml` fragment, fix
+its base-relative offset, replace mechanical names and add reviewed semantics.
+
+The report is never an input to SVD or PAC generation. This keeps local
+artifact paths and generated placeholder names outside the versioned hardware
+model. CI may check that a committed or separately archived report is current
+with `registers review --check`; `--output PATH` overrides the configured
+destination.
 
 Validate the model and its coverage against current facts:
 

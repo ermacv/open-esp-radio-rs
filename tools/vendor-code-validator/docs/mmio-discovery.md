@@ -40,10 +40,14 @@ that used each register. For writes it reports output-bit provenance as
 preserved, inverted, forced zero, forced one, derived from a register read, or
 dynamic. `modified_mask`, `candidate_bit_ranges` and `field_candidates` are
 mechanical data-flow facts; they do not claim field names, reset values, W1C
-semantics or any other peripheral behavior. Field candidates combine partial
-write masks, poll masks and MMIO-backed branch predicates, and link the
-resulting bit ranges to access functions and guarded semantic actions for
-manual analysis.
+semantics or any other peripheral behavior. The discovery JSON records
+`modified_mask` and `candidate_bit_ranges` for every write pattern together
+with its functions. `registers review` turns the boundaries induced by partial
+write masks into copyable field drafts while keeping those placeholders
+outside the reviewed model. The richer
+`ir export` register index additionally combines partial writes, poll masks and
+MMIO-backed branch predicates into `field_candidates` linked to access
+functions and guarded semantic actions.
 
 Discovery deliberately retains events recovered before unsupported control
 flow and emits per-function diagnostics without failing the run. Its JSON says

@@ -71,6 +71,9 @@ The first two boundary slices are complete:
   register catalog;
 - `open-esp-radio-register-model` owns the target-neutral editable register
   schema and clean SVD encoder used by both validator projects and `pac-gen`;
+- the facade owns generated MMIO facts and the `registers review` join report;
+  function names, write-pattern provenance and draft placeholders never enter
+  the shared register model or release SVD/PAC;
 - `open-radio-vendor-harness-esp32s31` depends only on core and owns the OSI
   table version/layout and mutable PHY lifecycle entry contracts;
 - architecture-neutral effect-contract, driver-adapter and evidence-source

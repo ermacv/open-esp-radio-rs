@@ -13,6 +13,9 @@ fn facts() -> RegisterFacts {
             catalog_name: "UNMAPPED".to_owned(),
             reads: 1,
             writes: 1,
+            read_functions: Default::default(),
+            write_functions: Default::default(),
+            write_patterns: vec![],
             candidate_masks: vec![3],
         }],
     }

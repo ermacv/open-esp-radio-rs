@@ -21,6 +21,9 @@ svd = ["registers/vendor.svd", "registers/reviewed.svd"]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
 
+[registers.review]
+output = "generated/reports/register-review.md"
+
 [registers.svd]
 output = "generated/svd/device.svd"
 
@@ -72,9 +75,11 @@ visible in the command itself.
 The optional `[registers]` table establishes a generated/reviewed register
 workspace. Its `facts` path becomes the default JSON destination of
 `mmio discover`; `model` is a versioned multi-file hardware description.
-`registers init-model` bootstraps it from discovery ranges and
-`registers import-svd` migrates an existing catalog. Configured SVD and PAC
-outputs let export/check commands run without repeating paths. See
+`registers init-model` bootstraps it from discovery ranges,
+`registers import-svd` migrates an existing catalog, and `registers review`
+joins generated functions/write patterns to reviewed model identities without
+copying them into the model. Configured review, SVD and PAC outputs let
+generation/check commands run without repeating paths. See
 [register workspace](register-workspace.md) for the model schema, provenance
 boundary and generation workflow.
 
@@ -197,7 +202,7 @@ Commands now request the knowledge they actually consume:
 | `symbols inventory` | yes | no | no |
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
-| `registers init-model` / `import-svd` / `validate` / `export-svd` / `generate-pac` | no | no | no |
+| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
 | execute/compare | yes | yes | no |

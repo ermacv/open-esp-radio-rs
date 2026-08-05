@@ -15,7 +15,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
@@ -43,6 +43,7 @@ pub(crate) fn run() -> Result<bool> {
             | Command::RegisterInitModel
             | Command::RegisterImportSvd
             | Command::RegisterValidate
+            | Command::RegisterReview
             | Command::RegisterExportSvd
             | Command::RegisterGeneratePac
     ) && project.is_none()
@@ -233,6 +234,7 @@ pub(crate) fn run() -> Result<bool> {
             | Command::RegisterInitModel
             | Command::RegisterImportSvd
             | Command::RegisterValidate
+            | Command::RegisterReview
             | Command::RegisterExportSvd
             | Command::RegisterGeneratePac
     ) {

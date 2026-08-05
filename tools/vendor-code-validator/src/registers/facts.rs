@@ -20,12 +20,28 @@ impl FactRange {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RegisterWritePatternFact {
+    pub(crate) occurrences: usize,
+    pub(crate) modified_mask: u32,
+    pub(crate) preserved_mask: u32,
+    pub(crate) inverted_mask: u32,
+    pub(crate) forced_zero_mask: u32,
+    pub(crate) forced_one_mask: u32,
+    pub(crate) read_derived_mask: u32,
+    pub(crate) dynamic_mask: u32,
+    pub(crate) functions: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RegisterFact {
     pub(crate) address: u32,
     pub(crate) width: u8,
     pub(crate) catalog_name: String,
     pub(crate) reads: usize,
     pub(crate) writes: usize,
+    pub(crate) read_functions: BTreeSet<String>,
+    pub(crate) write_functions: BTreeSet<String>,
+    pub(crate) write_patterns: Vec<RegisterWritePatternFact>,
     pub(crate) candidate_masks: Vec<u32>,
 }
 
@@ -156,15 +172,28 @@ fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
     let width = integer(value, "width", &context)?
         .try_into()
         .map_err(|_| format!("invalid width in {context}"))?;
-    let mut candidate_masks = Vec::new();
+    let mut write_patterns = Vec::new();
     for (pattern_index, pattern) in array(value, "write_patterns", &context)?.iter().enumerate() {
         let pattern_context = format!("{context}.write_patterns[{pattern_index}]");
-        candidate_masks.push(address(
-            object(pattern, &pattern_context)?,
-            "modified_mask",
-            &pattern_context,
-        )?);
+        let pattern = object(pattern, &pattern_context)?;
+        write_patterns.push(RegisterWritePatternFact {
+            occurrences: integer(pattern, "occurrences", &pattern_context)?
+                .try_into()
+                .map_err(|_| format!("invalid occurrence count in {pattern_context}"))?,
+            modified_mask: address(pattern, "modified_mask", &pattern_context)?,
+            preserved_mask: address(pattern, "preserved_mask", &pattern_context)?,
+            inverted_mask: address(pattern, "inverted_mask", &pattern_context)?,
+            forced_zero_mask: address(pattern, "forced_zero_mask", &pattern_context)?,
+            forced_one_mask: address(pattern, "forced_one_mask", &pattern_context)?,
+            read_derived_mask: address(pattern, "read_derived_mask", &pattern_context)?,
+            dynamic_mask: address(pattern, "dynamic_mask", &pattern_context)?,
+            functions: string_set(pattern, "functions", &pattern_context)?,
+        });
     }
+    let mut candidate_masks = write_patterns
+        .iter()
+        .map(|pattern| pattern.modified_mask)
+        .collect::<Vec<_>>();
     candidate_masks.sort_unstable();
     candidate_masks.dedup();
     Ok(RegisterFact {
@@ -177,8 +206,27 @@ fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
         writes: integer(value, "writes", &context)?
             .try_into()
             .map_err(|_| format!("invalid write count in {context}"))?,
+        read_functions: string_set(value, "read_functions", &context)?,
+        write_functions: string_set(value, "write_functions", &context)?,
+        write_patterns,
         candidate_masks,
     })
+}
+
+fn string_set(object: &Map<String, Value>, key: &str, context: &str) -> Result<BTreeSet<String>> {
+    array(object, key, context)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| {
+                    format!("{context}.{key}[{index}] must be a non-empty string").into()
+                })
+        })
+        .collect()
 }
 
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
@@ -230,13 +278,19 @@ mod tests {
   "schema_version": 1,
   "command": "mmio-discover",
   "ranges": [{"name":"radio","start":"0x1000","end_exclusive":"0x2000"}],
-  "registers": [{"address":"0x1010","width":32,"name":"UNMAPPED","reads":1,"writes":2,"write_patterns":[{"modified_mask":"0x3"}]}]
+  "registers": [{"address":"0x1010","width":32,"name":"UNMAPPED","reads":1,"writes":2,"read_functions":["rom:read"],"write_functions":["lib:member.o:write"],"write_patterns":[{"occurrences":2,"modified_mask":"0x3","candidate_bit_ranges":"0-1","preserved_mask":"0xfffffffc","inverted_mask":"0x0","forced_zero_mask":"0x0","forced_one_mask":"0x1","read_derived_mask":"0x0","dynamic_mask":"0x2","functions":["lib:member.o:write"]}]}]
 }"#,
         )
         .unwrap();
         let facts = RegisterFacts::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
         assert_eq!(facts.registers[0].candidate_masks, [3]);
+        assert_eq!(
+            facts.registers[0].read_functions,
+            ["rom:read".to_owned()].into()
+        );
+        assert_eq!(facts.registers[0].write_patterns[0].occurrences, 2);
+        assert_eq!(facts.registers[0].write_patterns[0].dynamic_mask, 2);
         assert_eq!(facts.range_for(0x1010).unwrap().name, "radio");
     }
 }

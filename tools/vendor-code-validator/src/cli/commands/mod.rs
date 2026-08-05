@@ -80,6 +80,7 @@ pub(super) fn run(
         | Command::RegisterInitModel
         | Command::RegisterImportSvd
         | Command::RegisterValidate
+        | Command::RegisterReview
         | Command::RegisterExportSvd
         | Command::RegisterGeneratePac
         | Command::SymbolInventory

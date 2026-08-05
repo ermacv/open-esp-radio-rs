@@ -15,10 +15,53 @@ pub(super) fn run(command: Command, arguments: Vec<String>, project: &ProjectSpe
         Command::RegisterInitModel => init_model(arguments, project, paths),
         Command::RegisterImportSvd => import_svd(arguments, project, paths),
         Command::RegisterValidate => validate(arguments, paths),
+        Command::RegisterReview => review(arguments, paths),
         Command::RegisterExportSvd => export_svd(arguments, paths),
         Command::RegisterGeneratePac => generate_pac_source(arguments, paths),
         _ => unreachable!("register command dispatcher received another command"),
     }
+}
+
+fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths) -> Result<bool> {
+    let mut output = None;
+    let mut check = false;
+    let mut arguments = arguments.into_iter();
+    while let Some(argument) = arguments.next() {
+        match argument.as_str() {
+            "--output" => {
+                if output.is_some() {
+                    return Err("duplicate --output".into());
+                }
+                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
+            }
+            "--check" => check = true,
+            _ => return Err(format!("unknown registers review option: {argument}").into()),
+        }
+    }
+    let output = output
+        .as_deref()
+        .or(paths.review_output.as_deref())
+        .ok_or("registers review requires --output PATH or [registers.review] output")?;
+    if !RegisterModel::is_model_file(&paths.model)? {
+        return Err(
+            "registers review requires a schema 2 model; migrate a legacy overlay first".into(),
+        );
+    }
+    let facts = RegisterFacts::load(&paths.facts)?;
+    let model = RegisterModel::load(&paths.model)?;
+    let (contents, summary) = render_register_review(&facts, &model, &paths.facts, &paths.model)?;
+    write_or_check(output, &contents, check, "register review")?;
+    println!(
+        "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tfield-candidates={}\tpath={}",
+        if check { "verified" } else { "written" },
+        summary.observed,
+        summary.reviewed,
+        summary.unreviewed,
+        summary.model_only,
+        summary.field_candidates,
+        output.display()
+    );
+    Ok(true)
 }
 
 fn init_model(

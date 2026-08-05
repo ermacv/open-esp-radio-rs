@@ -40,6 +40,9 @@ Inspect the model and configured outputs with:
 cargo vendor-code-validator registers validate \
   --project verification/vendor/targets/esp32s31/vendor-validator.toml
 
+cargo vendor-code-validator registers review \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+
 cargo vendor-code-validator registers export-svd \
   --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --check
@@ -48,9 +51,12 @@ cargo pac-gen --check
 ```
 
 The clean SVD is written to `svd/esp32s31-radio.svd`. Discovery evidence
-remains in the ignored `generated/findings/mmio.json`; users edit reviewed
-names, fields, access rules, reset values and enumerations in
-`registers/peripherals/*.toml`.
+remains in the ignored `generated/findings/mmio.json`. `registers review`
+writes the ignored `generated/reports/register-review.md`, joining addresses
+to read/write functions, write masks and current model identities and emitting
+copyable drafts for gaps. Users edit reviewed names, fields, access rules,
+reset values and enumerations only in `registers/peripherals/*.toml`; the
+generated report never feeds SVD or PAC generation.
 
 `cargo pac-gen` reads the same model through `tools/register-model` and applies
 `registers/pac-addon.xml` only while generating the production PAC. The add-on

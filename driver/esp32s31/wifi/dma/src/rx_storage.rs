@@ -291,7 +291,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)?;
         let buffer_size = u32::try_from(BUFFER_SIZE).map_err(|_| RxRingError::Size)?;
-        RxRingStopped::prepare(
+        RxRingStopped::prepare_inner(
             mmio,
             &self.descriptors,
             descriptor_base,

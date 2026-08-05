@@ -959,7 +959,10 @@ async fn run_open_mac_rx(
             return false;
         }
     };
-    if let Err(error) = publish_cold_ring(mmio, descriptor_base, true) {
+    // SAFETY: `RX_STORAGE` is a `StaticCell`; its descriptors and buffers
+    // remain allocated for the complete oracle image and this function owns
+    // the only RX walker until shutdown/reboot.
+    if let Err(error) = unsafe { publish_cold_ring(mmio, descriptor_base, true) } {
         emergency_log(format_args!(
             "OPEN_RADIO_ORACLE_HIL result=FAIL stage=rx-ring-publish error={error:?}"
         ));

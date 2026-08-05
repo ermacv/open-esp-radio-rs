@@ -236,7 +236,7 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
         M: RxDma,
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
-        match RxRingStopped::prepare(
+        match RxRingStopped::prepare_inner(
             mmio,
             self.descriptors,
             self.descriptor_base,
@@ -276,7 +276,65 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// SOURCE\[ROM_REV0_WDEV_APPEND_RX_BLOCKS,ROM_REV0_HAL_MAC_RX_GATE,
     /// ROM_REV0_HAL_MAC_RX_LAST_DESCRIPTOR]; the rotated handoff is qualified
     /// by HIL_OPEN_RX_LIVE_APPEND_2026_07_27.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn prepare<M, F>(
+        mmio: &mut M,
+        descriptors: &'a [Descriptor; COUNT],
+        descriptor_base: u32,
+        buffer_addresses: &'a [u32; COUNT],
+        buffer_size: u32,
+        prepare_buffer: F,
+    ) -> Result<Self, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        Self::prepare_inner(
+            mmio,
+            descriptors,
+            descriptor_base,
+            buffer_addresses,
+            buffer_size,
+            prepare_buffer,
+        )
+    }
+
+    /// Build a ring from raw addresses for a target-only validation harness.
+    ///
+    /// # Safety
+    ///
+    /// Every descriptor and addressed buffer must remain allocated, aligned
+    /// and exclusively DMA-owned until the returned ring is confirmed halted.
+    /// Shipping code must use [`crate::rx_storage::RxDmaStorage::prepare_ring`]
+    /// instead, which establishes that proof from a static arena.
+    #[cfg(target_pointer_width = "32")]
+    #[allow(
+        unsafe_code,
+        reason = "raw target constructor makes its DMA lifetime contract explicit"
+    )]
+    pub unsafe fn prepare<M, F>(
+        mmio: &mut M,
+        descriptors: &'a [Descriptor; COUNT],
+        descriptor_base: u32,
+        buffer_addresses: &'a [u32; COUNT],
+        buffer_size: u32,
+        prepare_buffer: F,
+    ) -> Result<Self, RxRingError>
+    where
+        M: RxDma,
+        F: FnMut(usize) -> Result<(), RxRingError>,
+    {
+        Self::prepare_inner(
+            mmio,
+            descriptors,
+            descriptor_base,
+            buffer_addresses,
+            buffer_size,
+            prepare_buffer,
+        )
+    }
+
+    pub(crate) fn prepare_inner<M, F>(
         mmio: &mut M,
         descriptors: &'a [Descriptor; COUNT],
         descriptor_base: u32,
@@ -307,7 +365,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             initial_start,
         )?;
         let head = descriptor_address(descriptor_base, initial_start)?;
-        publish_cold_ring(mmio, head, false)?;
+        publish_cold_ring_inner(mmio, head, false)?;
 
         Ok(Self {
             descriptors,
@@ -339,7 +397,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         self,
         mmio: &mut M,
     ) -> Result<RxRingLive<'a, COUNT>, (Self, RxRingError)> {
-        if let Err(error) = enable_receive(mmio) {
+        if let Err(error) = enable_receive_inner(mmio) {
             return Err((self, error));
         }
         Ok(RxRingLive {
@@ -995,9 +1053,37 @@ pub fn build_cold_ring(
     Ok(())
 }
 
-/// Publishes a previously built cold ring using the instruction-confirmed
-/// fence/high-window/base/enable/fence sequence.
+/// Publish a synthetic cold ring in a native model with no DMA actor.
+#[cfg(not(target_pointer_width = "32"))]
 pub fn publish_cold_ring<M: RxDma>(
+    mmio: &mut M,
+    descriptor_dma_base: u32,
+    enable_rx: bool,
+) -> Result<(), RxRingError> {
+    publish_cold_ring_inner(mmio, descriptor_dma_base, enable_rx)
+}
+
+/// Publish raw target addresses outside the owned storage path.
+///
+/// # Safety
+///
+/// `descriptor_dma_base` must identify a fully initialized static descriptor
+/// chain whose buffers remain exclusively available to DMA until the walker
+/// is confirmed stopped.
+#[cfg(target_pointer_width = "32")]
+#[allow(
+    unsafe_code,
+    reason = "raw target publication makes its DMA lifetime contract explicit"
+)]
+pub unsafe fn publish_cold_ring<M: RxDma>(
+    mmio: &mut M,
+    descriptor_dma_base: u32,
+    enable_rx: bool,
+) -> Result<(), RxRingError> {
+    publish_cold_ring_inner(mmio, descriptor_dma_base, enable_rx)
+}
+
+fn publish_cold_ring_inner<M: RxDma>(
     mmio: &mut M,
     descriptor_dma_base: u32,
     enable_rx: bool,
@@ -1015,14 +1101,35 @@ pub fn publish_cold_ring<M: RxDma>(
     Ok(())
 }
 
-/// Opens the RX walker after a cold ring base has already been published.
+/// Opens the RX walker in a native model after publishing a cold ring.
 ///
 /// The vendor cold path keeps these operations separate:
 /// `wDev_AppendRxBlocks` publishes the first descriptor base, while the later
 /// `chip_enable` path calls `hal_mac_rx_enable`. Keeping this as a distinct
 /// operation preserves that ordering and gives the base register time to
 /// settle while the caller completes channel/MAC setup.
+#[cfg(not(target_pointer_width = "32"))]
 pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
+    enable_receive_inner(mmio)
+}
+
+/// Open a target walker whose raw published base is owned by the caller.
+///
+/// # Safety
+///
+/// The currently published descriptor chain and all addressed buffers must
+/// satisfy the same static lifetime and exclusive ownership requirements as
+/// [`publish_cold_ring`]. Owned code starts through [`RxRingStopped`] instead.
+#[cfg(target_pointer_width = "32")]
+#[allow(
+    unsafe_code,
+    reason = "raw target enable makes its DMA lifetime contract explicit"
+)]
+pub unsafe fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
+    enable_receive_inner(mmio)
+}
+
+fn enable_receive_inner<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
     if mmio.try_enable_walker() {
         Ok(())
     } else {

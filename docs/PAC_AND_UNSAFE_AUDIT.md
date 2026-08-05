@@ -77,9 +77,12 @@ On 32-bit hardware targets, initial RX-ring construction requires a
 leak the ring and leave the walker active, but it cannot deallocate or move the
 descriptor/buffer arena underneath DMA. Native host models retain a borrowed
 constructor because they have no asynchronous hardware actor. Raw RX-DMA
-backend operations and validation-only cold-ring helpers are not storage
-ownership APIs; narrowing their public surface is the next remaining part of
-this audit.
+construction, cold-ring publication and standalone walker enable are unsafe on
+32-bit targets and remain safe only in native models with no DMA actor. The
+validation probes state their synthetic/static-address proof explicitly. The
+remaining public `RxDma` backend trait still exposes address-level operations;
+replacing its production implementation with a storage-bound capability is the
+next remaining part of this audit.
 
 ## Layer rules
 

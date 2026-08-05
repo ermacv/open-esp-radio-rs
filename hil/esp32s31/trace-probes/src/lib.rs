@@ -269,14 +269,19 @@ pub extern "C" fn open_libpp_rx_trace_wdev_append_rx_blocks(scenario: u32) -> u3
     let descriptors = [const { Descriptor::new() }; COUNT];
     let buffers = [0x2f00_2000, 0x2f00_2200];
     let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
-    let stopped = match RxRingStopped::prepare(
-        &mut registers,
-        &descriptors,
-        BASE,
-        &buffers,
-        BUFFER_SIZE,
-        |_| Ok(()),
-    ) {
+    // SAFETY: this retained staticlib symbol is inspected by the compiled
+    // parity harness; no hardware DMA walker executes its synthetic SRAM
+    // addresses or outlives these local probe values.
+    let stopped = match unsafe {
+        RxRingStopped::prepare(
+            &mut registers,
+            &descriptors,
+            BASE,
+            &buffers,
+            BUFFER_SIZE,
+            |_| Ok(()),
+        )
+    } {
         Ok(stopped) => stopped,
         Err(_) => return 0,
     };

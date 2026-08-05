@@ -162,6 +162,24 @@ methods. Memory policy is therefore reusable from focused execution tests and
 does not depend on individual instruction encodings. The public `execute`
 facade and scenario/result types are unchanged.
 
+## RISC-V event-codegen layout
+
+`backend-riscv/src/codegen/events.rs` retains the exhaustive event-family
+dispatch and renders the ordered event stream. Family-specific lowering lives
+under it:
+
+| Module | Responsibility |
+| --- | --- |
+| `events/mmio.rs` | Static/indexed MMIO reads and writes plus simple MMIO polls |
+| `events/polls.rs` | Bounded polls, composed poll flows, and reviewed calibration search |
+| `events/memory.rs` | ELF/RAM accesses and proven byte/word transfer loops |
+| `events/calls.rs` | External ABI, diagnostics, composed calls, scratch calls, and reviewed wide division |
+
+The facade match remains exhaustive, so a new `ResolvedReferenceEvent` cannot
+silently bypass code generation. All family renderers mutate the same
+`RenderState` in stream order; token namespaces and external-table validation
+therefore still have one ordered owner.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -207,9 +225,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/codegen/events.rs`: separate event-family lowering and
-  expression bindings from the ordered renderer without creating multiple
-  owners for output order or temporary-name allocation.
+- `backend-riscv/src/execution/tests.rs`: group image/call, session-lifecycle,
+  memory-policy, and instruction/event regressions without duplicating shared
+  synthetic-image fixtures.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

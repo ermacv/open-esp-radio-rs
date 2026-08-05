@@ -110,6 +110,12 @@ dispatch in separate modules. The top-level executor still owns scenario
 validation, response-consumption checks, and result assembly; ordered trace
 semantics and the CLI surface are unchanged.
 
+Ordered reference-event code generation now has one exhaustive dispatcher and
+separate MMIO, structured-poll, normal-memory, and call-family renderers. They
+share a single `RenderState`, preserving event order, call/read token numbering,
+and one-time external-table validation while making each lowering policy
+reviewable in isolation.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

@@ -31,6 +31,7 @@ use open_esp_radio_wifi_sta::{
 
 use crate::{
     backend::Esp32s31ControlService,
+    connected_control_state::{ConnectedControlState, ControlInFlight},
     control_mailbox::ConnectedControlReceiver,
     runner::{WifiControlContext, WifiControlProgress},
     rx_reorder::{
@@ -41,18 +42,19 @@ use crate::{
 };
 
 pub use crate::connected_control_port::{ConnectedControlHardware, ConnectedControlTx};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConnectedControlTxKind {
-    RxAddbaResponse { tid: u8 },
-    TxAddbaRequest { tid: u8 },
-    PowerManagement(StaPowerManagement),
-}
+pub use crate::connected_control_state::ConnectedControlTxKind;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ConnectedControlTxFailure {
     pub kind: ConnectedControlTxKind,
     pub outcome: SingleMpduTxOutcome,
+}
+
+#[derive(Default)]
+struct ConnectedControlObservations {
+    last_event: Option<ConnectedRxControlEvent>,
+    last_tx_failure: Option<ConnectedControlTxFailure>,
+    last_expired_tid: Option<u8>,
 }
 
 /// Finite ownership released when one connected control epoch stops.
@@ -120,40 +122,11 @@ impl From<RxReorderCommandError> for ConnectedControlError {
     }
 }
 
-enum ControlInFlight {
-    RxAddba(StaRxBlockAckActivation),
-    TxAddba { tid: u8 },
-    PowerManagement(StaPowerManagement),
-}
-
-impl ControlInFlight {
-    fn kind(&self) -> ConnectedControlTxKind {
-        match self {
-            Self::RxAddba(activation) => ConnectedControlTxKind::RxAddbaResponse {
-                tid: activation.negotiated().tid,
-            },
-            Self::TxAddba { tid } => ConnectedControlTxKind::TxAddbaRequest { tid: *tid },
-            Self::PowerManagement(mode) => ConnectedControlTxKind::PowerManagement(*mode),
-        }
-    }
-}
-
 /// Unique consumer for connected control events and BlockAck state.
 pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
-    peer: [u8; 6],
-    he_enabled: bool,
-    rx_block_ack: StaRxBlockAckSessions,
-    tx_block_ack: StaTxBlockAckSessions,
-    initial_tx_block_ack: [bool; 3],
-    in_flight: Option<ControlInFlight>,
-    last_event: Option<ConnectedRxControlEvent>,
-    last_tx_failure: Option<ConnectedControlTxFailure>,
-    last_expired_tid: Option<u8>,
-    beacon_monitor: Option<StaBeaconMonitor>,
-    beacon_lost: bool,
-    power_save: Option<StaPowerSavePlanner>,
-    pending_doze_permit: Option<StaDozePermit>,
+    state: ConnectedControlState,
+    observations: ConnectedControlObservations,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
 }
 
@@ -168,19 +141,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     ) -> Self {
         Self {
             receiver,
-            peer,
-            he_enabled,
-            rx_block_ack: StaRxBlockAckSessions::new(),
-            tx_block_ack,
-            initial_tx_block_ack: [false; 3],
-            in_flight: None,
-            last_event: None,
-            last_tx_failure: None,
-            last_expired_tid: None,
-            beacon_monitor: None,
-            beacon_lost: false,
-            power_save: None,
-            pending_doze_permit: None,
+            state: ConnectedControlState::new(peer, he_enabled, tx_block_ack),
+            observations: ConnectedControlObservations::default(),
             rx_reorder_commands: None,
         }
     }
@@ -203,65 +165,65 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         mut self,
         maximum_window: u16,
     ) -> Result<Self, StaRxBlockAckSessionsError> {
-        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)?;
+        self.state.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)?;
         Ok(self)
     }
 
     /// Install the association-derived beacon-loss policy. This only arms a
     /// link-health deadline; modem sleep remains a separate explicit policy.
     pub fn enable_beacon_loss(&mut self, config: StaBeaconLossConfig) {
-        self.beacon_monitor = Some(StaBeaconMonitor::new(config));
-        self.beacon_lost = false;
+        self.state.beacon_monitor = Some(StaBeaconMonitor::new(config));
+        self.state.beacon_lost = false;
     }
 
     /// Install the source-owned STA power-save policy. Construction remains
     /// opt-in; production HIL stays continuously awake until a platform sleep
     /// owner consumes the resulting permit.
     pub fn enable_power_save(&mut self, policy: StaPowerSavePolicy) {
-        self.power_save = Some(StaPowerSavePlanner::new(policy));
-        self.pending_doze_permit = None;
+        self.state.power_save = Some(StaPowerSavePlanner::new(policy));
+        self.state.pending_doze_permit = None;
     }
 
     /// Queue the exact TID 0, 7, 5 negotiations initiated by the recovered
     /// vendor connection-complete path.
     pub fn queue_initial_tx_block_ack(&mut self) {
-        self.initial_tx_block_ack.fill(true);
+        self.state.initial_tx_block_ack.fill(true);
     }
 
     pub const fn rx_block_ack(&self) -> &StaRxBlockAckSessions {
-        &self.rx_block_ack
+        &self.state.rx_block_ack
     }
 
     pub const fn tx_block_ack(&self) -> &StaTxBlockAckSessions {
-        &self.tx_block_ack
+        &self.state.tx_block_ack
     }
 
     pub const fn last_event(&self) -> Option<ConnectedRxControlEvent> {
-        self.last_event
+        self.observations.last_event
     }
 
     pub const fn last_tx_failure(&self) -> Option<ConnectedControlTxFailure> {
-        self.last_tx_failure
+        self.observations.last_tx_failure
     }
 
     pub const fn last_expired_tid(&self) -> Option<u8> {
-        self.last_expired_tid
+        self.observations.last_expired_tid
     }
 
     pub const fn beacon_monitor(&self) -> Option<&StaBeaconMonitor> {
-        self.beacon_monitor.as_ref()
+        self.state.beacon_monitor.as_ref()
     }
 
     pub const fn beacon_lost(&self) -> bool {
-        self.beacon_lost
+        self.state.beacon_lost
     }
 
     pub const fn power_save(&self) -> Option<&StaPowerSavePlanner> {
-        self.power_save.as_ref()
+        self.state.power_save.as_ref()
     }
 
     pub fn take_doze_permit(&mut self) -> Option<StaDozePermit> {
-        self.pending_doze_permit.take()
+        self.state.pending_doze_permit.take()
     }
 
     pub fn dropped_events(&self) -> u32 {
@@ -284,20 +246,20 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         H: ConnectedControlHardware,
         X: ConnectedControlTx,
     {
-        let in_flight_kind = self.in_flight.as_ref().map(ControlInFlight::kind);
-        if let Some(in_flight) = self.in_flight.take() {
+        let in_flight_kind = self.state.in_flight.as_ref().map(ControlInFlight::kind);
+        if let Some(in_flight) = self.state.in_flight.take() {
             match in_flight {
                 ControlInFlight::RxAddba(activation) => {
                     if let Err(error) =
                         hardware.clear_rx_block_ack(activation.hardware().hardware_index)
                     {
-                        self.in_flight = Some(ControlInFlight::RxAddba(activation));
+                        self.state.in_flight = Some(ControlInFlight::RxAddba(activation));
                         return Err(error.into());
                     }
-                    self.rx_block_ack.cancel(activation)?;
+                    self.state.rx_block_ack.cancel(activation)?;
                 }
                 ControlInFlight::TxAddba { tid } => {
-                    self.tx_block_ack.stop(tid);
+                    self.state.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_operational(tid, false);
                 }
                 ControlInFlight::PowerManagement(_) => {}
@@ -305,42 +267,42 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         }
 
         let mut rx_block_ack_agreements = 0_u8;
-        for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
+        for agreement in self.state.rx_block_ack.snapshots().into_iter().flatten() {
             hardware.clear_rx_block_ack(agreement.hardware_index)?;
-            let stopped = self.rx_block_ack.stop(agreement.tid);
+            let stopped = self.state.rx_block_ack.stop(agreement.tid);
             debug_assert_eq!(stopped, Some(agreement));
             rx_block_ack_agreements = rx_block_ack_agreements.saturating_add(1);
         }
         // No activation remains outside this owner after the transition
         // above. Reconstructing the fixed state discards unexecuted offers as
         // well as their association-specific dialog tokens.
-        let maximum_window = self.rx_block_ack.maximum_window();
-        self.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)
+        let maximum_window = self.state.rx_block_ack.maximum_window();
+        self.state.rx_block_ack = StaRxBlockAckSessions::with_maximum_window(maximum_window)
             .expect("an existing RX BlockAck maximum remains valid");
 
         let mut tx_block_ack_sessions = 0_u8;
         for tid in STA_TX_BLOCK_ACK_TIDS {
-            if self.tx_block_ack.operational(tid).is_some()
-                || self.tx_block_ack.alarm(tid).is_some()
+            if self.state.tx_block_ack.operational(tid).is_some()
+                || self.state.tx_block_ack.alarm(tid).is_some()
             {
                 tx_block_ack_sessions = tx_block_ack_sessions.saturating_add(1);
             }
-            self.tx_block_ack.stop(tid);
+            self.state.tx_block_ack.stop(tid);
             tx.set_tx_block_ack_operational(tid, false);
-            if self.he_enabled {
+            if self.state.he_enabled {
                 hardware.set_he_tid_enabled(tid, false)?;
             }
         }
-        self.initial_tx_block_ack.fill(false);
+        self.state.initial_tx_block_ack.fill(false);
 
         let mut discarded_events = 0_u8;
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
-        self.beacon_monitor = None;
-        self.beacon_lost = false;
-        self.power_save = None;
-        self.pending_doze_permit = None;
+        self.state.beacon_monitor = None;
+        self.state.beacon_lost = false;
+        self.state.power_save = None;
+        self.state.pending_doze_permit = None;
 
         Ok(ConnectedControlShutdown {
             rx_block_ack_agreements,
@@ -351,27 +313,11 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     fn has_immediate_work(&self) -> bool {
-        self.in_flight.is_some()
-            || self.receiver.len() != 0
-            || self.initial_tx_block_ack.into_iter().any(|pending| pending)
+        self.state.has_immediate_work(self.receiver.len() != 0)
     }
 
     fn next_alarm_deadline(&self) -> Option<u64> {
-        let block_ack = STA_TX_BLOCK_ACK_TIDS
-            .into_iter()
-            .filter_map(|tid| self.tx_block_ack.alarm(tid))
-            .map(|alarm| alarm.deadline_us)
-            .min();
-        match (
-            block_ack,
-            self.beacon_monitor
-                .as_ref()
-                .and_then(StaBeaconMonitor::deadline_micros),
-        ) {
-            (Some(left), Some(right)) => Some(left.min(right)),
-            (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-            (None, None) => None,
-        }
+        self.state.next_alarm_deadline()
     }
 
     /// Wait without consuming the event that made control work ready.
@@ -419,34 +365,34 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         X: ConnectedControlTx + 'a,
     {
         async move {
-            if let Some(monitor) = &mut self.beacon_monitor {
+            if let Some(monitor) = &mut self.state.beacon_monitor {
                 monitor.arm(tx.now_micros())?;
             }
-            if let Some(in_flight) = self.in_flight.take() {
+            if let Some(in_flight) = self.state.in_flight.take() {
                 let outcome = tx
                     .take_last_outcome()
                     .ok_or(ConnectedControlError::MissingTxOutcome)?;
                 let success = outcome.is_success();
                 if !success {
-                    self.last_tx_failure = Some(ConnectedControlTxFailure {
+                    self.observations.last_tx_failure = Some(ConnectedControlTxFailure {
                         kind: in_flight.kind(),
                         outcome,
                     });
                 }
                 match in_flight {
                     ControlInFlight::RxAddba(activation) if success => {
-                        self.rx_block_ack.commit(activation)?;
+                        self.state.rx_block_ack.commit(activation)?;
                     }
                     ControlInFlight::RxAddba(activation) => {
                         hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
                         self.publish_rx_reorder_command(RxReorderCommand::Stop {
                             tid: activation.negotiated().tid,
                         })?;
-                        self.rx_block_ack.cancel(activation)?;
+                        self.state.rx_block_ack.cancel(activation)?;
                     }
                     ControlInFlight::TxAddba { .. } if success => {}
                     ControlInFlight::TxAddba { tid } => {
-                        self.tx_block_ack.stop(tid);
+                        self.state.tx_block_ack.stop(tid);
                         tx.set_tx_block_ack_operational(tid, false);
                     }
                     ControlInFlight::PowerManagement(advertised) => {
@@ -460,6 +406,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                             station_tsf: hardware.station_tsf(),
                         };
                         let mut decision = self
+                            .state
                             .power_save
                             .as_mut()
                             .ok_or(ConnectedControlError::MissingPowerSavePlanner)?
@@ -469,15 +416,16 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                         // the AP may still buffer for a sleeping station.
                         // Never release queued data into that split state.
                         if advertised == StaPowerManagement::Active && !success {
-                            self.pending_doze_permit = None;
+                            self.state.pending_doze_permit = None;
                             return Ok(WifiControlProgress::Disconnected);
                         }
                         if self.has_pending_traffic(context)
-                            && self.power_save.as_ref().is_some_and(|planner| {
+                            && self.state.power_save.as_ref().is_some_and(|planner| {
                                 planner.state() == StaPowerSaveState::PowerSave
                             })
                         {
                             decision = self
+                                .state
                                 .power_save
                                 .as_mut()
                                 .expect("power-save planner was checked above")
@@ -493,44 +441,47 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             // event before applying an equal executor deadline, so a beacon
             // or ADDBA response received exactly on the boundary wins.
             if let Some(event) = self.receiver.try_receive() {
-                self.last_event = Some(event);
+                self.observations.last_event = Some(event);
                 return self.apply_event(hardware, tx, event, context);
             }
 
             let now_micros = tx.now_micros();
-            if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
+            if let Some(tid) = self.state.tx_block_ack.expire_next(now_micros) {
                 tx.set_tx_block_ack_operational(tid, false);
-                self.last_expired_tid = Some(tid);
+                self.observations.last_expired_tid = Some(tid);
                 return Ok(WifiControlProgress::More);
             }
             if self
+                .state
                 .beacon_monitor
                 .as_ref()
                 .is_some_and(|monitor| monitor.expired(now_micros))
             {
-                for agreement in self.rx_block_ack.snapshots().into_iter().flatten() {
-                    self.rx_block_ack.stop(agreement.tid);
+                for agreement in self.state.rx_block_ack.snapshots().into_iter().flatten() {
+                    self.state.rx_block_ack.stop(agreement.tid);
                     hardware.clear_rx_block_ack(agreement.hardware_index)?;
                 }
                 self.publish_rx_reorder_command(RxReorderCommand::StopAll)?;
                 for tid in STA_TX_BLOCK_ACK_TIDS {
-                    self.tx_block_ack.stop(tid);
+                    self.state.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_operational(tid, false);
-                    if self.he_enabled {
+                    if self.state.he_enabled {
                         hardware.set_he_tid_enabled(tid, false)?;
                     }
                 }
-                self.beacon_lost = true;
+                self.state.beacon_lost = true;
                 return Ok(WifiControlProgress::Disconnected);
             }
 
             if context.network_tx_pending
                 && self
+                    .state
                     .power_save
                     .as_ref()
                     .is_some_and(|planner| planner.state() == StaPowerSaveState::PowerSave)
             {
                 let decision = self
+                    .state
                     .power_save
                     .as_mut()
                     .expect("power-save planner was checked above")
@@ -539,11 +490,12 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             }
 
             if let Some(index) = self
+                .state
                 .initial_tx_block_ack
                 .iter()
                 .position(|pending| *pending)
             {
-                self.initial_tx_block_ack[index] = false;
+                self.state.initial_tx_block_ack[index] = false;
                 let tid = STA_TX_BLOCK_ACK_TIDS[index];
                 return self.start_tx_addba(hardware, tx, tid);
             }
@@ -564,10 +516,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         X: ConnectedControlTx,
     {
         if let ConnectedRxControlEvent::Beacon(observation) = event {
-            if let Some(monitor) = &mut self.beacon_monitor {
+            if let Some(monitor) = &mut self.state.beacon_monitor {
                 monitor.observe(tx.now_micros(), observation)?;
             }
-            if self.power_save.is_some() {
+            if self.state.power_save.is_some() {
                 let traffic = if self.has_pending_traffic(context) {
                     StaTrafficState::Pending
                 } else {
@@ -580,6 +532,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 };
                 let decision = {
                     let planner = self
+                        .state
                         .power_save
                         .as_mut()
                         .expect("power-save planner was checked above");
@@ -608,7 +561,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 starting_sequence,
                 ..
             } => {
-                self.rx_block_ack.offer(
+                self.state.rx_block_ack.offer(
                     dialog_token,
                     tid,
                     immediate,
@@ -616,35 +569,36 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                     timeout_tu,
                     starting_sequence,
                 )?;
-                let Some(activation) = self.rx_block_ack.begin_pending(self.peer)? else {
+                let Some(activation) = self.state.rx_block_ack.begin_pending(self.state.peer)?
+                else {
                     return Ok(WifiControlProgress::More);
                 };
                 self.start_rx_addba_response(hardware, tx, activation)
             }
             BlockAckAction::AddbaResponse { .. } => {
                 let StaTxBlockAckResponse { tid, response } =
-                    self.tx_block_ack.on_response_action(action)?;
+                    self.state.tx_block_ack.on_response_action(action)?;
                 let operational = matches!(response, TxBlockAckResponse::Operational(_));
                 tx.set_tx_block_ack_operational(tid, operational);
                 if let TxBlockAckResponse::Operational(agreement) = response {
-                    if self.he_enabled {
+                    if self.state.he_enabled {
                         hardware.set_he_tid_enabled(agreement.tid, true)?;
                     }
-                } else if self.he_enabled {
+                } else if self.state.he_enabled {
                     hardware.set_he_tid_enabled(tid, false)?;
                 }
                 Ok(WifiControlProgress::More)
             }
             BlockAckAction::Delba { tid, initiator, .. } => {
                 if initiator {
-                    if let Some(agreement) = self.rx_block_ack.stop(tid) {
+                    if let Some(agreement) = self.state.rx_block_ack.stop(tid) {
                         hardware.clear_rx_block_ack(agreement.hardware_index)?;
                         self.publish_rx_reorder_command(RxReorderCommand::Stop { tid })?;
                     }
                 } else {
-                    self.tx_block_ack.stop(tid);
+                    self.state.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_operational(tid, false);
-                    if self.he_enabled {
+                    if self.state.he_enabled {
                         hardware.set_he_tid_enabled(tid, false)?;
                     }
                 }
@@ -654,9 +608,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     fn has_pending_traffic(&self, context: WifiControlContext) -> bool {
-        context.network_tx_pending
-            || self.receiver.len() != 0
-            || self.initial_tx_block_ack.into_iter().any(|pending| pending)
+        self.state
+            .has_pending_traffic(context.network_tx_pending, self.receiver.len() != 0)
     }
 
     fn publish_rx_reorder_command(
@@ -681,17 +634,17 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     {
         match decision {
             StaPowerSaveDecision::PermitDoze(permit) => {
-                self.pending_doze_permit = Some(permit);
+                self.state.pending_doze_permit = Some(permit);
                 Ok(WifiControlProgress::More)
             }
             StaPowerSaveDecision::SendPowerManagement(power_management) => {
-                self.pending_doze_permit = None;
+                self.state.pending_doze_permit = None;
                 let progress = tx.start_power_management_null(hardware, power_management)?;
-                self.in_flight = Some(ControlInFlight::PowerManagement(power_management));
+                self.state.in_flight = Some(ControlInFlight::PowerManagement(power_management));
                 Ok(progress)
             }
             StaPowerSaveDecision::StayAwake(_) => {
-                self.pending_doze_permit = None;
+                self.state.pending_doze_permit = None;
                 Ok(WifiControlProgress::More)
             }
         }
@@ -712,7 +665,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
                 self.publish_rx_reorder_command(RxReorderCommand::Stop { tid: replaced.tid })
             {
                 hardware.clear_rx_block_ack(replaced.hardware_index)?;
-                self.rx_block_ack.cancel(activation)?;
+                self.state.rx_block_ack.cancel(activation)?;
                 return Err(error.into());
             }
             hardware.clear_rx_block_ack(replaced.hardware_index)?;
@@ -725,7 +678,7 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             window: negotiated.window,
         }) {
             hardware.clear_rx_block_ack(activation.hardware().hardware_index)?;
-            self.rx_block_ack.cancel(activation)?;
+            self.state.rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }
         if let Err(error) = tx.start_action(
@@ -737,10 +690,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             self.publish_rx_reorder_command(RxReorderCommand::Stop {
                 tid: activation.negotiated().tid,
             })?;
-            self.rx_block_ack.cancel(activation)?;
+            self.state.rx_block_ack.cancel(activation)?;
             return Err(error.into());
         }
-        self.in_flight = Some(ControlInFlight::RxAddba(activation));
+        self.state.in_flight = Some(ControlInFlight::RxAddba(activation));
         Ok(WifiControlProgress::TxPending)
     }
 
@@ -757,14 +710,17 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         let sequence = tx
             .peek_qos_sequence(tid)
             .ok_or(ConnectedControlError::MissingQosSequence(tid))?;
-        let request = self.tx_block_ack.begin(tid, sequence, tx.now_micros())?;
+        let request = self
+            .state
+            .tx_block_ack
+            .begin(tid, sequence, tx.now_micros())?;
         if let Err(error) =
             tx.start_action(hardware, &request.body, ActionTxConfig::VENDOR_MANAGEMENT)
         {
-            self.tx_block_ack.stop(tid);
+            self.state.tx_block_ack.stop(tid);
             return Err(error.into());
         }
-        self.in_flight = Some(ControlInFlight::TxAddba { tid });
+        self.state.in_flight = Some(ControlInFlight::TxAddba { tid });
         Ok(WifiControlProgress::TxPending)
     }
 }
@@ -821,8 +777,8 @@ mod tests {
         runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
         rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_receive_rx_reorder_command},
         single_mpdu_tx::{
-            Esp32s31SingleMpduTx, SingleMpduTxConfig, WifiTxPowerPair, WifiTxPowerProfile,
-            WifiTxTimer,
+            Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
+            WifiTxPowerProfile, WifiTxTimer,
         },
     };
 

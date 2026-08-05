@@ -14,6 +14,7 @@ pub mod aggregate_tx;
 pub mod backend;
 pub mod connected_control;
 mod connected_control_port;
+mod connected_control_state;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;

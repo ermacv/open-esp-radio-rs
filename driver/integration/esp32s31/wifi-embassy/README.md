@@ -63,6 +63,9 @@ power-save transitions, while private `connected_control_port` binds only the
 required hardware and shared-TX operations. The port owns neither the Embassy
 mailbox nor protocol state, and its public traits remain re-exported from
 `connected_control` so consumers do not depend on the private module layout.
+The association-scoped data itself is isolated in executor-independent
+`connected_control_state`; only the outer control adapter owns the Embassy
+receiver, wakeup selection and reorder-command sender.
 
 WPA2 protocol deadlines and atomic key-publication rollback live in
 `open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31

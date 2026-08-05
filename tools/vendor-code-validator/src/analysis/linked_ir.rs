@@ -272,8 +272,20 @@ pub(crate) struct LinkedMmioFieldSemanticEvidence {
     pub(crate) kind: &'static str,
     pub(crate) root: String,
     pub(crate) operation: String,
+    pub(crate) action_target: String,
+    pub(crate) action_origin: String,
+    pub(crate) action_site: Option<u32>,
+    pub(crate) action_site_path: Vec<Option<u32>>,
+    pub(crate) action_path: String,
     pub(crate) predicate_function: String,
     pub(crate) producer: Option<String>,
+    pub(crate) scope_index: usize,
+    pub(crate) scope_alternatives: usize,
+    pub(crate) path_index: usize,
+    pub(crate) path_expression: String,
+    pub(crate) path_guards: usize,
+    pub(crate) guard_index: usize,
+    pub(crate) residual_path_expression: String,
     pub(crate) site: u32,
     pub(crate) condition: String,
     pub(crate) taken: bool,
@@ -1009,6 +1021,55 @@ pub(crate) fn effective_branch_operation(operation: &'static str, taken: bool) -
         "less-unsigned" => "greater-equal-unsigned",
         "greater-equal-unsigned" => "less-unsigned",
         _ => unreachable!("branch operations have a closed vocabulary"),
+    }
+}
+
+fn format_guard_literal(guard: &LinkedCallGuard) -> String {
+    if guard.taken {
+        format!("({})", guard.condition)
+    } else {
+        format!("!({})", guard.condition)
+    }
+}
+
+pub(crate) fn format_guard_path(path: &LinkedCallGuardPath) -> String {
+    let expression = path
+        .guards
+        .iter()
+        .map(format_guard_literal)
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if expression.is_empty() {
+        "true".to_owned()
+    } else {
+        expression
+    }
+}
+
+pub(crate) fn format_guard_paths(paths: &[LinkedCallGuardPath]) -> String {
+    if paths.is_empty() {
+        return "false".to_owned();
+    }
+    paths
+        .iter()
+        .map(|path| format!("({})", format_guard_path(path)))
+        .collect::<Vec<_>>()
+        .join(" || ")
+}
+
+fn format_guard_path_without(path: &LinkedCallGuardPath, excluded: usize) -> String {
+    let expression = path
+        .guards
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != excluded)
+        .map(|(_, guard)| format_guard_literal(guard))
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if expression.is_empty() {
+        "true".to_owned()
+    } else {
+        expression
     }
 }
 
@@ -4616,12 +4677,51 @@ struct SemanticFieldEvidence<'a> {
     width: u8,
     operation: &'a str,
     root: &'a str,
+    action_target: &'a str,
+    action_origin: &'a str,
+    action_site: Option<u32>,
+    action_site_path: &'a [Option<u32>],
+    action_path: &'a str,
     predicate_function: &'a str,
     producer: Option<&'a str>,
+    scope_index: usize,
+    scope_alternatives: usize,
+    path_index: usize,
+    path_expression: &'a str,
+    path_guards: usize,
+    guard_index: usize,
+    residual_path_expression: &'a str,
     site: u32,
     condition: &'a str,
     taken: bool,
     guard_operation: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct SemanticFieldLink {
+    kind: &'static str,
+    address: u32,
+    register_bits: u32,
+    root: String,
+    operation: String,
+    action_target: String,
+    action_origin: String,
+    action_site: Option<u32>,
+    action_site_path: Vec<Option<u32>>,
+    action_path: String,
+    predicate_function: String,
+    producer: Option<String>,
+    scope_index: usize,
+    scope_alternatives: usize,
+    path_index: usize,
+    path_expression: String,
+    path_guards: usize,
+    guard_index: usize,
+    residual_path_expression: String,
+    site: u32,
+    condition: String,
+    guard_operation: &'static str,
+    taken: bool,
 }
 
 fn record_semantic_field_link(
@@ -4645,8 +4745,20 @@ fn record_semantic_field_link(
                 kind: evidence.kind,
                 root: evidence.root.to_owned(),
                 operation: evidence.operation.to_owned(),
+                action_target: evidence.action_target.to_owned(),
+                action_origin: evidence.action_origin.to_owned(),
+                action_site: evidence.action_site,
+                action_site_path: evidence.action_site_path.to_vec(),
+                action_path: evidence.action_path.to_owned(),
                 predicate_function: evidence.predicate_function.to_owned(),
                 producer: evidence.producer.map(str::to_owned),
+                scope_index: evidence.scope_index,
+                scope_alternatives: evidence.scope_alternatives,
+                path_index: evidence.path_index,
+                path_expression: evidence.path_expression.to_owned(),
+                path_guards: evidence.path_guards,
+                guard_index: evidence.guard_index,
+                residual_path_expression: evidence.residual_path_expression.to_owned(),
                 site: evidence.site,
                 condition: evidence.condition.to_owned(),
                 taken: evidence.taken,
@@ -4901,44 +5013,59 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             &evidence.into_iter().collect::<Vec<_>>(),
         );
     }
-    let mut semantic_evidence = BTreeSet::new();
-    let mut direct_semantic_evidence = BTreeSet::new();
+    let mut semantic_evidence = BTreeSet::<SemanticFieldLink>::new();
     for function in &functions {
         for action in &function.effect_summary.semantic_actions {
             let Some(scopes) = action.guard_scopes.as_deref() else {
                 continue;
             };
-            for scope in scopes {
-                for path in &scope.paths {
-                    for guard in &path.guards {
+            for (scope_index, scope) in scopes.iter().enumerate() {
+                for (path_index, path) in scope.paths.iter().enumerate() {
+                    let path_expression = format_guard_path(path);
+                    for (guard_index, guard) in path.guards.iter().enumerate() {
+                        let residual_path_expression = format_guard_path_without(path, guard_index);
+                        let link = |kind, address, register_bits, producer: Option<String>| {
+                            SemanticFieldLink {
+                                kind,
+                                address,
+                                register_bits,
+                                root: function.identity.clone(),
+                                operation: action.operation.clone(),
+                                action_target: action.target.clone(),
+                                action_origin: action.origin.clone(),
+                                action_site: action.site,
+                                action_site_path: action.site_path.clone(),
+                                action_path: action.path.clone(),
+                                predicate_function: scope.function.clone(),
+                                producer,
+                                scope_index,
+                                scope_alternatives: scope.paths.len(),
+                                path_index,
+                                path_expression: path_expression.clone(),
+                                path_guards: path.guards.len(),
+                                guard_index,
+                                residual_path_expression: residual_path_expression.clone(),
+                                site: guard.site,
+                                condition: guard.condition.clone(),
+                                guard_operation: guard.operation,
+                                taken: guard.taken,
+                            }
+                        };
                         for mmio in &guard.direct_mmio_sources {
-                            direct_semantic_evidence.insert((
-                                function.identity.clone(),
-                                action.operation.clone(),
-                                scope.function.clone(),
-                                guard.site,
-                                guard.condition.clone(),
-                                guard.operation,
-                                guard.taken,
-                                mmio.clone(),
+                            semantic_evidence.insert(link(
+                                "direct-mmio",
+                                mmio.address,
+                                mmio.register_bits,
+                                Some(scope.function.clone()),
                             ));
                         }
                         for source in &guard.result_sources {
-                            let producer = source
-                                .target
-                                .clone()
-                                .unwrap_or_else(|| "unknown".to_owned());
                             for mmio in &source.mmio_sources {
-                                semantic_evidence.insert((
-                                    function.identity.clone(),
-                                    action.operation.clone(),
-                                    scope.function.clone(),
-                                    producer.clone(),
-                                    guard.site,
-                                    guard.condition.clone(),
-                                    guard.operation,
-                                    guard.taken,
-                                    mmio.clone(),
+                                semantic_evidence.insert(link(
+                                    "producer-return",
+                                    mmio.address,
+                                    mmio.register_bits,
+                                    source.target.clone(),
                                 ));
                             }
                         }
@@ -4947,64 +5074,39 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             }
         }
     }
-    for (
-        root,
-        operation,
-        predicate_function,
-        producer,
-        site,
-        condition,
-        guard_operation,
-        taken,
-        mmio,
-    ) in semantic_evidence
-    {
-        let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
+    for link in semantic_evidence {
+        let Some(width) = unique_widths.get(&link.address).copied().flatten() else {
             continue;
         };
         let entry = mmio_index
-            .get_mut(&(mmio.address, width))
+            .get_mut(&(link.address, width))
             .expect("unique MMIO width comes from the register index");
         record_semantic_field_link(
             entry,
             SemanticFieldEvidence {
-                kind: "producer-return",
-                mask: mmio.register_bits,
+                kind: link.kind,
+                mask: link.register_bits,
                 width,
-                operation: &operation,
-                root: &root,
-                predicate_function: &predicate_function,
-                producer: (producer != "unknown").then_some(producer.as_str()),
-                site,
-                condition: &condition,
-                taken,
-                guard_operation,
-            },
-        );
-    }
-    for (root, operation, predicate_function, site, condition, guard_operation, taken, mmio) in
-        direct_semantic_evidence
-    {
-        let Some(width) = unique_widths.get(&mmio.address).copied().flatten() else {
-            continue;
-        };
-        let entry = mmio_index
-            .get_mut(&(mmio.address, width))
-            .expect("unique MMIO width comes from the register index");
-        record_semantic_field_link(
-            entry,
-            SemanticFieldEvidence {
-                kind: "direct-mmio",
-                mask: mmio.register_bits,
-                width,
-                operation: &operation,
-                root: &root,
-                predicate_function: &predicate_function,
-                producer: Some(&predicate_function),
-                site,
-                condition: &condition,
-                taken,
-                guard_operation,
+                operation: &link.operation,
+                root: &link.root,
+                action_target: &link.action_target,
+                action_origin: &link.action_origin,
+                action_site: link.action_site,
+                action_site_path: &link.action_site_path,
+                action_path: &link.action_path,
+                predicate_function: &link.predicate_function,
+                producer: link.producer.as_deref(),
+                scope_index: link.scope_index,
+                scope_alternatives: link.scope_alternatives,
+                path_index: link.path_index,
+                path_expression: &link.path_expression,
+                path_guards: link.path_guards,
+                guard_index: link.guard_index,
+                residual_path_expression: &link.residual_path_expression,
+                site: link.site,
+                condition: &link.condition,
+                taken: link.taken,
+                guard_operation: link.guard_operation,
             },
         );
     }
@@ -5620,6 +5722,29 @@ mod tests {
     }
 
     #[test]
+    fn guard_path_rendering_keeps_the_residual_condition_for_one_literal() {
+        let guard = |site, condition: &str, taken| LinkedCallGuard {
+            site,
+            condition: condition.to_owned(),
+            operation: "not-equal",
+            taken,
+            result_sources: Vec::new(),
+            direct_mmio_sources: Vec::new(),
+        };
+        let path = LinkedCallGuardPath {
+            guards: vec![
+                guard(0x10, "status & 0x30 != 0", false),
+                guard(0x20, "queue != 0", true),
+            ],
+        };
+        assert_eq!(
+            format_guard_path(&path),
+            "!(status & 0x30 != 0) && (queue != 0)"
+        );
+        assert_eq!(format_guard_path_without(&path, 0), "(queue != 0)");
+    }
+
+    #[test]
     fn cfg_guard_names_call_results_without_token_prefix_collisions() {
         let call_results = BTreeMap::from([
             (1, "vendor::one".to_owned()),
@@ -6191,8 +6316,20 @@ mod tests {
                 width: 32,
                 operation: "rtos.event.post",
                 root: "irq_handler",
+                action_target: "pp_post",
+                action_origin: "event_dispatch",
+                action_site: Some(0x30),
+                action_site_path: &[Some(0x20), Some(0x30)],
+                action_path: "irq_handler -> event_dispatch -> pp_post",
                 predicate_function: "dispatcher",
                 producer: Some("reader"),
+                scope_index: 0,
+                scope_alternatives: 1,
+                path_index: 0,
+                path_expression: "!(result & 0x30 != 0) && (queue != 0)",
+                path_guards: 2,
+                guard_index: 0,
+                residual_path_expression: "(queue != 0)",
                 site: 0x10,
                 condition: "result & 0x30 != 0",
                 taken: false,
@@ -6265,6 +6402,10 @@ mod tests {
         let semantic = candidate.semantic_evidence.first().unwrap();
         assert_eq!(semantic.effective_operation, "equal");
         assert!(!semantic.taken);
+        assert_eq!(semantic.action_site_path, [Some(0x20), Some(0x30)]);
+        assert_eq!(semantic.path_index, 0);
+        assert_eq!(semantic.guard_index, 0);
+        assert_eq!(semantic.residual_path_expression, "(queue != 0)");
     }
 
     #[test]

@@ -137,7 +137,7 @@ fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize, usize, usi
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=two-stage-exact-bit-projection-with-comparison-values\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=path-polarity-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=two-stage-exact-bit-projection-with-comparison-values\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -756,19 +756,33 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
             }
             for evidence in &candidate.semantic_evidence {
                 println!(
-                    "MMIO-FIELD-SEMANTIC\t{:#010x}\tbits={}-{}\tkind={}\troot={}\toperation={}\tpredicate-function={}\tproducer={}\tsite={:#010x}\tcondition={}\ttaken={}\teffective-operation={}",
+                    "MMIO-FIELD-SEMANTIC\t{:#010x}\tbits={}-{}\tkind={}\troot={}\toperation={}\taction-target={}\taction-origin={}\taction-site={}\taction-site-path={}\tpredicate-function={}\tproducer={}\tscope-index={}\tscope-alternatives={}\tpath-index={}\tpath-guards={}\tguard-index={}\tsite={:#010x}\tcondition={}\ttaken={}\teffective-operation={}\tresidual-path={}\tpath-expression={}\taction-path={}",
                     register.address,
                     candidate.least_significant_bit,
                     candidate.most_significant_bit,
                     evidence.kind,
                     evidence.root,
                     evidence.operation,
+                    evidence.action_target,
+                    evidence.action_origin,
+                    evidence
+                        .action_site
+                        .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}")),
+                    format_site_path(&evidence.action_site_path),
                     evidence.predicate_function,
                     evidence.producer.as_deref().unwrap_or("-"),
+                    evidence.scope_index,
+                    evidence.scope_alternatives,
+                    evidence.path_index,
+                    evidence.path_guards,
+                    evidence.guard_index,
                     evidence.site,
                     evidence.condition,
                     evidence.taken,
                     evidence.effective_operation,
+                    evidence.residual_path_expression,
+                    evidence.path_expression,
+                    evidence.action_path,
                 );
             }
         }
@@ -964,10 +978,26 @@ fn write_pseudo(
             for evidence in &candidate.semantic_evidence {
                 writeln!(
                     output,
-                    "//   GUARDED-SEMANTIC-PATH: {} via {} in {} at {:#010x} when effective={} [{} taken={}]{}",
+                    "//   GUARDED-SEMANTIC-ACTION: {} target={} origin={} root={} action-sites={}{}",
                     evidence.operation,
+                    evidence.action_target,
+                    evidence.action_origin,
                     evidence.root,
+                    format_site_path(&evidence.action_site_path),
+                    evidence
+                        .action_site
+                        .map_or_else(String::new, |site| format!(" action-site={site:#010x}")),
+                )
+                .expect("writing to String cannot fail");
+                writeln!(
+                    output,
+                    "//     MMIO-GUARD: in {} scope={} path={}/{} guard={}/{} site={:#010x} effective={} [{} taken={}]{}",
                     evidence.predicate_function,
+                    evidence.scope_index + 1,
+                    evidence.path_index + 1,
+                    evidence.scope_alternatives,
+                    evidence.guard_index + 1,
+                    evidence.path_guards,
                     evidence.site,
                     evidence.effective_operation,
                     evidence.condition,
@@ -978,6 +1008,14 @@ fn write_pseudo(
                         .map_or_else(String::new, |producer| format!(" producer={producer}")),
                 )
                 .expect("writing to String cannot fail");
+                writeln!(
+                    output,
+                    "//     RESIDUAL-PATH: {}",
+                    evidence.residual_path_expression,
+                )
+                .expect("writing to String cannot fail");
+                writeln!(output, "//     SELECTED-PATH: {}", evidence.path_expression,)
+                    .expect("writing to String cannot fail");
             }
         }
     }
@@ -1276,29 +1314,19 @@ fn format_site_path(site_path: &[Option<u32>]) -> String {
         .join(" -> ")
 }
 
-fn format_guard_path(path: &LinkedCallGuardPath) -> String {
-    if path.guards.is_empty() {
-        return "true".to_owned();
+fn write_site_path(output: &mut String, site_path: &[Option<u32>]) {
+    output.push('[');
+    for (site_index, site) in site_path.iter().enumerate() {
+        if site_index != 0 {
+            output.push_str(", ");
+        }
+        if let Some(site) = site {
+            write_string(output, &format!("{site:#010x}"));
+        } else {
+            output.push_str("null");
+        }
     }
-    path.guards
-        .iter()
-        .map(|guard| {
-            if guard.taken {
-                format!("({})", guard.condition)
-            } else {
-                format!("!({})", guard.condition)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" && ")
-}
-
-fn format_guard_paths(paths: &[LinkedCallGuardPath]) -> String {
-    paths
-        .iter()
-        .map(|path| format!("({})", format_guard_path(path)))
-        .collect::<Vec<_>>()
-        .join(" || ")
+    output.push(']');
 }
 
 fn optional_hex_text(value: Option<u32>) -> String {
@@ -1711,7 +1739,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 26,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 27,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1771,7 +1799,9 @@ fn write_json_report(
     output.push_str(
         "  \"direct_mmio_predicate_mode\": \"exact-bit-provenance-with-constant-comparison-mapping\",\n",
     );
-    output.push_str("  \"semantic_field_guard_mode\": \"path-polarity-preserving\",\n");
+    output.push_str(
+        "  \"semantic_field_guard_mode\": \"action-identity-and-path-coordinate-preserving\",\n",
+    );
     output.push_str("  \"direct_mmio_predicate_completeness_claim\": false,\n");
     output.push_str("  \"mmio_field_semantics_claim\": false,\n");
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
@@ -1992,14 +2022,38 @@ fn write_json_report(
                 write_string(&mut output, &evidence.root);
                 output.push_str(", \"operation\": ");
                 write_string(&mut output, &evidence.operation);
+                output.push_str(", \"action_target\": ");
+                write_string(&mut output, &evidence.action_target);
+                output.push_str(", \"action_origin\": ");
+                write_string(&mut output, &evidence.action_origin);
+                output.push_str(", \"action_site\": ");
+                write_optional_hex(&mut output, evidence.action_site);
+                output.push_str(", \"action_site_path\": ");
+                write_site_path(&mut output, &evidence.action_site_path);
+                output.push_str(", \"action_path\": ");
+                write_string(&mut output, &evidence.action_path);
                 output.push_str(", \"predicate_function\": ");
                 write_string(&mut output, &evidence.predicate_function);
                 output.push_str(", \"producer\": ");
                 write_optional_string(&mut output, evidence.producer.as_deref());
                 write!(
                     output,
+                    ", \"scope_index\": {}, \"scope_alternatives\": {}, \"path_index\": {}, \"path_expression\": ",
+                    evidence.scope_index, evidence.scope_alternatives, evidence.path_index,
+                )
+                .expect("writing to String cannot fail");
+                write_string(&mut output, &evidence.path_expression);
+                write!(
+                    output,
+                    ", \"path_guards\": {}, \"guard_index\": {}, \"residual_path_expression\": ",
+                    evidence.path_guards, evidence.guard_index,
+                )
+                .expect("writing to String cannot fail");
+                write_string(&mut output, &evidence.residual_path_expression);
+                write!(
+                    output,
                     ", \"site\": \"{:#010x}\", \"condition\": ",
-                    evidence.site,
+                    evidence.site
                 )
                 .expect("writing to String cannot fail");
                 write_string(&mut output, &evidence.condition);
@@ -2426,18 +2480,8 @@ fn write_json_report(
             } else {
                 output.push_str("null");
             }
-            output.push_str(", \"site_path\": [");
-            for (site_index, site) in action.site_path.iter().enumerate() {
-                if site_index != 0 {
-                    output.push_str(", ");
-                }
-                if let Some(site) = site {
-                    write_string(&mut output, &format!("{site:#010x}"));
-                } else {
-                    output.push_str("null");
-                }
-            }
-            output.push(']');
+            output.push_str(", \"site_path\": ");
+            write_site_path(&mut output, &action.site_path);
             output.push_str(", \"cfg_guard_scopes\": ");
             write_guard_scopes(&mut output, action.guard_scopes.as_deref());
             write!(

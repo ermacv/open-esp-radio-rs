@@ -97,7 +97,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v26 records the selection mode plus root and
+`reachable-internal`, and schema v27 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -119,7 +119,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v26 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v27 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -147,7 +147,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v26 records
+symbolic states. Schema v27 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -274,7 +274,7 @@ whole-register and read-modify-write shapes, and splits modified masks into
 contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-only inventory remains available for compatibility.
 
-Schema v26 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v27 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate
@@ -295,9 +295,16 @@ under field candidates as `predicate_evidence`, together with poll and
 producer-return evidence. Guarded producer-return evidence also records
 `taken` and `effective_operation`; a false branch complements the supported
 comparison operator instead of hiding path polarity. `semantic_evidence`
-preserves the same site, condition and effective operation for every
-semantic-action-to-field link, while the compact operation/root sets remain
-available as an index.
+identifies the concrete semantic action by target, origin, call path, call site
+and full lexical site path. Scope/path indices form stable coordinates into the
+action's factorized `cfg_guard_scopes`; the evidence also retains the selected
+DNF alternative, guard position and `residual_path_expression` after removing
+the MMIO literal. JSON and tabular indices are zero-based; pseudo-source labels
+are one-based. Thus opposite bit polarities on different action sites or under
+different remaining conditions stay distinguishable without duplicating the
+entire action guard for every field. The compact operation/root sets remain
+available as an index. The `semantic_field_guard_mode` value is
+`"action-identity-and-path-coordinate-preserving"`.
 
 Zero and whole-register masks never create field candidates; whole-register
 writes, predicates and polls have separate counters. Discontiguous masks become

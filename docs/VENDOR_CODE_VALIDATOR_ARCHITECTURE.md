@@ -311,13 +311,19 @@ MMIO predicates and exact guard-result links to an MMIO-backed producer return.
 Evidence classes retain separate shape counts and structured predicate records.
 Guarded records preserve whether the branch was taken and the effective
 comparison after complementing a false branch. Candidates link access and
-predicate functions; when a guarded semantic action is reachable, they also
-retain structured site, condition, polarity, operation and effect-summary root
-evidence for navigation in generated pseudo-source. Full-register masks remain
-separate counters and do not become fields. Guard evidence is accepted only for
-an address with one observed access width. This join does not infer register or
-field names, merge adjacent hardware fields, recover W1C or reset semantics, or
-guess through arithmetic and transitive return calls.
+predicate functions; when a guarded semantic action is reachable, they retain
+its target, origin, call path, call site and lexical site path. Scope/path
+indices are stable coordinates into the action's factorized guard. Each MMIO
+link also retains the selected DNF alternative, guard position and residual
+path after removing that MMIO literal. Machine-readable and tabular indices are
+zero-based; pseudo-source labels are one-based. Opposite polarities from
+different action occurrences or different remaining conditions therefore
+remain distinguishable without duplicating the complete action guard per
+field. Full-register masks remain separate counters and do not become fields.
+Guard evidence is accepted only for an address with one observed access width.
+This join does not infer register or field names, merge adjacent hardware
+fields, recover W1C or reset semantics, or guess through arithmetic and
+transitive return calls.
 
 ### Shared model
 

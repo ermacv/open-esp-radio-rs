@@ -92,10 +92,8 @@ use open_esp_radio::{
     },
     integration::{
         esp32s31::wifi_embassy::{
-            aggregate_tx::{
-                AggregateTxCounterSnapshot, AggregateTxCounters, AggregateTxError,
-                AggregateTxResetReason,
-            },
+            aggregate_observer::{AggregateTxCounterSnapshot, AggregateTxCounters},
+            aggregate_tx::{AggregateTxError, AggregateTxResetReason},
             backend::Esp32s31WifiBackendError,
             connected_sta_port::{
                 Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaControlResources,

@@ -9,9 +9,11 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod aggregate_observer;
 pub mod aggregate_tx;
 pub mod backend;
 pub mod connected_control;
+mod connected_control_port;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;

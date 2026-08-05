@@ -52,6 +52,18 @@ reload waits, staging leases and optional observations. Network publication
 is isolated in `network_rx`; the bounded borrowed-RX to owned-control handoff
 is isolated in `control_mailbox`.
 
+Connected aggregate TX is likewise separated from its optional measurements:
+`aggregate_tx` owns pinned network leases, A-MPDU publication and completion;
+`aggregate_observer` owns only lock-free counters and interval snapshots. The
+observer state cannot affect retry, queue or DMA decisions.
+
+Connected-station control has a similarly explicit integration seam:
+`connected_control` owns the association-scoped BlockAck, beacon-loss and
+power-save transitions, while private `connected_control_port` binds only the
+required hardware and shared-TX operations. The port owns neither the Embassy
+mailbox nor protocol state, and its public traits remain re-exported from
+`connected_control` so consumers do not depend on the private module layout.
+
 WPA2 protocol deadlines and atomic key-publication rollback live in
 `open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31
 handshake/key ports live in `open_esp_radio_esp32s31_wifi_sta::wpa2`. The local

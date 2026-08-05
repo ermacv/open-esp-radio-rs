@@ -34,7 +34,8 @@ use open_esp_radio_wifi_lmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 use crate::{
-    aggregate_tx::{AggregateTxConfig, AggregateTxCounters, Esp32s31ConnectedTx},
+    aggregate_observer::AggregateTxCounters,
+    aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     backend::Esp32s31WifiBackend,
     connected_control::Esp32s31ConnectedControl,
     control_mailbox::ConnectedControlReceiver,

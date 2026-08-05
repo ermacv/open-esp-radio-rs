@@ -136,7 +136,7 @@ composition-level coupling without changing the single PAC/DMA owner.
 
 The composition root now spawns the network stack, staged RX protocol, radio
 owner, network report and benchmark as five independent Embassy tasks. The
-driver's `WifiRunner` remains the sole PAC/DMA/TX owner and retains its internal
+driver's `ConnectedRunner` remains the sole PAC/DMA/TX owner and retains its internal
 RX-before-TX arbitration. Moving the running register owner, RX address table
 and scratch ownership into explicit static task resources avoided a second PAC
 singleton and made the long-running lifetimes visible in the type graph.

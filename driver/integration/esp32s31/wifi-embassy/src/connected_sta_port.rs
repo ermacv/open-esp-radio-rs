@@ -3,7 +3,7 @@
 //! Board/HIL code supplies already allocated storage, a network RX sink and
 //! executor task placement. This module owns the driver relationships between
 //! the associated peer, RX dispatcher/protocol, control-TX handoff,
-//! ordinary/A-MPDU TX, BlockAck control and the final [`Esp32s31WifiBackend`].
+//! ordinary/A-MPDU TX, BlockAck control and the final [`Esp32s31ConnectedServices`].
 
 use core::pin::Pin;
 
@@ -36,8 +36,8 @@ use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossCo
 use crate::{
     aggregate_observer::AggregateTxCounters,
     aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
-    backend::Esp32s31WifiBackend,
     connected_control::Esp32s31ConnectedControl,
+    connected_services::Esp32s31ConnectedServices,
     control_mailbox::ConnectedControlReceiver,
     control_tx::Esp32s31ControlTx,
     embassy_irq::EmbassyMacIrqRuntime,
@@ -516,13 +516,13 @@ impl Esp32s31ConnectedStaPort {
     }
 
     /// Join the already prepared hardware/RX/TX/control owners into the only
-    /// backend accepted by [`crate::runner::WifiRunner`].
+    /// services accepted by [`crate::connected_runner::ConnectedRunner`].
     pub fn assemble<H, R, X, C, P>(
         plan: Esp32s31ConnectedStaPlan,
         parts: Esp32s31ConnectedStaDriverParts<H, R, X, C, P>,
     ) -> Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
         Esp32s31ConnectedStaDrivers {
-            backend: Esp32s31WifiBackend::with_control(
+            services: Esp32s31ConnectedServices::with_control(
                 parts.hardware,
                 parts.rx,
                 parts.tx,
@@ -717,7 +717,7 @@ pub struct Esp32s31ConnectedStaControlResources<'resources, M: RawMutex, const C
     pub reorder_commands: RxReorderCommandSender<'resources, M>,
 }
 
-/// Final owner graph immediately before the backend begins running.
+/// Final owner graph immediately before the connected services begin running.
 pub struct Esp32s31ConnectedStaDriverParts<H, R, X, C, P> {
     pub hardware: H,
     pub rx: R,
@@ -728,7 +728,7 @@ pub struct Esp32s31ConnectedStaDriverParts<H, R, X, C, P> {
 
 /// Driver composition returned to the executor/application layer.
 pub struct Esp32s31ConnectedStaDrivers<H, R, X, C, P> {
-    pub backend: Esp32s31WifiBackend<H, R, X, C>,
+    pub services: Esp32s31ConnectedServices<H, R, X, C>,
     pub protocol: P,
     pub report: Esp32s31ConnectedStaReport,
 }

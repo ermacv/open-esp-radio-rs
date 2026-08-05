@@ -1,7 +1,7 @@
-//! HIL-only fault adapter around the production connected radio backend.
+//! HIL-only fault adapter around the production connected radio services.
 //!
 //! The adapter never fabricates a station/lifecycle result. It first lets the
-//! real backend acquire a network lease and publish a MAC descriptor. Only
+//! real services acquire a network lease and publish a MAC descriptor. Only
 //! then does it replace the next TX wake with an impossible simultaneous
 //! completion/timeout image. The production ordinary/A-MPDU transaction must
 //! classify that edge as reset-required and quarantine its real owner.
@@ -9,9 +9,9 @@
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
 use open_esp_radio::esp32s31::wifi::lmac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT};
-use open_esp_radio::integration::esp32s31::wifi_embassy::runner::{
-    WifiControlContext, WifiControlProgress, WifiRunnerBackend, WifiRxProgress, WifiTxProgress,
-    WifiTxWake,
+use open_esp_radio::integration::esp32s31::wifi_embassy::connected_runner::{
+    ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
+    WifiTxProgress, WifiTxWake,
 };
 use open_esp_radio::integration::network::embassy_net::{
     PinnedTxConsumer, PinnedTxFrame, RawMutex,
@@ -95,7 +95,7 @@ pub static STATION_FAULT_CONTROL: StationFaultControl = StationFaultControl::new
 
 /// Failure returned by the HIL adapter without erasing the production error.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FaultInjectingBackendError<E> {
+pub enum FaultInjectingServicesError<E> {
     Inner(E),
     InjectedTxAfterPublication {
         fault: ArmedStationFault,
@@ -107,14 +107,14 @@ pub enum FaultInjectingBackendError<E> {
     },
 }
 
-/// HIL decorator retaining the complete real production backend.
-pub struct FaultInjectingWifiBackend<'control, B> {
+/// HIL decorator retaining the complete real production services graph.
+pub struct FaultInjectingConnectedServices<'control, B> {
     inner: B,
     control: &'control StationFaultControl,
     active: Option<ArmedStationFault>,
 }
 
-impl<'control, B> FaultInjectingWifiBackend<'control, B> {
+impl<'control, B> FaultInjectingConnectedServices<'control, B> {
     pub const fn new(inner: B, control: &'control StationFaultControl) -> Self {
         Self {
             inner,
@@ -140,13 +140,13 @@ impl<
     const HEADROOM: usize,
     const TRAILER: usize,
     const TX_QUEUE_DEPTH: usize,
-> WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
-    for FaultInjectingWifiBackend<'_, B>
+> ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>
+    for FaultInjectingConnectedServices<'_, B>
 where
     M: RawMutex,
-    B: WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
-    type Error = FaultInjectingBackendError<B::Error>;
+    type Error = FaultInjectingServicesError<B::Error>;
 
     fn service_rx(
         &mut self,
@@ -155,7 +155,7 @@ where
             self.inner
                 .service_rx()
                 .await
-                .map_err(FaultInjectingBackendError::Inner)
+                .map_err(FaultInjectingServicesError::Inner)
         }
     }
 
@@ -171,7 +171,7 @@ where
             self.inner
                 .service_control(context)
                 .await
-                .map_err(FaultInjectingBackendError::Inner)
+                .map_err(FaultInjectingServicesError::Inner)
         }
     }
 
@@ -200,7 +200,7 @@ where
                 .inner
                 .start_tx(frame, network)
                 .await
-                .map_err(FaultInjectingBackendError::Inner)?;
+                .map_err(FaultInjectingServicesError::Inner)?;
             if progress == WifiTxProgress::Pending {
                 self.active = self.control.take_after_tx_publication();
             }
@@ -226,17 +226,17 @@ where
                     .inner
                     .service_tx(wake)
                     .await
-                    .map_err(FaultInjectingBackendError::Inner);
+                    .map_err(FaultInjectingServicesError::Inner);
             };
             let contradictory = WifiTxWake::Interrupt {
                 events: MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT,
             };
             match self.inner.service_tx(contradictory).await {
                 Err(source) => {
-                    Err(FaultInjectingBackendError::InjectedTxAfterPublication { fault, source })
+                    Err(FaultInjectingServicesError::InjectedTxAfterPublication { fault, source })
                 }
                 Ok(progress) => {
-                    Err(FaultInjectingBackendError::InjectionContractViolation { fault, progress })
+                    Err(FaultInjectingServicesError::InjectionContractViolation { fault, progress })
                 }
             }
         }

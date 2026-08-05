@@ -17,11 +17,11 @@ use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
 use crate::{
     aggregate_tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
-    backend::Esp32s31WifiBackend,
     connected_control::{
         ConnectedControlError, ConnectedControlHardware, ConnectedControlShutdown,
         ConnectedControlTx, Esp32s31ConnectedControl,
     },
+    connected_services::Esp32s31ConnectedServices,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_backend::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
     single_mpdu_tx::WifiTxResources,
@@ -183,7 +183,7 @@ pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
 pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     Control {
         error: CE,
-        backend: Esp32s31WifiBackend<H, R, X, C>,
+        services: Esp32s31ConnectedServices<H, R, X, C>,
         group_key: StaGroupCcmpSlot,
     },
     Rx {
@@ -206,11 +206,11 @@ pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
 pub struct Esp32s31ConnectedStaTeardownPort;
 
 impl Esp32s31ConnectedStaTeardownPort {
-    /// Consume a stopped runner backend and return the peer-independent
+    /// Consume stopped connected services and return the peer-independent
     /// station owners in the only hardware-safe order.
     #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_teardown<H, R, X, C>(
-        backend: Esp32s31WifiBackend<H, R, X, C>,
+        services: Esp32s31ConnectedServices<H, R, X, C>,
         group_key: StaGroupCcmpSlot,
     ) -> Result<
         Esp32s31ConnectedStaTeardownSuccess<H, R::Stopped, X::Resources, X::Aggregate, C::Report>,
@@ -222,13 +222,13 @@ impl Esp32s31ConnectedStaTeardownPort {
         R: Esp32s31ConnectedStaRxTeardown<H>,
         X: Esp32s31ConnectedStaTxTeardown,
     {
-        let (mut hardware, rx, mut tx, mut control) = backend.into_parts();
+        let (mut hardware, rx, mut tx, mut control) = services.into_parts();
         let control_report = match control.shutdown(&mut hardware, &mut tx) {
             Ok(report) => report,
             Err(error) => {
                 return Err(Esp32s31ConnectedStaTeardownFailure::Control {
                     error,
-                    backend: Esp32s31WifiBackend::with_control(hardware, rx, tx, control),
+                    services: Esp32s31ConnectedServices::with_control(hardware, rx, tx, control),
                     group_key,
                 });
             }
@@ -346,20 +346,20 @@ mod tests {
         }
     }
 
-    fn backend(
+    fn services(
         hardware: &mut Hardware,
         control_failure: bool,
         rx_failure: bool,
         tx_active: bool,
     ) -> (
-        Esp32s31WifiBackend<Hardware, Rx, Tx, Control>,
+        Esp32s31ConnectedServices<Hardware, Rx, Tx, Control>,
         StaGroupCcmpSlot,
     ) {
         let pairwise =
             install_sta_pairwise_ccmp(hardware, [1, 2, 3, 4, 5, 6], &[0x11; 16]).unwrap();
         let group = install_sta_group_ccmp(hardware, 1, &[0x22; 16]).unwrap();
         (
-            Esp32s31WifiBackend::with_control(
+            Esp32s31ConnectedServices::with_control(
                 core::mem::take(hardware),
                 Rx(rx_failure),
                 Tx {
@@ -375,8 +375,8 @@ mod tests {
     #[test]
     fn teardown_orders_control_rx_tx_and_both_key_clears() {
         let mut hardware = Hardware::default();
-        let (backend, group) = backend(&mut hardware, false, false, false);
-        let stopped = Esp32s31ConnectedStaTeardownPort::try_teardown(backend, group)
+        let (services, group) = services(&mut hardware, false, false, false);
+        let stopped = Esp32s31ConnectedStaTeardownPort::try_teardown(services, group)
             .unwrap_or_else(|_| panic!("idle mock owners must stop"));
         assert_eq!(stopped.stopped_rx, 4);
         assert_eq!(stopped.tx_resources, 5);
@@ -394,8 +394,8 @@ mod tests {
             (false, false, true, 3),
         ] {
             let mut hardware = Hardware::default();
-            let (backend, group) = backend(&mut hardware, control, rx, tx);
-            let failure = Esp32s31ConnectedStaTeardownPort::try_teardown(backend, group)
+            let (services, group) = services(&mut hardware, control, rx, tx);
+            let failure = Esp32s31ConnectedStaTeardownPort::try_teardown(services, group)
                 .err()
                 .expect("selected stage must fail");
             let observed = match failure {

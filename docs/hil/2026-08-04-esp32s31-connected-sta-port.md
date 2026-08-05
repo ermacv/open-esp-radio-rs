@@ -24,13 +24,13 @@ Association and owns the following policy and composition:
 - the control-TX to ordinary/A-MPDU ownership handoff, including PTK and
   sequence ownership;
 - TX/RX BlockAck, initial ADDBA, beacon-loss and reorder-command control;
-- assembly of the one production `Esp32s31WifiBackend` accepted by
-  `WifiRunner`.
+- assembly of the one production `Esp32s31ConnectedServices` accepted by
+  `ConnectedRunner`.
 
 HIL now supplies compile-time scenario values, pinned/static resources, the
 `embassy-net` sink, executor placement and diagnostics. It no longer constructs
 `ConnectedRxDispatcher`, `Esp32s31ConnectedTx`, `StaTxBlockAckSessions`,
-`Esp32s31ConnectedControl` or `Esp32s31WifiBackend` directly. A rejected
+`Esp32s31ConnectedControl` or `Esp32s31ConnectedServices` directly. A rejected
 configuration returns the exact peer before PTK, sequence or pinned TX storage
 can move. A busy control-TX handoff likewise returns every unique owner and
 does not allocate.

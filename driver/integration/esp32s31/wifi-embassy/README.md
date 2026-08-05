@@ -67,6 +67,11 @@ The association-scoped data itself is isolated in executor-independent
 `connected_control_state`; only the outer control adapter owns the Embassy
 receiver, wakeup selection and reorder-command sender.
 
+The connected datapath entry points use responsibility names rather than the
+generic `runner`/`backend` pair: `connected_runner` owns Embassy arbitration
+and cancellation-safe stopping, while `connected_services` owns the finite
+RX, control and network-TX service graph consumed by that runner.
+
 WPA2 protocol deadlines and atomic key-publication rollback live in
 `open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31
 handshake/key ports live in `open_esp_radio_esp32s31_wifi_sta::wpa2`. The local

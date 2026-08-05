@@ -30,10 +30,10 @@ use open_esp_radio_wifi_sta::{
 };
 
 use crate::{
-    backend::Esp32s31ControlService,
     connected_control_state::{ConnectedControlState, ControlInFlight},
+    connected_runner::{WifiControlContext, WifiControlProgress},
+    connected_services::Esp32s31ControlService,
     control_mailbox::ConnectedControlReceiver,
-    runner::{WifiControlContext, WifiControlProgress},
     rx_reorder::{
         RxReorderCommand, RxReorderCommandError, RxReorderCommandSender,
         try_send_rx_reorder_command,
@@ -773,8 +773,8 @@ mod tests {
     use open_esp_radio_wifi_lmac::{MacRxMetadata, MacTxPlan};
 
     use crate::{
+        connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
         control_mailbox::ConnectedControlResources,
-        runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
         rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_receive_rx_reorder_command},
         single_mpdu_tx::{
             Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,

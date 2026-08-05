@@ -1,4 +1,4 @@
-//! Production composition of finite ESP32-S31 RX, control and network-TX services.
+//! Finite ESP32-S31 RX, control and network-TX services for one connected epoch.
 
 use core::{
     convert::Infallible,
@@ -9,9 +9,9 @@ use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_lmac::tx::TxHardware;
 
 use crate::{
-    runner::{
-        WifiControlContext, WifiControlProgress, WifiRunnerBackend, WifiRxProgress, WifiTxProgress,
-        WifiTxWake,
+    connected_runner::{
+        ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
+        WifiTxProgress, WifiTxWake,
     },
     single_mpdu_tx::{
         Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
@@ -31,7 +31,7 @@ pub trait Esp32s31ConnectedRxService<H> {
     ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a;
 }
 
-/// One owned control scheduler sharing the backend's PAC and TX transaction.
+/// One owned control scheduler sharing the services owner's PAC and TX transaction.
 pub trait Esp32s31ControlService<H, X> {
     type Error;
 
@@ -65,7 +65,7 @@ impl<H, X> Esp32s31ControlService<H, X> for NoConnectedControl {
     }
 }
 
-/// Connected network-TX transaction owned by the production backend.
+/// Connected network-TX transaction owned by the connected services graph.
 ///
 /// Taking the first lease by value is essential for referenced DMA. The
 /// service may synchronously claim further ready leases from `network`, but
@@ -106,22 +106,26 @@ pub trait Esp32s31NetworkTxService<
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31WifiBackendError<RxError, ControlError = Infallible, TxError = SingleMpduTxError> {
+pub enum Esp32s31ConnectedServicesError<
+    RxError,
+    ControlError = Infallible,
+    TxError = SingleMpduTxError,
+> {
     Rx(RxError),
     Control(ControlError),
     Tx(TxError),
 }
 
-/// Unique production owner for the shared register capability, RX ring,
+/// Unique connected-epoch owner for the shared register capability, RX ring,
 /// connected control and the selected ordinary/aggregate TX owner.
-pub struct Esp32s31WifiBackend<H, R, X, C = NoConnectedControl> {
+pub struct Esp32s31ConnectedServices<H, R, X, C = NoConnectedControl> {
     hardware: H,
     rx: R,
     tx: X,
     control: C,
 }
 
-impl<H, R, X> Esp32s31WifiBackend<H, R, X, NoConnectedControl> {
+impl<H, R, X> Esp32s31ConnectedServices<H, R, X, NoConnectedControl> {
     pub const fn new(hardware: H, rx: R, tx: X) -> Self {
         Self {
             hardware,
@@ -132,7 +136,7 @@ impl<H, R, X> Esp32s31WifiBackend<H, R, X, NoConnectedControl> {
     }
 }
 
-impl<H, R, X, C> Esp32s31WifiBackend<H, R, X, C> {
+impl<H, R, X, C> Esp32s31ConnectedServices<H, R, X, C> {
     pub const fn with_control(hardware: H, rx: R, tx: X, control: C) -> Self {
         Self {
             hardware,
@@ -195,22 +199,22 @@ impl<
     const HEADROOM: usize,
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
-> WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-    for Esp32s31WifiBackend<H, R, X, C>
+> ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for Esp32s31ConnectedServices<H, R, X, C>
 where
     M: RawMutex,
     R: Esp32s31ConnectedRxService<H>,
     X: Esp32s31NetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     C: Esp32s31ControlService<H, X>,
 {
-    type Error = Esp32s31WifiBackendError<R::Error, C::Error, X::Error>;
+    type Error = Esp32s31ConnectedServicesError<R::Error, C::Error, X::Error>;
 
     fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
         async move {
             self.rx
                 .service(&mut self.hardware)
                 .await
-                .map_err(Esp32s31WifiBackendError::Rx)
+                .map_err(Esp32s31ConnectedServicesError::Rx)
         }
     }
 
@@ -226,7 +230,7 @@ where
             self.control
                 .service(&mut self.hardware, &mut self.tx, context)
                 .await
-                .map_err(Esp32s31WifiBackendError::Control)
+                .map_err(Esp32s31ConnectedServicesError::Control)
         }
     }
 
@@ -254,7 +258,7 @@ where
             self.tx
                 .start(&mut self.hardware, frame, network)
                 .await
-                .map_err(Esp32s31WifiBackendError::Tx)
+                .map_err(Esp32s31ConnectedServicesError::Tx)
         }
     }
 
@@ -270,7 +274,7 @@ where
             self.tx
                 .service(&mut self.hardware, wake)
                 .await
-                .map_err(Esp32s31WifiBackendError::Tx)
+                .map_err(Esp32s31ConnectedServicesError::Tx)
         }
     }
 }

@@ -11,10 +11,11 @@ extern crate std;
 
 pub mod aggregate_observer;
 pub mod aggregate_tx;
-pub mod backend;
 pub mod connected_control;
 mod connected_control_port;
 mod connected_control_state;
+pub mod connected_runner;
+pub mod connected_services;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;
@@ -30,7 +31,6 @@ mod ordinary_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod phy_delay;
 pub mod preconnected_rx;
-pub mod runner;
 pub mod rx_backend;
 pub mod rx_observer;
 pub mod rx_reorder;

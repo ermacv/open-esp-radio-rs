@@ -19,9 +19,9 @@ use open_esp_radio_esp32s31_wifi_lmac::{
 };
 
 use crate::{
-    backend::Esp32s31ConnectedRxService,
+    connected_runner::WifiRxProgress,
+    connected_services::Esp32s31ConnectedRxService,
     embassy_rx::{RxReloadDelay, await_staged_rx_reload},
-    runner::WifiRxProgress,
     rx_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },

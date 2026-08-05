@@ -534,19 +534,19 @@ impl Scenario {
     const fn description(self) -> &'static str {
         match self {
             Self::BootSmoke => "bootstrap, Flash/PSRAM and runtime smoke test",
-            Self::Radio => "production WifiRunner PHY/MAC/STA/WPA2 HIL",
+            Self::Radio => "production ConnectedRunner PHY/MAC/STA/WPA2 HIL",
             Self::RadioPollProfile => {
                 "radio HIL with diagnostic Embassy Future::poll residence telemetry"
             }
             Self::RadioRxOrderProfile => {
                 "radio HIL correlating UDP and 802.11 receive sequence order"
             }
-            Self::UdpTx => "production WifiRunner embassy-net UDP throughput",
+            Self::UdpTx => "production ConnectedRunner embassy-net UDP throughput",
             Self::StationTxFault => {
                 "connected TX reset frontier against the repository-controlled AP"
             }
-            Self::Bidirectional => "production WifiRunner simultaneous RX/TX throughput",
-            Self::TcpRx => "production WifiRunner embassy-net TCP receive throughput",
+            Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
+            Self::TcpRx => "production ConnectedRunner embassy-net TCP receive throughput",
         }
     }
 }

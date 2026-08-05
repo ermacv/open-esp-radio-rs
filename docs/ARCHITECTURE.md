@@ -189,7 +189,7 @@ attached, the driver does not read a diagnostic clock; the remaining cost is
 only the explicit optional branch at each observation site.
 
 Fault injection follows the same boundary. The HIL may decorate the complete
-production `WifiRunnerBackend`, but it must first let the real transaction
+production `ConnectedRunnerServices`, but it must first let the real transaction
 acquire its lease/descriptor owner and then drive a normal production service
 edge. It may not fabricate a lifecycle outcome. Protocol-v8 TX fault evidence
 is emitted only after the reusable runner/task/RX teardown has returned and

@@ -11,7 +11,7 @@ protocol or integration crate.
 The production path now has reusable owners for generated PAC register leaves,
 MAC IRQ dispatch, RX/DMA frontier and recycle, ordinary connected TX,
 pre-connected management/EAPOL TX,
-connected BlockAck control, the single `WifiRunner` event loop,
+connected BlockAck control, the single `ConnectedRunner` event loop,
 Authentication/Association through `StaJoinRunner`, and WPA2 Message 1/3
 response handling through `Wpa2HandshakeRunner`. `Wpa2KeyInstallRunner` owns
 request validation, PTK/GTK publication ordering, Message 4 completion and
@@ -51,7 +51,7 @@ The HIL has deleted its former Message 3 receive/deadline loop.
 `Wpa2KeyInstallRunner` now consumes `Wpa2PendingKeyInstall`, validates the
 station PTK/GTK request, publishes both keys atomically through its backend,
 builds and transmits the exact Message 4, rolls both keys back on every later
-failure, and returns typed installed-key ownership for `WifiRunner`. Its host
+failure, and returns typed installed-key ownership for `ConnectedRunner`. Its host
 tests include the complete successful M1/M2/M3/key/M4 transition, atomic
 install failure and Message 4 rollback.
 
@@ -91,7 +91,7 @@ ADDBA response, rejection, timeout and DELBA state directly into this TX
 scheduler.
 
 `Esp32s31ConnectedStaPort` constructs this owner and the HIL runs it through
-the same `WifiRunner`; both debug and optimized RISC-V images link
+the same `ConnectedRunner`; both debug and optimized RISC-V images link
 successfully. Host
 tests cover full BlockAck release, partial-BlockAck compaction/republication
 and the individual retry handoff. The former raw-MAC, A-MSDU and HE matrix
@@ -123,7 +123,7 @@ The coherent `hal_get_sta_tsf` ROM transaction is represented in SVD/PAC and
 passes a four-case compiled profile covering both optional output pointers.
 
 The policy is now integrated into `Esp32s31ConnectedControl` behind an
-explicit opt-in. `WifiRunner` supplies one coherent `WifiControlContext`
+explicit opt-in. `ConnectedRunner` supplies one coherent `WifiControlContext`
 instead of a growing positional argument list, and re-runs control while
 holding a newly arrived pinned network lease. Consequently a station that has
 advertised PM=1 must complete an acknowledged PM=0 transaction before the
@@ -208,9 +208,9 @@ leaf.
 
 The first reconnect seam is now production-owned:
 
-- `WifiRunner::run` returns the typed `WifiRunnerExit::Disconnected` after it
+- `ConnectedRunner::run` returns the typed `ConnectedRunnerExit::Disconnected` after it
   publishes link-down instead of hiding link loss as `Ok(())`;
-- `WifiRunner::into_parts` and `Esp32s31WifiBackend::into_parts` return the
+- `ConnectedRunner::into_parts` and `Esp32s31ConnectedServices::into_parts` return the
   network, hardware, RX, TX and control owners to their caller;
 - an idle connected ordinary or aggregate transmitter can return its pinned
   descriptor resources, A-MPDU storage, pairwise-key token and sequence state;
@@ -226,7 +226,7 @@ The first reconnect seam is now production-owned:
   transition after its radio runner exits;
 - `Esp32s31ConnectedTx::try_into_teardown_parts` returns descriptor resources,
   A-MPDU storage, PTK token and sequence state as one driver invariant. The
-  HIL now keeps `WifiRunner` in its parent STA future, clears PTK/GTK through
+  HIL now keeps `ConnectedRunner` in its parent STA future, clears PTK/GTK through
   the cooperative hardware owner and reconstructs its pre-connected control
   TX owner instead of stranding the connected runner in task storage.
 - the connected interrupt transaction is reversible: the platform first
@@ -355,7 +355,7 @@ The first reconnect seam is now production-owned:
   now intrinsically requires the cold PAC-owner type;
 - the HIL now consumes `RadioHilReconnectReady` instead of parking it. It runs
   the same production Association, peer programming, WPA2 handshake/key
-  install and connected `WifiRunner` on the cooperative hardware, halted RX,
+  install and connected `ConnectedRunner` on the cooperative hardware, halted RX,
   persistent network stack, A-MPDU arena and control mailbox returned by the
   first epoch. A second connected teardown recreates the same typed frontier
   once more, proving at compile time that no reconnect phase needs another
@@ -452,7 +452,7 @@ The first reconnect seam is now production-owned:
 
 This is now a bounded controlled rescan and re-authentication implementation
 with board evidence.
-`WifiRunner::run_until` observes an outer stop only at a transaction boundary,
+`ConnectedRunner::run_until` observes an outer stop only at a transaction boundary,
 waits for an active TX to release hardware, publishes link-down and returns the
 distinct `Stopped` outcome. HIL protocol v7 advertises this capability and
 `cargo hil station reconnect` requests it without calling the stop a beacon

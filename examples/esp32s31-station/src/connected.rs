@@ -46,7 +46,7 @@ use open_esp_radio::{
             },
             embassy_rx::EmbassyEsp32s31RxReloadDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            runner::WifiRunner,
+            connected_runner::ConnectedRunner,
             network_rx::EmbassyNetConnectedRxSink,
             rx_backend::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
             rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
@@ -562,7 +562,7 @@ pub async fn run_connected(
             protocol,
         },
     );
-    let mut radio_runner = WifiRunner::new(&IRQ_RUNTIME, network_runner, drivers.backend);
+    let mut radio_runner = ConnectedRunner::new(&IRQ_RUNTIME, network_runner, drivers.services);
 
     if let Some(stack_runner) = stack_runner {
         let task = network_task(stack_runner).expect("network task storage must be available once");
@@ -619,8 +619,8 @@ pub async fn run_connected(
         shutdown.active_reorders,
     );
     let (frame, ethernet) = stopped_protocol.into_scratch();
-    let (network_runner, backend) = radio_runner.into_parts();
-    let teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(backend, group) {
+    let (network_runner, services) = radio_runner.into_parts();
+    let teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group) {
         Ok(teardown) => teardown,
         Err(Esp32s31ConnectedStaTeardownFailure::Control { .. }) => {
             panic!("connected control teardown failed; platform reset required")

@@ -14,7 +14,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
 
 use crate::{
-    runner::{WifiControlProgress, WifiControlProgress::TxPending},
+    connected_runner::{WifiControlProgress, WifiControlProgress::TxPending},
     single_mpdu_tx::{
         ActionTxConfig, Esp32s31SingleMpduTx, SingleMpduTxError, SingleMpduTxOutcome,
     },

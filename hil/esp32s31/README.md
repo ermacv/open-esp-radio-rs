@@ -77,7 +77,7 @@ named mode, so an old shell export cannot silently combine two HIL workloads.
 | Scenario | Firmware workload | Host-side follow-up |
 | --- | --- | --- |
 | `boot-smoke` | bootstrap, Flash/PSRAM and stage-two runtime | inspect UART PASS marker |
-| `radio` | production `WifiRunner` PHY/MAC/STA/WPA2 path | scenario-specific UART inspection |
+| `radio` | production `ConnectedRunner` PHY/MAC/STA/WPA2 path | scenario-specific UART inspection |
 | `udp-tx` | `embassy-net` device-to-host UDP throughput | provide the configured UDP receiver |
 | `tcp-rx` | runtime-configured host-to-device TCP stream | `cargo hil traffic tcp-rx <device-ipv4>` |
 
@@ -106,7 +106,7 @@ model.
 `Esp32s31ConnectedStaPort` consumes that peer and one coherent connected
 configuration. It owns rate selection, staged RX dispatcher/protocol policy,
 the control-to-ordinary/A-MPDU TX handoff, TX/RX BlockAck and beacon control,
-and final `Esp32s31WifiBackend` assembly. HIL provides fixed resources,
+and final `Esp32s31ConnectedServices` assembly. HIL provides fixed resources,
 `embassy-net` endpoints, task placement and observations; it does not recreate
 those driver constructors. `Esp32s31StaTxEpoch` now retains the ordinary TX
 policy while connected service owns its descriptor. Pre-connected RX consumes
@@ -140,7 +140,7 @@ is qualified.
 
 `cargo hil station reconnect` provisions credentials over the current HIL
 protocol and
-requests one or more hardware-safe `WifiRunner` stops. `--cycles 3`, for
+requests one or more hardware-safe `ConnectedRunner` stops. `--cycles 3`, for
 example, requires three request-correlated typed completions covering the
 runner/teardown stop, returned scan owners, fresh Open Authentication and
 Association/WPA2, and the replacement connected runner on selected same-SSID
@@ -193,7 +193,7 @@ second connected event loop that predated the production backend. They are
 intentionally absent from `cargo hil scenarios`; selecting their old build
 environment fails at compile time. Reintroduce each workload only after its
 aggregate/HE transaction is owned by the production backend and scheduled by
-`WifiRunner`, so a HIL result cannot accidentally qualify a parallel driver.
+`ConnectedRunner`, so a HIL result cannot accidentally qualify a parallel driver.
 
 SSID, passphrase, peer address, channel and bounded rate/MCS overrides remain
 external HIL configuration. They are intentionally not written to

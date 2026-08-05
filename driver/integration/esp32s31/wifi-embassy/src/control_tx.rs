@@ -24,11 +24,11 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_lmac::MacTxPlan;
 
 use crate::{
+    connected_runner::WifiTxProgress,
     ordinary_tx::{
         OrdinaryTxError, OrdinaryTxOutcome, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE,
         TX_METADATA_SIZE, TxResetReason, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
     },
-    runner::WifiTxProgress,
     single_mpdu_tx::Esp32s31SingleMpduTx,
 };
 

@@ -22,7 +22,7 @@ happened to be the same peer in this cell.
 This does not claim recovery from AP disappearance. The latest controlled run
 performs a full running scan and feeds the selected candidate into fresh Open
 Authentication before Association. It intentionally distinguishes
-`WifiRunnerExit::Stopped` from beacon-loss `Disconnected`; the HIL adapter
+`ConnectedRunnerExit::Stopped` from beacon-loss `Disconnected`; the HIL adapter
 names the former `CycleRequested`, and the outer service enters
 `RunningScan` with `refresh_candidate=1`. The trigger is still a healthy
 host-requested cycle rather than AP disappearance.

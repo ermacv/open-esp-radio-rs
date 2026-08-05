@@ -32,10 +32,10 @@ use open_esp_radio_wifi_lmac::{MacAmpduTxResult, MacAmpduTxStatus, MacTxQueueSta
 
 use crate::{
     aggregate_observer::{AggregateBuildStop, AggregateTxCounters, NetworkSingleMpduReason},
-    backend::Esp32s31NetworkTxService,
     connected_control::ConnectedControlTx,
+    connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
+    connected_services::Esp32s31NetworkTxService,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     single_mpdu_tx::{
         ActionTxConfig, ConnectedTxHandoff, Esp32s31SingleMpduTx, SingleMpduTxError,
         SingleMpduTxOutcome, WifiTxResources,

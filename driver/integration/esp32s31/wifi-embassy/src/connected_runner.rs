@@ -1,8 +1,8 @@
-//! Production Embassy event loop for one ESP32-S31 Wi-Fi radio owner.
+//! Embassy event loop for one connected ESP32-S31 Wi-Fi radio owner.
 //!
 //! The runner owns PAC/DMA/TX scheduling. Connected-frame protocol state lives
 //! in a separate staged-RX consumer, so parsing cannot extend one hardware
-//! service epoch. A backend owns only finite PAC/DMA transactions: it must
+//! service epoch. The services owner exposes only finite PAC/DMA transactions: it must
 //! never wait for an executor primitive while holding a mutable PAC borrow.
 
 use core::future::{Future, pending, ready};
@@ -57,7 +57,7 @@ pub enum WifiControlProgress {
 /// lifecycle transition. The caller may use this edge to tear down the
 /// network stack, release the connected epoch and start reassociation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiRunnerExit {
+pub enum ConnectedRunnerExit {
     /// Connected policy proved that the peer is no longer reachable and the
     /// runner published link-down before returning.
     Disconnected,
@@ -72,7 +72,7 @@ pub enum WifiRunnerExit {
 ///
 /// This value is sampled before control arbitration, while no TX transaction
 /// owns hardware. It prevents power policy from treating an already queued
-/// network frame as idle merely because the backend has not claimed it yet.
+/// network frame as idle merely because the services have not claimed it yet.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct WifiControlContext {
     pub network_tx_pending: bool,
@@ -93,7 +93,7 @@ pub enum WifiTxWake {
     Deadline,
 }
 
-/// Finite chip-specific operations used by [`WifiRunner`].
+/// Finite chip-specific operations used by [`ConnectedRunner`].
 ///
 /// An implementation normally owns the live RX descriptor ring, staging
 /// storage, staging publisher, TX descriptor state and a short-lived PAC
@@ -104,8 +104,8 @@ pub enum WifiTxWake {
 /// Every method must finish after a bounded number of hardware observations.
 /// A method may await a timer edge needed by a typed transaction, but it must
 /// release every mutable PAC borrow before that edge. RX-before-TX arbitration
-/// and the lifetime of a pinned network lease belong to [`WifiRunner::run`].
-pub trait WifiRunnerBackend<
+/// and the lifetime of a pinned network lease belong to [`ConnectedRunner::run`].
+pub trait ConnectedRunnerServices<
     'resources,
     M: RawMutex,
     const FRAME_CAPACITY: usize,
@@ -148,7 +148,7 @@ pub trait WifiRunnerBackend<
 
     /// Transfer one network-owned frame into the MAC/DMA transaction.
     ///
-    /// The backend receives ownership rather than a temporary borrow. An
+    /// The services owner receives ownership rather than a temporary borrow. An
     /// ordinary copy-based transmitter may release the lease immediately;
     /// a referenced A-MPDU owner may retain it, claim further ready leases
     /// from `network`, and return all of them only after BlockAck/detach.
@@ -180,7 +180,7 @@ pub trait WifiRunnerBackend<
 }
 
 /// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.
-pub struct WifiRunner<
+pub struct ConnectedRunner<
     'resources,
     'irq,
     M: RawMutex,
@@ -201,7 +201,7 @@ pub struct WifiRunner<
         RX_QUEUE_DEPTH,
         TX_QUEUE_DEPTH,
     >,
-    backend: B,
+    services: B,
     rx_backpressured: bool,
 }
 
@@ -216,7 +216,7 @@ impl<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 >
-    WifiRunner<
+    ConnectedRunner<
         'resources,
         'irq,
         M,
@@ -228,10 +228,10 @@ impl<
         TX_QUEUE_DEPTH,
     >
 where
-    B: WifiRunnerBackend<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: ConnectedRunnerServices<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     async fn service_rx(&mut self) -> Result<(), B::Error> {
-        self.rx_backpressured = self.backend.service_rx().await? == WifiRxProgress::Backpressured;
+        self.rx_backpressured = self.services.service_rx().await? == WifiRxProgress::Backpressured;
         // One service call owns exactly the completion frontier captured at
         // its start. Yield at that hardware epoch boundary so a separate
         // protocol task can consume staged ownership before another RX epoch.
@@ -255,17 +255,22 @@ where
                     irq.wait_rx().await;
                 }
             };
-            let wake = select3(wait_rx, self.irq.wait_tx(), self.backend.wait_tx_deadline()).await;
+            let wake = select3(
+                wait_rx,
+                self.irq.wait_tx(),
+                self.services.wait_tx_deadline(),
+            )
+            .await;
             match wake {
                 Either3::First(()) => self.service_rx().await?,
                 Either3::Second(events) => {
                     progress = self
-                        .backend
+                        .services
                         .service_tx(WifiTxWake::Interrupt { events })
                         .await?;
                 }
                 Either3::Third(()) => {
-                    progress = self.backend.service_tx(WifiTxWake::Deadline).await?;
+                    progress = self.services.service_tx(WifiTxWake::Deadline).await?;
                 }
             }
         }
@@ -283,28 +288,28 @@ where
             RX_QUEUE_DEPTH,
             TX_QUEUE_DEPTH,
         >,
-        backend: B,
+        services: B,
     ) -> Self {
         Self {
             irq,
             network,
-            backend,
+            services,
             rx_backpressured: false,
         }
     }
 
-    pub const fn backend(&self) -> &B {
-        &self.backend
+    pub const fn services(&self) -> &B {
+        &self.services
     }
 
-    pub fn backend_mut(&mut self) -> &mut B {
-        &mut self.backend
+    pub fn services_mut(&mut self) -> &mut B {
+        &mut self.services
     }
 
     /// Return the network and hardware owners after the runner exits.
     ///
     /// A station lifecycle must be able to reclaim these values after
-    /// [`WifiRunnerExit::Disconnected`] in order to stop DMA, clear keys and
+    /// [`ConnectedRunnerExit::Disconnected`] in order to stop DMA, clear keys and
     /// construct a later association epoch. Keeping them recoverable also
     /// makes it impossible for `run` to hide teardown behind task-local
     /// globals.
@@ -322,12 +327,12 @@ where
         >,
         B,
     ) {
-        (self.network, self.backend)
+        (self.network, self.services)
     }
 
     /// Run the production radio event loop until connected policy proves the
     /// peer is unreachable.
-    pub async fn run(&mut self) -> Result<WifiRunnerExit, B::Error> {
+    pub async fn run(&mut self) -> Result<ConnectedRunnerExit, B::Error> {
         self.run_until(pending()).await
     }
 
@@ -341,9 +346,9 @@ where
     ///
     /// `stop` is observed only at transaction boundaries. If it becomes ready
     /// during TX, the normal IRQ/deadline path first releases hardware; the
-    /// next idle boundary returns [`WifiRunnerExit::Stopped`]. This makes
+    /// next idle boundary returns [`ConnectedRunnerExit::Stopped`]. This makes
     /// cancellation bounded without inventing an unsafe descriptor abort.
-    pub async fn run_until<S>(&mut self, stop: S) -> Result<WifiRunnerExit, B::Error>
+    pub async fn run_until<S>(&mut self, stop: S) -> Result<ConnectedRunnerExit, B::Error>
     where
         S: Future<Output = ()>,
     {
@@ -355,7 +360,7 @@ where
             if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
                 self.network
                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                return Ok(WifiRunnerExit::Stopped);
+                return Ok(ConnectedRunnerExit::Stopped);
             }
             // No TX owner is live at this boundary. Drain stale transaction
             // wakes before a control or network publication can create a new
@@ -364,7 +369,7 @@ where
             let control_context = WifiControlContext {
                 network_tx_pending: self.network.tx_queue_len() != 0,
             };
-            match self.backend.service_control(control_context).await? {
+            match self.services.service_control(control_context).await? {
                 WifiControlProgress::More => continue,
                 WifiControlProgress::TxPending => {
                     self.drive_active_tx().await?;
@@ -373,7 +378,7 @@ where
                 WifiControlProgress::Disconnected => {
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(WifiRunnerExit::Disconnected);
+                    return Ok(ConnectedRunnerExit::Disconnected);
                 }
                 WifiControlProgress::Idle => {}
             }
@@ -391,7 +396,7 @@ where
                 stop.as_mut(),
                 select3(
                     wait_rx,
-                    self.backend.wait_control_ready(),
+                    self.services.wait_control_ready(),
                     self.network.receive_tx(),
                 ),
             )
@@ -400,7 +405,7 @@ where
                 Either::First(()) => {
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                    return Ok(WifiRunnerExit::Stopped);
+                    return Ok(ConnectedRunnerExit::Stopped);
                 }
                 Either::Second(Either3::First(())) => self.service_rx().await?,
                 Either::Second(Either3::Second(())) => {}
@@ -415,10 +420,10 @@ where
                             drop(frame);
                             self.network
                                 .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                            return Ok(WifiRunnerExit::Stopped);
+                            return Ok(ConnectedRunnerExit::Stopped);
                         }
                         match self
-                            .backend
+                            .services
                             .service_control(WifiControlContext {
                                 network_tx_pending: true,
                             })
@@ -432,13 +437,13 @@ where
                                 drop(frame);
                                 self.network
                                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
-                                return Ok(WifiRunnerExit::Disconnected);
+                                return Ok(ConnectedRunnerExit::Disconnected);
                             }
                             WifiControlProgress::Idle => break,
                         }
                     }
                     let network_tx = self.network.tx_consumer();
-                    let progress = self.backend.start_tx(frame, &network_tx).await?;
+                    let progress = self.services.start_tx(frame, &network_tx).await?;
                     if progress == WifiTxProgress::Pending {
                         self.drive_active_tx().await?;
                     }
@@ -503,8 +508,15 @@ mod tests {
         }
     }
 
-    impl WifiRunnerBackend<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-        for Backend
+    impl
+        ConnectedRunnerServices<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        > for Backend
     {
         type Error = TestError;
 
@@ -621,7 +633,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -637,7 +649,7 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
         let mut run = std::boxed::Box::pin(runner.run());
         let mut context = Context::from_waker(core::task::Waker::noop());
 
@@ -648,7 +660,7 @@ mod tests {
             Err(TestError::Finished)
         );
         drop(run);
-        assert!(runner.backend().network_pending_seen);
+        assert!(runner.services().network_pending_seen);
     }
 
     #[test]
@@ -663,7 +675,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -679,15 +691,15 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
             Err(TestError::Finished)
         );
-        assert_eq!(runner.backend().order[..2], [1, 2]);
+        assert_eq!(runner.services().order[..2], [1, 2]);
         assert_eq!(
-            runner.backend().tx_wake,
+            runner.services().tx_wake,
             Some(WifiTxWake::Interrupt {
                 events: MAC_INT_TX_COMPLETE,
             })
@@ -706,7 +718,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -722,15 +734,15 @@ mod tests {
             repost_rx_when_backpressured: true,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
             Err(TestError::Finished)
         );
-        assert_eq!(runner.backend().order[..2], [1, 2]);
+        assert_eq!(runner.services().order[..2], [1, 2]);
         assert_eq!(
-            runner.backend().tx_wake,
+            runner.services().tx_wake,
             Some(WifiTxWake::Interrupt {
                 events: MAC_INT_TX_COMPLETE,
             })
@@ -750,7 +762,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -766,14 +778,14 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
             Err(TestError::Finished)
         );
-        assert_eq!(runner.backend().order[0], 2);
-        assert_eq!(runner.backend().tx_wake, Some(WifiTxWake::Deadline));
+        assert_eq!(runner.services().order[0], 2);
+        assert_eq!(runner.services().tx_wake, Some(WifiTxWake::Deadline));
     }
 
     #[test]
@@ -788,7 +800,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -804,13 +816,13 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
             Err(TestError::Finished)
         );
-        assert_eq!(runner.backend().order, [1, 2, 3]);
+        assert_eq!(runner.services().order, [1, 2, 3]);
     }
 
     #[test]
@@ -825,7 +837,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -841,19 +853,19 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run_until(core::future::ready(()))),
-            Ok(WifiRunnerExit::Stopped)
+            Ok(ConnectedRunnerExit::Stopped)
         );
         let mut context = Context::from_waker(core::task::Waker::noop());
         assert!(matches!(
             device.link_state(&mut context),
             open_esp_radio_embassy_net::LinkState::Down
         ));
-        let (_network, backend) = runner.into_parts();
-        assert!(!backend.disconnect);
+        let (_network, services) = runner.into_parts();
+        assert!(!services.disconnect);
     }
 
     #[test]
@@ -870,7 +882,7 @@ mod tests {
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
         let stop = std::boxed::Box::leak(std::boxed::Box::new(AtomicBool::new(false)));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -894,15 +906,15 @@ mod tests {
                 Poll::Pending
             }
         });
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run_until(stop_future)),
-            Ok(WifiRunnerExit::Stopped)
+            Ok(ConnectedRunnerExit::Stopped)
         );
-        assert_eq!(runner.backend().order[..2], [1, 2]);
+        assert_eq!(runner.services().order[..2], [1, 2]);
         assert_eq!(
-            runner.backend().tx_wake,
+            runner.services().tx_wake,
             Some(WifiTxWake::Interrupt {
                 events: MAC_INT_TX_COMPLETE,
             })
@@ -926,7 +938,7 @@ mod tests {
         let irq = std::boxed::Box::leak(std::boxed::Box::new(
             EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
         ));
-        let backend = Backend {
+        let services = Backend {
             irq,
             order: [0; 3],
             count: 0,
@@ -942,18 +954,18 @@ mod tests {
             repost_rx_when_backpressured: false,
             stop_after_tx: None,
         };
-        let mut runner = WifiRunner::new(irq, network, backend);
+        let mut runner = ConnectedRunner::new(irq, network, services);
 
         assert_eq!(
             embassy_futures::block_on(runner.run()),
-            Ok(WifiRunnerExit::Disconnected)
+            Ok(ConnectedRunnerExit::Disconnected)
         );
         let mut context = Context::from_waker(core::task::Waker::noop());
         assert!(matches!(
             device.link_state(&mut context),
             open_esp_radio_embassy_net::LinkState::Down
         ));
-        let (_network, backend) = runner.into_parts();
-        assert!(backend.disconnect);
+        let (_network, services) = runner.into_parts();
+        assert!(services.disconnect);
     }
 }

@@ -20,7 +20,7 @@ pub use open_esp_radio_esp32s31_wifi_sta::tx::{
 };
 use open_esp_radio_wifi_lmac::{MacTxPlan, MacTxQueueState, MacTxResult, MacTxStatus};
 
-use crate::runner::{WifiTxProgress, WifiTxWake};
+use crate::connected_runner::{WifiTxProgress, WifiTxWake};
 
 pub(crate) const TX_METADATA_SIZE: usize = 8;
 pub(crate) const TX_CCMP_MIC_SIZE: usize = 8;

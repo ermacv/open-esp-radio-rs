@@ -24,7 +24,7 @@ pub struct RxEnqueueCounterSnapshot {
 ///
 /// The counters do not participate in admission. They only make the sink's
 /// existing local accounting observable while its production owner is inside
-/// a long-running [`crate::runner::WifiRunner`].
+/// a long-running [`crate::connected_runner::ConnectedRunner`].
 pub struct RxEnqueueCounters {
     enqueued: AtomicU32,
     dropped: AtomicU32,

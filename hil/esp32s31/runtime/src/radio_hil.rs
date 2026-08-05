@@ -94,7 +94,8 @@ use open_esp_radio::{
         esp32s31::wifi_embassy::{
             aggregate_observer::{AggregateTxCounterSnapshot, AggregateTxCounters},
             aggregate_tx::{AggregateTxError, AggregateTxResetReason},
-            backend::Esp32s31WifiBackendError,
+            connected_runner::ConnectedRunner,
+            connected_services::Esp32s31ConnectedServicesError,
             connected_sta_port::{
                 Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaControlResources,
                 Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaNetworkTxDomain,
@@ -114,7 +115,6 @@ use open_esp_radio::{
             network_rx::{EmbassyNetConnectedRxSink, RxEnqueueCounters},
             phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            runner::WifiRunner,
             rx_backend::{
                 ESP32S31_RX_BUFFER_SIZE, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
                 Esp32s31StoppedRx,
@@ -195,7 +195,8 @@ use open_esp_radio_hil_protocol::{
 };
 
 use crate::radio_fault::{
-    ArmedStationFault, FaultInjectingBackendError, FaultInjectingWifiBackend, STATION_FAULT_CONTROL,
+    ArmedStationFault, FaultInjectingConnectedServices, FaultInjectingServicesError,
+    STATION_FAULT_CONTROL,
 };
 
 mod phy_diagnostics;
@@ -410,7 +411,7 @@ const OPEN_RADIO_HE_DCM_HIL: bool = option_env!("OPEN_RADIO_HE_DCM_HIL").is_some
 const OPEN_RADIO_HE_TB_HIL: bool = option_env!("OPEN_RADIO_HE_TB_HIL").is_some();
 const _: () = assert!(
     !OPEN_RADIO_RAW_MAC_BENCH && !OPEN_RADIO_AMSDU_BENCH && !OPEN_RADIO_NETWORK_AMSDU_BENCH,
-    "legacy raw/A-MPDU/A-MSDU HIL profiles are not wired to the production WifiRunner"
+    "legacy raw/A-MPDU/A-MSDU HIL profiles are not wired to the production ConnectedRunner"
 );
 // One slot must admit the complete baseline 3,839-byte A-MSDU class plus the
 // outer QoS/CCMP headers, hardware MIC/FCS and S31 private metadata.
@@ -1098,17 +1099,17 @@ enum RadioHilConnectedExit {
 }
 
 fn injected_tx_source_requires_reset<R, C>(
-    source: &Esp32s31WifiBackendError<R, C, AggregateTxError>,
+    source: &Esp32s31ConnectedServicesError<R, C, AggregateTxError>,
 ) -> bool {
     let expected_events = MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT;
     matches!(
         source,
-        Esp32s31WifiBackendError::Tx(AggregateTxError::RadioResetRequired(
+        Esp32s31ConnectedServicesError::Tx(AggregateTxError::RadioResetRequired(
             AggregateTxResetReason::ConflictingInterruptEvents(events),
         )) if *events == expected_events
     ) || matches!(
         source,
-        Esp32s31WifiBackendError::Tx(AggregateTxError::Ordinary(
+        Esp32s31ConnectedServicesError::Tx(AggregateTxError::Ordinary(
             SingleMpduTxError::RadioResetRequired(TxResetReason::ConflictingInterruptEvents(
                 events,
             )),
@@ -4215,8 +4216,8 @@ async fn run_connected_network<'fixture, 'security>(
         },
     );
     let rx_protocol = drivers.protocol;
-    let backend = FaultInjectingWifiBackend::new(drivers.backend, &STATION_FAULT_CONTROL);
-    let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
+    let services = FaultInjectingConnectedServices::new(drivers.services, &STATION_FAULT_CONTROL);
+    let mut radio_runner = ConnectedRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, services);
 
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {
@@ -4269,7 +4270,7 @@ async fn run_connected_network<'fixture, 'security>(
     .await
     {
         Esp32s31ConnectedStationExit::Disconnected => {
-            let control = radio_runner.backend().inner().control();
+            let control = radio_runner.services().inner().control();
             let beacon_monitor = control.beacon_monitor();
             let beacon_lost = control.beacon_lost();
             emergency_log(format_args!(
@@ -4299,7 +4300,7 @@ async fn run_connected_network<'fixture, 'security>(
             RadioHilConnectedExit::StationStopped(command)
         }
         Esp32s31ConnectedStationExit::HardwareFailure(error) => match error {
-            FaultInjectingBackendError::InjectedTxAfterPublication { fault, source } => {
+            FaultInjectingServicesError::InjectedTxAfterPublication { fault, source } => {
                 let reset_required = injected_tx_source_requires_reset(&source);
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result={} stage=production-runner-fault \
@@ -4314,13 +4315,13 @@ async fn run_connected_network<'fixture, 'security>(
                     reset_required,
                 }
             }
-            FaultInjectingBackendError::Inner(error) => {
+            FaultInjectingServicesError::Inner(error) => {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
                 ));
                 RadioHilConnectedExit::HardwareFailure
             }
-            FaultInjectingBackendError::InjectionContractViolation { fault, progress } => {
+            FaultInjectingServicesError::InjectionContractViolation { fault, progress } => {
                 emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner-fault \
                          injection={:?} request_id={} contract_progress={progress:?}",
@@ -4381,19 +4382,19 @@ async fn run_connected_network<'fixture, 'security>(
         protocol_shutdown.active_reorders,
     ));
     let (frame, ethernet) = stopped_protocol.into_scratch();
-    let (network, backend) = radio_runner.into_parts();
-    let backend = backend.into_inner();
-    let mut teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(backend, group_slot) {
+    let (network, services) = radio_runner.into_parts();
+    let services = services.into_inner();
+    let mut teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_slot) {
         Ok(teardown) => teardown,
         Err(Esp32s31ConnectedStaTeardownFailure::Control {
             error,
-            backend,
+            services,
             group_key,
         }) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-control-stop error={error:?}"
             ));
-            let _owners = (network, backend, group_key);
+            let _owners = (network, services, group_key);
             loop {
                 Timer::after_secs(60).await;
             }

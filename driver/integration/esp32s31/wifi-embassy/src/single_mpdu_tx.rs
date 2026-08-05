@@ -19,6 +19,7 @@ use open_esp_radio_ieee80211::station::{
 use open_esp_radio_ieee80211::station_power_save::{StaNullDataFrame, StaPowerManagement};
 use open_esp_radio_wifi_lmac::{MacTxPlan, MacTxQueueState};
 
+use crate::connected_runner::{WifiTxProgress, WifiTxWake};
 use crate::ordinary_tx::{
     OrdinaryTxError, OrdinaryTxOwner, OrdinaryTxPlan, TX_CCMP_MIC_SIZE, TX_METADATA_SIZE,
 };
@@ -27,7 +28,6 @@ pub use crate::ordinary_tx::{
     TxResetReason, WifiTxEntropy, WifiTxPowerPair, WifiTxPowerProfile, WifiTxResources,
     WifiTxTimer,
 };
-use crate::runner::{WifiTxProgress, WifiTxWake};
 pub use crate::tx_time::EmbassyWifiTxTimer;
 
 /// Association-derived inputs for the first ordinary connected-data slice.

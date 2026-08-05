@@ -18,7 +18,7 @@ use open_esp_radio_wifi_sta::station::{
     StaLifecycleService, StaNextCandidate, StaReconnectPolicy,
 };
 
-use crate::runner::{WifiRunner, WifiRunnerBackend, WifiRunnerExit};
+use crate::connected_runner::{ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices};
 
 pub use crate::station_tasks::{
     Esp32s31ConnectedTaskGroup, Esp32s31ConnectedTaskStopOutcome,
@@ -170,7 +170,7 @@ impl<M: RawMutex> Esp32s31StationController<'_, M> {
 /// Single-consumer command side supplied to the concrete lifecycle backend.
 ///
 /// A connected backend must observe this future only at a cancellation-safe
-/// edge such as [`crate::runner::WifiRunner::run_until`]. It records a
+/// edge such as [`crate::connected_runner::ConnectedRunner::run_until`]. It records a
 /// terminal command only when it returns `StaAttemptOutcome::Stopped`;
 /// `Reconnect` normally becomes a disconnected epoch instead.
 pub struct Esp32s31StationCommandReceiver<'resources, M: RawMutex> {
@@ -264,7 +264,7 @@ fn complete_connected_station_command<E, M: RawMutex>(
 
 /// Run one connected hardware owner until peer loss or a station command.
 ///
-/// `WifiRunner` observes the stop future only at a transaction-safe boundary.
+/// `ConnectedRunner` observes the stop future only at a transaction-safe boundary.
 /// A simultaneous peer disconnect is then coalesced with any still-pending
 /// application command before ownership is handed back to the outer lifecycle.
 pub async fn run_esp32s31_connected_station_epoch<
@@ -279,7 +279,7 @@ pub async fn run_esp32s31_connected_station_epoch<
     const RX_QUEUE_DEPTH: usize,
     const TX_QUEUE_DEPTH: usize,
 >(
-    runner: &mut WifiRunner<
+    runner: &mut ConnectedRunner<
         'resources,
         'irq,
         RM,
@@ -295,15 +295,15 @@ pub async fn run_esp32s31_connected_station_epoch<
 where
     RM: NetworkRawMutex,
     CM: RawMutex,
-    B: WifiRunnerBackend<'resources, RM, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+    B: ConnectedRunnerServices<'resources, RM, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
 {
     let requested_command = core::cell::Cell::new(None);
     let station_stop = async {
         requested_command.set(Some(control.wait().await));
     };
     match runner.run_until(station_stop).await {
-        Ok(WifiRunnerExit::Disconnected) => coalesce_disconnected_station_command(control),
-        Ok(WifiRunnerExit::Stopped) => {
+        Ok(ConnectedRunnerExit::Disconnected) => coalesce_disconnected_station_command(control),
+        Ok(ConnectedRunnerExit::Stopped) => {
             let command = requested_command
                 .get()
                 .expect("a stopped station runner consumed one controller command");

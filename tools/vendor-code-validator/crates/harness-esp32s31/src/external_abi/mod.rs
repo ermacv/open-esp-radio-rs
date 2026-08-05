@@ -10,6 +10,23 @@ use open_radio_vendor_validator_core::{
 };
 
 const NO_ARGUMENTS: &[ExternalArgumentSpec] = &[];
+const WIFI_INT_DISABLE_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
+    name: "interrupt_mux",
+    c_type: "*mut void",
+    direction: ExternalArgumentDirection::InputOutput,
+}];
+const WIFI_INT_RESTORE_ARGUMENTS: &[ExternalArgumentSpec] = &[
+    ExternalArgumentSpec {
+        name: "interrupt_mux",
+        c_type: "*mut void",
+        direction: ExternalArgumentDirection::InputOutput,
+    },
+    ExternalArgumentSpec {
+        name: "restore_state",
+        c_type: "u32",
+        direction: ExternalArgumentDirection::Input,
+    },
+];
 const COEX_PTI_ARGUMENTS: &[ExternalArgumentSpec] = &[
     ExternalArgumentSpec {
         name: "pti_kind",
@@ -203,6 +220,32 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NO_ARGUMENTS,
             return_type: "bool (ABI u32)",
             replacement: Some("compile-time target capability"),
+        },
+    },
+    ExternalFunctionSpec {
+        id: "wifi-int-disable",
+        offset: 0x028,
+        c_name: "_wifi_int_disable",
+        argument_count: 1,
+        return_model: ExternalReturnModel::Unmodeled,
+        semantic: ExternalSemanticSpec {
+            operation: "critical-section.enter",
+            arguments: WIFI_INT_DISABLE_ARGUMENTS,
+            return_type: "restore-state u32",
+            replacement: Some("Rust interrupt critical-section guard"),
+        },
+    },
+    ExternalFunctionSpec {
+        id: "wifi-int-restore",
+        offset: 0x02c,
+        c_name: "_wifi_int_restore",
+        argument_count: 2,
+        return_model: ExternalReturnModel::Unmodeled,
+        semantic: ExternalSemanticSpec {
+            operation: "critical-section.exit",
+            arguments: WIFI_INT_RESTORE_ARGUMENTS,
+            return_type: "void",
+            replacement: Some("Rust interrupt critical-section guard release"),
         },
     },
     ExternalFunctionSpec {
@@ -421,9 +464,9 @@ const ESP32S31_WIFI_OSI_V9: ExternalTableSpec = ExternalTableSpec {
 pub const WIFI_OSI_V9: ExternalTableRef = ExternalTableRef::new(&ESP32S31_WIFI_OSI_V9);
 pub const ENV_IS_CHIP: ExternalFunctionRef =
     ExternalFunctionRef::new(&ESP32S31_WIFI_OSI_V9_FUNCTIONS[0]);
-pub const RAND: ExternalFunctionRef = ExternalFunctionRef::new(&ESP32S31_WIFI_OSI_V9_FUNCTIONS[1]);
+pub const RAND: ExternalFunctionRef = ExternalFunctionRef::new(&ESP32S31_WIFI_OSI_V9_FUNCTIONS[3]);
 pub const RANDOM: ExternalFunctionRef =
-    ExternalFunctionRef::new(&ESP32S31_WIFI_OSI_V9_FUNCTIONS[2]);
+    ExternalFunctionRef::new(&ESP32S31_WIFI_OSI_V9_FUNCTIONS[4]);
 
 #[cfg(test)]
 pub fn slots(table: ExternalTableRef) -> impl Iterator<Item = ExternalFunctionRef> {

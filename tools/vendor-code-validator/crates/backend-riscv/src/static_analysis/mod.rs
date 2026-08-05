@@ -6,11 +6,12 @@ use rv_asm::{Inst, Reg};
 
 use crate::{
     BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
-    DraftReferenceEvent, ExpressionOperation, ExternalReturnModel, ExternalTableRef,
-    FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister, MemoryAccess,
-    MmioRegisterMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT,
-    Result, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact,
-    collect_evaluable_input_bits, encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation, ExternalReturnModel,
+    ExternalTableRef, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister,
+    MemoryAccess, MmioRegisterMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
+    RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG,
+    SymbolicValue, artifact, collect_evaluable_input_bits, encode_fence_set, evaluate_for_input,
+    indexed_mmio_domain,
 };
 
 mod context;
@@ -38,6 +39,8 @@ const MAX_STRUCTURAL_INSTRUCTION_VISITS: u16 = 1_024;
 #[derive(Debug)]
 pub struct RiscvSummaryHooks {
     pub secondary_return_target: fn(u32) -> bool,
+    pub direct_semantic:
+        fn(&artifact::ArtifactSymbolDefinition) -> Option<&'static DirectSemanticFunctionSpec>,
     pub reference_intrinsic: fn(
         &artifact::ArtifactSymbolDefinition,
         &MmioRegisterMap,

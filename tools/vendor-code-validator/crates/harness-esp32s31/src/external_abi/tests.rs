@@ -18,6 +18,19 @@ fn rand_and_random_are_distinct_slots() {
 }
 
 #[test]
+fn wifi_interrupt_critical_section_slots_are_typed_and_unmodeled() {
+    for (offset, operation, arguments) in [
+        (0x028, "critical-section.enter", 1),
+        (0x02c, "critical-section.exit", 2),
+    ] {
+        let function = WIFI_OSI_V9.function_at(offset).unwrap().spec();
+        assert_eq!(function.semantic.operation, operation);
+        assert_eq!(function.argument_count, arguments);
+        assert_eq!(function.return_model, ExternalReturnModel::Unmodeled);
+    }
+}
+
+#[test]
 fn every_external_slot_has_a_typed_semantic_contract() {
     for function in WIFI_OSI_V9.spec().functions {
         assert!(!function.semantic.operation.is_empty());

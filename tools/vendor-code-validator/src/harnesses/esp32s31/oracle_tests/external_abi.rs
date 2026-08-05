@@ -132,6 +132,28 @@ fn real_libpp_hal_random_resolves_through_wifi_osi_abi() {
 }
 
 #[test]
+fn real_libpp_pp_post_matches_the_reviewed_direct_semantic_contract() {
+    let artifact = private_input("OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE").unwrap_or_default();
+    if !artifact.exists() {
+        eprintln!("private libpp fixture is not installed; integration test skipped");
+        return;
+    }
+
+    let symbols = artifact::load_all_code_symbols(&artifact, "pp_post").unwrap();
+    let symbol = symbols
+        .iter()
+        .find(|symbol| symbol.member.as_deref() == Some("pp.o") && symbol.name == "pp_post")
+        .expect("reviewed libpp fixture must contain pp.o:pp_post");
+    let contract = (RISCV_HARNESS.summaries.direct_semantic)(symbol)
+        .expect("reviewed libpp pp_post body and relocations must match");
+
+    assert_eq!(contract.id, "esp32s31-libpp-pp-post-v1");
+    assert_eq!(contract.semantic.operation, "wifi.internal-signal.post");
+    assert_eq!(contract.semantic.arguments.len(), 1);
+    assert_eq!(contract.semantic.arguments[0].name, "signal");
+}
+
+#[test]
 fn real_wdev_append_rx_blocks_recognizes_wifi_assert_as_a_diagnostic_boundary() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()

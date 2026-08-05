@@ -231,6 +231,12 @@ fn no_test_memory_intrinsic(
     None
 }
 
+fn no_test_direct_semantic(
+    _symbol: &artifact::ArtifactSymbolDefinition,
+) -> Option<&'static DirectSemanticFunctionSpec> {
+    None
+}
+
 fn no_test_wide_divide(
     _symbol: &artifact::ArtifactSymbolDefinition,
     _arguments: &Rv32CallArguments,
@@ -240,6 +246,7 @@ fn no_test_wide_divide(
 
 static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |_| false,
+    direct_semantic: no_test_direct_semantic,
     reference_intrinsic: test_reference_intrinsic,
     standard_memory_intrinsic: no_test_memory_intrinsic,
     wide_signed_divide: no_test_wide_divide,

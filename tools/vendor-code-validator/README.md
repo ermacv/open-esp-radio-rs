@@ -94,7 +94,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v17 records the selection mode plus root and
+`reachable-internal`, and schema v18 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v17 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v18 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v17 records
+symbolic states. Schema v18 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -178,6 +178,18 @@ avoid unbounded affine offsets or combinatorial output. The top-level
 both an already-composed caller flow and the separately analyzed callee are
 counted once while retaining both provenance paths.
 
+The same path walk emits `semantic_actions`: one record for every recovered
+semantic call on every explored simple call path. Each action retains its
+origin, static call site, target, typed argument values, replacement hint and
+any affine projection back to root arguments. It also carries the exact
+contract source, stable ID and evidence rule that justified the semantic name.
+The top-level
+`semantic_action_mode: "simple-call-paths-affine-root-bindings"` is explicit
+because this is a path-qualified manual-analysis inventory, not a total runtime
+order. Mutually exclusive paths can both contribute actions, loops are
+represented by recovered shapes rather than iteration counts, and recursive
+revisits stop at the projection boundary.
+
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,
 branches, internal calls, diagnostic calls, scratch buffers, and named
@@ -209,7 +221,9 @@ name, typed/named input/output arguments, return type and optional replacement
 hint. The ESP32-S31 Wi-Fi OSI v9 contract currently identifies ISR queue
 notifications, task delays, event posting, microsecond timers, NVS
 open/commit/blob operations, logging, randomness, clock calibration and
-coexistence PTI queries. Pseudo-Rust renders these as calls such as
+coexistence PTI queries. The table also records critical-section enter/exit
+slots even though their interrupt-state effects remain deliberately unmodeled.
+Pseudo-Rust renders these as calls such as
 `semantic.rtos_queue_send_from_isr(...)` while retaining table version and
 slot. Slots whose meaning is known but whose complete memory/scheduler effects
 are not modeled emit `unmodeled-external-semantics`; their opaque return data
@@ -220,6 +234,15 @@ The report also builds a top-level `semantic_boundaries` index. It groups each
 operation across artifacts by calling functions, concrete ABI targets and
 replacement hints, so RTOS, timer, NVS and logging dependencies can be audited
 without first reading every recovered function body.
+
+Semantic boundaries are not limited to callback-table slots. A platform
+harness may assign a typed operation to a direct internal vendor function only
+after an exact reviewed body-and-relocation fingerprint matches. For the
+ESP32-S31 `libpp.a` contract this recognizes `pp_post(signal)` as
+`wifi.internal-signal.post`; a changed body, member, symbol layout or relocation
+schema stays an ordinary internal call. This lets callers such as
+`wDev_ProcessFiq` expose the recovered signal argument without pretending that
+the helper is an RTOS event API or weakening its ordinary body analysis.
 
 Known function-table calls additionally carry a structured `trampoline`
 record. It includes the table pointer and backing symbols, version, magic and

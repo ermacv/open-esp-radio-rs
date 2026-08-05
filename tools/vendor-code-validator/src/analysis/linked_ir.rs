@@ -54,6 +54,13 @@ pub(crate) struct LinkedTrampoline {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedSemanticContract {
+    pub(crate) source: &'static str,
+    pub(crate) id: String,
+    pub(crate) evidence: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCall {
     pub(crate) kind: &'static str,
     pub(crate) target: String,
@@ -62,6 +69,7 @@ pub(crate) struct LinkedCall {
     pub(crate) result_modeled: bool,
     pub(crate) semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
+    pub(crate) semantic_contract: Option<LinkedSemanticContract>,
     pub(crate) replacement_hint: Option<String>,
     pub(crate) project_symbol: Option<String>,
     pub(crate) project_candidates: Vec<String>,
@@ -195,7 +203,7 @@ pub(crate) struct LinkedSummaryContextField {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(crate) struct LinkedProjectedTrampolineArgument {
+pub(crate) struct LinkedProjectedCallArgument {
     pub(crate) position: usize,
     pub(crate) name: String,
     pub(crate) c_type: String,
@@ -212,7 +220,20 @@ pub(crate) struct LinkedProjectedTrampolineCall {
     pub(crate) origin: String,
     pub(crate) path: String,
     pub(crate) argument_shapes: usize,
-    pub(crate) arguments: Vec<LinkedProjectedTrampolineArgument>,
+    pub(crate) arguments: Vec<LinkedProjectedCallArgument>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedProjectedSemanticAction {
+    pub(crate) operation: String,
+    pub(crate) target: String,
+    pub(crate) contract: Option<LinkedSemanticContract>,
+    pub(crate) replacement_hint: Option<String>,
+    pub(crate) origin: String,
+    pub(crate) path: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) argument_shapes: usize,
+    pub(crate) arguments: Vec<LinkedProjectedCallArgument>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -237,6 +258,7 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<LinkedSummaryContextField>,
     pub(crate) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
+    pub(crate) semantic_actions: Vec<LinkedProjectedSemanticAction>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -677,6 +699,32 @@ fn external_typed_arguments(
         .collect()
 }
 
+fn direct_semantic_typed_arguments(
+    function: &crate::DirectSemanticFunctionSpec,
+    arguments: &[String],
+) -> Vec<LinkedCallArgument> {
+    arguments
+        .iter()
+        .take(usize::from(function.argument_count))
+        .enumerate()
+        .map(|(position, value)| {
+            let semantic = function.semantic.arguments.get(position);
+            LinkedCallArgument {
+                position,
+                name: semantic.map_or_else(
+                    || format!("arg{position}"),
+                    |argument| argument.name.to_owned(),
+                ),
+                c_type: semantic
+                    .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
+                direction: semantic
+                    .map_or("unknown", |argument| external_direction(argument.direction)),
+                value: value.clone(),
+            }
+        })
+        .collect()
+}
+
 fn branch_expression(condition: &BranchCondition) -> String {
     let left = pseudo_value(&condition.left);
     let right = pseudo_value(&condition.right);
@@ -763,6 +811,7 @@ struct LinkedCallIdentity {
     result_modeled: bool,
     semantics: Option<String>,
     semantic_operation: Option<String>,
+    semantic_contract: Option<LinkedSemanticContract>,
     replacement_hint: Option<String>,
     project_symbol: Option<String>,
     project_candidates: Vec<String>,
@@ -780,6 +829,7 @@ impl From<&LinkedCall> for LinkedCallIdentity {
             result_modeled: call.result_modeled,
             semantics: call.semantics.clone(),
             semantic_operation: call.semantic_operation.clone(),
+            semantic_contract: call.semantic_contract.clone(),
             replacement_hint: call.replacement_hint.clone(),
             project_symbol: call.project_symbol.clone(),
             project_candidates: call.project_candidates.clone(),
@@ -900,6 +950,11 @@ fn collect_call_event(
             ),
             semantics: external_semantics(event),
             semantic_operation: Some(function.spec().semantic.operation.to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "registered-external-table-slot",
+                id: format!("{}::{}", table.spec().id, function.spec().id),
+                evidence: "exact-pointer-cell-and-slot".to_owned(),
+            }),
             replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -921,6 +976,11 @@ fn collect_call_event(
             result_modeled: false,
             semantics: Some("diagnostic/logging boundary".to_owned()),
             semantic_operation: Some("diagnostic.emit".to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "registered-diagnostic-symbol",
+                id: function.clone(),
+                evidence: "relocated-symbol-and-reviewed-arity".to_owned(),
+            }),
             replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -947,6 +1007,7 @@ fn collect_call_event(
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -973,6 +1034,7 @@ fn collect_call_event(
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -995,6 +1057,7 @@ fn collect_call_event(
             result_modeled: *result_modeled,
             semantics: Some("callee body was composed by the reference resolver".to_owned()),
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -1025,6 +1088,7 @@ fn collect_call_event(
                 "scratch argument={scratch_argument} size={scratch_size}"
             )),
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -1051,6 +1115,7 @@ fn collect_call_event(
                 "composed callee with scratch argument={scratch_argument} size={scratch_size}"
             )),
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -1136,6 +1201,7 @@ fn explore_direct_calls(
                             .to_owned(),
                     ),
                     semantic_operation: None,
+                    semantic_contract: None,
                     replacement_hint: None,
                     project_symbol: Some(relocation.symbol.clone()),
                     project_candidates: Vec::new(),
@@ -2228,9 +2294,14 @@ fn render_pseudo(
         let site = call
             .site
             .map_or_else(|| "unknown-site".to_owned(), |site| format!("{site:#010x}"));
+        let semantic = call.semantic_operation.as_deref().unwrap_or("-");
+        let contract = call
+            .semantic_contract
+            .as_ref()
+            .map_or("-", |contract| contract.id.as_str());
         writeln!(
             output,
-            "// DIRECT-CALL {site}: {} {}{} [argument-shapes={}]",
+            "// DIRECT-CALL {site}: {} {}{} [argument-shapes={}] [semantic={semantic}] [contract={contract}]",
             call.kind,
             call.target,
             if call.tail { " [tail]" } else { "" },
@@ -2283,6 +2354,44 @@ fn calls_for_trace(
         }
     }
     compact_calls(calls)
+}
+
+fn annotate_direct_semantic_calls(
+    calls: &mut [LinkedCall],
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+) {
+    let Some(hooks) = resolver.pointer_context.summary_hooks else {
+        return;
+    };
+    for call in calls
+        .iter_mut()
+        .filter(|call| call.kind == "internal" && call.semantic_operation.is_none())
+    {
+        let Some(symbol) = identities.selectable_symbol(&call.target) else {
+            continue;
+        };
+        let Some(function) = (hooks.direct_semantic)(symbol) else {
+            continue;
+        };
+        debug_assert_eq!(
+            function.semantic.arguments.len(),
+            usize::from(function.argument_count),
+            "direct semantic ABI arity must match its typed arguments"
+        );
+        call.semantics = Some(format!(
+            "reviewed direct semantic function={} args={} operation={}",
+            function.c_name, function.argument_count, function.semantic.operation,
+        ));
+        call.semantic_operation = Some(function.semantic.operation.to_owned());
+        call.semantic_contract = Some(LinkedSemanticContract {
+            source: "reviewed-internal-function",
+            id: function.id.to_owned(),
+            evidence: function.evidence.to_owned(),
+        });
+        call.replacement_hint = function.semantic.replacement.map(str::to_owned);
+        call.typed_arguments = direct_semantic_typed_arguments(function, &call.arguments);
+    }
 }
 
 pub(crate) fn build_linked_ir_for_source(
@@ -2342,11 +2451,12 @@ pub(crate) fn build_linked_ir_for_source(
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
                 let delays = delays_for_trace(&trace);
-                let calls = if direct_calls.is_empty() {
+                let mut calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
                     compact_calls(direct_calls)
                 };
+                annotate_direct_semantic_calls(&mut calls, resolver, &identities);
                 let flow_kind = if trace.reference_flow.is_some() {
                     "structured"
                 } else if trace.is_reference_eligible() {
@@ -2409,6 +2519,8 @@ pub(crate) fn build_linked_ir_for_source(
             Err(error) => {
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
                 let direct_blockers = rendered_diagnostics(&direct_diagnostics);
+                let mut calls = compact_calls(direct_calls);
+                annotate_direct_semantic_calls(&mut calls, resolver, &identities);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
@@ -2424,7 +2536,7 @@ pub(crate) fn build_linked_ir_for_source(
                     exact: false,
                     return_value: "unknown".to_owned(),
                     dependencies: Vec::new(),
-                    calls: compact_calls(direct_calls),
+                    calls,
                     mmio_accesses: Vec::new(),
                     delays: Vec::new(),
                     context_accesses: Vec::new(),
@@ -2643,6 +2755,61 @@ fn local_context_access(access: &ContextAccess) -> bool {
         .any(|component| component.starts_with("call "))
 }
 
+fn project_call_arguments(
+    call: &LinkedCall,
+    argument_map: &[Option<(u8, i32)>],
+    blockers: &mut BTreeSet<String>,
+    boundary: &str,
+    path: &str,
+) -> Vec<LinkedProjectedCallArgument> {
+    call.typed_arguments
+        .iter()
+        .map(|argument| {
+            let affine = call
+                .argument_bindings
+                .iter()
+                .find(|binding| binding.position == argument.position);
+            let pointer = argument.c_type.contains('*');
+            let (binding, root_argument, root_offset) = if !pointer {
+                ("non-pointer", None, None)
+            } else if let Some(affine) = affine {
+                match argument_map
+                    .get(usize::from(affine.caller_argument))
+                    .copied()
+                    .flatten()
+                    .and_then(|(argument, offset)| {
+                        offset
+                            .checked_add(affine.offset)
+                            .map(|offset| (argument, offset))
+                    }) {
+                    Some((argument, offset)) => {
+                        ("affine-root-context", Some(argument), Some(offset))
+                    }
+                    None => {
+                        blockers.insert(format!(
+                            "semantic pointer binding cannot reach root: {boundary} arg{} along {path}",
+                            argument.position
+                        ));
+                        ("affine-origin-context-unavailable", None, None)
+                    }
+                }
+            } else {
+                ("not-affine-caller-context", None, None)
+            };
+            LinkedProjectedCallArgument {
+                position: argument.position,
+                name: argument.name.clone(),
+                c_type: argument.c_type.clone(),
+                direction: argument.direction,
+                value: argument.value.clone(),
+                binding,
+                root_argument,
+                root_offset,
+            }
+        })
+        .collect()
+}
+
 fn project_context_fields(
     root: usize,
     functions: &[LinkedIrFunction],
@@ -2654,6 +2821,7 @@ fn project_context_fields(
     Vec<String>,
     Vec<LinkedSummaryContextField>,
     Vec<LinkedProjectedTrampolineCall>,
+    Vec<LinkedProjectedSemanticAction>,
 ) {
     let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
     for argument in 0..LINKED_CONTEXT_ARGUMENTS {
@@ -2668,6 +2836,7 @@ fn project_context_fields(
     let mut blockers = BTreeSet::new();
     let mut fields = BTreeMap::<(u8, i32, u8), SummaryContextAccumulator>::new();
     let mut trampoline_calls = BTreeSet::new();
+    let mut semantic_actions = BTreeSet::new();
     let mut explored = 0_usize;
 
     while let Some(state) = queue.pop_front() {
@@ -2682,6 +2851,38 @@ fn project_context_fields(
         for call in function
             .calls
             .iter()
+            .filter(|call| call.semantic_operation.is_some())
+        {
+            let operation = call
+                .semantic_operation
+                .as_ref()
+                .expect("filtered semantic call")
+                .clone();
+            let site = call
+                .site
+                .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
+            let boundary = format!("{operation} via {}", call.target);
+            semantic_actions.insert(LinkedProjectedSemanticAction {
+                path: format!("{} --semantic@{}--> {}", state.path, site, call.target),
+                operation,
+                target: call.target.clone(),
+                contract: call.semantic_contract.clone(),
+                replacement_hint: call.replacement_hint.clone(),
+                origin: function.identity.clone(),
+                site: call.site,
+                argument_shapes: call.argument_shapes,
+                arguments: project_call_arguments(
+                    call,
+                    &state.argument_map,
+                    &mut blockers,
+                    &boundary,
+                    &state.path,
+                ),
+            });
+        }
+        for call in function
+            .calls
+            .iter()
             .filter(|call| call.trampoline.is_some())
         {
             let trampoline = call
@@ -2689,57 +2890,14 @@ fn project_context_fields(
                 .as_ref()
                 .expect("filtered trampoline call")
                 .clone();
-            let arguments = call
-                .typed_arguments
-                .iter()
-                .map(|argument| {
-                    let affine = call
-                        .argument_bindings
-                        .iter()
-                        .find(|binding| binding.position == argument.position);
-                    let pointer = argument.c_type.contains('*');
-                    let (binding, root_argument, root_offset) = if !pointer {
-                        ("non-pointer", None, None)
-                    } else if let Some(affine) = affine {
-                        match state
-                            .argument_map
-                            .get(usize::from(affine.caller_argument))
-                            .copied()
-                            .flatten()
-                            .and_then(|(argument, offset)| {
-                                offset
-                                    .checked_add(affine.offset)
-                                    .map(|offset| (argument, offset))
-                            }) {
-                            Some((argument, offset)) => {
-                                ("affine-root-context", Some(argument), Some(offset))
-                            }
-                            None => {
-                                blockers.insert(format!(
-                                    "trampoline pointer binding cannot reach root: {} {} arg{} along {}",
-                                    trampoline.table,
-                                    trampoline.c_name,
-                                    argument.position,
-                                    state.path
-                                ));
-                                ("affine-origin-context-unavailable", None, None)
-                            }
-                        }
-                    } else {
-                        ("not-affine-caller-context", None, None)
-                    };
-                    LinkedProjectedTrampolineArgument {
-                        position: argument.position,
-                        name: argument.name.clone(),
-                        c_type: argument.c_type.clone(),
-                        direction: argument.direction,
-                        value: argument.value.clone(),
-                        binding,
-                        root_argument,
-                        root_offset,
-                    }
-                })
-                .collect();
+            let boundary = format!("{} {}", trampoline.table, trampoline.c_name);
+            let arguments = project_call_arguments(
+                call,
+                &state.argument_map,
+                &mut blockers,
+                &boundary,
+                &state.path,
+            );
             trampoline_calls.insert(LinkedProjectedTrampolineCall {
                 path: format!(
                     "{} --trampoline@{}+{:#x}--> {}",
@@ -2875,6 +3033,7 @@ fn project_context_fields(
         blockers.into_iter().collect(),
         fields,
         trampoline_calls.into_iter().collect(),
+        semantic_actions.into_iter().collect(),
     )
 }
 
@@ -2890,6 +3049,10 @@ fn projection_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usiz
         .map(|function| {
             function.context_accesses.iter().any(local_context_access)
                 || function.calls.iter().any(|call| call.trampoline.is_some())
+                || function
+                    .calls
+                    .iter()
+                    .any(|call| call.semantic_operation.is_some())
         })
         .collect::<Vec<_>>();
     let mut queue = reachable
@@ -3051,6 +3214,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_projection_blockers,
                 context_fields,
                 trampoline_calls,
+                semantic_actions,
             ) = project_context_fields(
                 root,
                 functions,
@@ -3102,6 +3266,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_projection_blockers,
                 context_fields,
                 trampoline_calls,
+                semantic_actions,
             }
         })
         .collect::<Vec<_>>();
@@ -3613,6 +3778,14 @@ mod tests {
             call.semantic_operation.as_deref(),
             Some("time.delay-micros")
         );
+        assert_eq!(
+            call.semantic_contract.as_ref(),
+            Some(&LinkedSemanticContract {
+                source: "registered-external-table-slot",
+                id: "wifi_osi::delay_us".to_owned(),
+                evidence: "exact-pointer-cell-and-slot".to_owned(),
+            })
+        );
         assert_eq!(call.replacement_hint.as_deref(), Some("Rust async timer"));
         assert_eq!(call.typed_arguments.len(), 1);
         assert_eq!(call.typed_arguments[0].name, "micros");
@@ -3654,6 +3827,7 @@ mod tests {
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -4055,6 +4229,7 @@ mod tests {
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
@@ -4125,6 +4300,7 @@ mod tests {
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
@@ -4146,6 +4322,7 @@ mod tests {
                 result_modeled: true,
                 semantics: Some("reviewed delay boundary".to_owned()),
                 semantic_operation: Some("time.delay-micros".to_owned()),
+                semantic_contract: None,
                 replacement_hint: Some("Rust async timer".to_owned()),
                 project_symbol: None,
                 project_candidates: Vec::new(),
@@ -4256,6 +4433,7 @@ mod tests {
                 result_modeled: false,
                 semantics: None,
                 semantic_operation: None,
+                semantic_contract: None,
                 replacement_hint: None,
                 project_symbol: None,
                 project_candidates: Vec::new(),
@@ -4291,6 +4469,11 @@ mod tests {
             result_modeled: false,
             semantics: Some("typed trampoline".to_owned()),
             semantic_operation: Some("timer.arm-micros".to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "registered-external-table-slot",
+                id: "platform::timer-arm".to_owned(),
+                evidence: "exact-pointer-cell-and-slot".to_owned(),
+            }),
             replacement_hint: Some("Rust async timer registration".to_owned()),
             project_symbol: None,
             project_candidates: Vec::new(),
@@ -4367,6 +4550,30 @@ mod tests {
         assert_eq!(trampoline.arguments[0].binding, "affine-root-context");
         assert_eq!(trampoline.arguments[0].root_argument, Some(2));
         assert_eq!(trampoline.arguments[0].root_offset, Some(0x1c));
+        assert_eq!(root.effect_summary.semantic_actions.len(), 1);
+        let action = &root.effect_summary.semantic_actions[0];
+        assert_eq!(action.operation, "timer.arm-micros");
+        assert_eq!(action.origin, "rom::leaf");
+        assert!(
+            action
+                .path
+                .contains("rom::root --call@0x00000010--> rom::middle")
+        );
+        assert!(
+            action
+                .path
+                .ends_with("--semantic@composed--> platform::timer_arm")
+        );
+        assert_eq!(
+            action
+                .contract
+                .as_ref()
+                .map(|contract| contract.id.as_str()),
+            Some("platform::timer-arm")
+        );
+        assert_eq!(action.arguments[0].binding, "affine-root-context");
+        assert_eq!(action.arguments[0].root_argument, Some(2));
+        assert_eq!(action.arguments[0].root_offset, Some(0x1c));
         assert_eq!(report.trampoline_slots.len(), 1);
         assert_eq!(report.trampoline_slots[0].call_shapes, 1);
     }
@@ -4381,6 +4588,7 @@ mod tests {
             result_modeled: false,
             semantics: None,
             semantic_operation: None,
+            semantic_contract: None,
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),

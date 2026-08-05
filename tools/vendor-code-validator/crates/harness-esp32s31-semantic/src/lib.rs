@@ -20,6 +20,7 @@ mod reviewed_summaries;
 
 const RISCV_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |target| target == wide_signed_divide_target_address(),
+    direct_semantic: reviewed_summaries::direct_semantic_function,
     reference_intrinsic: reviewed_summaries::reference_intrinsic_trace,
     standard_memory_intrinsic: reviewed_summaries::standard_memory_intrinsic_trace,
     wide_signed_divide: reviewed_summaries::wide_signed_divide_intrinsic,

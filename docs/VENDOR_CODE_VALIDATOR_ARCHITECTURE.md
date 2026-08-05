@@ -138,6 +138,8 @@ driver because comparing its typed state is the harness's purpose.
 - opaque external callback-table and function references;
 - harness-owned external semantic overlays with opaque operation IDs, C types,
   argument directions and replacement hints;
+- architecture-neutral direct-function semantic contracts whose platform hook
+  may accept a function only from its complete structural definition;
 - immutable ABI table descriptions and return models;
 - entry lifecycle, pointer-cell and function-table contracts;
 - platform-independent contract lookup by caller-supplied string identity.
@@ -157,6 +159,15 @@ Linked IR aggregates those labels into a report-level semantic-boundary index
 containing callers, ABI targets and replacement hints. This index is a
 migration inventory for manual analysis; it does not weaken the per-function
 completeness or reference-eligibility checks.
+
+Direct internal functions may receive the same typed semantic overlay through
+a separate harness hook. The current ESP32-S31 contract recognizes
+`pp.o:pp_post` only when its exact body and full relocation schema match the
+reviewed definition, and labels it `wifi.internal-signal.post`. The hook is
+architecture-neutral at the core boundary; byte and relocation matching stays
+with the platform/backend integration. A near match remains an ordinary
+internal edge, and the function body is still analyzed rather than replaced by
+the label.
 
 The same proven external calls form a structured trampoline inventory keyed by
 the complete registered table/slot contract: pointer and backing symbols,
@@ -225,6 +236,15 @@ function's argument/offset coordinates while retaining origin and path
 provenance. Dynamic bindings, recursive revisits, arithmetic overflow and the
 explicit path-state limit fail the projection closed without invalidating the
 lower-level direct context inventory.
+
+That projection also emits path-qualified semantic actions for both reviewed
+external slots and reviewed direct functions. An action retains operation,
+target, origin, static site, complete simple call path, typed argument shapes,
+replacement hint and the exact contract/evidence identifier that authorized
+the label. Pointer arguments reuse affine root bindings; scalar values retain
+their recovered symbolic form. This is deliberately not a total execution
+trace: mutually exclusive paths coexist, dynamic loop counts are not inferred
+and recursive revisits are bounded exactly like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

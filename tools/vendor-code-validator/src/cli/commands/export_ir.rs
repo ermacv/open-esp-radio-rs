@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=simple-call-paths-affine-root-bindings\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -144,8 +144,20 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                     )
                 },
             );
+            let semantic_source = call
+                .semantic_contract
+                .as_ref()
+                .map_or("-", |contract| contract.source);
+            let semantic_contract = call
+                .semantic_contract
+                .as_ref()
+                .map_or("-", |contract| contract.id.as_str());
+            let semantic_evidence = call
+                .semantic_contract
+                .as_ref()
+                .map_or("-", |contract| contract.evidence.as_str());
             println!(
-                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\t{}",
+                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\t{}",
                 function.identity,
                 call.kind,
                 call.target,
@@ -153,6 +165,9 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 call.tail,
                 call.result_modeled,
                 call.semantic_operation.as_deref().unwrap_or("-"),
+                semantic_source,
+                semantic_contract,
+                semantic_evidence,
                 call.replacement_hint.as_deref().unwrap_or("-"),
                 trampoline,
                 call.project_symbol.as_deref().unwrap_or("-"),
@@ -272,7 +287,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
         }
         let summary = &function.effect_summary;
         println!(
-            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\ttrampoline-calls={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
+            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tsemantic-actions={}\ttrampoline-calls={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
             function.identity,
             summary.call_graph_closed,
             summary.max_depth,
@@ -281,6 +296,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
             summary.mmio_registers.len(),
             summary.delays.len(),
             summary.semantic_operations.len(),
+            summary.semantic_actions.len(),
             summary.trampoline_calls.len(),
             summary.context_projection_complete,
             summary.context_fields.len(),
@@ -321,6 +337,56 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 semantic.replacement_hints.join(" | "),
                 semantic.origins.join(","),
             );
+        }
+        for action in &summary.semantic_actions {
+            let site = action
+                .site
+                .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}"));
+            let semantic_source = action
+                .contract
+                .as_ref()
+                .map_or("-", |contract| contract.source);
+            let semantic_contract = action
+                .contract
+                .as_ref()
+                .map_or("-", |contract| contract.id.as_str());
+            let semantic_evidence = action
+                .contract
+                .as_ref()
+                .map_or("-", |contract| contract.evidence.as_str());
+            println!(
+                "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
+                function.identity,
+                action.operation,
+                action.target,
+                site,
+                action.argument_shapes,
+                action.origin,
+                action.path,
+                semantic_source,
+                semantic_contract,
+                semantic_evidence,
+                action.replacement_hint.as_deref().unwrap_or("-"),
+            );
+            for argument in &action.arguments {
+                println!(
+                    "EFFECT-ACTION-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
+                    function.identity,
+                    action.operation,
+                    argument.position,
+                    argument.name,
+                    argument.c_type,
+                    argument.direction,
+                    argument.value,
+                    argument.binding,
+                    argument
+                        .root_argument
+                        .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                    argument
+                        .root_offset
+                        .map_or_else(|| "-".to_owned(), |value| format!("{value:+#x}")),
+                );
+            }
         }
         for field in &summary.context_fields {
             println!(
@@ -542,13 +608,14 @@ fn write_pseudo(
             .expect("writing to String cannot fail");
         writeln!(
             output,
-            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
+            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} semantic-actions={} trampolines={} context-fields={} context-projection-complete={} blockers={}",
             summary.call_graph_closed,
             summary.max_depth,
             summary.reachable_functions.len(),
             summary.mmio_registers.len(),
             summary.delays.len(),
             summary.semantic_operations.len(),
+            summary.semantic_actions.len(),
             summary.trampoline_calls.len(),
             summary.context_fields.len(),
             summary.context_projection_complete,
@@ -571,6 +638,45 @@ fn write_pseudo(
                 semantic.origins.join(" | ")
             )
             .expect("writing to String cannot fail");
+        }
+        for action in &summary.semantic_actions {
+            let contract = action.contract.as_ref().map_or_else(
+                || "unqualified".to_owned(),
+                |contract| {
+                    format!(
+                        "{}:{} evidence={}",
+                        contract.source, contract.id, contract.evidence
+                    )
+                },
+            );
+            writeln!(
+                output,
+                "// REACHABLE-ACTION: {}({}) argument-shapes={} via {} [contract={}]{}",
+                action.operation,
+                action.target,
+                action.argument_shapes,
+                action.path,
+                contract,
+                action
+                    .replacement_hint
+                    .as_ref()
+                    .map_or_else(String::new, |hint| { format!(" [replacement={hint}]") }),
+            )
+            .expect("writing to String cannot fail");
+            for argument in &action.arguments {
+                let projected = match (argument.root_argument, argument.root_offset) {
+                    (Some(root_argument), Some(root_offset)) => {
+                        format!("ctx{root_argument} {root_offset:+#x}")
+                    }
+                    _ => argument.value.clone(),
+                };
+                writeln!(
+                    output,
+                    "//   {}: {} = {} ({}, {})",
+                    argument.name, argument.c_type, projected, argument.direction, argument.binding,
+                )
+                .expect("writing to String cannot fail");
+            }
         }
         for field in &summary.context_fields {
             writeln!(
@@ -681,6 +787,60 @@ fn write_trampoline(output: &mut String, trampoline: &LinkedTrampoline) {
     output.push('}');
 }
 
+fn write_semantic_contract(output: &mut String, contract: Option<&LinkedSemanticContract>) {
+    let Some(contract) = contract else {
+        output.push_str("null");
+        return;
+    };
+    output.push_str("{\"source\": ");
+    write_string(output, contract.source);
+    output.push_str(", \"id\": ");
+    write_string(output, &contract.id);
+    output.push_str(", \"evidence\": ");
+    write_string(output, &contract.evidence);
+    output.push('}');
+}
+
+fn write_projected_arguments(output: &mut String, arguments: &[LinkedProjectedCallArgument]) {
+    output.push('[');
+    for (argument_index, argument) in arguments.iter().enumerate() {
+        if argument_index != 0 {
+            output.push_str(", ");
+        }
+        write!(output, "{{\"position\": {}, \"name\": ", argument.position)
+            .expect("writing to String cannot fail");
+        write_string(output, &argument.name);
+        output.push_str(", \"c_type\": ");
+        write_string(output, &argument.c_type);
+        output.push_str(", \"direction\": ");
+        write_string(output, argument.direction);
+        output.push_str(", \"value\": ");
+        write_string(output, &argument.value);
+        output.push_str(", \"binding\": ");
+        write_string(output, argument.binding);
+        output.push_str(", \"root_argument\": ");
+        if let Some(root_argument) = argument.root_argument {
+            write!(output, "{root_argument}").expect("writing to String cannot fail");
+        } else {
+            output.push_str("null");
+        }
+        output.push_str(", \"root_offset\": ");
+        if let Some(root_offset) = argument.root_offset {
+            write!(output, "{root_offset}").expect("writing to String cannot fail");
+        } else {
+            output.push_str("null");
+        }
+        output.push_str(", \"root_offset_hex\": ");
+        if let Some(root_offset) = argument.root_offset {
+            write_string(output, &format!("{root_offset:+#x}"));
+        } else {
+            output.push_str("null");
+        }
+        output.push('}');
+    }
+    output.push(']');
+}
+
 fn write_diagnostics(output: &mut String, diagnostics: &[LinkedDiagnostic]) {
     output.push('[');
     for (diagnostic_index, diagnostic) in diagnostics.iter().enumerate() {
@@ -724,7 +884,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 17,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 18,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -760,6 +920,7 @@ fn write_json_report(
     output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
     output.push_str("  \"diagnostic_compaction_mode\": \"exact-semicolon-fragment-inventory\",\n");
     output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
+    output.push_str("  \"semantic_action_mode\": \"simple-call-paths-affine-root-bindings\",\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
     for (index, artifact) in artifacts.iter().enumerate() {
@@ -988,6 +1149,8 @@ fn write_json_report(
             write_optional_string(&mut output, call.semantics.as_deref());
             output.push_str(", \"semantic_operation\": ");
             write_optional_string(&mut output, call.semantic_operation.as_deref());
+            output.push_str(", \"semantic_contract\": ");
+            write_semantic_contract(&mut output, call.semantic_contract.as_ref());
             output.push_str(", \"replacement_hint\": ");
             write_optional_string(&mut output, call.replacement_hint.as_deref());
             output.push_str(", \"trampoline\": ");
@@ -1229,6 +1392,38 @@ fn write_json_report(
             write_strings(&mut output, &semantic.origins);
             output.push('}');
         }
+        output.push_str("], \"semantic_actions\": [");
+        for (action_index, action) in summary.semantic_actions.iter().enumerate() {
+            if action_index != 0 {
+                output.push_str(", ");
+            }
+            output.push_str("{\"operation\": ");
+            write_string(&mut output, &action.operation);
+            output.push_str(", \"target\": ");
+            write_string(&mut output, &action.target);
+            output.push_str(", \"semantic_contract\": ");
+            write_semantic_contract(&mut output, action.contract.as_ref());
+            output.push_str(", \"replacement_hint\": ");
+            write_optional_string(&mut output, action.replacement_hint.as_deref());
+            output.push_str(", \"origin\": ");
+            write_string(&mut output, &action.origin);
+            output.push_str(", \"path\": ");
+            write_string(&mut output, &action.path);
+            output.push_str(", \"site\": ");
+            if let Some(site) = action.site {
+                write_string(&mut output, &format!("{site:#010x}"));
+            } else {
+                output.push_str("null");
+            }
+            write!(
+                output,
+                ", \"argument_shapes\": {}, \"arguments\": ",
+                action.argument_shapes
+            )
+            .expect("writing to String cannot fail");
+            write_projected_arguments(&mut output, &action.arguments);
+            output.push('}');
+        }
         write!(
             output,
             "], \"context_projection_complete\": {}, \"context_projection_blockers\": ",
@@ -1274,43 +1469,9 @@ fn write_json_report(
             write_string(&mut output, &call.path);
             write!(output, ", \"argument_shapes\": {}", call.argument_shapes)
                 .expect("writing to String cannot fail");
-            output.push_str(", \"arguments\": [");
-            for (argument_index, argument) in call.arguments.iter().enumerate() {
-                if argument_index != 0 {
-                    output.push_str(", ");
-                }
-                write!(output, "{{\"position\": {}, \"name\": ", argument.position)
-                    .expect("writing to String cannot fail");
-                write_string(&mut output, &argument.name);
-                output.push_str(", \"c_type\": ");
-                write_string(&mut output, &argument.c_type);
-                output.push_str(", \"direction\": ");
-                write_string(&mut output, argument.direction);
-                output.push_str(", \"value\": ");
-                write_string(&mut output, &argument.value);
-                output.push_str(", \"binding\": ");
-                write_string(&mut output, argument.binding);
-                output.push_str(", \"root_argument\": ");
-                if let Some(root_argument) = argument.root_argument {
-                    write!(output, "{root_argument}").expect("writing to String cannot fail");
-                } else {
-                    output.push_str("null");
-                }
-                output.push_str(", \"root_offset\": ");
-                if let Some(root_offset) = argument.root_offset {
-                    write!(output, "{root_offset}").expect("writing to String cannot fail");
-                } else {
-                    output.push_str("null");
-                }
-                output.push_str(", \"root_offset_hex\": ");
-                if let Some(root_offset) = argument.root_offset {
-                    write_string(&mut output, &format!("{root_offset:+#x}"));
-                } else {
-                    output.push_str("null");
-                }
-                output.push('}');
-            }
-            output.push_str("]}");
+            output.push_str(", \"arguments\": ");
+            write_projected_arguments(&mut output, &call.arguments);
+            output.push('}');
         }
         output.push_str("]}, \"direct_blockers\": ");
         write_strings(&mut output, &function.direct_blockers);

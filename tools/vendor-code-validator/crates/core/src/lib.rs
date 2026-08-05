@@ -44,6 +44,21 @@ pub struct ExternalSemanticSpec {
     pub replacement: Option<&'static str>,
 }
 
+/// Reviewed meaning attached to a directly linked vendor function.
+///
+/// The platform semantic harness is responsible for returning this spec only
+/// after it has matched the exact artifact identity it reviewed. Core carries
+/// the opaque operation vocabulary and typed ABI without knowing a chip,
+/// vendor library or instruction set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DirectSemanticFunctionSpec {
+    pub id: &'static str,
+    pub c_name: &'static str,
+    pub argument_count: u8,
+    pub semantic: ExternalSemanticSpec,
+    pub evidence: &'static str,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ExternalFunctionSpec {
     pub id: &'static str,

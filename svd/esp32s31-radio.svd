@@ -637,11 +637,13 @@
               <name>PARAMETER_121_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. First update writes parameter byte 0x121 into bits 11:4.</description>
               <bitOffset>4</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>PARAMETER_120_OFFSET_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Second update writes the low eight bits of parameter byte 0x120 plus 0x50 into bits 19:12.</description>
               <bitOffset>12</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -654,11 +656,13 @@
               <name>RX_COMPENSATION_LOW_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0.</description>
               <bitOffset>0</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>RX_GAIN_INDEX_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication.</description>
               <bitOffset>8</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
             <field>
               <name>PULSE_UNKNOWN</name>
@@ -687,6 +691,7 @@
               <name>ANTENNA_INIT_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x34 into bits 17:11.</description>
               <bitOffset>11</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
             <field>
               <name>AGC_DISABLE_UNKNOWN</name>
@@ -722,11 +727,13 @@
               <name>RX_11B_LOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 13:8.</description>
               <bitOffset>8</bitOffset><bitWidth>6</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint>
             </field>
             <field>
               <name>RX_11B_HIGH_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 21:16.</description>
               <bitOffset>16</bitOffset><bitWidth>6</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -744,6 +751,7 @@
               <name>LOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 18:0 receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX saturation phases.</description>
               <bitOffset>0</bitOffset><bitWidth>19</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7ffff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>RF_RX_SATURATION_BIT_19_UNKNOWN</name>
@@ -769,6 +777,7 @@
               <name>RF_RX_SATURATION_HIGH_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 31:30 are the adjacent high pair in the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst.</description>
               <bitOffset>30</bitOffset><bitWidth>2</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -776,6 +785,7 @@
           <name>SATURATION_GAIN_LOW</name>
           <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here first.</description>
           <addressOffset>0x7064</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>RF_RX_SATURATION_CONFIG</name>
@@ -791,6 +801,7 @@
               <name>PARAMETER_MINUS_ONE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one.</description>
               <bitOffset>2</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -803,6 +814,7 @@
               <name>RX_COMPENSATION_HIGH_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_set_rx_comp_new writes 0xed into bits 31:24.</description>
               <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -815,6 +827,7 @@
               <name>WINDOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0.</description>
               <bitOffset>0</bitOffset><bitWidth>9</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x1ff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -822,6 +835,7 @@
           <name>SATURATION_GAIN_HIGH</name>
           <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here second.</description>
           <addressOffset>0x7114</addressOffset><size>32</size><access>write-only</access>
+          <fields><field><name>OPAQUE_VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>ANTENNA_CONTROL_0</name>
@@ -832,6 +846,7 @@
               <name>LOW_CLEAR_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init clears bits 10:0.</description>
               <bitOffset>0</bitOffset><bitWidth>11</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7ff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>ANTENNA_DIVERSITY_ENABLE_UNKNOWN</name>
@@ -861,11 +876,13 @@
               <name>LOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x1e into bits 15:8.</description>
               <bitOffset>8</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
             <field>
               <name>HIGH_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_ANT_INIT]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_ant_init writes 0x1e into bits 31:24.</description>
               <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -878,11 +895,13 @@
               <name>RX_11B_LOW_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 3:0.</description>
               <bitOffset>0</bitOffset><bitWidth>4</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint>
             </field>
             <field>
               <name>RX_11B_HIGH_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 15:10.</description>
               <bitOffset>10</bitOffset><bitWidth>6</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -895,6 +914,7 @@
               <name>INIT_HIGH_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Instruction-exact 0xd2 value in bits 31:24.</description>
               <bitOffset>24</bitOffset><bitWidth>8</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -907,6 +927,7 @@
               <name>RX_GAIN_LIMIT_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE]; CONFIDENCE[instruction-exact-semantics-unknown]. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication.</description>
               <bitOffset>18</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -924,11 +945,13 @@
               <name>LOW_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. First fresh-read update replaces bits 6:0 with 0x17.</description>
               <bitOffset>0</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
             <field>
               <name>HIGH_UNKNOWN</name>
               <description>SOURCE[BLOB_LIBPHY_PHY_REG_UPDATE_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Second fresh-read update replaces bits 13:7 with 0x17.</description>
               <bitOffset>7</bitOffset><bitWidth>7</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0x7f</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -953,6 +976,7 @@
               <name>RX_11B_MODE_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_rx_11b_opt replaces bits 15:12.</description>
               <bitOffset>12</bitOffset><bitWidth>4</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint>
             </field>
             <field>
               <name>BB_AGC_UPDATE_CLEAR_UNKNOWN</name>
@@ -1005,6 +1029,7 @@
               <name>BB_AGC_UPDATE_SET_UNKNOWN</name>
               <description>SOURCE[ROM_REV0_PHY_AGC]; CONFIDENCE[instruction-exact-semantics-unknown]. Complete phy_bb_agc_reg_update sets all three bits.</description>
               <bitOffset>20</bitOffset><bitWidth>3</bitWidth>
+              <writeConstraint><range><minimum>0</minimum><maximum>7</maximum></range></writeConstraint>
             </field>
           </fields>
         </register>
@@ -4223,6 +4248,16 @@
              register="FREQUENCY_PARAMETER_0_OPAQUE"
              field="OPAQUE_VALUE"
              source="ROM_REV0_PHY_FREQUENCY_CHANNEL"/>
+      <write name="agc_saturation_gain_low"
+             peripheral="PHY_AGC_ORACLE"
+             register="SATURATION_GAIN_LOW"
+             field="OPAQUE_VALUE"
+             source="BLOB_LIBPHY_PHY_REG_UPDATE_NEW"/>
+      <write name="agc_saturation_gain_high"
+             peripheral="PHY_AGC_ORACLE"
+             register="SATURATION_GAIN_HIGH"
+             field="OPAQUE_VALUE"
+             source="BLOB_LIBPHY_PHY_REG_UPDATE_NEW"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
       <write name="open_frontend_clock_gates"
@@ -4256,6 +4291,73 @@
              variant="MASKED"
              source="BLOB_LIBPP_HAL_TSF_TIMER"/>
     </openEspRadioFixedRegisterWrites>
+    <openEspRadioFixedRegisterImages>
+      <write name="initialize_agc_update_8070"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_8070_OPAQUE"
+             value="0x000008c7"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_78a4"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_78A4_OPAQUE"
+             value="0x0001721f"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_8010"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_8010_OPAQUE"
+             value="0x000852a1"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_8018"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_8018_OPAQUE"
+             value="0x00600030"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_801c"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_801C_OPAQUE"
+             value="0x010000a0"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_8020"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_8020_OPAQUE"
+             value="0x00000180"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_8028"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_8028_OPAQUE"
+             value="0xc0403020"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_802c"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_802C_OPAQUE"
+             value="0x01000080"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_rx_11b_path_control_0"
+             peripheral="PHY_AGC_ORACLE"
+             register="RX_11B_PATH_CONTROL_0"
+             value="0xfe3fe1fe"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_agc_update_7048"
+             peripheral="PHY_AGC_ORACLE"
+             register="AGC_UPDATE_7048_OPAQUE"
+             value="0xff7da4f3"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_rx_11b_window_control"
+             peripheral="PHY_AGC_ORACLE"
+             register="RX_11B_WINDOW_CONTROL"
+             value="0x06acc7c8"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_rx_11b_path_control_1"
+             peripheral="PHY_AGC_ORACLE"
+             register="RX_11B_PATH_CONTROL_1"
+             value="0xb2208553"
+             source="ROM_REV0_PHY_AGC"/>
+      <write name="initialize_rf_rx_saturation_config"
+             peripheral="PHY_AGC_ORACLE"
+             register="RF_RX_SATURATION_CONFIG"
+             value="0x00000404"
+             source="ROM_REV0_PHY_AGC"/>
+    </openEspRadioFixedRegisterImages>
     <openEspRadioZeroBasedFieldWrites>
       <write name="ersu_ack_rate_baseline"
              peripheral="WIFI_MAC_HE_INIT_SUFFIX"

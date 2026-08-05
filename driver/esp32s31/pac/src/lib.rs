@@ -5484,11 +5484,12 @@ pub mod phy_agc_oracle {
         #[doc = "Field `PARAMETER_121_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First update writes parameter byte 0x121 into bits 11:4."]
         pub type Parameter121UnknownR = crate::FieldReader;
         #[doc = "Field `PARAMETER_121_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First update writes parameter byte 0x121 into bits 11:4."]
-        pub type Parameter121UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Parameter121UnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `PARAMETER_120_OFFSET_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second update writes the low eight bits of parameter byte 0x120 plus 0x50 into bits 19:12."]
         pub type Parameter120OffsetUnknownR = crate::FieldReader;
         #[doc = "Field `PARAMETER_120_OFFSET_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second update writes the low eight bits of parameter byte 0x120 plus 0x50 into bits 19:12."]
-        pub type Parameter120OffsetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Parameter120OffsetUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 4:11 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First update writes parameter byte 0x121 into bits 11:4."]
             #[inline(always)]
@@ -5541,11 +5542,12 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_COMPENSATION_LOW_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
         pub type RxCompensationLowUnknownR = crate::FieldReader;
         #[doc = "Field `RX_COMPENSATION_LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 7:0."]
-        pub type RxCompensationLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type RxCompensationLowUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RX_GAIN_INDEX_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
         pub type RxGainIndexUnknownR = crate::FieldReader;
         #[doc = "Field `RX_GAIN_INDEX_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 14:8 receive parameter byte 0x121 during AGC initialization and the final Wi-Fi RX gain index after table publication."]
-        pub type RxGainIndexUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type RxGainIndexUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `PULSE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
         pub type PulseUnknownR = crate::BitReader;
         #[doc = "Field `PULSE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,ROM_REV0_PHY_PBUS,ROM_REV0_PHY_FORCE_RX_GAIN\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bit 23 is pulsed by complete phy_enable_agc and by the delayed tail of phy_pbus_force_mode; complete phy_force_rx_gain replaces it with the caller low bit."]
@@ -5632,7 +5634,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `ANTENNA_INIT_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
         pub type AntennaInitUnknownR = crate::FieldReader;
         #[doc = "Field `ANTENNA_INIT_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x34 into bits 17:11."]
-        pub type AntennaInitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type AntennaInitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `AGC_DISABLE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact AGC disable/enable gate."]
         pub type AgcDisableUnknownR = crate::BitReader;
         #[doc = "Field `AGC_DISABLE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact AGC disable/enable gate."]
@@ -5777,11 +5779,11 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_11B_LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 13:8."]
         pub type Rx11bLowUnknownR = crate::FieldReader;
         #[doc = "Field `RX_11B_LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 13:8."]
-        pub type Rx11bLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Rx11bLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `RX_11B_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 21:16."]
         pub type Rx11bHighUnknownR = crate::FieldReader;
         #[doc = "Field `RX_11B_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 21:16."]
-        pub type Rx11bHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Rx11bHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 8:13 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 13:8."]
             #[inline(always)]
@@ -5853,7 +5855,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 18:0 receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX saturation phases."]
         pub type LowUnknownR = crate::FieldReader<u32>;
         #[doc = "Field `LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 18:0 receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX saturation phases."]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 19, u32, crate::Safe>;
         #[doc = "Field `RF_RX_SATURATION_BIT_19_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. One member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."]
         pub type RfRxSaturationBit19UnknownR = crate::BitReader;
         #[doc = "Field `RF_RX_SATURATION_BIT_19_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. One member of the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."]
@@ -5873,7 +5875,8 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RF_RX_SATURATION_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:30 are the adjacent high pair in the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."]
         pub type RfRxSaturationHighUnknownR = crate::FieldReader;
         #[doc = "Field `RF_RX_SATURATION_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 31:30 are the adjacent high pair in the discontiguous 0xd1080000 mask set or cleared by phy_rfrx_sat_rst."]
-        pub type RfRxSaturationHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type RfRxSaturationHighUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:18 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 18:0 receive 0xbb8 during AGC initialization and 0x400 or 0x800 in the two RF RX saturation phases."]
             #[inline(always)]
@@ -5967,12 +5970,15 @@ pub mod phy_agc_oracle {
     pub mod saturation_gain_low {
         #[doc = "Register `SATURATION_GAIN_LOW` writer"]
         pub type W = crate::W<SaturationGainLowSpec>;
-        impl core::fmt::Debug for crate::generic::Reg<SaturationGainLowSpec> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "(not readable)")
+        #[doc = "Field `OPAQUE_VALUE` writer - "]
+        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn opaque_value(&mut self) -> OpaqueValueW<'_, SaturationGainLowSpec> {
+                OpaqueValueW::new(self, 0)
             }
         }
-        impl W {}
         #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here first.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saturation_gain_low::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SaturationGainLowSpec;
         impl crate::RegisterSpec for SaturationGainLowSpec {
@@ -5980,7 +5986,7 @@ pub mod phy_agc_oracle {
         }
         #[doc = "`write(|w| ..)` method takes [`saturation_gain_low::W`](W) writer structure"]
         impl crate::Writable for SaturationGainLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RF_RX_SATURATION_CONFIG (w) register accessor: SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rfrx_sat_rst writes the full value 0x00000404 before either branch.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`rf_rx_saturation_config::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@rf_rx_saturation_config`] module"]
@@ -6018,7 +6024,8 @@ pub mod phy_agc_oracle {
         #[doc = "Field `PARAMETER_MINUS_ONE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
         pub type ParameterMinusOneUnknownR = crate::FieldReader;
         #[doc = "Field `PARAMETER_MINUS_ONE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
-        pub type ParameterMinusOneUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type ParameterMinusOneUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 2:8 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 8:2 receive the low seven bits of parameter byte 0x121 minus one."]
             #[inline(always)]
@@ -6060,7 +6067,8 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_COMPENSATION_HIGH_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 31:24."]
         pub type RxCompensationHighUnknownR = crate::FieldReader;
         #[doc = "Field `RX_COMPENSATION_HIGH_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 31:24."]
-        pub type RxCompensationHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type RxCompensationHighUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 24:31 - SOURCE\\[BLOB_LIBPHY_PHY_SET_RX_COMP_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_set_rx_comp_new writes 0xed into bits 31:24."]
             #[inline(always)]
@@ -6101,7 +6109,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `WINDOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0."]
         pub type WindowUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `WINDOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0."]
-        pub type WindowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        pub type WindowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:8 - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt writes 0x1c8 and complete phy_reg_update_new writes 0x1c0 into bits 8:0."]
             #[inline(always)]
@@ -6135,12 +6143,15 @@ pub mod phy_agc_oracle {
     pub mod saturation_gain_high {
         #[doc = "Register `SATURATION_GAIN_HIGH` writer"]
         pub type W = crate::W<SaturationGainHighSpec>;
-        impl core::fmt::Debug for crate::generic::Reg<SaturationGainHighSpec> {
-            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-                write!(f, "(not readable)")
+        #[doc = "Field `OPAQUE_VALUE` writer - "]
+        pub type OpaqueValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn opaque_value(&mut self) -> OpaqueValueW<'_, SaturationGainHighSpec> {
+                OpaqueValueW::new(self, 0)
             }
         }
-        impl W {}
         #[doc = "SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Complete rev0 ROM phy_wifi_agc_sat_gain writes its argument here second.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`saturation_gain_high::W`](W). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct SaturationGainHighSpec;
         impl crate::RegisterSpec for SaturationGainHighSpec {
@@ -6148,7 +6159,7 @@ pub mod phy_agc_oracle {
         }
         #[doc = "`write(|w| ..)` method takes [`saturation_gain_high::W`](W) writer structure"]
         impl crate::Writable for SaturationGainHighSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "ANTENNA_CONTROL_0 (rw) register accessor: SOURCE\\[ROM_REV0_PHY_ANT_INIT,ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update of complete phy_ant_init clears two independently evidenced field groups; complete phy_ant_dft_cfg replaces bit 11 with its caller low bit.\n\nYou can [`read`](crate::Reg::read) this register and get [`antenna_control_0::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`antenna_control_0::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@antenna_control_0`] module"]
@@ -6163,7 +6174,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `LOW_CLEAR_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init clears bits 10:0."]
         pub type LowClearUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `LOW_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init clears bits 10:0."]
-        pub type LowClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type LowClearUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "SOURCE\\[ROM_REV0_PHY_ANT_DFT_CFG\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_ant_dft_cfg writes zero to disable antenna diversity and one to enable it."]
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub enum AntennaDiversityEnable {
@@ -6282,11 +6293,11 @@ pub mod phy_agc_oracle {
         #[doc = "Field `LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x1e into bits 15:8."]
         pub type LowUnknownR = crate::FieldReader;
         #[doc = "Field `LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x1e into bits 15:8."]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x1e into bits 31:24."]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x1e into bits 31:24."]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 8:15 - SOURCE\\[ROM_REV0_PHY_ANT_INIT\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_ant_init writes 0x1e into bits 15:8."]
             #[inline(always)]
@@ -6335,11 +6346,11 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_11B_LOW_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 3:0."]
         pub type Rx11bLowUnknownR = crate::FieldReader;
         #[doc = "Field `RX_11B_LOW_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 3:0."]
-        pub type Rx11bLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Rx11bLowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `RX_11B_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 15:10."]
         pub type Rx11bHighUnknownR = crate::FieldReader;
         #[doc = "Field `RX_11B_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 15:10."]
-        pub type Rx11bHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Rx11bHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 3:0."]
             #[inline(always)]
@@ -6388,7 +6399,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `INIT_HIGH_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact 0xd2 value in bits 31:24."]
         pub type InitHighUnknownR = crate::FieldReader;
         #[doc = "Field `INIT_HIGH_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact 0xd2 value in bits 31:24."]
-        pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type InitHighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 24:31 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Instruction-exact 0xd2 value in bits 31:24."]
             #[inline(always)]
@@ -6427,7 +6438,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_GAIN_LIMIT_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
         pub type RxGainLimitUnknownR = crate::FieldReader;
         #[doc = "Field `RX_GAIN_LIMIT_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
-        pub type RxGainLimitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type RxGainLimitUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 18:24 - SOURCE\\[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Bits 24:18 receive parameter byte 0x121 minus one during initialization and the final Wi-Fi index capped at 0x4c after table publication."]
             #[inline(always)]
@@ -6491,11 +6502,11 @@ pub mod phy_agc_oracle {
         #[doc = "Field `LOW_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update replaces bits 6:0 with 0x17."]
         pub type LowUnknownR = crate::FieldReader;
         #[doc = "Field `LOW_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update replaces bits 6:0 with 0x17."]
-        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type LowUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second fresh-read update replaces bits 13:7 with 0x17."]
         pub type HighUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_UNKNOWN` writer - SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Second fresh-read update replaces bits 13:7 with 0x17."]
-        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type HighUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:6 - SOURCE\\[BLOB_LIBPHY_PHY_REG_UPDATE_NEW\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. First fresh-read update replaces bits 6:0 with 0x17."]
             #[inline(always)]
@@ -6583,7 +6594,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `RX_11B_MODE_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 15:12."]
         pub type Rx11bModeUnknownR = crate::FieldReader;
         #[doc = "Field `RX_11B_MODE_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_rx_11b_opt replaces bits 15:12."]
-        pub type Rx11bModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Rx11bModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BB_AGC_UPDATE_CLEAR_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update clears bit 26."]
         pub type BbAgcUpdateClearUnknownR = crate::BitReader;
         #[doc = "Field `BB_AGC_UPDATE_CLEAR_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update clears bit 26."]
@@ -6799,7 +6810,7 @@ pub mod phy_agc_oracle {
         #[doc = "Field `BB_AGC_UPDATE_SET_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update sets all three bits."]
         pub type BbAgcUpdateSetUnknownR = crate::FieldReader;
         #[doc = "Field `BB_AGC_UPDATE_SET_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update sets all three bits."]
-        pub type BbAgcUpdateSetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type BbAgcUpdateSetUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 20:22 - SOURCE\\[ROM_REV0_PHY_AGC\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Complete phy_bb_agc_reg_update sets all three bits."]
             #[inline(always)]
@@ -31197,6 +31208,32 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.opaque_value().set(value));
         }
     }
+
+    /// Write every bit of `PHY_AGC_ORACLE`.`SATURATION_GAIN_LOW` through its full-width field.
+    #[inline]
+    pub fn agc_saturation_gain_low(registers: &crate::PhyAgcOracle, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .saturation_gain_low()
+                .write_with_zero(|writer| writer.opaque_value().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_AGC_ORACLE`.`SATURATION_GAIN_HIGH` through its full-width field.
+    #[inline]
+    pub fn agc_saturation_gain_high(registers: &crate::PhyAgcOracle, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .saturation_gain_high()
+                .write_with_zero(|writer| writer.opaque_value().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -31259,6 +31296,179 @@ pub mod fixed_register_write {
             registers
                 .enable()
                 .write_with_zero(|writer| writer.event_mask().masked());
+        }
+    }
+}
+
+/// Safe, SVD-declared writes of fixed complete-register images.
+pub mod fixed_register_image {
+
+    /// Publish the SVD-qualified image `0x000008c7` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8070_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_8070(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_8070_opaque()
+                .write_with_zero(|writer| writer.bits(0x000008c7));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x0001721f` to `PHY_AGC_ORACLE`.`AGC_UPDATE_78A4_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_78a4(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_78a4_opaque()
+                .write_with_zero(|writer| writer.bits(0x0001721f));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x000852a1` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8010_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_8010(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_8010_opaque()
+                .write_with_zero(|writer| writer.bits(0x000852a1));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00600030` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8018_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_8018(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_8018_opaque()
+                .write_with_zero(|writer| writer.bits(0x00600030));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x010000a0` to `PHY_AGC_ORACLE`.`AGC_UPDATE_801C_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_801c(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_801c_opaque()
+                .write_with_zero(|writer| writer.bits(0x010000a0));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000180` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8020_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_8020(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_8020_opaque()
+                .write_with_zero(|writer| writer.bits(0x00000180));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xc0403020` to `PHY_AGC_ORACLE`.`AGC_UPDATE_8028_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_8028(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_8028_opaque()
+                .write_with_zero(|writer| writer.bits(0xc0403020));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x01000080` to `PHY_AGC_ORACLE`.`AGC_UPDATE_802C_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_802c(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_802c_opaque()
+                .write_with_zero(|writer| writer.bits(0x01000080));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xfe3fe1fe` to `PHY_AGC_ORACLE`.`RX_11B_PATH_CONTROL_0`.
+    #[inline]
+    pub fn initialize_rx_11b_path_control_0(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .rx_11b_path_control_0()
+                .write_with_zero(|writer| writer.bits(0xfe3fe1fe));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xff7da4f3` to `PHY_AGC_ORACLE`.`AGC_UPDATE_7048_OPAQUE`.
+    #[inline]
+    pub fn initialize_agc_update_7048(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .agc_update_7048_opaque()
+                .write_with_zero(|writer| writer.bits(0xff7da4f3));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x06acc7c8` to `PHY_AGC_ORACLE`.`RX_11B_WINDOW_CONTROL`.
+    #[inline]
+    pub fn initialize_rx_11b_window_control(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .rx_11b_window_control()
+                .write_with_zero(|writer| writer.bits(0x06acc7c8));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0xb2208553` to `PHY_AGC_ORACLE`.`RX_11B_PATH_CONTROL_1`.
+    #[inline]
+    pub fn initialize_rx_11b_path_control_1(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .rx_11b_path_control_1()
+                .write_with_zero(|writer| writer.bits(0xb2208553));
+        }
+    }
+
+    /// Publish the SVD-qualified image `0x00000404` to `PHY_AGC_ORACLE`.`RF_RX_SATURATION_CONFIG`.
+    #[inline]
+    pub fn initialize_rf_rx_saturation_config(registers: &crate::PhyAgcOracle) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register, while the SVD extension
+        // and its provenance qualify this exact complete image.
+        unsafe {
+            registers
+                .rf_rx_saturation_config()
+                .write_with_zero(|writer| writer.bits(0x00000404));
         }
     }
 }

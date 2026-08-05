@@ -1,5 +1,7 @@
 //! Ownership-bound AGC control leaves.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 const fn agc_parameter_offset(parameter: u8) -> u8 {
@@ -52,45 +54,22 @@ impl RadioRegisters {
     /// Apply all fourteen internal MMIO edges of `phy_bb_agc_reg_update`.
     pub fn update_agc_baseband_registers(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: every full-word image below is an instruction-exact store
-        // from the complete rev0 ROM body. Write-only words have no useful
-        // reset image, while R/W words are intentionally replaced in full.
-        unsafe {
-            agc.agc_update_8070_opaque()
-                .write_with_zero(|w| w.bits(0x0000_08c7));
-            agc.agc_update_78a4_opaque()
-                .write_with_zero(|w| w.bits(0x0001_721f));
-        }
+        super::svd::fixed_register_image::initialize_agc_update_8070(agc);
+        super::svd::fixed_register_image::initialize_agc_update_78a4(agc);
         agc.rx_11b_mode_control()
             .modify(|_, w| w.bb_agc_update_clear_unknown().clear_bit());
-        unsafe {
-            agc.agc_update_8010_opaque()
-                .write_with_zero(|w| w.bits(0x0008_52a1));
-            agc.agc_update_8018_opaque()
-                .write_with_zero(|w| w.bits(0x0060_0030));
-            agc.agc_update_801c_opaque()
-                .write_with_zero(|w| w.bits(0x0100_00a0));
-            agc.agc_update_8020_opaque()
-                .write_with_zero(|w| w.bits(0x0000_0180));
-            agc.agc_update_8028_opaque()
-                .write_with_zero(|w| w.bits(0xc040_3020));
-            agc.agc_update_802c_opaque()
-                .write_with_zero(|w| w.bits(0x0100_0080));
-        }
-        // SAFETY: seven is the complete image of the generated three-bit
-        // field.
+        super::svd::fixed_register_image::initialize_agc_update_8010(agc);
+        super::svd::fixed_register_image::initialize_agc_update_8018(agc);
+        super::svd::fixed_register_image::initialize_agc_update_801c(agc);
+        super::svd::fixed_register_image::initialize_agc_update_8020(agc);
+        super::svd::fixed_register_image::initialize_agc_update_8028(agc);
+        super::svd::fixed_register_image::initialize_agc_update_802c(agc);
         agc.agc_update_8078_control()
-            .modify(|_, w| unsafe { w.bb_agc_update_set_unknown().bits(7) });
-        unsafe {
-            agc.rx_11b_path_control_0()
-                .write_with_zero(|w| w.bits(0xfe3f_e1fe));
-            agc.agc_update_7048_opaque()
-                .write_with_zero(|w| w.bits(0xff7d_a4f3));
-            agc.rx_11b_window_control()
-                .write_with_zero(|w| w.bits(0x06ac_c7c8));
-            agc.rx_11b_path_control_1()
-                .write_with_zero(|w| w.bits(0xb220_8553));
-        }
+            .modify(|_, w| w.bb_agc_update_set_unknown().set(7));
+        super::svd::fixed_register_image::initialize_rx_11b_path_control_0(agc);
+        super::svd::fixed_register_image::initialize_agc_update_7048(agc);
+        super::svd::fixed_register_image::initialize_rx_11b_window_control(agc);
+        super::svd::fixed_register_image::initialize_rx_11b_path_control_1(agc);
     }
 
     /// Select the complete rev0 ROM AGC enable or disable sequence.
@@ -113,11 +92,10 @@ impl RadioRegisters {
     /// Publish both complete pinned RX-compensation fields in order.
     pub fn configure_rx_compensation(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: 0xed fits both generated eight-bit fields.
         agc.agc_shared_control()
-            .modify(|_, w| unsafe { w.rx_compensation_low_unknown().bits(0xed) });
+            .modify(|_, w| w.rx_compensation_low_unknown().set(0xed));
         agc.rx_compensation_high_control()
-            .modify(|_, w| unsafe { w.rx_compensation_high_unknown().bits(0xed) });
+            .modify(|_, w| w.rx_compensation_high_unknown().set(0xed));
     }
 
     /// Pulse the generated DC-memory clear field through two fresh RMWs.
@@ -146,22 +124,19 @@ impl RadioRegisters {
     pub fn initialize_agc_registers(&mut self, parameter_121: u8, parameter_120: u8) {
         let agc = &self.peripherals.phy_agc_oracle;
         let gain_minus_one = parameter_121.wrapping_sub(1) & 0x7f;
-        // SAFETY: all dynamic values are explicitly bounded to their
-        // generated seven- or eight-bit field widths; fixed literals fit the
-        // SVD-described fields.
         agc.rx_gain_limit_control()
-            .modify(|_, w| unsafe { w.rx_gain_limit_unknown().bits(gain_minus_one) });
+            .modify(|_, w| w.rx_gain_limit_unknown().set(gain_minus_one));
         agc.agc_gain_limit_low()
-            .modify(|_, w| unsafe { w.parameter_minus_one_unknown().bits(gain_minus_one) });
+            .modify(|_, w| w.parameter_minus_one_unknown().set(gain_minus_one));
         agc.agc_shared_control()
-            .modify(|_, w| unsafe { w.rx_gain_index_unknown().bits(parameter_121 & 0x7f) });
+            .modify(|_, w| w.rx_gain_index_unknown().set(parameter_121 & 0x7f));
         agc.agc_saturation_control()
-            .modify(|_, w| unsafe { w.low_unknown().bits(0x0bb8) });
+            .modify(|_, w| w.low_unknown().set(0x0bb8));
         agc.agc_parameter_control()
-            .modify(|_, w| unsafe { w.parameter_121_unknown().bits(parameter_121) });
-        agc.agc_parameter_control().modify(|_, w| unsafe {
+            .modify(|_, w| w.parameter_121_unknown().set(parameter_121));
+        agc.agc_parameter_control().modify(|_, w| {
             w.parameter_120_offset_unknown()
-                .bits(agc_parameter_offset(parameter_120))
+                .set(agc_parameter_offset(parameter_120))
         });
         agc.agc_shared_control()
             .modify(|_, w| w.control_high_unknown().set(0x32));
@@ -170,24 +145,22 @@ impl RadioRegisters {
         agc.agc_shared_control()
             .modify(|_, w| w.pulse_unknown().clear_bit());
         agc.agc_init_high_control()
-            .modify(|_, w| unsafe { w.init_high_unknown().bits(0xd2) });
+            .modify(|_, w| w.init_high_unknown().set(0xd2));
     }
 
     /// Apply all three fresh-read antenna initialization updates.
     pub fn configure_agc_antenna(&mut self) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: zero fits the generated eleven-bit clear field.
-        agc.antenna_control_0().modify(|_, w| unsafe {
+        agc.antenna_control_0().modify(|_, w| {
             w.low_clear_unknown()
-                .bits(0)
+                .set(0)
                 .bit_12_clear_unknown()
                 .clear_bit()
         });
-        // SAFETY: all three 0x34/0x1e values fit their generated fields.
         agc.agc_antenna_control()
-            .modify(|_, w| unsafe { w.antenna_init_unknown().bits(0x34) });
+            .modify(|_, w| w.antenna_init_unknown().set(0x34));
         agc.antenna_control_2()
-            .modify(|_, w| unsafe { w.low_unknown().bits(0x1e).high_unknown().bits(0x1e) });
+            .modify(|_, w| w.low_unknown().set(0x1e).high_unknown().set(0x1e));
     }
 
     /// Apply complete rev0 ROM `phy_rx11blr_cfg` without widening the caller
@@ -206,14 +179,8 @@ impl RadioRegisters {
     /// Apply either complete branch of rev0 ROM `phy_rfrx_sat_rst`.
     pub fn configure_rf_rx_saturation(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: this is the complete full-word store from the ROM body.
-        unsafe {
-            agc.rf_rx_saturation_config()
-                .write_with_zero(|w| w.bits(0x0000_0404));
-        }
-        // SAFETY: the high field receives either its all-zero or all-one
-        // two-bit image; the other members are generated single-bit fields.
-        agc.agc_saturation_control().modify(|_, w| unsafe {
+        super::svd::fixed_register_image::initialize_rf_rx_saturation_config(agc);
+        agc.agc_saturation_control().modify(|_, w| {
             w.rf_rx_saturation_bit_19_unknown()
                 .bit(enabled)
                 .rf_rx_saturation_bit_24_unknown()
@@ -221,34 +188,26 @@ impl RadioRegisters {
                 .rf_rx_saturation_bit_28_unknown()
                 .bit(enabled)
                 .rf_rx_saturation_high_unknown()
-                .bits(if enabled { 3 } else { 0 })
+                .set(if enabled { 3 } else { 0 })
         });
-        // SAFETY: both complete branch values fit the nineteen-bit field.
         agc.agc_saturation_control()
-            .modify(|_, w| unsafe { w.low_unknown().bits(if enabled { 0x0800 } else { 0x0400 }) });
+            .modify(|_, w| w.low_unknown().set(if enabled { 0x0800 } else { 0x0400 }));
     }
 
     /// Publish both final RX-gain limits through separate fresh RMWs.
     pub fn configure_rx_gain_limits(&mut self, wifi_last_index: u8) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: the first value is masked to seven bits and the capped
-        // second value cannot exceed the generated seven-bit field.
         agc.agc_shared_control()
-            .modify(|_, w| unsafe { w.rx_gain_index_unknown().bits(wifi_last_index & 0x7f) });
+            .modify(|_, w| w.rx_gain_index_unknown().set(wifi_last_index & 0x7f));
         agc.rx_gain_limit_control()
-            .modify(|_, w| unsafe { w.rx_gain_limit_unknown().bits(wifi_last_index.min(0x4c)) });
+            .modify(|_, w| w.rx_gain_limit_unknown().set(wifi_last_index.min(0x4c)));
     }
 
     /// Publish one saturation-gain word to both recovered destinations.
     pub fn set_agc_saturation_gain(&mut self, value: u32) {
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: complete ROM `phy_wifi_agc_sat_gain` performs two
-        // unrestricted full-word stores in this order.
-        unsafe {
-            agc.saturation_gain_low().write_with_zero(|w| w.bits(value));
-            agc.saturation_gain_high()
-                .write_with_zero(|w| w.bits(value));
-        }
+        super::svd::full_register_write::agc_saturation_gain_low(agc, value);
+        super::svd::full_register_write::agc_saturation_gain_high(agc, value);
     }
 
     /// Select the complete pinned `phy_set_ftm_en` one-bit image.
@@ -267,14 +226,12 @@ impl RadioRegisters {
             .modify(|_, w| w.post_init_set_unknown().set_bit());
         self.set_agc_saturation_gain(0x0818_212d);
         let agc = &self.peripherals.phy_agc_oracle;
-        // SAFETY: 0x1c0 fits the generated nine-bit field and 0x17 fits both
-        // generated seven-bit fields.
         agc.rx_11b_window_control()
-            .modify(|_, w| unsafe { w.window_unknown().bits(0x1c0) });
+            .modify(|_, w| w.window_unknown().set(0x1c0));
         agc.post_init_rx_control()
-            .modify(|_, w| unsafe { w.low_unknown().bits(0x17) });
+            .modify(|_, w| w.low_unknown().set(0x17));
         agc.post_init_rx_control()
-            .modify(|_, w| unsafe { w.high_unknown().bits(0x17) });
+            .modify(|_, w| w.high_unknown().set(0x17));
         self.set_ftm_enabled(true);
     }
 
@@ -282,21 +239,18 @@ impl RadioRegisters {
     pub fn configure_rx_11b_optimization(&mut self, enabled: bool) {
         let agc = &self.peripherals.phy_agc_oracle;
         let (path0_high, path0_low, path1_high, path1_low, mode) = rx_11b_values(enabled);
-        // SAFETY: rx_11b_values contains only instruction-exact values
-        // bounded to the generated six-, four- and four-bit fields.
         agc.rx_11b_path_control_0()
-            .modify(|_, w| unsafe { w.rx_11b_high_unknown().bits(path0_high) });
+            .modify(|_, w| w.rx_11b_high_unknown().set(path0_high));
         agc.rx_11b_path_control_0()
-            .modify(|_, w| unsafe { w.rx_11b_low_unknown().bits(path0_low) });
+            .modify(|_, w| w.rx_11b_low_unknown().set(path0_low));
         agc.rx_11b_path_control_1()
-            .modify(|_, w| unsafe { w.rx_11b_high_unknown().bits(path1_high) });
+            .modify(|_, w| w.rx_11b_high_unknown().set(path1_high));
         agc.rx_11b_path_control_1()
-            .modify(|_, w| unsafe { w.rx_11b_low_unknown().bits(path1_low) });
+            .modify(|_, w| w.rx_11b_low_unknown().set(path1_low));
         agc.rx_11b_mode_control()
-            .modify(|_, w| unsafe { w.rx_11b_mode_unknown().bits(mode) });
-        // SAFETY: 0x1c8 fits the generated nine-bit field.
+            .modify(|_, w| w.rx_11b_mode_unknown().set(mode));
         agc.rx_11b_window_control()
-            .modify(|_, w| unsafe { w.window_unknown().bits(0x1c8) });
+            .modify(|_, w| w.window_unknown().set(0x1c8));
     }
 }
 

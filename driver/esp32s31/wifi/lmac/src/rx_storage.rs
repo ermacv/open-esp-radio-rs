@@ -53,13 +53,6 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     }
 }
 
-// SAFETY: access to the cell is admitted only through the unique live-ring
-// transaction. The storage may be moved to a radio task before DMA starts.
-unsafe impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> Send
-    for RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>
-{
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxDmaStorageError {
     AddressWidth,

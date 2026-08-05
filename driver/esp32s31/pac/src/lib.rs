@@ -16236,11 +16236,11 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `BPSK_RATE` reader - "]
         pub type BpskRateR = crate::FieldReader;
         #[doc = "Field `BPSK_RATE` writer - "]
-        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type BpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `BPSK_SIGNAL_MODE` reader - "]
         pub type BpskSignalModeR = crate::FieldReader;
         #[doc = "Field `BPSK_SIGNAL_MODE` writer - "]
-        pub type BpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `BPSK_DCM` reader - "]
         pub type BpskDcmR = crate::BitReader;
         #[doc = "Field `BPSK_DCM` writer - "]
@@ -16252,11 +16252,11 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `QPSK_RATE` reader - "]
         pub type QpskRateR = crate::FieldReader;
         #[doc = "Field `QPSK_RATE` writer - "]
-        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type QpskRateW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QPSK_SIGNAL_MODE` reader - "]
         pub type QpskSignalModeR = crate::FieldReader;
         #[doc = "Field `QPSK_SIGNAL_MODE` writer - "]
-        pub type QpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type QpskSignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `QPSK_DCM` reader - "]
         pub type QpskDcmR = crate::BitReader;
         #[doc = "Field `QPSK_DCM` writer - "]
@@ -16268,11 +16268,11 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `QAM16_RATE` reader - "]
         pub type Qam16RateR = crate::FieldReader;
         #[doc = "Field `QAM16_RATE` writer - "]
-        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 5>;
+        pub type Qam16RateW<'a, REG> = crate::FieldWriter<'a, REG, 5, u8, crate::Safe>;
         #[doc = "Field `QAM16_SIGNAL_MODE` reader - "]
         pub type Qam16SignalModeR = crate::FieldReader;
         #[doc = "Field `QAM16_SIGNAL_MODE` writer - "]
-        pub type Qam16SignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type Qam16SignalModeW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `QAM16_DCM` reader - "]
         pub type Qam16DcmR = crate::BitReader;
         #[doc = "Field `QAM16_DCM` writer - "]
@@ -19610,19 +19610,19 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `RATE_0` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate0R = crate::FieldReader;
         #[doc = "Field `RATE_0` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
-        pub type Rate0W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate0W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_1` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate1R = crate::FieldReader;
         #[doc = "Field `RATE_1` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Second byte written by hal_he_set_ersu_ack_rate."]
-        pub type Rate1W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate1W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_2` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate2R = crate::FieldReader;
         #[doc = "Field `RATE_2` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Third byte written by hal_he_set_ersu_ack_rate."]
-        pub type Rate2W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate2W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `RATE_3` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
         pub type Rate3R = crate::FieldReader;
         #[doc = "Field `RATE_3` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. Fourth byte written by hal_he_set_ersu_ack_rate."]
-        pub type Rate3W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type Rate3W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7 - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG\\]; CONFIDENCE\\[instruction-exact\\]. First byte written by hal_he_set_ersu_ack_rate."]
             #[inline(always)]

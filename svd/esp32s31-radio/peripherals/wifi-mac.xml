@@ -664,16 +664,16 @@
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_PREFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Three independently published beamforming-report profiles selected for BPSK, QPSK and 16-QAM. Complete hal_he_set_bf_report_rate(1,0x10,0,0) writes signal mode one, normalized rate zero, DCM false and ER-SU false into the 16-QAM, QPSK and BPSK profiles in that order.</description>
           <addressOffset>0x41c</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>BPSK_SIGNAL_MODE</name><bitOffset>5</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>BPSK_RATE</name><bitOffset>0</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>BPSK_SIGNAL_MODE</name><bitOffset>5</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>BPSK_DCM</name><bitOffset>7</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>BPSK_ERSU</name><bitOffset>8</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>QPSK_RATE</name><bitOffset>9</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>QPSK_SIGNAL_MODE</name><bitOffset>14</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>QPSK_RATE</name><bitOffset>9</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>QPSK_SIGNAL_MODE</name><bitOffset>14</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>QPSK_DCM</name><bitOffset>16</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>QPSK_ERSU</name><bitOffset>17</bitOffset><bitWidth>1</bitWidth></field>
-            <field><name>QAM16_RATE</name><bitOffset>18</bitOffset><bitWidth>5</bitWidth></field>
-            <field><name>QAM16_SIGNAL_MODE</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>QAM16_RATE</name><bitOffset>18</bitOffset><bitWidth>5</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x1f</maximum></range></writeConstraint></field>
+            <field><name>QAM16_SIGNAL_MODE</name><bitOffset>23</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
             <field><name>QAM16_DCM</name><bitOffset>25</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>QAM16_ERSU</name><bitOffset>26</bitOffset><bitWidth>1</bitWidth></field>
 
@@ -1032,7 +1032,7 @@
           <name>ERSU_ACK_RATE</name>
           <description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Complete hal_he_set_ersu_ack_rate writes the same byte through four separate fresh-read RMWs: argument zero selects 0x80 and nonzero selects 0xa0. Complete trc_set_bf_report_rate calls this leaf after publishing BF_REPORT_RATE, selecting 0xa0 only for its low-link-metric DCM plus ER-SU branch.</description>
           <addressOffset>0x3e4</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>RATE_0</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. First byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_1</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Second byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_2</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Third byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>16</bitOffset><bitWidth>8</bitWidth></field><field><name>RATE_3</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Fourth byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>24</bitOffset><bitWidth>8</bitWidth></field></fields>
+          <fields><field><name>RATE_0</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. First byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>0</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_1</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Second byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>8</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_2</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Third byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>16</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field><field><name>RATE_3</name><description>SOURCE[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_BF_CONFIG]; CONFIDENCE[instruction-exact]. Fourth byte written by hal_he_set_ersu_ack_rate.</description><bitOffset>24</bitOffset><bitWidth>8</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xff</maximum></range></writeConstraint></field></fields>
         </register>
         <register>
           <name>ERSU_AND_VHT_CONTROL</name>

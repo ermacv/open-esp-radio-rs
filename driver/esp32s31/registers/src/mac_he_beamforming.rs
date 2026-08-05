@@ -1,5 +1,7 @@
 //! Typed HE beamforming report-rate configuration.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// Four-byte ER-SU ACK-rate image selected by the recovered rate policy.
@@ -114,33 +116,31 @@ impl RadioRegisters {
     pub fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
         let report = self.peripherals.wifi_mac_he_init_prefix.bf_report_rate();
 
-        // SAFETY: construction bounds signal_mode to two bits and normalized
-        // rate to five bits. Boolean fields use generated safe bit writers.
-        report.modify(|_, w| unsafe {
+        report.modify(|_, w| {
             w.qam16_rate()
-                .bits(profile.normalized_rate)
+                .set(profile.normalized_rate)
                 .qam16_signal_mode()
-                .bits(profile.signal_mode)
+                .set(profile.signal_mode)
                 .qam16_dcm()
                 .bit(profile.dcm)
                 .qam16_ersu()
                 .bit(profile.extended_range_single_user)
         });
-        report.modify(|_, w| unsafe {
+        report.modify(|_, w| {
             w.qpsk_rate()
-                .bits(profile.normalized_rate)
+                .set(profile.normalized_rate)
                 .qpsk_signal_mode()
-                .bits(profile.signal_mode)
+                .set(profile.signal_mode)
                 .qpsk_dcm()
                 .bit(profile.dcm)
                 .qpsk_ersu()
                 .bit(profile.extended_range_single_user)
         });
-        report.modify(|_, w| unsafe {
+        report.modify(|_, w| {
             w.bpsk_rate()
-                .bits(profile.normalized_rate)
+                .set(profile.normalized_rate)
                 .bpsk_signal_mode()
-                .bits(profile.signal_mode)
+                .set(profile.signal_mode)
                 .bpsk_dcm()
                 .bit(profile.dcm)
                 .bpsk_ersu()
@@ -159,13 +159,10 @@ impl RadioRegisters {
         let encoded = profile.encoded_byte();
         let ack = self.peripherals.wifi_mac_he_init_suffix.ersu_ack_rate();
 
-        // SAFETY: every generated field is exactly eight bits wide and
-        // `encoded` is a bounded byte. Each modify preserves the other three
-        // lanes, matching the four independently observed volatile RMWs.
-        ack.modify(|_, w| unsafe { w.rate_0().bits(encoded) });
-        ack.modify(|_, w| unsafe { w.rate_1().bits(encoded) });
-        ack.modify(|_, w| unsafe { w.rate_2().bits(encoded) });
-        ack.modify(|_, w| unsafe { w.rate_3().bits(encoded) });
+        ack.modify(|_, w| w.rate_0().set(encoded));
+        ack.modify(|_, w| w.rate_1().set(encoded));
+        ack.modify(|_, w| w.rate_2().set(encoded));
+        ack.modify(|_, w| w.rate_3().set(encoded));
     }
 }
 

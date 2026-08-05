@@ -1311,6 +1311,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "vcell",
 ]
 

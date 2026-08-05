@@ -139,6 +139,21 @@
                 source="BLOB_LIBPP_HAL_PWR_INTERRUPT"/>
     </openEspRadioInterruptSnapshots>
     <openEspRadioFullRegisterWrites>
+      <write name="mac_interrupt_enable"
+             peripheral="WIFI_MAC_INTERRUPT"
+             register="ENABLE"
+             field="EVENT_MASK"
+             source="BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL"/>
+      <write name="mac_interrupt_clear"
+             peripheral="WIFI_MAC_INTERRUPT"
+             register="CLEAR"
+             field="EVENTS"
+             source="BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"/>
+      <write name="mac_power_interrupt_clear"
+             peripheral="WIFI_MAC_POWER_INTERRUPT"
+             register="CLEAR"
+             field="EVENTS"
+             source="BLOB_LIBPP_HAL_PWR_INTERRUPT"/>
       <write name="station_tsf_value_low"
              peripheral="WIFI_MAC_STA_TSF_LOAD"
              register="VALUE_LOW"
@@ -155,6 +170,14 @@
              field="ADDRESS"
              source="ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"/>
     </openEspRadioFullRegisterWrites>
+    <openEspRadioFixedRegisterWrites>
+      <write name="mask_mac_power_interrupts"
+             peripheral="WIFI_MAC_POWER_INTERRUPT"
+             register="ENABLE"
+             field="EVENT_MASK"
+             variant="MASKED"
+             source="BLOB_LIBPP_HAL_TSF_TIMER"/>
+    </openEspRadioFixedRegisterWrites>
     <openEspRadioProvenance>
       <source id="ROM_REV0_HAL_GET_STA_TSF">_oracles/esp32s31_rev0_rom.elf sha256 d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542; complete hal_get_sta_tsf at 0x2f82c15c, size 0x36. The function snapshots the station TSF through CONTROL bit zero, conditionally reads the low and high words, then clears the snapshot request.</source>
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e</source>

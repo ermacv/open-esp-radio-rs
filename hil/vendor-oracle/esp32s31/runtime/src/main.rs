@@ -1245,13 +1245,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
     };
     let mut state = PhyColdState::from_parameter_image(parameter_image);
 
-    // SAFETY: the sole WIFI token is transferred to open-radio after the PHY
-    // oracle completed. The returned guard only retains the already
+    // The sole WIFI token is transferred to open-radio after the PHY oracle
+    // completed. The returned guard only retains the already
     // established clocks and does not continue radio transactions. Replaying
     // `power_up` here would reset the calibrated oracle state, so this HIL
     // explicitly adopts the completed external prerequisites. The powered
     // owner remains live for the entire open channel graph.
-    let mut owner = unsafe { Radio::claim(radio).assume_powered_after_external_initialization() };
+    let owner = match Radio::claim(radio) {
+        Ok(owner) => owner,
+        Err(_) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_ORACLE_HIL result=FAIL stage=radio-already-claimed"
+            ));
+            halt();
+        }
+    };
+    let mut owner = owner.assume_powered_after_external_initialization();
     // Vendor PHY calibration powers the temperature sensor back down and
     // leaves its DAC field at zero. Channel programming samples temperature,
     // so establish the first valid ROM range through the open identity-bound

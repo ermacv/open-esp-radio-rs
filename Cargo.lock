@@ -1101,6 +1101,7 @@ dependencies = [
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
+ "critical-section",
  "open-esp-radio-esp32s31-registers",
 ]
 

@@ -20,15 +20,10 @@ impl ColdRadioRegisters {
             return false;
         }
 
-        // SAFETY: complete hal_init stores the full constant image before any
-        // remaining tail operation.
-        unsafe {
-            self.registers
-                .peripherals
-                .wifi_mac_interrupt
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(event_mask));
-        }
+        super::svd::full_register_write::mac_interrupt_enable(
+            &self.interrupts.wifi_mac_interrupt,
+            event_mask,
+        );
 
         // This is deliberately a repeated edge: mac_txrx_init already set the
         // same bit, and complete hal_init samples and sets it again here.

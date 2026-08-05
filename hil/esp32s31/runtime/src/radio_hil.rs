@@ -6136,10 +6136,16 @@ pub async fn run(
          channel={LISTEN_CHANNEL}"
     ));
 
-    // SAFETY: this isolated image owns the sole `WIFI` singleton and its
-    // audited dependency graph excludes every vendor radio package.
     set_diagnostic_stage(20);
-    let owned = unsafe { Radio::claim(platform) };
+    let owned = match Radio::claim(platform) {
+        Ok(owned) => owned,
+        Err(_) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=radio-already-claimed"
+            ));
+            halt();
+        }
+    };
     // `register_chipv7_phy` always finishes `phy_bb_init` on channel 11.
     // Selecting the requested listen channel is a separate post-init call,
     // matching the vendor call graph instead of folding it into cold init.

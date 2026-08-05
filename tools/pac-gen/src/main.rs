@@ -82,6 +82,15 @@ struct FullRegisterWriteBinding {
     field: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FixedRegisterWriteBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    field: String,
+    variant: String,
+}
+
 const fn inherited_properties(
     parent: RegisterProperties,
     child: RegisterProperties,
@@ -869,6 +878,26 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             }
         }
     }
+    if let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioFixedRegisterWrites"))
+    {
+        for write in extension
+            .children()
+            .filter(|node| node.has_tag_name("write"))
+        {
+            let sources = required_attribute(write, "source")?;
+            for source in sources.split(',').map(str::trim) {
+                if source.is_empty() || !definitions.contains(source) {
+                    return Err(format!(
+                        "fixed-register write {} references undefined provenance source {source:?}",
+                        required_attribute(write, "name")?
+                    )
+                    .into());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1093,6 +1122,92 @@ fn generate_interrupt_snapshot_api(document: &Document<'_>) -> Result<String, Bo
     Ok(output)
 }
 
+fn generate_peripheral_ownership_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let interrupt_peripherals = parse_interrupt_snapshots(document)?
+        .into_iter()
+        .map(|binding| binding.peripheral)
+        .collect::<BTreeSet<_>>();
+    if interrupt_peripherals.is_empty() {
+        return Ok(String::new());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let peripheral_names = peripherals
+        .children()
+        .filter(|node| node.has_tag_name("peripheral"))
+        .map(|node| child_text(node, "name").map(str::to_owned))
+        .collect::<Result<Vec<_>, _>>()?;
+    let ordinary_peripherals = peripheral_names
+        .iter()
+        .filter(|name| !interrupt_peripherals.contains(name.as_str()))
+        .collect::<Vec<_>>();
+    let interrupt_peripherals = peripheral_names
+        .iter()
+        .filter(|name| interrupt_peripherals.contains(name.as_str()))
+        .collect::<Vec<_>>();
+
+    let fields = |names: &[&String]| {
+        names
+            .iter()
+            .map(|name| {
+                format!(
+                    "    pub {}: crate::{},\n",
+                    member_binding_name(name),
+                    type_binding_name(name),
+                )
+            })
+            .collect::<String>()
+    };
+    let members = |names: &[&String]| {
+        names
+            .iter()
+            .map(|name| format!("        {},\n", member_binding_name(name)))
+            .collect::<String>()
+    };
+
+    let all_members = members(&peripheral_names.iter().collect::<Vec<_>>());
+    let ordinary_members = members(&ordinary_peripherals);
+    let interrupt_members = members(&interrupt_peripherals);
+    Ok(format!(
+        "\n/// Safe ownership partitions derived from the SVD interrupt banks.\n\
+         pub mod peripheral_ownership {{\n\
+         /// Radio peripherals which remain available to ordinary task code.\n\
+         #[allow(non_snake_case)]\n\
+         pub struct RadioPeripherals {{\n{}         }}\n\
+         /// Interrupt banks transferred from cold setup to the hard handlers.\n\
+         #[allow(non_snake_case)]\n\
+         pub struct InterruptPeripherals {{\n{}         }}\n\
+         /// Consume the singleton and separate task-owned registers from interrupt banks.\n\
+         #[inline]\n\
+         pub fn split(\n\
+             peripherals: crate::Peripherals,\n\
+         ) -> (RadioPeripherals, InterruptPeripherals) {{\n\
+             let crate::Peripherals {{\n{}             }} = peripherals;\n\
+             (\n\
+                 RadioPeripherals {{\n{}                 }},\n\
+                 InterruptPeripherals {{\n{}                 }},\n\
+             )\n\
+         }}\n\
+         /// Acquire a fresh singleton in an isolated compiled-validation image.\n\
+         #[cfg(feature = \"validation-probes\")]\n\
+         #[doc(hidden)]\n\
+         #[inline]\n\
+         pub fn peripherals_for_validation() -> crate::Peripherals {{\n\
+             // SAFETY: validation images contain one closed probe and no runtime driver.\n\
+             unsafe {{ crate::Peripherals::steal() }}\n\
+         }}\n\
+         }}\n",
+        fields(&ordinary_peripherals),
+        fields(&interrupt_peripherals),
+        all_members,
+        ordinary_members,
+        interrupt_members,
+    ))
+}
+
 fn parse_full_register_writes(
     document: &Document<'_>,
 ) -> Result<Vec<FullRegisterWriteBinding>, Box<dyn Error>> {
@@ -1236,6 +1351,160 @@ fn generate_full_register_write_api(document: &Document<'_>) -> Result<String, B
                  }}\n\
              }}\n",
             binding.peripheral, binding.register, binding.name,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_fixed_register_writes(
+    document: &Document<'_>,
+) -> Result<Vec<FixedRegisterWriteBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioFixedRegisterWrites"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioFixedRegisterWrites"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioFixedRegisterWrites extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for write in extension
+        .children()
+        .filter(|node| node.has_tag_name("write"))
+    {
+        let name = required_attribute(write, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("fixed-register write name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate fixed-register write name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(write, "peripheral")?;
+        let register_name = required_attribute(write, "register")?;
+        let field_name = required_attribute(write, "field")?;
+        let variant_name = required_attribute(write, "variant")?;
+        required_attribute(write, "source")?;
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "fixed-register write {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("fixed-register write {name} references unknown register {register_name}")
+            })?;
+        let access = child_text(register, "access")?;
+        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+            return Err(
+                format!("fixed-register write {name} requires a writable 32-bit register").into(),
+            );
+        }
+        let fields = register
+            .children()
+            .find(|node| node.has_tag_name("fields"))
+            .ok_or_else(|| format!("fixed-register write {name} register has no fields"))?;
+        if fields
+            .children()
+            .filter(|node| node.has_tag_name("field"))
+            .count()
+            != 1
+        {
+            return Err(format!(
+                "fixed-register write {name} register must contain exactly one field"
+            )
+            .into());
+        }
+        let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
+            format!("fixed-register write {name} references unknown field {field_name}")
+        })?;
+        if child_text(field, "bitOffset")? != "0" || child_text(field, "bitWidth")? != "32" {
+            return Err(format!(
+                "fixed-register write {name} field must cover the complete 32-bit register"
+            )
+            .into());
+        }
+        let has_variant = field
+            .children()
+            .filter(|node| node.has_tag_name("enumeratedValues"))
+            .filter(|values| optional_child_text(*values, "usage") != Some("read"))
+            .flat_map(|values| {
+                values
+                    .children()
+                    .filter(|node| node.has_tag_name("enumeratedValue"))
+            })
+            .any(|variant| optional_child_text(variant, "name") == Some(variant_name));
+        if !has_variant {
+            return Err(format!(
+                "fixed-register write {name} references unknown writable variant {variant_name}"
+            )
+            .into());
+        }
+
+        bindings.push(FixedRegisterWriteBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            field: field_name.to_owned(),
+            variant: variant_name.to_owned(),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_fixed_register_write_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_fixed_register_writes(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared complete-register writes of fixed enumerated values.\n\
+         pub mod fixed_register_write {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let field = member_binding_name(&binding.field);
+        let variant = member_binding_name(&binding.variant);
+        output.push_str(&format!(
+            "\n    /// Write the `{}` variant to every bit of `{}`.`{}`.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}) {{\n\
+                 // SAFETY: generator validation proves that the sole field covers\n\
+                 // all 32 bits and the named writable variant exists in the SVD.\n\
+                 unsafe {{\n\
+                     registers.{register}().write_with_zero(|writer|\n\
+                         writer.{field}().{variant}()\n\
+                     );\n\
+                 }}\n\
+             }}\n",
+            binding.variant, binding.peripheral, binding.register, binding.name,
         ));
     }
     output.push_str("}\n");
@@ -1641,6 +1910,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     validate_register_aliases(input)?;
     parse_interrupt_snapshots(&document)?;
     parse_full_register_writes(&document)?;
+    parse_fixed_register_writes(&document)?;
     Ok(windows)
 }
 
@@ -1675,12 +1945,16 @@ fn run() -> Result<(), Box<dyn Error>> {
     config.strict = true;
     let document = Document::parse(&input)?;
     let interrupt_snapshot_api = generate_interrupt_snapshot_api(&document)?;
+    let peripheral_ownership_api = generate_peripheral_ownership_api(&document)?;
     let full_register_write_api = generate_full_register_write_api(&document)?;
+    let fixed_register_write_api = generate_fixed_register_write_api(&document)?;
     let generated = format_generated(&format!(
-        "{}{}{}",
+        "{}{}{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
         interrupt_snapshot_api,
+        peripheral_ownership_api,
         full_register_write_api,
+        fixed_register_write_api,
     ))?;
     let binding_index = generate_binding_index(&input)?;
 
@@ -1730,11 +2004,13 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
-        generate_full_register_write_api, generate_interrupt_snapshot_api, member_binding_name,
-        mmio_window, parse_full_register_writes, parse_interrupt_snapshots, parse_mmio_windows,
-        type_binding_name, validate_alias_group, validate_confidence, validate_dimension_order,
-        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
-        validate_register_layout, validate_write_semantics,
+        generate_fixed_register_write_api, generate_full_register_write_api,
+        generate_interrupt_snapshot_api, generate_peripheral_ownership_api, member_binding_name,
+        mmio_window, parse_fixed_register_writes, parse_full_register_writes,
+        parse_interrupt_snapshots, parse_mmio_windows, type_binding_name, validate_alias_group,
+        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
+        validate_provenance, validate_register_aliases, validate_register_layout,
+        validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -1880,6 +2156,31 @@ mod tests {
     }
 
     #[test]
+    fn interrupt_snapshots_define_safe_peripheral_ownership_partitions() {
+        let document = Document::parse(
+            "<device><peripherals>\
+             <peripheral><name>RADIO</name></peripheral>\
+             <peripheral><name>IRQ_BANK</name><registers>\
+             <register><name>STATUS</name><size>32</size><access>read-only</access></register>\
+             <register><name>CLEAR</name><size>32</size><access>write-only</access>\
+             <modifiedWriteValues>oneToClear</modifiedWriteValues><fields><field>\
+             <name>EVENTS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth>\
+             </field></fields></register></registers></peripheral></peripherals>\
+             <vendorExtensions><openEspRadioInterruptSnapshots>\
+             <snapshot name=\"irq_bank\" peripheral=\"IRQ_BANK\" statusRegister=\"STATUS\" \
+             clearRegister=\"CLEAR\" clearField=\"EVENTS\" source=\"TEST\"/>\
+             </openEspRadioInterruptSnapshots></vendorExtensions></device>",
+        )
+        .unwrap();
+
+        let generated = generate_peripheral_ownership_api(&document).unwrap();
+        assert!(generated.contains("pub radio: crate::Radio"));
+        assert!(generated.contains("pub irq_bank: crate::IrqBank"));
+        assert!(generated.contains("let crate::Peripherals"));
+        assert!(generated.contains("unsafe { crate::Peripherals::steal() }"));
+    }
+
+    #[test]
     fn interrupt_snapshot_rejects_a_non_w1c_clear_register() {
         let document = Document::parse(
             "<device><peripherals><peripheral><name>IRQ_BANK</name><registers>\
@@ -1929,6 +2230,26 @@ mod tests {
         )
         .unwrap();
         assert!(parse_full_register_writes(&partial).is_err());
+    }
+
+    #[test]
+    fn fixed_register_write_requires_a_complete_enumerated_field() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>MASK</name><size>32</size><access>read-write</access><fields>\
+             <field><name>VALUE</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth>\
+             <enumeratedValues><usage>write</usage><enumeratedValue><name>DISABLED</name>\
+             <value>0</value></enumeratedValue></enumeratedValues></field></fields></register>\
+             </registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioFixedRegisterWrites><write name=\"disable_port\" peripheral=\"PORT\" \
+             register=\"MASK\" field=\"VALUE\" variant=\"DISABLED\" source=\"TEST\"/>\
+             </openEspRadioFixedRegisterWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_fixed_register_writes(&valid).unwrap().len(), 1);
+        let generated = generate_fixed_register_write_api(&valid).unwrap();
+        assert!(generated.contains("pub fn disable_port(registers: &crate::Port)"));
+        assert!(generated.contains("writer.value().disabled()"));
     }
 
     #[test]

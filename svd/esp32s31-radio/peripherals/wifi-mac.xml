@@ -1452,7 +1452,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_WDEV_PROCESS_FIQ,BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. Complete hal_init first publishes 0x19a879e0 here before its remaining tail. Complete hal_enable_mac independently publishes its argument after clearing the shared MAC disable gates. The common FIQ samples it with each interrupt status snapshot.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>EVENT_MASK</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+            <field><name>EVENT_MASK</name><description>SOURCE[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL]; CONFIDENCE[instruction-exact]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1480,7 +1480,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT,BLOB_LIBPP_WDEV_PROCESS_FIQ]; CONFIDENCE[instruction-exact]. Full event snapshot written by the complete clear leaf to acknowledge pending MAC events.</description>
           <addressOffset>0x0c</addressOffset><size>32</size><access>write-only</access><modifiedWriteValues>oneToClear</modifiedWriteValues>
           <fields>
-            <field><name>EVENTS</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT]; CONFIDENCE[instruction-exact]. Ones acknowledge the corresponding event bits.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>
+            <field><name>EVENTS</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT]; CONFIDENCE[instruction-exact]. Ones acknowledge the corresponding event bits.</description><bitOffset>0</bitOffset><bitWidth>32</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum></range></writeConstraint></field>
           </fields>
         </register>
       </registers>

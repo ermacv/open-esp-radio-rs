@@ -248,24 +248,23 @@ impl Field32 {
 /// [`MacInterruptSetup`] and then to [`MacInterruptRegisters`] plus
 /// [`MacPowerInterruptRegisters`].
 pub struct RadioRegisters {
-    peripherals: svd::Peripherals,
+    peripherals: svd::peripheral_ownership::RadioPeripherals,
     wifi_baseband_enabled: bool,
 }
 
 impl RadioRegisters {
-    /// Claim radio MMIO when the caller has established unique ownership.
-    ///
-    /// # Safety
-    ///
-    /// No other live owner may mutate the radio through raw pointers, ROM,
-    /// vendor code, or another `RadioRegisters` value.
-    pub unsafe fn steal() -> Self {
+    fn from_peripherals(peripherals: svd::peripheral_ownership::RadioPeripherals) -> Self {
         Self {
-            // SAFETY: the caller establishes the same unique ownership
-            // invariant required by `svd2rust::Peripherals::steal`.
-            peripherals: unsafe { svd::Peripherals::steal() },
+            peripherals,
             wifi_baseband_enabled: false,
         }
+    }
+
+    #[cfg(test)]
+    fn for_test() -> Self {
+        let peripherals = svd::peripheral_ownership::peripherals_for_validation();
+        let (radio, _) = svd::peripheral_ownership::split(peripherals);
+        Self::from_peripherals(radio)
     }
 
     /// Synchronize the owned Wi-Fi-enable image after a platform PAC update.
@@ -330,21 +329,27 @@ impl RadioRegisters {
 /// ISR epoch can return the same peripheral ownership to another setup token.
 pub struct ColdRadioRegisters {
     registers: RadioRegisters,
+    interrupts: svd::peripheral_ownership::InterruptPeripherals,
 }
 
 impl ColdRadioRegisters {
-    /// Claim cold radio MMIO when the caller has established unique ownership.
-    ///
-    /// # Safety
-    ///
-    /// No other live owner may mutate the radio through raw pointers, ROM,
-    /// vendor code, another `RadioRegisters`, or another
-    /// `ColdRadioRegisters` value.
-    pub unsafe fn steal() -> Self {
+    /// Acquire the generated radio singleton once.
+    pub fn take() -> Option<Self> {
+        svd::Peripherals::take().map(Self::from_peripherals)
+    }
+
+    /// Bind the unique generated PAC singleton to the cold radio lifecycle.
+    pub fn from_peripherals(peripherals: svd::Peripherals) -> Self {
+        let (radio, interrupts) = svd::peripheral_ownership::split(peripherals);
         Self {
-            // SAFETY: forwarded from the caller's unique cold-radio claim.
-            registers: unsafe { RadioRegisters::steal() },
+            registers: RadioRegisters::from_peripherals(radio),
+            interrupts,
         }
+    }
+
+    #[cfg(test)]
+    fn for_test() -> Self {
+        Self::from_peripherals(svd::peripheral_ownership::peripherals_for_validation())
     }
 
     /// Complete the one-way cold-to-running ownership transition.
@@ -354,17 +359,15 @@ impl ColdRadioRegisters {
     /// creates the ISR-only [`MacInterruptRegisters`] and
     /// [`MacPowerInterruptRegisters`] capabilities.
     pub fn into_running(self) -> (RadioRegisters, MacInterruptSetup) {
-        // SAFETY: `self` is consumed. `RadioRegisters` exposes no safe
-        // MAC or WDEVPWR interrupt operation, so the returned setup token is
-        // the only safe owner of both disjoint register transactions.
-        let setup = unsafe { MacInterruptSetup::steal_from_cold_radio_owner() };
-        (self.registers, setup)
+        (
+            self.registers,
+            MacInterruptSetup::from_peripherals(self.interrupts),
+        )
     }
 
     /// Read the cold initializer's currently published interrupt mask.
     pub fn mac_interrupt_enable(&self) -> u32 {
-        self.registers
-            .peripherals
+        self.interrupts
             .wifi_mac_interrupt
             .enable()
             .read()
@@ -374,30 +377,15 @@ impl ColdRadioRegisters {
 
     /// Mask every MAC event and acknowledge the supplied cold event image.
     pub fn mask_and_clear_mac_interrupts(&mut self, events: u32) {
-        let interrupt = &self.registers.peripherals.wifi_mac_interrupt;
-        // SAFETY: ENABLE is the complete full-width event bitmap and CLEAR is
-        // a full-width write-one-to-clear event image.
-        unsafe {
-            interrupt
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(0));
-            interrupt
-                .clear()
-                .write_with_zero(|w| w.events().bits(events));
-        }
+        let interrupt = &self.interrupts.wifi_mac_interrupt;
+        svd::full_register_write::mac_interrupt_enable(interrupt, 0);
+        svd::full_register_write::mac_interrupt_clear(interrupt, events);
         device_fence();
     }
 
     /// Acknowledge a cold polling-phase event image without enabling the ISR.
     pub fn clear_mac_interrupts(&mut self, events: u32) {
-        // SAFETY: CLEAR is a complete full-width write-one-to-clear bitmap.
-        unsafe {
-            self.registers
-                .peripherals
-                .wifi_mac_interrupt
-                .clear()
-                .write_with_zero(|w| w.events().bits(events))
-        };
+        svd::full_register_write::mac_interrupt_clear(&self.interrupts.wifi_mac_interrupt, events);
         device_fence();
     }
 }
@@ -458,17 +446,17 @@ mod tests {
 
     #[test]
     fn cold_owner_is_consumed_by_interrupt_setup_split() {
-        // SAFETY: this host test does not access MMIO and creates no second
+        // This host test does not access MMIO and creates no second
         // radio owner; it exercises only the type-level ownership transition.
-        let registers = unsafe { ColdRadioRegisters::steal() };
+        let registers = ColdRadioRegisters::for_test();
         let (_running, _setup) = registers.into_running();
     }
 
     #[test]
     fn generated_tx_banks_reverse_physical_order_exactly_once() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let control = &registers.peripherals.wifi_mac_tx_queue_control;
         let vector = &registers.peripherals.wifi_mac_tx_queue_vector;
         let completion = &registers.peripherals.wifi_mac_tx_completion;
@@ -486,9 +474,9 @@ mod tests {
 
     #[test]
     fn generated_tx_block_ack_debug_geometry_matches_complete_decoders() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let queues = &registers.peripherals.wifi_mac_rx_dma;
         assert_eq!(
             queues.tx_queue_information_q0().as_ptr() as usize,
@@ -522,9 +510,9 @@ mod tests {
 
     #[test]
     fn generated_rx_block_ack_banks_match_complete_hal_ampdu_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let block = &registers.peripherals.wifi_mac_rx_dma;
         for physical_index in 0..8 {
             let base = 0x2010_4178 + physical_index * 0x24;
@@ -589,9 +577,9 @@ mod tests {
 
     #[test]
     fn generated_sta_rx_policy_registers_match_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
@@ -640,9 +628,9 @@ mod tests {
 
     #[test]
     fn generated_interface_address_pairs_match_complete_leaf_stride() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let addresses = &registers.peripherals.wifi_mac_interface_address;
         for interface in 0..4 {
             assert_eq!(
@@ -658,9 +646,9 @@ mod tests {
 
     #[test]
     fn generated_station_tsf_load_matches_complete_hal_tsf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let load = &registers.peripherals.wifi_mac_sta_tsf_load;
         assert_eq!(load.control().as_ptr() as usize, 0x2010_d814);
         assert_eq!(load.value_low().as_ptr() as usize, 0x2010_d818);
@@ -679,9 +667,9 @@ mod tests {
 
     #[test]
     fn generated_cold_handshake_matches_complete_hal_init_prefix() {
-        // SAFETY: this host test inspects a generated register pointer only
+        // This host test inspects a generated register pointer only
         // and performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
@@ -694,9 +682,9 @@ mod tests {
 
     #[test]
     fn generated_crypto_aux_register_matches_complete_cold_leaf() {
-        // SAFETY: this host test inspects a generated register pointer only
+        // This host test inspects a generated register pointer only
         // and performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
@@ -709,9 +697,9 @@ mod tests {
 
     #[test]
     fn generated_rx_cold_prefix_registers_match_complete_leaf() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let dma = &registers.peripherals.wifi_mac_rx_dma;
         assert_eq!(dma.rx_cold_control_unknown().as_ptr() as usize, 0x2010_407c);
         assert_eq!(dma.rx_buffer_limit_unknown().as_ptr() as usize, 0x2010_4c68);
@@ -724,9 +712,9 @@ mod tests {
 
     #[test]
     fn generated_mac_enable_gate_matches_complete_leaf() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = ColdRadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
@@ -736,26 +724,26 @@ mod tests {
             0x2010_4c00
         );
         assert_eq!(
-            registers.peripherals.wifi_mac_interrupt.enable().as_ptr() as usize,
+            registers.interrupts.wifi_mac_interrupt.enable().as_ptr() as usize,
             0x2010_4c40
         );
         assert_eq!(
-            registers.peripherals.wifi_mac_interrupt.raw().as_ptr() as usize,
+            registers.interrupts.wifi_mac_interrupt.raw().as_ptr() as usize,
             0x2010_4c44
         );
     }
 
     #[test]
     fn generated_debug_oracle_registers_keep_one_canonical_owner() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = ColdRadioRegisters::for_test();
         let he = &registers.peripherals.wifi_mac_he_init_prefix;
         assert_eq!(he.parent_enable().as_ptr() as usize, 0x2010_4c2c);
         assert_eq!(he.interrupt_1_raw().as_ptr() as usize, 0x2010_4c30);
         assert_eq!(he.interrupt_1_status().as_ptr() as usize, 0x2010_4c34);
 
-        let power = &registers.peripherals.wifi_mac_power_interrupt;
+        let power = &registers.interrupts.wifi_mac_power_interrupt;
         assert_eq!(power.enable().as_ptr() as usize, 0x2010_d8b4);
         assert_eq!(power.raw().as_ptr() as usize, 0x2010_d8b8);
         assert_eq!(power.status().as_ptr() as usize, 0x2010_d8bc);
@@ -773,9 +761,9 @@ mod tests {
 
     #[test]
     fn generated_phy_low_rate_registers_match_complete_rom_leaves() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let bb = &registers.peripherals.phy_agc_oracle;
         assert_eq!(bb.low_rate_primary_control().as_ptr() as usize, 0x2010_8060);
         assert_eq!(
@@ -786,9 +774,9 @@ mod tests {
 
     #[test]
     fn generated_phy_feature_and_watchdog_fields_match_complete_rom_leaves() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let agc = &registers.peripherals.phy_agc_oracle;
         let frequency = &registers.peripherals.phy_frequency_channel_oracle;
         let baseband = &registers.peripherals.phy_baseband_config_oracle;
@@ -833,9 +821,9 @@ mod tests {
 
     #[test]
     fn generated_last_rx_buffer_table_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let table = &registers.peripherals.wifi_mac_last_rx_buffer;
         assert_eq!(table.control().as_ptr() as usize, 0x2010_4120);
         for entry in 0..6 {
@@ -864,9 +852,9 @@ mod tests {
 
     #[test]
     fn generated_mac_txrx_prefix_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let init = &registers.peripherals.wifi_mac_txrx_prefix;
         for queue in 0..4 {
             assert_eq!(
@@ -883,9 +871,9 @@ mod tests {
 
     #[test]
     fn generated_mac_antenna_init_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let init = &registers.peripherals.wifi_mac_antenna_init;
         assert_eq!(init.common_control().as_ptr() as usize, 0x2010_42b0);
         for physical_bank in 0..4 {
@@ -908,9 +896,9 @@ mod tests {
 
     #[test]
     fn generated_mac_coex_init_matches_complete_setter_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let coex = &registers.peripherals.wifi_mac_coex_init;
         assert_eq!(coex.rx_pti().as_ptr() as usize, 0x2010_42fc);
         assert_eq!(
@@ -923,9 +911,9 @@ mod tests {
 
     #[test]
     fn generated_mac_he_prefix_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let init = &registers.peripherals.wifi_mac_he_init_prefix;
         assert_eq!(init.rx_field_control().as_ptr() as usize, 0x2010_4048);
         assert_eq!(init.bf_mode_control().as_ptr() as usize, 0x2010_409c);
@@ -952,9 +940,9 @@ mod tests {
 
     #[test]
     fn generated_mac_he_tb_diagnostics_match_complete_blob_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let statistics = &registers.peripherals.wifi_mac_he_tb_statistics;
         assert_eq!(statistics.rx_trigger().as_ptr() as usize, 0x2010_43a0);
         assert_eq!(statistics.tb_transmission().as_ptr() as usize, 0x2010_43a4);
@@ -968,9 +956,9 @@ mod tests {
 
     #[test]
     fn generated_mac_he_ofdma_diagnostics_match_complete_blob_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let bsr = &registers.peripherals.wifi_mac_he_buffer_status;
         for tid in 0..8 {
             assert_eq!(
@@ -1030,9 +1018,9 @@ mod tests {
 
     #[test]
     fn generated_mac_rx_statistics_match_complete_blob_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let colors = &registers.peripherals.wifi_mac_he_color_collision;
         assert_eq!(colors.bss_color_bitmap_low().as_ptr() as usize, 0x2010_4040);
         assert_eq!(
@@ -1075,9 +1063,9 @@ mod tests {
 
     #[test]
     fn generated_mac_rx_misc_matches_complete_blob_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         assert_eq!(
             registers
                 .peripherals
@@ -1106,9 +1094,9 @@ mod tests {
 
     #[test]
     fn generated_mac_he_suffix_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let init = &registers.peripherals.wifi_mac_he_init_suffix;
         assert_eq!(init.multi_bssid_control().as_ptr() as usize, 0x2010_4020);
         assert_eq!(init.broadcast_ru_low().as_ptr() as usize, 0x2010_4038);
@@ -1150,9 +1138,9 @@ mod tests {
 
     #[test]
     fn generated_mac_tx_power_init_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let power = &registers.peripherals.wifi_mac_tx_power_init;
         for word in 0..10 {
             assert_eq!(
@@ -1175,9 +1163,9 @@ mod tests {
 
     #[test]
     fn generated_mac_hal_tail_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let rtc = &registers.peripherals.wifi_mac_rtc_timer_update;
         assert_eq!(rtc.control().as_ptr() as usize, 0x2010_d830);
         assert_eq!(rtc.sta_tsf_control().as_ptr() as usize, 0x2010_d858);
@@ -1196,16 +1184,16 @@ mod tests {
     fn mac_hal_tail_rejects_out_of_range_calibration_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = unsafe { ColdRadioRegisters::steal() };
+        let mut registers = ColdRadioRegisters::for_test();
         assert!(!registers.initialize_mac_hal_tail(0x19a8_79e0, 0x0004_0000));
         assert!(!registers.initialize_mac_hal_tail(0, u32::MAX));
     }
 
     #[test]
     fn generated_mac_txrx_callbacks_match_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let callbacks = &registers.peripherals.wifi_mac_txrx_callbacks;
         assert_eq!(callbacks.ack_rate_table().as_ptr() as usize, 0x2010_444c);
         assert_eq!(
@@ -1237,16 +1225,16 @@ mod tests {
     fn mac_txrx_callbacks_reject_out_of_range_slot_before_mmio() {
         // SAFETY: the rejected input returns before any generated register is
         // accessed; the host test therefore performs no volatile MMIO.
-        let mut registers = unsafe { RadioRegisters::steal() };
+        let mut registers = RadioRegisters::for_test();
         assert!(!registers.initialize_mac_txrx_callbacks(11));
         assert!(!registers.initialize_mac_txrx_callbacks(u8::MAX));
     }
 
     #[test]
     fn generated_mac_txrx_suffix_matches_complete_leaf_geometry() {
-        // SAFETY: this host test inspects generated register pointers only and
+        // This host test inspects generated register pointers only and
         // performs no volatile access.
-        let registers = unsafe { RadioRegisters::steal() };
+        let registers = RadioRegisters::for_test();
         let init = &registers.peripherals.wifi_mac_txrx_suffix;
         assert_eq!(init.aux_enable().as_ptr() as usize, 0x2010_4308);
         assert_eq!(

@@ -947,9 +947,8 @@ impl<'control, 'state, 'security> StaLifecycleBackend
 pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) -> ! {
     esp_println::println!("open-radio: cold PHY start");
 
-    // SAFETY: the board entry transfers the sole WIFI/platform singleton set
-    // into this task and this firmware links no vendor Wi-Fi implementation.
-    let owned = unsafe { Radio::claim(platform) };
+    let owned = Radio::claim(platform)
+        .unwrap_or_else(|_| panic!("open-radio register singleton was already claimed"));
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let calibration_identity = PhyCalibrationIdentity {
         rf_cal_version: phy_get_rf_cal_version(),

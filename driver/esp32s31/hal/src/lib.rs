@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 #[cfg(test)]
 extern crate std;
@@ -8,7 +9,7 @@ use core::marker::PhantomData;
 
 pub use open_esp_radio_esp32s31_registers::{
     CfrValue, ColdRadioRegisters, ForcedRxGain, RadioRegisters, Register32,
-    power as radio_registers,
+    power as radio_registers, svd,
 };
 pub mod analog_i2c;
 pub mod pbus;
@@ -82,17 +83,22 @@ impl<P> Radio<P, state::Owned> {
     /// Bind the integration layer's unique peripheral token to the open
     /// driver's register capability.
     ///
-    /// # Safety
-    ///
-    /// The token must uniquely represent the ESP32-S31 Wi-Fi/radio peripheral,
-    /// and ROM/vendor code must not own or mutate that peripheral until this
-    /// value is released.
-    pub unsafe fn claim(peripheral: P) -> Self {
-        Self {
+    /// The platform token and custom radio PAC singleton must both be free.
+    /// A second claim returns the platform token unchanged.
+    pub fn claim(peripheral: P) -> Result<Self, P> {
+        #[cfg(not(test))]
+        let Some(registers) = ColdRadioRegisters::take() else {
+            return Err(peripheral);
+        };
+        #[cfg(test)]
+        let registers = ColdRadioRegisters::from_peripherals(
+            svd::peripheral_ownership::peripherals_for_validation(),
+        );
+        Ok(Self {
             peripheral,
-            registers: unsafe { ColdRadioRegisters::steal() },
+            registers,
             state: PhantomData,
-        }
+        })
     }
 
     /// Release a radio that has not crossed into the powered state.
@@ -106,13 +112,11 @@ impl<P> Radio<P, state::Owned> {
     /// HIL may first run the vendor cold initializer and must not pulse the
     /// already calibrated radio reset merely to obtain the Rust type state.
     ///
-    /// # Safety
-    ///
-    /// The caller must have completed the ESP32-S31 modem/PHY clock, power and
-    /// reset prerequisites represented by [`state::Powered`]. No external
-    /// driver may continue accessing the radio after this transition; the
-    /// peripheral token and returned value must remain the unique owner.
-    pub unsafe fn assume_powered_after_external_initialization(mut self) -> Radio<P, state::Powered>
+    /// The caller is responsible for completing the modem/PHY clock, power and
+    /// reset prerequisites before choosing this explicit external-init path.
+    /// This is a hardware protocol precondition rather than a Rust memory-
+    /// safety contract.
+    pub fn assume_powered_after_external_initialization(mut self) -> Radio<P, state::Powered>
     where
         P: wifi_bb::PhyWifiBbControl,
     {
@@ -273,9 +277,8 @@ mod tests {
 
     #[test]
     fn peripheral_token_follows_the_type_state_owner() {
-        // SAFETY: this test token represents no real hardware and no MMIO is
-        // accessed.
-        let owned = unsafe { Radio::claim(TestPeripheral { id: 7, ready: true }) };
+        let owned = Radio::claim(TestPeripheral { id: 7, ready: true })
+            .unwrap_or_else(|_| panic!("test radio claim failed"));
         require_owned(&owned);
 
         let powered = owned
@@ -287,34 +290,29 @@ mod tests {
 
     #[test]
     fn external_initialization_bridge_preserves_the_unique_owner() {
-        // SAFETY: this test token represents no real hardware and no MMIO is
-        // accessed.
-        let owned = unsafe { Radio::claim(TestPeripheral { id: 8, ready: true }) };
+        let owned = Radio::claim(TestPeripheral { id: 8, ready: true })
+            .unwrap_or_else(|_| panic!("test radio claim failed"));
         require_owned(&owned);
 
-        // SAFETY: this host-only type-state test models a completed external
-        // initializer and performs no register access.
-        let powered = unsafe { owned.assume_powered_after_external_initialization() };
+        let powered = owned.assume_powered_after_external_initialization();
         require_powered(&powered);
         assert_eq!(powered.peripheral(), &TestPeripheral { id: 8, ready: true });
     }
 
     #[test]
     fn unpowered_owner_can_release_the_original_token() {
-        // SAFETY: this test token represents no real hardware.
-        let owned = unsafe { Radio::claim(TestPeripheral { id: 9, ready: true }) };
+        let owned = Radio::claim(TestPeripheral { id: 9, ready: true })
+            .unwrap_or_else(|_| panic!("test radio claim failed"));
         assert_eq!(owned.release(), TestPeripheral { id: 9, ready: true });
     }
 
     #[test]
     fn failed_power_transition_returns_the_unique_owned_radio() {
-        // SAFETY: this test token represents no real hardware.
-        let owned = unsafe {
-            Radio::claim(TestPeripheral {
-                id: 11,
-                ready: false,
-            })
-        };
+        let owned = Radio::claim(TestPeripheral {
+            id: 11,
+            ready: false,
+        })
+        .unwrap_or_else(|_| panic!("test radio claim failed"));
         let failure = match owned.power_up() {
             Ok(_) => panic!("stuck reset unexpectedly powered the radio"),
             Err(failure) => failure,

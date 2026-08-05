@@ -24056,7 +24056,7 @@ pub mod wifi_mac_interrupt {
         #[doc = "Field `EVENT_MASK` reader - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
         pub type EventMaskR = crate::FieldReader<u32>;
         #[doc = "Field `EVENT_MASK` writer - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
-        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_ENABLE_MAC,BLOB_LIBPP_HAL_INIT_TAIL\\]; CONFIDENCE\\[instruction-exact\\]. One enable bit per MAC event; complete hal_init stores 0x19a879e0 and complete hal_enable_mac stores its full argument here. Event identities are documented on STATUS."]
             #[inline(always)]
@@ -24080,7 +24080,7 @@ pub mod wifi_mac_interrupt {
         impl crate::Readable for EnableSpec {}
         #[doc = "`write(|w| ..)` method takes [`enable::W`](W) writer structure"]
         impl crate::Writable for EnableSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "RAW (r) register accessor: SOURCE\\[BLOB_LIBPP_ISR_REGISTER_DUMP\\]; CONFIDENCE\\[instruction-exact\\]. Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
@@ -24181,7 +24181,7 @@ pub mod wifi_mac_interrupt {
         #[doc = "Register `CLEAR` writer"]
         pub type W = crate::W<ClearSpec>;
         #[doc = "Field `EVENTS` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT\\]; CONFIDENCE\\[instruction-exact\\]. Ones acknowledge the corresponding event bits."]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31 - SOURCE\\[BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT\\]; CONFIDENCE\\[instruction-exact\\]. Ones acknowledge the corresponding event bits."]
             #[inline(always)]
@@ -24196,7 +24196,7 @@ pub mod wifi_mac_interrupt {
         }
         #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
         impl crate::Writable for ClearSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
@@ -24655,10 +24655,53 @@ pub mod wifi_mac_power_interrupt {
         pub type R = crate::R<EnableSpec>;
         #[doc = "Register `ENABLE` writer"]
         pub type W = crate::W<EnableSpec>;
+        #[doc = ""]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u32)]
+        pub enum EventMask {
+            #[doc = "0: Mask every qualified WDEVPWR event during ownership handoff."]
+            Masked = 0,
+        }
+        impl From<EventMask> for u32 {
+            #[inline(always)]
+            fn from(variant: EventMask) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for EventMask {
+            type Ux = u32;
+        }
+        impl crate::IsEnum for EventMask {}
         #[doc = "Field `EVENT_MASK` reader - "]
-        pub type EventMaskR = crate::FieldReader<u32>;
+        pub type EventMaskR = crate::FieldReader<EventMask>;
+        impl EventMaskR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<EventMask> {
+                match self.bits {
+                    0 => Some(EventMask::Masked),
+                    _ => None,
+                }
+            }
+            #[doc = "Mask every qualified WDEVPWR event during ownership handoff."]
+            #[inline(always)]
+            pub fn is_masked(&self) -> bool {
+                *self == EventMask::Masked
+            }
+        }
         #[doc = "Field `EVENT_MASK` writer - "]
-        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type EventMaskW<'a, REG> = crate::FieldWriter<'a, REG, 32, EventMask>;
+        impl<'a, REG> EventMaskW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u32>,
+        {
+            #[doc = "Mask every qualified WDEVPWR event during ownership handoff."]
+            #[inline(always)]
+            pub fn masked(self) -> &'a mut crate::W<REG> {
+                self.variant(EventMask::Masked)
+            }
+        }
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24745,7 +24788,7 @@ pub mod wifi_mac_power_interrupt {
         #[doc = "Field `EVENTS` reader - "]
         pub type EventsR = crate::FieldReader<u32>;
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24769,7 +24812,7 @@ pub mod wifi_mac_power_interrupt {
         impl crate::Readable for ClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`clear::W`](W) writer structure"]
         impl crate::Writable for ClearSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
             const ONE_TO_MODIFY_FIELDS_BITMAP: u32 = 0xffff_ffff;
         }
     }
@@ -30318,8 +30361,298 @@ pub mod interrupt_snapshot {
     }
 }
 
+/// Safe ownership partitions derived from the SVD interrupt banks.
+pub mod peripheral_ownership {
+    /// Radio peripherals which remain available to ordinary task code.
+    #[allow(non_snake_case)]
+    pub struct RadioPeripherals {
+        pub wifi_mac_internal_tx_block_ack: crate::WifiMacInternalTxBlockAck,
+        pub wifi_mac_he_color_collision: crate::WifiMacHeColorCollision,
+        pub wifi_mac_rx_power_save: crate::WifiMacRxPowerSave,
+        pub wifi_mac_rx_bssid_list: crate::WifiMacRxBssidList,
+        pub wifi_mac_rx_custom_type: crate::WifiMacRxCustomType,
+        pub wifi_mac_rx_statistics: crate::WifiMacRxStatistics,
+        pub wifi_mac_tx_statistics: crate::WifiMacTxStatistics,
+        pub wifi_mac_diagnostic_statistics: crate::WifiMacDiagnosticStatistics,
+        pub wifi_mac_rx_hang_statistics: crate::WifiMacRxHangStatistics,
+        pub phy_memory: crate::PhyMemory,
+        pub phy_frequency_channel_oracle: crate::PhyFrequencyChannelOracle,
+        pub phy_pbus: crate::PhyPbus,
+        pub phy_i2c_command_ram: crate::PhyI2cCommandRam,
+        pub phy_agc_oracle: crate::PhyAgcOracle,
+        pub phy_baseband_config_oracle: crate::PhyBasebandConfigOracle,
+        pub phy_iq_estimator_oracle: crate::PhyIqEstimatorOracle,
+        pub phy_rx_dco_oracle: crate::PhyRxDcoOracle,
+        pub phy_cold_deadline_oracle: crate::PhyColdDeadlineOracle,
+        pub phy_clock_oracle: crate::PhyClockOracle,
+        pub wifi_mac_sta_beacon_filter: crate::WifiMacStaBeaconFilter,
+        pub wifi_mac_beacon_ie_crc: crate::WifiMacBeaconIeCrc,
+        pub wifi_mac_rx_end_state: crate::WifiMacRxEndState,
+        pub wifi_mac_rx_runtime_results: crate::WifiMacRxRuntimeResults,
+        pub wifi_mac_bssid_policy: crate::WifiMacBssidPolicy,
+        pub wifi_mac_interface_address: crate::WifiMacInterfaceAddress,
+        pub wifi_mac_rx_filter: crate::WifiMacRxFilter,
+        pub wifi_mac_control: crate::WifiMacControl,
+        pub wifi_mac_regdma_control: crate::WifiMacRegdmaControl,
+        pub wifi_mac_crypto_control: crate::WifiMacCryptoControl,
+        pub wifi_mac_key_table: crate::WifiMacKeyTable,
+        pub wifi_mac_tx_common: crate::WifiMacTxCommon,
+        pub wifi_mac_tx_queue_control: crate::WifiMacTxQueueControl,
+        pub wifi_mac_tx_queue_vector: crate::WifiMacTxQueueVector,
+        pub wifi_mac_beamforming_report: crate::WifiMacBeamformingReport,
+        pub wifi_mac_tx_completion: crate::WifiMacTxCompletion,
+        pub wifi_mac_he_init_prefix: crate::WifiMacHeInitPrefix,
+        pub wifi_mac_he_tb_statistics: crate::WifiMacHeTbStatistics,
+        pub wifi_mac_he_tb_diagnostics: crate::WifiMacHeTbDiagnostics,
+        pub wifi_mac_he_buffer_status: crate::WifiMacHeBufferStatus,
+        pub wifi_mac_he_mu_edca_timer: crate::WifiMacHeMuEdcaTimer,
+        pub wifi_mac_he_trigger_rx_diagnostics: crate::WifiMacHeTriggerRxDiagnostics,
+        pub wifi_mac_beamforming_feedback_test: crate::WifiMacBeamformingFeedbackTest,
+        pub wifi_mac_he_obss_narrow_band_ru: crate::WifiMacHeObssNarrowBandRu,
+        pub wifi_mac_tx_power_init: crate::WifiMacTxPowerInit,
+        pub wifi_mac_he_init_suffix: crate::WifiMacHeInitSuffix,
+        pub wifi_mac_coex_init: crate::WifiMacCoexInit,
+        pub wifi_mac_antenna_init: crate::WifiMacAntennaInit,
+        pub wifi_mac_tsf_status: crate::WifiMacTsfStatus,
+        pub wifi_mac_sta_tbtt_target: crate::WifiMacStaTbttTarget,
+        pub wifi_mac_sta_tsf_load: crate::WifiMacStaTsfLoad,
+        pub wifi_mac_rtc_timer_update: crate::WifiMacRtcTimerUpdate,
+        pub wifi_mac_aux_tsf_control: crate::WifiMacAuxTsfControl,
+        pub wifi_mac_txrx_prefix: crate::WifiMacTxrxPrefix,
+        pub wifi_mac_txrx_callbacks: crate::WifiMacTxrxCallbacks,
+        pub wifi_mac_txrx_suffix: crate::WifiMacTxrxSuffix,
+        pub wifi_mac_rx_csi_control: crate::WifiMacRxCsiControl,
+        pub wifi_mac_last_rx_buffer: crate::WifiMacLastRxBuffer,
+        pub wifi_mac_core_enable: crate::WifiMacCoreEnable,
+        pub wifi_mac_tsf_timer: crate::WifiMacTsfTimer,
+        pub wifi_mac_coex_runtime: crate::WifiMacCoexRuntime,
+        pub wifi_mac_cold_handshake: crate::WifiMacColdHandshake,
+        pub wifi_mac_rx_dma: crate::WifiMacRxDma,
+        pub phy_fecoex_recovered: crate::PhyFecoexRecovered,
+        pub phy_fedata_recovered: crate::PhyFedataRecovered,
+        pub phy_fectrl_recovered: crate::PhyFectrlRecovered,
+        pub phy_fedata_wifi_recovered: crate::PhyFedataWifiRecovered,
+        pub phy_btagc_recovered: crate::PhyBtagcRecovered,
+        pub phy_agc_recovered_gaps: crate::PhyAgcRecoveredGaps,
+        pub phy_nrx_recovered_gaps: crate::PhyNrxRecoveredGaps,
+        pub phy_bb_recovered_gaps: crate::PhyBbRecoveredGaps,
+        pub phy_brx_recovered_gaps: crate::PhyBrxRecoveredGaps,
+    }
+    /// Interrupt banks transferred from cold setup to the hard handlers.
+    #[allow(non_snake_case)]
+    pub struct InterruptPeripherals {
+        pub wifi_mac_interrupt: crate::WifiMacInterrupt,
+        pub wifi_mac_power_interrupt: crate::WifiMacPowerInterrupt,
+    }
+    /// Consume the singleton and separate task-owned registers from interrupt banks.
+    #[inline]
+    pub fn split(peripherals: crate::Peripherals) -> (RadioPeripherals, InterruptPeripherals) {
+        let crate::Peripherals {
+            wifi_mac_internal_tx_block_ack,
+            wifi_mac_he_color_collision,
+            wifi_mac_rx_power_save,
+            wifi_mac_rx_bssid_list,
+            wifi_mac_rx_custom_type,
+            wifi_mac_rx_statistics,
+            wifi_mac_tx_statistics,
+            wifi_mac_diagnostic_statistics,
+            wifi_mac_rx_hang_statistics,
+            phy_memory,
+            phy_frequency_channel_oracle,
+            phy_pbus,
+            phy_i2c_command_ram,
+            phy_agc_oracle,
+            phy_baseband_config_oracle,
+            phy_iq_estimator_oracle,
+            phy_rx_dco_oracle,
+            phy_cold_deadline_oracle,
+            phy_clock_oracle,
+            wifi_mac_sta_beacon_filter,
+            wifi_mac_beacon_ie_crc,
+            wifi_mac_rx_end_state,
+            wifi_mac_rx_runtime_results,
+            wifi_mac_bssid_policy,
+            wifi_mac_interface_address,
+            wifi_mac_rx_filter,
+            wifi_mac_control,
+            wifi_mac_regdma_control,
+            wifi_mac_crypto_control,
+            wifi_mac_key_table,
+            wifi_mac_tx_common,
+            wifi_mac_tx_queue_control,
+            wifi_mac_tx_queue_vector,
+            wifi_mac_beamforming_report,
+            wifi_mac_tx_completion,
+            wifi_mac_he_init_prefix,
+            wifi_mac_he_tb_statistics,
+            wifi_mac_he_tb_diagnostics,
+            wifi_mac_he_buffer_status,
+            wifi_mac_he_mu_edca_timer,
+            wifi_mac_he_trigger_rx_diagnostics,
+            wifi_mac_beamforming_feedback_test,
+            wifi_mac_he_obss_narrow_band_ru,
+            wifi_mac_tx_power_init,
+            wifi_mac_he_init_suffix,
+            wifi_mac_coex_init,
+            wifi_mac_antenna_init,
+            wifi_mac_tsf_status,
+            wifi_mac_sta_tbtt_target,
+            wifi_mac_sta_tsf_load,
+            wifi_mac_rtc_timer_update,
+            wifi_mac_aux_tsf_control,
+            wifi_mac_txrx_prefix,
+            wifi_mac_txrx_callbacks,
+            wifi_mac_txrx_suffix,
+            wifi_mac_rx_csi_control,
+            wifi_mac_last_rx_buffer,
+            wifi_mac_core_enable,
+            wifi_mac_interrupt,
+            wifi_mac_tsf_timer,
+            wifi_mac_coex_runtime,
+            wifi_mac_power_interrupt,
+            wifi_mac_cold_handshake,
+            wifi_mac_rx_dma,
+            phy_fecoex_recovered,
+            phy_fedata_recovered,
+            phy_fectrl_recovered,
+            phy_fedata_wifi_recovered,
+            phy_btagc_recovered,
+            phy_agc_recovered_gaps,
+            phy_nrx_recovered_gaps,
+            phy_bb_recovered_gaps,
+            phy_brx_recovered_gaps,
+        } = peripherals;
+        (
+            RadioPeripherals {
+                wifi_mac_internal_tx_block_ack,
+                wifi_mac_he_color_collision,
+                wifi_mac_rx_power_save,
+                wifi_mac_rx_bssid_list,
+                wifi_mac_rx_custom_type,
+                wifi_mac_rx_statistics,
+                wifi_mac_tx_statistics,
+                wifi_mac_diagnostic_statistics,
+                wifi_mac_rx_hang_statistics,
+                phy_memory,
+                phy_frequency_channel_oracle,
+                phy_pbus,
+                phy_i2c_command_ram,
+                phy_agc_oracle,
+                phy_baseband_config_oracle,
+                phy_iq_estimator_oracle,
+                phy_rx_dco_oracle,
+                phy_cold_deadline_oracle,
+                phy_clock_oracle,
+                wifi_mac_sta_beacon_filter,
+                wifi_mac_beacon_ie_crc,
+                wifi_mac_rx_end_state,
+                wifi_mac_rx_runtime_results,
+                wifi_mac_bssid_policy,
+                wifi_mac_interface_address,
+                wifi_mac_rx_filter,
+                wifi_mac_control,
+                wifi_mac_regdma_control,
+                wifi_mac_crypto_control,
+                wifi_mac_key_table,
+                wifi_mac_tx_common,
+                wifi_mac_tx_queue_control,
+                wifi_mac_tx_queue_vector,
+                wifi_mac_beamforming_report,
+                wifi_mac_tx_completion,
+                wifi_mac_he_init_prefix,
+                wifi_mac_he_tb_statistics,
+                wifi_mac_he_tb_diagnostics,
+                wifi_mac_he_buffer_status,
+                wifi_mac_he_mu_edca_timer,
+                wifi_mac_he_trigger_rx_diagnostics,
+                wifi_mac_beamforming_feedback_test,
+                wifi_mac_he_obss_narrow_band_ru,
+                wifi_mac_tx_power_init,
+                wifi_mac_he_init_suffix,
+                wifi_mac_coex_init,
+                wifi_mac_antenna_init,
+                wifi_mac_tsf_status,
+                wifi_mac_sta_tbtt_target,
+                wifi_mac_sta_tsf_load,
+                wifi_mac_rtc_timer_update,
+                wifi_mac_aux_tsf_control,
+                wifi_mac_txrx_prefix,
+                wifi_mac_txrx_callbacks,
+                wifi_mac_txrx_suffix,
+                wifi_mac_rx_csi_control,
+                wifi_mac_last_rx_buffer,
+                wifi_mac_core_enable,
+                wifi_mac_tsf_timer,
+                wifi_mac_coex_runtime,
+                wifi_mac_cold_handshake,
+                wifi_mac_rx_dma,
+                phy_fecoex_recovered,
+                phy_fedata_recovered,
+                phy_fectrl_recovered,
+                phy_fedata_wifi_recovered,
+                phy_btagc_recovered,
+                phy_agc_recovered_gaps,
+                phy_nrx_recovered_gaps,
+                phy_bb_recovered_gaps,
+                phy_brx_recovered_gaps,
+            },
+            InterruptPeripherals {
+                wifi_mac_interrupt,
+                wifi_mac_power_interrupt,
+            },
+        )
+    }
+    /// Acquire a fresh singleton in an isolated compiled-validation image.
+    #[cfg(feature = "validation-probes")]
+    #[doc(hidden)]
+    #[inline]
+    pub fn peripherals_for_validation() -> crate::Peripherals {
+        // SAFETY: validation images contain one closed probe and no runtime driver.
+        unsafe { crate::Peripherals::steal() }
+    }
+}
+
 /// Safe, SVD-declared writes which cover a complete register.
 pub mod full_register_write {
+
+    /// Write every bit of `WIFI_MAC_INTERRUPT`.`ENABLE` through its full-width field.
+    #[inline]
+    pub fn mac_interrupt_enable(registers: &crate::WifiMacInterrupt, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .enable()
+                .write_with_zero(|writer| writer.event_mask().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_INTERRUPT`.`CLEAR` through its full-width field.
+    #[inline]
+    pub fn mac_interrupt_clear(registers: &crate::WifiMacInterrupt, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.events().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_POWER_INTERRUPT`.`CLEAR` through its full-width field.
+    #[inline]
+    pub fn mac_power_interrupt_clear(registers: &crate::WifiMacPowerInterrupt, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .clear()
+                .write_with_zero(|writer| writer.events().set(value));
+        }
+    }
 
     /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_LOW` through its full-width field.
     #[inline]
@@ -30357,6 +30690,22 @@ pub mod full_register_write {
             registers
                 .rx_descriptor_base()
                 .write_with_zero(|writer| writer.address().set(value));
+        }
+    }
+}
+
+/// Safe, SVD-declared complete-register writes of fixed enumerated values.
+pub mod fixed_register_write {
+
+    /// Write the `MASKED` variant to every bit of `WIFI_MAC_POWER_INTERRUPT`.`ENABLE`.
+    #[inline]
+    pub fn mask_mac_power_interrupts(registers: &crate::WifiMacPowerInterrupt) {
+        // SAFETY: generator validation proves that the sole field covers
+        // all 32 bits and the named writable variant exists in the SVD.
+        unsafe {
+            registers
+                .enable()
+                .write_with_zero(|writer| writer.event_mask().masked());
         }
     }
 }

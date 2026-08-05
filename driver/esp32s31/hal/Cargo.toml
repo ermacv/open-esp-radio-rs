@@ -10,5 +10,9 @@ description = "Ownership and async HAL boundaries for the ESP32-S31 radio"
 [dependencies]
 open-esp-radio-esp32s31-registers = { path = "../registers" }
 
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+open-esp-radio-esp32s31-registers = { path = "../registers", features = ["validation-probes"] }
+
 [lints]
 workspace = true

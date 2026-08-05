@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the finite MAC interrupt transaction.
 
+#![forbid(unsafe_code)]
+
 use super::{
     MacInterruptSnapshot, MacPowerInterruptSnapshot, device_fence,
     svd::{self, interrupt_snapshot},
@@ -16,15 +18,12 @@ pub struct MacInterruptSetup {
 }
 
 impl MacInterruptSetup {
-    pub(super) unsafe fn steal_from_cold_radio_owner() -> Self {
+    pub(super) fn from_peripherals(
+        peripherals: svd::peripheral_ownership::InterruptPeripherals,
+    ) -> Self {
         Self {
-            // SAFETY: `ColdRadioRegisters::into_running` consumes the only
-            // safe owner that can access interrupt enable/clear registers.
-            peripheral: unsafe { svd::WifiMacInterrupt::steal() },
-            // SAFETY: the same consumed cold owner uniquely owns the disjoint
-            // WDEVPWR bank. It is transferred with the MAC bank so both ISR
-            // capabilities exist before either CPU route is exposed.
-            power_peripheral: unsafe { svd::WifiMacPowerInterrupt::steal() },
+            peripheral: peripherals.wifi_mac_interrupt,
+            power_peripheral: peripherals.wifi_mac_power_interrupt,
         }
     }
 
@@ -38,20 +37,10 @@ impl MacInterruptSetup {
         // mask, explicitly keep the still-unqualified WDEVPWR causes masked,
         // acknowledge every stale event, then order all MMIO writes before
         // the caller exposes either ISR capability.
-        unsafe {
-            self.peripheral
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(event_mask));
-            self.power_peripheral
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(0));
-            self.peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(u32::MAX));
-            self.power_peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(u32::MAX));
-        }
+        svd::full_register_write::mac_interrupt_enable(&self.peripheral, event_mask);
+        svd::fixed_register_write::mask_mac_power_interrupts(&self.power_peripheral);
+        svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
+        svd::full_register_write::mac_power_interrupt_clear(&self.power_peripheral, u32::MAX);
         device_fence();
         (
             MacInterruptRegisters {
@@ -129,26 +118,10 @@ impl MacInterruptRegisters {
     /// [`MacInterruptSetup::activate`] transaction possible without stealing
     /// either PAC peripheral a second time.
     pub fn deactivate(self, power: MacPowerInterruptRegisters) -> MacInterruptSetup {
-        // SAFETY: ENABLE and CLEAR are complete full-width event bitmaps. The
-        // unique values consumed here prove that no safe task/ISR accessor can
-        // overlap this transition; platform routing is the caller's separate
-        // responsibility as documented above.
-        unsafe {
-            self.peripheral
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(0));
-            power
-                .peripheral
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(0));
-            self.peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(u32::MAX));
-            power
-                .peripheral
-                .clear()
-                .write_with_zero(|w| w.events().bits(u32::MAX));
-        }
+        svd::full_register_write::mac_interrupt_enable(&self.peripheral, 0);
+        svd::fixed_register_write::mask_mac_power_interrupts(&power.peripheral);
+        svd::full_register_write::mac_interrupt_clear(&self.peripheral, u32::MAX);
+        svd::full_register_write::mac_power_interrupt_clear(&power.peripheral, u32::MAX);
         device_fence();
         MacInterruptSetup {
             peripheral: self.peripheral,
@@ -157,11 +130,7 @@ impl MacInterruptRegisters {
     }
 
     #[cfg(feature = "validation-probes")]
-    pub(crate) unsafe fn steal_for_validation() -> Self {
-        Self {
-            // SAFETY: this constructor exists only in the isolated validation
-            // image, whose exported probe is the sole peripheral owner.
-            peripheral: unsafe { svd::WifiMacInterrupt::steal() },
-        }
+    pub(crate) fn from_peripheral_for_validation(peripheral: svd::WifiMacInterrupt) -> Self {
+        Self { peripheral }
     }
 }

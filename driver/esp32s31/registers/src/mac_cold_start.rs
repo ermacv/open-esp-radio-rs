@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the cold MAC handshake prefix.
 
+#![forbid(unsafe_code)]
+
 use super::ColdRadioRegisters;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -44,17 +46,9 @@ impl ColdRadioRegisters {
             }
         };
 
-        let interrupt = &self.registers.peripherals.wifi_mac_interrupt;
-        // SAFETY: both are complete full-register images from the recovered
-        // prefix; CLEAR is write-only and accepts the sampled event bitmap.
-        unsafe {
-            interrupt
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(0));
-            interrupt
-                .clear()
-                .write_with_zero(|w| w.events().bits(u32::MAX));
-        }
+        let interrupt = &self.interrupts.wifi_mac_interrupt;
+        super::svd::full_register_write::mac_interrupt_enable(interrupt, 0);
+        super::svd::full_register_write::mac_interrupt_clear(interrupt, u32::MAX);
 
         Ok(MacColdHandshakeOutcome { samples, value })
     }

@@ -1,9 +1,19 @@
 //! Feature-gated compiled-validation access to qualified register transactions.
 //!
 //! This module is never enabled by the runtime. It exposes the exact safe
-//! transaction while keeping lifecycle ownership and `steal` in the HIL probe.
+//! transaction while keeping lifecycle ownership in the generated PAC.
+
+#![forbid(unsafe_code)]
 
 use crate::{MacInterruptRegisters, svd};
+
+/// Construct the ordinary task-owned register partition for an isolated probe.
+#[inline(always)]
+pub fn radio_registers() -> crate::RadioRegisters {
+    let peripherals = svd::peripheral_ownership::peripherals_for_validation();
+    let (radio, _) = svd::peripheral_ownership::split(peripherals);
+    crate::RadioRegisters::from_peripherals(radio)
+}
 
 #[inline(always)]
 pub fn hal_get_sta_tsf(
@@ -15,14 +25,11 @@ pub fn hal_get_sta_tsf(
 }
 
 /// Construct the real finite production capability in an isolated probe ELF.
-///
-/// # Safety
-///
-/// The caller must ensure that the probe is the only owner of this peripheral.
 #[inline(always)]
-pub unsafe fn mac_interrupt_registers() -> MacInterruptRegisters {
-    // SAFETY: the caller accepts the validation-only uniqueness contract.
-    unsafe { MacInterruptRegisters::steal_for_validation() }
+pub fn mac_interrupt_registers() -> MacInterruptRegisters {
+    let peripherals = svd::peripheral_ownership::peripherals_for_validation();
+    let (_, interrupts) = svd::peripheral_ownership::split(peripherals);
+    MacInterruptRegisters::from_peripheral_for_validation(interrupts.wifi_mac_interrupt)
 }
 
 #[inline(always)]

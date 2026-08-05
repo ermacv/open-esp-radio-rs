@@ -15,14 +15,9 @@ impl ColdRadioRegisters {
             .wifi_mac_core_enable
             .control()
             .modify(|_, w| unsafe { w.mac_disable_gates_unknown().bits(0) });
-        // SAFETY: the complete leaf publishes all 32 argument bits as the
-        // enabled-event image; this is not a write-to-clear register.
-        unsafe {
-            self.registers
-                .peripherals
-                .wifi_mac_interrupt
-                .enable()
-                .write_with_zero(|w| w.event_mask().bits(event_mask))
-        };
+        super::svd::full_register_write::mac_interrupt_enable(
+            &self.interrupts.wifi_mac_interrupt,
+            event_mask,
+        );
     }
 }

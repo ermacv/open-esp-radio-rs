@@ -268,8 +268,7 @@ pub extern "C" fn open_libpp_rx_trace_wdev_append_rx_blocks(scenario: u32) -> u3
 
     let descriptors = [const { Descriptor::new() }; COUNT];
     let buffers = [0x2f00_2000, 0x2f00_2200];
-    // SAFETY: the isolated validation image has no second radio owner.
-    let mut registers = unsafe { RadioRegisters::steal() };
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
     let stopped = match RxRingStopped::prepare(
         &mut registers,
         &descriptors,
@@ -816,9 +815,7 @@ pub extern "C" fn open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_power_tsf_trace_hal_set_sta_tsf_wakeup(enabled: u32) {
-    // SAFETY: this validation-only function is the sole owner of the complete
-    // radio PAC singleton in its isolated probe image.
-    let mut registers = unsafe { RadioRegisters::steal() };
+    let mut registers = open_esp_radio_esp32s31_registers::validation::radio_registers();
     registers.set_station_tsf_wakeup(enabled != 0);
 }
 
@@ -862,10 +859,8 @@ impl IrqSink for ProbeIrqSink {
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn open_libpp_trace_wdev_process_fiq_mac_slice() -> u32 {
-    // SAFETY: this validation-only function is the sole user of the stolen
-    // peripheral in its isolated probe image.
     let mut interrupt =
-        unsafe { open_esp_radio_esp32s31_registers::validation::mac_interrupt_registers() };
+        open_esp_radio_esp32s31_registers::validation::mac_interrupt_registers();
     let sink = ProbeIrqSink {
         posted: Cell::new(0),
         unhandled: Cell::new(0),

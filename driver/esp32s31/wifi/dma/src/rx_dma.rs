@@ -48,6 +48,7 @@ impl<'storage> RxDmaBinding<'storage> {
         unsafe_code,
         reason = "raw target publication is already an unsafe validation boundary"
     )]
+    #[cfg(any(not(target_pointer_width = "32"), feature = "validation-raw-dma"))]
     pub(crate) fn raw_validation(descriptor_base: u32) -> RxDmaBinding<'static> {
         // SAFETY: target callers cross an unsafe public API and retain the
         // addressed ring; native callers use a model with no DMA actor.

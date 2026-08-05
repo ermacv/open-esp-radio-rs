@@ -11,6 +11,7 @@ description = "Allocation-free source-owned ESP32-S31 Wi-Fi MAC primitives"
 default = []
 large-rx-pool-48 = []
 rx-ba-window-8 = []
+validation-raw-dma = ["open-esp-radio-esp32s31-wifi-dma/validation-raw-dma"]
 
 [dependencies]
 open-esp-radio-dma = { path = "../../../dma" }

@@ -309,7 +309,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
     /// and exclusively DMA-owned until the returned ring is confirmed halted.
     /// Shipping code must use [`crate::rx_storage::RxDmaStorage::prepare_ring`]
     /// instead, which establishes that proof from a static arena.
-    #[cfg(target_pointer_width = "32")]
+    #[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
     #[allow(
         unsafe_code,
         reason = "raw target constructor makes its DMA lifetime contract explicit"
@@ -1076,7 +1076,7 @@ pub fn publish_cold_ring<M: RxDma>(
 /// `descriptor_dma_base` must identify a fully initialized static descriptor
 /// chain whose buffers remain exclusively available to DMA until the walker
 /// is confirmed stopped.
-#[cfg(target_pointer_width = "32")]
+#[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
 #[allow(
     unsafe_code,
     reason = "raw target publication makes its DMA lifetime contract explicit"
@@ -1118,22 +1118,6 @@ fn publish_cold_ring_inner<M: RxDma>(
 /// settle while the caller completes channel/MAC setup.
 #[cfg(not(target_pointer_width = "32"))]
 pub fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
-    enable_receive_inner(mmio, &RxDmaBinding::raw_validation(0))
-}
-
-/// Open a target walker whose raw published base is owned by the caller.
-///
-/// # Safety
-///
-/// The currently published descriptor chain and all addressed buffers must
-/// satisfy the same static lifetime and exclusive ownership requirements as
-/// [`publish_cold_ring`]. Owned code starts through [`RxRingStopped`] instead.
-#[cfg(target_pointer_width = "32")]
-#[allow(
-    unsafe_code,
-    reason = "raw target enable makes its DMA lifetime contract explicit"
-)]
-pub unsafe fn enable_receive<M: RxDma>(mmio: &mut M) -> Result<(), RxRingError> {
     enable_receive_inner(mmio, &RxDmaBinding::raw_validation(0))
 }
 

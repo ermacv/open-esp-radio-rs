@@ -87,9 +87,11 @@ from its retained descriptor arena and moves that authority through stopped
 and live typestates. The public `RxDma` backend and the lower
 `RadioRegisters` descriptor-base, enable and reload methods all require the
 binding/range; owning a register singleton or implementing a mock backend is
-no longer enough to publish an arbitrary safe-Rust address. Only the existing
-raw target validation entry points manufacture synthetic authority, under
-their explicit unsafe contract.
+no longer enough to publish an arbitrary safe-Rust address. The raw target
+constructor/publication entry points are absent from ordinary production
+builds and exist only under the explicit `validation-raw-dma` feature; those
+harness calls manufacture synthetic authority under their unsafe contract.
+There is no standalone raw target walker-enable entry point.
 
 ## Layer rules
 

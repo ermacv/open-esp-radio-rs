@@ -33,6 +33,10 @@ esp32s31-wifi-embassy = [
     "integration-embassy-net",
     "dep:open-esp-radio-esp32s31-wifi-embassy",
 ]
+validation-raw-dma = [
+    "esp32s31-wifi",
+    "open-esp-radio-esp32s31-wifi-lmac/validation-raw-dma",
+]
 
 [dependencies]
 open-esp-radio-embassy-net = { path = "../integration/network/embassy-net", optional = true }

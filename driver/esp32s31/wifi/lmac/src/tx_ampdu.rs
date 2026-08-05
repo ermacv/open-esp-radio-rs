@@ -777,7 +777,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// A descriptor-only storage uses `BUFFER_SIZE == 0`; its external
     /// allocation capacity is supplied by the pinned lease instead of being
     /// charged twice to the aggregate owner.
-    pub fn can_commit_referenced_frame(
+    fn can_commit_referenced_frame(
         &self,
         cookie: TxCookie,
         frame_length: usize,
@@ -978,31 +978,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             <= rate.maximum_apep_bytes(txop_limit))
     }
 
-    /// Check one referenced HE frame using the blob-derived delimiter policy.
-    ///
-    /// This is the descriptor-only/cache-TX counterpart of
-    /// [`Self::can_commit_he_frame`]. The frame capacity belongs to the pinned
-    /// network lease rather than this aggregate owner.
-    pub fn can_commit_referenced_he_frame(
-        &self,
-        cookie: TxCookie,
-        frame_length: usize,
-        hardware_mic_length: u8,
-        rate: HeRate,
-        density: HtAmpduDensity,
-        dma_capacity: usize,
-    ) -> Result<bool, HtAmpduTxError> {
-        self.can_commit_referenced_he_frame_with_txop(
-            cookie,
-            frame_length,
-            hardware_mic_length,
-            rate,
-            density,
-            HeEdcaTxopLimit::DEFAULT,
-            dma_capacity,
-        )
-    }
-
     /// Check one referenced HE frame against allocation, APEP and TXOP limits.
     pub fn can_commit_referenced_he_frame_with_txop(
         &self,
@@ -1176,7 +1151,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// buffer through `s_netstack_ref`; complete `libpp.a[pp.o]::
     /// ppAssembleAMPDU` links the existing ESF descriptors without copying
     /// their payloads.
-    pub unsafe fn commit_referenced_frame(
+    unsafe fn commit_referenced_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
@@ -1399,39 +1374,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .ampdu_empty_delimiters(psdu_length, density)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
         self.commit_frame(cookie, frame_length, hardware_mic_length, empty_delimiters)
-    }
-
-    /// Commit one HE MPDU already encoded in a separately pinned allocation.
-    ///
-    /// This preserves the exact HE delimiter and TXOP gates of
-    /// [`Self::commit_he_frame_with_txop`] while using the vendor cache-TX
-    /// ownership model represented by [`Self::commit_referenced_frame`].
-    ///
-    /// # Safety
-    ///
-    /// The caller must uphold the allocation lifetime and exclusivity
-    /// invariant documented by [`Self::commit_referenced_frame`].
-    pub unsafe fn commit_referenced_he_frame(
-        self: Pin<&mut Self>,
-        cookie: TxCookie,
-        dma_storage: &mut [u8],
-        frame_length: usize,
-        hardware_mic_length: u8,
-        rate: HeRate,
-        density: HtAmpduDensity,
-    ) -> Result<(), HtAmpduTxError> {
-        // SAFETY: forwarded unchanged to the TXOP-aware implementation.
-        unsafe {
-            self.commit_referenced_he_frame_with_txop(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                rate,
-                density,
-                HeEdcaTxopLimit::DEFAULT,
-            )
-        }
     }
 
     /// Commit one referenced HE MPDU under the complete rate/TXOP policy.
@@ -3414,13 +3356,14 @@ mod tests {
             unsafe {
                 storage
                     .as_mut()
-                    .commit_referenced_he_frame(
+                    .commit_referenced_he_frame_with_txop(
                         cookie,
                         external,
                         16,
                         8,
                         rate,
                         HtAmpduDensity::SixteenMicroseconds,
+                        HeEdcaTxopLimit::DEFAULT,
                     )
                     .unwrap();
             }

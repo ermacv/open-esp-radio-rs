@@ -64,6 +64,23 @@ struct StagedMetadata {
     length: usize,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CompletedDescriptorObservation {
+    descriptor_address: u32,
+    descriptor_word0: u32,
+    next_descriptor_address: u32,
+}
+
+impl From<RxCompletedDescriptor> for CompletedDescriptorObservation {
+    fn from(completed: RxCompletedDescriptor) -> Self {
+        Self {
+            descriptor_address: completed.descriptor_address(),
+            descriptor_word0: completed.word0(),
+            next_descriptor_address: completed.next_descriptor_address(),
+        }
+    }
+}
+
 /// Fixed staging storage with explicit vendor-equivalent ownership states.
 ///
 /// Place `RxStagePool<32, 1700>` in internal SRAM. It is ordinary CPU-owned
@@ -84,13 +101,13 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
 
     fn try_stage<'pool>(
         &'pool self,
-        completed: RxCompletedDescriptor,
+        completed: CompletedDescriptorObservation,
         source: &[u8],
     ) -> Result<RadioRxFrame<'pool, SLOTS, CAPACITY>, RxStageError> {
         if SLOTS == 0 || SLOTS > RX_STAGE_MAX_SLOTS || CAPACITY == 0 {
             return Err(RxStageError::InvalidPool);
         }
-        let length = usize::try_from(descriptor_length(completed.word0()))
+        let length = usize::try_from(descriptor_length(completed.descriptor_word0))
             .map_err(|_| RxStageError::TooLong)?;
         if length == 0 {
             return Err(RxStageError::Empty);
@@ -108,9 +125,9 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             lease: Some(lease),
             _slots: PhantomData,
             metadata: StagedMetadata {
-                descriptor_address: completed.descriptor_address(),
-                descriptor_word0: completed.word0(),
-                next_descriptor_address: completed.next_descriptor_address(),
+                descriptor_address: completed.descriptor_address,
+                descriptor_word0: completed.descriptor_word0,
+                next_descriptor_address: completed.next_descriptor_address,
                 length,
             },
         })
@@ -211,7 +228,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
         let radio_frame = self
-            .try_stage(completed, source)
+            .try_stage(completed.into(), source)
             .map_err(RxStageTransactionError::Stage)?;
         let append = ring
             .recycle_completed_prefix::<1, _, _>(mmio, prepare_buffer)
@@ -531,13 +548,12 @@ mod tests {
 
     use super::*;
 
-    fn completed(length: u32) -> RxCompletedDescriptor {
-        RxCompletedDescriptor::from_raw_parts_for_test(
-            0,
-            0x2f00_1000,
-            1_700 | (length << 14) | 0xc000_0000,
-            0,
-        )
+    fn completed(length: u32) -> CompletedDescriptorObservation {
+        CompletedDescriptorObservation {
+            descriptor_address: 0x2f00_1000,
+            descriptor_word0: 1_700 | (length << 14) | 0xc000_0000,
+            next_descriptor_address: 0,
+        }
     }
 
     #[test]

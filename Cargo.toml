@@ -11,6 +11,7 @@ members = [
     "driver/wifi/lmac",
     "driver/wifi/wpa2",
     "driver/esp32s31/hal",
+    "driver/esp32s31/wifi/dma",
     "driver/esp32s31/wifi/lmac",
     "driver/esp32s31/wifi/sta",
     "driver/esp32s31/registers",

@@ -19,6 +19,7 @@ vendor-layout-compat = []
 open-esp-radio-esp32s31-registers = { path = "../../registers" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-lmac = { path = "../../../wifi/lmac" }
+pin-project = "1.1.13"
 vcell = "0.1.3"
 
 [lints]

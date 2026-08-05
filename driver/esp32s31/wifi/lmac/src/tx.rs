@@ -1,6 +1,10 @@
 //! Bounded q0 legacy TX descriptor, submission and completion ownership.
 
-use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin, ptr};
+#![forbid(unsafe_code)]
+
+use core::{marker::PhantomPinned, mem::MaybeUninit, pin::Pin};
+
+use pin_project::pin_project;
 
 use open_esp_radio_esp32s31_registers::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
@@ -2681,19 +2685,29 @@ pub const fn legacy_q0_image(
 #[repr(C, align(16))]
 struct TxDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
+impl<const BUFFER_SIZE: usize> TxDmaBuffer<BUFFER_SIZE> {
+    fn bytes_mut(self: Pin<&mut Self>) -> &mut [u8; BUFFER_SIZE] {
+        &mut self.get_mut().0
+    }
+}
+
 /// Permanently pinned storage for one ordinary legacy/HT MPDU.
 ///
 /// The descriptor and its source buffer deliberately share one owner. Once
 /// [`pin_static`](Self::pin_static) is called, safe code can neither move the
 /// published descriptor nor move/drop the DMA buffer independently while the
 /// hardware owns it.
+#[pin_project]
 pub struct TxSlot<const BUFFER_SIZE: usize> {
+    #[pin]
     descriptor: Descriptor,
+    #[pin]
     buffer: TxDmaBuffer<BUFFER_SIZE>,
     state: TxSlotState,
     generation_cursor: u32,
     active: TxCookie,
     queue: LegacyTxQueue,
+    #[pin]
     _pin: PhantomPinned,
 }
 
@@ -2712,35 +2726,15 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Initialize the descriptor and source buffer in their final allocation.
     ///
-    /// This avoids materializing `BUFFER_SIZE` bytes in an embedded caller's
-    /// stack frame before moving the value into static DMA SRAM.
+    /// `MaybeUninit::write` constructs one valid owner directly into the
+    /// caller-provided final allocation without raw field projection.
     pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        let storage = storage.as_mut_ptr();
-
-        // SAFETY: `storage` is exclusively borrowed and correctly aligned.
-        // Every field is initialized before the final reference is formed.
-        // Only the byte-array field is zeroed as raw storage; enum and pin
-        // fields are constructed with valid Rust values explicitly.
-        unsafe {
-            ptr::addr_of_mut!((*storage).descriptor).write(Descriptor::new());
-            ptr::addr_of_mut!((*storage).buffer)
-                .cast::<u8>()
-                .write_bytes(0, core::mem::size_of::<TxDmaBuffer<BUFFER_SIZE>>());
-            ptr::addr_of_mut!((*storage).state).write(TxSlotState::Free);
-            ptr::addr_of_mut!((*storage).generation_cursor).write(0);
-            ptr::addr_of_mut!((*storage).active).write(TxCookie(0));
-            ptr::addr_of_mut!((*storage).queue).write(LegacyTxQueue::Voice);
-            ptr::addr_of_mut!((*storage)._pin).write(PhantomPinned);
-            &mut *storage
-        }
+        storage.write(Self::new())
     }
 
     /// Consume a unique static owner and permanently pin its DMA addresses.
     pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
-        // SAFETY: the unique `&'static mut` is consumed by the returned
-        // `'static` pin. `PhantomPinned` prevents safe extraction or movement
-        // for the remainder of the program.
-        unsafe { Pin::new_unchecked(storage) }
+        Pin::static_mut(storage)
     }
 
     pub fn state(&self) -> TxSlotState {
@@ -2749,13 +2743,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
     /// Borrow the complete source buffer while software exclusively owns it.
     pub fn buffer_mut(self: Pin<&mut Self>) -> Result<&mut [u8; BUFFER_SIZE], TxError> {
-        // SAFETY: the pinned slot is not moved. `Free` proves that no
-        // descriptor containing this buffer's address is hardware-owned.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Free {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Free {
             return Err(TxError::Busy);
         }
-        Ok(&mut slot.buffer.0)
+        Ok(slot.buffer.bytes_mut())
     }
 
     /// Current descriptor ownership word for bounded diagnostics.
@@ -2778,10 +2770,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         buffer_capacity: u32,
         transfer_length: u32,
     ) -> Result<TxCookie, TxError> {
-        // SAFETY: scalar state and descriptor words change in place; neither
-        // the descriptor nor its enclosed DMA buffer is moved.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Free {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Free {
             return Err(TxError::Busy);
         }
         if buffer_capacity == 0
@@ -2791,10 +2781,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         {
             return Err(TxError::Invalid);
         }
-        let buffer_address = slot.buffer.0.as_ptr().addr() as u32;
+        let buffer_address = slot.buffer.as_ref().get_ref().0.as_ptr().addr() as u32;
         #[cfg(target_arch = "riscv32")]
         {
-            let descriptor_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
+            let descriptor_address =
+                core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
             if !descriptor_address_valid(descriptor_address)
                 || !crate::descriptor::dma_range_valid(buffer_address, buffer_capacity)
             {
@@ -2805,16 +2796,18 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         // publishes the populated transfer length. They remain distinct even
         // for a direct buffer without an ESF-private prefix.
         let word0 = tx_owned_word(buffer_capacity, transfer_length).ok_or(TxError::Invalid)?;
-        let generation = slot
-            .generation_cursor
+        let generation = (*slot.generation_cursor)
             .checked_add(1)
             .ok_or(TxError::ResetRequired)?;
-        slot.generation_cursor = generation;
-        slot.active = TxCookie(generation);
-        slot.queue = LegacyTxQueue::Voice;
-        slot.descriptor.publish(word0, buffer_address, 0);
-        slot.state = TxSlotState::Reserved;
-        Ok(slot.active)
+        *slot.generation_cursor = generation;
+        *slot.active = TxCookie(generation);
+        *slot.queue = LegacyTxQueue::Voice;
+        slot.descriptor
+            .as_ref()
+            .get_ref()
+            .publish(word0, buffer_address, 0);
+        *slot.state = TxSlotState::Reserved;
+        Ok(*slot.active)
     }
 
     /// Cancel a descriptor that has not been published to an ordinary queue.
@@ -2825,16 +2818,13 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// edge makes that pre-publication failure recoverable without inventing
     /// a hardware detach transaction.
     pub fn cancel_reservation(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        // SAFETY: `Reserved` proves that no queue can reach the descriptor.
-        // The pinned allocation stays in place; only its unpublished image
-        // and scalar ownership state are reset.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
             return Err(TxError::Stale);
         }
-        slot.descriptor.publish(0, 0, 0);
-        slot.active = TxCookie(0);
-        slot.state = TxSlotState::Free;
+        slot.descriptor.as_ref().get_ref().publish(0, 0, 0);
+        *slot.active = TxCookie(0);
+        *slot.state = TxSlotState::Free;
         Ok(())
     }
 
@@ -2859,13 +2849,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         queue: LegacyTxQueue,
         config: LegacyTxConfig,
     ) -> Result<(), TxError> {
-        // SAFETY: the method never moves the pinned slot; it changes only
-        // scalar ownership fields and the device-owned descriptor words.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
             return Err(TxError::Stale);
         }
-        let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
+        let actual_address = core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
         let hardware_address = hardware.tx_descriptor_address(actual_address);
         let image = legacy_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
@@ -2888,8 +2876,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
 
         // Publish the software owner before the final hardware edge. A fast
         // completion can therefore never observe the old Reserved state.
-        slot.queue = queue;
-        slot.state = TxSlotState::HardwareOwned;
+        *slot.queue = queue;
+        *slot.state = TxSlotState::HardwareOwned;
         hardware.start_legacy_tx(index, image.plcp0);
         Ok(())
     }
@@ -2907,13 +2895,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         queue: LegacyTxQueue,
         config: HtTxConfig,
     ) -> Result<(), TxError> {
-        // SAFETY: the method never moves the pinned slot; it changes only
-        // scalar ownership fields and the device-owned descriptor words.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
             return Err(TxError::Stale);
         }
-        let actual_address = core::ptr::addr_of!(slot.descriptor).addr() as u32;
+        let actual_address = core::ptr::from_ref(slot.descriptor.as_ref().get_ref()).addr() as u32;
         let hardware_address = hardware.tx_descriptor_address(actual_address);
         let image = ht_q0_image(hardware_address, config).ok_or(TxError::Invalid)?;
         let index = queue.index();
@@ -2939,8 +2925,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
             return Err(TxError::QueueActive);
         }
 
-        slot.queue = queue;
-        slot.state = TxSlotState::HardwareOwned;
+        *slot.queue = queue;
+        *slot.state = TxSlotState::HardwareOwned;
         hardware.start_ht_tx(index, image.plcp0);
         Ok(())
     }
@@ -2950,12 +2936,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// exclusion. Full q0 PPDU/rate configuration must precede this call; this
     /// method intentionally performs no incomplete hardware submission.
     pub fn mark_hardware_owned(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        // SAFETY: only scalar ownership state changes inside the pinned slot.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Reserved || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Reserved || cookie != *slot.active {
             return Err(TxError::Stale);
         }
-        slot.state = TxSlotState::HardwareOwned;
+        *slot.state = TxSlotState::HardwareOwned;
         Ok(())
     }
 
@@ -2974,20 +2959,18 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         self: Pin<&mut Self>,
         hardware: &mut H,
     ) -> Result<Option<TxCompletion>, TxError> {
-        // SAFETY: completion changes scalar state but never moves pinned DMA
-        // storage. The hardware detach edge remains mandatory before reuse.
-        let slot = unsafe { self.get_unchecked_mut() };
+        let slot = self.project();
         let index = slot.queue.index();
         let Some(registers) = hardware.take_tx_completion(index) else {
             return Ok(None);
         };
 
-        if slot.state != TxSlotState::HardwareOwned {
-            slot.state = TxSlotState::ResetRequired;
+        if *slot.state != TxSlotState::HardwareOwned {
+            *slot.state = TxSlotState::ResetRequired;
             return Err(TxError::Stale);
         }
-        slot.state = TxSlotState::Completed;
-        Ok(Some(decode_tx_completion(slot.active, registers)))
+        *slot.state = TxSlotState::Completed;
+        Ok(Some(decode_tx_completion(*slot.active, registers)))
     }
 
     /// Starts the recovered two-phase abort for this queue's TX-timeout edge.
@@ -3000,10 +2983,8 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
-        // SAFETY: only scalar state is observed; the pinned allocation stays
-        // in place throughout the two-phase hardware abort.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.begin_tx_timeout_abort(slot.queue.index()) {
@@ -3019,13 +3000,11 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
     /// in that state. The caller returns control to the unique radio lifecycle
     /// owner, which performs a full reset before reconstructing TX storage.
     pub fn require_reset(self: Pin<&mut Self>, cookie: TxCookie) -> Result<(), TxError> {
-        // SAFETY: only scalar ownership state changes; hardware may still
-        // address the pinned descriptor and buffer until the radio reset.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
             return Err(TxError::Stale);
         }
-        slot.state = TxSlotState::ResetRequired;
+        *slot.state = TxSlotState::ResetRequired;
         Ok(())
     }
 
@@ -3035,18 +3014,16 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<bool, TxError> {
-        // SAFETY: hardware release is completed before scalar ownership
-        // returns to `Free`; the pinned storage is never moved.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.abort_tx_collision(slot.queue.index()) {
             return Ok(false);
         }
-        slot.descriptor.publish(0, 0, 0);
-        slot.active = TxCookie(0);
-        slot.state = TxSlotState::Free;
+        slot.descriptor.as_ref().get_ref().publish(0, 0, 0);
+        *slot.active = TxCookie(0);
+        *slot.state = TxSlotState::Free;
         Ok(true)
     }
 
@@ -3061,20 +3038,19 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        // SAFETY: only scalar state changes after hardware confirms detach.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::HardwareOwned || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::HardwareOwned || cookie != *slot.active {
             return Err(TxError::Stale);
         }
         let Some(detached) = hardware.finish_tx_timeout_abort(slot.queue.index()) else {
             return Err(TxError::TimeoutNotPending);
         };
         if !detached {
-            slot.state = TxSlotState::ResetRequired;
+            *slot.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }
-        slot.active = TxCookie(0);
-        slot.state = TxSlotState::Free;
+        *slot.active = TxCookie(0);
+        *slot.state = TxSlotState::Free;
         Ok(())
     }
 
@@ -3086,17 +3062,16 @@ impl<const BUFFER_SIZE: usize> TxSlot<BUFFER_SIZE> {
         hardware: &mut H,
         cookie: TxCookie,
     ) -> Result<(), TxError> {
-        // SAFETY: only scalar state changes after hardware confirms detach.
-        let slot = unsafe { self.get_unchecked_mut() };
-        if slot.state != TxSlotState::Completed || cookie != slot.active {
+        let slot = self.project();
+        if *slot.state != TxSlotState::Completed || cookie != *slot.active {
             return Err(TxError::Stale);
         }
         if !hardware.detach_completed_tx(slot.queue.index()) {
-            slot.state = TxSlotState::ResetRequired;
+            *slot.state = TxSlotState::ResetRequired;
             return Err(TxError::DetachFailed);
         }
-        slot.active = TxCookie(0);
-        slot.state = TxSlotState::Free;
+        *slot.active = TxCookie(0);
+        *slot.state = TxSlotState::Free;
         Ok(())
     }
 }

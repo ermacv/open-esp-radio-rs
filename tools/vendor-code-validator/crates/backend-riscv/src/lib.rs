@@ -26,9 +26,14 @@ pub mod artifact;
 pub mod codegen;
 pub mod direct_target_audit;
 pub mod execution;
+pub mod interface_discovery;
 pub mod reference_analysis;
 pub mod static_analysis;
 
+pub use interface_discovery::{
+    InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
+    InterfacePointer, InterfaceRoot, InterfaceSymbolAddressing, discover_interface_calls,
+};
 pub use reference_analysis::{ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{
     RiscvHarnessSpec, RiscvSummaryHooks, StructuralCallSite, StructuralPointerContext,

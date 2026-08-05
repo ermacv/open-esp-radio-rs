@@ -184,8 +184,9 @@ pub(super) fn run(
     let mut symbol_prefix = "phy_".to_owned();
     let mut probe_prefix = "open_phy_trace_".to_owned();
     let mut source_name = None;
-    let riscv_harness = harnesses::riscv(&target.harness)?;
-    let mut entry_contract = harnesses::entry_contract(&target.harness, "none")?;
+    let harness = target.require_available_harness()?;
+    let riscv_harness = harnesses::riscv(harness)?;
+    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
     let mut output_dir = None;
     let mut manifest = None;
     let mut force = false;
@@ -209,7 +210,7 @@ pub(super) fn run(
             }
             "--entry-contract" => {
                 entry_contract = harnesses::entry_contract(
-                    &target.harness,
+                    harness,
                     &take_value(&mut arguments, "--entry-contract")?,
                 )?;
             }

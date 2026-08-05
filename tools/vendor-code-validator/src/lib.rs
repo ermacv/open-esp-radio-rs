@@ -7,8 +7,11 @@
 mod analysis;
 mod cli;
 mod harnesses;
+mod memory_map;
 mod orchestration;
 mod parse;
+mod project;
+mod registers;
 mod run_spec;
 mod target;
 #[cfg(test)]
@@ -21,16 +24,18 @@ use cli::run;
 pub(crate) use harnesses::esp32s31::entry_contract;
 #[cfg(test)]
 pub(crate) use harnesses::esp32s31::external_abi;
+use memory_map::MemoryMap;
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
 pub(crate) use open_radio_vendor_backend_riscv::{
-    artifact, codegen, direct_target_audit, execution,
+    artifact, codegen, direct_target_audit, execution, interface_discovery,
 };
 use open_radio_vendor_validator_model::*;
 #[cfg(test)]
 use open_radio_vendor_validator_model::{Register, Window, reject_register_collisions};
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
+use project::ProjectSpec;
 use run_spec::RunSpec;
 use target::TargetSpec;
 #[cfg(test)]

@@ -1,5 +1,11 @@
 # Linked function IR
 
+`ir export` can run with an architecture-only target that has no platform
+harness. In that mode it uses an empty ABI contract: ordinary ELF linkage and
+instruction effects remain visible, while service-table slots and external
+semantics remain unresolved. Selecting a harness enriches the same IR and does
+not change its exploratory completeness claim.
+
 `ir export` produces a separate best-effort representation for manual code
 reading. It uses the reference resolver to link direct ELF targets, archive
 `R_RISCV_CALL`/`R_RISCV_CALL_PLT` relocations, structured conditional flows,
@@ -283,6 +289,10 @@ with `direct_mmio_predicate_mode`,
 `mmio_field_candidate_mode` and `mmio_field_semantics_claim: false`.
 
 ## External ABI and trampolines
+
+The lower-level symbol and definition facts are described in
+[artifact and symbol inventory](symbol-inventory.md). In particular, a project
+symbol candidate is not enough to activate the semantic behavior below.
 
 External ABI slots carry a harness-owned semantic overlay: an opaque operation
 name, typed/named input/output arguments, return type and optional replacement

@@ -33,8 +33,9 @@ pub(super) fn run(
     let mut include_reachable = false;
     let mut pseudo_path = None;
     let mut json_report = None;
-    let riscv_harness = harnesses::riscv(&target.harness)?;
-    let mut entry_contract = harnesses::entry_contract(&target.harness, "none")?;
+    let harness = target.harness.as_deref();
+    let riscv_harness = harnesses::riscv_or_neutral(harness)?;
+    let mut entry_contract = harnesses::entry_contract_or_neutral(harness, "none")?;
     let mut arguments = filtered.into_iter();
     while let Some(argument) = arguments.next() {
         if let Some(source) = source_artifact_option(&argument) {
@@ -56,8 +57,8 @@ pub(super) fn run(
             }
             "--include-reachable" => include_reachable = true,
             "--entry-contract" => {
-                entry_contract = harnesses::entry_contract(
-                    &target.harness,
+                entry_contract = harnesses::entry_contract_or_neutral(
+                    harness,
                     &take_value(&mut arguments, "--entry-contract")?,
                 )?;
             }

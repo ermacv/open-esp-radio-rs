@@ -46,8 +46,9 @@ pub(super) fn run(
     let mut output_kind = None;
     let mut output = None;
     let mut plan_output = None;
-    let riscv_harness = harnesses::riscv(&target.harness)?;
-    let mut entry_contract = harnesses::entry_contract(&target.harness, "none")?;
+    let harness = target.require_available_harness()?;
+    let riscv_harness = harnesses::riscv(harness)?;
+    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
     let mut arguments = filtered.into_iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
@@ -75,7 +76,7 @@ pub(super) fn run(
             }
             "--entry-contract" => {
                 entry_contract = harnesses::entry_contract(
-                    &target.harness,
+                    harness,
                     &take_value(&mut arguments, "--entry-contract")?,
                 )?;
             }

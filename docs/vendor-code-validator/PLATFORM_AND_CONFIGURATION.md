@@ -2,8 +2,6 @@
 
 ## Platform harness
 
-- target identity and memory map;
-- SVD composition;
 - external callback-table descriptions;
 - mutable pointer-cell and function-table entry contracts;
 - global-state regions and typed projections;
@@ -16,9 +14,41 @@ The ESP32-S31 harness is allowed to say `esp32s31`, `phy_param` and
 Versions and layouts are data owned by the harness, not variants compiled into
 the validator engine.
 
+The harness does not own the project memory map or decide which artifacts are
+loaded. An architecture-only target may omit the harness for generic MMIO and
+IR discovery. In that mode no external-table or RTOS semantics are invented.
+
+## Target and project
+
+The reusable target pack selects the architecture, calling convention,
+endianness, pointer width, and optional semantic harness. The project composes
+that target with a caller-owned memory map, SVD register catalogs, and local
+artifact bindings. This keeps physical address classification usable before a
+chip harness or complete SVD exists.
+
+Artifact symbol tables are also platform-neutral. `symbols inventory` retains
+binding, visibility, type, section, definition state, archive member, and
+cross-input candidates without invoking harness semantics. A unique candidate
+in another input is a navigation association, not a claim that the linker
+selected it. Exact resolution belongs to the fully linked ELF.
+
+Trampoline recognition has a two-layer contract. Core may recover an aligned
+pointer table, a constant slot offset, an indirect call, and argument value
+flow. A selected semantic pack or platform harness owns table anchors, layout
+versions, slot names, ABI types, and effects such as RTOS event delivery. This
+keeps RTOS/NVS/logging/delay vocabularies reusable while leaving chip-specific
+addresses and table versions outside the generic engine.
+
+`interfaces discover` is the generic implementation of the first layer. Its
+JSON is generated evidence and explicitly claims neither table layout nor
+linker resolution nor semantic completeness. See
+[`interface-discovery.md`](../../tools/vendor-code-validator/docs/interface-discovery.md).
+
 ## CLI/orchestrator
 
+- loads a project manifest as the stable composition root;
 - loads a checked target pack and an optional local run manifest;
+- loads address spaces and memory regions independently of SVD;
 - binds input roles to paths supplied by the caller;
 - selects an architecture backend and validates its ABI;
 - invokes one workflow and renders text/JSON reports.
@@ -64,3 +94,7 @@ Reviewed semantic summaries inherit that trust boundary. Core never chooses a
 summary from a vendor digest. The explicitly selected platform harness chooses
 its summary by target, symbol and structural identity after the caller has
 authenticated the complete input artifact.
+
+The concrete project and memory-map schemas, precedence rules, and command
+capabilities are documented in
+[`project-workspace.md`](../../tools/vendor-code-validator/docs/project-workspace.md).

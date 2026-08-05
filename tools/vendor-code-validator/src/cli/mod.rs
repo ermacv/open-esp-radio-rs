@@ -15,39 +15,90 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND --target-spec PATH [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  inspect   analyze | trace | compare\n  mmio      discover\n  ir        export\n  reference generate | generate-batch\n  driver    generate\n  execute   run | compare\n  verify    profiles | source | inventory | contract channel | contract rf-init\n  image     audit-targets\n\nThe target spec supplies architecture, calling convention, SVDs and checked harness data.\nA caller-owned run spec may bind input roles to local artifact paths. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover\n  registers  init-overlay | validate | export-svd\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
 pub(crate) fn run() -> Result<bool> {
     let Invocation {
         command,
+        project,
         target_spec,
         run_spec,
         mut svd_paths,
         arguments: mut filtered,
     } = Invocation::parse(env::args().skip(1))?;
+    let project_path = if project.is_some() || target_spec.is_some() {
+        project
+    } else {
+        ProjectSpec::discover_from(&env::current_dir()?)
+    };
+    let project = project_path.as_deref().map(ProjectSpec::load).transpose()?;
+    if matches!(
+        command,
+        Command::ProjectDoctor
+            | Command::RegisterInitOverlay
+            | Command::RegisterValidate
+            | Command::RegisterExportSvd
+    ) && project.is_none()
+    {
+        return Err("project and register workspace commands require a project manifest".into());
+    }
+    let target_spec = target_spec
+        .or_else(|| project.as_ref().map(|project| project.target_spec.clone()))
+        .ok_or("missing --project or --target-spec, and no vendor-validator.toml was found")?;
     let target = TargetSpec::load(&target_spec)?;
-    target.require_available_backend()?;
-    target.require_available_harness()?;
-    eprintln!(
-        "TARGET\tid={}\tharness={}\tarchitecture={}\tcalling-convention={}\tendianness={}\tpointer-width={}\trust-target={}",
-        target.id,
-        target.harness,
-        target.architecture.label(),
-        target.calling_convention.label(),
-        target.endianness.label(),
-        target.pointer_width,
-        target.rust_target,
-    );
-    if let Some(path) = run_spec {
-        RunSpec::load(&path)?.append_defaults(&mut filtered);
+    if command.requires_backend() {
+        target.require_available_backend()?;
+    }
+    if command.requires_harness() {
+        target.require_available_harness()?;
+    }
+    if command != Command::ProjectDoctor {
+        if let Some(project) = &project {
+            eprintln!(
+                "PROJECT\tid={}\tmanifest={}",
+                project.id,
+                project_path
+                    .as_deref()
+                    .expect("a loaded project has a manifest path")
+                    .display()
+            );
+        }
+        eprintln!(
+            "TARGET\tid={}\tharness={}\tarchitecture={}\tcalling-convention={}\tendianness={}\tpointer-width={}\trust-target={}",
+            target.id,
+            target.harness.as_deref().unwrap_or("-"),
+            target.architecture.label(),
+            target.calling_convention.label(),
+            target.endianness.label(),
+            target.pointer_width,
+            target.rust_target,
+        );
+    }
+    let run_spec_path = if command.uses_run_spec() {
+        run_spec.or_else(|| {
+            project
+                .as_ref()
+                .and_then(|project| project.run_spec.clone())
+        })
+    } else {
+        None
+    };
+    let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
+    if let Some(run_spec) = &run_spec {
+        run_spec.append_defaults(
+            &mut filtered,
+            |role| command.accepts_run_input_role(role),
+            |role, arguments| command.input_role_is_overridden(role, arguments),
+        );
     }
     if svd_paths.is_empty() {
-        svd_paths = target.svd_paths.clone();
-    }
-    if svd_paths.is_empty() && command != Command::AuditDirectTargets {
-        return Err("target spec has no SVD and command has no --svd override".into());
+        svd_paths = project
+            .as_ref()
+            .map(|project| project.svd_paths.clone())
+            .filter(|paths| !paths.is_empty())
+            .unwrap_or_else(|| target.svd_paths.clone());
     }
     if command == Command::VerifyAll {
         append_default_path(&mut filtered, "--profiles", target.profiles.as_deref());
@@ -62,7 +113,101 @@ pub(crate) fn run() -> Result<bool> {
             target.evidence_baseline.as_deref(),
         );
     }
-    let svd = MmioRegisterMap::load_all(&svd_paths)?;
+    let memory_map = if command.uses_memory_map() {
+        project
+            .as_ref()
+            .map(ProjectSpec::load_memory_map)
+            .transpose()?
+            .flatten()
+    } else {
+        None
+    };
+    if command == Command::DiscoverMmio
+        && !filtered.iter().any(|argument| argument == "--range")
+        && let Some(memory_map) = &memory_map
+    {
+        for (name, start, end) in memory_map.mmio_ranges()? {
+            filtered.push("--range".to_owned());
+            filtered.push(format!("{name}={start:#010x}..{end:#010x}"));
+        }
+    }
+    if command == Command::DiscoverMmio
+        && !filtered.iter().any(|argument| argument == "--json-report")
+        && let Some(path) = project
+            .as_ref()
+            .and_then(|project| project.registers.as_ref())
+            .map(|registers| &registers.facts)
+    {
+        filtered.push("--json-report".to_owned());
+        filtered.push(path.display().to_string());
+    }
+    if command == Command::InterfaceDiscover
+        && !filtered.iter().any(|argument| argument == "--json-report")
+        && let Some(path) = project
+            .as_ref()
+            .and_then(|project| project.interfaces.as_ref())
+            .map(|interfaces| &interfaces.facts)
+    {
+        filtered.push("--json-report".to_owned());
+        filtered.push(path.display().to_string());
+    }
+    let mut svd = if command.uses_register_catalog() {
+        MmioRegisterMap::load_all(&svd_paths)?
+    } else {
+        MmioRegisterMap::load_all(&[])?
+    };
+    if let Some(memory_map) = &memory_map {
+        svd.windows.extend(memory_map.mmio_windows()?);
+        svd.windows.sort_by_key(|window| (window.start, window.end));
+        svd.windows.dedup();
+    }
+    if command.requires_mmio_map() && svd.windows.is_empty() {
+        return Err("command requires an MMIO region; add memory-map to the project or an SVD address-window extension".into());
+    }
+    if command == Command::ProjectDoctor {
+        return commands::run_project_doctor(
+            filtered,
+            commands::ProjectDoctorContext {
+                project_path: project_path
+                    .as_deref()
+                    .expect("project doctor requires a manifest path"),
+                project: project
+                    .as_ref()
+                    .expect("project doctor requires a loaded project"),
+                target_path: &target_spec,
+                target: &target,
+                run_spec_path: run_spec_path.as_deref(),
+                run_spec: run_spec.as_ref(),
+                memory_map: memory_map.as_ref(),
+                svd_paths: &svd_paths,
+                svd: &svd,
+            },
+        );
+    }
+    if command == Command::SymbolInventory {
+        let run_spec = run_spec
+            .as_ref()
+            .ok_or("symbols inventory requires a run spec with artifact bindings")?;
+        return commands::run_symbol_inventory(filtered, run_spec);
+    }
+    if command == Command::InterfaceDiscover {
+        let run_spec = run_spec
+            .as_ref()
+            .ok_or("interfaces discover requires a run spec with artifact bindings")?;
+        return commands::run_interface_discovery(filtered, run_spec);
+    }
+    if matches!(
+        command,
+        Command::RegisterInitOverlay | Command::RegisterValidate | Command::RegisterExportSvd
+    ) {
+        return commands::run_register_command(
+            command,
+            filtered,
+            project
+                .as_ref()
+                .expect("register commands require a loaded project"),
+        );
+    }
     commands::run(command, filtered, &svd, &target)
 }
 

@@ -11,7 +11,17 @@ The backend reads ELF files and static archives directly with the Rust
 not require binutils and does not scan source text for register addresses or
 function names.
 
-Every command requires an explicit target specification:
+Repeated analysis should use a project manifest:
+
+```console
+cargo vendor-code-validator mmio discover \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+```
+
+The project composes a target, local inputs, an independent memory map, and
+optional SVD catalogs. See [project workspace](docs/project-workspace.md).
+Direct target selection remains available for compatibility:
 
 ```console
 cargo vendor-code-validator <workflow> <command> \
@@ -29,7 +39,12 @@ callers authenticate inputs and pass them directly or through a local
 
 | Workflow | Purpose | Detailed documentation |
 | --- | --- | --- |
+| Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
+| `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
+| `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
+| `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
+| `registers init-overlay` / `validate` / `export-svd` | Review discovery facts separately and materialize CMSIS-SVD | [Register workspace](docs/register-workspace.md) |
 | `ir export` | Produce linked JSON and pseudo-Rust IR for manual analysis | [Linked function IR](docs/linked-ir.md) |
 | `execute run` / `execute compare` | Execute deterministic scenarios and compare ordered effects | [Execution and profiles](docs/execution-and-profiles.md) |
 | `reference generate` / `generate-batch` | Generate fail-closed Rust reference programs | [Reference generation](docs/reference-generation.md) |
@@ -44,7 +59,29 @@ and migration constraints live in the repository-level
 
 ## Typical reverse-engineering pass
 
-Start with an address inventory:
+Start by recording artifact and linkage facts:
+
+```console
+cargo vendor-code-validator symbols inventory \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --json-report /tmp/esp32s31-symbols.json
+```
+
+Then find structurally recoverable callback/function-table use:
+
+```console
+cargo vendor-code-validator interfaces discover \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --json-report /tmp/esp32s31-interfaces.json
+```
+
+This report keeps relocation/global-symbol associations, pointer-load chains,
+slot offsets, call sites, and recoverable argument provenance separate from
+RTOS/NVS/logging names supplied by reviewed semantic packs.
+
+Then build an address inventory:
 
 ```console
 cargo vendor-code-validator mmio discover \

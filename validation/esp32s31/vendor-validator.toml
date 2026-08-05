@@ -1,0 +1,6 @@
+# Shareable project entry point. Local artifact paths belong in an untracked
+# run spec passed with --run-spec, or in a private copy referenced here.
+schema = 1
+id = "esp32s31-radio-rev0"
+target-spec = "target.spec"
+memory-map = "memory.toml"

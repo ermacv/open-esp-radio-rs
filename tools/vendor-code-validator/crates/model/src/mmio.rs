@@ -1,4 +1,4 @@
-//! SVD-derived MMIO register and address-window catalog.
+//! SVD-derived register names plus independently supplied MMIO windows.
 
 use std::{
     fs,
@@ -62,9 +62,6 @@ impl MmioRegisterMap {
                 continue;
             };
             windows.push(Window { start, end });
-        }
-        if windows.is_empty() {
-            return Err("SVD has no openEspRadioAddressWindows".into());
         }
         Ok(Self { registers, windows })
     }
@@ -184,4 +181,41 @@ fn collect_registers(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_svd_does_not_need_a_vendor_address_window_extension() {
+        let path = std::env::temp_dir().join(format!(
+            "open-radio-validator-standard-svd-{}.svd",
+            std::process::id()
+        ));
+        std::fs::write(
+            &path,
+            r#"<?xml version="1.0"?>
+<device>
+  <peripherals>
+    <peripheral>
+      <name>RADIO</name>
+      <baseAddress>0x20100000</baseAddress>
+      <registers>
+        <register>
+          <name>CONTROL</name>
+          <addressOffset>0x10</addressOffset>
+        </register>
+      </registers>
+    </peripheral>
+  </peripherals>
+</device>"#,
+        )
+        .unwrap();
+        let map = MmioRegisterMap::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        assert_eq!(map.registers[0].address, 0x2010_0010);
+        assert_eq!(map.registers[0].name, "RADIO.CONTROL");
+        assert!(map.windows.is_empty());
+    }
 }

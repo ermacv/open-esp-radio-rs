@@ -91,7 +91,7 @@ impl Endianness {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TargetSpec {
     pub(crate) id: String,
-    pub(crate) harness: String,
+    pub(crate) harness: Option<String>,
     pub(crate) architecture: Architecture,
     pub(crate) calling_convention: CallingConvention,
     pub(crate) endianness: Endianness,
@@ -219,7 +219,7 @@ impl TargetSpec {
         }
         let target = Self {
             id: id.ok_or("target spec has no target id")?,
-            harness: harness.ok_or("target spec has no harness")?,
+            harness,
             architecture: architecture.ok_or("target spec has no architecture")?,
             calling_convention: calling_convention
                 .ok_or("target spec has no calling-convention")?,
@@ -276,15 +276,19 @@ impl TargetSpec {
 
     /// Harness selection is explicit even while only one harness is compiled
     /// into the transition facade.
-    pub(crate) fn require_available_harness(&self) -> Result<()> {
-        if !crate::harnesses::is_available(&self.harness) {
+    pub(crate) fn require_available_harness(&self) -> Result<&str> {
+        let harness = self
+            .harness
+            .as_deref()
+            .ok_or_else(|| format!("target {} has no platform harness", self.id))?;
+        if !crate::harnesses::is_available(harness) {
             return Err(format!(
                 "target {} selects unavailable harness {:?}",
-                self.id, self.harness
+                self.id, harness
             )
             .into());
         }
-        Ok(())
+        Ok(harness)
     }
 }
 
@@ -333,6 +337,24 @@ mod tests {
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
         target.require_available_backend().unwrap();
+    }
+
+    #[test]
+    fn generic_target_can_omit_a_platform_harness() {
+        let path = write_spec(
+            "generic-riscv",
+            "schema 1\ntarget generic-riscv\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+        );
+        let target = TargetSpec::load(&path).unwrap();
+        std::fs::remove_file(path).unwrap();
+        target.require_available_backend().unwrap();
+        assert!(
+            target
+                .require_available_harness()
+                .unwrap_err()
+                .to_string()
+                .contains("no platform harness")
+        );
     }
 
     #[test]

@@ -19,6 +19,8 @@ open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-
 open-radio-vendor-validator-model = { path = "crates/model" }
 open-radio-vendor-validator-semantic = { path = "crates/semantic" }
 sha2 = "=0.10.9"
+serde_json = "=1.0.151"
+toml_edit = "=0.25.13"
 
 [lints]
 workspace = true

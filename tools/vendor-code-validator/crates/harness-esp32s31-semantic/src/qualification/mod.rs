@@ -135,9 +135,14 @@ fn inventory_symbol_definition_sha256(
             })?;
         hasher.update(relative.to_le_bytes());
         let kind = match relocation.kind {
+            crate::artifact::RelocationKind::GotHi20 => b"got-hi20".as_slice(),
             crate::artifact::RelocationKind::Hi20 => b"hi20".as_slice(),
             crate::artifact::RelocationKind::Lo12I => b"lo12-i".as_slice(),
             crate::artifact::RelocationKind::Lo12S => b"lo12-s".as_slice(),
+            crate::artifact::RelocationKind::PcRelHi20 => b"pcrel-hi20".as_slice(),
+            crate::artifact::RelocationKind::PcRelLo12I => b"pcrel-lo12-i".as_slice(),
+            crate::artifact::RelocationKind::PcRelLo12S => b"pcrel-lo12-s".as_slice(),
+            crate::artifact::RelocationKind::GotPcRelLo12I => b"got-pcrel-lo12-i".as_slice(),
             crate::artifact::RelocationKind::Call => b"call".as_slice(),
             crate::artifact::RelocationKind::CallPlt => b"call-plt".as_slice(),
         };

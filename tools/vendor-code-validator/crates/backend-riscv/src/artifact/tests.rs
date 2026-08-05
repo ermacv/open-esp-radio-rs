@@ -1,6 +1,8 @@
 use super::*;
 
 fn write_visibility_fixture() -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use object::{
         Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolScope,
         write::{Object, Symbol, SymbolSection},
@@ -11,7 +13,7 @@ fn write_visibility_fixture() -> std::path::PathBuf {
     let global_offset = object.append_section_data(section, &[0x67, 0x80, 0x00, 0x00], 4);
     let local_offset = object.append_section_data(section, &[0x67, 0x80, 0x00, 0x00], 4);
     for (name, value, scope) in [
-        ("exported_function", global_offset, SymbolScope::Linkage),
+        ("exported_function", global_offset, SymbolScope::Dynamic),
         ("private_function", local_offset, SymbolScope::Compilation),
     ] {
         object.add_symbol(Symbol {
@@ -25,9 +27,121 @@ fn write_visibility_fixture() -> std::path::PathBuf {
             flags: SymbolFlags::None,
         });
     }
+    object.add_symbol(Symbol {
+        name: b"external_service".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Dynamic,
+        weak: false,
+        section: SymbolSection::Undefined,
+        flags: SymbolFlags::None,
+    });
+    static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
     let path = std::env::temp_dir().join(format!(
-        "vendor-validator-symbol-visibility-{}.o",
-        std::process::id()
+        "vendor-validator-symbol-visibility-{}-{}.o",
+        std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&path, object.write().unwrap()).unwrap();
+    path
+}
+
+fn write_pcrel_fixture(got: bool, include_high: bool) -> std::path::PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use object::{
+        Architecture, BinaryFormat, Endianness, RelocationFlags, SymbolFlags, SymbolScope,
+        write::{Object, Relocation, Symbol, SymbolSection},
+    };
+
+    let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
+    let section = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
+    let bytes = if got {
+        vec![
+            0x97, 0x07, 0x00, 0x00, // auipc a5, 0 (GOT address)
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5) (symbol address from GOT)
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5) (pointer cell)
+            0x83, 0xa2, 0x07, 0x01, // lw t0, 16(a5) (slot)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+        ]
+    } else {
+        vec![
+            0x97, 0x07, 0x00, 0x00, // auipc a5, 0
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5) (pointer cell)
+            0x83, 0xa2, 0x07, 0x01, // lw t0, 16(a5) (slot)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+        ]
+    };
+    let function_offset = object.append_section_data(section, &bytes, 4);
+    object.add_symbol(Symbol {
+        name: b"vendor_callback".to_vec(),
+        value: function_offset,
+        size: bytes.len() as u64,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Dynamic,
+        weak: false,
+        section: SymbolSection::Section(section),
+        flags: SymbolFlags::None,
+    });
+    let label = object.add_symbol(Symbol {
+        name: b".Lpcrel0".to_vec(),
+        value: function_offset,
+        size: 0,
+        kind: SymbolKind::Label,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(section),
+        flags: SymbolFlags::None,
+    });
+    let external = object.add_symbol(Symbol {
+        name: b"g_services".to_vec(),
+        value: 0,
+        size: 0,
+        kind: SymbolKind::Data,
+        scope: SymbolScope::Dynamic,
+        weak: false,
+        section: SymbolSection::Undefined,
+        flags: SymbolFlags::None,
+    });
+    if include_high {
+        object
+            .add_relocation(
+                section,
+                Relocation {
+                    offset: function_offset,
+                    symbol: external,
+                    addend: 0,
+                    flags: RelocationFlags::Elf {
+                        r_type: if got {
+                            object::elf::R_RISCV_GOT_HI20
+                        } else {
+                            object::elf::R_RISCV_PCREL_HI20
+                        },
+                    },
+                },
+            )
+            .unwrap();
+    }
+    object
+        .add_relocation(
+            section,
+            Relocation {
+                offset: function_offset + 4,
+                symbol: label,
+                addend: 0,
+                flags: RelocationFlags::Elf {
+                    r_type: object::elf::R_RISCV_PCREL_LO12_I,
+                },
+            },
+        )
+        .unwrap();
+
+    static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
+    let path = std::env::temp_dir().join(format!(
+        "vendor-validator-pcrel-{}-{}.o",
+        std::process::id(),
+        NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::write(&path, object.write().unwrap()).unwrap();
     path
@@ -92,6 +206,113 @@ fn recognizes_both_riscv_call_relocation_kinds() {
 }
 
 #[test]
+fn recognizes_absolute_pc_relative_and_got_relocation_kinds() {
+    assert_eq!(
+        riscv_relocation_kind(object::elf::R_RISCV_PCREL_HI20),
+        Some(RelocationKind::PcRelHi20)
+    );
+    assert_eq!(
+        riscv_relocation_kind(object::elf::R_RISCV_PCREL_LO12_I),
+        Some(RelocationKind::PcRelLo12I)
+    );
+    assert_eq!(
+        riscv_relocation_kind(object::elf::R_RISCV_GOT_HI20),
+        Some(RelocationKind::GotHi20)
+    );
+}
+
+#[test]
+fn pcrel_low_is_normalized_from_local_label_to_actual_symbol() {
+    let path = write_pcrel_fixture(false, true);
+    let symbols = load_all_code_symbols(&path, "vendor_callback").unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    assert_eq!(symbols.len(), 1);
+    assert_eq!(
+        symbols[0]
+            .relocations
+            .iter()
+            .map(|relocation| (
+                relocation.address,
+                relocation.kind,
+                relocation.symbol.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (0, RelocationKind::PcRelHi20, "g_services"),
+            (4, RelocationKind::PcRelLo12I, "g_services"),
+        ]
+    );
+    let calls = crate::discover_interface_calls(&symbols[0]).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(matches!(
+        calls[0].target.root,
+        crate::InterfaceRoot::RelocatedSymbol {
+            addressing: crate::InterfaceSymbolAddressing::PcRelative,
+            ..
+        }
+    ));
+    assert_eq!(
+        calls[0]
+            .target
+            .loads
+            .iter()
+            .map(|load| load.offset)
+            .collect::<Vec<_>>(),
+        [0, 16]
+    );
+}
+
+#[test]
+fn got_pair_resolves_symbol_address_without_inventing_a_table_load() {
+    let path = write_pcrel_fixture(true, true);
+    let symbols = load_all_code_symbols(&path, "vendor_callback").unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    assert_eq!(
+        symbols[0]
+            .relocations
+            .iter()
+            .map(|relocation| (
+                relocation.address,
+                relocation.kind,
+                relocation.symbol.as_str()
+            ))
+            .collect::<Vec<_>>(),
+        [
+            (0, RelocationKind::GotHi20, "g_services"),
+            (4, RelocationKind::GotPcRelLo12I, "g_services"),
+        ]
+    );
+    let calls = crate::discover_interface_calls(&symbols[0]).unwrap();
+    assert_eq!(calls.len(), 1);
+    assert!(matches!(
+        calls[0].target.root,
+        crate::InterfaceRoot::RelocatedSymbol {
+            addressing: crate::InterfaceSymbolAddressing::Got,
+            ..
+        }
+    ));
+    assert_eq!(
+        calls[0]
+            .target
+            .loads
+            .iter()
+            .map(|load| load.offset)
+            .collect::<Vec<_>>(),
+        [0, 16]
+    );
+}
+
+#[test]
+fn unpaired_pcrel_low_is_rejected_as_malformed_evidence() {
+    let path = write_pcrel_fixture(false, false);
+    let error = load_all_code_symbols(&path, "vendor_callback").unwrap_err();
+    std::fs::remove_file(path).unwrap();
+    assert!(error.to_string().contains("has no HI20 relocation"));
+}
+
+#[test]
 fn relocated_call_link_register_distinguishes_call_and_tail_call() {
     let mut symbol = ArtifactSymbolDefinition {
         member: None,
@@ -133,4 +354,45 @@ fn exploratory_catalog_adds_local_functions_without_broadening_default_inventory
             .collect::<Vec<_>>(),
         ["exported_function", "private_function"]
     );
+}
+
+#[test]
+fn artifact_inventory_preserves_definition_binding_and_section_facts() {
+    let path = write_visibility_fixture();
+    let inventory = inspect_artifact(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    assert_eq!(inventory.container, ArtifactContainerKind::Elf32);
+    assert_eq!(inventory.objects.len(), 1);
+    assert_eq!(inventory.objects[0].kind, ArtifactObjectKind::Relocatable);
+    let symbols = &inventory.objects[0].symbols;
+    let exported = symbols
+        .iter()
+        .find(|symbol| symbol.name == "exported_function")
+        .unwrap();
+    assert_eq!(exported.binding, ArtifactSymbolBinding::Global);
+    assert_eq!(exported.visibility, ArtifactSymbolVisibility::Default);
+    assert_eq!(exported.definition, ArtifactSymbolDefinitionState::Section);
+    assert_eq!(exported.section.as_deref(), Some(".text"));
+    assert_eq!(exported.scope, ArtifactSymbolScope::Dynamic);
+    assert!(exported.is_exported_definition());
+
+    let private = symbols
+        .iter()
+        .find(|symbol| symbol.name == "private_function")
+        .unwrap();
+    assert_eq!(private.binding, ArtifactSymbolBinding::Local);
+    assert_eq!(private.scope, ArtifactSymbolScope::Compilation);
+    assert!(!private.is_exported_definition());
+
+    let external = symbols
+        .iter()
+        .find(|symbol| symbol.name == "external_service")
+        .unwrap();
+    assert_eq!(external.binding, ArtifactSymbolBinding::Global);
+    assert_eq!(
+        external.definition,
+        ArtifactSymbolDefinitionState::Undefined
+    );
+    assert!(!external.is_exported_definition());
 }

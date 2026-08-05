@@ -93,9 +93,10 @@ pub(super) fn run(
     };
     let symbols = vendor_symbols(source)?;
     let mut evidence = EvidenceSet::new();
+    let harness = target.require_available_harness()?;
     let summary = verify_source(
         svd,
-        &target.harness,
+        harness,
         &target.rust_target,
         source,
         &rust_artifact,

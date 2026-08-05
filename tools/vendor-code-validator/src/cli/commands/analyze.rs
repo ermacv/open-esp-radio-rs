@@ -247,8 +247,9 @@ pub(super) fn run(
     let mut artifact = None;
     let mut companions = Vec::new();
     let mut prefix = "phy_".to_owned();
-    let riscv_harness = harnesses::riscv(&target.harness)?;
-    let mut entry_contract = harnesses::entry_contract(&target.harness, "none")?;
+    let harness = target.require_available_harness()?;
+    let riscv_harness = harnesses::riscv(harness)?;
+    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
     let mut json_report = None;
     let mut arguments = filtered.into_iter();
     while let Some(argument) = arguments.next() {
@@ -267,7 +268,7 @@ pub(super) fn run(
             }
             "--entry-contract" => {
                 entry_contract = harnesses::entry_contract(
-                    &target.harness,
+                    harness,
                     &take_value(&mut arguments, "--entry-contract")?,
                 )?;
             }

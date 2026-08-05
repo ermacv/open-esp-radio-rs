@@ -1,5 +1,24 @@
 # MMIO discovery
 
+With a project memory map, SVD and explicit ranges are optional:
+
+```console
+cargo vendor-code-validator mmio discover \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --json-report /tmp/radio-mmio.json
+```
+
+Every `mmio` region in the project's default address space becomes a discovery
+range. Pass one or more explicit `--range` options to replace those defaults
+for a narrower scan. SVD contributes register names only; unknown addresses
+remain valid findings named `UNMAPPED`.
+
+When the project has a `[registers]` table, its `facts` path is also the
+default JSON destination. That report feeds the editable
+[register workspace and SVD export](register-workspace.md); names and hardware
+semantics stay in the reviewed overlay rather than this generated file.
+
 `mmio discover` is a best-effort, artifact-wide inventory for reverse
 engineering register blocks. It accepts multiple ELF/ar inputs and explicit
 half-open address ranges independently of whether every address already has an

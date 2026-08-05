@@ -1,6 +1,7 @@
 //! Platform-specific validation harnesses.
 
 pub(crate) mod esp32s31;
+mod neutral;
 
 pub(crate) use open_radio_vendor_validator_semantic::{
     DriverAdapterEvidenceSources, DriverAdapterQualification, DriverAdapterRequest,
@@ -25,10 +26,26 @@ pub(crate) fn riscv(harness: &str) -> crate::Result<&'static crate::RiscvHarness
     }
 }
 
+pub(crate) fn riscv_or_neutral(
+    harness: Option<&str>,
+) -> crate::Result<&'static crate::RiscvHarnessSpec> {
+    harness.map_or(Ok(&neutral::RISCV_HARNESS), riscv)
+}
+
 pub(crate) fn entry_contract(harness: &str, id: &str) -> crate::Result<crate::EntryContractRef> {
     contracts(harness)?
         .entry_contract(id)
         .ok_or_else(|| format!("harness {harness:?} has no entry contract {id:?}").into())
+}
+
+pub(crate) fn entry_contract_or_neutral(
+    harness: Option<&str>,
+    id: &str,
+) -> crate::Result<crate::EntryContractRef> {
+    match harness {
+        Some(harness) => entry_contract(harness, id),
+        None => neutral::entry_contract(id),
+    }
 }
 
 pub(crate) fn qualify_driver_adapter(

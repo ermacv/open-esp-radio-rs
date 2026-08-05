@@ -99,24 +99,38 @@ impl RunSpec {
         Ok(Self { inputs })
     }
 
-    pub(crate) fn append_defaults(&self, arguments: &mut Vec<String>) {
+    pub(crate) fn append_defaults(
+        &self,
+        arguments: &mut Vec<String>,
+        accepts_role: impl Fn(&str) -> bool,
+        is_overridden: impl Fn(&str, &[String]) -> bool,
+    ) {
         let overridden = self
             .inputs
             .iter()
+            .filter(|(role, _)| accepts_role(role))
             .map(|(role, _)| role)
             .filter(|role| {
                 let option = format!("--{role}");
                 arguments.iter().any(|argument| argument == &option)
+                    || is_overridden(role, arguments)
             })
             .cloned()
             .collect::<BTreeSet<_>>();
         for (role, path) in &self.inputs {
+            if !accepts_role(role) {
+                continue;
+            }
             if overridden.contains(role) {
                 continue;
             }
             arguments.push(format!("--{role}"));
             arguments.push(path.display().to_string());
         }
+    }
+
+    pub(crate) fn inputs(&self) -> &[(String, PathBuf)] {
+        &self.inputs
     }
 }
 
@@ -146,7 +160,7 @@ mod tests {
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
         let mut arguments = Vec::new();
-        run.append_defaults(&mut arguments);
+        run.append_defaults(&mut arguments, |_| true, |_, _| false);
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(arguments[0], "--rom-artifact");
         assert!(arguments[1].ends_with("inputs/rom.elf"));
@@ -168,11 +182,37 @@ mod tests {
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
         let mut arguments = Vec::new();
-        run.append_defaults(&mut arguments);
+        run.append_defaults(&mut arguments, |_| true, |_, _| false);
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(arguments[0], "--source-artifact:libpp");
         assert!(arguments[1].ends_with("inputs/libpp.elf"));
         assert_eq!(arguments[2], "--source-inventory:libpp");
         assert!(arguments[3].ends_with("inputs/libpp.a"));
+    }
+
+    #[test]
+    fn command_role_filter_omits_unrelated_project_bindings() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-validator-filtered-run-spec-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.run");
+        std::fs::write(
+            &path,
+            "schema 1\ninput source-artifact:rom rom.elf\ninput source-inventory:rom rom.a\ninput rust-artifact probes.elf\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        let mut arguments = Vec::new();
+        run.append_defaults(
+            &mut arguments,
+            |role| role.starts_with("source-artifact:"),
+            |_, _| false,
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(arguments[0], "--source-artifact:rom");
+        assert!(arguments[1].ends_with("rom.elf"));
+        assert_eq!(arguments.len(), 2);
     }
 }

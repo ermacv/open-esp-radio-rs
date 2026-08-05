@@ -1,0 +1,39 @@
+schema = 1
+default-address-space = "cpu"
+
+[[address-spaces]]
+id = "cpu"
+address-width = 32
+endianness = "little"
+
+[[regions]]
+name = "modem-radio-core"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20100000
+end-exclusive = 0x20200000
+permissions = "rw"
+
+[[regions]]
+name = "hp-system"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20500000
+end-exclusive = 0x20600000
+permissions = "rw"
+
+[[regions]]
+name = "lp-system"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20700000
+end-exclusive = 0x20800000
+permissions = "rw"
+
+[[regions]]
+name = "lp-peripheral"
+address-space = "cpu"
+kind = "mmio"
+start = 0x20800000
+end-exclusive = 0x20900000
+permissions = "rw"

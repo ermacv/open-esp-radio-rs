@@ -286,6 +286,12 @@ fn write_json_report(path: &Path, report: &MmioDiscoveryReport) -> Result<()> {
         });
     }
     output.push_str("  ]\n}\n");
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        fs::create_dir_all(parent)?;
+    }
     fs::write(path, output)?;
     println!("JSON-REPORT\t{}", path.display());
     Ok(())

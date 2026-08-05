@@ -6,6 +6,12 @@ use crate::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
+    ProjectDoctor,
+    RegisterInitOverlay,
+    RegisterValidate,
+    RegisterExportSvd,
+    SymbolInventory,
+    InterfaceDiscover,
     AuditDirectTargets,
     DiscoverMmio,
     ExportIr,
@@ -27,6 +33,30 @@ pub(crate) enum Command {
 impl Command {
     fn parse(value: &str, remaining: &mut Vec<String>) -> Result<Self> {
         Ok(match (value, remaining.first().map(String::as_str)) {
+            ("project", Some("doctor")) => {
+                remaining.remove(0);
+                Self::ProjectDoctor
+            }
+            ("registers", Some("init-overlay")) => {
+                remaining.remove(0);
+                Self::RegisterInitOverlay
+            }
+            ("registers", Some("validate")) => {
+                remaining.remove(0);
+                Self::RegisterValidate
+            }
+            ("registers", Some("export-svd")) => {
+                remaining.remove(0);
+                Self::RegisterExportSvd
+            }
+            ("symbols", Some("inventory")) => {
+                remaining.remove(0);
+                Self::SymbolInventory
+            }
+            ("interfaces", Some("discover")) => {
+                remaining.remove(0);
+                Self::InterfaceDiscover
+            }
             ("mmio", Some("discover")) => {
                 remaining.remove(0);
                 Self::DiscoverMmio
@@ -100,10 +130,18 @@ impl Command {
                     None => return Err("verify contract requires a contract name".into()),
                 }
             }
-            ("image" | "inspect" | "reference" | "driver" | "mmio" | "ir", Some(command)) => {
+            (
+                "project" | "registers" | "symbols" | "interfaces" | "image" | "inspect"
+                | "reference" | "driver" | "mmio" | "ir",
+                Some(command),
+            ) => {
                 return Err(format!("unknown {value} command: {command}").into());
             }
-            ("image" | "inspect" | "reference" | "driver" | "mmio" | "ir", None) => {
+            (
+                "project" | "registers" | "symbols" | "interfaces" | "image" | "inspect"
+                | "reference" | "driver" | "mmio" | "ir",
+                None,
+            ) => {
                 return Err(format!("{value} requires a command").into());
             }
             ("audit-direct-targets", _) => Self::AuditDirectTargets,
@@ -122,12 +160,124 @@ impl Command {
             _ => return Err(format!("unknown command: {value}").into()),
         })
     }
+
+    pub(crate) const fn requires_harness(self) -> bool {
+        matches!(
+            self,
+            Self::QualifyContractChannel
+                | Self::QualifyContractRfInit
+                | Self::GenerateReference
+                | Self::GenerateReferenceBatch
+                | Self::GenerateDriver
+                | Self::Analyze
+                | Self::VerifyAll
+                | Self::Verify
+        )
+    }
+
+    pub(crate) const fn requires_backend(self) -> bool {
+        !matches!(
+            self,
+            Self::ProjectDoctor
+                | Self::RegisterInitOverlay
+                | Self::RegisterValidate
+                | Self::RegisterExportSvd
+        )
+    }
+
+    pub(crate) const fn requires_mmio_map(self) -> bool {
+        !matches!(
+            self,
+            Self::ProjectDoctor
+                | Self::RegisterInitOverlay
+                | Self::RegisterValidate
+                | Self::RegisterExportSvd
+                | Self::SymbolInventory
+                | Self::InterfaceDiscover
+                | Self::AuditDirectTargets
+                | Self::DiscoverMmio
+                | Self::ExportIr
+        )
+    }
+
+    pub(crate) const fn uses_memory_map(self) -> bool {
+        !matches!(
+            self,
+            Self::RegisterInitOverlay
+                | Self::RegisterValidate
+                | Self::RegisterExportSvd
+                | Self::SymbolInventory
+                | Self::InterfaceDiscover
+                | Self::AuditDirectTargets
+        )
+    }
+
+    pub(crate) const fn uses_register_catalog(self) -> bool {
+        !matches!(
+            self,
+            Self::RegisterInitOverlay
+                | Self::RegisterValidate
+                | Self::RegisterExportSvd
+                | Self::SymbolInventory
+                | Self::InterfaceDiscover
+                | Self::AuditDirectTargets
+        )
+    }
+
+    pub(crate) const fn uses_run_spec(self) -> bool {
+        !matches!(
+            self,
+            Self::RegisterInitOverlay | Self::RegisterValidate | Self::RegisterExportSvd
+        )
+    }
+
+    pub(crate) fn accepts_run_input_role(self, role: &str) -> bool {
+        match self {
+            Self::ProjectDoctor
+            | Self::RegisterInitOverlay
+            | Self::RegisterValidate
+            | Self::RegisterExportSvd
+            | Self::SymbolInventory
+            | Self::InterfaceDiscover => false,
+            Self::DiscoverMmio => role
+                .strip_prefix("source-artifact:")
+                .is_some_and(|source| !source.is_empty()),
+            Self::ExportIr => {
+                role == "companion"
+                    || role
+                        .strip_prefix("source-artifact:")
+                        .is_some_and(|source| !source.is_empty())
+            }
+            Self::AuditDirectTargets => role == "artifact",
+            _ => true,
+        }
+    }
+
+    pub(crate) fn input_role_is_overridden(self, role: &str, arguments: &[String]) -> bool {
+        let option = format!("--{role}");
+        if arguments.iter().any(|argument| argument == &option) {
+            return true;
+        }
+        let Some(source) = role.strip_prefix("source-artifact:") else {
+            return false;
+        };
+        if !matches!(self, Self::DiscoverMmio | Self::ExportIr) {
+            return false;
+        }
+        arguments.windows(2).any(|pair| {
+            pair[0] == "--artifact"
+                && pair[1]
+                    .split_once('=')
+                    .is_some_and(|(explicit_source, _)| explicit_source == source)
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Invocation {
     pub(crate) command: Command,
-    pub(crate) target_spec: PathBuf,
+    pub(crate) project: Option<PathBuf>,
+    pub(crate) target_spec: Option<PathBuf>,
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) arguments: Vec<String>,
@@ -139,13 +289,22 @@ impl Invocation {
         let primary = arguments.next().ok_or("missing command")?;
         let mut remaining = arguments.collect::<Vec<_>>();
         let command = Command::parse(&primary, &mut remaining)?;
+        let mut project = None;
         let mut target_spec = None;
         let mut run_spec = None;
         let mut svd_paths = Vec::new();
         let mut filtered = Vec::new();
         let mut index = 0;
         while index < remaining.len() {
-            if remaining[index] == "--target-spec" {
+            if remaining[index] == "--project" {
+                let path = remaining
+                    .get(index + 1)
+                    .ok_or("--project requires a value")?;
+                if project.replace(PathBuf::from(path)).is_some() {
+                    return Err("duplicate --project".into());
+                }
+                index += 2;
+            } else if remaining[index] == "--target-spec" {
                 let path = remaining
                     .get(index + 1)
                     .ok_or("--target-spec requires a value")?;
@@ -170,9 +329,12 @@ impl Invocation {
                 index += 1;
             }
         }
-        let target_spec = target_spec.ok_or("missing --target-spec")?;
+        if project.is_some() && target_spec.is_some() {
+            return Err("--project and --target-spec are mutually exclusive".into());
+        }
         Ok(Self {
             command,
+            project,
             target_spec,
             run_spec,
             svd_paths,
@@ -202,7 +364,8 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(invocation.command, Command::Extract);
-        assert_eq!(invocation.target_spec, PathBuf::from("target.spec"));
+        assert_eq!(invocation.project, None);
+        assert_eq!(invocation.target_spec, Some(PathBuf::from("target.spec")));
         assert_eq!(invocation.run_spec, Some(PathBuf::from("local.run")));
         assert_eq!(invocation.svd_paths, [PathBuf::from("radio.svd")]);
         assert_eq!(
@@ -230,6 +393,108 @@ mod tests {
         .unwrap();
         assert_eq!(invocation.command, Command::AuditDirectTargets);
         assert!(invocation.svd_paths.is_empty());
+    }
+
+    #[test]
+    fn accepts_a_project_as_the_composed_configuration_root() {
+        let invocation = Invocation::parse([
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(
+            invocation.project,
+            Some(PathBuf::from("vendor-validator.toml"))
+        );
+        assert_eq!(invocation.target_spec, None);
+    }
+
+    #[test]
+    fn parses_project_doctor_without_command_arguments() {
+        let invocation = Invocation::parse([
+            "project".to_owned(),
+            "doctor".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::ProjectDoctor);
+        assert!(invocation.arguments.is_empty());
+    }
+
+    #[test]
+    fn parses_project_symbol_inventory() {
+        let invocation = Invocation::parse([
+            "symbols".to_owned(),
+            "inventory".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+            "--undefined-only".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::SymbolInventory);
+        assert_eq!(invocation.arguments, ["--undefined-only"]);
+    }
+
+    #[test]
+    fn parses_generic_interface_discovery_without_semantic_capabilities() {
+        let invocation = Invocation::parse([
+            "interfaces".to_owned(),
+            "discover".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+            "--source".to_owned(),
+            "libpp".to_owned(),
+            "--tables-only".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::InterfaceDiscover);
+        assert_eq!(invocation.arguments, ["--source", "libpp", "--tables-only"]);
+        assert!(!invocation.command.requires_harness());
+        assert!(!invocation.command.requires_mmio_map());
+    }
+
+    #[test]
+    fn parses_register_workspace_commands() {
+        for (name, command) in [
+            ("init-overlay", Command::RegisterInitOverlay),
+            ("validate", Command::RegisterValidate),
+            ("export-svd", Command::RegisterExportSvd),
+        ] {
+            let invocation = Invocation::parse([
+                "registers".to_owned(),
+                name.to_owned(),
+                "--project".to_owned(),
+                "vendor-validator.toml".to_owned(),
+            ])
+            .unwrap();
+            assert_eq!(invocation.command, command);
+        }
+    }
+
+    #[test]
+    fn rejects_ambiguous_project_and_target_roots() {
+        let error = Invocation::parse([
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+            "--target-spec".to_owned(),
+            "target.spec".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn named_artifact_overrides_the_same_project_source() {
+        let arguments = ["--artifact".to_owned(), "rom=override.elf".to_owned()];
+        assert!(Command::DiscoverMmio.input_role_is_overridden("source-artifact:rom", &arguments));
+        assert!(
+            !Command::DiscoverMmio.input_role_is_overridden("source-artifact:archive", &arguments)
+        );
     }
 
     #[test]

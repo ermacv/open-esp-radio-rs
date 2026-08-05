@@ -1,5 +1,29 @@
 # ESP32-S31 validation harness
 
+`vendor-validator.toml` is the preferred project entry point. It composes the
+existing target pack with `memory.toml`, whose MMIO regions are independent of
+SVD register names:
+
+```console
+cargo vendor-code-validator mmio discover \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --json-report /tmp/esp32s31-mmio.json
+```
+
+The checked project deliberately omits a run spec because vendor artifact
+paths are caller-owned. `--target-spec` examples below remain valid as direct,
+single-command invocations.
+
+The public project configuration can be checked without proprietary inputs:
+
+```console
+cd validation/esp32s31
+cargo vendor-code-validator project doctor
+```
+
+The missing run spec is a readiness warning rather than a configuration error.
+
 This directory owns target-specific input for compiled vendor-to-Rust
 validation. It is deliberately outside the generic validator tool.
 

@@ -11,13 +11,50 @@ mod extract;
 mod generate_driver;
 mod generate_reference;
 mod generate_reference_batch;
+mod interface_discovery;
+mod interface_discovery_json;
+mod interface_discovery_options;
+mod project_doctor;
 mod qualify_channel;
 mod qualify_rf_init;
+mod registers;
+mod symbol_inventory;
 mod verify;
 mod verify_all;
 mod verify_profiles;
 
 use super::{Command, MmioRegisterMap, Result, TargetSpec};
+
+pub(crate) use project_doctor::ProjectDoctorContext;
+
+pub(super) fn run_project_doctor(
+    arguments: Vec<String>,
+    context: ProjectDoctorContext<'_>,
+) -> Result<bool> {
+    project_doctor::run(arguments, context)
+}
+
+pub(super) fn run_symbol_inventory(
+    arguments: Vec<String>,
+    run_spec: &crate::run_spec::RunSpec,
+) -> Result<bool> {
+    symbol_inventory::run(arguments, run_spec)
+}
+
+pub(super) fn run_interface_discovery(
+    arguments: Vec<String>,
+    run_spec: &crate::run_spec::RunSpec,
+) -> Result<bool> {
+    interface_discovery::run(arguments, run_spec)
+}
+
+pub(super) fn run_register_command(
+    command: Command,
+    arguments: Vec<String>,
+    project: &crate::project::ProjectSpec,
+) -> Result<bool> {
+    registers::run(command, arguments, project)
+}
 
 pub(super) fn run(
     command: Command,
@@ -26,11 +63,23 @@ pub(super) fn run(
     target: &TargetSpec,
 ) -> Result<bool> {
     match command {
+        Command::ProjectDoctor
+        | Command::RegisterInitOverlay
+        | Command::RegisterValidate
+        | Command::RegisterExportSvd
+        | Command::SymbolInventory
+        | Command::InterfaceDiscover => {
+            unreachable!("project, register and symbol commands use specialized dispatch")
+        }
         Command::AuditDirectTargets => audit_direct_targets::run(arguments),
         Command::DiscoverMmio => discover_mmio::run(arguments, svd),
         Command::ExportIr => export_ir::run(arguments, svd, target),
-        Command::QualifyContractChannel => qualify_channel::run(arguments, svd, &target.harness),
-        Command::QualifyContractRfInit => qualify_rf_init::run(arguments, svd, &target.harness),
+        Command::QualifyContractChannel => {
+            qualify_channel::run(arguments, svd, target.require_available_harness()?)
+        }
+        Command::QualifyContractRfInit => {
+            qualify_rf_init::run(arguments, svd, target.require_available_harness()?)
+        }
         Command::Execute => execute::run(arguments, svd),
         Command::ExecuteCompare => execute_compare::run(arguments, svd),
         Command::VerifyProfiles => verify_profiles::run(arguments, svd),

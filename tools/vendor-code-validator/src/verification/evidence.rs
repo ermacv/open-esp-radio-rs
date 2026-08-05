@@ -215,7 +215,7 @@ pub(crate) fn write_verification_json_report<S: AsRef<str>>(
     output.push_str("  \"target\": {\"id\": ");
     write_json_string(&mut output, &target.id);
     output.push_str(", \"harness\": ");
-    write_json_string(&mut output, &target.harness);
+    write_json_string(&mut output, target.require_available_harness()?);
     output.push_str(", \"architecture\": ");
     write_json_string(&mut output, target.architecture.label());
     output.push_str(", \"calling_convention\": ");

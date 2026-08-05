@@ -6,12 +6,14 @@
 use std::{fs, path::Path};
 
 use object::{
-    FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget,
-    SectionFlags, SectionKind, SymbolKind, read::archive::ArchiveFile,
+    FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionFlags, SectionKind,
+    SymbolFlags, SymbolKind, SymbolScope, SymbolSection, read::archive::ArchiveFile,
 };
 use rv_asm::{Imm, Inst, IsCompressed, Reg, Xlen};
 
 use crate::{Error, Result};
+
+mod relocations;
 
 #[derive(Clone, Debug)]
 pub struct ArtifactSymbolDefinition {
@@ -24,20 +26,245 @@ pub struct ArtifactSymbolDefinition {
     pub relocations: Vec<SymbolRelocation>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactContainerKind {
+    Elf32,
+    Archive,
+}
+
+impl ArtifactContainerKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Elf32 => "elf32",
+            Self::Archive => "archive",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactObjectKind {
+    Relocatable,
+    Executable,
+    Dynamic,
+    Core,
+    Unknown,
+}
+
+impl ArtifactObjectKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Relocatable => "relocatable",
+            Self::Executable => "executable",
+            Self::Dynamic => "dynamic",
+            Self::Core => "core",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolTable {
+    Static,
+    Dynamic,
+}
+
+impl ArtifactSymbolTable {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Dynamic => "dynamic",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolBinding {
+    Local,
+    Global,
+    Weak,
+    GnuUnique,
+    Unknown(u8),
+}
+
+impl ArtifactSymbolBinding {
+    pub fn label(self) -> String {
+        match self {
+            Self::Local => "local".to_owned(),
+            Self::Global => "global".to_owned(),
+            Self::Weak => "weak".to_owned(),
+            Self::GnuUnique => "gnu-unique".to_owned(),
+            Self::Unknown(value) => format!("unknown-{value}"),
+        }
+    }
+
+    pub const fn is_export_candidate(self) -> bool {
+        matches!(self, Self::Global | Self::Weak | Self::GnuUnique)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolVisibility {
+    Default,
+    Internal,
+    Hidden,
+    Protected,
+    Unknown(u8),
+}
+
+impl ArtifactSymbolVisibility {
+    pub fn label(self) -> String {
+        match self {
+            Self::Default => "default".to_owned(),
+            Self::Internal => "internal".to_owned(),
+            Self::Hidden => "hidden".to_owned(),
+            Self::Protected => "protected".to_owned(),
+            Self::Unknown(value) => format!("unknown-{value}"),
+        }
+    }
+
+    pub const fn is_externally_visible(self) -> bool {
+        matches!(self, Self::Default | Self::Protected)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolKind {
+    Unknown,
+    Text,
+    Data,
+    Section,
+    File,
+    Label,
+    Tls,
+}
+
+impl ArtifactSymbolKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Unknown => "unknown",
+            Self::Text => "text",
+            Self::Data => "data",
+            Self::Section => "section",
+            Self::File => "file",
+            Self::Label => "label",
+            Self::Tls => "tls",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolScope {
+    Compilation,
+    Linkage,
+    Dynamic,
+    Unknown,
+}
+
+impl ArtifactSymbolScope {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Compilation => "compilation",
+            Self::Linkage => "linkage",
+            Self::Dynamic => "dynamic",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactSymbolDefinitionState {
+    Undefined,
+    Absolute,
+    Common,
+    Section,
+    None,
+    Unknown,
+}
+
+impl ArtifactSymbolDefinitionState {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Undefined => "undefined",
+            Self::Absolute => "absolute",
+            Self::Common => "common",
+            Self::Section => "section",
+            Self::None => "none",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    pub const fn is_definition(self) -> bool {
+        matches!(self, Self::Absolute | Self::Common | Self::Section)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactSymbolFact {
+    pub table: ArtifactSymbolTable,
+    pub name: String,
+    pub address: u64,
+    pub size: u64,
+    pub binding: ArtifactSymbolBinding,
+    pub visibility: ArtifactSymbolVisibility,
+    pub kind: ArtifactSymbolKind,
+    pub definition: ArtifactSymbolDefinitionState,
+    pub section: Option<String>,
+    pub scope: ArtifactSymbolScope,
+}
+
+impl ArtifactSymbolFact {
+    pub const fn is_exported_definition(&self) -> bool {
+        self.definition.is_definition()
+            && self.binding.is_export_candidate()
+            && self.visibility.is_externally_visible()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactObjectInventory {
+    pub member: Option<String>,
+    pub kind: ArtifactObjectKind,
+    pub symbols: Vec<ArtifactSymbolFact>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactInventory {
+    pub container: ArtifactContainerKind,
+    pub objects: Vec<ArtifactObjectInventory>,
+    pub skipped_members: usize,
+}
+
+impl ArtifactInventory {
+    pub fn symbols(&self) -> impl Iterator<Item = (&ArtifactObjectInventory, &ArtifactSymbolFact)> {
+        self.objects
+            .iter()
+            .flat_map(|object| object.symbols.iter().map(move |symbol| (object, symbol)))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RelocationKind {
+    GotHi20,
     Hi20,
     Lo12I,
     Lo12S,
+    PcRelHi20,
+    PcRelLo12I,
+    PcRelLo12S,
+    GotPcRelLo12I,
     Call,
     CallPlt,
 }
 
 fn riscv_relocation_kind(r_type: u32) -> Option<RelocationKind> {
     match r_type {
+        object::elf::R_RISCV_GOT_HI20 => Some(RelocationKind::GotHi20),
         object::elf::R_RISCV_HI20 => Some(RelocationKind::Hi20),
         object::elf::R_RISCV_LO12_I => Some(RelocationKind::Lo12I),
         object::elf::R_RISCV_LO12_S => Some(RelocationKind::Lo12S),
+        object::elf::R_RISCV_PCREL_HI20 => Some(RelocationKind::PcRelHi20),
+        object::elf::R_RISCV_PCREL_LO12_I => Some(RelocationKind::PcRelLo12I),
+        object::elf::R_RISCV_PCREL_LO12_S => Some(RelocationKind::PcRelLo12S),
         object::elf::R_RISCV_CALL => Some(RelocationKind::Call),
         object::elf::R_RISCV_CALL_PLT => Some(RelocationKind::CallPlt),
         _ => None,
@@ -89,6 +316,199 @@ impl ArtifactSymbolDefinition {
         self.relocations
             .iter()
             .find(|relocation| relocation.address == address && relocation.kind == kind)
+    }
+}
+
+fn inventory_object_kind(kind: ObjectKind) -> ArtifactObjectKind {
+    match kind {
+        ObjectKind::Relocatable => ArtifactObjectKind::Relocatable,
+        ObjectKind::Executable => ArtifactObjectKind::Executable,
+        ObjectKind::Dynamic => ArtifactObjectKind::Dynamic,
+        ObjectKind::Core => ArtifactObjectKind::Core,
+        _ => ArtifactObjectKind::Unknown,
+    }
+}
+
+fn inventory_symbol_binding<'data>(symbol: &impl ObjectSymbol<'data>) -> ArtifactSymbolBinding {
+    if let SymbolFlags::Elf { st_info, .. } = symbol.flags() {
+        return match st_info >> 4 {
+            object::elf::STB_LOCAL => ArtifactSymbolBinding::Local,
+            object::elf::STB_GLOBAL => ArtifactSymbolBinding::Global,
+            object::elf::STB_WEAK => ArtifactSymbolBinding::Weak,
+            object::elf::STB_GNU_UNIQUE => ArtifactSymbolBinding::GnuUnique,
+            value => ArtifactSymbolBinding::Unknown(value),
+        };
+    }
+    if symbol.is_weak() {
+        ArtifactSymbolBinding::Weak
+    } else if symbol.is_local() {
+        ArtifactSymbolBinding::Local
+    } else if symbol.is_global() {
+        ArtifactSymbolBinding::Global
+    } else {
+        ArtifactSymbolBinding::Unknown(0xff)
+    }
+}
+
+fn inventory_symbol_visibility<'data>(
+    symbol: &impl ObjectSymbol<'data>,
+) -> ArtifactSymbolVisibility {
+    match symbol.flags().elf_visibility() {
+        Some(object::elf::STV_DEFAULT) => ArtifactSymbolVisibility::Default,
+        Some(object::elf::STV_INTERNAL) => ArtifactSymbolVisibility::Internal,
+        Some(object::elf::STV_HIDDEN) => ArtifactSymbolVisibility::Hidden,
+        Some(object::elf::STV_PROTECTED) => ArtifactSymbolVisibility::Protected,
+        Some(value) => ArtifactSymbolVisibility::Unknown(value),
+        None => ArtifactSymbolVisibility::Default,
+    }
+}
+
+fn inventory_symbol_kind(kind: SymbolKind) -> ArtifactSymbolKind {
+    match kind {
+        SymbolKind::Text => ArtifactSymbolKind::Text,
+        SymbolKind::Data => ArtifactSymbolKind::Data,
+        SymbolKind::Section => ArtifactSymbolKind::Section,
+        SymbolKind::File => ArtifactSymbolKind::File,
+        SymbolKind::Label => ArtifactSymbolKind::Label,
+        SymbolKind::Tls => ArtifactSymbolKind::Tls,
+        _ => ArtifactSymbolKind::Unknown,
+    }
+}
+
+fn inventory_symbol_definition(section: SymbolSection) -> ArtifactSymbolDefinitionState {
+    match section {
+        SymbolSection::Undefined => ArtifactSymbolDefinitionState::Undefined,
+        SymbolSection::Absolute => ArtifactSymbolDefinitionState::Absolute,
+        SymbolSection::Common => ArtifactSymbolDefinitionState::Common,
+        SymbolSection::Section(_) => ArtifactSymbolDefinitionState::Section,
+        SymbolSection::None => ArtifactSymbolDefinitionState::None,
+        _ => ArtifactSymbolDefinitionState::Unknown,
+    }
+}
+
+fn inventory_symbol_scope(scope: SymbolScope) -> ArtifactSymbolScope {
+    match scope {
+        SymbolScope::Compilation => ArtifactSymbolScope::Compilation,
+        SymbolScope::Linkage => ArtifactSymbolScope::Linkage,
+        SymbolScope::Dynamic => ArtifactSymbolScope::Dynamic,
+        SymbolScope::Unknown => ArtifactSymbolScope::Unknown,
+    }
+}
+
+fn inventory_symbol_fact<'data>(
+    file: &object::File<'data>,
+    symbol: impl ObjectSymbol<'data>,
+    table: ArtifactSymbolTable,
+) -> Result<Option<ArtifactSymbolFact>> {
+    let name_bytes = symbol.name_bytes()?;
+    if name_bytes.is_empty() {
+        return Ok(None);
+    }
+    let section = symbol
+        .section_index()
+        .map(|index| {
+            file.section_by_index(index)
+                .and_then(|section| section.name().map(str::to_owned))
+        })
+        .transpose()?;
+    Ok(Some(ArtifactSymbolFact {
+        table,
+        name: String::from_utf8_lossy(name_bytes).into_owned(),
+        address: symbol.address(),
+        size: symbol.size(),
+        binding: inventory_symbol_binding(&symbol),
+        visibility: inventory_symbol_visibility(&symbol),
+        kind: inventory_symbol_kind(symbol.kind()),
+        definition: inventory_symbol_definition(symbol.section()),
+        section,
+        scope: inventory_symbol_scope(symbol.scope()),
+    }))
+}
+
+fn inventory_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjectInventory> {
+    let file = object::File::parse(data)?;
+    if file.architecture() != object::Architecture::Riscv32 {
+        return Err(format!("artifact member {member:?} is not RISC-V 32-bit").into());
+    }
+    if !file.is_little_endian() {
+        return Err(format!("artifact member {member:?} is not little-endian").into());
+    }
+    let mut symbols = Vec::new();
+    for symbol in file.symbols() {
+        if let Some(fact) = inventory_symbol_fact(&file, symbol, ArtifactSymbolTable::Static)? {
+            symbols.push(fact);
+        }
+    }
+    for symbol in file.dynamic_symbols() {
+        if let Some(fact) = inventory_symbol_fact(&file, symbol, ArtifactSymbolTable::Dynamic)? {
+            symbols.push(fact);
+        }
+    }
+    symbols.sort_by(|left, right| {
+        (
+            &left.name,
+            left.table,
+            left.definition,
+            left.binding,
+            left.address,
+            left.size,
+        )
+            .cmp(&(
+                &right.name,
+                right.table,
+                right.definition,
+                right.binding,
+                right.address,
+                right.size,
+            ))
+    });
+    Ok(ArtifactObjectInventory {
+        member,
+        kind: inventory_object_kind(file.kind()),
+        symbols,
+    })
+}
+
+/// Read the named ELF symbol facts needed for project linkage analysis.
+///
+/// This inventory is deliberately separate from [`ArtifactSymbolDefinition`]:
+/// undefined imports, data, local and absolute symbols are linkage facts but
+/// are not decodable function bodies.
+pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
+    let data = fs::read(path)?;
+    match FileKind::parse(data.as_slice())? {
+        FileKind::Archive => {
+            let archive = ArchiveFile::parse(data.as_slice())?;
+            let mut objects = Vec::new();
+            let mut skipped_members = 0usize;
+            for member in archive.members() {
+                let member = member?;
+                let member_data = member.data(data.as_slice())?;
+                if FileKind::parse(member_data) != Ok(FileKind::Elf32) {
+                    skipped_members += 1;
+                    continue;
+                }
+                objects.push(inventory_object(
+                    member_data,
+                    Some(String::from_utf8_lossy(member.name()).into_owned()),
+                )?);
+            }
+            if objects.is_empty() {
+                return Err("archive has no RISC-V ELF32 members".into());
+            }
+            objects.sort_by(|left, right| left.member.cmp(&right.member));
+            Ok(ArtifactInventory {
+                container: ArtifactContainerKind::Archive,
+                objects,
+                skipped_members,
+            })
+        }
+        FileKind::Elf32 => Ok(ArtifactInventory {
+            container: ArtifactContainerKind::Elf32,
+            objects: vec![inventory_object(&data, None)?],
+            skipped_members: 0,
+        }),
+        kind => Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
 }
 
@@ -198,33 +618,18 @@ fn collect_object_symbols(
         let symbol_end = symbol_start
             .checked_add(symbol.size())
             .ok_or_else(|| format!("symbol {name} address range overflows"))?;
-        let section_start = section.address();
-        let section_end = section_start.wrapping_add(section.size());
         let mut relocations = Vec::new();
-        for (offset, relocation) in section.relocations() {
-            let RelocationFlags::Elf { r_type } = relocation.flags() else {
-                continue;
-            };
-            let Some(kind) = riscv_relocation_kind(r_type) else {
-                continue;
-            };
-            let RelocationTarget::Symbol(index) = relocation.target() else {
-                continue;
-            };
-            let relocation_address = if offset >= section_start && offset < section_end {
-                offset
-            } else {
-                section_start.wrapping_add(offset)
-            };
-            if relocation_address < symbol_start || relocation_address >= symbol_end {
+        for relocation in relocations::collect_section_relocations(&file, section_index)? {
+            if relocation.address < symbol_start || relocation.address >= symbol_end {
                 continue;
             }
+            let addend = relocation.addend();
             relocations.push(SymbolRelocation {
-                address: u32::try_from(relocation_address)
+                address: u32::try_from(relocation.address)
                     .map_err(|_| format!("relocation in {name} exceeds RV32 address space"))?,
-                kind,
-                symbol: file.symbol_by_index(index)?.name()?.to_owned(),
-                addend: relocation.addend(),
+                kind: relocation.kind,
+                symbol: relocation.symbol,
+                addend,
             });
         }
         relocations.sort_by_key(|relocation| (relocation.address, relocation.kind as u8));

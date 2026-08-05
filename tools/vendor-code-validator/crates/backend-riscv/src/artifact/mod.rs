@@ -9,7 +9,7 @@ use object::{
     FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget,
     SectionFlags, SectionKind, SymbolKind, read::archive::ArchiveFile,
 };
-use rv_asm::{Imm, Inst, IsCompressed, Xlen};
+use rv_asm::{Imm, Inst, IsCompressed, Reg, Xlen};
 
 use crate::{Error, Result};
 
@@ -379,6 +379,27 @@ pub fn decode_symbol(symbol: &ArtifactSymbolDefinition) -> Result<Vec<DecodedIns
         offset += width;
     }
     Ok(decoded)
+}
+
+/// Classify the JALR half of a standard two-instruction RISC-V call
+/// relocation. Returns `None` for malformed or non-standard link registers.
+pub fn relocated_call_is_tail(
+    symbol: &ArtifactSymbolDefinition,
+    relocation_address: u32,
+) -> Option<bool> {
+    let jalr_address = relocation_address.checked_add(4)?;
+    let instruction = decode_symbol(symbol)
+        .ok()?
+        .into_iter()
+        .find(|decoded| decoded.address == u64::from(jalr_address))?
+        .instruction;
+    match instruction {
+        Inst::Jalr {
+            dest: Reg::ZERO, ..
+        } => Some(true),
+        Inst::Jalr { dest: Reg::RA, .. } => Some(false),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

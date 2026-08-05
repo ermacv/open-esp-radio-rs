@@ -106,10 +106,18 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v10 records `"linkage_mode": "independent-artifacts"` and does not claim
-that unresolved calls between separate archives were linked. Use one linked
-ELF primary plus `--companion` inputs when cross-image addresses and relocations
-belong to one executable address space.
+schema v11 records `"linkage_mode": "independent-artifacts"` and does not claim
+that separate inputs share an address space or were fully linked. Use one
+linked ELF primary plus `--companion` inputs when cross-image addresses and
+relocations belong to one executable address space.
+
+Project mode does perform a conservative symbol-level call association. An
+unresolved call relocation becomes `project-linked` only when exactly one
+exported definition with that symbol exists across all inputs. Multiple weak or
+global definitions remain ambiguous, and local definitions are never selected.
+`project_call_linkage` records this policy. The edge is useful for navigation,
+but arguments, return propagation and callee effects are not composed, so the
+original reference blocker and incomplete function status remain intact.
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,

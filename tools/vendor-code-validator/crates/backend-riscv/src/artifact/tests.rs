@@ -92,6 +92,27 @@ fn recognizes_both_riscv_call_relocation_kinds() {
 }
 
 #[test]
+fn relocated_call_link_register_distinguishes_call_and_tail_call() {
+    let mut symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "relocated_call".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    assert_eq!(relocated_call_is_tail(&symbol, 0x1000), Some(false));
+
+    symbol.bytes[4..].copy_from_slice(&[0x67, 0x80, 0x00, 0x00]); // jalr zero, 0(ra)
+    assert_eq!(relocated_call_is_tail(&symbol, 0x1000), Some(true));
+    assert_eq!(relocated_call_is_tail(&symbol, 0x1004), None);
+}
+
+#[test]
 fn exploratory_catalog_adds_local_functions_without_broadening_default_inventory() {
     let path = write_visibility_fixture();
 

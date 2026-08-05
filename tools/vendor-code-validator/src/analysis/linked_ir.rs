@@ -34,6 +34,8 @@ pub(crate) struct LinkedCall {
     pub(crate) semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
     pub(crate) replacement_hint: Option<String>,
+    pub(crate) project_symbol: Option<String>,
+    pub(crate) project_candidates: Vec<String>,
     pub(crate) arguments: Vec<String>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
 }
@@ -163,6 +165,8 @@ pub(crate) struct LinkedIrReport {
     pub(crate) structured_functions: usize,
     pub(crate) internal_calls: usize,
     pub(crate) external_calls: usize,
+    pub(crate) project_linked_calls: usize,
+    pub(crate) ambiguous_project_calls: usize,
     pub(crate) unresolved_calls: usize,
 }
 
@@ -478,6 +482,8 @@ fn collect_call_event(
             semantics: external_semantics(event),
             semantic_operation: Some(function.spec().semantic.operation.to_owned()),
             replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: external_typed_arguments(*function, arguments),
         }),
@@ -494,6 +500,8 @@ fn collect_call_event(
             semantics: Some("diagnostic/logging boundary".to_owned()),
             semantic_operation: Some("diagnostic.emit".to_owned()),
             replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -515,6 +523,8 @@ fn collect_call_event(
             semantics: None,
             semantic_operation: None,
             replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -536,6 +546,8 @@ fn collect_call_event(
             semantics: None,
             semantic_operation: None,
             replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -553,6 +565,8 @@ fn collect_call_event(
             semantics: Some("callee body was composed by the reference resolver".to_owned()),
             semantic_operation: None,
             replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -578,6 +592,8 @@ fn collect_call_event(
             )),
             semantic_operation: None,
             replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -599,6 +615,8 @@ fn collect_call_event(
             )),
             semantic_operation: None,
             replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
             typed_arguments: Vec::new(),
         }),
@@ -650,6 +668,41 @@ fn explore_direct_calls(
         };
         for event in &trace.reference_events {
             collect_call_event(event, resolver, identities, &mut result.calls);
+        }
+        for relocation in symbol.relocations.iter().filter(|relocation| {
+            matches!(
+                relocation.kind,
+                artifact::RelocationKind::Call | artifact::RelocationKind::CallPlt
+            )
+        }) {
+            let unresolved = format!(
+                "unresolved-call-relocation at {:#x}: {}",
+                relocation.address, relocation.symbol
+            );
+            if trace
+                .reference_blockers
+                .iter()
+                .any(|blocker| blocker == &unresolved)
+            {
+                result.calls.insert(LinkedCall {
+                    kind: "unresolved",
+                    target: relocation.symbol.clone(),
+                    site: Some(relocation.address),
+                    tail: artifact::relocated_call_is_tail(symbol, relocation.address)
+                        .unwrap_or(false),
+                    result_modeled: false,
+                    semantics: Some(
+                        "unresolved call relocation; arguments and callee effects are unavailable"
+                            .to_owned(),
+                    ),
+                    semantic_operation: None,
+                    replacement_hint: None,
+                    project_symbol: Some(relocation.symbol.clone()),
+                    project_candidates: Vec::new(),
+                    arguments: Vec::new(),
+                    typed_arguments: Vec::new(),
+                });
+            }
         }
         result
             .blockers
@@ -1814,6 +1867,71 @@ pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {
     summarize_linked_ir(functions)
 }
 
+pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {
+    let mut exported_definitions = BTreeMap::<String, BTreeSet<String>>::new();
+    for function in reports.iter().flat_map(|report| &report.functions) {
+        if function.binding == "global-or-weak" {
+            exported_definitions
+                .entry(function.symbol.clone())
+                .or_default()
+                .insert(function.identity.clone());
+        }
+    }
+
+    for function in reports.iter_mut().flat_map(|report| &mut report.functions) {
+        let mut project_notes = Vec::new();
+        let mut linked_dependencies = Vec::new();
+        for call in &mut function.calls {
+            let Some(symbol) = call.project_symbol.as_ref() else {
+                continue;
+            };
+            let candidates = exported_definitions
+                .get(symbol)
+                .map(|definitions| definitions.iter().cloned().collect::<Vec<_>>())
+                .unwrap_or_default();
+            call.project_candidates = candidates.clone();
+            match candidates.as_slice() {
+                [target] => {
+                    call.kind = "project-linked";
+                    call.target = target.clone();
+                    call.semantics = Some(
+                        "unique exported project definition; edge linked without composing callee effects"
+                            .to_owned(),
+                    );
+                    linked_dependencies.push(target.clone());
+                    project_notes.push(format!(
+                        "// PROJECT-LINKED-CALL: {symbol} -> {target}; callee effects are not composed"
+                    ));
+                }
+                [] => {
+                    call.semantics = Some(
+                        "unresolved project call; no exported definition was found".to_owned(),
+                    );
+                }
+                _ => {
+                    call.semantics = Some(
+                        "ambiguous project call; multiple exported definitions were found"
+                            .to_owned(),
+                    );
+                    project_notes.push(format!(
+                        "// PROJECT-AMBIGUOUS-CALL: {symbol} -> {}",
+                        candidates.join(" | ")
+                    ));
+                }
+            }
+        }
+        function.dependencies.extend(linked_dependencies);
+        function.dependencies.sort();
+        function.dependencies.dedup();
+        function.calls.sort();
+        if !project_notes.is_empty() {
+            project_notes.sort();
+            project_notes.dedup();
+            function.pseudo = format!("{}\n{}", project_notes.join("\n"), function.pseudo);
+        }
+    }
+}
+
 #[derive(Default)]
 struct MmioRegisterAccumulator {
     names: BTreeSet<String>,
@@ -1972,6 +2090,16 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .flat_map(|function| &function.calls)
         .filter(|call| matches!(call.kind, "external" | "diagnostic"))
         .count();
+    let project_linked_calls = functions
+        .iter()
+        .flat_map(|function| &function.calls)
+        .filter(|call| call.kind == "project-linked")
+        .count();
+    let ambiguous_project_calls = functions
+        .iter()
+        .flat_map(|function| &function.calls)
+        .filter(|call| call.kind == "unresolved" && call.project_candidates.len() > 1)
+        .count();
     let unresolved_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
@@ -2027,6 +2155,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         structured_functions,
         internal_calls,
         external_calls,
+        project_linked_calls,
+        ambiguous_project_calls,
         unresolved_calls,
     }
 }
@@ -2495,6 +2625,99 @@ mod tests {
                 ("rom", "rom::private_helper@0x00001000"),
                 ("rom", "rom::private_helper@0x00002000"),
             ]
+        );
+    }
+
+    #[test]
+    fn project_call_linking_requires_one_exported_definition() {
+        let function = |source: &str,
+                        symbol: &str,
+                        binding: &'static str,
+                        calls: Vec<LinkedCall>| LinkedIrFunction {
+            source: source.to_owned(),
+            identity: format!("{source}::{symbol}"),
+            member: None,
+            symbol: symbol.to_owned(),
+            binding,
+            address: None,
+            object_offset: 0,
+            size: 4,
+            flow_kind: "partial",
+            complete: false,
+            exact: false,
+            return_value: "unknown".to_owned(),
+            dependencies: Vec::new(),
+            calls,
+            mmio_accesses: Vec::new(),
+            context_accesses: Vec::new(),
+            context_fields: Vec::new(),
+            call_graph_blockers: Vec::new(),
+            direct_blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
+        };
+        let unresolved = || LinkedCall {
+            kind: "unresolved",
+            target: "vendor_child".to_owned(),
+            site: Some(0),
+            tail: true,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            replacement_hint: None,
+            project_symbol: Some("vendor_child".to_owned()),
+            project_candidates: Vec::new(),
+            arguments: Vec::new(),
+            typed_arguments: Vec::new(),
+        };
+
+        let mut unique = vec![
+            summarize_linked_ir(vec![function(
+                "parent",
+                "vendor_parent",
+                "global-or-weak",
+                vec![unresolved()],
+            )]),
+            summarize_linked_ir(vec![function(
+                "child",
+                "vendor_child",
+                "global-or-weak",
+                Vec::new(),
+            )]),
+        ];
+        link_project_calls(&mut unique);
+        let parent = &unique[0].functions[0];
+        assert_eq!(parent.calls[0].kind, "project-linked");
+        assert_eq!(parent.calls[0].target, "child::vendor_child");
+        assert_eq!(parent.dependencies, ["child::vendor_child"]);
+        assert!(!parent.complete);
+
+        let mut ambiguous = vec![
+            summarize_linked_ir(vec![function(
+                "parent",
+                "vendor_parent",
+                "global-or-weak",
+                vec![unresolved()],
+            )]),
+            summarize_linked_ir(vec![function(
+                "child-a",
+                "vendor_child",
+                "global-or-weak",
+                Vec::new(),
+            )]),
+            summarize_linked_ir(vec![function(
+                "child-b",
+                "vendor_child",
+                "global-or-weak",
+                Vec::new(),
+            )]),
+        ];
+        link_project_calls(&mut ambiguous);
+        let call = &ambiguous[0].functions[0].calls[0];
+        assert_eq!(call.kind, "unresolved");
+        assert_eq!(
+            call.project_candidates,
+            ["child-a::vendor_child", "child-b::vendor_child"]
         );
     }
 }

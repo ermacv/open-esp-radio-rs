@@ -165,6 +165,13 @@ boundary explicit. A linked ELF with companions remains the mode for genuine
 cross-image address and relocation resolution; resolving undefined symbols
 across independent static archives requires a later project linker layer.
 
+As a narrower navigation aid, project IR associates an unresolved call
+relocation with a callee only when one exported definition exists across all
+named inputs. It ignores local definitions and leaves duplicate global/weak
+definitions ambiguous. This produces a `project-linked` call-graph edge but
+does not compose arguments, return values, addresses or callee effects; the
+caller therefore retains its reference blocker and incomplete status.
+
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,
 bounded indexed candidates and poll shapes retain path, address-expression and

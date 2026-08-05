@@ -77,11 +77,16 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
     println!(
-        "PROJECT\tlinkage={}\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
             "primary-with-companions"
+        },
+        if artifacts.len() > 1 {
+            "unique-exported-symbol-only"
+        } else {
+            "primary-resolver"
         },
         artifacts.len()
     );
@@ -120,7 +125,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 .site
                 .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}"));
             println!(
-                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\t{}",
+                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\tproject-symbol={}\tproject-candidates={}\t{}",
                 function.identity,
                 call.kind,
                 call.target,
@@ -129,6 +134,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 call.result_modeled,
                 call.semantic_operation.as_deref().unwrap_or("-"),
                 call.replacement_hint.as_deref().unwrap_or("-"),
+                call.project_symbol.as_deref().unwrap_or("-"),
+                call.project_candidates.join("|"),
                 call.semantics.as_deref().unwrap_or("-"),
             );
             for argument in &call.typed_arguments {
@@ -265,7 +272,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         );
     }
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tunresolved-calls={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -282,6 +289,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         report.structured_functions,
         report.internal_calls,
         report.external_calls,
+        report.project_linked_calls,
+        report.ambiguous_project_calls,
         report.unresolved_calls,
     );
 }
@@ -300,7 +309,7 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
     }
     if artifacts.len() > 1 {
         output.push_str(
-            "// Named primary artifacts use independent address spaces; cross-artifact calls are not linked.\n",
+            "// Named primary artifacts use independent address spaces; unique exported-symbol call edges may be associated, but addresses and callee effects are not linked.\n",
         );
     }
     output
@@ -339,7 +348,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 10,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 11,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -348,6 +357,15 @@ fn write_json_report(
             "independent-artifacts"
         } else {
             "primary-with-companions"
+        },
+    );
+    output.push_str(",\n  \"project_call_linkage\": ");
+    write_string(
+        &mut output,
+        if artifacts.len() > 1 {
+            "unique-exported-symbol-only"
+        } else {
+            "primary-resolver"
         },
     );
     output.push_str(",\n");
@@ -375,7 +393,7 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"unresolved_calls\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}}},",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -392,6 +410,8 @@ fn write_json_report(
         report.structured_functions,
         report.internal_calls,
         report.external_calls,
+        report.project_linked_calls,
+        report.ambiguous_project_calls,
         report.unresolved_calls,
     )
     .expect("writing to String cannot fail");
@@ -528,6 +548,10 @@ fn write_json_report(
             write_optional_string(&mut output, call.semantic_operation.as_deref());
             output.push_str(", \"replacement_hint\": ");
             write_optional_string(&mut output, call.replacement_hint.as_deref());
+            output.push_str(", \"project_symbol\": ");
+            write_optional_string(&mut output, call.project_symbol.as_deref());
+            output.push_str(", \"project_candidates\": ");
+            write_strings(&mut output, &call.project_candidates);
             output.push_str(", \"arguments\": ");
             write_strings(&mut output, &call.arguments);
             output.push_str(", \"typed_arguments\": [");
@@ -731,6 +755,9 @@ pub(super) fn run(
             &artifact.source,
             namespace_identities,
         ));
+    }
+    if artifacts.len() > 1 {
+        link_project_calls(&mut reports);
     }
     let report = merge_linked_ir(reports);
     if report.functions.is_empty() {

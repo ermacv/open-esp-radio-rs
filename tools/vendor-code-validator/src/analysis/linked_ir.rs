@@ -14,6 +14,8 @@ use crate::{
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
 const MAX_CALL_GRAPH_BRANCH_DECISIONS: usize = 12;
+const MAX_CONTEXT_PROJECTION_STATES: usize = 4_096;
+const LINKED_CONTEXT_ARGUMENTS: u8 = 16;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCallArgument {
@@ -22,6 +24,14 @@ pub(crate) struct LinkedCallArgument {
     pub(crate) c_type: String,
     pub(crate) direction: &'static str,
     pub(crate) value: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedArgumentBinding {
+    pub(crate) position: usize,
+    pub(crate) caller_argument: u8,
+    pub(crate) offset: i32,
+    pub(crate) expression: String,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -37,6 +47,7 @@ pub(crate) struct LinkedCall {
     pub(crate) project_symbol: Option<String>,
     pub(crate) project_candidates: Vec<String>,
     pub(crate) arguments: Vec<String>,
+    pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
 }
 
@@ -149,6 +160,19 @@ pub(crate) struct LinkedSummarySemantic {
     pub(crate) origins: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedSummaryContextField {
+    pub(crate) argument: u8,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+    pub(crate) origins: Vec<String>,
+    pub(crate) paths: Vec<String>,
+    pub(crate) write_values: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct LinkedEffectSummary {
     pub(crate) call_graph_closed: bool,
@@ -159,6 +183,9 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) mmio_registers: Vec<LinkedSummaryMmio>,
     pub(crate) delays: Vec<LinkedSummaryDelay>,
     pub(crate) semantic_operations: Vec<LinkedSummarySemantic>,
+    pub(crate) context_projection_complete: bool,
+    pub(crate) context_projection_blockers: Vec<String>,
+    pub(crate) context_fields: Vec<LinkedSummaryContextField>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -221,6 +248,8 @@ pub(crate) struct LinkedIrReport {
     pub(crate) unresolved_calls: usize,
     pub(crate) closed_effect_summaries: usize,
     pub(crate) recursive_effect_summaries: usize,
+    pub(crate) complete_context_projections: usize,
+    pub(crate) projected_context_fields: usize,
 }
 
 fn identity(member: Option<&str>, symbol: &str) -> String {
@@ -449,6 +478,30 @@ fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
     arguments.iter().map(SymbolicValue::canonical).collect()
 }
 
+fn affine_argument_bindings(arguments: &[SymbolicValue]) -> Vec<LinkedArgumentBinding> {
+    arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(position, value)| {
+            let (caller_argument, offset) = value.caller_memory_location()?;
+            Some(LinkedArgumentBinding {
+                position,
+                caller_argument,
+                offset,
+                expression: match offset.cmp(&0) {
+                    std::cmp::Ordering::Less => {
+                        format!("arg{caller_argument} - {:#x}", offset.unsigned_abs())
+                    }
+                    std::cmp::Ordering::Equal => format!("arg{caller_argument}"),
+                    std::cmp::Ordering::Greater => {
+                        format!("arg{caller_argument} + {offset:#x}")
+                    }
+                },
+            })
+        })
+        .collect()
+}
+
 fn external_typed_arguments(
     function: crate::ExternalFunctionRef,
     arguments: &[SymbolicValue],
@@ -538,6 +591,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: external_typed_arguments(*function, arguments),
         }),
         DraftReferenceEvent::DiagnosticCall {
@@ -556,6 +610,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         DraftReferenceEvent::Call {
@@ -579,6 +634,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         DraftReferenceEvent::TailCall {
@@ -602,6 +658,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         DraftReferenceEvent::ComposedCall {
@@ -621,6 +678,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         DraftReferenceEvent::ScratchCall {
@@ -648,6 +706,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         DraftReferenceEvent::ComposedCallWithScratch {
@@ -671,6 +730,7 @@ fn collect_call_event(
             project_symbol: None,
             project_candidates: Vec::new(),
             arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
         }),
         _ => None,
@@ -753,6 +813,7 @@ fn explore_direct_calls(
                     project_symbol: Some(relocation.symbol.clone()),
                     project_candidates: Vec::new(),
                     arguments: Vec::new(),
+                    argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
                 });
             }
@@ -2161,6 +2222,230 @@ struct SummarySemanticAccumulator {
     origins: BTreeSet<String>,
 }
 
+#[derive(Clone)]
+struct SummaryCallEdge {
+    target: usize,
+    site: Option<u32>,
+    bindings: Vec<LinkedArgumentBinding>,
+}
+
+#[derive(Default)]
+struct SummaryContextAccumulator {
+    read_shapes: BTreeSet<String>,
+    write_shapes: BTreeSet<ContextWriteShape>,
+    write_mask: u32,
+    origins: BTreeSet<String>,
+    paths: BTreeSet<String>,
+    write_values: BTreeSet<String>,
+}
+
+#[derive(Eq, Ord, PartialEq, PartialOrd)]
+struct ContextWriteShape {
+    path: String,
+    value: Option<String>,
+    write_mask: Option<u32>,
+    preserved_mask: Option<u32>,
+    forced_zero_mask: Option<u32>,
+    forced_one_mask: Option<u32>,
+}
+
+struct ContextProjectionState {
+    function: usize,
+    argument_map: Vec<Option<(u8, i32)>>,
+    visited_functions: Vec<usize>,
+    path: String,
+}
+
+fn local_context_access(access: &ContextAccess) -> bool {
+    !access
+        .path
+        .split(" / ")
+        .any(|component| component.starts_with("call "))
+}
+
+fn project_context_fields(
+    root: usize,
+    functions: &[LinkedIrFunction],
+    call_edges: &[Vec<SummaryCallEdge>],
+    context_reachable: &[bool],
+    call_graph_closed: bool,
+) -> (bool, Vec<String>, Vec<LinkedSummaryContextField>) {
+    let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
+    for argument in 0..LINKED_CONTEXT_ARGUMENTS {
+        root_arguments[usize::from(argument)] = Some((argument, 0));
+    }
+    let mut queue = VecDeque::from([ContextProjectionState {
+        function: root,
+        argument_map: root_arguments,
+        visited_functions: vec![root],
+        path: functions[root].identity.clone(),
+    }]);
+    let mut blockers = BTreeSet::new();
+    let mut fields = BTreeMap::<(u8, i32, u8), SummaryContextAccumulator>::new();
+    let mut explored = 0_usize;
+
+    while let Some(state) = queue.pop_front() {
+        if explored >= MAX_CONTEXT_PROJECTION_STATES {
+            blockers.insert(format!(
+                "context projection exceeds {MAX_CONTEXT_PROJECTION_STATES} simple-path states"
+            ));
+            break;
+        }
+        explored += 1;
+        let function = &functions[state.function];
+        for access in function
+            .context_accesses
+            .iter()
+            .filter(|access| local_context_access(access))
+        {
+            let Some((root_argument, base_offset)) = state
+                .argument_map
+                .get(usize::from(access.argument))
+                .copied()
+                .flatten()
+            else {
+                blockers.insert(format!(
+                    "no affine binding for {} arg{} along {}",
+                    function.identity, access.argument, state.path
+                ));
+                continue;
+            };
+            let Some(offset) = base_offset.checked_add(access.offset) else {
+                blockers.insert(format!(
+                    "context offset overflow for {} arg{} along {}",
+                    function.identity, access.argument, state.path
+                ));
+                continue;
+            };
+            let field = fields
+                .entry((root_argument, offset, access.width))
+                .or_default();
+            match access.access {
+                "read" => {
+                    field.read_shapes.insert(access.path.clone());
+                }
+                "write" => {
+                    field.write_shapes.insert(ContextWriteShape {
+                        path: access.path.clone(),
+                        value: access.value.clone(),
+                        write_mask: access.write_mask,
+                        preserved_mask: access.preserved_mask,
+                        forced_zero_mask: access.forced_zero_mask,
+                        forced_one_mask: access.forced_one_mask,
+                    });
+                    field.write_mask |= access.write_mask.unwrap_or_default();
+                    if let Some(value) = access.value_pseudo.as_ref() {
+                        field.write_values.insert(value.clone());
+                    }
+                }
+                _ => unreachable!("context access has a closed access vocabulary"),
+            }
+            field.origins.insert(function.identity.clone());
+            field
+                .paths
+                .insert(format!("{} / {}", state.path, access.path));
+        }
+
+        for edge in &call_edges[state.function] {
+            if !context_reachable[edge.target] {
+                continue;
+            }
+            if state.visited_functions.contains(&edge.target) {
+                blockers.insert(format!(
+                    "recursive context projection stopped: {} -> {}",
+                    function.identity, functions[edge.target].identity
+                ));
+                continue;
+            }
+            let mut argument_map = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
+            for binding in &edge.bindings {
+                if binding.position >= argument_map.len() {
+                    continue;
+                }
+                let Some((root_argument, caller_offset)) = state
+                    .argument_map
+                    .get(usize::from(binding.caller_argument))
+                    .copied()
+                    .flatten()
+                else {
+                    continue;
+                };
+                let Some(offset) = caller_offset.checked_add(binding.offset) else {
+                    blockers.insert(format!(
+                        "call argument offset overflow: {} -> {} arg{}",
+                        function.identity, functions[edge.target].identity, binding.position
+                    ));
+                    continue;
+                };
+                argument_map[binding.position] = Some((root_argument, offset));
+            }
+            let mut visited_functions = state.visited_functions.clone();
+            visited_functions.push(edge.target);
+            let site = edge
+                .site
+                .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
+            queue.push_back(ContextProjectionState {
+                function: edge.target,
+                argument_map,
+                visited_functions,
+                path: format!(
+                    "{} --call@{}--> {}",
+                    state.path, site, functions[edge.target].identity
+                ),
+            });
+        }
+    }
+
+    let fields = fields
+        .into_iter()
+        .map(
+            |((argument, offset, width), field)| LinkedSummaryContextField {
+                argument,
+                offset,
+                width,
+                reads: field.read_shapes.len(),
+                writes: field.write_shapes.len(),
+                write_mask: field.write_mask,
+                origins: field.origins.into_iter().collect(),
+                paths: field.paths.into_iter().collect(),
+                write_values: field.write_values.into_iter().collect(),
+            },
+        )
+        .collect();
+    (
+        call_graph_closed && blockers.is_empty(),
+        blockers.into_iter().collect(),
+        fields,
+    )
+}
+
+fn context_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usize>]) -> Vec<bool> {
+    let mut reverse = vec![Vec::new(); functions.len()];
+    for (source, targets) in adjacency.iter().enumerate() {
+        for &target in targets {
+            reverse[target].push(source);
+        }
+    }
+    let mut reachable = functions
+        .iter()
+        .map(|function| function.context_accesses.iter().any(local_context_access))
+        .collect::<Vec<_>>();
+    let mut queue = reachable
+        .iter()
+        .enumerate()
+        .filter_map(|(index, reachable)| reachable.then_some(index))
+        .collect::<VecDeque<_>>();
+    while let Some(target) = queue.pop_front() {
+        for &source in &reverse[target] {
+            if !reachable[source] {
+                reachable[source] = true;
+                queue.push_back(source);
+            }
+        }
+    }
+    reachable
+}
+
 fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
     let identities = functions
         .iter()
@@ -2176,6 +2461,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
     }
 
     let mut adjacency = vec![Vec::new(); functions.len()];
+    let mut call_edges = vec![Vec::new(); functions.len()];
     let mut local_blockers = vec![BTreeSet::<String>::new(); functions.len()];
     for (index, function) in functions.iter().enumerate() {
         if !function.complete {
@@ -2195,6 +2481,11 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                     });
                     if let Some(target) = target {
                         adjacency[index].push(target);
+                        call_edges[index].push(SummaryCallEdge {
+                            target,
+                            site: call.site,
+                            bindings: call.argument_bindings.clone(),
+                        });
                     } else {
                         local_blockers[index].insert(format!(
                             "callee is outside the exported IR: {} -> {}",
@@ -2227,6 +2518,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
         adjacency[index].dedup();
     }
     let recursive_nodes = recursive_call_graph_nodes(&adjacency);
+    let context_reachable = context_reachability(functions, &adjacency);
 
     let summaries = (0..functions.len())
         .map(|root| {
@@ -2291,8 +2583,17 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 .filter(|(index, _)| recursive_nodes.contains(index))
                 .map(|(index, _)| functions[*index].identity.clone())
                 .collect();
+            let call_graph_closed = blockers.is_empty();
+            let (context_projection_complete, context_projection_blockers, context_fields) =
+                project_context_fields(
+                    root,
+                    functions,
+                    &call_edges,
+                    &context_reachable,
+                    call_graph_closed,
+                );
             LinkedEffectSummary {
-                call_graph_closed: blockers.is_empty(),
+                call_graph_closed,
                 max_depth: reachable
                     .iter()
                     .map(|(_, depth)| *depth)
@@ -2331,6 +2632,9 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                         origins: entry.origins.into_iter().collect(),
                     })
                     .collect(),
+                context_projection_complete,
+                context_projection_blockers,
+                context_fields,
             }
         })
         .collect::<Vec<_>>();
@@ -2526,6 +2830,14 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .iter()
         .filter(|function| !function.effect_summary.recursive_functions.is_empty())
         .count();
+    let complete_context_projections = functions
+        .iter()
+        .filter(|function| function.effect_summary.context_projection_complete)
+        .count();
+    let projected_context_fields = functions
+        .iter()
+        .map(|function| function.effect_summary.context_fields.len())
+        .sum();
     let semantic_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
@@ -2583,6 +2895,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         unresolved_calls,
         closed_effect_summaries,
         recursive_effect_summaries,
+        complete_context_projections,
+        projected_context_fields,
     }
 }
 
@@ -2701,6 +3015,16 @@ mod tests {
         assert_eq!(calls[0].kind, "internal");
         assert_eq!(calls[0].target, "member.o:vendor_child");
         assert_eq!(calls[0].site, Some(0x1000));
+        assert_eq!(calls[0].argument_bindings.len(), 16);
+        assert_eq!(
+            calls[0].argument_bindings[0],
+            LinkedArgumentBinding {
+                position: 0,
+                caller_argument: 0,
+                offset: 0,
+                expression: "arg0".to_owned(),
+            }
+        );
     }
 
     #[test]
@@ -3100,6 +3424,7 @@ mod tests {
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
             arguments: Vec::new(),
+            argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
         };
 
@@ -3167,6 +3492,7 @@ mod tests {
             project_symbol: Some("vendor_child".to_owned()),
             project_candidates: Vec::new(),
             arguments: Vec::new(),
+            argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
         };
         let mut child = linked_test_function(
@@ -3185,6 +3511,7 @@ mod tests {
                 project_symbol: None,
                 project_candidates: Vec::new(),
                 arguments: vec!["const:0x00000014".to_owned()],
+                argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
             }],
         );
@@ -3214,6 +3541,19 @@ mod tests {
             path: "entry".to_owned(),
             micros: "const:0x00000014".to_owned(),
             constant_micros: Some(20),
+        });
+        child.context_accesses.push(ContextAccess {
+            argument: 0,
+            offset: 4,
+            access: "write",
+            width: 32,
+            path: "entry".to_owned(),
+            value: Some("const:0x00000001".to_owned()),
+            value_pseudo: Some("0x00000001".to_owned()),
+            write_mask: Some(u32::MAX),
+            preserved_mask: None,
+            forced_zero_mask: Some(u32::MAX - 1),
+            forced_one_mask: Some(1),
         });
 
         let mut reports = vec![
@@ -3253,6 +3593,85 @@ mod tests {
             parent.effect_summary.semantic_operations[0].origins,
             ["child::vendor_child"]
         );
+        assert!(!parent.effect_summary.context_projection_complete);
+        assert!(parent.effect_summary.context_fields.is_empty());
+        assert!(
+            parent
+                .effect_summary
+                .context_projection_blockers
+                .iter()
+                .any(|blocker| blocker.contains("no affine binding for child::vendor_child arg0"))
+        );
+    }
+
+    #[test]
+    fn affine_call_bindings_project_transitive_context_fields() {
+        let internal = |target: &str, caller_argument: u8, offset: i32| -> LinkedCall {
+            LinkedCall {
+                kind: "internal",
+                target: target.to_owned(),
+                site: Some(0x10),
+                tail: false,
+                result_modeled: false,
+                semantics: None,
+                semantic_operation: None,
+                replacement_hint: None,
+                project_symbol: None,
+                project_candidates: Vec::new(),
+                arguments: vec![format!("arg{caller_argument}{offset:+#x}")],
+                argument_bindings: vec![LinkedArgumentBinding {
+                    position: 0,
+                    caller_argument,
+                    offset,
+                    expression: format!("arg{caller_argument}{offset:+#x}"),
+                }],
+                typed_arguments: Vec::new(),
+            }
+        };
+        let mut root = linked_test_function(
+            "rom",
+            "root",
+            "global-or-weak",
+            vec![internal("rom::middle", 2, 0x20)],
+        );
+        root.complete = true;
+        let mut middle =
+            linked_test_function("rom", "middle", "local", vec![internal("rom::leaf", 0, -8)]);
+        middle.complete = true;
+        let mut leaf = linked_test_function("rom", "leaf", "local", Vec::new());
+        leaf.complete = true;
+        leaf.context_accesses.push(ContextAccess {
+            argument: 0,
+            offset: 0x10,
+            access: "write",
+            width: 32,
+            path: "entry / if arg1 != 0".to_owned(),
+            value: Some("const:0x00000001".to_owned()),
+            value_pseudo: Some("0x00000001".to_owned()),
+            write_mask: Some(u32::MAX),
+            preserved_mask: None,
+            forced_zero_mask: Some(u32::MAX - 1),
+            forced_one_mask: Some(1),
+        });
+        leaf.context_fields = context_fields_for_accesses(&leaf.context_accesses);
+
+        let report = summarize_linked_ir(vec![root, middle, leaf]);
+        let root = report
+            .functions
+            .iter()
+            .find(|function| function.identity == "rom::root")
+            .unwrap();
+        assert!(root.effect_summary.context_projection_complete);
+        assert!(root.effect_summary.context_projection_blockers.is_empty());
+        assert_eq!(root.effect_summary.context_fields.len(), 1);
+        let field = &root.effect_summary.context_fields[0];
+        assert_eq!((field.argument, field.offset, field.width), (2, 0x28, 32));
+        assert_eq!((field.reads, field.writes), (0, 1));
+        assert_eq!(field.write_mask, u32::MAX);
+        assert_eq!(field.origins, ["rom::leaf"]);
+        assert_eq!(field.write_values, ["0x00000001"]);
+        assert!(field.paths[0].contains("rom::root --call@0x00000010--> rom::middle"));
+        assert!(field.paths[0].contains("rom::leaf / entry / if arg1 != 0"));
     }
 
     #[test]
@@ -3268,7 +3687,13 @@ mod tests {
             replacement_hint: None,
             project_symbol: None,
             project_candidates: Vec::new(),
-            arguments: Vec::new(),
+            arguments: vec!["arg0".to_owned()],
+            argument_bindings: vec![LinkedArgumentBinding {
+                position: 0,
+                caller_argument: 0,
+                offset: 0,
+                expression: "arg0".to_owned(),
+            }],
             typed_arguments: Vec::new(),
         };
         let mut first = linked_test_function(
@@ -3278,6 +3703,19 @@ mod tests {
             vec![internal("rom::second")],
         );
         first.complete = true;
+        first.context_accesses.push(ContextAccess {
+            argument: 0,
+            offset: 0,
+            access: "read",
+            width: 32,
+            path: "entry".to_owned(),
+            value: None,
+            value_pseudo: None,
+            write_mask: None,
+            preserved_mask: None,
+            forced_zero_mask: None,
+            forced_one_mask: None,
+        });
         let mut second = linked_test_function(
             "rom",
             "second",
@@ -3297,6 +3735,14 @@ mod tests {
             );
             assert_eq!(function.effect_summary.reachable_functions.len(), 1);
             assert_eq!(function.effect_summary.max_depth, 1);
+            assert!(!function.effect_summary.context_projection_complete);
+            assert!(
+                function
+                    .effect_summary
+                    .context_projection_blockers
+                    .iter()
+                    .any(|blocker| blocker.starts_with("recursive context projection stopped:"))
+            );
         }
     }
 

@@ -176,9 +176,15 @@ The exploratory layer may follow those resolved edges to produce a reachable
 effect inventory. The fixed-point summary groups MMIO, delay and typed semantic
 shapes by the functions in which they were recovered, and identifies recursive
 components. It is closed only when every reachable function body and edge is
-closed. This propagation is intentionally provenance-only: it neither maps
-caller context fields into callee arguments nor turns the inventory into an
-effect-equivalence claim.
+closed. This propagation is intentionally not an effect-equivalence claim.
+
+A separate affine projection associates a callee pointer argument with one
+caller argument plus a constant byte offset. Such bindings may be composed over
+simple call paths, allowing callee context accesses to be expressed in the root
+function's argument/offset coordinates while retaining origin and path
+provenance. Dynamic bindings, recursive revisits, arithmetic overflow and the
+explicit path-state limit fail the projection closed without invalidating the
+lower-level direct context inventory.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

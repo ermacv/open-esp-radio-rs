@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tcontext-projection=affine-simple-call-paths\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -125,7 +125,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 .site
                 .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}"));
             println!(
-                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\tproject-symbol={}\tproject-candidates={}\t{}",
+                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\treplacement={}\tproject-symbol={}\tproject-candidates={}\taffine-bindings={}\t{}",
                 function.identity,
                 call.kind,
                 call.target,
@@ -136,6 +136,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 call.replacement_hint.as_deref().unwrap_or("-"),
                 call.project_symbol.as_deref().unwrap_or("-"),
                 call.project_candidates.join("|"),
+                call.argument_bindings.len(),
                 call.semantics.as_deref().unwrap_or("-"),
             );
             for argument in &call.typed_arguments {
@@ -148,6 +149,19 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                     argument.c_type,
                     argument.direction,
                     argument.value,
+                );
+            }
+            for binding in call.argument_bindings.iter().filter(|binding| {
+                binding.offset != 0 || binding.position != usize::from(binding.caller_argument)
+            }) {
+                println!(
+                    "CALL-BINDING\t{}\t{}\tcallee-arg={}\tcaller-arg={}\toffset={:+#x}\texpression={}",
+                    function.identity,
+                    call.target,
+                    binding.position,
+                    binding.caller_argument,
+                    binding.offset,
+                    binding.expression,
                 );
             }
         }
@@ -236,7 +250,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         }
         let summary = &function.effect_summary;
         println!(
-            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tblockers={}",
+            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
             function.identity,
             summary.call_graph_closed,
             summary.max_depth,
@@ -245,7 +259,10 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             summary.mmio_registers.len(),
             summary.delays.len(),
             summary.semantic_operations.len(),
+            summary.context_projection_complete,
+            summary.context_fields.len(),
             summary.blockers.len(),
+            summary.context_projection_blockers.len(),
         );
         for mmio in &summary.mmio_registers {
             println!(
@@ -282,8 +299,26 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 semantic.origins.join(","),
             );
         }
+        for field in &summary.context_fields {
+            println!(
+                "EFFECT-CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\torigins={}\tpaths={}\tvalues={}",
+                function.identity,
+                field.argument,
+                field.offset,
+                field.width,
+                field.reads,
+                field.writes,
+                field.write_mask,
+                field.origins.join(","),
+                field.paths.join(" | "),
+                field.write_values.join(" | "),
+            );
+        }
         for blocker in &summary.blockers {
             println!("EFFECT-BLOCKER\t{}\t{}", function.identity, blocker);
+        }
+        for blocker in &summary.context_projection_blockers {
+            println!("EFFECT-CONTEXT-BLOCKER\t{}\t{}", function.identity, blocker);
         }
     }
     for register in &report.mmio_registers {
@@ -335,7 +370,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         );
     }
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -359,6 +394,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         report.unresolved_calls,
         report.closed_effect_summaries,
         report.recursive_effect_summaries,
+        report.complete_context_projections,
+        report.projected_context_fields,
     );
 }
 
@@ -376,7 +413,7 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
     }
     if artifacts.len() > 1 {
         output.push_str(
-            "// Named primary artifacts use independent address spaces; unique exported-symbol edges provide reachable effect inventories without argument or address substitution.\n",
+            "// Named primary artifacts use independent address spaces; unique exported-symbol edges provide reachable inventories, and only recovered affine call bindings project context fields.\n",
         );
     }
     output
@@ -385,13 +422,15 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
         let summary = &function.effect_summary;
         writeln!(
             output,
-            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} blockers={}",
+            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} context-fields={} context-projection-complete={} blockers={}",
             summary.call_graph_closed,
             summary.max_depth,
             summary.reachable_functions.len(),
             summary.mmio_registers.len(),
             summary.delays.len(),
             summary.semantic_operations.len(),
+            summary.context_fields.len(),
+            summary.context_projection_complete,
             summary.blockers.len(),
         )
         .expect("writing to String cannot fail");
@@ -409,6 +448,20 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
                 "// REACHABLE-SEMANTIC: {} via {}",
                 semantic.operation,
                 semantic.origins.join(" | ")
+            )
+            .expect("writing to String cannot fail");
+        }
+        for field in &summary.context_fields {
+            writeln!(
+                output,
+                "// REACHABLE-CONTEXT: ctx{}.field_{:+x} width={} reads={} writes={} mask={:#010x} via {}",
+                field.argument,
+                field.offset,
+                field.width,
+                field.reads,
+                field.writes,
+                field.write_mask,
+                field.origins.join(" | ")
             )
             .expect("writing to String cannot fail");
         }
@@ -445,7 +498,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 12,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 13,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -466,8 +519,8 @@ fn write_json_report(
         },
     );
     output.push_str(",\n");
-    output
-        .push_str("  \"effect_summary_mode\": \"reachable-inventory-no-argument-substitution\",\n");
+    output.push_str("  \"effect_summary_mode\": \"reachable-inventory-origin-preserving\",\n");
+    output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
     for (index, artifact) in artifacts.iter().enumerate() {
         if index != 0 {
@@ -492,7 +545,7 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}, \"complete_context_projections\": {}, \"projected_context_fields\": {}}},",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -516,6 +569,8 @@ fn write_json_report(
         report.unresolved_calls,
         report.closed_effect_summaries,
         report.recursive_effect_summaries,
+        report.complete_context_projections,
+        report.projected_context_fields,
     )
     .expect("writing to String cannot fail");
     output.push_str("  \"mmio_registers\": [");
@@ -657,7 +712,23 @@ fn write_json_report(
             write_strings(&mut output, &call.project_candidates);
             output.push_str(", \"arguments\": ");
             write_strings(&mut output, &call.arguments);
-            output.push_str(", \"typed_arguments\": [");
+            output.push_str(", \"argument_bindings\": [");
+            for (binding_index, binding) in call.argument_bindings.iter().enumerate() {
+                if binding_index != 0 {
+                    output.push_str(", ");
+                }
+                write!(
+                    output,
+                    "{{\"position\": {}, \"caller_argument\": {}, \"offset\": {}, \"offset_hex\": ",
+                    binding.position, binding.caller_argument, binding.offset
+                )
+                .expect("writing to String cannot fail");
+                write_string(&mut output, &format!("{:+#x}", binding.offset));
+                output.push_str(", \"expression\": ");
+                write_string(&mut output, &binding.expression);
+                output.push('}');
+            }
+            output.push_str("], \"typed_arguments\": [");
             for (argument_index, argument) in call.typed_arguments.iter().enumerate() {
                 if argument_index != 0 {
                     output.push_str(", ");
@@ -864,6 +935,38 @@ fn write_json_report(
             write_strings(&mut output, &semantic.replacement_hints);
             output.push_str(", \"origins\": ");
             write_strings(&mut output, &semantic.origins);
+            output.push('}');
+        }
+        write!(
+            output,
+            "], \"context_projection_complete\": {}, \"context_projection_blockers\": ",
+            summary.context_projection_complete
+        )
+        .expect("writing to String cannot fail");
+        write_strings(&mut output, &summary.context_projection_blockers);
+        output.push_str(", \"context_fields\": [");
+        for (field_index, field) in summary.context_fields.iter().enumerate() {
+            if field_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"argument\": {}, \"offset\": {}, \"offset_hex\": ",
+                field.argument, field.offset
+            )
+            .expect("writing to String cannot fail");
+            write_string(&mut output, &format!("{:+#x}", field.offset));
+            write!(
+                output,
+                ", \"width\": {}, \"reads\": {}, \"writes\": {}, \"write_mask\": \"{:#010x}\", \"origins\": ",
+                field.width, field.reads, field.writes, field.write_mask
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &field.origins);
+            output.push_str(", \"paths\": ");
+            write_strings(&mut output, &field.paths);
+            output.push_str(", \"write_values\": ");
+            write_strings(&mut output, &field.write_values);
             output.push('}');
         }
         output.push_str("]}, \"direct_blockers\": ");

@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v12 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v13 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -126,10 +126,23 @@ operations by their originating functions. `call_graph_closed` is true only
 when every reached function body and traversed edge is complete; otherwise
 `blockers` names the incomplete bodies, unresolved edges or omitted callees.
 This is deliberately not an effect-equivalence proof: counts describe recovered
-IR shapes, mutually exclusive paths may coexist, and no context pointer or call
-argument is projected into a callee. Top-level
-`effect_summary_mode: "reachable-inventory-no-argument-substitution"` makes
-that boundary machine-readable.
+IR shapes and mutually exclusive paths may coexist. Top-level
+`effect_summary_mode: "reachable-inventory-origin-preserving"` makes that
+boundary machine-readable.
+
+Internal call records retain proven affine pointer bindings such as
+`callee arg0 = caller arg2 + 0x20`. The effect summary composes those bindings
+along simple call paths and projects callee context fields back into the root
+function's argument/offset coordinates. Projected fields retain access counts,
+write masks, values, complete call paths and originating functions. Dynamic or
+missing bindings are never guessed; they produce `context_projection_blockers`
+when the reached callee actually accesses that argument. Recursive paths stop
+before revisiting a function, and projection is capped at 4096 path states to
+avoid unbounded affine offsets or combinatorial output. The top-level
+`context_projection_mode: "affine-simple-call-paths"` and per-function
+`context_projection_complete` expose these limits. Exact access shapes seen in
+both an already-composed caller flow and the separately analyzed callee are
+counted once while retaining both provenance paths.
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,

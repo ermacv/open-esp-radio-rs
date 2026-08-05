@@ -19,8 +19,10 @@ use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorageError;
 use pin_project::pin_project;
 
 mod owner;
+mod request;
 
 pub use owner::{HtAmpduTxResources, RetainedDmaAmpduTx};
+pub use request::{AmpduFrameLayout, HeAmpduFrameRequest, HtAmpduFrameRequest};
 
 use crate::tx::{
     HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate,
@@ -1270,10 +1272,11 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
-        frame_length: usize,
-        hardware_mic_length: u8,
+        layout: AmpduFrameLayout,
         empty_delimiters: u8,
     ) -> Result<(), HtAmpduTxError> {
+        let frame_length = layout.mpdu_length();
+        let hardware_mic_length = layout.hardware_mic_length();
         let storage = self.as_ref().get_ref();
         if storage.state != TxSlotState::Reserved || storage.active != cookie {
             return Err(HtAmpduTxError::Stale);
@@ -1336,17 +1339,15 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
-        frame_length: usize,
-        hardware_mic_length: u8,
-        empty_delimiters: u8,
-        rate: HtRate,
+        request: HtAmpduFrameRequest,
     ) -> Result<(), HtAmpduTxError> {
+        let layout = request.layout();
         if !self.as_ref().can_commit_referenced_ht_frame(
             cookie,
-            frame_length,
-            hardware_mic_length,
-            empty_delimiters,
-            rate,
+            layout.mpdu_length(),
+            layout.hardware_mic_length(),
+            request.empty_delimiters(),
+            request.rate(),
             dma_storage.len(),
         )? {
             return Err(HtAmpduTxError::AggregateFull);
@@ -1354,9 +1355,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         self.as_mut().commit_referenced_frame(
             cookie,
             dma_storage,
-            frame_length,
-            hardware_mic_length,
-            empty_delimiters,
+            layout,
+            request.empty_delimiters(),
         )
     }
 
@@ -1499,43 +1499,37 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The retained owner keeps `dma_storage` at its current address until the
     /// batch is detached and released or cancelled.
-    fn commit_referenced_he_frame_with_txop(
+    fn commit_referenced_he_frame(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
-        frame_length: usize,
-        hardware_mic_length: u8,
-        rate: HeRate,
-        density: HtAmpduDensity,
-        txop_limit: HeEdcaTxopLimit,
+        request: HeAmpduFrameRequest,
     ) -> Result<(), HtAmpduTxError> {
+        let layout = request.layout();
         if !self.as_ref().can_commit_referenced_he_frame_with_txop(
             cookie,
-            frame_length,
-            hardware_mic_length,
-            rate,
-            density,
-            txop_limit,
+            layout.mpdu_length(),
+            layout.hardware_mic_length(),
+            request.rate(),
+            request.density(),
+            request.txop_limit(),
             dma_storage.len(),
         )? {
             return Err(HtAmpduTxError::AggregateFull);
         }
-        let psdu_length = frame_length
-            .checked_add(usize::from(hardware_mic_length))
+        let psdu_length = layout
+            .mpdu_length()
+            .checked_add(usize::from(layout.hardware_mic_length()))
             .and_then(|length| length.checked_add(usize::from(TX_FCS_SIZE)))
             .and_then(|length| u16::try_from(length).ok())
             .filter(|length| *length != 0 && *length <= 0x3fff)
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        let empty_delimiters = rate
-            .ampdu_empty_delimiters(psdu_length, density)
+        let empty_delimiters = request
+            .rate()
+            .ampdu_empty_delimiters(psdu_length, request.density())
             .ok_or(HtAmpduTxError::FrameTooLong)?;
-        self.as_mut().commit_referenced_frame(
-            cookie,
-            dma_storage,
-            frame_length,
-            hardware_mic_length,
-            empty_delimiters,
-        )
+        self.as_mut()
+            .commit_referenced_frame(cookie, dma_storage, layout, empty_delimiters)
     }
 
     /// Commit one HE MPDU with a hardware-inserted HE-Control field.

@@ -14,14 +14,11 @@ use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::{
     PinnedAmpduDmaStorage, RetainedAmpduDma,
 };
 
-use crate::tx::{
-    HeAmpduTxConfig, HeEdcaTxopLimit, HeRate, HtAmpduDensity, HtAmpduTxConfig, HtRate,
-    LegacyTxQueue, TxCookie, TxSlotState,
-};
+use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
 
 use super::{
-    HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion, HtAmpduTxError, HtAmpduTxStorage,
-    TX_AMPDU_METADATA_SIZE,
+    HeAmpduFrameRequest, HtAmpduFrameRequest, HtAmpduHardware, HtAmpduLength, HtAmpduTxCompletion,
+    HtAmpduTxError, HtAmpduTxStorage, TX_AMPDU_METADATA_SIZE,
 };
 
 /// Idle resources required by the safe external-buffer A-MPDU path.
@@ -308,11 +305,7 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
         &mut self,
         cookie: TxCookie,
         backing: B,
-        dma_offset: usize,
-        frame_length: usize,
-        hardware_mic_length: u8,
-        empty_delimiters: u8,
-        rate: HtRate,
+        request: HtAmpduFrameRequest,
     ) -> Result<(), HtAmpduTxError> {
         let (storage, dma) = (
             self.storage
@@ -328,16 +321,11 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             let mut region = backing.stable_dma_region();
             let dma_storage = region
                 .as_mut_slice()
-                .get_mut(dma_offset..)
+                .get_mut(request.layout().dma_offset()..)
                 .ok_or(HtAmpduTxError::FrameTooLong)?;
-            storage.as_mut().commit_referenced_ht_frame(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                empty_delimiters,
-                rate,
-            )
+            storage
+                .as_mut()
+                .commit_referenced_ht_frame(cookie, dma_storage, request)
         })();
         if let Err(error) = result {
             drop(dma.pop_last_backing(backing_index)?);
@@ -347,16 +335,11 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
     }
 
     /// Commit one HE frame under the exact TXOP policy and retain its backing.
-    pub fn commit_he_with_txop(
+    pub fn commit_he(
         &mut self,
         cookie: TxCookie,
         backing: B,
-        dma_offset: usize,
-        frame_length: usize,
-        hardware_mic_length: u8,
-        rate: HeRate,
-        density: HtAmpduDensity,
-        txop_limit: HeEdcaTxopLimit,
+        request: HeAmpduFrameRequest,
     ) -> Result<(), HtAmpduTxError> {
         let (storage, dma) = (
             self.storage
@@ -372,17 +355,11 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             let mut region = backing.stable_dma_region();
             let dma_storage = region
                 .as_mut_slice()
-                .get_mut(dma_offset..)
+                .get_mut(request.layout().dma_offset()..)
                 .ok_or(HtAmpduTxError::FrameTooLong)?;
-            storage.as_mut().commit_referenced_he_frame_with_txop(
-                cookie,
-                dma_storage,
-                frame_length,
-                hardware_mic_length,
-                rate,
-                density,
-                txop_limit,
-            )
+            storage
+                .as_mut()
+                .commit_referenced_he_frame(cookie, dma_storage, request)
         })();
         if let Err(error) = result {
             drop(dma.pop_last_backing(backing_index)?);

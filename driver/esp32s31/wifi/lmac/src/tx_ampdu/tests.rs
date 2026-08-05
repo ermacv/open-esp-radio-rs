@@ -82,6 +82,34 @@ impl HtAmpduHardware for CompletionHardware {
     }
 }
 
+fn frame_layout(
+    dma_offset: usize,
+    mpdu_length: usize,
+    hardware_mic_length: u8,
+) -> AmpduFrameLayout {
+    AmpduFrameLayout::new(dma_offset, mpdu_length, hardware_mic_length).unwrap()
+}
+
+fn ht_frame_request(
+    dma_offset: usize,
+    mpdu_length: usize,
+    hardware_mic_length: u8,
+    empty_delimiters: u8,
+    rate: HtRate,
+) -> HtAmpduFrameRequest {
+    HtAmpduFrameRequest::new(
+        frame_layout(dma_offset, mpdu_length, hardware_mic_length),
+        empty_delimiters,
+        rate,
+    )
+}
+
+#[test]
+fn ampdu_frame_layout_rejects_unaligned_dma_prefix() {
+    assert_eq!(AmpduFrameLayout::new(1, 32, 8), None);
+    assert_eq!(AmpduFrameLayout::new(4, 32, 8).unwrap().dma_offset(), 4);
+}
+
 #[test]
 fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
     let storage = HtAmpduTxStorage::<2, 0>::new();
@@ -100,14 +128,16 @@ fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
             .commit_ht(
                 cookie,
                 backing,
-                0,
-                32,
-                8,
-                0,
-                HtRate::new(
-                    crate::tx::HtMcs::Mcs0,
-                    crate::tx::HtGuardInterval::Long800Ns,
-                    crate::tx::HtChannelWidth::Mhz20,
+                ht_frame_request(
+                    0,
+                    32,
+                    8,
+                    0,
+                    HtRate::new(
+                        crate::tx::HtMcs::Mcs0,
+                        crate::tx::HtGuardInterval::Long800Ns,
+                        crate::tx::HtChannelWidth::Mhz20,
+                    ),
                 ),
             )
             .unwrap();
@@ -134,14 +164,16 @@ fn rejected_referenced_commit_rolls_back_the_lower_lease() {
             owner.commit_ht(
                 cookie,
                 backing,
-                257,
-                32,
-                8,
-                0,
-                HtRate::new(
-                    crate::tx::HtMcs::Mcs0,
-                    crate::tx::HtGuardInterval::Long800Ns,
-                    crate::tx::HtChannelWidth::Mhz20,
+                ht_frame_request(
+                    256,
+                    32,
+                    8,
+                    0,
+                    HtRate::new(
+                        crate::tx::HtMcs::Mcs0,
+                        crate::tx::HtGuardInterval::Long800Ns,
+                        crate::tx::HtChannelWidth::Mhz20,
+                    ),
                 ),
             ),
             Err(HtAmpduTxError::FrameTooLong)
@@ -172,7 +204,9 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
             crate::tx::HtGuardInterval::Long800Ns,
             crate::tx::HtChannelWidth::Mhz20,
         );
-        owner.commit_ht(cookie, backing, 0, 32, 8, 0, rate).unwrap();
+        owner
+            .commit_ht(cookie, backing, ht_frame_request(0, 32, 8, 0, rate))
+            .unwrap();
         let aggregate = owner.prepared_aggregate(cookie).unwrap();
         owner
             .submit(
@@ -236,7 +270,7 @@ fn referenced_commit_uses_the_retained_allocation_without_copying_payload() {
     let cookie = storage.as_mut().begin().unwrap();
     storage
         .as_mut()
-        .commit_referenced_frame(cookie, &mut external, 100, 8, 0)
+        .commit_referenced_frame(cookie, &mut external, frame_layout(0, 100, 8), 0)
         .unwrap();
 
     assert_eq!(
@@ -276,14 +310,15 @@ fn referenced_he_commit_uses_external_capacity_with_descriptor_only_storage() {
     for external in [&mut first, &mut second] {
         storage
             .as_mut()
-            .commit_referenced_he_frame_with_txop(
+            .commit_referenced_he_frame(
                 cookie,
                 external,
-                16,
-                8,
-                rate,
-                HtAmpduDensity::SixteenMicroseconds,
-                HeEdcaTxopLimit::DEFAULT,
+                HeAmpduFrameRequest::new(
+                    frame_layout(0, 16, 8),
+                    rate,
+                    HtAmpduDensity::SixteenMicroseconds,
+                    HeEdcaTxopLimit::DEFAULT,
+                ),
             )
             .unwrap();
     }
@@ -322,7 +357,7 @@ fn referenced_ht_commit_stops_at_the_vendor_rate_byte_ceiling() {
     for frame in external.iter_mut().take(6) {
         storage
             .as_mut()
-            .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs0_sgi)
+            .commit_referenced_ht_frame(cookie, frame, ht_frame_request(0, 1_500, 8, 0, mcs0_sgi))
             .unwrap();
     }
     assert_eq!(
@@ -341,10 +376,7 @@ fn referenced_ht_commit_stops_at_the_vendor_rate_byte_ceiling() {
         storage.as_mut().commit_referenced_ht_frame(
             cookie,
             &mut external[6],
-            1_500,
-            8,
-            0,
-            mcs0_sgi,
+            ht_frame_request(0, 1_500, 8, 0, mcs0_sgi),
         ),
         Err(HtAmpduTxError::AggregateFull)
     );
@@ -363,7 +395,7 @@ fn referenced_ht_commit_stops_at_the_vendor_rate_byte_ceiling() {
     for frame in external.iter_mut().take(7) {
         storage
             .as_mut()
-            .commit_referenced_ht_frame(cookie, frame, 1_500, 8, 0, mcs7_sgi)
+            .commit_referenced_ht_frame(cookie, frame, ht_frame_request(0, 1_500, 8, 0, mcs7_sgi))
             .unwrap();
     }
     assert_eq!(storage.frame_count(), 7);

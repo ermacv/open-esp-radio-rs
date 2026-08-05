@@ -143,11 +143,14 @@ oracle/test builds; its buffers and upper-only commit/retry methods are absent
 from 32-bit production builds, and a target compile-time layout assertion
 ensures the metadata size is independent of the model buffer capacity. Its
 duplicate descriptor array and the retired `submit`, `submit_he` and
-`submit_he_smpdu` entry points have been removed. Descriptor publication and
-queue-detach proof exist only in the composed lower owner. `TxHardware` no
-longer translates bare CPU addresses or contains raw legacy/HT/HE
-prepare/start operations; the corresponding register methods are private
-helpers behind capability-bound calls. The public TX hardware API is therefore
+`submit_he_smpdu` entry points have been removed. `AmpduFrameLayout` validates
+the word-aligned metadata-prefix offset before a backing is retained, while
+HT/HE request values keep length, rate and delimiter/TXOP policy together;
+neither value can grant DMA access. Descriptor publication and queue-detach
+proof exist only in the composed lower owner. `TxHardware` no longer
+translates bare CPU addresses or contains raw legacy/HT/HE prepare/start
+operations; the corresponding register methods are private helpers behind
+capability-bound calls. The public TX hardware API is therefore
 capability-closed for legacy, HT and HE.
 
 Do not fix this by adding an unchecked address token in LMAC. The required

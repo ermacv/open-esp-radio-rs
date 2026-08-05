@@ -35,6 +35,12 @@ impl<const FRAME_CAPACITY: usize> RxHandoffSlot<FRAME_CAPACITY> {
         );
     }
 
+    fn try_claim(&self, from: u8, to: u8) -> bool {
+        self.state
+            .compare_exchange(from, to, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    }
+
     fn publish_ready(&self, length: usize) {
         self.length.store(length, Ordering::Relaxed);
         assert_eq!(
@@ -56,6 +62,10 @@ impl<const FRAME_CAPACITY: usize> RxHandoffSlot<FRAME_CAPACITY> {
 
     fn length(&self) -> usize {
         self.length.load(Ordering::Acquire)
+    }
+
+    fn state(&self) -> u8 {
+        self.state.load(Ordering::Acquire)
     }
 
     fn storage_mut_ptr(&self) -> *mut u8 {
@@ -103,6 +113,20 @@ impl<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
         }
     }
 
+    /// Claim the first free slot without exposing its storage.
+    pub fn try_claim_radio(&self) -> Option<RxRadioLease<'_, FRAME_CAPACITY>> {
+        if QUEUE_DEPTH > usize::from(u8::MAX) + 1 {
+            return None;
+        }
+        self.slots.iter().enumerate().find_map(|(index, slot)| {
+            slot.try_claim(SLOT_FREE, SLOT_RADIO).then(|| RxRadioLease {
+                slot,
+                index: index as u8,
+                live: true,
+            })
+        })
+    }
+
     pub fn claim_network(&self, index: u8) -> RxNetworkLease<'_, FRAME_CAPACITY> {
         let slot = self
             .slots
@@ -118,6 +142,22 @@ impl<const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
             index,
             live: true,
         }
+    }
+
+    /// Number of slots retained by any pipeline stage.
+    pub fn claimed_slots(&self) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| slot.state() != SLOT_FREE)
+            .count()
+    }
+
+    /// Number of slots currently exposed to the network stage.
+    pub fn network_slots(&self) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| slot.state() == SLOT_NETWORK)
+            .count()
     }
 }
 
@@ -136,17 +176,43 @@ pub struct RxRadioLease<'pool, const FRAME_CAPACITY: usize> {
     live: bool,
 }
 
-impl<const FRAME_CAPACITY: usize> RxRadioLease<'_, FRAME_CAPACITY> {
+impl<'pool, const FRAME_CAPACITY: usize> RxRadioLease<'pool, FRAME_CAPACITY> {
+    pub const fn index(&self) -> usize {
+        self.index as usize
+    }
+
+    pub fn frame_prefix_mut(&mut self, length: usize) -> &mut [u8] {
+        assert!(length <= FRAME_CAPACITY, "RX frame exceeds slot capacity");
+        // SAFETY: `&mut self` borrows the unique non-Clone SLOT_RADIO lease.
+        #[allow(unsafe_code, reason = "radio lease uniquely owns its RX slot")]
+        unsafe {
+            core::slice::from_raw_parts_mut(self.slot.storage_mut_ptr(), length)
+        }
+    }
+
     pub fn publish<R>(mut self, length: usize, write: impl FnOnce(&mut [u8]) -> R) -> (u8, R) {
         assert!(length <= FRAME_CAPACITY, "RX frame exceeds slot capacity");
-        // SAFETY: this non-Clone Radio lease is the unique SLOT_RADIO owner.
-        // The Ready transition happens only after the writer returns.
-        #[allow(unsafe_code, reason = "radio lease uniquely initializes its RX slot")]
-        let frame = unsafe { core::slice::from_raw_parts_mut(self.slot.storage_mut_ptr(), length) };
-        let result = write(frame);
+        let result = write(self.frame_prefix_mut(length));
         self.slot.publish_ready(length);
         self.live = false;
         (self.index, result)
+    }
+
+    /// Publish already initialized bytes directly to a network lease.
+    pub fn into_network(mut self, length: usize) -> RxNetworkLease<'pool, FRAME_CAPACITY> {
+        assert!(length <= FRAME_CAPACITY, "RX frame exceeds slot capacity");
+        self.slot.publish_ready(length);
+        self.slot.claim(
+            SLOT_READY,
+            SLOT_NETWORK,
+            "only the just-published RX slot may enter network ownership",
+        );
+        self.live = false;
+        RxNetworkLease {
+            slot: self.slot,
+            index: self.index,
+            live: true,
+        }
     }
 
     pub fn release(mut self) -> u8 {
@@ -178,6 +244,20 @@ pub struct RxNetworkLease<'pool, const FRAME_CAPACITY: usize> {
 }
 
 impl<const FRAME_CAPACITY: usize> RxNetworkLease<'_, FRAME_CAPACITY> {
+    pub const fn index(&self) -> usize {
+        self.index as usize
+    }
+
+    pub fn frame(&self) -> &[u8] {
+        let length = self.slot.length();
+        // SAFETY: this non-Clone token uniquely retains SLOT_NETWORK; safe
+        // pool operations cannot mutate or reclaim the matching storage.
+        #[allow(unsafe_code, reason = "network lease uniquely retains its RX slot")]
+        unsafe {
+            core::slice::from_raw_parts(self.slot.storage_mut_ptr(), length)
+        }
+    }
+
     pub fn with_frame<R>(&mut self, read: impl FnOnce(&mut [u8]) -> R) -> R {
         let length = self.slot.length();
         // SAFETY: `&mut self` borrows the unique non-Clone SLOT_NETWORK lease.
@@ -241,5 +321,16 @@ mod tests {
         let radio = pool.claim_radio(0);
         let (index, ()) = radio.publish(1, |frame| frame[0] = 9);
         assert_eq!(pool.claim_network(index).release(), 0);
+    }
+
+    #[test]
+    fn failed_any_slot_claim_never_releases_the_current_owner() {
+        let pool = RxHandoffPool::<16, 1>::new();
+        let owner = pool.try_claim_radio().unwrap();
+        assert!(pool.try_claim_radio().is_none());
+        assert_eq!(pool.claimed_slots(), 1);
+        drop(owner);
+        assert_eq!(pool.claimed_slots(), 0);
+        assert!(pool.try_claim_radio().is_some());
     }
 }

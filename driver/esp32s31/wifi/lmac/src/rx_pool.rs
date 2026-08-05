@@ -14,12 +14,7 @@
 //! `Free -> Radio -> Network -> Free` ownership and 32-by-1,700 geometry,
 //! while omitting the C-only ESF header and intrusive pointers.
 
-#![allow(unsafe_code, reason = "RX staging slot ownership boundary")]
-
-use core::{
-    cell::UnsafeCell,
-    sync::atomic::{AtomicUsize, Ordering},
-};
+use core::marker::PhantomData;
 
 use crate::{
     descriptor::length as descriptor_length,
@@ -30,11 +25,12 @@ use crate::{
     },
     rx_storage::RxDmaCompletedUnit,
 };
+use open_esp_radio_dma::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 use open_esp_radio_wifi_lmac::MacRxMetadata;
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;
 pub const VENDOR_LARGE_RX_PAYLOAD_CAPACITY: usize = 1_700;
-const RX_STAGE_BITMAP_WORDS: usize = 2;
+const RX_STAGE_MAX_SLOTS: usize = 2 * usize::BITS as usize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxStageError {
@@ -67,38 +63,21 @@ struct StagedMetadata {
     length: usize,
 }
 
-#[repr(C, align(4))]
-struct RxStageSlot<const CAPACITY: usize>(UnsafeCell<[u8; CAPACITY]>);
-
-impl<const CAPACITY: usize> RxStageSlot<CAPACITY> {
-    const fn new() -> Self {
-        Self(UnsafeCell::new([0; CAPACITY]))
-    }
-}
-
-// SAFETY: access to the UnsafeCell is admitted only after the matching bit
-// makes the slot uniquely Radio-owned. Network ownership exposes immutable
-// bytes, and the slot cannot be claimed again until that token is dropped.
-unsafe impl<const CAPACITY: usize> Sync for RxStageSlot<CAPACITY> {}
-
 /// Fixed staging storage with explicit vendor-equivalent ownership states.
 ///
 /// Place `RxStagePool<32, 1700>` in internal SRAM. It is ordinary CPU-owned
 /// memory and must never be published to the Wi-Fi DMA walker. Two native
-/// atomic bitmap words permit a platform profile to add burst elasticity
-/// beyond the 32-slot vendor default without requiring 64-bit atomics on RV32.
+/// machine words define the qualified upper bound, permitting a platform
+/// profile to add burst elasticity beyond the 32-slot vendor default without
+/// requiring 64-bit atomics on RV32.
 pub struct RxStagePool<const SLOTS: usize, const CAPACITY: usize> {
-    slots: [RxStageSlot<CAPACITY>; SLOTS],
-    claimed: [AtomicUsize; RX_STAGE_BITMAP_WORDS],
-    network: [AtomicUsize; RX_STAGE_BITMAP_WORDS],
+    storage: RxHandoffPool<CAPACITY, SLOTS>,
 }
 
 impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     pub const fn new() -> Self {
         Self {
-            slots: [const { RxStageSlot::new() }; SLOTS],
-            claimed: [const { AtomicUsize::new(0) }; RX_STAGE_BITMAP_WORDS],
-            network: [const { AtomicUsize::new(0) }; RX_STAGE_BITMAP_WORDS],
+            storage: RxHandoffPool::new(),
         }
     }
 
@@ -107,7 +86,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         completed: RxCompletedDescriptor,
         source: &[u8],
     ) -> Result<RadioRxFrame<'pool, SLOTS, CAPACITY>, RxStageError> {
-        if SLOTS == 0 || SLOTS > RX_STAGE_BITMAP_WORDS * usize::BITS as usize || CAPACITY == 0 {
+        if SLOTS == 0 || SLOTS > RX_STAGE_MAX_SLOTS || CAPACITY == 0 {
             return Err(RxStageError::InvalidPool);
         }
         let length = usize::try_from(descriptor_length(completed.word0()))
@@ -119,25 +98,20 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             return Err(RxStageError::TooLong);
         }
         let source = source.get(..length).ok_or(RxStageError::SourceTooShort)?;
-        let slot = (0..SLOTS)
-            .find(|&slot| self.try_claim_radio(slot))
+        let mut lease = self
+            .storage
+            .try_claim_radio()
             .ok_or(RxStageError::Exhausted)?;
-
-        // SAFETY: try_claim_radio made this slot uniquely Radio-owned, and
-        // both source and destination have been bounded by `length`.
-        unsafe {
-            (&mut *self.slots[slot].0.get())[..length].copy_from_slice(source);
-        }
+        lease.frame_prefix_mut(length).copy_from_slice(source);
         Ok(RadioRxFrame {
-            pool: self,
-            slot,
+            lease: Some(lease),
+            _slots: PhantomData,
             metadata: StagedMetadata {
                 descriptor_address: completed.descriptor_address(),
                 descriptor_word0: completed.word0(),
                 next_descriptor_address: completed.next_descriptor_address(),
                 length,
             },
-            live: true,
         })
     }
 
@@ -149,7 +123,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     where
         F: FnMut(usize, &mut [u8]) -> Result<(), RxStageError>,
     {
-        if SLOTS == 0 || SLOTS > RX_STAGE_BITMAP_WORDS * usize::BITS as usize || CAPACITY == 0 {
+        if SLOTS == 0 || SLOTS > RX_STAGE_MAX_SLOTS || CAPACITY == 0 {
             return Err(RxStageError::InvalidPool);
         }
         let length = unit.total_length();
@@ -159,8 +133,9 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         if length > CAPACITY {
             return Err(RxStageError::TooLong);
         }
-        let slot = (0..SLOTS)
-            .find(|&slot| self.try_claim_radio(slot))
+        let mut lease = self
+            .storage
+            .try_claim_radio()
             .ok_or(RxStageError::Exhausted)?;
 
         let copied = (|| {
@@ -173,12 +148,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
                     .checked_add(segment_length)
                     .filter(|&end| end <= length)
                     .ok_or(RxStageError::SourceTooShort)?;
-                // SAFETY: the claimed slot is uniquely Radio-owned and the
-                // range is bounded by the validated complete unit length.
-                let destination = unsafe {
-                    let slot_bytes = &mut *self.slots[slot].0.get();
-                    &mut slot_bytes[offset..end]
-                };
+                let destination = &mut lease.frame_prefix_mut(length)[offset..end];
                 copy_segment(step, destination)?;
                 offset = end;
             }
@@ -186,22 +156,17 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
                 .then_some(())
                 .ok_or(RxStageError::SourceTooShort)
         })();
-        if let Err(error) = copied {
-            let released = self.release_radio(slot);
-            debug_assert!(released);
-            return Err(error);
-        }
+        copied?;
 
         Ok(RadioRxFrame {
-            pool: self,
-            slot,
+            lease: Some(lease),
+            _slots: PhantomData,
             metadata: StagedMetadata {
                 descriptor_address: unit.descriptor_address(),
                 descriptor_word0: unit.staged_word0(),
                 next_descriptor_address: 0,
                 length,
             },
-            live: true,
         })
     }
 
@@ -224,6 +189,10 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// TX preparation and delivered 10.036-Mbit/s RX plus 67.942-Mbit/s TX.
     /// The preceding parse-before-recycle path produced `BUFFER_FULL`.
     #[inline(never)]
+    #[allow(
+        unsafe_code,
+        reason = "qualified target linker placement for the RX hot path"
+    )]
     #[cfg_attr(
         target_arch = "riscv32",
         unsafe(link_section = ".rwtext.open_radio_rx_hot")
@@ -347,10 +316,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     }
 
     pub fn claimed_slots(&self) -> u32 {
-        self.claimed
-            .iter()
-            .map(|word| word.load(Ordering::Acquire).count_ones())
-            .sum()
+        self.storage.claimed_slots() as u32
     }
 
     /// Number of slots that can still accept an independent DMA copy.
@@ -363,58 +329,8 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     }
 
     pub fn network_slots(&self) -> u32 {
-        self.network
-            .iter()
-            .map(|word| word.load(Ordering::Acquire).count_ones())
-            .sum()
+        self.storage.network_slots() as u32
     }
-
-    fn try_claim_radio(&self, slot: usize) -> bool {
-        let (word, bit) = bitmap_word_and_bit(slot);
-        if self.claimed[word].fetch_or(bit, Ordering::AcqRel) & bit != 0 {
-            return false;
-        }
-        if self.network[word].load(Ordering::Acquire) & bit == 0 {
-            return true;
-        }
-        self.claimed[word].fetch_and(!bit, Ordering::AcqRel);
-        false
-    }
-
-    fn try_publish_network(&self, slot: usize) -> bool {
-        let (word, bit) = bitmap_word_and_bit(slot);
-        if self.claimed[word].load(Ordering::Acquire) & bit == 0
-            || self.network[word].fetch_or(bit, Ordering::AcqRel) & bit != 0
-        {
-            return false;
-        }
-        if self.claimed[word].load(Ordering::Acquire) & bit != 0 {
-            return true;
-        }
-        self.network[word].fetch_and(!bit, Ordering::AcqRel);
-        false
-    }
-
-    fn release_radio(&self, slot: usize) -> bool {
-        let (word, bit) = bitmap_word_and_bit(slot);
-        self.network[word].load(Ordering::Acquire) & bit == 0
-            && self.claimed[word].fetch_and(!bit, Ordering::AcqRel) & bit != 0
-    }
-
-    fn release_network(&self, slot: usize) -> bool {
-        let (word, bit) = bitmap_word_and_bit(slot);
-        if self.network[word].load(Ordering::Acquire) & bit == 0
-            || self.claimed[word].fetch_and(!bit, Ordering::AcqRel) & bit == 0
-        {
-            return false;
-        }
-        self.network[word].fetch_and(!bit, Ordering::AcqRel) & bit != 0
-    }
-}
-
-fn bitmap_word_and_bit(slot: usize) -> (usize, usize) {
-    let bits = usize::BITS as usize;
-    (slot / bits, 1_usize << (slot % bits))
 }
 
 /// Unique staged-frame owner while the RX append doorbell is pending.
@@ -463,13 +379,7 @@ impl<'pool, const SLOTS: usize, const CAPACITY: usize>
                     .frame
                     .take()
                     .ok_or(RxStageTransactionError::Ownership)?;
-                match frame.publish() {
-                    Ok(frame) => Ok(Some(frame)),
-                    Err(frame) => {
-                        self.frame = Some(frame);
-                        Err(RxStageTransactionError::Ownership)
-                    }
-                }
+                Ok(Some(frame.publish()))
             }
         }
     }
@@ -487,45 +397,31 @@ impl<const SLOTS: usize, const CAPACITY: usize> Default for RxStagePool<SLOTS, C
 
 /// Unique frame owner between the DMA copy and queue publication.
 struct RadioRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
-    pool: &'pool RxStagePool<SLOTS, CAPACITY>,
-    slot: usize,
+    lease: Option<RxRadioLease<'pool, CAPACITY>>,
+    _slots: PhantomData<[(); SLOTS]>,
     metadata: StagedMetadata,
-    live: bool,
 }
 
 impl<'pool, const SLOTS: usize, const CAPACITY: usize> RadioRxFrame<'pool, SLOTS, CAPACITY> {
     /// Transfer the staged frame to the upper receive queue.
-    fn publish(
-        mut self,
-    ) -> Result<NetworkRxFrame<'pool, SLOTS, CAPACITY>, RadioRxFrame<'pool, SLOTS, CAPACITY>> {
-        if !self.pool.try_publish_network(self.slot) {
-            return Err(self);
-        }
-        self.live = false;
-        Ok(NetworkRxFrame {
-            pool: self.pool,
-            slot: self.slot,
+    fn publish(mut self) -> NetworkRxFrame<'pool, SLOTS, CAPACITY> {
+        let lease = self
+            .lease
+            .take()
+            .expect("live staged RX frame owns its radio lease")
+            .into_network(self.metadata.length);
+        NetworkRxFrame {
+            lease,
+            _slots: PhantomData,
             metadata: self.metadata,
-        })
-    }
-}
-
-impl<const SLOTS: usize, const CAPACITY: usize> Drop for RadioRxFrame<'_, SLOTS, CAPACITY> {
-    fn drop(&mut self) {
-        if self.live {
-            // The transition is required behavior, not a debug-only check.
-            // Keep it outside `debug_assert!`: release builds erase the
-            // complete assertion expression.
-            let released = self.pool.release_radio(self.slot);
-            debug_assert!(released);
         }
     }
 }
 
 /// Unique upper-layer owner of one staged receive frame.
 pub struct NetworkRxFrame<'pool, const SLOTS: usize, const CAPACITY: usize> {
-    pool: &'pool RxStagePool<SLOTS, CAPACITY>,
-    slot: usize,
+    lease: RxNetworkLease<'pool, CAPACITY>,
+    _slots: PhantomData<[(); SLOTS]>,
     metadata: StagedMetadata,
 }
 
@@ -534,18 +430,15 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
     ///
     /// The index is metadata, not an address. It lets an allocation-free
     /// reorder state refer back to this token without exposing pool storage.
-    pub const fn slot(&self) -> usize {
-        self.slot
+    pub fn slot(&self) -> usize {
+        self.lease.index()
     }
 
     pub fn segment(&self) -> RxSegment<'_> {
-        // SAFETY: this non-Clone token uniquely retains Network ownership, so
-        // the pool cannot mutate or reclaim the matching slot.
-        let bytes = unsafe { &*self.pool.slots[self.slot].0.get() };
         RxSegment {
             descriptor_address: self.metadata.descriptor_address,
             descriptor_word0: self.metadata.descriptor_word0,
-            buffer: &bytes[..self.metadata.length],
+            buffer: self.lease.frame(),
             next_descriptor_address: self.metadata.next_descriptor_address,
         }
     }
@@ -561,13 +454,6 @@ impl<const SLOTS: usize, const CAPACITY: usize> NetworkRxFrame<'_, SLOTS, CAPACI
 
     pub const fn length(&self) -> usize {
         self.metadata.length
-    }
-}
-
-impl<const SLOTS: usize, const CAPACITY: usize> Drop for NetworkRxFrame<'_, SLOTS, CAPACITY> {
-    fn drop(&mut self) {
-        let released = self.pool.release_network(self.slot);
-        debug_assert!(released);
     }
 }
 
@@ -659,7 +545,7 @@ mod tests {
         let radio = pool.try_stage(completed(4), &[1, 2, 3, 4]).unwrap();
         assert_eq!(pool.claimed_slots(), 1);
         assert_eq!(pool.network_slots(), 0);
-        let network = radio.publish().ok().unwrap();
+        let network = radio.publish();
         assert_eq!(pool.network_slots(), 1);
         assert_eq!(network.slot(), 0);
         assert_eq!(network.segment().buffer, &[1, 2, 3, 4]);
@@ -677,12 +563,7 @@ mod tests {
         bytes[0x1f] = 1;
         bytes[0x25] = 4 << 4;
         let pool = RxStagePool::<1, 64>::new();
-        let network = pool
-            .try_stage(completed(64), &bytes)
-            .unwrap()
-            .publish()
-            .ok()
-            .unwrap();
+        let network = pool.try_stage(completed(64), &bytes).unwrap().publish();
 
         let metadata = network.normalized_metadata().unwrap();
         assert_eq!(metadata.channel, MacRxEvidence::HardwareObserved(11));
@@ -694,14 +575,14 @@ mod tests {
     }
 
     #[test]
-    fn ownership_bitmap_crosses_one_machine_word() {
+    fn ownership_scales_past_one_machine_word() {
         const CROSS_WORD_SLOTS: usize = usize::BITS as usize + 1;
         let pool = RxStagePool::<CROSS_WORD_SLOTS, 4>::new();
         let mut frames = std::vec::Vec::new();
 
         for _ in 0..CROSS_WORD_SLOTS {
             let radio = pool.try_stage(completed(4), &[1, 2, 3, 4]).unwrap();
-            frames.push(radio.publish().ok().unwrap());
+            frames.push(radio.publish());
         }
 
         assert_eq!(pool.claimed_slots(), CROSS_WORD_SLOTS as u32);
@@ -743,18 +624,8 @@ mod tests {
     #[test]
     fn frame_queue_preserves_fifo_ownership_and_releases_on_drop() {
         let pool = RxStagePool::<2, 32>::new();
-        let first = pool
-            .try_stage(completed(1), &[0x11])
-            .unwrap()
-            .publish()
-            .ok()
-            .unwrap();
-        let second = pool
-            .try_stage(completed(1), &[0x22])
-            .unwrap()
-            .publish()
-            .ok()
-            .unwrap();
+        let first = pool.try_stage(completed(1), &[0x11]).unwrap().publish();
+        let second = pool.try_stage(completed(1), &[0x22]).unwrap().publish();
         let mut queue = RxFrameQueue::new();
         queue.try_push(first).ok().unwrap();
         queue.try_push(second).ok().unwrap();

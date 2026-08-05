@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
+    BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
     DraftReferenceTerminator, ExpressionOperation, ExternalReturnModel, FunctionAnalysis,
     MemoryAccess, MmioRegisterMap, ObservableEvent, ReferenceResolver, SymbolicValue, artifact,
     direct,
@@ -539,6 +539,110 @@ fn pseudo_identifier(value: &str) -> String {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum PseudoBitBase {
+    Input(u8),
+    Register { token: u32, address: u32 },
+    IndexedRegister(u32),
+    Memory(u32),
+    PrivateStack(u32),
+    CallResult(u32),
+    ExternalResult(u32),
+}
+
+impl PseudoBitBase {
+    fn render(&self) -> String {
+        match self {
+            Self::Input(index) => format!("arg{index}"),
+            Self::Register { token, .. } => format!("read{token}"),
+            Self::IndexedRegister(token) => format!("indexed_read{token}"),
+            Self::Memory(token) => format!("ramread{token}"),
+            Self::PrivateStack(token) => format!("private_stack_read{token}"),
+            Self::CallResult(token) => format!("call{token}"),
+            Self::ExternalResult(token) => format!("external{token}"),
+        }
+    }
+}
+
+fn pseudo_bit_source(source: &BitSource) -> Option<(PseudoBitBase, u8, bool)> {
+    match source {
+        BitSource::Input {
+            index,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::Input(*index), *bit, *inverted)),
+        BitSource::Register {
+            read_token,
+            address,
+            bit,
+            inverted,
+        } => Some((
+            PseudoBitBase::Register {
+                token: *read_token,
+                address: *address,
+            },
+            *bit,
+            *inverted,
+        )),
+        BitSource::IndexedRegister {
+            read_token,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::IndexedRegister(*read_token), *bit, *inverted)),
+        BitSource::Memory {
+            read_token,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::Memory(*read_token), *bit, *inverted)),
+        BitSource::PrivateStack {
+            read_token,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::PrivateStack(*read_token), *bit, *inverted)),
+        BitSource::CallResult {
+            call_token,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::CallResult(*call_token), *bit, *inverted)),
+        BitSource::ExternalResult {
+            call_token,
+            bit,
+            inverted,
+        } => Some((PseudoBitBase::ExternalResult(*call_token), *bit, *inverted)),
+        BitSource::Unknown | BitSource::Constant(_) => None,
+    }
+}
+
+fn pseudo_masked_bits(bits: &[BitSource; 32]) -> Option<String> {
+    let mut base = None;
+    let mut inverted = None;
+    let mut mask = 0_u32;
+    for (output_bit, source) in bits.iter().enumerate() {
+        if matches!(source, BitSource::Constant(false)) {
+            continue;
+        }
+        let (source_base, source_bit, source_inverted) = pseudo_bit_source(source)?;
+        if usize::from(source_bit) != output_bit {
+            return None;
+        }
+        if base.as_ref().is_some_and(|base| base != &source_base)
+            || inverted.is_some_and(|inverted| inverted != source_inverted)
+        {
+            return None;
+        }
+        base = Some(source_base);
+        inverted = Some(source_inverted);
+        mask |= 1 << output_bit;
+    }
+    let base = base?.render();
+    match (inverted == Some(true), mask) {
+        (false, u32::MAX) => Some(base),
+        (true, u32::MAX) => Some(format!("(!{base})")),
+        (false, mask) => Some(format!("({base} & {mask:#010x})")),
+        (true, mask) => Some(format!("((!{base}) & {mask:#010x})")),
+    }
+}
+
 fn pseudo_value(value: &SymbolicValue) -> String {
     if let Some(index) = value.direct_input_index() {
         return format!("arg{index}");
@@ -624,11 +728,15 @@ fn pseudo_value(value: &SymbolicValue) -> String {
             and_mask,
             or_mask,
         } => format!("((ramread{read_token} & {and_mask:#010x}) | {or_mask:#010x})"),
+        SymbolicValue::Bits(bits) => {
+            pseudo_masked_bits(bits).unwrap_or_else(|| format!("symbolic({:?})", value.canonical()))
+        }
         SymbolicValue::ExternalTable(_)
         | SymbolicValue::ExternalFunction { .. }
         | SymbolicValue::FunctionTable(_)
-        | SymbolicValue::FunctionPointer { .. }
-        | SymbolicValue::Bits(_) => format!("symbolic({:?})", value.canonical()),
+        | SymbolicValue::FunctionPointer { .. } => {
+            format!("symbolic({:?})", value.canonical())
+        }
     }
 }
 
@@ -1323,8 +1431,15 @@ fn name_call_results(expression: &str, call_results: &BTreeMap<u32, String>) -> 
     let mut output = String::with_capacity(expression.len());
     let mut index = 0;
     while index < bytes.len() {
-        if bytes[index..].starts_with(b"call") {
-            let digits_start = index + 4;
+        let prefix_len = if bytes[index..].starts_with(b"external") {
+            Some(8)
+        } else if bytes[index..].starts_with(b"call") {
+            Some(4)
+        } else {
+            None
+        };
+        if let Some(prefix_len) = prefix_len {
+            let digits_start = index + prefix_len;
             let mut digits_end = digits_start;
             while digits_end < bytes.len() && bytes[digits_end].is_ascii_digit() {
                 digits_end += 1;
@@ -4236,8 +4351,8 @@ mod tests {
         ]);
 
         assert_eq!(
-            name_call_results("call1 | call10 | callback", &call_results),
-            "result_of_vendor__one_1 | result_of_vendor__ten_10 | callback"
+            name_call_results("call1 | call10 | external10 | callback", &call_results),
+            "result_of_vendor__one_1 | result_of_vendor__ten_10 | result_of_vendor__ten_10 | callback"
         );
     }
 
@@ -4283,6 +4398,23 @@ mod tests {
         };
 
         assert_eq!(pseudo_value(&value), "((read3 & 0xdfffffff) | 0x20000000)");
+    }
+
+    #[test]
+    fn pseudo_value_compacts_aligned_symbolic_bit_slices_into_masks() {
+        let mut bits = [BitSource::Constant(false); 32];
+        for (bit, source) in bits.iter_mut().enumerate().take(8).skip(4) {
+            *source = BitSource::CallResult {
+                call_token: 10,
+                bit: bit as u8,
+                inverted: false,
+            };
+        }
+
+        assert_eq!(
+            pseudo_value(&SymbolicValue::Bits(Box::new(bits))),
+            "(call10 & 0x000000f0)"
+        );
     }
 
     #[test]

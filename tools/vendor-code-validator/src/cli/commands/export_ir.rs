@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -1024,7 +1024,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 20,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 21,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1065,6 +1065,9 @@ fn write_json_report(
     );
     output.push_str(
         "  \"cfg_guard_mode\": \"forced-branch-paths-minimized-dnf-factorized-by-function\",\n",
+    );
+    output.push_str(
+        "  \"cfg_guard_expression_mode\": \"pseudo-rust-aligned-bit-masks-with-symbolic-fallback\",\n",
     );
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");

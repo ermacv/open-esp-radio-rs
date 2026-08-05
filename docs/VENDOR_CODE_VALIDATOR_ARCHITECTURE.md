@@ -253,11 +253,13 @@ compose disjunctively, and decisions within a path compose conjunctively. This
 avoids multiplying alternatives at every nested call while retaining lexical
 provenance. Only exact complementary alternatives and absorbed supersets are
 removed; symbolic conditions are not assigned guessed register, bit or event
-semantics. Missing guard evidence stays explicit, and the report makes no CFG
-guard completeness claim because exploration is bounded. Consequently this is
-deliberately not a total execution trace: mutually exclusive paths coexist,
-dynamic loop counts are not inferred and recursive revisits are bounded exactly
-like context projection.
+semantics. Aligned bits derived from one symbolic source are losslessly
+canonicalized to an ordinary mask expression; non-uniform bit provenance keeps
+the existing explicit symbolic fallback. Missing guard evidence stays
+explicit, and the report makes no CFG guard completeness claim because
+exploration is bounded. Consequently this is deliberately not a total
+execution trace: mutually exclusive paths coexist, dynamic loop counts are not
+inferred and recursive revisits are bounded exactly like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

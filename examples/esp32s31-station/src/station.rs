@@ -979,7 +979,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         }
     }
 
-    let rx_storage = RxStorage::init_in_place(RX_DMA_STORAGE.uninit());
+    let rx_storage = RX_DMA_STORAGE.init_with(RxStorage::new);
     let buffer_addresses = RX_BUFFER_ADDRESSES.init([0; RX_DESCRIPTOR_COUNT]);
     let descriptor_base = rx_storage
         .dma_layout(buffer_addresses)

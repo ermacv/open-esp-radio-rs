@@ -5586,7 +5586,7 @@ async fn run_promiscuous_rx_hil(
 ) -> bool {
     let platform = &mut platform;
     let mmio = &mut cold_mmio;
-    let storage = RxStorage::init_in_place(OPEN_RADIO_RX_DMA_STORAGE.uninit());
+    let storage = OPEN_RADIO_RX_DMA_STORAGE.init_with(RxStorage::new);
     let tx_slot = TxSlot::pin_static(TxSlot::init_in_place(OPEN_RADIO_TX_DMA_STORAGE.uninit()));
     let tx_storage = OPEN_RADIO_TX_STATE.init(TxStorage::from_slot(
         tx_slot,

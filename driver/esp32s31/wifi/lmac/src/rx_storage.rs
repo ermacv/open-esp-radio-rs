@@ -4,7 +4,7 @@
 //! payload capacity and placement policy are selected by the board or runtime
 //! composition and remain const-generic here.
 
-use core::{cell::UnsafeCell, mem::MaybeUninit, ptr};
+use core::cell::UnsafeCell;
 
 use crate::{
     descriptor::Descriptor,
@@ -39,30 +39,6 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
     pub unsafe fn prepare_for_recycle(&self) -> Result<(), RxRingError> {
         // SAFETY: ring ownership makes this the only CPU or DMA writer.
         unsafe { prepare_recycled_buffer(&mut *self.0.get(), BUFFER_SIZE) }
-    }
-
-    /// Volatile diagnostic word read after the matching descriptor completed.
-    pub unsafe fn read_word(&self, offset: usize) -> u32 {
-        assert!(offset + 4 <= BUFFER_SIZE);
-        // SAFETY: the caller owns the completed descriptor and the assertion
-        // bounds all four volatile byte reads.
-        unsafe {
-            let bytes = self.0.get().cast::<u8>().add(offset);
-            u32::from_le_bytes([
-                bytes.read_volatile(),
-                bytes.add(1).read_volatile(),
-                bytes.add(2).read_volatile(),
-                bytes.add(3).read_volatile(),
-            ])
-        }
-    }
-
-    /// Volatile diagnostic byte read after the matching descriptor completed.
-    pub unsafe fn read_byte(&self, offset: usize) -> u8 {
-        assert!(offset < BUFFER_SIZE);
-        // SAFETY: the caller owns the completed descriptor and offset is in
-        // the advertised DMA prefix.
-        unsafe { self.0.get().cast::<u8>().add(offset).read_volatile() }
     }
 
     /// Whether DMA has overwritten the leading recycle guard.
@@ -110,23 +86,6 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         }
     }
 
-    /// Initialize a large RX arena directly in its final allocation.
-    pub fn init_in_place(storage: &mut MaybeUninit<Self>) -> &mut Self {
-        let storage = storage.as_mut_ptr();
-        // SAFETY: the allocation is exclusive and aligned. Each array element
-        // is initialized exactly once before the reference is formed.
-        unsafe {
-            let descriptors = ptr::addr_of_mut!((*storage).descriptors).cast::<Descriptor>();
-            let buffers = ptr::addr_of_mut!((*storage).buffers)
-                .cast::<RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>>();
-            for index in 0..COUNT {
-                descriptors.add(index).write(Descriptor::new());
-                buffers.add(index).write(RxDmaBuffer::new());
-            }
-            &mut *storage
-        }
-    }
-
     pub const fn descriptors(&self) -> &[Descriptor; COUNT] {
         &self.descriptors
     }
@@ -156,14 +115,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> De
 
 #[cfg(test)]
 mod tests {
-    use core::mem::MaybeUninit;
-
     use super::*;
 
     #[test]
     fn arena_initializes_in_its_final_location_and_recycles_one_buffer() {
-        let mut allocation = MaybeUninit::<RxDmaStorage<2, 16, 20>>::uninit();
-        let storage = RxDmaStorage::init_in_place(&mut allocation);
+        let storage = RxDmaStorage::<2, 16, 20>::new();
 
         assert_eq!(storage.descriptors().len(), 2);
         assert_eq!(storage.buffers().len(), 2);

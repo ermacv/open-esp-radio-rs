@@ -12704,7 +12704,8 @@ pub mod wifi_mac_regdma_control {
         #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
         pub type ModemWakeupProtectEarlyTimeR = crate::FieldReader<u16>;
         #[doc = "Field `MODEM_WAKEUP_PROTECT_EARLY_TIME` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_early_time replaces the low sixteen bits."]
-        pub type ModemWakeupProtectEarlyTimeW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ModemWakeupProtectEarlyTimeW<'a, REG> =
+            crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         #[doc = "Field `LOW_CONTROL_UNKNOWN` reader - "]
         pub type LowControlUnknownR = crate::BitReader;
         #[doc = "Field `LOW_CONTROL_UNKNOWN` writer - "]
@@ -12716,7 +12717,8 @@ pub mod wifi_mac_regdma_control {
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
         pub type ModemTbttAutoPeriodIntervalR = crate::FieldReader<u16>;
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_INTERVAL` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. pwr_hal_set_mac_modem_tbtt_auto_period_interval replaces bits 30:21 from the low ten argument bits."]
-        pub type ModemTbttAutoPeriodIntervalW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type ModemTbttAutoPeriodIntervalW<'a, REG> =
+            crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
         pub type ModemTbttAutoPeriodEnableR = crate::BitReader;
         #[doc = "Field `MODEM_TBTT_AUTO_PERIOD_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The dedicated enable and disable leaves set or clear bit 31."]
@@ -21133,7 +21135,7 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "Register `VALUE_LOW` writer"]
         pub type W = crate::W<ValueLowSpec>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -21148,7 +21150,7 @@ pub mod wifi_mac_sta_tsf_load {
         }
         #[doc = "`write(|w| ..)` method takes [`value_low::W`](W) writer structure"]
         impl crate::Writable for ValueLowSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "VALUE_HIGH (w) register accessor: SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. High 32 bits written second by complete hal_set_sta_tsf.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`value_high::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@value_high`] module"]
@@ -21159,7 +21161,7 @@ pub mod wifi_mac_sta_tsf_load {
         #[doc = "Register `VALUE_HIGH` writer"]
         pub type W = crate::W<ValueHighSpec>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -21174,7 +21176,7 @@ pub mod wifi_mac_sta_tsf_load {
         }
         #[doc = "`write(|w| ..)` method takes [`value_high::W`](W) writer structure"]
         impl crate::Writable for ValueHighSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "SNAPSHOT_LOW (r) register accessor: SOURCE\\[ROM_REV0_HAL_GET_STA_TSF\\]; CONFIDENCE\\[instruction-exact\\]. Coherently latched low 32 bits conditionally read by complete hal_get_sta_tsf.\n\nYou can [`read`](crate::Reg::read) this register and get [`snapshot_low::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@snapshot_low`] module"]
@@ -21510,7 +21512,7 @@ pub mod wifi_mac_rtc_timer_update {
         #[doc = "Field `BEACON_MISS_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
         pub type BeaconMissLimitR = crate::FieldReader;
         #[doc = "Field `BEACON_MISS_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low four argument bits published by pwr_hal_set_mac_modem_beacon_miss_limit."]
-        pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type BeaconMissLimitW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
         pub type BeaconMissLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `BEACON_MISS_LIMIT_WAKEUP_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit four."]
@@ -21518,7 +21520,7 @@ pub mod wifi_mac_rtc_timer_update {
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
         pub type ModemStateSleepLimitR = crate::FieldReader<u16>;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. Low ten argument bits published in bits 14:5 by pwr_hal_set_mac_modem_state_sleep_limit."]
-        pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type ModemStateSleepLimitW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
         pub type ModemStateSleepLimitWakeupEnableR = crate::BitReader;
         #[doc = "Field `MODEM_STATE_SLEEP_LIMIT_WAKEUP_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Dedicated enable/disable leaves set or clear bit fifteen."]
@@ -21641,7 +21643,7 @@ pub mod wifi_mac_rtc_timer_update {
         #[doc = "Field `VALUE` reader - "]
         pub type ValueR = crate::FieldReader<u16>;
         #[doc = "Field `VALUE` writer - "]
-        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16>;
+        pub type ValueW<'a, REG> = crate::FieldWriter<'a, REG, 16, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:15"]
             #[inline(always)]
@@ -21677,10 +21679,66 @@ pub mod wifi_mac_rtc_timer_update {
         pub type R = crate::R<StaTsfControlSpec>;
         #[doc = "Register `STA_TSF_CONTROL` writer"]
         pub type W = crate::W<StaTsfControlSpec>;
+        #[doc = "SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        #[repr(u8)]
+        pub enum StaTsfMode {
+            #[doc = "0: `0`"]
+            Disabled = 0,
+            #[doc = "1: `1`"]
+            Enabled = 1,
+        }
+        impl From<StaTsfMode> for u8 {
+            #[inline(always)]
+            fn from(variant: StaTsfMode) -> Self {
+                variant as _
+            }
+        }
+        impl crate::FieldSpec for StaTsfMode {
+            type Ux = u8;
+        }
+        impl crate::IsEnum for StaTsfMode {}
         #[doc = "Field `STA_TSF_MODE` reader - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
-        pub type StaTsfModeR = crate::FieldReader;
+        pub type StaTsfModeR = crate::FieldReader<StaTsfMode>;
+        impl StaTsfModeR {
+            #[doc = "Get enumerated values variant"]
+            #[inline(always)]
+            pub const fn variant(&self) -> Option<StaTsfMode> {
+                match self.bits {
+                    0 => Some(StaTsfMode::Disabled),
+                    1 => Some(StaTsfMode::Enabled),
+                    _ => None,
+                }
+            }
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn is_disabled(&self) -> bool {
+                *self == StaTsfMode::Disabled
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn is_enabled(&self) -> bool {
+                *self == StaTsfMode::Enabled
+            }
+        }
         #[doc = "Field `STA_TSF_MODE` writer - SOURCE\\[BLOB_LIBPP_HAL_TSF\\]; CONFIDENCE\\[instruction-exact\\]. hal_enable_sta_tsf replaces bits 22:19 with one; hal_disable_sta_tsf clears them."]
-        pub type StaTsfModeW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type StaTsfModeW<'a, REG> = crate::FieldWriter<'a, REG, 4, StaTsfMode>;
+        impl<'a, REG> StaTsfModeW<'a, REG>
+        where
+            REG: crate::Writable + crate::RegisterSpec,
+            REG::Ux: From<u8>,
+        {
+            #[doc = "`0`"]
+            #[inline(always)]
+            pub fn disabled(self) -> &'a mut crate::W<REG> {
+                self.variant(StaTsfMode::Disabled)
+            }
+            #[doc = "`1`"]
+            #[inline(always)]
+            pub fn enabled(self) -> &'a mut crate::W<REG> {
+                self.variant(StaTsfMode::Enabled)
+            }
+        }
         #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
         pub type ModemStateWakeupProtectEnableR = crate::BitReader;
         #[doc = "Field `MODEM_STATE_WAKEUP_PROTECT_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_PWR\\]; CONFIDENCE\\[instruction-exact\\]. pwr_hal_set_mac_modem_state_wakeup_protect_enable sets this bit and the corresponding disable leaf clears it."]
@@ -30257,5 +30315,35 @@ pub mod interrupt_snapshot {
     #[doc(hidden)]
     pub const fn mac_power_interrupt_for_validation(bits: u32) -> MacPowerInterruptSnapshot {
         MacPowerInterruptSnapshot(bits)
+    }
+}
+
+/// Safe, SVD-declared writes which cover a complete register.
+pub mod full_register_write {
+
+    /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_LOW` through its full-width field.
+    #[inline]
+    pub fn station_tsf_value_low(registers: &crate::WifiMacStaTsfLoad, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .value_low()
+                .write_with_zero(|writer| writer.value().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_STA_TSF_LOAD`.`VALUE_HIGH` through its full-width field.
+    #[inline]
+    pub fn station_tsf_value_high(registers: &crate::WifiMacStaTsfLoad, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .value_high()
+                .write_with_zero(|writer| writer.value().set(value));
+        }
     }
 }

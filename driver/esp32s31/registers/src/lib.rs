@@ -31,6 +31,7 @@ mod mac_he_tb;
 mod mac_interface_address;
 mod mac_interrupt;
 mod mac_last_rx_buffer;
+mod mac_modem_wakeup;
 mod mac_rx_dma;
 mod mac_rx_policy;
 mod mac_rx_statistics;
@@ -68,11 +69,13 @@ pub use mac_he_ofdma::{
 pub use mac_he_peer::{MacHe20PeerConfig, MacHe20PeerError};
 pub use mac_he_tb::{MacHeTbStatistics, MacHeTbTxDiagnostics};
 pub use mac_interrupt::{MacInterruptRegisters, MacInterruptSetup, MacPowerInterruptRegisters};
+pub use mac_modem_wakeup::{
+    StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod,
+};
 pub use mac_rx_statistics::{
     MacHeColorCollisionSnapshot, MacRxDecodeErrorStatistics, MacRxHangStatistics,
     MacRxPrimaryStatistics, MacRxPrimaryStatisticsDelta, MacRxStatisticsSnapshot,
 };
-pub use mac_tsf::{StaBeaconMissLimit, StaModemSleepLimit, StaModemWakeConfig, StaTbttAutoPeriod};
 pub use mac_tx::{
     MacHeTxProgram, MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacHtTxProgram,
     MacLegacyTxProgram, MacTxCompletionRegisters,

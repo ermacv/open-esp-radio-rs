@@ -100,12 +100,12 @@ explicitly outside this gate.
 
 ## Connected modem wake counters
 
-Ten generated PAC leaves cover the finite register transaction selected by
-the connected vendor PM path: beacon-miss timeout/limit, both counter wake
+Ten safe typed PAC transactions cover the finite register sequence selected
+by the connected vendor PM path: beacon-miss timeout/limit, both counter wake
 gates, modem-state sleep limit, wake protection lead time, and optional TBTT
 auto-period enable/disable/interval. `StaModemWakeConfig` bounds every field
 before MMIO, and `RadioRegisters::configure_station_modem_wakeup` composes the
-same leaves in vendor order without importing vendor PM context.
+same operations in vendor order without importing vendor PM context.
 
 ```console
 cargo vendor-code-validator verify inventory \

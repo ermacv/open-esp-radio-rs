@@ -74,6 +74,14 @@ struct InterruptSnapshotBinding {
     clear_field: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FullRegisterWriteBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    field: String,
+}
+
 const fn inherited_properties(
     parent: RegisterProperties,
     child: RegisterProperties,
@@ -841,6 +849,26 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             }
         }
     }
+    if let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioFullRegisterWrites"))
+    {
+        for write in extension
+            .children()
+            .filter(|node| node.has_tag_name("write"))
+        {
+            let sources = required_attribute(write, "source")?;
+            for source in sources.split(',').map(str::trim) {
+                if source.is_empty() || !definitions.contains(source) {
+                    return Err(format!(
+                        "full-register write {} references undefined provenance source {source:?}",
+                        required_attribute(write, "name")?
+                    )
+                    .into());
+                }
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1059,6 +1087,155 @@ fn generate_interrupt_snapshot_api(document: &Document<'_>) -> Result<String, Bo
                  {snapshot_type}(bits)\n\
              }}\n",
             binding.peripheral, binding.status_register, binding.name, binding.name, binding.name,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_full_register_writes(
+    document: &Document<'_>,
+) -> Result<Vec<FullRegisterWriteBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioFullRegisterWrites"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioFullRegisterWrites"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioFullRegisterWrites extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for write in extension
+        .children()
+        .filter(|node| node.has_tag_name("write"))
+    {
+        let name = required_attribute(write, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("full-register write name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate full-register write name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(write, "peripheral")?;
+        let register_name = required_attribute(write, "register")?;
+        let field_name = required_attribute(write, "field")?;
+        required_attribute(write, "source")?;
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "full-register write {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("full-register write {name} references unknown register {register_name}")
+            })?;
+        let access = child_text(register, "access")?;
+        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+            return Err(
+                format!("full-register write {name} requires a writable 32-bit register").into(),
+            );
+        }
+        let fields = register
+            .children()
+            .find(|node| node.has_tag_name("fields"))
+            .ok_or_else(|| format!("full-register write {name} register has no fields"))?;
+        if fields
+            .children()
+            .filter(|node| node.has_tag_name("field"))
+            .count()
+            != 1
+        {
+            return Err(format!(
+                "full-register write {name} register must contain exactly one field"
+            )
+            .into());
+        }
+        let field = direct_named_child(fields, "field", field_name).ok_or_else(|| {
+            format!("full-register write {name} references unknown field {field_name}")
+        })?;
+        if child_text(field, "bitOffset")? != "0" || child_text(field, "bitWidth")? != "32" {
+            return Err(format!(
+                "full-register write {name} field must cover the complete 32-bit register"
+            )
+            .into());
+        }
+        let constraint = field
+            .children()
+            .find(|node| node.has_tag_name("writeConstraint"))
+            .and_then(|node| node.children().find(|child| child.has_tag_name("range")))
+            .ok_or_else(|| format!("full-register write {name} has no range constraint"))?;
+        if parse_u64(child_text(constraint, "minimum")?, "write minimum")? != 0
+            || parse_u64(child_text(constraint, "maximum")?, "write maximum")? != u32::MAX.into()
+        {
+            return Err(
+                format!("full-register write {name} field must accept every 32-bit value").into(),
+            );
+        }
+
+        bindings.push(FullRegisterWriteBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            field: field_name.to_owned(),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_full_register_write_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_full_register_writes(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared writes which cover a complete register.\n\
+         pub mod full_register_write {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let field = member_binding_name(&binding.field);
+        output.push_str(&format!(
+            "\n    /// Write every bit of `{}`.`{}` through its full-width field.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}, value: u32) {{\n\
+                 // SAFETY: generator validation proves that this is the only field,\n\
+                 // it covers all 32 bits and accepts every `u32`; no zero-filled\n\
+                 // reserved or partially described bits remain.\n\
+                 unsafe {{\n\
+                     registers.{register}().write_with_zero(|writer|\n\
+                         writer.{field}().set(value)\n\
+                     );\n\
+                 }}\n\
+             }}\n",
+            binding.peripheral, binding.register, binding.name,
         ));
     }
     output.push_str("}\n");
@@ -1463,6 +1640,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     validate_evidence_ranges(&document, &windows)?;
     validate_register_aliases(input)?;
     parse_interrupt_snapshots(&document)?;
+    parse_full_register_writes(&document)?;
     Ok(windows)
 }
 
@@ -1497,10 +1675,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     config.strict = true;
     let document = Document::parse(&input)?;
     let interrupt_snapshot_api = generate_interrupt_snapshot_api(&document)?;
+    let full_register_write_api = generate_full_register_write_api(&document)?;
     let generated = format_generated(&format!(
-        "{}{}",
+        "{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
-        interrupt_snapshot_api
+        interrupt_snapshot_api,
+        full_register_write_api,
     ))?;
     let binding_index = generate_binding_index(&input)?;
 
@@ -1550,11 +1730,11 @@ fn main() -> ExitCode {
 mod tests {
     use super::{
         ExpandedRegister, MmioWindow, array_binding_name, explicitly_alternate,
-        generate_interrupt_snapshot_api, member_binding_name, mmio_window,
-        parse_interrupt_snapshots, parse_mmio_windows, type_binding_name, validate_alias_group,
-        validate_confidence, validate_dimension_order, validate_evidence_ranges, validate_names,
-        validate_provenance, validate_register_aliases, validate_register_layout,
-        validate_write_semantics,
+        generate_full_register_write_api, generate_interrupt_snapshot_api, member_binding_name,
+        mmio_window, parse_full_register_writes, parse_interrupt_snapshots, parse_mmio_windows,
+        type_binding_name, validate_alias_group, validate_confidence, validate_dimension_order,
+        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
+        validate_register_layout, validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -1715,6 +1895,40 @@ mod tests {
         .unwrap();
 
         assert!(parse_interrupt_snapshots(&document).is_err());
+    }
+
+    #[test]
+    fn full_register_write_requires_one_constrained_complete_field() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>VALUE</name><size>32</size><access>write-only</access><fields>\
+             <field><name>BITS</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth>\
+             <writeConstraint><range><minimum>0</minimum><maximum>0xffffffff</maximum>\
+             </range></writeConstraint></field></fields></register></registers></peripheral>\
+             </peripherals><vendorExtensions><openEspRadioFullRegisterWrites>\
+             <write name=\"port_value\" peripheral=\"PORT\" register=\"VALUE\" field=\"BITS\" \
+             source=\"TEST\"/></openEspRadioFullRegisterWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_full_register_writes(&valid).unwrap().len(), 1);
+        assert!(
+            generate_full_register_write_api(&valid)
+                .unwrap()
+                .contains("pub fn port_value(registers: &crate::Port, value: u32)")
+        );
+
+        let partial = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>VALUE</name><size>32</size><access>write-only</access><fields>\
+             <field><name>BITS</name><bitOffset>0</bitOffset><bitWidth>31</bitWidth>\
+             <writeConstraint><range><minimum>0</minimum><maximum>0x7fffffff</maximum>\
+             </range></writeConstraint></field></fields></register></registers></peripheral>\
+             </peripherals><vendorExtensions><openEspRadioFullRegisterWrites>\
+             <write name=\"port_value\" peripheral=\"PORT\" register=\"VALUE\" field=\"BITS\" \
+             source=\"TEST\"/></openEspRadioFullRegisterWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert!(parse_full_register_writes(&partial).is_err());
     }
 
     #[test]

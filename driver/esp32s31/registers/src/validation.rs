@@ -143,9 +143,7 @@ pub fn pwr_hal_set_mac_modem_beacon_miss_timeout(
     registers: &svd::WifiMacRtcTimerUpdate,
     value: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_beacon_miss_timeout::generated_pwr_hal_set_mac_modem_beacon_miss_timeout(
-        registers, value,
-    )
+    crate::mac_modem_wakeup::set_beacon_miss_timeout(registers, value as u16)
 }
 
 #[inline(always)]
@@ -153,9 +151,7 @@ pub fn pwr_hal_set_mac_modem_beacon_miss_limit(
     registers: &svd::WifiMacRtcTimerUpdate,
     value: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_beacon_miss_limit::generated_pwr_hal_set_mac_modem_beacon_miss_limit(
-        registers, value,
-    )
+    crate::mac_modem_wakeup::set_beacon_miss_limit(registers, (value & 0x0f) as u8)
 }
 
 #[inline(always)]
@@ -163,10 +159,8 @@ pub fn pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable(
     registers: &svd::WifiMacRtcTimerUpdate,
     passthrough: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable::generated_pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable(
-        registers,
-        passthrough,
-    )
+    crate::mac_modem_wakeup::enable_beacon_miss_limit_wakeup(registers);
+    passthrough
 }
 
 #[inline(always)]
@@ -174,9 +168,7 @@ pub fn pwr_hal_set_mac_modem_state_sleep_limit(
     registers: &svd::WifiMacRtcTimerUpdate,
     value: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_state_sleep_limit::generated_pwr_hal_set_mac_modem_state_sleep_limit(
-        registers, value,
-    )
+    crate::mac_modem_wakeup::set_modem_state_sleep_limit(registers, (value & 0x03ff) as u16)
 }
 
 #[inline(always)]
@@ -184,10 +176,8 @@ pub fn pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable(
     registers: &svd::WifiMacRtcTimerUpdate,
     passthrough: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable::generated_pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable(
-        registers,
-        passthrough,
-    )
+    crate::mac_modem_wakeup::enable_modem_state_sleep_limit_wakeup(registers);
+    passthrough
 }
 
 #[inline(always)]
@@ -195,10 +185,8 @@ pub fn pwr_hal_set_mac_modem_state_wakeup_protect_enable(
     registers: &svd::WifiMacRtcTimerUpdate,
     passthrough: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_state_wakeup_protect_enable::generated_pwr_hal_set_mac_modem_state_wakeup_protect_enable(
-        registers,
-        passthrough,
-    )
+    crate::mac_modem_wakeup::enable_modem_state_wakeup_protect(registers);
+    passthrough
 }
 
 #[inline(always)]
@@ -206,9 +194,7 @@ pub fn pwr_hal_set_mac_modem_state_wakeup_protect_early_time(
     registers: &svd::WifiMacRegdmaControl,
     value: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_state_wakeup_protect_early_time::generated_pwr_hal_set_mac_modem_state_wakeup_protect_early_time(
-        registers, value,
-    )
+    crate::mac_modem_wakeup::set_wakeup_protect_early_time(registers, value as u16)
 }
 
 #[inline(always)]
@@ -216,10 +202,8 @@ pub fn pwr_hal_set_mac_modem_tbtt_auto_period_enable(
     registers: &svd::WifiMacRegdmaControl,
     passthrough: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_tbtt_auto_period_enable::generated_pwr_hal_set_mac_modem_tbtt_auto_period_enable(
-        registers,
-        passthrough,
-    )
+    crate::mac_modem_wakeup::enable_tbtt_auto_period(registers);
+    passthrough
 }
 
 #[inline(always)]
@@ -227,10 +211,8 @@ pub fn pwr_hal_set_mac_modem_tbtt_auto_period_disable(
     registers: &svd::WifiMacRegdmaControl,
     passthrough: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_tbtt_auto_period_disable::generated_pwr_hal_set_mac_modem_tbtt_auto_period_disable(
-        registers,
-        passthrough,
-    )
+    crate::mac_modem_wakeup::disable_tbtt_auto_period(registers);
+    passthrough
 }
 
 #[inline(always)]
@@ -238,7 +220,5 @@ pub fn pwr_hal_set_mac_modem_tbtt_auto_period_interval(
     registers: &svd::WifiMacRegdmaControl,
     value: u32,
 ) -> u32 {
-    generated::pwr_hal_set_mac_modem_tbtt_auto_period_interval::generated_pwr_hal_set_mac_modem_tbtt_auto_period_interval(
-        registers, value,
-    )
+    crate::mac_modem_wakeup::set_tbtt_auto_period(registers, (value & 0x03ff) as u16)
 }

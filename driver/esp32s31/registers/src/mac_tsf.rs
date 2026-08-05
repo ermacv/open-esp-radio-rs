@@ -2,7 +2,29 @@
 
 #![forbid(unsafe_code)]
 
-use super::{RadioRegisters, device_fence, generated, svd::full_register_write};
+use super::{RadioRegisters, device_fence, svd, svd::full_register_write};
+
+/// Snapshot either or both station TSF words using the complete ROM leaf's
+/// conditional-output semantics.
+#[inline(always)]
+pub(crate) fn snapshot_station_tsf(
+    registers: &svd::WifiMacStaTsfLoad,
+    low: Option<&mut u32>,
+    high: Option<&mut u32>,
+) {
+    registers
+        .control()
+        .modify(|_, writer| writer.snapshot_station_tsf().set_bit());
+    if let Some(low) = low {
+        *low = registers.snapshot_low().read().value().bits();
+    }
+    if let Some(high) = high {
+        *high = registers.snapshot_high().read().value().bits();
+    }
+    registers
+        .control()
+        .modify(|_, writer| writer.snapshot_station_tsf().clear_bit());
+}
 
 impl RadioRegisters {
     /// Return one coherent station TSF snapshot.
@@ -14,7 +36,7 @@ impl RadioRegisters {
     pub fn station_tsf(&mut self) -> u64 {
         let mut low = 0;
         let mut high = 0;
-        generated::hal_get_sta_tsf::generated_hal_get_sta_tsf(
+        snapshot_station_tsf(
             &self.peripherals.wifi_mac_sta_tsf_load,
             Some(&mut low),
             Some(&mut high),

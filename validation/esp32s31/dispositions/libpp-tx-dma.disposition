@@ -6,7 +6,7 @@ default-protocol wifi
 function libpp hal_mac_tx_set_cca
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_tx_set_cca
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::set_cca_force
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_tx_set_cca
 compare-return true
@@ -17,7 +17,7 @@ effect mmio-write 32 0x20104c5c required
 function libpp hal_mac_get_txq_in_trig_flow_state
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_get_txq_in_trig_flow_state
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::trigger_flow_state
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_get_txq_in_trig_flow_state
 compare-return true
@@ -27,7 +27,7 @@ effect mmio-read 32 0x20104cb4 required
 function libpp hal_mac_is_txq_enabled
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_is_txq_enabled
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::queue_enabled
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_is_txq_enabled
 compare-return true
@@ -40,7 +40,7 @@ effect mmio-read 32 0x20104d70 required
 function libpp hal_mac_is_txq_valid
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_is_txq_valid
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::queue_valid
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_is_txq_valid
 compare-return true
@@ -53,7 +53,7 @@ effect mmio-read 32 0x20104d70 required
 function libpp hal_mac_set_txq_invalid
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_set_txq_invalid
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::invalidate_queue
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_set_txq_invalid
 effect-contract exact-effects-v1
@@ -69,7 +69,7 @@ effect mmio-write 32 0x20104d70 required
 function libpp hal_mac_txq_disable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_txq_disable
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::disable_queue
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_txq_disable
 effect-contract exact-effects-v1
@@ -89,7 +89,7 @@ effect mmio-write 32 0x20104d70 required
 function libpp hal_mac_txq_enable
 disposition replaced-by-composition
 protocol wifi
-rust-component open_esp_radio_esp32s31_registers::generated::hal_mac_txq_enable_register_slice
+rust-component open_esp_radio_esp32s31_registers::mac_tx_queue::publish_queue
 binding v1
 rust-probe open_libpp_tx_trace_hal_mac_txq_enable_register_slice
 driver-adapter esp32s31-hal-mac-txq-enable-register-slice-v1

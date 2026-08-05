@@ -398,8 +398,8 @@
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
             <field><name>CONTROL_LOW_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>28</bitWidth></field>
-            <field><name>PHY_AUX_FORCE</name><description>SOURCE[ROM_REV0_PHY_CCA_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge.</description><bitOffset>28</bitOffset><bitWidth>2</bitWidth></field>
-            <field><name>FORCE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL]; CONFIDENCE[instruction-exact]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>PHY_AUX_FORCE</name><description>SOURCE[ROM_REV0_PHY_CCA_CONTROL]; CONFIDENCE[instruction-exact]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge.</description><bitOffset>28</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
+            <field><name>FORCE</name><description>SOURCE[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL]; CONFIDENCE[instruction-exact]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero.</description><bitOffset>30</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>

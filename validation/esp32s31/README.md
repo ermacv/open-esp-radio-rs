@@ -151,8 +151,8 @@ method now retains exactly the vendor-observed transaction.
 The planner also needs a live STA-TSF sample to reject a wake target that has
 already passed while RX/control work was queued. The focused ROM gate closes
 all four optional-output-pointer combinations of `hal_get_sta_tsf`; the
-production `RadioRegisters::station_tsf` specializes the same generated PAC
-transaction to both output words.
+production `RadioRegisters::station_tsf` specializes the same safe PAC
+register transaction to both output words.
 
 ```console
 cargo vendor-code-validator verify inventory \
@@ -176,8 +176,8 @@ The next focused gate covers seven production operations: CCA publication,
 trigger-flow sampling, finite enable/valid/invalid/disable queue access, and
 the final TX queue doorbell. The four indexed profiles declare `arg-range 0 0
 3`; all four logical queues must be executed, and the validator proves the
-reversed `CONTROL[3-queue]` mapping without treating the generated panic arm
-as an admissible vendor input.
+reversed `CONTROL[3-queue]` mapping without treating the out-of-domain
+assertion as an admissible vendor input.
 
 `hal_mac_txq_enable` is intentionally not labeled whole-function equivalent.
 The vendor root first performs the exact CONTROL read/write, then changes its
@@ -203,9 +203,9 @@ cargo vendor-code-validator verify inventory \
 
 The expected focused result is `match=7`, `mismatch=0`, `incomplete=0`,
 `orphan-rust-probe=0`, and a passing evidence baseline. The production
-`start_prepared_mac_tx` calls the same qualified PAC leaf between its two
-device fences; vendor context layout and statistics are absent from runtime
-code.
+`start_prepared_mac_tx` calls the same qualified safe PAC transaction between
+its two device fences; vendor context layout and statistics are absent from
+runtime code.
 
 ## RX descriptor-walker register slice
 

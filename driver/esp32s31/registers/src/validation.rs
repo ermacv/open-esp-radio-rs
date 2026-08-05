@@ -1,9 +1,9 @@
-//! Feature-gated compiled-validation access to generated vendor leaves.
+//! Feature-gated compiled-validation access to qualified register transactions.
 //!
-//! This module is never enabled by the runtime. It exposes the exact generated
+//! This module is never enabled by the runtime. It exposes the exact safe
 //! transaction while keeping lifecycle ownership and `steal` in the HIL probe.
 
-use crate::{MacInterruptRegisters, generated, svd};
+use crate::{MacInterruptRegisters, svd};
 
 #[inline(always)]
 pub fn hal_get_sta_tsf(
@@ -11,7 +11,7 @@ pub fn hal_get_sta_tsf(
     low: Option<&mut u32>,
     high: Option<&mut u32>,
 ) {
-    generated::hal_get_sta_tsf::generated_hal_get_sta_tsf(registers, low, high);
+    crate::mac_tsf::snapshot_station_tsf(registers, low, high);
 }
 
 /// Construct the real finite production capability in an isolated probe ELF.
@@ -99,34 +99,32 @@ pub fn hal_mac_rx_set_dscr_reload(registers: &svd::WifiMacRxDma, passthrough: u3
 
 #[inline(always)]
 pub fn hal_mac_tx_set_cca(registers: &svd::WifiMacTxCommon, value: u32) -> u32 {
-    generated::hal_mac_tx_set_cca::generated_hal_mac_tx_set_cca(registers, value)
+    crate::mac_tx_queue::set_cca_force(registers, value)
 }
 
 #[inline(always)]
 pub fn hal_mac_get_txq_in_trig_flow_state(registers: &svd::WifiMacTxCommon) -> u32 {
-    generated::hal_mac_get_txq_in_trig_flow_state::generated_hal_mac_get_txq_in_trig_flow_state(
-        registers,
-    )
+    crate::mac_tx_queue::trigger_flow_state(registers)
 }
 
 #[inline(always)]
 pub fn hal_mac_is_txq_enabled(registers: &svd::WifiMacTxQueueControl, queue: u32) -> u32 {
-    generated::hal_mac_is_txq_enabled::generated_hal_mac_is_txq_enabled(registers, queue)
+    u32::from(crate::mac_tx_queue::queue_enabled(registers, queue))
 }
 
 #[inline(always)]
 pub fn hal_mac_is_txq_valid(registers: &svd::WifiMacTxQueueControl, queue: u32) -> u32 {
-    generated::hal_mac_is_txq_valid::generated_hal_mac_is_txq_valid(registers, queue)
+    u32::from(crate::mac_tx_queue::queue_valid(registers, queue))
 }
 
 #[inline(always)]
 pub fn hal_mac_set_txq_invalid(registers: &svd::WifiMacTxQueueControl, queue: u32) -> u32 {
-    generated::hal_mac_set_txq_invalid::generated_hal_mac_set_txq_invalid(registers, queue)
+    crate::mac_tx_queue::invalidate_queue(registers, queue)
 }
 
 #[inline(always)]
 pub fn hal_mac_txq_disable(registers: &svd::WifiMacTxQueueControl, queue: u32) -> u32 {
-    generated::hal_mac_txq_disable::generated_hal_mac_txq_disable(registers, queue)
+    crate::mac_tx_queue::disable_queue(registers, queue)
 }
 
 #[inline(always)]
@@ -134,9 +132,7 @@ pub fn hal_mac_txq_enable_register_slice(
     registers: &svd::WifiMacTxQueueControl,
     queue: u32,
 ) -> u32 {
-    generated::hal_mac_txq_enable_register_slice::generated_hal_mac_txq_enable_register_slice(
-        registers, queue,
-    )
+    crate::mac_tx_queue::publish_queue(registers, queue)
 }
 
 #[inline(always)]

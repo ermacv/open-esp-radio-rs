@@ -13171,11 +13171,11 @@ pub mod wifi_mac_tx_common {
         #[doc = "Field `PHY_AUX_FORCE` reader - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
         pub type PhyAuxForceR = crate::FieldReader;
         #[doc = "Field `PHY_AUX_FORCE` writer - SOURCE\\[ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero in their second fresh-read edge."]
-        pub type PhyAuxForceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type PhyAuxForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `FORCE` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
         pub type ForceR = crate::FieldReader;
         #[doc = "Field `FORCE` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX,ROM_REV0_PHY_CCA_CONTROL\\]; CONFIDENCE\\[instruction-exact\\]. Value three suppresses CCA while invalidating a timed-out queue. Complete phy_disable_cca writes encoding two and complete phy_enable_cca writes zero."]
-        pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ForceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:27"]
             #[inline(always)]

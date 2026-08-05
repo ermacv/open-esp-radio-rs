@@ -4,3 +4,8 @@ schema = 1
 id = "esp32s31-radio-rev0"
 target-spec = "target.spec"
 memory-map = "memory.toml"
+
+[interfaces]
+facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+semantic-catalogs = ["../../tools/vendor-code-validator/catalogs/embedded-semantics.toml"]

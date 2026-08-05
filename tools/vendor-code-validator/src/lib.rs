@@ -6,7 +6,9 @@
 
 mod analysis;
 mod cli;
+mod digest;
 mod harnesses;
+mod interfaces;
 mod memory_map;
 mod orchestration;
 mod parse;
@@ -20,6 +22,7 @@ mod verification;
 
 use analysis::*;
 use cli::run;
+pub(crate) use digest::artifact_sha256;
 #[cfg(test)]
 pub(crate) use harnesses::esp32s31::entry_contract;
 #[cfg(test)]

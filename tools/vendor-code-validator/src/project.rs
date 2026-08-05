@@ -18,8 +18,10 @@ pub(crate) struct RegisterWorkspacePaths {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct InterfaceDiscoveryPaths {
+pub(crate) struct InterfaceWorkspacePaths {
     pub(crate) facts: PathBuf,
+    pub(crate) pack: Option<PathBuf>,
+    pub(crate) semantic_catalogs: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -30,7 +32,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
-    pub(crate) interfaces: Option<InterfaceDiscoveryPaths>,
+    pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
 }
 
 impl ProjectSpec {
@@ -101,11 +103,35 @@ impl ProjectSpec {
             .transpose()?;
         let interfaces = document
             .get("interfaces")
-            .map(|item| -> Result<InterfaceDiscoveryPaths> {
+            .map(|item| -> Result<InterfaceWorkspacePaths> {
                 let table = item
                     .as_table()
                     .ok_or("project manifest interfaces must be a table")?;
-                Ok(InterfaceDiscoveryPaths {
+                let semantic_catalogs = table
+                    .get("semantic-catalogs")
+                    .map(|item| {
+                        let array = item.as_array().ok_or(
+                            "project interfaces semantic-catalogs must be an array of paths",
+                        )?;
+                        array
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| {
+                                value
+                                    .as_str()
+                                    .map(|path| resolve_path(base, path))
+                                    .ok_or_else(|| {
+                                        format!(
+                                            "project interfaces semantic-catalogs[{index}] must be a string"
+                                        )
+                                        .into()
+                                    })
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_default();
+                Ok(InterfaceWorkspacePaths {
                     facts: resolve_path(
                         base,
                         table
@@ -113,6 +139,11 @@ impl ProjectSpec {
                             .and_then(Item::as_str)
                             .ok_or("project interfaces requires string \"facts\"")?,
                     ),
+                    pack: table
+                        .get("pack")
+                        .and_then(Item::as_str)
+                        .map(|path| resolve_path(base, path)),
+                    semantic_catalogs,
                 })
             })
             .transpose()?;
@@ -189,6 +220,8 @@ overlay = "registers/reviewed.toml"
 
 [interfaces]
 facts = "generated/interfaces.json"
+pack = "interfaces/reviewed.toml"
+semantic-catalogs = ["interfaces/embedded-semantics.toml"]
 "#,
         )
         .unwrap();
@@ -209,8 +242,10 @@ facts = "generated/interfaces.json"
         );
         assert_eq!(
             project.interfaces,
-            Some(InterfaceDiscoveryPaths {
+            Some(InterfaceWorkspacePaths {
                 facts: directory.join("generated/interfaces.json"),
+                pack: Some(directory.join("interfaces/reviewed.toml")),
+                semantic_catalogs: vec![directory.join("interfaces/embedded-semantics.toml")],
             })
         );
     }

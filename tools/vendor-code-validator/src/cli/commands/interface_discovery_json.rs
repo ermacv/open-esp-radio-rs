@@ -141,11 +141,12 @@ fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
     groups
         .into_iter()
         .map(|((artifact, root, container), calls)| {
-            let slots = calls
-                .iter()
-                .filter_map(|call| call.target.slot())
-                .map(|slot| (slot.offset, slot.width))
-                .collect::<BTreeSet<_>>();
+            let mut slots = BTreeMap::<(i32, u8), Vec<&InterfaceCallCandidate>>::new();
+            for call in &calls {
+                if let Some(slot) = call.target.slot() {
+                    slots.entry((slot.offset, slot.width)).or_default().push(call);
+                }
+            }
             let functions = calls
                 .iter()
                 .map(|call| call.function.clone())
@@ -154,7 +155,12 @@ fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
                 "artifact": artifact,
                 "root": root_json(&root),
                 "container_path": container.iter().map(|(offset, width)| json!({"offset": offset, "width": width})).collect::<Vec<_>>(),
-                "slots": slots.iter().map(|(offset, width)| json!({"offset": offset, "width": width})).collect::<Vec<_>>(),
+                "slots": slots.iter().map(|((offset, width), slot_calls)| json!({
+                    "offset": offset,
+                    "width": width,
+                    "functions": slot_calls.iter().map(|call| call.function.clone()).collect::<BTreeSet<_>>(),
+                    "call_sites": slot_calls.len(),
+                })).collect::<Vec<_>>(),
                 "functions": functions,
                 "call_sites": calls.len(),
             })
@@ -163,6 +169,23 @@ fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
 }
 
 pub(super) fn write_json_report(path: &Path, discovery: &Discovery) -> Result<()> {
+    let artifacts = discovery
+        .linkage
+        .artifacts
+        .iter()
+        .enumerate()
+        .map(|(index, artifact)| -> Result<Value> {
+            Ok(json!({
+                "index": index,
+                "path": artifact.path,
+                "roles": artifact.roles,
+                "sources": artifact.sources,
+                "sha256": crate::artifact_sha256(&artifact.path)?,
+                "container": artifact.container.label(),
+                "functions": discovery.functions[index],
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
     let document = json!({
         "schema_version": 1,
         "command": "interfaces-discover",
@@ -176,14 +199,7 @@ pub(super) fn write_json_report(path: &Path, discovery: &Discovery) -> Result<()
             "linker_resolution_claim": false,
             "completeness_claim": false,
         },
-        "artifacts": discovery.linkage.artifacts.iter().enumerate().map(|(index, artifact)| json!({
-            "index": index,
-            "path": artifact.path,
-            "roles": artifact.roles,
-            "sources": artifact.sources,
-            "container": artifact.container.label(),
-            "functions": discovery.functions[index],
-        })).collect::<Vec<_>>(),
+        "artifacts": artifacts,
         "calls": discovery.calls.iter().map(|call| call_json(discovery, call)).collect::<Vec<_>>(),
         "table_candidates": table_groups_json(discovery),
         "decode_failures": discovery.failures.iter().map(|failure| json!({

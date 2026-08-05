@@ -14,6 +14,7 @@ mod generate_reference_batch;
 mod interface_discovery;
 mod interface_discovery_json;
 mod interface_discovery_options;
+mod interface_pack;
 mod project_doctor;
 mod qualify_channel;
 mod qualify_rf_init;
@@ -48,6 +49,15 @@ pub(super) fn run_interface_discovery(
     interface_discovery::run(arguments, run_spec)
 }
 
+pub(super) fn run_interface_pack_command(
+    command: Command,
+    arguments: Vec<String>,
+    project: &crate::project::ProjectSpec,
+    target: &TargetSpec,
+) -> Result<bool> {
+    interface_pack::run(command, arguments, project, target)
+}
+
 pub(super) fn run_register_command(
     command: Command,
     arguments: Vec<String>,
@@ -64,12 +74,14 @@ pub(super) fn run(
 ) -> Result<bool> {
     match command {
         Command::ProjectDoctor
+        | Command::InterfaceInitPack
+        | Command::InterfaceValidate
         | Command::RegisterInitOverlay
         | Command::RegisterValidate
         | Command::RegisterExportSvd
         | Command::SymbolInventory
         | Command::InterfaceDiscover => {
-            unreachable!("project, register and symbol commands use specialized dispatch")
+            unreachable!("project, workspace and discovery commands use specialized dispatch")
         }
         Command::AuditDirectTargets => audit_direct_targets::run(arguments),
         Command::DiscoverMmio => discover_mmio::run(arguments, svd),

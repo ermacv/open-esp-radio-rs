@@ -2,7 +2,7 @@
 
 `interfaces discover` inventories recoverable indirect calls before any chip,
 RTOS, NVS, logging, or delay semantics are selected. It is the bridge between
-raw symbols/instructions and a future reviewed interface pack.
+raw symbols/instructions and a reviewed interface pack.
 
 ## Project use
 
@@ -34,10 +34,14 @@ A project can make the report path reproducible:
 ```toml
 [interfaces]
 facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+semantic-catalogs = ["interfaces/embedded-semantics.toml"]
 ```
 
 With this table, `--json-report` is optional. The report is generated facts;
 do not edit it.
+See [reviewed interface and semantic packs](interface-packs.md) for the
+separate `init-pack` and `validate` lifecycle.
 
 ## Recovered evidence
 
@@ -116,10 +120,10 @@ slot `0x38`, arguments `(queue, item, woken)`” may map to the generic operatio
 channel replacement while the original low-level call evidence remains
 visible.
 
-The reviewed overlay should eventually use stable keys based on source,
-anchor, container path, slot offset and a layout/version guard—not instruction
-addresses alone. Regeneration can then distinguish unchanged, new, missing,
-and ambiguous slots without overwriting user decisions.
+The implemented reviewed pack uses stable keys based on source, root selector,
+container path, slot offset and a layout/version guard—not instruction
+addresses. Regeneration distinguishes unchanged, new, missing, and ambiguous
+slots without overwriting user decisions.
 
 ## Explicit limitations
 

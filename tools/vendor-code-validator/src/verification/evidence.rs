@@ -19,11 +19,6 @@ fn update_reference_codegen_sources(digest: &mut Sha256) {
     }
 }
 
-pub(crate) fn artifact_sha256(path: &Path) -> Result<String> {
-    let bytes = fs::read(path)?;
-    Ok(format!("{:x}", Sha256::digest(&bytes)))
-}
-
 pub(crate) fn record_evidence(
     evidence: &mut EvidenceSet,
     source: &str,

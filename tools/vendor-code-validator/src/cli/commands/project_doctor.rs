@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::*;
 use crate::{
+    interfaces::{InterfaceFacts, InterfaceWorkspace},
     memory_map::{MemoryMap, MemoryRegionKind},
     project::ProjectSpec,
     registers::{RegisterFacts, RegisterWorkspace},
@@ -169,42 +170,67 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 paths.facts.display()
             );
         }
-        Some(paths) => match load_json(&paths.facts) {
-            Ok(document)
-                if document
-                    .get("schema_version")
-                    .and_then(serde_json::Value::as_u64)
-                    == Some(1)
-                    && document.get("command").and_then(serde_json::Value::as_str)
-                        == Some("interfaces-discover") =>
-            {
-                let calls = document
-                    .get("calls")
-                    .and_then(serde_json::Value::as_array)
-                    .map_or(0, Vec::len);
-                let tables = document
-                    .get("table_candidates")
-                    .and_then(serde_json::Value::as_array)
-                    .map_or(0, Vec::len);
-                println!(
-                    "CAPABILITY\tinterface-facts\tavailable\tcalls={calls}\ttables={tables}\tfacts={}",
-                    paths.facts.display()
-                );
-            }
-            Ok(_) => {
-                errors += 1;
-                println!(
-                    "CAPABILITY\tinterface-facts\tinvalid-schema\tfacts={}",
-                    paths.facts.display()
-                );
-            }
+        Some(paths) => match InterfaceFacts::load(&paths.facts) {
             Err(error) => {
                 errors += 1;
                 println!(
-                    "CAPABILITY\tinterface-facts\tinvalid\tfacts={}\terror={error}",
+                    "CAPABILITY\tinterface-workspace\tinvalid-facts\tfacts={}\terror={error}",
                     paths.facts.display()
                 );
             }
+            Ok(facts) => match paths.pack.as_deref() {
+                None => {
+                    println!(
+                        "CAPABILITY\tinterface-facts\tavailable\ttables={}\tobserved-slots={}\tfacts={}",
+                        facts.tables.len(),
+                        facts.observed_slots(),
+                        paths.facts.display()
+                    );
+                }
+                Some(pack) if !pack.is_file() => {
+                    warnings += 1;
+                    println!(
+                        "CAPABILITY\tinterface-workspace\tpack-not-initialized\ttables={}\tobserved-slots={}\tfacts={}\tpack={}",
+                        facts.tables.len(),
+                        facts.observed_slots(),
+                        paths.facts.display(),
+                        pack.display()
+                    );
+                }
+                Some(pack) => match InterfaceWorkspace::load(
+                    &paths.facts,
+                    pack,
+                    &paths.semantic_catalogs,
+                    context.target.calling_convention.label(),
+                ) {
+                    Ok(workspace) => {
+                        let summary = workspace.summary();
+                        println!(
+                            "CAPABILITY\tinterface-workspace\tavailable\tfact-tables={}\tobserved-slots={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tsemantic-links={}\tsemantic-operations={}\tfacts={}\tpack={}",
+                            summary.fact_tables,
+                            summary.observed_slots,
+                            summary.reviewed_anchors,
+                            summary.ignored_anchors,
+                            summary.unreviewed_anchors,
+                            summary.reviewed_slots,
+                            summary.ignored_slots,
+                            summary.unreviewed_slots,
+                            summary.semantic_links,
+                            summary.semantic_operations,
+                            paths.facts.display(),
+                            pack.display()
+                        );
+                    }
+                    Err(error) => {
+                        errors += 1;
+                        println!(
+                            "CAPABILITY\tinterface-workspace\tinvalid\tfacts={}\tpack={}\terror={error}",
+                            paths.facts.display(),
+                            pack.display()
+                        );
+                    }
+                },
+            },
         },
     }
 
@@ -295,8 +321,4 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
         valid_inputs
     );
     Ok(errors == 0)
-}
-
-fn load_json(path: &Path) -> Result<serde_json::Value> {
-    Ok(serde_json::from_str(&std::fs::read_to_string(path)?)?)
 }

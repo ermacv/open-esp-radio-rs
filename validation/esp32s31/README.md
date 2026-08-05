@@ -24,6 +24,28 @@ cargo vendor-code-validator project doctor
 
 The missing run spec is a readiness warning rather than a configuration error.
 
+The project also configures the generic interface workspace. Generate facts
+from a caller-owned run spec, initialize the reviewed pack once, and validate
+it after edits or vendor updates:
+
+```console
+cargo vendor-code-validator interfaces discover \
+  --project validation/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+
+cargo vendor-code-validator interfaces init-pack \
+  --project validation/esp32s31/vendor-validator.toml
+
+cargo vendor-code-validator interfaces validate \
+  --project validation/esp32s31/vendor-validator.toml
+```
+
+Generated facts are ignored because they expose local paths and artifact
+digests. The reviewed `interfaces/reviewed.toml` is intended to become a
+shareable project asset after manual review. Reusable RTOS, NVS, logging, and
+delay operations come from the tool's semantic catalog; the project pack owns
+only ESP32-S31 anchors, layout versions, and slot ABI.
+
 This directory owns target-specific input for compiled vendor-to-Rust
 validation. It is deliberately outside the generic validator tool.
 
@@ -51,11 +73,11 @@ variables. The workflow checks them before building or invoking the validator.
 Those values are caller policy and deliberately do not live in this target
 pack or the validator binary.
 
-ABI versions, callback tables and lifecycle entry contracts are compiled from
-the dedicated `tools/vendor-code-validator/crates/harness-esp32s31` fixture
-crate. Typed semantic contracts live in the generic semantic crate and the
-ESP32-S31 qualification adapters live in the target semantic harness; the CLI
-facade only selects and runs them. See
+Legacy executable ABI fixtures and lifecycle entry contracts remain compiled
+in the ESP32-S31 semantic harness. New callback-table discovery and review use
+the project interface pack so names and layouts do not enter the generic
+backend. Typed executable contracts live in the generic semantic crate and
+ESP32-S31 qualification adapters live in the target semantic harness. See
 [`docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md`](../../docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md).
 
 ## libpp interrupt pilot

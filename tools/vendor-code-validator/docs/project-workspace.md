@@ -23,6 +23,10 @@ overlay = "registers/reviewed.toml"
 
 [interfaces]
 facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+semantic-catalogs = [
+  "../../tools/vendor-code-validator/catalogs/embedded-semantics.toml",
+]
 ```
 
 `target-spec` selects the architecture and ABI. A target may omit `harness`
@@ -54,9 +58,11 @@ workspace. Its `facts` path becomes the default JSON destination of
 the overlay schema, validation rules, and SVD export.
 
 The optional `[interfaces]` table names the generated structural report from
-`interfaces discover`. Its `facts` path becomes the default JSON destination.
+`interfaces discover`, an optional reviewed `pack`, and zero or more reusable
+`semantic-catalogs`. Its `facts` path becomes the default JSON destination.
 Interface facts are regenerated; reviewed table names, versions, slot
-signatures and semantics do not belong in that file.
+signatures and semantics do not belong in that file. See
+[interface packs](interface-packs.md).
 
 ## Project diagnostics
 
@@ -82,9 +88,10 @@ not been generated, an overlay that has not been initialized, an invalid/stale
 overlay, and a ready workspace. Coverage reports reviewed, ignored, manual and
 unreviewed registers plus reviewed fields.
 
-If `[interfaces]` is configured, the doctor reports whether its generated
-facts exist and have the expected command/schema identity, plus recovered call
-and table-candidate counts.
+If `[interfaces]` is configured, the doctor distinguishes missing facts, a
+pack that has not been initialized, invalid or stale review, and a ready
+workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
+semantic links, and loaded semantic operations.
 
 From inside a project tree, the short form is sufficient:
 
@@ -167,6 +174,7 @@ Commands now request the knowledge they actually consume:
 | `image audit-targets` | yes | no | no |
 | `symbols inventory` | yes | no | no |
 | `interfaces discover` | yes | no | no |
+| `interfaces init-pack` / `validate` | no | no | no |
 | `registers init-overlay` / `validate` / `export-svd` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
@@ -186,6 +194,6 @@ See [artifact and symbol inventory](symbol-inventory.md) for the exact boundary
 between archive candidates, fully linked ELF truth, and semantic packs. The
 [register workspace](register-workspace.md) implements the equivalent boundary
 for MMIO facts, reviewed fields, and SVD. Generated interface facts are
-described in [interface discovery](interface-discovery.md); reviewed interface
-and semantic packs remain separate project files rather than fields added to
-the target harness.
+described in [interface discovery](interface-discovery.md); reviewed layouts
+and reusable semantics are described in [interface packs](interface-packs.md).
+They remain project files rather than knowledge added to the generic backend.

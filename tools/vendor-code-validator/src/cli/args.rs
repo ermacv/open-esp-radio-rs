@@ -12,6 +12,8 @@ pub(crate) enum Command {
     RegisterExportSvd,
     SymbolInventory,
     InterfaceDiscover,
+    InterfaceInitPack,
+    InterfaceValidate,
     AuditDirectTargets,
     DiscoverMmio,
     ExportIr,
@@ -56,6 +58,14 @@ impl Command {
             ("interfaces", Some("discover")) => {
                 remaining.remove(0);
                 Self::InterfaceDiscover
+            }
+            ("interfaces", Some("init-pack")) => {
+                remaining.remove(0);
+                Self::InterfaceInitPack
+            }
+            ("interfaces", Some("validate")) => {
+                remaining.remove(0);
+                Self::InterfaceValidate
             }
             ("mmio", Some("discover")) => {
                 remaining.remove(0);
@@ -179,6 +189,8 @@ impl Command {
         !matches!(
             self,
             Self::ProjectDoctor
+                | Self::InterfaceInitPack
+                | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
@@ -189,6 +201,8 @@ impl Command {
         !matches!(
             self,
             Self::ProjectDoctor
+                | Self::InterfaceInitPack
+                | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
@@ -204,6 +218,8 @@ impl Command {
         !matches!(
             self,
             Self::RegisterInitOverlay
+                | Self::InterfaceInitPack
+                | Self::InterfaceValidate
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
                 | Self::SymbolInventory
@@ -216,6 +232,8 @@ impl Command {
         !matches!(
             self,
             Self::RegisterInitOverlay
+                | Self::InterfaceInitPack
+                | Self::InterfaceValidate
                 | Self::RegisterValidate
                 | Self::RegisterExportSvd
                 | Self::SymbolInventory
@@ -227,13 +245,19 @@ impl Command {
     pub(crate) const fn uses_run_spec(self) -> bool {
         !matches!(
             self,
-            Self::RegisterInitOverlay | Self::RegisterValidate | Self::RegisterExportSvd
+            Self::InterfaceInitPack
+                | Self::InterfaceValidate
+                | Self::RegisterInitOverlay
+                | Self::RegisterValidate
+                | Self::RegisterExportSvd
         )
     }
 
     pub(crate) fn accepts_run_input_role(self, role: &str) -> bool {
         match self {
             Self::ProjectDoctor
+            | Self::InterfaceInitPack
+            | Self::InterfaceValidate
             | Self::RegisterInitOverlay
             | Self::RegisterValidate
             | Self::RegisterExportSvd
@@ -454,6 +478,31 @@ mod tests {
         assert_eq!(invocation.arguments, ["--source", "libpp", "--tables-only"]);
         assert!(!invocation.command.requires_harness());
         assert!(!invocation.command.requires_mmio_map());
+    }
+
+    #[test]
+    fn parses_interface_pack_lifecycle_without_backend_inputs() {
+        let init = Invocation::parse([
+            "interfaces".to_owned(),
+            "init-pack".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(init.command, Command::InterfaceInitPack);
+        assert!(!init.command.requires_backend());
+        assert!(!init.command.uses_run_spec());
+
+        let validate = Invocation::parse([
+            "interfaces".to_owned(),
+            "validate".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+            "--deny-unreviewed".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(validate.command, Command::InterfaceValidate);
+        assert_eq!(validate.arguments, ["--deny-unreviewed"]);
     }
 
     #[test]

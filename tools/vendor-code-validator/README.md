@@ -43,6 +43,7 @@ callers authenticate inputs and pass them directly or through a local
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
+| `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
 | `registers init-overlay` / `validate` / `export-svd` | Review discovery facts separately and materialize CMSIS-SVD | [Register workspace](docs/register-workspace.md) |
 | `ir export` | Produce linked JSON and pseudo-Rust IR for manual analysis | [Linked function IR](docs/linked-ir.md) |
@@ -80,6 +81,17 @@ cargo vendor-code-validator interfaces discover \
 This report keeps relocation/global-symbol associations, pointer-load chains,
 slot offsets, call sites, and recoverable argument provenance separate from
 RTOS/NVS/logging names supplied by reviewed semantic packs.
+
+Initialize and validate the separate reviewed layer after configuring
+`[interfaces].pack` and `semantic-catalogs` in the project:
+
+```console
+cargo vendor-code-validator interfaces init-pack \
+  --project validation/esp32s31/vendor-validator.toml
+
+cargo vendor-code-validator interfaces validate \
+  --project validation/esp32s31/vendor-validator.toml
+```
 
 Then build an address inventory:
 

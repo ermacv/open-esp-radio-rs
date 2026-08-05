@@ -94,7 +94,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v22 records the selection mode plus root and
+`reachable-internal`, and schema v23 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v22 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v23 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v22 records
+symbolic states. Schema v23 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -178,6 +178,18 @@ avoid unbounded affine offsets or combinatorial output. The top-level
 both an already-composed caller flow and the separately analyzed callee are
 counted once while retaining both provenance paths.
 
+Every function has structured `return_provenance` in addition to the canonical
+`return_value` string. Constant-zero, constant-one and unknown output bits are
+separate masks. Dynamic bits are grouped into exact contiguous mappings from
+output ranges to argument, MMIO-read, indexed-MMIO, memory, private-stack or
+call-result source ranges. Each mapping retains source/output masks, bit
+positions, width, inversion, read token, resolved call target and concrete SVD
+register identity when available. `exact` means that all 32 bits of the
+recovered return value have known symbolic provenance; it does not imply that
+the function body or call graph is complete. The top-level
+`return_provenance_mode: "exact-bit-ranges-with-constant-and-unknown-masks"`
+records this distinction.
+
 The same path walk emits `semantic_actions`: one record for every recovered
 semantic call on every explored simple call path. Each action retains its
 origin, static call site, target, typed argument values, replacement hint and
@@ -206,7 +218,14 @@ from symbolic bit provenance. The target is the same stable identity used by
 return value and MMIO inventory without parsing the rendered expression.
 Missing producer resolution remains `null`, and the metadata field
 `cfg_guard_result_source_mode: "bit-provenance-with-producer-targets"` makes the
-join contract explicit.
+join contract explicit. When the selected producer returns bits directly from
+a concrete MMIO read, each result source also contains `mmio_sources` with the
+intersection between the tested result mask and the producer's return mapping.
+It records both result-bit and register-bit masks, address, SVD name and
+inversion. This is deliberately direct rather than transitive through another
+returned call result, and an absent or non-MMIO mapping stays an empty array.
+The top-level `cfg_guard_mmio_linkage_mode` value
+`"direct-producer-return-bit-intersection"` identifies that boundary.
 
 The top-level
 `semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings"`

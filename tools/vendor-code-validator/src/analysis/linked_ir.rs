@@ -61,11 +61,47 @@ pub(crate) struct LinkedSemanticContract {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedReturnBitSource {
+    pub(crate) kind: &'static str,
+    pub(crate) output_lsb: u8,
+    pub(crate) source_lsb: u8,
+    pub(crate) width: u8,
+    pub(crate) output_bits: u32,
+    pub(crate) source_bits: u32,
+    pub(crate) inverted: bool,
+    pub(crate) argument: Option<u8>,
+    pub(crate) token: Option<u32>,
+    pub(crate) target: Option<String>,
+    pub(crate) address: Option<u32>,
+    pub(crate) register: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedReturnProvenance {
+    pub(crate) exact: bool,
+    pub(crate) known_zero_bits: u32,
+    pub(crate) known_one_bits: u32,
+    pub(crate) unknown_bits: u32,
+    pub(crate) sources: Vec<LinkedReturnBitSource>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedCallGuardMmioSource {
+    pub(crate) address: u32,
+    pub(crate) register: String,
+    pub(crate) result_bits: u32,
+    pub(crate) register_bits: u32,
+    pub(crate) inverted: bool,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCallGuardResultSource {
     pub(crate) kind: &'static str,
     pub(crate) token: u32,
     pub(crate) target: Option<String>,
     pub(crate) source_bits: u32,
+    pub(crate) producer_return_exact: Option<bool>,
+    pub(crate) mmio_sources: Vec<LinkedCallGuardMmioSource>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -329,6 +365,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) complete: bool,
     pub(crate) exact: bool,
     pub(crate) return_value: String,
+    pub(crate) return_provenance: LinkedReturnProvenance,
     pub(crate) dependencies: Vec<String>,
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,
@@ -1471,6 +1508,8 @@ fn guard_result_sources(
             token,
             target: call_results.get(&token).cloned(),
             source_bits,
+            producer_return_exact: None,
+            mmio_sources: Vec::new(),
         })
         .collect()
 }
@@ -1752,6 +1791,308 @@ fn width_mask(width: u8) -> u32 {
         16 => 0xffff,
         32 => u32::MAX,
         _ => 0,
+    }
+}
+
+fn bit_range_mask(lsb: u8, width: u8) -> u32 {
+    if width == 32 {
+        u32::MAX
+    } else {
+        ((1_u32 << width) - 1) << lsb
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ReturnBitDescriptor {
+    kind: &'static str,
+    source_bit: u8,
+    inverted: bool,
+    argument: Option<u8>,
+    token: Option<u32>,
+    target: Option<String>,
+    address: Option<u32>,
+    register: Option<String>,
+}
+
+impl ReturnBitDescriptor {
+    fn continues_with(&self, next: &Self) -> bool {
+        self.kind == next.kind
+            && self.source_bit.checked_add(1) == Some(next.source_bit)
+            && self.inverted == next.inverted
+            && self.argument == next.argument
+            && self.token == next.token
+            && self.target == next.target
+            && self.address == next.address
+            && self.register == next.register
+    }
+}
+
+fn return_bit_descriptor(
+    source: BitSource,
+    call_results: &BTreeMap<u32, String>,
+    svd: &MmioRegisterMap,
+) -> Option<ReturnBitDescriptor> {
+    let descriptor = match source {
+        BitSource::Input {
+            index,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "argument",
+            source_bit: bit,
+            inverted,
+            argument: Some(index),
+            token: None,
+            target: None,
+            address: None,
+            register: None,
+        },
+        BitSource::Register {
+            read_token,
+            address,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "mmio-read",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(read_token),
+            target: None,
+            address: Some(address),
+            register: Some(svd.register_name(address)),
+        },
+        BitSource::IndexedRegister {
+            read_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "indexed-mmio-read",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(read_token),
+            target: None,
+            address: None,
+            register: None,
+        },
+        BitSource::Memory {
+            read_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "memory-read",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(read_token),
+            target: None,
+            address: None,
+            register: None,
+        },
+        BitSource::PrivateStack {
+            read_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "private-stack-read",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(read_token),
+            target: None,
+            address: None,
+            register: None,
+        },
+        BitSource::CallResult {
+            call_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "call-result",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(call_token),
+            target: call_results.get(&call_token).cloned(),
+            address: None,
+            register: None,
+        },
+        BitSource::ExternalResult {
+            call_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "external-result",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(call_token),
+            target: call_results.get(&call_token).cloned(),
+            address: None,
+            register: None,
+        },
+        BitSource::Unknown | BitSource::Constant(_) => return None,
+    };
+    Some(descriptor)
+}
+
+fn return_provenance(
+    value: &SymbolicValue,
+    call_results: &BTreeMap<u32, String>,
+    svd: &MmioRegisterMap,
+) -> LinkedReturnProvenance {
+    let bits = value.bits();
+    let mut known_zero_bits = 0_u32;
+    let mut known_one_bits = 0_u32;
+    let mut unknown_bits = 0_u32;
+    let mut sources = Vec::new();
+    let mut output_bit = 0_usize;
+    while output_bit < bits.len() {
+        match bits[output_bit] {
+            BitSource::Constant(false) => {
+                known_zero_bits |= 1_u32 << output_bit;
+                output_bit += 1;
+            }
+            BitSource::Constant(true) => {
+                known_one_bits |= 1_u32 << output_bit;
+                output_bit += 1;
+            }
+            BitSource::Unknown => {
+                unknown_bits |= 1_u32 << output_bit;
+                output_bit += 1;
+            }
+            source => {
+                let descriptor = return_bit_descriptor(source, call_results, svd)
+                    .expect("non-constant return bit has a source descriptor");
+                let first_output_bit = output_bit;
+                let first_source_bit = descriptor.source_bit;
+                let mut previous = descriptor.clone();
+                output_bit += 1;
+                while output_bit < bits.len() {
+                    let Some(next) = return_bit_descriptor(bits[output_bit], call_results, svd)
+                    else {
+                        break;
+                    };
+                    if !previous.continues_with(&next) {
+                        break;
+                    }
+                    previous = next;
+                    output_bit += 1;
+                }
+                let width = (output_bit - first_output_bit) as u8;
+                sources.push(LinkedReturnBitSource {
+                    kind: descriptor.kind,
+                    output_lsb: first_output_bit as u8,
+                    source_lsb: first_source_bit,
+                    width,
+                    output_bits: bit_range_mask(first_output_bit as u8, width),
+                    source_bits: bit_range_mask(first_source_bit, width),
+                    inverted: descriptor.inverted,
+                    argument: descriptor.argument,
+                    token: descriptor.token,
+                    target: descriptor.target,
+                    address: descriptor.address,
+                    register: descriptor.register,
+                });
+            }
+        }
+    }
+    LinkedReturnProvenance {
+        exact: unknown_bits == 0,
+        known_zero_bits,
+        known_one_bits,
+        unknown_bits,
+        sources,
+    }
+}
+
+fn trace_call_results(
+    trace: &FunctionAnalysis,
+    identities: &IrIdentityCatalog,
+) -> BTreeMap<u32, String> {
+    let mut candidates = BTreeMap::<u32, BTreeSet<String>>::new();
+    for event in &trace.reference_events {
+        if let Some((token, target)) = call_result_identity(event, identities) {
+            candidates.entry(token).or_default().insert(target);
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(token, targets)| {
+            let mut targets = targets.into_iter();
+            let target = targets.next()?;
+            targets.next().is_none().then_some((token, target))
+        })
+        .collect()
+}
+
+fn guard_mmio_sources(
+    result_bits: u32,
+    provenance: &LinkedReturnProvenance,
+) -> Vec<LinkedCallGuardMmioSource> {
+    provenance
+        .sources
+        .iter()
+        .filter(|source| source.kind == "mmio-read")
+        .filter_map(|source| {
+            let matched_result_bits = result_bits & source.output_bits;
+            if matched_result_bits == 0 {
+                return None;
+            }
+            let mut register_bits = 0_u32;
+            for result_bit in 0..32_u8 {
+                if matched_result_bits & (1_u32 << result_bit) == 0 {
+                    continue;
+                }
+                let source_bit = source.source_lsb + (result_bit - source.output_lsb);
+                register_bits |= 1_u32 << source_bit;
+            }
+            Some(LinkedCallGuardMmioSource {
+                address: source
+                    .address
+                    .expect("MMIO return source has a concrete address"),
+                register: source
+                    .register
+                    .clone()
+                    .expect("MMIO return source has a register label"),
+                result_bits: matched_result_bits,
+                register_bits,
+                inverted: source.inverted,
+            })
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn link_guard_result_mmio_sources(functions: &mut [LinkedIrFunction]) {
+    let producers = functions
+        .iter()
+        .map(|function| {
+            (
+                function.identity.clone(),
+                function.return_provenance.clone(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    for source in functions
+        .iter_mut()
+        .flat_map(|function| &mut function.calls)
+        .filter_map(|call| call.guard_paths.as_mut())
+        .flatten()
+        .flat_map(|path| &mut path.guards)
+        .flat_map(|guard| &mut guard.result_sources)
+    {
+        let Some(provenance) = source
+            .target
+            .as_ref()
+            .and_then(|target| producers.get(target))
+        else {
+            continue;
+        };
+        source.producer_return_exact = Some(provenance.exact);
+        source.mmio_sources = guard_mmio_sources(source.source_bits, provenance);
     }
 }
 
@@ -2899,6 +3240,9 @@ pub(crate) fn build_linked_ir_for_source(
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
                 let delays = delays_for_trace(&trace);
+                let return_call_results = trace_call_results(&trace, &identities);
+                let return_provenance =
+                    return_provenance(&trace.return_value, &return_call_results, svd);
                 let mut calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
@@ -2938,6 +3282,7 @@ pub(crate) fn build_linked_ir_for_source(
                     complete: trace.is_reference_eligible(),
                     exact: trace.is_exact(),
                     return_value: trace.return_value.canonical(),
+                    return_provenance,
                     dependencies: trace
                         .reference_dependencies
                         .iter()
@@ -2983,6 +3328,11 @@ pub(crate) fn build_linked_ir_for_source(
                     complete: false,
                     exact: false,
                     return_value: "unknown".to_owned(),
+                    return_provenance: return_provenance(
+                        &SymbolicValue::Unknown,
+                        &BTreeMap::new(),
+                        svd,
+                    ),
                     dependencies: Vec::new(),
                     calls,
                     mmio_accesses: Vec::new(),
@@ -3806,6 +4156,7 @@ fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
 
 fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
     functions.sort_by(|left, right| left.identity.cmp(&right.identity));
+    link_guard_result_mmio_sources(&mut functions);
     populate_effect_summaries(&mut functions);
     let mmio_functions = functions
         .iter()
@@ -4111,6 +4462,13 @@ mod tests {
             complete: false,
             exact: false,
             return_value: "unknown".to_owned(),
+            return_provenance: LinkedReturnProvenance {
+                exact: false,
+                known_zero_bits: 0,
+                known_one_bits: 0,
+                unknown_bits: u32::MAX,
+                sources: Vec::new(),
+            },
             dependencies: Vec::new(),
             calls,
             mmio_accesses: Vec::new(),
@@ -4520,6 +4878,51 @@ mod tests {
                 token: 10,
                 target: Some("hal::interrupt_status".to_owned()),
                 source_bits: 0x0000_00f0,
+                producer_return_exact: None,
+                mmio_sources: Vec::new(),
+            }]
+        );
+    }
+
+    #[test]
+    fn return_provenance_maps_result_ranges_back_to_mmio_bits() {
+        let mut bits = [BitSource::Constant(false); 32];
+        for (output_bit, source) in bits.iter_mut().enumerate().take(4) {
+            *source = BitSource::Register {
+                read_token: 3,
+                address: 0x2010_4c48,
+                bit: output_bit as u8 + 4,
+                inverted: false,
+            };
+        }
+        let svd = MmioRegisterMap {
+            registers: vec![crate::Register {
+                address: 0x2010_4c48,
+                name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
+            }],
+            windows: vec![crate::Window {
+                start: 0x2010_0000,
+                end: 0x2011_0000,
+            }],
+        };
+
+        let provenance =
+            return_provenance(&SymbolicValue::Bits(Box::new(bits)), &BTreeMap::new(), &svd);
+
+        assert!(provenance.exact);
+        assert_eq!(provenance.known_zero_bits, 0xffff_fff0);
+        assert_eq!(provenance.unknown_bits, 0);
+        assert_eq!(provenance.sources.len(), 1);
+        assert_eq!(provenance.sources[0].output_bits, 0x0000_000f);
+        assert_eq!(provenance.sources[0].source_bits, 0x0000_00f0);
+        assert_eq!(
+            guard_mmio_sources(0x0000_0005, &provenance),
+            [LinkedCallGuardMmioSource {
+                address: 0x2010_4c48,
+                register: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
+                result_bits: 0x0000_0005,
+                register_bits: 0x0000_0050,
+                inverted: false,
             }]
         );
     }

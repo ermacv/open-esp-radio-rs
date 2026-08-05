@@ -260,11 +260,25 @@ call-result provenance as a producer identity, trace-local result token and
 source-bit mask. Producer identities share the function-identity namespace,
 which provides a structural join to the producer's return and MMIO inventory
 without making the condition string into an API. An unresolved producer stays
-explicit. Missing guard evidence likewise stays explicit, and the report makes
-no CFG guard completeness claim because exploration is bounded. Consequently
-this is deliberately not a total execution trace: mutually exclusive paths
-coexist, dynamic loop counts are not inferred and recursive revisits are
-bounded exactly like context projection.
+explicit.
+
+Function returns carry a separate bit-provenance layer. It partitions the
+recovered 32-bit value into known-zero, known-one, unknown and dynamic source
+ranges. A dynamic range records the exact source/output bit mapping and source
+identity, including concrete MMIO address and SVD name where the value came
+from a register read. This exactness describes the recovered value only and is
+orthogonal to function/control-flow completeness.
+
+For a guard result produced by a selected function, the linked layer intersects
+the guard's tested result bits with direct MMIO ranges in that function's
+return provenance. The resulting evidence retains both result and register
+masks, so shifted and inverted mappings do not get mistaken for aligned raw
+register tests. It intentionally does not guess through unknown arithmetic or
+perform transitive return-call substitution. Missing guard evidence likewise
+stays explicit, and the report makes no CFG guard completeness claim because
+exploration is bounded. Consequently this is deliberately not a total
+execution trace: mutually exclusive paths coexist, dynamic loop counts are not
+inferred and recursive revisits are bounded exactly like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

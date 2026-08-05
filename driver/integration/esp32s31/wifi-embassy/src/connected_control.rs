@@ -764,7 +764,7 @@ mod tests {
         connected_rx::{ConnectedRxEvent, ConnectedRxSink},
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         rx_ampdu_hw::S31RxBlockAckAgreement,
-        tx::{LegacyRate, TxCompletion, TxHardware, TxSlot},
+        tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxHardware, TxSlot},
         tx_runtime::StaTxRuntimePolicy,
     };
     use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
@@ -812,11 +812,22 @@ mod tests {
             0x2f00_1000
         }
 
-        fn prepare_legacy_tx(&mut self, _queue: u8, _program: MacLegacyTxProgram) -> bool {
+        fn prepare_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            _queue: u8,
+            _program: MacLegacyTxProgram,
+        ) -> bool {
             self.prepare
         }
 
-        fn start_legacy_tx(&mut self, _queue: u8, _plcp0: u32) {}
+        fn start_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn HardwareOwnedTxDma,
+            _queue: u8,
+            _plcp0: u32,
+        ) {
+        }
 
         fn prepare_ht_tx(&mut self, _queue: u8, _program: MacHtTxProgram) -> bool {
             self.prepare

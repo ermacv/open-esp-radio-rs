@@ -501,7 +501,7 @@ mod tests {
     };
     use open_esp_radio_esp32s31_wifi_lmac::{
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
-        tx::{LegacyRate, TxCompletion, TxSlot, TxSlotState},
+        tx::{HardwareOwnedTxDma, LegacyRate, PreparedTxDma, TxCompletion, TxSlot, TxSlotState},
     };
     use open_esp_radio_wifi_lmac::MacTxResult;
 
@@ -535,12 +535,22 @@ mod tests {
             0x2f00_1000
         }
 
-        fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+        fn prepare_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            queue: u8,
+            program: MacLegacyTxProgram,
+        ) -> bool {
             self.legacy = Some((queue, program));
             self.prepare
         }
 
-        fn start_legacy_tx(&mut self, _queue: u8, _plcp0: u32) {
+        fn start_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn HardwareOwnedTxDma,
+            _queue: u8,
+            _plcp0: u32,
+        ) {
             self.publications += 1;
         }
 

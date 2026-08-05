@@ -3607,7 +3607,7 @@ const fn next_vendor_block_ack_dialog_token(current: u8) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_esp_radio_dma::PinnedDmaTxPool;
+    use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
     use open_esp_radio_esp32s31_registers::{
         MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters,
     };
@@ -3619,11 +3619,16 @@ mod tests {
     }
 
     impl TxHardware for CompletionHardware {
-        fn prepare_legacy_tx(&mut self, _: u8, _: MacLegacyTxProgram) -> bool {
+        fn prepare_bound_legacy_tx(
+            &mut self,
+            _: &dyn PreparedTxDma,
+            _: u8,
+            _: MacLegacyTxProgram,
+        ) -> bool {
             false
         }
 
-        fn start_legacy_tx(&mut self, _: u8, _: u32) {}
+        fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
 
         fn prepare_ht_tx(&mut self, _: u8, _: MacHtTxProgram) -> bool {
             false

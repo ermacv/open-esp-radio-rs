@@ -207,7 +207,10 @@ mod tests {
     use open_esp_radio_esp32s31_registers::{
         MacHeTxProgram, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
     };
-    use open_esp_radio_esp32s31_wifi_lmac::{tx::TxSlot, tx_runtime::StaTxRuntimePolicy};
+    use open_esp_radio_esp32s31_wifi_lmac::{
+        tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
+        tx_runtime::StaTxRuntimePolicy,
+    };
 
     use super::*;
     use crate::{
@@ -226,11 +229,21 @@ mod tests {
             0x2f00_1000
         }
 
-        fn prepare_legacy_tx(&mut self, _queue: u8, _program: MacLegacyTxProgram) -> bool {
+        fn prepare_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            _queue: u8,
+            _program: MacLegacyTxProgram,
+        ) -> bool {
             true
         }
 
-        fn start_legacy_tx(&mut self, _queue: u8, _plcp0: u32) {
+        fn start_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn HardwareOwnedTxDma,
+            _queue: u8,
+            _plcp0: u32,
+        ) {
             self.publications = self.publications.saturating_add(1);
         }
 

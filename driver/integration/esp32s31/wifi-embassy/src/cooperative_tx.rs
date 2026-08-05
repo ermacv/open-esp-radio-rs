@@ -22,7 +22,7 @@ use open_esp_radio_esp32s31_wifi_lmac::{
     rate_control::BeamformingReportHardware,
     rx::{RxDma, RxDmaBinding},
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
-    tx::TxHardware,
+    tx::{HardwareOwnedTxDma, PreparedTxDma, TxHardware},
     tx_ampdu::HtAmpduHardware,
 };
 
@@ -138,12 +138,17 @@ impl StaNoiseFloorHardware for CooperativeTxHardware<'_, '_> {
 }
 
 impl TxHardware for CooperativeTxHardware<'_, '_> {
-    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
-        TxHardware::prepare_legacy_tx(&mut **self.registers.borrow_mut(), queue, program)
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_legacy_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
     }
 
-    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_legacy_tx(&mut **self.registers.borrow_mut(), queue, plcp0);
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_legacy_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {

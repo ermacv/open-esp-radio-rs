@@ -109,10 +109,11 @@ return backing through lower state transitions; any impossible sequence or
 failed detach quarantines it.
 
 TX as a whole has not yet reached that boundary. `HtAmpduTxStorage` still
-retains descriptor arrays and buffers in safe LMAC, and the legacy raw
+retains descriptor arrays and buffers in safe LMAC, and the raw HT/HE
 `TxHardware`/`RadioRegisters` prepare and start methods remain public for that
-path. A raw but DMA-range-valid A-MPDU PLCP0 can therefore still bypass the
-intended TX owner.
+path. Raw legacy submission has been removed: a legacy queue can be prepared
+and started only with the phased capabilities. A raw but DMA-range-valid
+A-MPDU PLCP0 can still bypass the intended TX owner through HT/HE.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
@@ -120,8 +121,9 @@ order is:
 1. move A-MPDU descriptor arrays and every separately retained zero-copy
    backing into the chip DMA leaf;
 2. give aggregate prepare/start the same distinct phased capabilities;
-3. remove the legacy raw `TxHardware` and `RadioRegisters` submission methods
-   once no production or validation caller depends on them;
+3. remove the remaining raw HT/HE `TxHardware` and `RadioRegisters`
+   submission methods once no production or validation caller depends on
+   them;
 4. add a recoverable reset authority only after the complete MAC/DMA shutdown
    order is qualified; until then quarantine remains terminal.
 
@@ -131,8 +133,8 @@ no backing becomes reusable merely because its Rust queue owner was dropped.
 The application facade exposes this lower composition layer explicitly as
 `esp32s31::wifi::dma`, alongside `lmac` and `sta`; it is not re-exported as if
 DMA allocation were LMAC policy. This does not yet close the TX escape hatch:
-A-MPDU storage and the temporary raw submission methods remain in the order
-above.
+A-MPDU storage and the temporary raw HT/HE submission methods remain in the
+order above.
 
 ## Layer rules
 

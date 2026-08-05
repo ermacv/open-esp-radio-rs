@@ -9,7 +9,7 @@ extern crate alloc;
 #[cfg(not(target_pointer_width = "32"))]
 use alloc::boxed::Box;
 
-use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
+pub use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     ColdRadioRegisters, MacHeTbTidLimit, MacHeTid, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
@@ -173,8 +173,6 @@ pub trait TxHardware {
     fn tx_descriptor_address(&self, cpu_address: u32) -> u32 {
         cpu_address
     }
-    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool;
-    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool;
     fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
     fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool;
@@ -185,15 +183,9 @@ pub trait TxHardware {
         dma: &dyn PreparedTxDma,
         queue: u8,
         program: MacLegacyTxProgram,
-    ) -> bool {
-        assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
-        self.prepare_legacy_tx(queue, program)
-    }
+    ) -> bool;
 
-    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        assert_tx_dma_head(dma.descriptor_head(), plcp0);
-        self.start_legacy_tx(queue, plcp0);
-    }
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32);
 
     fn prepare_bound_ht_tx(
         &mut self,
@@ -244,14 +236,6 @@ fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
 }
 
 impl TxHardware for RadioRegisters {
-    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
-        self.prepare_legacy_mac_tx(queue, program)
-    }
-
-    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
-        self.start_legacy_mac_tx(queue, plcp0);
-    }
-
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
         self.prepare_ht_mac_tx(queue, program)
     }
@@ -333,14 +317,6 @@ impl TxHardware for RadioRegisters {
 }
 
 impl TxHardware for ColdRadioRegisters {
-    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
-        TxHardware::prepare_legacy_tx(&mut **self, queue, program)
-    }
-
-    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_legacy_tx(&mut **self, queue, plcp0);
-    }
-
     fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
         TxHardware::prepare_ht_tx(&mut **self, queue, program)
     }

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
     MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
     MacTxCompletionRegisters, Register32,
@@ -583,7 +584,16 @@ impl TxHardware for MockMmio {
         0x2f00_1000
     }
 
-    fn prepare_legacy_tx(&mut self, queue: u8, program: MacLegacyTxProgram) -> bool {
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacLegacyTxProgram,
+    ) -> bool {
+        assert_eq!(
+            dma.descriptor_head() & 0x000f_ffff,
+            program.plcp0 & 0x000f_ffff
+        );
         let index = usize::from(queue);
         if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
             return false;
@@ -727,7 +737,8 @@ impl TxHardware for MockMmio {
         true
     }
 
-    fn start_legacy_tx(&mut self, queue: u8, plcp0: u32) {
+    fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        assert_eq!(dma.descriptor_head() & 0x000f_ffff, plcp0 & 0x000f_ffff);
         Mmio::fence(self);
         self.write32(
             mac::TX_Q_CONTROL[usize::from(queue)],

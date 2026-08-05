@@ -1129,7 +1129,10 @@ mod tests {
     use open_esp_radio_esp32s31_wifi_lmac::{
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
         rx::HeGuardIntervalAndLtf,
-        tx::{HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate, LegacyRate, TxSlot},
+        tx::{
+            HardwareOwnedTxDma, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate,
+            LegacyRate, PreparedTxDma, TxSlot,
+        },
         tx_runtime::StaTxRuntimePolicy,
     };
     use open_esp_radio_ieee80211::station::{
@@ -1199,12 +1202,23 @@ mod tests {
             0x2f00_1000 | (cpu_address & 0x0ffc)
         }
 
-        fn prepare_legacy_tx(&mut self, _queue: u8, _program: MacLegacyTxProgram) -> bool {
+        fn prepare_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            _queue: u8,
+            _program: MacLegacyTxProgram,
+        ) -> bool {
             self.legacy_publications += 1;
             true
         }
 
-        fn start_legacy_tx(&mut self, _queue: u8, _plcp0: u32) {}
+        fn start_bound_legacy_tx(
+            &mut self,
+            _dma: &dyn HardwareOwnedTxDma,
+            _queue: u8,
+            _plcp0: u32,
+        ) {
+        }
 
         fn prepare_ht_tx(&mut self, _queue: u8, _program: MacHtTxProgram) -> bool {
             self.ht_publications += 1;

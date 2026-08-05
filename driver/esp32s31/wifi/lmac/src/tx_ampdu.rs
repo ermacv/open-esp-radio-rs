@@ -434,9 +434,11 @@ impl HtAmpduTxCompletion {
     }
 }
 
+#[cfg(not(target_pointer_width = "32"))]
 #[repr(C, align(16))]
 struct HtAmpduDmaBuffer<const BUFFER_SIZE: usize>([u8; BUFFER_SIZE]);
 
+#[cfg(not(target_pointer_width = "32"))]
 impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
     const fn new() -> Self {
         Self([0; BUFFER_SIZE])
@@ -448,8 +450,9 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// This type records aggregate layout, completion state and retained frame
 /// metadata. It cannot publish a descriptor chain or start hardware by itself:
 /// production submission requires [`HtAmpduTxResources`], which couples this
-/// state to the lower DMA crate's descriptor/backing owner. The fixed buffers
-/// remain an allocation-free formatter workspace and a host-test model.
+/// state to the lower DMA crate's descriptor/backing owner. Native models also
+/// retain fixed formatter buffers for oracle tests; those buffers and their
+/// upper-only APIs are absent from 32-bit production builds.
 ///
 /// SOURCE\[HIL_OPEN_HT_AMPDU_DIRECT_2026_07_29]: ESP32-S31 rev0,
 /// psram-code-psram-data, open PHY/MAC, HT40 MCS7 SGI. Four observed
@@ -457,6 +460,7 @@ impl<const BUFFER_SIZE: usize> HtAmpduDmaBuffer<BUFFER_SIZE> {
 /// in `0x000f`, with no aggregate hardware timeout.
 #[pin_project]
 pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
+    #[cfg(not(target_pointer_width = "32"))]
     buffers: [HtAmpduDmaBuffer<BUFFER_SIZE>; SLOTS],
     /// Stable backing allocation selected for each committed MPDU.
     ///
@@ -493,9 +497,17 @@ pub struct HtAmpduTxStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     _pin: PhantomPinned,
 }
 
+// Production metadata size must not scale with the host-only formatter
+// capacity. This is a compile-time target-layout assertion, not a runtime
+// diagnostic.
+#[cfg(target_pointer_width = "32")]
+const _: [(); core::mem::size_of::<HtAmpduTxStorage<8, 0>>()] =
+    [(); core::mem::size_of::<HtAmpduTxStorage<8, 4096>>()];
+
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFER_SIZE> {
     pub const fn new() -> Self {
         Self {
+            #[cfg(not(target_pointer_width = "32"))]
             buffers: [const { HtAmpduDmaBuffer::new() }; SLOTS],
             buffer_addresses: [0; SLOTS],
             frame_lengths: [0; SLOTS],
@@ -602,6 +614,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The returned slice excludes the private eight-byte DMA metadata prefix
     /// and the hardware-generated MIC/FCS trailer. Sequence Control and CCMP
     /// header are retained exactly as originally submitted.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn completed_frame(
         &self,
         cookie: TxCookie,
@@ -671,6 +684,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `lmacProcessLongRetryFail` writes four immediately before entering the
     /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
     /// EDCA backoff are expected to change before republication.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn retain_for_ampdu_retry(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -739,11 +753,13 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         Ok(locations)
     }
 
+    #[cfg(not(target_pointer_width = "32"))]
     fn internal_frame_matches(&self, location: RetryFrameLocation) -> bool {
         let buffer = &self.buffers[location.index].0;
         location.buffer_address == buffer.as_ptr().addr() && location.capacity <= buffer.len()
     }
 
+    #[cfg(not(target_pointer_width = "32"))]
     fn mark_internal_retry_frames(
         mut self: Pin<&mut Self>,
         locations: &[Option<RetryFrameLocation>; SLOTS],
@@ -823,6 +839,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The eight-byte S31 TX metadata prefix remains private and is published
     /// by [`commit_frame`](Self::commit_frame).
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn next_frame_buffer(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -851,6 +868,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// This does not reserve a slot or mutate the batch. A scheduler can
     /// therefore stop at the byte limit without consuming a CCMP PN or
     /// Sequence Control value for a frame that belongs in the next PPDU.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_frame(
         &self,
         cookie: TxCookie,
@@ -890,6 +908,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
 
     /// Check one HT MPDU against both negotiated storage and the exact
     /// rate-dependent `rx11NRate2AMPDULimit` ceiling.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_ht_frame(
         &self,
         cookie: TxCookie,
@@ -969,6 +988,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             .is_none_or(|limit| aggregate_length <= u32::from(limit)))
     }
 
+    #[cfg(not(target_pointer_width = "32"))]
     fn can_commit_frame_with_hardware_he_control(
         &self,
         cookie: TxCookie,
@@ -1029,6 +1049,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// Unlike [`Self::can_commit_frame`], the caller cannot accidentally
     /// publish an HE short subframe with a guessed metadata-byte-four value.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_he_frame(
         &self,
         cookie: TxCookie,
@@ -1048,6 +1069,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Check one HE frame against both peer and rate/TXOP APEP ceilings.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_he_frame_with_txop(
         &self,
         cookie: TxCookie,
@@ -1155,6 +1177,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The DMA-resident frame length remains unchanged. Only APEP accounting
     /// gains four bytes through metadata byte seven bit zero.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_hardware_he_control_frame(
         &self,
         cookie: TxCookie,
@@ -1174,6 +1197,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Check hardware HE-Control insertion under the same complete APEP gate.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn can_commit_hardware_he_control_frame_with_txop(
         &self,
         cookie: TxCookie,
@@ -1209,6 +1233,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `frame_length` is the encoded 802.11 MPDU before the hardware MIC and
     /// FCS. The resulting metadata length is the complete PSDU length used by
     /// the recovered `ppCalTxAMPDULength` accounting.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1335,6 +1360,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
         )
     }
 
+    #[cfg(not(target_pointer_width = "32"))]
     fn commit_frame_with_hardware_he_control(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1410,6 +1436,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit one HE MPDU with exact PP-blob delimiter padding.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_he_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1429,6 +1456,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit one HE MPDU under the complete rate/TXOP duration policy.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_he_frame_with_txop(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1516,6 +1544,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// increase the low fourteen-bit DMA MPDU length. It publishes the exact
     /// vendor metadata byte-seven bit and adds four only to assembled APEP
     /// accounting.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_hardware_he_control_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1535,6 +1564,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit hardware HE-Control insertion under the complete duration gate.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_hardware_he_control_frame_with_txop(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1583,6 +1613,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// across the linked aggregate and publishes it to `WDEVTXQBSR_SW`.
     /// Keeping the value beside the owned encoded MPDU prevents the Trigger
     /// path from substituting the larger 802.11 frame or PSDU length.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_he_msdu_frame(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1604,6 +1635,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit a Trigger-eligible HE MPDU with hardware HE-Control insertion.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_hardware_he_control_msdu_frame(
         self: Pin<&mut Self>,
         cookie: TxCookie,
@@ -1625,6 +1657,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Commit Trigger metadata and HE-Control under a typed EDCA TXOP limit.
+    #[cfg(not(target_pointer_width = "32"))]
     pub fn commit_hardware_he_control_msdu_frame_with_txop(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,

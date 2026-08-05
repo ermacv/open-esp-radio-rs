@@ -31,6 +31,30 @@ pub struct ExternalArgumentSpec {
     pub direction: ExternalArgumentDirection,
 }
 
+/// Mechanism-neutral role assigned to one named semantic argument.
+///
+/// Roles are declarative navigation metadata. They do not model the memory or
+/// scheduler effects of the argument.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SemanticArgumentRoleSpec {
+    pub role: &'static str,
+    pub argument: &'static str,
+}
+
+/// Reviewed high-level event-dispatch view of a semantic operation.
+///
+/// The mechanism and execution-context names remain opaque to core. A receiver
+/// may be named only when the platform contract reviewed that relationship;
+/// `None` prevents the linked layer from guessing one from pointer values or
+/// symbol spelling.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EventDispatchSemanticSpec {
+    pub mechanism: &'static str,
+    pub execution_context: &'static str,
+    pub receiver: Option<&'static str>,
+    pub argument_roles: &'static [SemanticArgumentRoleSpec],
+}
+
 /// Reviewed meaning attached to one external ABI slot.
 ///
 /// Operation and replacement names are deliberately opaque strings. Core can
@@ -42,6 +66,7 @@ pub struct ExternalSemanticSpec {
     pub arguments: &'static [ExternalArgumentSpec],
     pub return_type: &'static str,
     pub replacement: Option<&'static str>,
+    pub event_dispatch: Option<EventDispatchSemanticSpec>,
 }
 
 /// Reviewed meaning attached to a directly linked vendor function.

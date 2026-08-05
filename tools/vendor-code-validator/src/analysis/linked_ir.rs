@@ -54,10 +54,25 @@ pub(crate) struct LinkedTrampoline {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedEventDispatchArgumentRole {
+    pub(crate) role: &'static str,
+    pub(crate) argument: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedEventDispatchContract {
+    pub(crate) mechanism: &'static str,
+    pub(crate) execution_context: &'static str,
+    pub(crate) receiver: Option<&'static str>,
+    pub(crate) argument_roles: Vec<LinkedEventDispatchArgumentRole>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedSemanticContract {
     pub(crate) source: &'static str,
     pub(crate) id: String,
     pub(crate) evidence: String,
+    pub(crate) event_dispatch: Option<LinkedEventDispatchContract>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1163,6 +1178,25 @@ fn linked_trampoline(
     }
 }
 
+fn linked_event_dispatch_contract(
+    semantic: crate::ExternalSemanticSpec,
+) -> Option<LinkedEventDispatchContract> {
+    let dispatch = semantic.event_dispatch?;
+    Some(LinkedEventDispatchContract {
+        mechanism: dispatch.mechanism,
+        execution_context: dispatch.execution_context,
+        receiver: dispatch.receiver,
+        argument_roles: dispatch
+            .argument_roles
+            .iter()
+            .map(|binding| LinkedEventDispatchArgumentRole {
+                role: binding.role,
+                argument: binding.argument,
+            })
+            .collect(),
+    })
+}
+
 fn external_direction(direction: crate::ExternalArgumentDirection) -> &'static str {
     match direction {
         crate::ExternalArgumentDirection::Input => "input",
@@ -1438,6 +1472,7 @@ fn collect_call_event(
                 source: "registered-external-table-slot",
                 id: format!("{}::{}", table.spec().id, function.spec().id),
                 evidence: "exact-pointer-cell-and-slot".to_owned(),
+                event_dispatch: linked_event_dispatch_contract(function.spec().semantic),
             }),
             replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
             project_symbol: None,
@@ -1465,6 +1500,7 @@ fn collect_call_event(
                 source: "registered-diagnostic-symbol",
                 id: function.clone(),
                 evidence: "relocated-symbol-and-reviewed-arity".to_owned(),
+                event_dispatch: None,
             }),
             replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
             project_symbol: None,
@@ -3699,6 +3735,7 @@ fn annotate_direct_semantic_calls(
             source: "reviewed-internal-function",
             id: function.id.to_owned(),
             evidence: function.evidence.to_owned(),
+            event_dispatch: linked_event_dispatch_contract(function.semantic),
         });
         call.replacement_hint = function.semantic.replacement.map(str::to_owned);
         call.typed_arguments = direct_semantic_typed_arguments(function, &call.arguments);
@@ -4154,62 +4191,23 @@ fn extend_guard_scopes(
     Some(scopes)
 }
 
-struct EventDispatchSpec {
-    mechanism: &'static str,
-    execution_context: &'static str,
-    argument_roles: &'static [(&'static str, &'static str)],
-}
-
-const INTERNAL_SIGNAL_ARGUMENT_ROLES: &[(&str, &str)] = &[("selector", "signal")];
-const ISR_QUEUE_ARGUMENT_ROLES: &[(&str, &str)] = &[
-    ("channel", "queue"),
-    ("payload", "item"),
-    ("wake-output", "higher_priority_task_woken"),
-];
-const EVENT_POST_ARGUMENT_ROLES: &[(&str, &str)] = &[
-    ("channel", "event_base"),
-    ("selector", "event_id"),
-    ("payload", "event_data"),
-    ("payload-size", "event_data_size"),
-    ("wait", "ticks_to_wait"),
-];
-
-fn event_dispatch_spec(operation: &str) -> Option<EventDispatchSpec> {
-    let spec = match operation {
-        "wifi.internal-signal.post" => EventDispatchSpec {
-            mechanism: "internal-signal",
-            execution_context: "unspecified",
-            argument_roles: INTERNAL_SIGNAL_ARGUMENT_ROLES,
-        },
-        "rtos.queue.send-from-isr" => EventDispatchSpec {
-            mechanism: "rtos-queue",
-            execution_context: "isr",
-            argument_roles: ISR_QUEUE_ARGUMENT_ROLES,
-        },
-        "rtos.event.post" => EventDispatchSpec {
-            mechanism: "rtos-event-loop",
-            execution_context: "unspecified",
-            argument_roles: EVENT_POST_ARGUMENT_ROLES,
-        },
-        _ => return None,
-    };
-    Some(spec)
-}
-
 fn project_event_dispatches(actions: &[LinkedProjectedSemanticAction]) -> Vec<LinkedEventDispatch> {
     actions
         .iter()
         .enumerate()
         .filter_map(|(semantic_action_index, action)| {
-            let spec = event_dispatch_spec(&action.operation)?;
+            let spec = action.contract.as_ref()?.event_dispatch.as_ref()?;
             let mut blockers = BTreeSet::new();
-            if action.contract.is_none() {
-                blockers.insert("semantic action has no reviewed contract".to_owned());
+            if spec.mechanism.is_empty() {
+                blockers.insert("event dispatch mechanism is empty".to_owned());
+            }
+            if spec.execution_context.is_empty() {
+                blockers.insert("event dispatch execution context is empty".to_owned());
             }
             let expected_names = spec
                 .argument_roles
                 .iter()
-                .map(|(_, name)| *name)
+                .map(|binding| binding.argument)
                 .collect::<BTreeSet<_>>();
             for argument in &action.arguments {
                 if !expected_names.contains(argument.name.as_str()) {
@@ -4220,7 +4218,23 @@ fn project_event_dispatches(actions: &[LinkedProjectedSemanticAction]) -> Vec<Li
                 }
             }
             let mut bindings = Vec::new();
-            for &(role, name) in spec.argument_roles {
+            let mut declared_roles = BTreeSet::new();
+            let mut declared_arguments = BTreeSet::new();
+            for binding in &spec.argument_roles {
+                let role = binding.role;
+                let name = binding.argument;
+                if !declared_roles.insert(role) {
+                    blockers.insert(format!("duplicate event role {role}"));
+                }
+                if !declared_arguments.insert(name) {
+                    blockers.insert(format!("duplicate event argument {name}"));
+                }
+                if role.is_empty() {
+                    blockers.insert(format!("semantic argument {name} has an empty event role"));
+                }
+                if name.is_empty() {
+                    blockers.insert(format!("event role {role} has an empty semantic argument"));
+                }
                 let matching = action
                     .arguments
                     .iter()
@@ -4246,7 +4260,7 @@ fn project_event_dispatches(actions: &[LinkedProjectedSemanticAction]) -> Vec<Li
                 semantic_action_index,
                 mechanism: spec.mechanism,
                 execution_context: spec.execution_context,
-                receiver: None,
+                receiver: spec.receiver.map(str::to_owned),
                 interface_complete: blockers.is_empty(),
                 blockers: blockers.into_iter().collect(),
                 bindings,
@@ -5670,16 +5684,17 @@ mod tests {
     fn projected_semantic_action(
         operation: &str,
         arguments: Vec<LinkedProjectedCallArgument>,
-        reviewed: bool,
+        event_dispatch: Option<LinkedEventDispatchContract>,
     ) -> LinkedProjectedSemanticAction {
         LinkedProjectedSemanticAction {
             site_path: vec![Some(0x10)],
             operation: operation.to_owned(),
             target: "semantic::dispatch".to_owned(),
-            contract: reviewed.then(|| LinkedSemanticContract {
+            contract: Some(LinkedSemanticContract {
                 source: "test-reviewed-contract",
                 id: format!("test::{operation}"),
                 evidence: "unit-test".to_owned(),
+                event_dispatch,
             }),
             replacement_hint: None,
             origin: "rom::irq_handler".to_owned(),
@@ -5691,26 +5706,57 @@ mod tests {
         }
     }
 
+    fn event_dispatch_contract(
+        mechanism: &'static str,
+        execution_context: &'static str,
+        receiver: Option<&'static str>,
+        argument_roles: &[(&'static str, &'static str)],
+    ) -> LinkedEventDispatchContract {
+        LinkedEventDispatchContract {
+            mechanism,
+            execution_context,
+            receiver,
+            argument_roles: argument_roles
+                .iter()
+                .map(|&(role, argument)| LinkedEventDispatchArgumentRole { role, argument })
+                .collect(),
+        }
+    }
+
     #[test]
     fn event_dispatch_projection_assigns_reviewed_argument_roles() {
         let actions = vec![
-            projected_semantic_action("critical-section.enter", Vec::new(), true),
+            projected_semantic_action("wifi.internal-signal.post", Vec::new(), None),
             projected_semantic_action(
-                "wifi.internal-signal.post",
+                "vendor.radio.notify",
                 vec![projected_argument(0, "signal", "u32", "const:0x1a")],
-                true,
+                Some(event_dispatch_contract(
+                    "internal-signal",
+                    "unspecified",
+                    Some("test::radio-owner"),
+                    &[("selector", "signal")],
+                )),
             ),
             projected_semantic_action(
-                "rtos.queue.send-from-isr",
+                "platform.queue.publish",
                 vec![
                     projected_argument(0, "queue", "*mut void", "arg0"),
                     projected_argument(1, "item", "*const void", "arg1"),
                     projected_argument(2, "higher_priority_task_woken", "*mut bool", "arg2"),
                 ],
-                true,
+                Some(event_dispatch_contract(
+                    "rtos-queue",
+                    "isr",
+                    None,
+                    &[
+                        ("channel", "queue"),
+                        ("payload", "item"),
+                        ("wake-output", "higher_priority_task_woken"),
+                    ],
+                )),
             ),
             projected_semantic_action(
-                "rtos.event.post",
+                "platform.event.publish",
                 vec![
                     projected_argument(0, "event_base", "*const char", "arg0"),
                     projected_argument(1, "event_id", "i32", "const:0x7"),
@@ -5718,7 +5764,18 @@ mod tests {
                     projected_argument(3, "event_data_size", "usize", "const:0x4"),
                     projected_argument(4, "ticks_to_wait", "u32", "const:0x0"),
                 ],
-                true,
+                Some(event_dispatch_contract(
+                    "rtos-event-loop",
+                    "unspecified",
+                    None,
+                    &[
+                        ("channel", "event_base"),
+                        ("selector", "event_id"),
+                        ("payload", "event_data"),
+                        ("payload-size", "event_data_size"),
+                        ("wait", "ticks_to_wait"),
+                    ],
+                )),
             ),
         ];
 
@@ -5728,7 +5785,7 @@ mod tests {
         assert_eq!(dispatches[0].semantic_action_index, 1);
         assert_eq!(dispatches[0].mechanism, "internal-signal");
         assert_eq!(dispatches[0].execution_context, "unspecified");
-        assert_eq!(dispatches[0].receiver, None);
+        assert_eq!(dispatches[0].receiver.as_deref(), Some("test::radio-owner"));
         assert!(dispatches[0].interface_complete);
         assert_eq!(dispatches[0].bindings[0].role, "selector");
         assert_eq!(dispatches[0].bindings[0].argument.value, "const:0x1a");
@@ -5755,11 +5812,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["channel", "selector", "payload", "payload-size", "wait"]
         );
-        assert!(dispatches.iter().all(|dispatch| {
-            dispatch.interface_complete
-                && dispatch.receiver.is_none()
-                && dispatch.blockers.is_empty()
-        }));
+        assert!(
+            dispatches
+                .iter()
+                .all(|dispatch| dispatch.interface_complete && dispatch.blockers.is_empty())
+        );
+        assert!(
+            dispatches[1..]
+                .iter()
+                .all(|dispatch| dispatch.receiver.is_none())
+        );
     }
 
     #[test]
@@ -5767,7 +5829,12 @@ mod tests {
         let actions = vec![projected_semantic_action(
             "wifi.internal-signal.post",
             vec![projected_argument(0, "unexpected", "u32", "arg0")],
-            false,
+            Some(event_dispatch_contract(
+                "internal-signal",
+                "unspecified",
+                None,
+                &[("selector", "signal")],
+            )),
         )];
 
         let dispatches = project_event_dispatches(&actions);
@@ -5779,7 +5846,6 @@ mod tests {
             dispatches[0].blockers,
             [
                 "missing semantic argument signal for role selector",
-                "semantic action has no reviewed contract",
                 "unexpected semantic argument unexpected at position 0",
             ]
         );
@@ -5889,6 +5955,7 @@ mod tests {
                 arguments: &ARGUMENTS,
                 return_type: "void",
                 replacement: Some("Rust async timer"),
+                event_dispatch: None,
             },
         }];
         static TABLE: crate::ExternalTableSpec = crate::ExternalTableSpec {
@@ -5929,6 +5996,7 @@ mod tests {
                 source: "registered-external-table-slot",
                 id: "wifi_osi::delay_us".to_owned(),
                 evidence: "exact-pointer-cell-and-slot".to_owned(),
+                event_dispatch: None,
             })
         );
         assert_eq!(call.replacement_hint.as_deref(), Some("Rust async timer"));
@@ -7239,6 +7307,7 @@ mod tests {
                 source: "registered-external-table-slot",
                 id: "platform::timer-arm".to_owned(),
                 evidence: "exact-pointer-cell-and-slot".to_owned(),
+                event_dispatch: None,
             }),
             replacement_hint: Some("Rust async timer registration".to_owned()),
             project_symbol: None,

@@ -49,6 +49,42 @@ fn every_external_slot_has_a_typed_semantic_contract() {
 }
 
 #[test]
+fn event_dispatch_metadata_references_the_reviewed_typed_signature() {
+    let mut operations = Vec::new();
+    for function in WIFI_OSI_V9.spec().functions {
+        let Some(dispatch) = function.semantic.event_dispatch else {
+            continue;
+        };
+        operations.push(function.semantic.operation);
+        assert!(!dispatch.mechanism.is_empty());
+        assert!(!dispatch.execution_context.is_empty());
+        assert!(!dispatch.argument_roles.is_empty());
+        let mut roles = Vec::new();
+        let mut arguments = Vec::new();
+        for binding in dispatch.argument_roles {
+            assert!(!binding.role.is_empty());
+            assert!(!roles.contains(&binding.role));
+            roles.push(binding.role);
+            assert!(!binding.argument.is_empty());
+            assert!(!arguments.contains(&binding.argument));
+            arguments.push(binding.argument);
+            assert!(
+                function
+                    .semantic
+                    .arguments
+                    .iter()
+                    .any(|argument| argument.name == binding.argument),
+                "{} dispatch role {} references unknown argument {}",
+                function.c_name,
+                binding.role,
+                binding.argument,
+            );
+        }
+    }
+    assert_eq!(operations, ["rtos.queue.send-from-isr", "rtos.event.post"]);
+}
+
+#[test]
 fn replacement_boundaries_use_reviewed_v9_offsets() {
     for (offset, operation) in [
         (0x068, "rtos.queue.send-from-isr"),

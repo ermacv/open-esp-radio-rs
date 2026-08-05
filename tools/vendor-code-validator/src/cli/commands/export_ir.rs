@@ -149,7 +149,7 @@ fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize, usize, usi
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-semantic-operation-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-contract-declared-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tevent-dispatch-receiver-source=reviewed-contract-or-unknown\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -1880,7 +1880,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 29,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 30,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1922,10 +1922,11 @@ fn write_json_report(
     output.push_str(
         "  \"semantic_action_mode\": \"lexical-site-paths-factorized-cfg-guards-affine-root-bindings\",\n",
     );
-    output
-        .push_str("  \"event_dispatch_mode\": \"reviewed-semantic-operation-role-projection\",\n");
+    output.push_str("  \"event_dispatch_mode\": \"reviewed-contract-declared-role-projection\",\n");
     output.push_str("  \"event_dispatch_effect_completeness_claim\": false,\n");
     output.push_str("  \"event_dispatch_receiver_inference_mode\": \"none\",\n");
+    output
+        .push_str("  \"event_dispatch_receiver_source_mode\": \"reviewed-contract-or-unknown\",\n");
     output.push_str(
         "  \"cfg_guard_mode\": \"forced-branch-paths-minimized-dnf-factorized-by-function\",\n",
     );

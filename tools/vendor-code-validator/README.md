@@ -97,7 +97,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v29 records the selection mode plus root and
+`reachable-internal`, and schema v30 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -119,7 +119,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v29 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v30 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -147,7 +147,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v29 records
+symbolic states. Schema v30 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -201,27 +201,29 @@ contract source, stable ID and evidence rule that justified the semantic name.
 The `site_path` array records the lexical call-site chain from the report root
 to the action, and actions are stably ordered by that chain.
 
-Schema v29 additionally projects the reviewed event-like operations into
+Schema v30 additionally projects reviewed event-like contracts into
 `event_dispatches`. This is a higher-level navigation view over
 `semantic_actions`, not a second source of effects. Each record has a
 zero-based `semantic_action_index`, a reviewed mechanism and execution context,
 and typed arguments assigned to stable roles such as `channel`, `selector`,
-`payload`, `payload-size`, `wait` and `wake-output`. The current vocabulary is
-deliberately narrow: `wifi.internal-signal.post`,
-`rtos.queue.send-from-isr` and `rtos.event.post`. Classification is based only
-on those semantic operation IDs after their contract has been established; raw
-function names and argument values are not used to guess an event.
+`payload`, `payload-size`, `wait` and `wake-output`. These fields are declared
+next to the typed semantic ABI by the selected platform harness. The generic
+linked analyzer contains no operation-name dispatch table, so a new reviewed
+contract can opt in without teaching it vendor or RTOS vocabulary. An operation
+name alone, a raw function name or an argument value never creates an event.
 
 `interface_complete` means only that the reviewed contract is present and its
 expected named arguments were projected without missing, duplicate or
 unexpected fields. It is not a scheduler, memory-effect or delivery proof;
 the top-level `event_dispatch_effect_completeness_claim` is therefore false.
-The receiving task or callback is not recoverable from the call interface
-alone, so `receiver` remains `null` and
-`event_dispatch_receiver_inference_mode` is `"none"`. The referenced semantic
-action remains authoritative for origin, lexical site path, full call path and
-factorized CFG guards. Human and pseudo views render the same relationship,
-with one-based action labels only in pseudo-source.
+The receiving task or callback is not inferred from the sending call:
+`event_dispatch_receiver_inference_mode` is `"none"`. `receiver` is populated
+only when the reviewed contract explicitly names it and otherwise remains
+`null`; `event_dispatch_receiver_source_mode` records this
+`"reviewed-contract-or-unknown"` policy. The referenced semantic action remains
+authoritative for origin, lexical site path, full call path and factorized CFG
+guards. Human and pseudo views render the same relationship, with one-based
+action labels only in pseudo-source.
 
 Direct call records additionally expose recovered `cfg_guard_paths` in
 disjunctive normal form: paths are alternatives and the decisions inside one
@@ -301,7 +303,7 @@ whole-register and read-modify-write shapes, and splits modified masks into
 contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-only inventory remains available for compatibility.
 
-Schema v29 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v30 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate

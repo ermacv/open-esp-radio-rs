@@ -117,6 +117,10 @@ const PP_POST_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
     c_type: "u32",
     direction: ExternalArgumentDirection::Input,
 }];
+const PP_POST_EVENT_ROLES: &[SemanticArgumentRoleSpec] = &[SemanticArgumentRoleSpec {
+    role: "selector",
+    argument: "signal",
+}];
 
 static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "esp32s31-libpp-pp-post-v1",
@@ -127,6 +131,12 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
         arguments: PP_POST_ARGUMENTS,
         return_type: "void",
         replacement: Some("typed Rust ISR-to-radio-owner signal"),
+        event_dispatch: Some(EventDispatchSemanticSpec {
+            mechanism: "internal-signal",
+            execution_context: "unspecified",
+            receiver: None,
+            argument_roles: PP_POST_EVENT_ROLES,
+        }),
     },
     evidence: "exact-body-and-relocation-schema",
 };
@@ -1071,6 +1081,14 @@ mod tests {
         assert_eq!(spec.id, "esp32s31-libpp-pp-post-v1");
         assert_eq!(spec.semantic.operation, "wifi.internal-signal.post");
         assert_eq!(spec.semantic.arguments.len(), 1);
+        let dispatch = spec
+            .semantic
+            .event_dispatch
+            .expect("reviewed pp_post must declare its dispatch projection");
+        assert_eq!(dispatch.mechanism, "internal-signal");
+        assert_eq!(dispatch.execution_context, "unspecified");
+        assert_eq!(dispatch.receiver, None);
+        assert_eq!(dispatch.argument_roles, PP_POST_EVENT_ROLES);
 
         let mut changed_body = pp_post_symbol();
         changed_body.bytes[0] ^= 1;

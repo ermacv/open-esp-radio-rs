@@ -5,8 +5,9 @@
 //! the named pointer cell and use an exact registered slot offset.
 
 use open_radio_vendor_validator_core::{
-    ExternalArgumentDirection, ExternalArgumentSpec, ExternalFunctionRef, ExternalFunctionSpec,
-    ExternalReturnModel, ExternalSemanticSpec, ExternalTableRef, ExternalTableSpec,
+    EventDispatchSemanticSpec, ExternalArgumentDirection, ExternalArgumentSpec,
+    ExternalFunctionRef, ExternalFunctionSpec, ExternalReturnModel, ExternalSemanticSpec,
+    ExternalTableRef, ExternalTableSpec, SemanticArgumentRoleSpec,
 };
 
 const NO_ARGUMENTS: &[ExternalArgumentSpec] = &[];
@@ -86,6 +87,42 @@ const EVENT_POST_ARGUMENTS: &[ExternalArgumentSpec] = &[
         name: "ticks_to_wait",
         c_type: "u32",
         direction: ExternalArgumentDirection::Input,
+    },
+];
+const QUEUE_SEND_FROM_ISR_EVENT_ROLES: &[SemanticArgumentRoleSpec] = &[
+    SemanticArgumentRoleSpec {
+        role: "channel",
+        argument: "queue",
+    },
+    SemanticArgumentRoleSpec {
+        role: "payload",
+        argument: "item",
+    },
+    SemanticArgumentRoleSpec {
+        role: "wake-output",
+        argument: "higher_priority_task_woken",
+    },
+];
+const EVENT_POST_EVENT_ROLES: &[SemanticArgumentRoleSpec] = &[
+    SemanticArgumentRoleSpec {
+        role: "channel",
+        argument: "event_base",
+    },
+    SemanticArgumentRoleSpec {
+        role: "selector",
+        argument: "event_id",
+    },
+    SemanticArgumentRoleSpec {
+        role: "payload",
+        argument: "event_data",
+    },
+    SemanticArgumentRoleSpec {
+        role: "payload-size",
+        argument: "event_data_size",
+    },
+    SemanticArgumentRoleSpec {
+        role: "wait",
+        argument: "ticks_to_wait",
     },
 ];
 const TIMER_ARM_US_ARGUMENTS: &[ExternalArgumentSpec] = &[
@@ -220,6 +257,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NO_ARGUMENTS,
             return_type: "bool (ABI u32)",
             replacement: Some("compile-time target capability"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -233,6 +271,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: WIFI_INT_DISABLE_ARGUMENTS,
             return_type: "restore-state u32",
             replacement: Some("Rust interrupt critical-section guard"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -246,6 +285,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: WIFI_INT_RESTORE_ARGUMENTS,
             return_type: "void",
             replacement: Some("Rust interrupt critical-section guard release"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -259,6 +299,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NO_ARGUMENTS,
             return_type: "u32",
             replacement: Some("Rust RNG provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -272,6 +313,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NO_ARGUMENTS,
             return_type: "u32",
             replacement: Some("Rust RNG provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -285,6 +327,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NO_ARGUMENTS,
             return_type: "u32",
             replacement: Some("platform slow-clock calibration provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -300,6 +343,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: COEX_PTI_ARGUMENTS,
             return_type: "status u32",
             replacement: Some("typed coexistence policy provider"),
+            event_dispatch: None,
         },
     },
     // The following slots have reviewed names, signatures and high-level
@@ -316,6 +360,12 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: QUEUE_SEND_FROM_ISR_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("async channel/event wakeup from ISR"),
+            event_dispatch: Some(EventDispatchSemanticSpec {
+                mechanism: "rtos-queue",
+                execution_context: "isr",
+                receiver: None,
+                argument_roles: QUEUE_SEND_FROM_ISR_EVENT_ROLES,
+            }),
         },
     },
     ExternalFunctionSpec {
@@ -329,6 +379,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: TASK_DELAY_ARGUMENTS,
             return_type: "void",
             replacement: Some("Rust async timer"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -342,6 +393,12 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: EVENT_POST_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust event dispatcher"),
+            event_dispatch: Some(EventDispatchSemanticSpec {
+                mechanism: "rtos-event-loop",
+                execution_context: "unspecified",
+                receiver: None,
+                argument_roles: EVENT_POST_EVENT_ROLES,
+            }),
         },
     },
     ExternalFunctionSpec {
@@ -355,6 +412,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: TIMER_ARM_US_ARGUMENTS,
             return_type: "void",
             replacement: Some("Rust async timer registration"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -368,6 +426,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_OPEN_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -381,6 +440,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_HANDLE_ARGUMENTS,
             return_type: "void",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -394,6 +454,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_HANDLE_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -407,6 +468,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_BLOB_SET_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -420,6 +482,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_BLOB_GET_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -433,6 +496,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: NVS_ERASE_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
+            event_dispatch: None,
         },
     },
     ExternalFunctionSpec {
@@ -446,6 +510,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
             arguments: LOG_WRITEV_ARGUMENTS,
             return_type: "void",
             replacement: Some("Rust logging facade"),
+            event_dispatch: None,
         },
     },
 ];

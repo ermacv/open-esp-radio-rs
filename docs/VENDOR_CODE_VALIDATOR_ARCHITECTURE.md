@@ -138,6 +138,8 @@ driver because comparing its typed state is the harness's purpose.
 - opaque external callback-table and function references;
 - harness-owned external semantic overlays with opaque operation IDs, C types,
   argument directions and replacement hints;
+- optional harness-owned event-dispatch projections with opaque mechanism and
+  execution-context names plus roles bound to reviewed semantic arguments;
 - architecture-neutral direct-function semantic contracts whose platform hook
   may accept a function only from its complete structural definition;
 - immutable ABI table descriptions and return models;
@@ -246,18 +248,19 @@ from the report root through nested calls; missing instruction sites remain
 explicit rather than receiving invented offsets. Pointer arguments reuse
 affine root bindings; scalar values retain their recovered symbolic form.
 
-A conservative event-dispatch projection consumes those semantic actions. It
-recognizes only a small reviewed operation vocabulary and maps the contract's
-named arguments onto mechanism-neutral roles such as channel, selector and
-payload. The result points back to the underlying action by stable index, so
-its lexical site path, call path and factorized guard scopes remain the single
+A conservative event-dispatch projection consumes those semantic actions only
+when their reviewed contract declares the projection. The declaration maps
+named ABI arguments onto mechanism-neutral roles such as channel, selector and
+payload; mechanism and execution-context strings remain opaque to core. The
+generic linked layer therefore has no platform or operation-name dispatch
+table. The result points back to the underlying action by stable index, so its
+lexical site path, call path and factorized guard scopes remain the single
 source of provenance. A complete interface record means that the reviewed
 contract and expected argument schema matched; it does not mean that scheduler,
 queue storage, callback execution or delivery effects were modeled. Receiver
-inference is intentionally absent because the sending call alone does not
-identify the consuming task or callback. Unknown receivers and schema blockers
-remain explicit rather than being derived from symbol spelling or pointer
-values.
+inference is intentionally absent. A receiver appears only when the reviewed
+contract names it; otherwise it stays unknown rather than being derived from
+symbol spelling or pointer values. Schema blockers remain explicit.
 
 Exploratory forced branch decisions are attached to direct calls as minimized
 DNF guard paths. Semantic projection keeps them factorized by the function in

@@ -11,13 +11,14 @@ use core::{marker::PhantomPinned, pin::Pin};
 
 use open_esp_radio_esp32s31_registers::{
     MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
-    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
-    RadioRegisters,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtTxProgram,
 };
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::AmpduDmaStorageError;
 use pin_project::pin_project;
 
 pub mod block_ack;
+mod hardware;
+mod length;
 #[cfg(not(target_pointer_width = "32"))]
 mod model;
 mod owner;
@@ -33,6 +34,8 @@ pub use block_ack::{
     TxBlockAckDialogTokenSequence, TxBlockAckError, TxBlockAckResponse, TxBlockAckSession,
     decode_ht_block_ack_registers, parse_block_ack_action,
 };
+pub use hardware::HtAmpduHardware;
+pub use length::{HtAmpduLength, HtAmpduLengthAccumulator, HtAmpduLengthError};
 #[cfg(not(target_pointer_width = "32"))]
 pub use model::{
     BasicHtAmpduAssemblyError, BasicHtAmpduAssemblyInput, BasicHtAmpduAssemblyOutput,
@@ -54,197 +57,11 @@ use crate::tx::{
 };
 #[cfg(not(target_pointer_width = "32"))]
 use crate::tx::{HeEdcaTxopLimit, HeRate, HtAmpduDensity};
-
-#[cfg(test)]
-use open_esp_radio_esp32s31_registers::{MacTxDetachOutcome, MacTxDetachReason};
+use length::HARDWARE_HE_CONTROL_LENGTH;
 
 pub const TX_AMPDU_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: u16 = 4;
-const HARDWARE_HE_CONTROL_LENGTH: u16 = 4;
 const TX_AMPDU_DEFAULT_MAX_BYTES: u16 = 0x1fff;
-const HT_MPDU_LENGTH_MASK: u32 = 0x3fff;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HtAmpduLengthError {
-    InvalidLimits,
-    Empty,
-    ZeroMpduLength,
-    WindowFull,
-    AggregateTooLong(u32),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct HtAmpduLength {
-    pub bytes: u16,
-    pub subframes: u8,
-}
-
-/// Exact basic-HT A-MPDU byte accounting recovered from the pinned PP blob.
-///
-/// Bits 0..13 of `payload_word` carry the MPDU length. `empty_delimiters` is
-/// the byte immediately following that word in the PP metadata prefix. Every
-/// non-final MPDU contributes its four-byte delimiter, its length rounded to
-/// four bytes, and the requested empty delimiters. `finish` removes the final
-/// padding and empty delimiters, leaving the last MPDU's mandatory delimiter.
-///
-/// The accumulator has a caller-selected fixed window and byte ceiling. It
-/// never allocates, accesses pointers, reads time, retries, waits or invokes a
-/// callback.
-pub struct HtAmpduLengthAccumulator {
-    bytes_with_tail: u32,
-    tail_bytes: u16,
-    count: u8,
-    max_subframes: u8,
-    max_bytes: u16,
-}
-
-impl HtAmpduLengthAccumulator {
-    pub const fn new(max_subframes: u8, max_bytes: u16) -> Result<Self, HtAmpduLengthError> {
-        if max_subframes == 0 || max_subframes as usize > TX_AMPDU_SLOT_CAPACITY || max_bytes == 0 {
-            return Err(HtAmpduLengthError::InvalidLimits);
-        }
-        Ok(Self {
-            bytes_with_tail: 0,
-            tail_bytes: 0,
-            count: 0,
-            max_subframes,
-            max_bytes,
-        })
-    }
-
-    pub const fn push(
-        &mut self,
-        payload_word: u32,
-        empty_delimiters: u8,
-    ) -> Result<(), HtAmpduLengthError> {
-        self.push_with_hardware_he_control(payload_word, empty_delimiters, false)
-    }
-
-    /// Add one MPDU whose HE-Control field may be inserted by MAC hardware.
-    ///
-    /// SOURCE: complete `libpp.a[pp_he.o]::
-    /// ppCalSubFrameLength` reads `metadata[7] & 1`, multiplies it by four,
-    /// and adds it after the delimiter and rounded metadata length. The low
-    /// fourteen-bit MPDU length remains unchanged.
-    pub const fn push_with_hardware_he_control(
-        &mut self,
-        payload_word: u32,
-        empty_delimiters: u8,
-        hardware_he_control: bool,
-    ) -> Result<(), HtAmpduLengthError> {
-        if self.count >= self.max_subframes {
-            return Err(HtAmpduLengthError::WindowFull);
-        }
-        let mpdu_bytes = payload_word & HT_MPDU_LENGTH_MASK;
-        if mpdu_bytes == 0 {
-            return Err(HtAmpduLengthError::ZeroMpduLength);
-        }
-        let padding = (4 - (mpdu_bytes & 3)) & 3;
-        let empty_bytes = (empty_delimiters as u32) * 4;
-        let inserted_bytes = if hardware_he_control {
-            HARDWARE_HE_CONTROL_LENGTH as u32
-        } else {
-            0
-        };
-        let contribution = mpdu_bytes + padding + empty_bytes + 4 + inserted_bytes;
-        let next = self.bytes_with_tail + contribution;
-        let final_bytes = next - padding - empty_bytes;
-        if final_bytes > self.max_bytes as u32 {
-            return Err(HtAmpduLengthError::AggregateTooLong(final_bytes));
-        }
-        self.bytes_with_tail = next;
-        self.tail_bytes = (padding + empty_bytes) as u16;
-        self.count += 1;
-        Ok(())
-    }
-
-    pub const fn finish(&self) -> Result<HtAmpduLength, HtAmpduLengthError> {
-        if self.count == 0 {
-            return Err(HtAmpduLengthError::Empty);
-        }
-        let bytes = self.bytes_with_tail - self.tail_bytes as u32;
-        if bytes > self.max_bytes as u32 {
-            return Err(HtAmpduLengthError::AggregateTooLong(bytes));
-        }
-        Ok(HtAmpduLength {
-            bytes: bytes as u16,
-            subframes: self.count,
-        })
-    }
-}
-
-/// Hardware authority needed specifically by an aggregate completion.
-///
-/// A normal [`TxHardware`] completion may acknowledge the edge immediately.
-/// A-MPDU must first sample the queue's three BlockAck words, so the ordering
-/// is a separate trait operation and cannot accidentally be replaced with
-/// the single-MPDU completion method.
-pub trait HtAmpduHardware: TxHardware {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters>;
-
-    /// Prepare one queue for a future AP Trigger before publishing TX enable.
-    ///
-    /// Implementations must validate every fallible input before the first
-    /// hardware write so an error cannot leave a partially published queue.
-    fn prepare_he_trigger_based_queue(
-        &mut self,
-        policy: MacHeTbTidLimit,
-        reservation: MacHeTbLinkReservation,
-        tid: MacHeTid,
-        mpdu_lengths: &[u16],
-        queued_msdu_bytes: u32,
-    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError>;
-
-    /// Remove Trigger eligibility only after DMA ownership has returned.
-    fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation);
-
-    /// Read back a live Trigger queue while the aggregate owner still retains
-    /// the reservation. Test doubles may return `None`.
-    fn he_trigger_based_queue_snapshot(
-        &self,
-        _reservation: MacHeTbLinkReservation,
-    ) -> Option<MacHeTriggerTxQueueSnapshot> {
-        None
-    }
-}
-
-impl HtAmpduHardware for RadioRegisters {
-    fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
-        self.take_mac_ht_ampdu_completion(queue)
-    }
-
-    fn prepare_he_trigger_based_queue(
-        &mut self,
-        policy: MacHeTbTidLimit,
-        reservation: MacHeTbLinkReservation,
-        tid: MacHeTid,
-        mpdu_lengths: &[u16],
-        queued_msdu_bytes: u32,
-    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
-        RadioRegisters::prepare_he_trigger_based_queue(
-            self,
-            policy,
-            reservation,
-            tid,
-            mpdu_lengths,
-            queued_msdu_bytes,
-        )
-    }
-
-    fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
-        RadioRegisters::clear_he_trigger_based_queue(self, reservation);
-    }
-
-    fn he_trigger_based_queue_snapshot(
-        &self,
-        reservation: MacHeTbLinkReservation,
-    ) -> Option<MacHeTriggerTxQueueSnapshot> {
-        Some(RadioRegisters::he_trigger_based_queue_snapshot(
-            self,
-            reservation,
-        ))
-    }
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HtAmpduTxError {

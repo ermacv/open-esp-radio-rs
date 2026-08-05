@@ -3,7 +3,8 @@
 use super::*;
 use open_esp_radio_dma::{HardwareOwnedTxDma, PinnedDmaTxPool, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
-    MacHeTxVectorSnapshot, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxQueueDetached,
+    MacHeTxVectorSnapshot, MacHtAmpduCompletionRegisters, MacLegacyTxProgram,
+    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 
 struct CompletionHardware {

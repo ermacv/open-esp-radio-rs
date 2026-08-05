@@ -101,6 +101,14 @@ struct FixedRegisterImageBinding {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+struct RegisterImageWriteBinding {
+    name: String,
+    peripheral: String,
+    register: String,
+    register_is_array: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct ZeroBasedFieldWriteBinding {
     name: String,
     peripheral: String,
@@ -941,6 +949,31 @@ fn validate_provenance(document: &Document<'_>, input: &str) -> Result<(), Box<d
             }
         }
     }
+    for (extension_name, operation_name) in [
+        ("openEspRadioFixedRegisterImages", "fixed-register image"),
+        ("openEspRadioRegisterImageWrites", "register-image write"),
+    ] {
+        if let Some(extension) = document
+            .descendants()
+            .find(|node| node.has_tag_name(extension_name))
+        {
+            for write in extension
+                .children()
+                .filter(|node| node.has_tag_name("write"))
+            {
+                let sources = required_attribute(write, "source")?;
+                for source in sources.split(',').map(str::trim) {
+                    if source.is_empty() || !definitions.contains(source) {
+                        return Err(format!(
+                            "{operation_name} {} references undefined provenance source {source:?}",
+                            required_attribute(write, "name")?
+                        )
+                        .into());
+                    }
+                }
+            }
+        }
+    }
     if let Some(extension) = document
         .descendants()
         .find(|node| node.has_tag_name("openEspRadioZeroBasedFieldWrites"))
@@ -1741,6 +1774,130 @@ fn generate_fixed_register_image_api(document: &Document<'_>) -> Result<String, 
                  }}\n\
              }}\n",
             binding.value, binding.peripheral, binding.register, binding.name, binding.value,
+        ));
+    }
+    output.push_str("}\n");
+    Ok(output)
+}
+
+fn parse_register_image_writes(
+    document: &Document<'_>,
+) -> Result<Vec<RegisterImageWriteBinding>, Box<dyn Error>> {
+    let Some(extension) = document
+        .descendants()
+        .find(|node| node.has_tag_name("openEspRadioRegisterImageWrites"))
+    else {
+        return Ok(Vec::new());
+    };
+    if document
+        .descendants()
+        .filter(|node| node.has_tag_name("openEspRadioRegisterImageWrites"))
+        .count()
+        != 1
+    {
+        return Err("SVD has duplicate openEspRadioRegisterImageWrites extensions".into());
+    }
+
+    let peripherals = document
+        .descendants()
+        .find(|node| node.has_tag_name("peripherals"))
+        .ok_or("SVD has no peripherals element")?;
+    let mut names = BTreeSet::new();
+    let mut bindings = Vec::new();
+    for write in extension
+        .children()
+        .filter(|node| node.has_tag_name("write"))
+    {
+        let name = required_attribute(write, "name")?;
+        if name.is_empty()
+            || member_binding_name(name) != name
+            || !name
+                .bytes()
+                .all(|byte| byte == b'_' || byte.is_ascii_alphanumeric())
+            || !name.as_bytes()[0].is_ascii_alphabetic()
+        {
+            return Err(
+                format!("register-image write name {name:?} is not lower snake case").into(),
+            );
+        }
+        if !names.insert(name) {
+            return Err(format!("duplicate register-image write name {name}").into());
+        }
+
+        let peripheral_name = required_attribute(write, "peripheral")?;
+        let register_name = required_attribute(write, "register")?;
+        required_attribute(write, "source")?;
+        let peripheral = direct_named_child(peripherals, "peripheral", peripheral_name)
+            .ok_or_else(|| {
+                format!(
+                    "register-image write {name} references unknown peripheral {peripheral_name}"
+                )
+            })?;
+        let registers = peripheral
+            .children()
+            .find(|node| node.has_tag_name("registers"))
+            .ok_or_else(|| format!("peripheral {peripheral_name} has no registers"))?;
+        let register =
+            direct_named_child(registers, "register", register_name).ok_or_else(|| {
+                format!("register-image write {name} references unknown register {register_name}")
+            })?;
+        let access = child_text(register, "access")?;
+        if child_text(register, "size")? != "32" || !matches!(access, "write-only" | "read-write") {
+            return Err(
+                format!("register-image write {name} requires a writable 32-bit register").into(),
+            );
+        }
+        if register
+            .children()
+            .any(|node| node.has_tag_name("modifiedWriteValues"))
+        {
+            return Err(format!(
+                "register-image write {name} cannot target modified-write semantics"
+            )
+            .into());
+        }
+
+        bindings.push(RegisterImageWriteBinding {
+            name: name.to_owned(),
+            peripheral: peripheral_name.to_owned(),
+            register: register_name.to_owned(),
+            register_is_array: register.children().any(|node| node.has_tag_name("dim")),
+        });
+    }
+    Ok(bindings)
+}
+
+fn generate_register_image_write_api(document: &Document<'_>) -> Result<String, Box<dyn Error>> {
+    let bindings = parse_register_image_writes(document)?;
+    if bindings.is_empty() {
+        return Ok(String::new());
+    }
+    let mut output = String::from(
+        "\n/// Safe, SVD-declared writes of dynamic complete-register images.\n\
+         pub mod register_image_write {\n",
+    );
+    for binding in bindings {
+        let peripheral_type = type_binding_name(&binding.peripheral);
+        let register = member_binding_name(&binding.register);
+        let (index_parameter, index_argument) = if binding.register_is_array {
+            ("index: usize, ", "index")
+        } else {
+            ("", "")
+        };
+        output.push_str(&format!(
+            "\n    /// Publish a caller-built complete image to `{}`.`{}`.\n\
+             #[inline]\n\
+             pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}image: u32) {{\n\
+                 // SAFETY: generator validation proves that the target is an\n\
+                 // ordinary writable 32-bit register. The SVD extension and\n\
+                 // its provenance qualify this semantic whole-image operation.\n\
+                 unsafe {{\n\
+                     registers.{register}({index_argument}).write_with_zero(|writer|\n\
+                         writer.bits(image)\n\
+                     );\n\
+                 }}\n\
+             }}\n",
+            binding.peripheral, binding.register, binding.name,
         ));
     }
     output.push_str("}\n");
@@ -2678,6 +2835,7 @@ fn validate_structure(input: &str) -> Result<Vec<MmioWindow>, Box<dyn Error>> {
     parse_full_register_writes(&document)?;
     parse_fixed_register_writes(&document)?;
     parse_fixed_register_images(&document)?;
+    parse_register_image_writes(&document)?;
     parse_zero_based_field_writes(&document)?;
     parse_zero_register_writes(&document)?;
     parse_masked_register_modifies(&document)?;
@@ -2719,17 +2877,19 @@ fn run() -> Result<(), Box<dyn Error>> {
     let full_register_write_api = generate_full_register_write_api(&document)?;
     let fixed_register_write_api = generate_fixed_register_write_api(&document)?;
     let fixed_register_image_api = generate_fixed_register_image_api(&document)?;
+    let register_image_write_api = generate_register_image_write_api(&document)?;
     let zero_based_field_write_api = generate_zero_based_field_write_api(&document)?;
     let zero_register_write_api = generate_zero_register_write_api(&document)?;
     let masked_register_modify_api = generate_masked_register_modify_api(&document)?;
     let generated = format_generated(&format!(
-        "{}{}{}{}{}{}{}{}{}{}",
+        "{}{}{}{}{}{}{}{}{}{}{}",
         svd2rust::generate(&input, &config)?.lib_rs,
         interrupt_snapshot_api,
         peripheral_ownership_api,
         full_register_write_api,
         fixed_register_write_api,
         fixed_register_image_api,
+        register_image_write_api,
         zero_based_field_write_api,
         zero_register_write_api,
         masked_register_modify_api,
@@ -2786,14 +2946,14 @@ mod tests {
         generate_device_access_api, generate_fixed_register_image_api,
         generate_fixed_register_write_api, generate_full_register_write_api,
         generate_interrupt_snapshot_api, generate_masked_register_modify_api,
-        generate_peripheral_ownership_api, generate_zero_based_field_write_api,
-        generate_zero_register_write_api, member_binding_name, mmio_window,
-        parse_fixed_register_images, parse_fixed_register_writes, parse_full_register_writes,
-        parse_interrupt_snapshots, parse_masked_register_modifies, parse_mmio_windows,
-        parse_zero_based_field_writes, parse_zero_register_writes, type_binding_name,
-        validate_alias_group, validate_confidence, validate_dimension_order,
-        validate_evidence_ranges, validate_names, validate_provenance, validate_register_aliases,
-        validate_register_layout, validate_write_semantics,
+        generate_peripheral_ownership_api, generate_register_image_write_api,
+        generate_zero_based_field_write_api, generate_zero_register_write_api, member_binding_name,
+        mmio_window, parse_fixed_register_images, parse_fixed_register_writes,
+        parse_full_register_writes, parse_interrupt_snapshots, parse_masked_register_modifies,
+        parse_mmio_windows, parse_register_image_writes, parse_zero_based_field_writes,
+        parse_zero_register_writes, type_binding_name, validate_alias_group, validate_confidence,
+        validate_dimension_order, validate_evidence_ranges, validate_names, validate_provenance,
+        validate_register_aliases, validate_register_layout, validate_write_semantics,
     };
     use roxmltree::Document;
     use svd_parser::svd::Access;
@@ -3067,6 +3227,40 @@ mod tests {
         )
         .unwrap();
         assert!(parse_fixed_register_images(&w1c).is_err());
+    }
+
+    #[test]
+    fn register_image_write_keeps_array_index_and_rejects_modified_write_semantics() {
+        let valid = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><dim>2</dim><name>VECTOR%s</name><size>32</size>\
+             <access>read-write</access><fields><field><name>LOW</name><bitOffset>0</bitOffset>\
+             <bitWidth>16</bitWidth></field><field><name>HIGH</name><bitOffset>16</bitOffset>\
+             <bitWidth>16</bitWidth></field></fields></register></registers></peripheral>\
+             </peripherals><vendorExtensions><openEspRadioRegisterImageWrites>\
+             <write name=\"publish_port_vector\" peripheral=\"PORT\" register=\"VECTOR%s\" \
+             source=\"TEST\"/></openEspRadioRegisterImageWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert_eq!(parse_register_image_writes(&valid).unwrap().len(), 1);
+        let generated = generate_register_image_write_api(&valid).unwrap();
+        assert!(generated.contains(
+            "pub fn publish_port_vector(registers: &crate::Port, index: usize, image: u32)"
+        ));
+        assert!(generated.contains("registers.vector(index).write_with_zero"));
+        assert!(generated.contains("writer.bits(image)"));
+
+        let w1c = Document::parse(
+            "<device><peripherals><peripheral><name>PORT</name><registers>\
+             <register><name>CLEAR</name><size>32</size><access>write-only</access>\
+             <modifiedWriteValues>oneToClear</modifiedWriteValues></register>\
+             </registers></peripheral></peripherals><vendorExtensions>\
+             <openEspRadioRegisterImageWrites><write name=\"publish_clear\" peripheral=\"PORT\" \
+             register=\"CLEAR\" source=\"TEST\"/>\
+             </openEspRadioRegisterImageWrites></vendorExtensions></device>",
+        )
+        .unwrap();
+        assert!(parse_register_image_writes(&w1c).is_err());
     }
 
     #[test]

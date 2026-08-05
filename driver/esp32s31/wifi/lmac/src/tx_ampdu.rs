@@ -1144,8 +1144,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// the same address until this batch has completed, detached, processed
     /// BlockAck/retries and reached [`Self::release_completed`] or
     /// [`Self::cancel`]. It must not mutate the allocation while hardware owns
-    /// the batch. A safe runtime wrapper is expected to enforce this by owning
-    /// the pinned frame lease beside this storage.
+    /// the batch. The public [`RetainedDmaAmpduTx`] wrapper enforces this by
+    /// owning every pinned frame lease beside this storage.
     ///
     /// SOURCE: complete `libnet80211.a[ieee80211_output.o]::
     /// ieee80211_alloc_tx_buf` cache-TX/type-nine branch retains the netstack
@@ -1220,7 +1220,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The caller must uphold the same pinned allocation invariant as
     /// [`Self::commit_referenced_frame`].
-    pub unsafe fn commit_referenced_ht_frame(
+    unsafe fn commit_referenced_ht_frame(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],
@@ -1390,7 +1390,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     ///
     /// The caller must retain exclusive ownership of `dma_storage` at its
     /// current address until the batch is detached and released or cancelled.
-    pub unsafe fn commit_referenced_he_frame_with_txop(
+    unsafe fn commit_referenced_he_frame_with_txop(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         dma_storage: &mut [u8],

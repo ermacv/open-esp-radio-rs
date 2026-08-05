@@ -1360,7 +1360,8 @@ pub mod wifi_mac_rx_bssid_list {
         #[doc = "Field `RX_CONTROL_9_BSSID_POSITION` reader - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Debug-decoded BSSID position field; complete hal_he_init writes encoding two."]
         pub type RxControl9BssidPositionR = crate::FieldReader;
         #[doc = "Field `RX_CONTROL_9_BSSID_POSITION` writer - SOURCE\\[BLOB_LIBPP_HAL_RX_MISC_DEBUG,BLOB_LIBPP_HAL_HE_INIT_PREFIX\\]; CONFIDENCE\\[instruction-exact\\]. Debug-decoded BSSID position field; complete hal_he_init writes encoding two."]
-        pub type RxControl9BssidPositionW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type RxControl9BssidPositionW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
@@ -16123,7 +16124,7 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `TIMEOUT_SECONDS` reader - "]
         pub type TimeoutSecondsR = crate::FieldReader;
         #[doc = "Field `TIMEOUT_SECONDS` writer - "]
-        pub type TimeoutSecondsW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type TimeoutSecondsW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `COLLISION_THRESHOLD` reader - "]
         pub type CollisionThresholdR = crate::FieldReader;
         #[doc = "Field `COLLISION_THRESHOLD` writer - "]
@@ -16432,7 +16433,7 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `IMAGE_UNKNOWN` reader - "]
         pub type ImageUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 12:23"]
             #[inline(always)]
@@ -16641,15 +16642,15 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `RX_BFRP_TIMEOUT_MS` reader - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
         pub type RxBfrpTimeoutMsR = crate::FieldReader;
         #[doc = "Field `RX_BFRP_TIMEOUT_MS` writer - SOURCE\\[BLOB_LIBPP_TEST_HAL_CSI\\]; CONFIDENCE\\[instruction-exact\\]. Vendor test getter names bits 7:1 RXBFRPTO_MS."]
-        pub type RxBfrpTimeoutMsW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type RxBfrpTimeoutMsW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `HE_BEAM_NDP_TIME` reader - "]
         pub type HeBeamNdpTimeR = crate::FieldReader;
         #[doc = "Field `HE_BEAM_NDP_TIME` writer - "]
-        pub type HeBeamNdpTimeW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HeBeamNdpTimeW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `HE_BEAM_HW_SEQUENCE_SELECT` reader - "]
         pub type HeBeamHwSequenceSelectR = crate::FieldReader;
         #[doc = "Field `HE_BEAM_HW_SEQUENCE_SELECT` writer - "]
-        pub type HeBeamHwSequenceSelectW<'a, REG> = crate::FieldWriter<'a, REG, 3>;
+        pub type HeBeamHwSequenceSelectW<'a, REG> = crate::FieldWriter<'a, REG, 3, u8, crate::Safe>;
         #[doc = "Field `HE_BEAM_HW_SEQUENCE_ENABLE` reader - "]
         pub type HeBeamHwSequenceEnableR = crate::BitReader;
         #[doc = "Field `HE_BEAM_HW_SEQUENCE_ENABLE` writer - "]
@@ -16808,7 +16809,7 @@ pub mod wifi_mac_he_init_prefix {
         #[doc = "Field `IMAGE_UNKNOWN` reader - "]
         pub type ImageUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `IMAGE_UNKNOWN` writer - "]
-        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type ImageUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 20:31"]
             #[inline(always)]

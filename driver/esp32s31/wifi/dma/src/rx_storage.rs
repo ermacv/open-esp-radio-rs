@@ -41,6 +41,10 @@ impl<const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> RxDmaBuffer<BUFFER_SIZ
             .expect("the selected RX DMA prefix has the exact declared size")
     }
 
+    fn cpu_owned_storage_mut(&mut self) -> &mut [u8; STORAGE_SIZE] {
+        self.0.get_mut()
+    }
+
     /// # Safety
     ///
     /// The caller must own the matching completed descriptor. The returned
@@ -225,6 +229,16 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
     /// deterministic host fixtures and pre-publication initialization.
     pub fn buffer_mut(&mut self, index: usize) -> Option<&mut [u8; BUFFER_SIZE]> {
         self.buffers.get_mut(index).map(RxDmaBuffer::cpu_owned_mut)
+    }
+
+    /// Restore one buffer's recycle guards before any ring borrows this arena.
+    ///
+    /// Requiring `&mut self` proves that no stopped/live ring token can exist
+    /// at the same time, so pre-publication setup does not need privileged
+    /// access to the buffer's `UnsafeCell`.
+    pub fn prepare_unpublished_buffer(&mut self, index: usize) -> Result<(), RxRingError> {
+        let buffer = self.buffers.get_mut(index).ok_or(RxRingError::Count)?;
+        prepare_recycled_buffer(buffer.cpu_owned_storage_mut(), BUFFER_SIZE)
     }
 
     pub fn dma_layout(
@@ -440,17 +454,14 @@ mod tests {
     use super::*;
 
     #[test]
-    #[allow(unsafe_code, reason = "host fixture has no DMA walker")]
     fn arena_initializes_in_its_final_location_and_recycles_one_buffer() {
-        let storage = RxDmaStorage::<2, 16, 20>::new();
+        let mut storage = RxDmaStorage::<2, 16, 20>::new();
 
         assert_eq!(storage.descriptors().len(), 2);
         assert_eq!(storage.buffers().len(), 2);
         assert_eq!(storage.buffers().as_ptr().addr() & 3, 0);
 
-        // SAFETY: no DMA walker exists in this unit test and this buffer has
-        // not been published to any other owner.
-        unsafe { storage.buffers()[0].prepare_for_recycle().unwrap() };
+        storage.prepare_unpublished_buffer(0).unwrap();
         assert!(!storage.buffers()[0].leading_guard_overwritten());
     }
 }

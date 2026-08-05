@@ -572,6 +572,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         None
     }
 
+    crate::place_rx_hot_path! {
     /// Takes one newly completed descriptor exactly once for this ring epoch.
     ///
     /// Kept in internal SRAM for PSRAM-code profiles: this is invoked once for
@@ -579,11 +580,6 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// executing the complete poll/copy path from PSRAM capped useful UDP RX
     /// near 65 Mbit/s.
     #[inline(never)]
-    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn take_completed(&mut self, index: usize) -> Option<RxCompletedDescriptor> {
         if index >= COUNT {
             return None;
@@ -604,8 +600,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             word0,
             next_descriptor_address: descriptor.next_address(),
         })
-    }
+    }}
 
+    crate::place_rx_hot_path! {
     /// Settles a prior append and, when the next half is entirely CPU-owned,
     /// rearms and appends it without stopping the live walker.
     ///
@@ -615,11 +612,6 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// during reload, the exact ROM base-repair rule is applied before the new
     /// tail becomes accepted.
     #[inline(never)]
-    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn recycle_completed_half<M, F>(
         &mut self,
         mmio: &mut M,
@@ -630,8 +622,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         F: FnMut(usize) -> Result<(), RxRingError>,
     {
         self.recycle_completed_group(mmio, COUNT / 2, false, prepare_buffer)
-    }
+    }}
 
+    crate::place_rx_hot_path! {
     /// Rearm and append one fixed-size, contiguous group of completed slots.
     ///
     /// The complete ROM `wDev_AppendRxBlocks` contract accepts an arbitrary
@@ -644,11 +637,6 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// successful append. This deliberately preserves the ROM doorbell/base
     /// repair ordering without hiding a wait in this finite operation.
     #[inline(never)]
-    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn recycle_completed_batch<const BATCH: usize, M, F>(
         &mut self,
         mmio: &mut M,
@@ -662,8 +650,9 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return Err(RxRingError::Count);
         }
         self.recycle_completed_group(mmio, BATCH, false, prepare_buffer)
-    }
+    }}
 
+    crate::place_rx_hot_path! {
     /// Rearm the longest currently completed prefix, up to `MAX_BATCH`.
     ///
     /// Unlike [`Self::recycle_completed_batch`], this does not wait for a
@@ -686,11 +675,6 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// variable-size reclaim policy is software, not automatic DMA recycling.
     /// `MAX_BATCH` bounds one append transaction without imposing a minimum.
     #[inline(never)]
-    #[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn recycle_completed_prefix<const MAX_BATCH: usize, M, F>(
         &mut self,
         mmio: &mut M,
@@ -721,7 +705,7 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             return Ok(None);
         }
         self.recycle_completed_group(mmio, completed, false, prepare_buffer)
-    }
+    }}
 
     /// Rearm and append one observed RX unit, preserving a multi-descriptor
     /// unit's `not-done .. done` completion shape until all of its bytes have

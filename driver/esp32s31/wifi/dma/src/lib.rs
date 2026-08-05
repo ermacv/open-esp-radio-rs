@@ -20,11 +20,12 @@ pub mod rx_storage;
 /// is intentionally limited to code items rather than storage.
 #[macro_export]
 macro_rules! place_rx_hot_path {
-    ($item:item) => {
+    ($(#[$attribute:meta])* $visibility:vis fn $name:ident $($body:tt)*) => {
+        $(#[$attribute])*
         #[cfg_attr(
             target_arch = "riscv32",
             unsafe(link_section = ".rwtext.open_radio_rx_hot")
         )]
-        $item
+        $visibility fn $name $($body)*
     };
 }

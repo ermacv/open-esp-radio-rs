@@ -35,6 +35,32 @@ the migration. The remaining orchestration and additional-backend work is
 tracked in
 [`docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md`](../../../docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md).
 
+## Shared trace and effect-contract layout
+
+`crates/model/src/ir/trace.rs` is a compatibility façade that preserves the
+public `ir::*` API. Its child modules separate stable data from queries:
+
+| Module | Responsibility |
+| --- | --- |
+| `events.rs` | Observable effects, draft reference events, and event formatting |
+| `flow.rs` | Draft CFG types and ABI-input collection |
+| `validation.rs` | Call-result availability and fail-closed flow validation |
+| `function.rs` | `FunctionAnalysis`, eligibility, and inventory queries |
+| `tests.rs` | Function-level trace classification tests |
+
+`crates/semantic/src/effect_contract.rs` similarly keeps the existing public
+exports while delegating to:
+
+| Module | Responsibility |
+| --- | --- |
+| `model.rs` | Closed effect vocabulary, selectors, dispositions, and policy |
+| `parser.rs` | Fail-closed textual policy parser |
+| `compare.rs` | Observable extraction and vendor/Rust effect comparison |
+| `tests.rs` | Parser, replacement, omission, and comparison tests |
+
+The comparator consumes `EffectPolicy` through its public query methods.
+Parser and comparison logic do not access the policy's internal rule map.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -83,12 +109,8 @@ Line count is only a signal, but the next useful responsibility reviews are:
 - `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
   small and move any remaining decoding/control-flow policy into its existing
   phase modules;
-- `model/src/ir/trace.rs`: separate stable observable-event data from
-  normalization and query helpers if they evolve independently;
 - `harness-esp32s31-semantic/src/reviewed_summaries.rs`: group reviewed
   summaries by subsystem while retaining one explicit registry;
-- `semantic/src/effect_contract.rs`: separate the policy model, canonical
-  comparison, and report diagnostics when each boundary has dedicated tests;
 - `backend-riscv/src/reference_analysis/mod.rs`: keep CFG orchestration apart
   from resolution/composition rules.
 

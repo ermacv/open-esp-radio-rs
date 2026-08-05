@@ -79,6 +79,12 @@ indexing and pseudo rendering. The `ir export` command owns only orchestration;
 input validation and the human, pseudo-Rust and JSON renderers are separate
 consumers of the same report.
 
+Shared trace IR now keeps observable/draft events, CFG/input queries,
+fail-closed validation and function-level eligibility in separate modules
+behind the unchanged `ir::*` façade. Effect Contract follows the same rule:
+its closed data model, textual parser and vendor/Rust comparator are separate,
+and the comparator uses policy query methods rather than its backing map.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

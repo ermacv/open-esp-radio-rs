@@ -12,7 +12,6 @@ use core::future::Future;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::{StaLinkRxPolicyHardware, configure_sta_link_receive_policy},
     rx::{RxDma, RxIngressConfig, RxSegment, extract_management},
-    tx::{TxCompletion, TxHardware},
 };
 use open_esp_radio_esp32s31_wifi_sta::{
     association::{ESP32S31_STA_LISTEN_INTERVAL, esp32s31_sta_association_profile},
@@ -20,7 +19,6 @@ use open_esp_radio_esp32s31_wifi_sta::{
         Esp32s31StaJoinObserver, Esp32s31StaJoinPortError, Esp32s31StaJoinReceive,
         Esp32s31StaJoinTransmit,
     },
-    tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
 };
 use open_esp_radio_ieee80211::{
     scan::ScanRecord,
@@ -32,12 +30,11 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_sta::join::{StaJoinBackend, StaJoinRxDirective, StaJoinRxObserver};
 
 use crate::{
-    control_tx::{ControlTxError, Esp32s31ControlTx},
     preconnected_rx::{
         Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
         Esp32s31PreconnectedRxError,
     },
-    rx_backend::Esp32s31RxDmaStorage,
+    rx_dma_service::Esp32s31RxDmaStorage,
 };
 
 /// RX owner bound to the stable DMA storage used by every finite join phase.
@@ -121,38 +118,6 @@ where
                 }
             })
             .map(|_| ())
-    }
-}
-
-impl<'slot, P, E, W, H, const BUFFER_SIZE: usize> Esp32s31StaJoinTransmit<H>
-    for Esp32s31ControlTx<'slot, P, E, W, BUFFER_SIZE>
-where
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    W: WifiTxTimer,
-    H: TxHardware,
-{
-    type Error = ControlTxError;
-    type PowerProfile = P;
-
-    fn power_profile(&self) -> &Self::PowerProfile {
-        Self::power_profile(self)
-    }
-
-    fn transmit_open_authentication<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        request: OpenAuthenticationRequest,
-    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        Self::transmit_open_authentication(self, hardware, request)
-    }
-
-    fn transmit_association<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        request: AssociationRequest<'a>,
-    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        Self::transmit_association(self, hardware, request)
     }
 }
 
@@ -371,8 +336,10 @@ mod tests {
     use std::vec::Vec;
 
     use crate::ordinary_tx::WifiTxPowerPair;
-    use open_esp_radio_esp32s31_wifi_mac::tx::TxCookie;
-    use open_esp_radio_esp32s31_wifi_sta::association::Esp32s31StaAssociationProfile;
+    use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxCookie};
+    use open_esp_radio_esp32s31_wifi_sta::{
+        association::Esp32s31StaAssociationProfile, tx::WifiTxPowerProfile,
+    };
     use open_esp_radio_ieee80211::station::StaAssociationPhy;
 
     use super::*;

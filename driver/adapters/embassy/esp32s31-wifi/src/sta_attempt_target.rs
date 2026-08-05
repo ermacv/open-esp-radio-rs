@@ -55,12 +55,12 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
-    cooperative_tx::CooperativeTxHardware,
+    cooperative_hardware::CooperativeRadioHardware,
     join_time::EmbassyStaJoinTimer,
     preconnected_rx::{
         Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,
     },
-    rx_backend::Esp32s31RxDmaStorage,
+    rx_dma_service::Esp32s31RxDmaStorage,
     sta_join_port::{
         Esp32s31StaJoinPort, Esp32s31StaJoinRadio, Esp32s31StaJoinRx, Esp32s31StaJoinStation,
         Esp32s31StaJoinStorage,
@@ -95,7 +95,8 @@ where
     }
 }
 
-impl<'cell, 'registers, P, O, D> Esp32s31StaAttemptChannel<CooperativeTxHardware<'cell, 'registers>>
+impl<'cell, 'registers, P, O, D>
+    Esp32s31StaAttemptChannel<CooperativeRadioHardware<'cell, 'registers>>
     for Esp32s31ScanPhy<'_, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
@@ -104,7 +105,7 @@ where
 {
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut CooperativeTxHardware<'cell, 'registers>,
+        hardware: &'a mut CooperativeRadioHardware<'cell, 'registers>,
         channel_or_frequency: u16,
         cbw: u8,
     ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {

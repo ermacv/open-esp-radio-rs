@@ -12,7 +12,7 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 
 use crate::{
     preconnected_rx::{Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay},
-    rx_backend::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
+    rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
 };
 
 /// RX conversion required at the disconnected-to-reconnected boundary.

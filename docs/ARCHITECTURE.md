@@ -43,7 +43,7 @@ Test harness (HIL)
 | `hal` | Typed power/clock/I2C/PBus operations and hardware boundaries | Board startup or an executor |
 | `phy` | Shared RF/baseband calibration plus the currently qualified Wi-Fi profile | Protocol MAC state or raw peripheral ownership |
 | `chips/esp32s31/wifi/mac` | 802.11 DMA descriptors, RX/TX state, interrupts, EDCA, BlockAck and rates | PHY calibration or non-Wi-Fi MAC policy |
-| `chips/esp32s31/wifi/sta` | S31 station startup, persistent channel authority, Association/peer policy and executor-independent STA TX ownership | Embassy, a network stack, board allocation or HIL policy |
+| `chips/esp32s31/wifi/sta` | S31 station startup, persistent channel authority, Association/peer policy, connected-control hardware contract and executor-independent STA TX/radio ownership | Embassy, a network stack, board allocation or HIL policy |
 | `ieee80211` | Portable frame formats and protocol state | Chip registers |
 | `wifi/softmac` | Portable VIF/channel-context identity, capability profile and normalized TX/RX contracts | DMA, IRQ, chip registers or executor scheduling |
 | `wifi/sta` | Portable STA MLME, scan/reconnect, beacon-loss and power-save decisions | Chip registers, DMA, executor timers or AP policy |
@@ -99,7 +99,7 @@ only the owner graph implemented today: one STA, no AP/AP+STA and no monitor
 tap.
 
 Raw ESP32-S31 `TxCompletion` remains an attempt-level hardware record. The
-Embassy ordinary-TX owner now additionally returns portable `MacTxStatus` with
+executor-independent ESP32-S31 STA ordinary-TX owner additionally returns portable `MacTxStatus` with
 the total attempt count, final typed rate, ACK semantics and ACK-SNR sample for
 the logical exchange. `MacAmpduTxStatus` now joins every aggregate publication,
 BlockAck delivery and the optional detached one-MPDU ordinary retry. In that
@@ -213,13 +213,36 @@ The station-wide unique control-TX owner follows the same rule: its epoch
 state is in `chips/esp32s31/wifi/sta::tx_epoch`; the Embassy adapter contributes
 only the extension which constructs `Esp32s31ControlTx` from a runtime-owned
 descriptor slot and later reconstructs it from returned resources.
+Task-cooperative PAC access follows that rule too. The executor-independent
+`cooperative_hardware::CooperativeRadioHardware` implementation is in the chip
+STA crate because it binds RX DMA, TX, key, peer and BlockAck operations to one
+`RadioRegisters` cell. The Embassy adapter schedules access to that value but
+does not define its hardware behaviour.
+The connected control plane follows the same boundary. The chip STA
+`connected_control::Esp32s31ConnectedControlCore` privately owns RX/TX
+BlockAck sessions, beacon-loss and power-save state. Its synchronous bounded
+step consumes an optional semantic RX event and uses runtime-neutral TX and
+reorder-command ports. The Embassy wrapper only dequeues that event and waits
+for either the next mailbox edge or the core's absolute deadline.
+Connected aggregate TX cannot yet move wholesale below the adapter because its
+DMA ownership includes pinned `embassy-net` leases. Its local `aggregate_tx`
+facade is nevertheless split by transaction responsibility: owner/teardown,
+publication, completion/retry, resource quarantine and runtime trait binding.
+The split keeps executor scheduling out of register and descriptor code while
+making the remaining network-lease dependency explicit.
+RX integration follows the same producer/consumer split. The Embassy
+`rx_dma_service` owns only ring type-state transitions and finite
+DMA-to-staging publication. `connected_rx_protocol` owns the independently
+scheduled staging consumer, with separate owner, scheduler, BlockAck reorder
+and Ethernet/A-MSDU dispatch modules. No protocol parser can advance the DMA
+frontier, and the DMA service cannot retain borrowed protocol events.
 The persistent `PhyColdState`/platform/observer owner used for cold scan,
 running scan and reconnect is similarly defined in
 `chips/esp32s31/wifi/sta::channel`; adapter modules only implement their scan
 and attempt traits for that owner.
 The finite scan transaction and mandatory RX cleanup order live in
 `chips/esp32s31/wifi/sta::scan`. It expresses dwell in abstract ticks; only the
-the Embassy adapter maps those ticks to an executor clock and binds the concrete
+Embassy adapter maps those ticks to an executor clock and binds the concrete
 RX-DMA and probe-TX owners.
 
 ## Transitional debt

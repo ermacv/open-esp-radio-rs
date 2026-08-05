@@ -1,0 +1,647 @@
+use core::{
+    future::{Future, ready},
+    pin::Pin,
+    task::{Context, Waker},
+};
+
+use open_esp_radio_embassy_net::{
+    Driver as _, NoopRawMutex, PinnedDevice, PinnedResources, PinnedTxPool, TxToken as _,
+};
+use open_esp_radio_esp32s31_registers::{
+    MacHeTbLinkReservation, MacHeTbProgramError, MacHeTbTidLimit, MacHeTid,
+    MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHtAmpduCompletionRegisters, MacHtTxProgram,
+    MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+    MacTxDetachReason, MacTxQueueDetached,
+};
+use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
+    rx::HeGuardIntervalAndLtf,
+    tx::{
+        HardwareOwnedTxDma, HeMcs, HeRate, HtChannelWidth, HtGuardInterval, HtMcs, HtRate,
+        LegacyRate, PreparedTxDma, TxSlot,
+    },
+    tx_ampdu::HtAmpduTxStorage,
+    tx_runtime::StaTxRuntimePolicy,
+};
+use open_esp_radio_ieee80211::station::{
+    STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters,
+};
+use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
+use open_esp_radio_wifi_softmac::MacTxPlan;
+
+use crate::{
+    ordinary_tx::{WifiTxPowerPair, WifiTxResources},
+    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
+};
+
+use super::*;
+
+const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
+const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
+const TEST_FRAME_CAPACITY: usize = 64;
+const TEST_HEADROOM: usize = open_esp_radio_esp32s31_wifi_mac::tx_ampdu::TX_AMPDU_METADATA_SIZE
+    + STA_PROTECTED_QOS_ETHERNET_HEADROOM;
+const TEST_TRAILER: usize = 12;
+const TEST_QUEUE_DEPTH: usize = 3;
+const TEST_SLOTS: usize = 3;
+const TEST_BUFFER_SIZE: usize = 256;
+const TEST_RATE: HtRate = HtRate::new(
+    HtMcs::Mcs7,
+    HtGuardInterval::Short400Ns,
+    HtChannelWidth::Mhz20,
+);
+
+type Resources = PinnedResources<
+    NoopRawMutex,
+    TEST_FRAME_CAPACITY,
+    TEST_HEADROOM,
+    TEST_TRAILER,
+    TEST_QUEUE_DEPTH,
+>;
+type Pool = PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, TEST_QUEUE_DEPTH>;
+type Device = PinnedDevice<
+    'static,
+    NoopRawMutex,
+    TEST_FRAME_CAPACITY,
+    TEST_HEADROOM,
+    TEST_TRAILER,
+    TEST_QUEUE_DEPTH,
+>;
+
+#[derive(Default)]
+struct Hardware {
+    legacy_publications: usize,
+    ht_publications: usize,
+    he_publications: usize,
+    ordinary_completion: Option<MacTxCompletionRegisters>,
+    aggregate_completion: Option<MacHtAmpduCompletionRegisters>,
+}
+
+impl CcmpKeyHardware for Hardware {
+    fn install_sta_ccmp_entry(&mut self, _index: u8, _words: [u32; 6]) -> MacKeyInstallOutcome {
+        MacKeyInstallOutcome::Installed
+    }
+
+    fn clear_ccmp_entry(&mut self, _index: u8) {}
+}
+
+impl open_esp_radio_esp32s31_wifi_mac::tx::TxHardware for Hardware {
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        _program: MacLegacyTxProgram,
+    ) -> bool {
+        self.legacy_publications += 1;
+        true
+    }
+
+    fn start_bound_legacy_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+
+    fn prepare_bound_ht_tx(
+        &mut self,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        _program: MacHtTxProgram,
+    ) -> bool {
+        self.ht_publications += 1;
+        true
+    }
+
+    fn start_bound_ht_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+
+    fn prepare_bound_he_tx(
+        &mut self,
+        _dma: &dyn PreparedTxDma,
+        _queue: u8,
+        _program: MacHeTxProgram,
+    ) -> bool {
+        self.he_publications += 1;
+        true
+    }
+
+    fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
+
+    fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
+        self.ordinary_completion.take()
+    }
+
+    fn begin_tx_timeout_abort(&mut self, _queue: u8) -> bool {
+        true
+    }
+
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        _queue: u8,
+        expected_descriptor_head: u32,
+        reason: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
+        match reason {
+            MacTxDetachReason::Timeout => MacTxDetachOutcome::Failed,
+            MacTxDetachReason::Collision | MacTxDetachReason::Completed => {
+                MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(
+                    expected_descriptor_head,
+                )))
+            }
+        }
+    }
+}
+
+impl HtAmpduHardware for Hardware {
+    fn take_ht_ampdu_completion(&mut self, _queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
+        self.aggregate_completion.take()
+    }
+
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        _policy: MacHeTbTidLimit,
+        _reservation: MacHeTbLinkReservation,
+        _tid: MacHeTid,
+        _mpdu_lengths: &[u16],
+        _queued_msdu_bytes: u32,
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+        unreachable!("HT tests never publish a trigger-based HE queue")
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, _reservation: MacHeTbLinkReservation) {}
+}
+
+struct Power;
+
+impl WifiTxPowerProfile for Power {
+    fn power_pair(&self, _rate_code: u8) -> WifiTxPowerPair {
+        WifiTxPowerPair {
+            primary: 5,
+            alternate: 6,
+        }
+    }
+}
+
+#[derive(Default)]
+struct Timer {
+    now: u64,
+}
+
+impl WifiTxTimer for Timer {
+    fn now_micros(&self) -> u64 {
+        self.now
+    }
+
+    fn wait_until(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
+        self.now = deadline_micros;
+        ready(())
+    }
+
+    fn after_micros(&mut self, micros: u64) -> impl Future<Output = ()> + '_ {
+        self.now += micros;
+        ready(())
+    }
+}
+
+fn context() -> Context<'static> {
+    Context::from_waker(Waker::noop())
+}
+
+fn send_frame(device: &mut Device, marker: u8) {
+    device
+        .transmit(&mut context())
+        .expect("free pinned network slot")
+        .consume(17, |frame| {
+            frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+            frame[6..12].copy_from_slice(&STATION);
+            frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+            frame[14..].fill(marker);
+        });
+}
+
+fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduCompletionRegisters {
+    MacHtAmpduCompletionRegisters {
+        tx: MacTxCompletionRegisters {
+            aux_a: 0,
+            aux_b: 0,
+            aux_c: 0,
+            primary: 0,
+            alternate: 0,
+            trigger_flow: false,
+        },
+        block_ack_control_and_sequence: u32::from(starting_sequence & 0x0fff) << 4,
+        block_ack_bitmap_low: bitmap as u32,
+        block_ack_bitmap_high: (bitmap >> 32) as u32,
+    }
+}
+
+fn make_ordinary<'a, const BUFFER_SIZE: usize>(
+    slot: Pin<&'a mut TxSlot<BUFFER_SIZE>>,
+    hardware: &mut Hardware,
+) -> Esp32s31SingleMpduTx<'a, Power, fn() -> u32, Timer, BUFFER_SIZE> {
+    fn entropy() -> u32 {
+        0x1234_5678
+    }
+
+    let key = install_sta_pairwise_ccmp(hardware, BSSID, &[0x5a; 16]).unwrap();
+    Esp32s31SingleMpduTx::new(
+        WifiTxResources {
+            slot,
+            policy: StaTxRuntimePolicy::vendor_defaults(),
+            power: Power,
+            entropy,
+            timer: Timer::default(),
+        },
+        ConnectedTxHandoff {
+            key,
+            sequences: StaTxSequenceCounters::new(7),
+            config: SingleMpduTxConfig {
+                station_address: STATION,
+                bssid: BSSID,
+                peer_qos: true,
+                exchange: MacTxPlan {
+                    access_category: WmmAccessCategory::BestEffort,
+                    initial_rate: TxPhyRate::Legacy(LegacyRate::Ofdm54M),
+                    publication_limit: 2,
+                    publication_timeout_micros: 250_000,
+                },
+            },
+        },
+    )
+}
+
+fn make_network() -> (
+    Device,
+    open_esp_radio_embassy_net::PinnedRadioRunner<
+        'static,
+        NoopRawMutex,
+        TEST_FRAME_CAPACITY,
+        TEST_HEADROOM,
+        TEST_TRAILER,
+        TEST_QUEUE_DEPTH,
+    >,
+) {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    resources.split(pool, STATION)
+}
+
+#[test]
+fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let tx = Esp32s31ConnectedTx::<
+        NoopRawMutex,
+        _,
+        _,
+        _,
+        TEST_FRAME_CAPACITY,
+        TEST_HEADROOM,
+        TEST_TRAILER,
+        TEST_QUEUE_DEPTH,
+        TEST_SLOTS,
+        0,
+        TEST_BUFFER_SIZE,
+    >::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+
+    let returned = match tx.try_into_station_parts() {
+        Ok(parts) => parts,
+        Err(_) => panic!("idle aggregate must decompose"),
+    };
+    assert_eq!(returned.aggregate.state(), TxSlotState::Free);
+    assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
+    assert_eq!(returned.sequences.peek_non_qos(), 7);
+    returned.pairwise_key.clear(&mut hardware);
+}
+
+#[test]
+fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
+    let (mut device, network) = make_network();
+    send_frame(&mut device, 1);
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let counters = AggregateTxCounters::new();
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::from_units_32_us(5).unwrap(),
+        },
+    )
+    .unwrap()
+    .with_counters(&counters);
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert_eq!(hardware.legacy_publications, 1);
+    assert_eq!(hardware.ht_publications, 0);
+    assert_eq!(counters.snapshot().network_single_mpdu_started, 1);
+    assert_eq!(
+        counters.snapshot().network_single_fresh_aggregate_capacity,
+        1
+    );
+}
+
+#[test]
+fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
+    const FRAME_CAPACITY: usize = 1_600;
+    const HEADROOM: usize = TEST_HEADROOM;
+    const TRAILER: usize = 12;
+    const QUEUE_DEPTH: usize = 3;
+    type LargeResources =
+        PinnedResources<NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+    type LargePool = PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
+
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(LargeResources::new()));
+    let pool = LargePool::pin_static(std::boxed::Box::leak(
+        std::boxed::Box::new(LargePool::new()),
+    ));
+    let (mut device, network) = resources.split(pool, STATION);
+    for marker in 1..=2 {
+        device
+            .transmit(&mut context())
+            .expect("free production-sized pinned network slot")
+            .consume(1_514, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+            });
+    }
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<2_048>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let counters = AggregateTxCounters::new();
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap()
+    .with_counters(&counters);
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert_eq!(hardware.he_publications, 1);
+    assert_eq!(hardware.legacy_publications, 0);
+    assert_eq!(counters.snapshot().aggregates_prepared, 1);
+    assert_eq!(counters.snapshot().network_single_mpdu_started, 0);
+}
+
+#[test]
+fn block_ack_completion_releases_all_referenced_network_leases() {
+    let (mut device, network) = make_network();
+    send_frame(&mut device, 1);
+    send_frame(&mut device, 2);
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 1);
+    // Only the unused third slot can return to the producer while the two
+    // submitted frames remain radio-owned.
+    send_frame(&mut device, 3);
+    assert!(device.transmit(&mut context()).is_none());
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+    assert_eq!(
+        tx.take_last_aggregate_status(),
+        Some(MacAmpduTxStatus {
+            result: MacAmpduTxResult::Delivered,
+            original_subframes: 2,
+            aggregate_attempts: 1,
+            aggregate_rate: TxPhyRate::Ht(TEST_RATE),
+            block_acknowledged_subframes: 2,
+            ordinary_retry: None,
+        })
+    );
+    send_frame(&mut device, 4);
+    send_frame(&mut device, 5);
+    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
+    for _ in 0..TEST_QUEUE_DEPTH {
+        drop(network.try_receive_tx().unwrap());
+    }
+}
+
+#[test]
+fn partial_block_ack_retains_missing_frames_across_one_republication() {
+    let (mut device, network) = make_network();
+    for marker in 1..=3 {
+        send_frame(&mut device, marker);
+    }
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_operational(0, true);
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 2);
+    assert!(device.transmit(&mut context()).is_none());
+
+    hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+    assert_eq!(
+        tx.take_last_aggregate_status(),
+        Some(MacAmpduTxStatus {
+            result: MacAmpduTxResult::Delivered,
+            original_subframes: 3,
+            aggregate_attempts: 2,
+            aggregate_rate: TxPhyRate::Ht(TEST_RATE),
+            block_acknowledged_subframes: 3,
+            ordinary_retry: None,
+        })
+    );
+    send_frame(&mut device, 4);
+    send_frame(&mut device, 5);
+    send_frame(&mut device, 6);
+    assert!(device.transmit(&mut context()).is_none());
+    assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
+    for _ in 0..TEST_QUEUE_DEPTH {
+        drop(network.try_receive_tx().unwrap());
+    }
+}
+
+#[test]
+fn one_missing_ht_mpdu_moves_to_ordinary_retry_without_new_sequence_or_pn() {
+    let (mut device, network) = make_network();
+    send_frame(&mut device, 1);
+    send_frame(&mut device, 2);
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_operational(0, true);
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b01));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(tx.take_last_aggregate_status(), None);
+    assert_eq!(tx.peek_qos_sequence(0), Some(9));
+
+    // The individual retry uses the private ordinary descriptor. Both
+    // referenced network allocations have already crossed the safe
+    // detach/release edge and can be filled again while it is in flight.
+    send_frame(&mut device, 3);
+    send_frame(&mut device, 4);
+    send_frame(&mut device, 5);
+    assert_eq!(network.tx_queue_len(), TEST_QUEUE_DEPTH);
+
+    hardware.ordinary_completion = Some(MacTxCompletionRegisters {
+        aux_a: 0,
+        aux_b: 0,
+        aux_c: 0,
+        primary: 0,
+        alternate: 0,
+        trigger_flow: false,
+    });
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+    let aggregate = tx
+        .take_last_aggregate_status()
+        .expect("ordinary retry completes the logical aggregate exchange");
+    assert_eq!(aggregate.result, MacAmpduTxResult::Delivered);
+    assert_eq!(aggregate.original_subframes, 2);
+    assert_eq!(aggregate.aggregate_attempts, 1);
+    assert_eq!(aggregate.aggregate_rate, TxPhyRate::Ht(TEST_RATE));
+    assert_eq!(aggregate.block_acknowledged_subframes, 1);
+    assert_eq!(aggregate.delivered_subframes(), 2);
+    assert_eq!(aggregate.total_publication_attempts(), 2);
+    assert!(matches!(
+        aggregate.ordinary_retry,
+        Some(status) if status.result == MacTxResult::Transmitted
+            && status.final_rate == TxPhyRate::Ht(TEST_RATE)
+            && status.acknowledged == Some(true)
+    ));
+    assert!(matches!(
+        tx.take_last_ordinary_outcome(),
+        Some(SingleMpduTxOutcome::Success(_))
+    ));
+    for _ in 0..TEST_QUEUE_DEPTH {
+        drop(network.try_receive_tx().unwrap());
+    }
+}

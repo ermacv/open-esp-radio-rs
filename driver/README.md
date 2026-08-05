@@ -50,8 +50,10 @@ The hardware directory names now follow their responsibilities:
 - `chips/esp32s31/wifi/sta` owns S31 station composition that has no executor or
   network-stack dependency, including Association PHY/power selection,
   associated-peer WMM/HT/HE/rate-control programming and the platform ports
-  plus the unique epoch and persistent channel owner consumed by STA
-  transactions;
+  plus the unique epoch, persistent channel owner and cooperative
+  `RadioRegisters` facade consumed by STA transactions. The facade covers RX,
+  TX, keys, peer programming and BlockAck; it is therefore named
+  `CooperativeRadioHardware`, not after one datapath direction;
 - `wifi/sta` owns role-specific STA MLME and policy, including beacon loss and
   the decision to enter or leave power save;
 - `wifi/ieee80211` contains portable code, but still combines frame codecs and
@@ -143,19 +145,35 @@ Embassy adapter supplies the one-millisecond timer plus concrete PHY, RX-DMA and
 probe-TX owners. Host tests of mandatory RX stop and owner return therefore no
 longer compile through the runtime adapter.
 The concrete adapter is now explicit rather than hidden behind aliases:
-`scan_rx` owns DMA-ring phases, `scan_tx` owns active-probe publication,
+`scan_rx` owns DMA-ring phases,
 `scan_port` composes one finite channel visit and `scan_target` supplies the
-RISC-V hardware bindings.
+RISC-V hardware bindings. Active-probe publication and passive fallback live
+in `chips/esp32s31/wifi/sta::scan_tx` beside the ordinary/control TX owner.
+
+Ordinary descriptor retry/deadline ownership, single-MPDU encoding, the
+pre-connected control transmitter and active-scan TX now live together in
+`chips/esp32s31/wifi/sta::{ordinary_tx,single_mpdu_tx,control_tx,scan_tx}`.
+The former Embassy modules are compatibility re-exports; their host tests no
+longer compile through Embassy.
+
+The cooperative register facade, connected-control hardware contract and
+complete finite control state machine now live in
+`chips/esp32s31/wifi/sta::{cooperative_hardware,connected_control_hardware,
+connected_control}`. BlockAck, beacon-loss and power-save transitions accept
+one explicitly delivered event and a bounded reorder-command sink; they do not
+depend on an executor. The Embassy crate retains mailbox/deadline scheduling
+and compatibility exports, but no longer defines this protocol or PAC
+behaviour.
 
 The executor-independent Authentication/Association RX, control-TX,
 observation and error contracts likewise live in `chips/esp32s31/wifi/sta::join`.
 The local `sta_join_port` is now only their retained-DMA/control-TX binding.
 
 The RX descriptor/buffer arena itself now lives in
-`chips/esp32s31/wifi/dma::rx_storage`. `wifi-embassy::rx_backend` selects the
+`chips/esp32s31/wifi/dma::rx_storage`. `wifi-embassy::rx_dma_service` selects the
 qualified large-RX dimensions and owns the asynchronous ring/staging epoch;
 `network_rx` owns the network-stack sink and `control_mailbox` owns the
-bounded semantic-event handoff. The RX backend no longer defines the chip DMA
+bounded semantic-event handoff. The RX DMA service no longer defines the chip DMA
 memory representation or unrelated consumers.
 
 The complete `chips/esp32s31/wifi/mac` crate, including its tests, forbids `unsafe`.

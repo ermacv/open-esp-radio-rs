@@ -14,7 +14,7 @@ use open_esp_radio_esp32s31_wifi_mac::rx::{
     RxDma, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
 };
 
-use crate::rx_backend::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
+use crate::rx_dma_service::{ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage};
 
 /// Executor edge between walker publication and its first live observation.
 pub trait Esp32s31PreconnectedRxDelay {
@@ -342,7 +342,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::rx_backend::Esp32s31RxDmaStorage;
+    use crate::rx_dma_service::Esp32s31RxDmaStorage;
 
     const COUNT: usize = 2;
     const BUFFER_SIZE: usize = 64;

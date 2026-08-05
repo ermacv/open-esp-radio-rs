@@ -8,7 +8,7 @@
 
 use crate::{
     control_tx::{ControlTxError, Esp32s31ControlTx},
-    cooperative_tx::CooperativeTxHardware,
+    cooperative_hardware::CooperativeRadioHardware,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     scan_port::{Esp32s31ScanPhyPort, Esp32s31ScanReceivePort, Esp32s31ScanTransmitPort},
     scan_rx::{
@@ -29,7 +29,7 @@ use open_esp_radio_esp32s31_wifi_sta::channel::Esp32s31ScanPhy;
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
 impl<'state, 'cell, 'registers, P, O, D>
-    Esp32s31ScanPhyPort<CooperativeTxHardware<'cell, 'registers>>
+    Esp32s31ScanPhyPort<CooperativeRadioHardware<'cell, 'registers>>
     for Esp32s31ScanPhy<'state, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
@@ -40,7 +40,7 @@ where
 
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut CooperativeTxHardware<'cell, 'registers>,
+        hardware: &'a mut CooperativeRadioHardware<'cell, 'registers>,
         channel: u8,
     ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
         async move {

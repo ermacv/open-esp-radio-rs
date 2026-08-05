@@ -14,17 +14,12 @@ use embassy_futures::{
 use open_esp_radio_embassy_net::{
     PinnedTxConsumer, PinnedTxFrame, RawMutex, SplitPinnedRadioRunner,
 };
+pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
+    ConnectedControlContext as WifiControlContext, ConnectedControlProgress as WifiControlProgress,
+};
+pub use open_esp_radio_esp32s31_wifi_sta::tx::{WifiTxProgress, WifiTxWake};
 
 use crate::embassy_irq::EmbassyMacIrqRuntime;
-
-/// State of the one hardware TX transaction currently owned by the runner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiTxProgress {
-    /// DMA, acknowledgement or a bounded retry is still in flight.
-    Pending,
-    /// Hardware no longer owns the pinned network frame.
-    Complete,
-}
 
 /// Result of one bounded RX bottom-half pass.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,20 +29,6 @@ pub enum WifiRxProgress {
     /// Completed descriptors remain, but no independent staging owner is
     /// available. Resume only after protocol processing returns a credit.
     Backpressured,
-}
-
-/// Result of one finite control-plane scheduling step.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiControlProgress {
-    /// No control-plane PAC or TX work is currently ready.
-    Idle,
-    /// One finite action completed and another action may remain queued.
-    More,
-    /// A control frame now owns the shared TX transaction.
-    TxPending,
-    /// The connected policy proved that the peer is no longer reachable.
-    /// The runner publishes link-down and returns ownership to its caller.
-    Disconnected,
 }
 
 /// Terminal, non-error outcome of the connected radio event loop.
@@ -66,31 +47,6 @@ pub enum ConnectedRunnerExit {
     /// and returned the same owners as a disconnect without claiming peer
     /// reachability had failed.
     Stopped,
-}
-
-/// Coherent runner-owned scheduling facts supplied to one control step.
-///
-/// This value is sampled before control arbitration, while no TX transaction
-/// owns hardware. It prevents power policy from treating an already queued
-/// network frame as idle merely because the services have not claimed it yet.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct WifiControlContext {
-    pub network_tx_pending: bool,
-}
-
-impl WifiControlContext {
-    pub const IDLE: Self = Self {
-        network_tx_pending: false,
-    };
-}
-
-/// Reason for inspecting the one active TX transaction.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum WifiTxWake {
-    /// A coalesced completion, hardware-timeout or collision interrupt fired.
-    Interrupt { events: u32 },
-    /// The transaction's executor deadline expired without a decisive IRQ.
-    Deadline,
 }
 
 /// Finite chip-specific operations used by [`ConnectedRunner`].

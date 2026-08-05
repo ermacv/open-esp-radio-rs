@@ -61,9 +61,9 @@ remain HIL policy. No RTOS event queue or vendor supplicant context is retained.
 
 ## 2. Completed: management/EAPOL TX transaction owner
 
-`ordinary_tx.rs` is now the single owner of the pinned ordinary descriptor,
+`chips/esp32s31/wifi/sta::ordinary_tx` is now the single owner of the pinned ordinary descriptor,
 EDCA/retry state, calibrated power, entropy and per-publication deadline.
-`control_tx.rs` provides typed Probe, Authentication, Association, unprotected
+`chips/esp32s31/wifi/sta::control_tx` provides typed Probe, Authentication, Association, unprotected
 EAPOL and protected-data transactions before connection. It transfers the
 same owner directly into `Esp32s31SingleMpduTx` after WPA2 Message 4.
 
@@ -286,7 +286,7 @@ The first reconnect seam is now production-owned:
 - the finite Authentication/Association and WPA2 HIL backends now depend only
   on their actual `Mmio`, `RxDma`, `TxHardware` and `CcmpKeyHardware`
   capabilities. They are no longer tied to the cold `RadioRegisters` type and
-  can therefore operate on the `CooperativeTxHardware` returned by a completed
+  can therefore operate on the `CooperativeRadioHardware` returned by a completed
   connected epoch;
 - every returning Association/WPA2 error now produces one
   `RadioHilJoinFailure` with observable progress and a `RadioHilJoinRetry`
@@ -350,7 +350,7 @@ The first reconnect seam is now production-owned:
 - the remaining synchronous Association hardware leaves now expose narrow
   reusable traits: link RX policy, noise-floor observation, HE20 peer
   programming and beamforming report-rate programming. Both `RadioRegisters`
-  and `CooperativeTxHardware` implement the same contracts, in addition to
+  and `CooperativeRadioHardware` implement the same contracts, in addition to
   their existing MMIO/RX-DMA/TX/CCMP traits; no finite Association operation
   now intrinsically requires the cold PAC-owner type;
 - the HIL now consumes `RadioHilReconnectReady` instead of parking it. It runs
@@ -407,7 +407,7 @@ The first reconnect seam is now production-owned:
   scan table into a concrete running `Esp32s31StaScanPort`. The same backend
   completed the full 6, 1--5, 7--13 channel plan, selected the target network,
   returned every RX/TX owner and transferred the selected `ScanRecord` into a
-  fresh Open Authentication transaction on `CooperativeTxHardware`. The
+  fresh Open Authentication transaction on `CooperativeRadioHardware`. The
   resulting target then completed the second Association/WPA2 epoch. This
   proves the running transaction and candidate transfer. The concrete
   `Esp32s31ScanPort` which binds PHY retune, cooperative hardware,

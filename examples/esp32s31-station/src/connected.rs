@@ -14,21 +14,6 @@ use embassy_net::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use open_esp_radio::{
-    esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
-    esp32s31::{
-        hal::RadioRegisters,
-        phy::phy_cold::PhyColdState,
-        registers::MacInterruptSetup,
-        wifi::dma::tx_ampdu_storage::AmpduDmaStorage,
-        wifi::lmac::{
-            crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot},
-            init::MAC_COLD_RX_INTERRUPT_MASK,
-            rx::RxIngressConfig,
-            rx_pool::RxStagePool,
-            tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
-            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
-        },
-    },
     adapters::{
         esp32s31::wifi_embassy::{
             connected_runner::ConnectedRunner,
@@ -42,17 +27,17 @@ use open_esp_radio::{
                 Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
             },
             control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
-            cooperative_tx::CooperativeTxHardware,
+            cooperative_hardware::CooperativeRadioHardware,
             embassy_irq::{
                 EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
             },
             embassy_rx::EmbassyEsp32s31RxReloadDelay,
             network_rx::EmbassyNetConnectedRxSink,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            rx_backend::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
+            rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
             rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
             sta_tx_epoch::Esp32s31StaTxEpochExt,
-            staged_rx::{
+            connected_rx_protocol::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
             },
             station::{
@@ -69,6 +54,21 @@ use open_esp_radio::{
         network::embassy_net::{
             LinkState, PinnedTxPool, SplitPinnedDevice, SplitPinnedRadioRunner,
             SplitPinnedResources,
+        },
+    },
+    esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
+    esp32s31::{
+        hal::RadioRegisters,
+        phy::phy_cold::PhyColdState,
+        registers::MacInterruptSetup,
+        wifi::dma::tx_ampdu_storage::AmpduDmaStorage,
+        wifi::lmac::{
+            crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot},
+            init::MAC_COLD_RX_INTERRUPT_MASK,
+            rx::RxIngressConfig,
+            rx_pool::RxStagePool,
+            tx::{HeEdcaTxopLimit, HtGuardInterval, HtMcs, LegacyRate},
+            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
         },
     },
     wifi::{ieee80211::station::StaTxSequenceCounters, wpa2::Pmk},
@@ -150,7 +150,7 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_SLOT_COUNT,
     RX_REORDER_WINDOW,
 >;
-pub type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
+pub type ConnectedHardware = CooperativeRadioHardware<'static, 'static>;
 type ConnectedStoppedRx = Esp32s31StoppedRx<
     'static,
     'static,
@@ -486,7 +486,7 @@ pub async fn run_connected(
             let control_resources = CONTROL_RESOURCES.init(ConnectedControlResources::new());
             let register_cell = REGISTER_CELL.init(RefCell::new(hardware));
             (
-                CooperativeTxHardware::new(register_cell),
+                CooperativeRadioHardware::new(register_cell),
                 rx,
                 aggregate,
                 &*control_resources,

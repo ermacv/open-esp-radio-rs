@@ -16,7 +16,7 @@ use open_esp_radio_ieee80211::scan::{ScanObservation, ScanTable};
 
 use crate::{
     embassy_rx::RxReloadDelay,
-    rx_backend::{
+    rx_dma_service::{
         ESP32S31_RX_WALKER_ENABLE_SETTLE_US, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
         Esp32s31StoppedRx,
     },
@@ -563,7 +563,9 @@ impl<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{rx_backend::Esp32s31ConnectedRx, staged_rx::Esp32s31StagedRxQueue};
+    use crate::{
+        connected_rx_protocol::Esp32s31StagedRxQueue, rx_dma_service::Esp32s31ConnectedRx,
+    };
     use core::{
         future::{Future, ready},
         pin::pin,

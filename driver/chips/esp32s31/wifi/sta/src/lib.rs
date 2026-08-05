@@ -35,9 +35,16 @@ pub mod attempt;
 pub mod channel;
 #[cfg(target_arch = "riscv32")]
 pub mod cold_start;
+pub mod connected_control;
+pub mod connected_control_hardware;
+pub mod control_tx;
+pub mod cooperative_hardware;
 pub mod join;
+pub mod ordinary_tx;
 pub mod peer;
 pub mod scan;
+pub mod scan_tx;
+pub mod single_mpdu_tx;
 pub mod tx;
 pub mod tx_epoch;
 pub mod wpa2;

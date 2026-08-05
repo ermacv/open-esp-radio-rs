@@ -20,6 +20,13 @@ resource bundle live in `open_esp_radio_esp32s31_wifi_sta::tx`. This crate
 supplies only `tx_time::EmbassyWifiTxTimer`; it does not make Embassy time part
 of station policy or Association power derivation.
 
+The task-cooperative register facade also belongs to the chip composition,
+not to Embassy. `open_esp_radio_esp32s31_wifi_sta::cooperative_hardware` owns
+the RX/TX/key/peer/BlockAck trait implementations over the single
+`RadioRegisters` cell. This adapter re-exports it as
+`cooperative_hardware::CooperativeRadioHardware`; the former
+`cooperative_tx` path is compatibility-only.
+
 The station-wide TX epoch itself lives in
 `open_esp_radio_esp32s31_wifi_sta::tx_epoch`. The local `sta_tx_epoch` module
 is only an extension that creates and restores this owner using the concrete
@@ -38,34 +45,74 @@ time.
 The concrete scan adapter has four non-overlapping modules:
 
 - `scan_rx` owns prepared/live/halted DMA-ring transitions and frame copying;
-- `scan_tx` owns active Probe Request publication and passive fallback;
+- `open_esp_radio_esp32s31_wifi_sta::scan_tx` owns active Probe Request
+  publication and passive fallback;
 - `scan_port` composes PHY, RX, TX, storage and the executor dwell timer;
 - `scan_target` implements those ports for cold and cooperative RISC-V owners.
 
 There is no separate `running_scan` facade: cold scan and reconnect scan use
 the same `Esp32s31ScanPort` with different typed resource owners.
 
+Ordinary retry/deadline ownership, single-MPDU encoding and the pre-connected
+control transmitter likewise live in
+`open_esp_radio_esp32s31_wifi_sta::{ordinary_tx,single_mpdu_tx,control_tx}`.
+The same chip crate implements its join, peer and WPA2 transmit ports. Local
+modules with those former paths are compatibility re-exports plus the Embassy
+timer; no TX state machine depends on this adapter.
+
 RX descriptor and DMA-buffer storage is executor-independent and lives in
-`open_esp_radio_esp32s31_wifi_mac::rx_storage`. The local `rx_backend`
+`open_esp_radio_esp32s31_wifi_mac::rx_storage`. The local `rx_dma_service`
 chooses the production large-RX dimensions and combines that arena with
 reload waits, staging leases and optional observations. Network publication
 is isolated in `network_rx`; the bounded borrowed-RX to owned-control handoff
 is isolated in `control_mailbox`.
+
+The two adapter-side RX actors now have responsibility names and private
+phase modules:
+
+- `rx_dma_service::{lifecycle,service}` owns stopped/prepared/live ring
+  transitions and one finite DMA-to-staging service epoch;
+- `connected_rx_protocol::owner` owns the staged queue, scratch and shutdown;
+- `connected_rx_protocol::scheduler` owns Embassy queue/command/deadline
+  arbitration;
+- `connected_rx_protocol::reorder` owns RX BlockAck buffering and release;
+- `connected_rx_protocol::dispatch` owns ordinary MSDU and A-MSDU publication.
+
+The first actor is hardware-facing and never parses 802.11. The second has no
+PAC access and cannot extend the DMA completion frontier. Their only shared
+currency is an owned staging lease.
 
 Connected aggregate TX is likewise separated from its optional measurements:
 `aggregate_tx` owns pinned network leases, A-MPDU publication and completion;
 `aggregate_observer` owns only lock-free counters and interval snapshots. The
 observer state cannot affect retry, queue or DMA decisions.
 
-Connected-station control has a similarly explicit integration seam:
-`connected_control` owns the association-scoped BlockAck, beacon-loss and
-power-save transitions, while private `connected_control_port` binds only the
-required hardware and shared-TX operations. The port owns neither the Embassy
-mailbox nor protocol state, and its public traits remain re-exported from
-`connected_control` so consumers do not depend on the private module layout.
-The association-scoped data itself is isolated in executor-independent
-`connected_control_state`; only the outer control adapter owns the Embassy
-receiver, wakeup selection and reorder-command sender.
+`aggregate_tx` is a facade rather than one transaction-sized source file. Its
+private modules follow the lifetime of one connected TX exchange:
+
+- `owner` constructs the unique owner and returns its resources at station
+  teardown;
+- `publication` admits network frames, encodes the batch and publishes it;
+- `completion` normalizes completion, BlockAck retry, collision and timeout;
+- `resources` owns release, quarantine and the fail-closed `Drop` path;
+- `adapters` binds that owner to the connected-control and network-service
+  runtime contracts;
+- `tests` contains the host transaction fixture and ownership regressions.
+
+This is still an Embassy integration component because it retains pinned
+`embassy-net` leases. Register programming and descriptor state remain in the
+chip MAC/DMA crates; the module split does not introduce another MAC layer.
+
+Connected-station control has a similarly explicit integration seam.
+`open_esp_radio_esp32s31_wifi_sta::connected_control` owns the complete
+association-scoped BlockAck, beacon-loss and power-save state machine plus its
+runtime-neutral TX and reorder-command contracts. Its fields remain private;
+one synchronous `service_step` consumes at most one delivered event and
+performs one bounded transition. The adjacent
+`connected_control_hardware` module owns the chip-specific TSF, RX BlockAck
+and HE-TID contract. This adapter's `connected_control` module owns only the
+Embassy receiver, deadline `select` and bounded reorder sender, while
+preserving the former application-facing type names.
 
 The connected datapath entry points use responsibility names rather than the
 generic `runner`/`backend` pair: `connected_runner` owns Embassy arbitration

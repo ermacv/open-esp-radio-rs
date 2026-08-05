@@ -35,6 +35,9 @@ use crate::{
     aggregate_observer::AggregateTxCounters,
     aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
     connected_control::Esp32s31ConnectedControl,
+    connected_rx_protocol::{
+        ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxFrame,
+    },
     connected_services::Esp32s31ConnectedServices,
     control_mailbox::ConnectedControlReceiver,
     control_tx::Esp32s31ControlTx,
@@ -46,7 +49,6 @@ use crate::{
         RxReorderFrameStorage,
     },
     single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
-    staged_rx::{ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxFrame},
 };
 
 /// Runtime-selected rate policy independent of HIL environment variables.
@@ -750,9 +752,9 @@ mod tests {
     };
 
     use crate::{
+        connected_rx_protocol::{AlwaysReadyConnectedRxSink, Esp32s31StagedRxQueue},
         control_mailbox::ConnectedControlResources,
         rx_reorder::RxReorderCommandResources,
-        staged_rx::{AlwaysReadyConnectedRxSink, Esp32s31StagedRxQueue},
     };
 
     struct Sink;

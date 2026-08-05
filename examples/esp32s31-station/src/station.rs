@@ -29,24 +29,11 @@ use open_esp_radio::esp32s31::wifi::sta::scan::{
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
-    esp32s31::{
-        hal::{Radio, RadioRegisters},
-        phy::{
-            NoopPhyTargetObserver, PhyCalibrationIdentity, PhyTxTargetPowerProfile,
-            phy_cold::PhyColdState, phy_rfpll::phy_get_rf_cal_version,
-        },
-        registers::MacInterruptSetup,
-        wifi::lmac::{
-            init::initialize_promiscuous_receive,
-            scan::{ScanObservation, ScanRecord, ScanTable},
-            tx::TxSlot,
-        },
-    },
     adapters::esp32s31::wifi_embassy::{
         control_tx::Esp32s31ControlTx,
         phy_delay::EmbassyEsp32s31PhyDelay,
         preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-        rx_backend::Esp32s31RxDmaStorage,
+        rx_dma_service::Esp32s31RxDmaStorage,
         scan_port::{
             EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError,
             Esp32s31ScanPortParts, Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
@@ -65,6 +52,19 @@ use open_esp_radio::{
             Esp32s31StationResources,
         },
         station_epoch::Esp32s31RunningScanEpochParts,
+    },
+    esp32s31::{
+        hal::{Radio, RadioRegisters},
+        phy::{
+            NoopPhyTargetObserver, PhyCalibrationIdentity, PhyTxTargetPowerProfile,
+            phy_cold::PhyColdState, phy_rfpll::phy_get_rf_cal_version,
+        },
+        registers::MacInterruptSetup,
+        wifi::lmac::{
+            init::initialize_promiscuous_receive,
+            scan::{ScanObservation, ScanRecord, ScanTable},
+            tx::TxSlot,
+        },
     },
     wifi::{
         ieee80211::station::{StaAssociationPreference, StaSequenceCounter, StaTxSequenceCounters},

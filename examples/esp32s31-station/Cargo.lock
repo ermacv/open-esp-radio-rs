@@ -1417,6 +1417,7 @@ dependencies = [
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
 ]

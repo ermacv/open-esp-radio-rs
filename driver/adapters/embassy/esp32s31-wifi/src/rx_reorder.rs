@@ -17,6 +17,9 @@ use embassy_sync::{
 };
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::rx::RxSegment;
+pub use open_esp_radio_esp32s31_wifi_sta::connected_control::{
+    RxReorderCommand, RxReorderCommandError,
+};
 
 /// One command per possible RX agreement plus replacement/teardown slack.
 ///
@@ -233,25 +236,6 @@ impl<const CAPACITY: usize, const SLOTS: usize> Drop for RxReorderFrame<'_, CAPA
 const fn reorder_bitmap_word_and_bit(slot: usize) -> (usize, usize) {
     let bits = usize::BITS as usize;
     (slot / bits, 1_usize << (slot % bits))
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxReorderCommand {
-    /// Install or replace the receive reorder state for one QoS TID.
-    Start {
-        tid: u8,
-        starting_sequence: u16,
-        window: u16,
-    },
-    /// Flush and remove the receive reorder state for one QoS TID.
-    Stop { tid: u8 },
-    /// Flush every agreement when the connected ownership epoch ends.
-    StopAll,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RxReorderCommandError {
-    Full(RxReorderCommand),
 }
 
 pub type RxReorderCommandSender<'resources, M> =

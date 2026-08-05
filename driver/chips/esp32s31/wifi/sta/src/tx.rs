@@ -10,6 +10,27 @@ use core::{future::Future, pin::Pin};
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
 use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::StaTxRuntimePolicy};
 
+/// State of one finite ESP32-S31 STA TX transaction.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiTxProgress {
+    /// DMA, acknowledgement or a bounded retry is still in flight.
+    Pending,
+    /// Hardware no longer owns the TX descriptor or its frame.
+    Complete,
+}
+
+/// Reason for inspecting one active TX transaction.
+///
+/// The executor decides how either edge is produced. The transaction owner
+/// consumes only this value and therefore remains independent of Embassy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiTxWake {
+    /// A coalesced completion, hardware-timeout or collision interrupt fired.
+    Interrupt { events: u32 },
+    /// The transaction's external deadline expired without a decisive IRQ.
+    Deadline,
+}
+
 /// Platform entropy input used only for bounded EDCA slot selection.
 pub trait WifiTxEntropy {
     fn next_u32(&mut self) -> u32;

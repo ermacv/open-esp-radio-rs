@@ -9,8 +9,8 @@ use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 
 use crate::{
+    connected_rx_protocol::ConnectedRxProtocolSink,
     rx_observer::{RxPipelineObservation, RxPipelineObserver},
-    staged_rx::ConnectedRxProtocolSink,
 };
 
 /// One observation of the bounded network RX publication counters.

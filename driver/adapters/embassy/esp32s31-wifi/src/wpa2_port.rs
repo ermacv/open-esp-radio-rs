@@ -6,54 +6,18 @@
 
 use core::future::Future;
 
-use open_esp_radio_esp32s31_wifi_mac::{
-    rx::{RxDma, RxIngressConfig, extract_data},
-    tx::{LegacyTxQueue, TxCompletion, TxHardware, TxPhyRate},
-};
-use open_esp_radio_ieee80211::station::{StaDataFrame, StaProtectedDataFrame};
+use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, extract_data};
 use open_esp_radio_wpa2::runner::Wpa2RxProgress;
 
 pub use open_esp_radio_esp32s31_wifi_sta::wpa2::*;
 
 use crate::{
-    control_tx::{ControlTxError, Esp32s31ControlTx},
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     preconnected_rx::{
         Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxDirective,
         Esp32s31PreconnectedRxError,
     },
-    rx_backend::Esp32s31RxDmaStorage,
+    rx_dma_service::Esp32s31RxDmaStorage,
 };
-
-impl<'slot, P, E, W, H, const BUFFER_SIZE: usize> Esp32s31Wpa2Transmit<H>
-    for Esp32s31ControlTx<'slot, P, E, W, BUFFER_SIZE>
-where
-    P: WifiTxPowerProfile,
-    E: WifiTxEntropy,
-    W: WifiTxTimer,
-    H: TxHardware,
-{
-    type Error = ControlTxError;
-
-    fn transmit_unprotected<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        frame: StaDataFrame<'a>,
-    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        self.transmit_unprotected_data(hardware, frame)
-    }
-
-    fn transmit_protected<'a>(
-        &'a mut self,
-        hardware: &'a mut H,
-        frame: StaProtectedDataFrame<'a>,
-        queue: LegacyTxQueue,
-        rate: TxPhyRate,
-        hardware_key_selector: u8,
-    ) -> impl Future<Output = Result<TxCompletion, Self::Error>> + 'a {
-        self.transmit_protected_data(hardware, frame, queue, rate, hardware_key_selector)
-    }
-}
 
 /// Retained RX owner bound to its stable DMA allocation for WPA2.
 pub struct Esp32s31Wpa2Rx<

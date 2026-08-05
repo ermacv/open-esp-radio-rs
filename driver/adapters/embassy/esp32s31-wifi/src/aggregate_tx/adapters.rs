@@ -1,0 +1,182 @@
+use super::*;
+
+impl<
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> ConnectedControlTx
+    for Esp32s31ConnectedTx<
+        '_,
+        '_,
+        '_,
+        M,
+        P,
+        E,
+        T,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+        ORDINARY_BUFFER_SIZE,
+    >
+{
+    fn take_last_outcome(&mut self) -> Option<SingleMpduTxOutcome> {
+        self.take_last_ordinary_outcome()
+    }
+
+    fn now_micros(&self) -> u64 {
+        self.ordinary.now_micros()
+    }
+
+    fn peek_qos_sequence(&self, tid: u8) -> Option<u16> {
+        self.ordinary.peek_qos_sequence(tid)
+    }
+
+    fn start_action<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        body: &[u8],
+        config: ActionTxConfig,
+    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary.start_action(hardware, body, config)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(WifiControlProgress::TxPending)
+    }
+
+    fn start_power_management_null<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        power_management: StaPowerManagement,
+    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary
+            .start_power_management_null(hardware, power_management)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(WifiControlProgress::TxPending)
+    }
+
+    fn set_tx_block_ack_operational(&mut self, tid: u8, operational: bool) {
+        self.set_block_ack_operational(tid, operational);
+    }
+}
+
+impl<
+    M: RawMutex,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> ConnectedControlTimer
+    for Esp32s31ConnectedTx<
+        '_,
+        '_,
+        '_,
+        M,
+        P,
+        E,
+        T,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+        ORDINARY_BUFFER_SIZE,
+    >
+{
+    fn wait_until_micros(&mut self, deadline_micros: u64) -> impl Future<Output = ()> + '_ {
+        self.ordinary.wait_until_micros(deadline_micros)
+    }
+}
+
+impl<
+    'resources,
+    'slot,
+    'ampdu,
+    M,
+    H,
+    P,
+    E,
+    T,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+    const SLOTS: usize,
+    const AMPDU_BUFFER_SIZE: usize,
+    const ORDINARY_BUFFER_SIZE: usize,
+> Esp32s31NetworkTxService<'resources, M, H, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for Esp32s31ConnectedTx<
+        'slot,
+        'ampdu,
+        'resources,
+        M,
+        P,
+        E,
+        T,
+        FRAME_CAPACITY,
+        HEADROOM,
+        TRAILER,
+        QUEUE_DEPTH,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+        ORDINARY_BUFFER_SIZE,
+    >
+where
+    M: RawMutex,
+    H: HtAmpduHardware,
+    P: WifiTxPowerProfile,
+    E: WifiTxEntropy,
+    T: WifiTxTimer,
+{
+    type Error = AggregateTxError;
+
+    fn start<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move { self.start_network(hardware, frame, network) }
+    }
+
+    fn wait_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        Esp32s31ConnectedTx::wait_deadline(self)
+    }
+
+    fn service<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        Esp32s31ConnectedTx::service(self, hardware, wake)
+    }
+}

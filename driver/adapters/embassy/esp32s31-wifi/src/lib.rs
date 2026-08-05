@@ -13,14 +13,15 @@ extern crate std;
 pub mod aggregate_observer;
 pub mod aggregate_tx;
 pub mod connected_control;
-mod connected_control_port;
-mod connected_control_state;
 pub mod connected_runner;
+pub mod connected_rx_protocol;
 pub mod connected_services;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;
 pub mod control_tx;
+pub mod cooperative_hardware;
+#[doc(hidden)]
 pub mod cooperative_tx;
 pub mod embassy_irq;
 pub mod embassy_rx;
@@ -31,7 +32,7 @@ mod ordinary_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod phy_delay;
 pub mod preconnected_rx;
-pub mod rx_backend;
+pub mod rx_dma_service;
 pub mod rx_observer;
 pub mod rx_reorder;
 pub mod scan_port;
@@ -43,9 +44,7 @@ pub mod single_mpdu_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_attempt_target;
 pub mod sta_join_port;
-mod sta_peer_tx;
 pub mod sta_tx_epoch;
-pub mod staged_rx;
 pub mod station;
 pub mod station_epoch;
 mod station_tasks;

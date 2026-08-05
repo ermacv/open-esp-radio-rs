@@ -21,7 +21,7 @@ use crate::{
     },
     connected_services::Esp32s31ConnectedServices,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    rx_backend::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
+    rx_dma_service::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
     single_mpdu_tx::WifiTxResources,
 };
 

@@ -1,0 +1,133 @@
+use super::*;
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    H,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+> Esp32s31ConnectedRxService<H>
+    for Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    >
+where
+    H: RxDma,
+    D: RxReloadDelay,
+{
+    type Error = RxStageTransactionError;
+
+    fn service<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+    ) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + 'a {
+        async move {
+            let service_started = self
+                .pipeline_observer
+                .map(|observer| observer.begin_service());
+            let hardware_buffer_full = self
+                .pipeline_observer
+                .and_then(|_| hardware.buffer_full_count());
+            // Freeze the completion frontier before any descriptor is rearmed.
+            // A saturated producer can therefore only create a later epoch; it
+            // cannot make this service call unbounded by refilling the ring.
+            let frontier_snapshot = self
+                .storage
+                .completed_unit_frontier(&self.ring)
+                .map_err(RxStageTransactionError::Ring)?;
+            let frontier = frontier_snapshot.unit_count;
+            let pool_credits = self.pool.available_slots();
+            let queue_credits = self.frames.free_capacity();
+            let credits = pool_credits.min(queue_credits);
+            let admitted = frontier.min(credits);
+            let mut staged_bytes = 0_usize;
+            let mut remaining_descriptors = frontier_snapshot.descriptor_count;
+
+            for _ in 0..admitted {
+                let unit = self
+                    .storage
+                    .take_completed_unit(&mut self.ring, remaining_descriptors)
+                    .map_err(RxStageTransactionError::Ring)?
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                let unit_descriptor_count = unit.descriptor_count();
+                remaining_descriptors = remaining_descriptors
+                    .checked_sub(unit_descriptor_count)
+                    .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
+                let pending = match self.pool.stage_dma_unit_recycle(unit, hardware)? {
+                    RxDmaStageUnitOutcome::Staged(pending) => pending,
+                    RxDmaStageUnitOutcome::Discarded(error) => {
+                        // Length is supplied by an untrusted receive unit. A
+                        // malformed/FCS/oversize unit must not terminate the
+                        // sole radio owner: the vendor path discards such a
+                        // frame and immediately returns its descriptor to the
+                        // DMA walker. Preserve that ownership order and the
+                        // asynchronous reload edge without publishing a
+                        // staging token.
+                        if let Some(observer) = self.pipeline_observer {
+                            let discard = match error {
+                                RxStageError::Empty => RxStageDiscard::Empty,
+                                RxStageError::TooLong => RxStageDiscard::TooLong,
+                                _ => unreachable!("match arm admits only length discards"),
+                            };
+                            observer.observe(RxPipelineObservation::StageDiscarded(discard));
+                        }
+                        loop {
+                            match self
+                                .ring
+                                .poll_pending_reload(hardware)
+                                .map_err(RxStageTransactionError::Ring)?
+                            {
+                                RxReloadObservation::Pending => self.delay.after_micros(1).await,
+                                RxReloadObservation::Settled => break,
+                            }
+                        }
+                        continue;
+                    }
+                };
+                let frame =
+                    await_staged_rx_reload(pending, hardware, &mut self.ring, &mut self.delay)
+                        .await?;
+                staged_bytes = staged_bytes.saturating_add(frame.length());
+                self.frames.try_send(frame).map_err(|error| match error {
+                    TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
+                })?;
+            }
+
+            if let (Some(observer), Some(started)) = (self.pipeline_observer, service_started) {
+                observer.observe(RxPipelineObservation::ServiceCompleted(
+                    RxServiceObservation {
+                        frontier,
+                        pool_credits,
+                        queue_credits,
+                        admitted,
+                        staged_bytes,
+                        micros: observer.elapsed_micros_since(started),
+                        hardware_buffer_full,
+                    },
+                ));
+            }
+
+            Ok(if admitted < frontier {
+                WifiRxProgress::Backpressured
+            } else {
+                WifiRxProgress::Drained
+            })
+        }
+    }
+}

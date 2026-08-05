@@ -13,6 +13,7 @@ open-esp-radio-esp32s31-phy = { path = "../../phy" }
 open-esp-radio-esp32s31-registers = { path = "../../registers" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../mac" }
 open-esp-radio-ieee80211 = { path = "../../../../wifi/ieee80211" }
+open-esp-radio-wifi-softmac = { path = "../../../../wifi/softmac" }
 open-esp-radio-wpa2 = { path = "../../../../wifi/wpa2" }
 open-esp-radio-wifi-sta = { path = "../../../../wifi/sta" }
 

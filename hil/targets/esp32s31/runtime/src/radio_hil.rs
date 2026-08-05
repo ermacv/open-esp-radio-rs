@@ -67,7 +67,7 @@ use open_esp_radio::{
             },
             control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
             control_tx::{ControlTxError, Esp32s31ControlTx},
-            cooperative_tx::CooperativeTxHardware,
+            cooperative_hardware::CooperativeRadioHardware,
             embassy_irq::{
                 EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
             },
@@ -75,7 +75,7 @@ use open_esp_radio::{
             network_rx::{EmbassyNetConnectedRxSink, RxEnqueueCounters},
             phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            rx_backend::{
+            rx_dma_service::{
                 ESP32S31_RX_BUFFER_SIZE, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
                 Esp32s31StoppedRx,
             },
@@ -98,7 +98,7 @@ use open_esp_radio::{
                 Esp32s31StaAttemptTargetPort,
             },
             sta_tx_epoch::Esp32s31StaTxEpochExt,
-            staged_rx::{
+            connected_rx_protocol::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
             },
             station::{
@@ -949,7 +949,7 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_SLOT_COUNT,
 >;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
-type ConnectedHardware = CooperativeTxHardware<'static, 'static>;
+type ConnectedHardware = CooperativeRadioHardware<'static, 'static>;
 
 fn assert_join_hardware_capabilities<
     H: RxDma
@@ -4096,7 +4096,7 @@ async fn run_connected_network<'fixture, 'security>(
             let control_resources = OPEN_RADIO_CONTROL_RESOURCES.init(ControlResources::new());
             let registers = OPEN_RADIO_REGISTER_CELL.init(RefCell::new(registers));
             (
-                CooperativeTxHardware::new(registers),
+                CooperativeRadioHardware::new(registers),
                 rx,
                 ampdu,
                 &*control_resources,

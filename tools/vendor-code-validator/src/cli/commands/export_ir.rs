@@ -5,7 +5,99 @@ use std::{fmt::Write as _, path::Path};
 use super::super::json::{write_artifact, write_string, write_strings};
 use super::super::*;
 
-fn print_report(report: &LinkedIrReport) {
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct IrArtifactInput {
+    source: String,
+    path: PathBuf,
+    explicitly_named: bool,
+}
+
+fn valid_source_id(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput> {
+    if !valid_source_id(source) {
+        return Err(format!("invalid artifact source id {source:?}").into());
+    }
+    if path.is_empty() {
+        return Err("artifact path must not be empty".into());
+    }
+    Ok(IrArtifactInput {
+        source: source.to_owned(),
+        path: PathBuf::from(path),
+        explicitly_named: true,
+    })
+}
+
+fn parse_artifact(value: &str) -> Result<IrArtifactInput> {
+    if let Some((source, path)) = value
+        .split_once('=')
+        .filter(|(source, path)| valid_source_id(source) && !path.is_empty())
+    {
+        return named_artifact(source, path);
+    }
+    if value.is_empty() {
+        return Err("--artifact requires a path or SOURCE=PATH".into());
+    }
+    Ok(IrArtifactInput {
+        source: "primary".to_owned(),
+        path: PathBuf::from(value),
+        explicitly_named: false,
+    })
+}
+
+fn source_artifact_option(argument: &str) -> Option<&str> {
+    argument
+        .strip_prefix("--source-artifact:")
+        .filter(|source| !source.is_empty())
+}
+
+fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf]) -> Result<bool> {
+    if artifacts.is_empty() {
+        return Err("ir export requires at least one --artifact PATH or SOURCE=PATH".into());
+    }
+    if artifacts.len() > 1 && artifacts.iter().any(|artifact| !artifact.explicitly_named) {
+        return Err("multiple IR artifacts must use unique SOURCE=PATH names".into());
+    }
+    if artifacts.len() > 1 && !companions.is_empty() {
+        return Err("--companion is only supported with one primary IR artifact".into());
+    }
+    let mut sources = BTreeSet::new();
+    for artifact in artifacts {
+        if !sources.insert(artifact.source.clone()) {
+            return Err(format!("duplicate artifact source {:?}", artifact.source).into());
+        }
+    }
+    Ok(artifacts.len() > 1 || artifacts[0].explicitly_named)
+}
+
+fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
+    println!(
+        "PROJECT\tlinkage={}\tartifacts={}",
+        if artifacts.len() > 1 {
+            "independent-artifacts"
+        } else {
+            "primary-with-companions"
+        },
+        artifacts.len()
+    );
+    for artifact in artifacts {
+        let functions = report
+            .functions
+            .iter()
+            .filter(|function| function.source == artifact.source)
+            .count();
+        println!(
+            "ARTIFACT\t{}\t{}\tfunctions={}",
+            artifact.source,
+            artifact.path.display(),
+            functions
+        );
+    }
     for function in &report.functions {
         let address = function.address.map_or_else(
             || "relocatable".to_owned(),
@@ -109,7 +201,8 @@ fn print_report(report: &LinkedIrReport) {
         );
     }
     println!(
-        "SUMMARY\tfunctions={}\texported={}\tlocal={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tunresolved-calls={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tunresolved-calls={}",
+        artifacts.len(),
         report.functions.len(),
         report.exported_functions,
         report.local_functions,
@@ -126,14 +219,23 @@ fn print_report(report: &LinkedIrReport) {
     );
 }
 
-fn write_pseudo(path: &Path, artifact: &Path, report: &LinkedIrReport) -> Result<()> {
+fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrReport) -> Result<()> {
     let mut output = String::new();
-    writeln!(
-        output,
-        "// Best-effort vendor-code pseudo-Rust generated from {}.",
-        artifact.display()
-    )
-    .expect("writing to String cannot fail");
+    output.push_str("// Best-effort vendor-code pseudo-Rust generated from:\n");
+    for artifact in artifacts {
+        writeln!(
+            output,
+            "// - {}: {}",
+            artifact.source,
+            artifact.path.display()
+        )
+        .expect("writing to String cannot fail");
+    }
+    if artifacts.len() > 1 {
+        output.push_str(
+            "// Named primary artifacts use independent address spaces; cross-artifact calls are not linked.\n",
+        );
+    }
     output
         .push_str("// This is analysis IR, not compilable Rust and not a completeness claim.\n\n");
     for function in &report.functions {
@@ -155,18 +257,37 @@ fn write_optional_string(output: &mut String, value: Option<&str>) {
 
 fn write_json_report(
     path: &Path,
-    artifact: &Path,
+    artifacts: &[IrArtifactInput],
     companions: &[PathBuf],
     symbol_prefix: &str,
     entry_contract: EntryContractRef,
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 7,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 8,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
-    output.push_str("  \"completeness_claim\": false,\n  \"artifact\": ");
-    write_artifact(&mut output, artifact)?;
-    output.push_str(",\n  \"companions\": [");
+    output.push_str("  \"linkage_mode\": ");
+    write_string(
+        &mut output,
+        if artifacts.len() > 1 {
+            "independent-artifacts"
+        } else {
+            "primary-with-companions"
+        },
+    );
+    output.push_str(",\n");
+    output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
+    for (index, artifact) in artifacts.iter().enumerate() {
+        if index != 0 {
+            output.push_str(", ");
+        }
+        output.push_str("{\"source\": ");
+        write_string(&mut output, &artifact.source);
+        output.push_str(", \"artifact\": ");
+        write_artifact(&mut output, &artifact.path)?;
+        output.push('}');
+    }
+    output.push_str("],\n  \"companions\": [");
     for (index, companion) in companions.iter().enumerate() {
         if index != 0 {
             output.push_str(", ");
@@ -179,7 +300,8 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"functions\": {}, \"exported\": {}, \"local\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"unresolved_calls\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"unresolved_calls\": {}}},",
+        artifacts.len(),
         report.functions.len(),
         report.exported_functions,
         report.local_functions,
@@ -218,7 +340,9 @@ fn write_json_report(
     output.push_str("],\n");
     output.push_str("  \"functions\": [\n");
     for (index, function) in report.functions.iter().enumerate() {
-        output.push_str("    {\"identity\": ");
+        output.push_str("    {\"source\": ");
+        write_string(&mut output, &function.source);
+        output.push_str(", \"identity\": ");
         write_string(&mut output, &function.identity);
         output.push_str(", \"member\": ");
         write_optional_string(&mut output, function.member.as_deref());
@@ -382,7 +506,7 @@ pub(super) fn run(
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifact = None;
+    let mut artifacts = Vec::new();
     let mut companions = Vec::new();
     let mut symbol_prefix = String::new();
     let mut pseudo_path = None;
@@ -391,9 +515,16 @@ pub(super) fn run(
     let mut entry_contract = harnesses::entry_contract(&target.harness, "none")?;
     let mut arguments = filtered.into_iter();
     while let Some(argument) = arguments.next() {
+        if let Some(source) = source_artifact_option(&argument) {
+            artifacts.push(named_artifact(
+                source,
+                &take_value(&mut arguments, &argument)?,
+            )?);
+            continue;
+        }
         match argument.as_str() {
             "--artifact" => {
-                artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
+                artifacts.push(parse_artifact(&take_value(&mut arguments, "--artifact")?)?);
             }
             "--companion" => {
                 companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
@@ -416,30 +547,39 @@ pub(super) fn run(
             _ => return Err(format!("unknown ir export option: {argument}").into()),
         }
     }
-    let artifact = artifact.ok_or("ir export requires --artifact PATH")?;
-    let resolver = ReferenceResolver::load_all_code_with_entry_contract(
-        &artifact,
-        &companions,
-        riscv_harness,
-        entry_contract,
-    )?;
-    let report = build_linked_ir(&resolver, &symbol_prefix, svd);
+    let namespace_identities = validate_artifact_inputs(&artifacts, &companions)?;
+    let mut reports = Vec::with_capacity(artifacts.len());
+    for artifact in &artifacts {
+        let resolver = ReferenceResolver::load_all_code_with_entry_contract(
+            &artifact.path,
+            &companions,
+            riscv_harness,
+            entry_contract,
+        )?;
+        reports.push(build_linked_ir_for_source(
+            &resolver,
+            &symbol_prefix,
+            svd,
+            &artifact.source,
+            namespace_identities,
+        ));
+    }
+    let report = merge_linked_ir(reports);
     if report.functions.is_empty() {
         return Err(format!(
-            "no named code symbols start with {symbol_prefix:?} in {}",
-            artifact.display()
+            "no named code symbols start with {symbol_prefix:?} in any IR artifact"
         )
         .into());
     }
 
-    print_report(&report);
+    print_report(&artifacts, &report);
     if let Some(path) = pseudo_path.as_deref() {
-        write_pseudo(path, &artifact, &report)?;
+        write_pseudo(path, &artifacts, &report)?;
     }
     if let Some(path) = json_report.as_deref() {
         write_json_report(
             path,
-            &artifact,
+            &artifacts,
             &companions,
             &symbol_prefix,
             entry_contract,
@@ -447,4 +587,72 @@ pub(super) fn run(
         )?;
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn artifact_input_supports_legacy_paths_and_explicit_source_names() {
+        assert_eq!(
+            parse_artifact("vendor.a").unwrap(),
+            IrArtifactInput {
+                source: "primary".to_owned(),
+                path: PathBuf::from("vendor.a"),
+                explicitly_named: false,
+            }
+        );
+        assert_eq!(
+            parse_artifact("libphy=/tmp/vendor=archive.a").unwrap(),
+            IrArtifactInput {
+                source: "libphy".to_owned(),
+                path: PathBuf::from("/tmp/vendor=archive.a"),
+                explicitly_named: true,
+            }
+        );
+        assert_eq!(
+            parse_artifact("/tmp/vendor=archive.a").unwrap(),
+            IrArtifactInput {
+                source: "primary".to_owned(),
+                path: PathBuf::from("/tmp/vendor=archive.a"),
+                explicitly_named: false,
+            }
+        );
+    }
+
+    #[test]
+    fn artifact_source_ids_are_stable_machine_keys() {
+        assert!(named_artifact("wifi-rom.v1", "rom.elf").is_ok());
+        assert!(named_artifact("wifi/rom", "rom.elf").is_err());
+        assert!(named_artifact("", "rom.elf").is_err());
+    }
+
+    #[test]
+    fn project_inputs_require_unique_explicit_sources_and_no_companions() {
+        let rom = named_artifact("rom", "rom.elf").unwrap();
+        let libphy = named_artifact("libphy", "libphy.a").unwrap();
+        assert!(validate_artifact_inputs(&[rom.clone(), libphy], &[]).unwrap());
+        assert!(validate_artifact_inputs(&[rom.clone(), rom], &[]).is_err());
+        assert!(
+            validate_artifact_inputs(
+                &[
+                    parse_artifact("rom.elf").unwrap(),
+                    parse_artifact("libphy.a").unwrap()
+                ],
+                &[],
+            )
+            .is_err()
+        );
+        assert!(
+            validate_artifact_inputs(
+                &[
+                    named_artifact("rom", "rom.elf").unwrap(),
+                    named_artifact("libphy", "libphy.a").unwrap()
+                ],
+                &[PathBuf::from("rom-companion.elf")],
+            )
+            .is_err()
+        );
+    }
 }

@@ -76,6 +76,7 @@ pub(crate) struct SemanticBoundary {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedIrFunction {
+    pub(crate) source: String,
     pub(crate) identity: String,
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
@@ -130,7 +131,7 @@ struct IrIdentityCatalog {
 }
 
 impl IrIdentityCatalog {
-    fn new(resolver: &ReferenceResolver) -> Self {
+    fn new(resolver: &ReferenceResolver, namespace: Option<&str>) -> Self {
         let mut definitions = resolver.symbols.clone();
         definitions.extend(resolver.symbols_by_address.values().cloned());
         definitions.sort_by_key(symbol_key);
@@ -156,6 +157,7 @@ impl IrIdentityCatalog {
                 } else {
                     base
                 };
+                let value = namespace.map_or(value.clone(), |source| format!("{source}::{value}"));
                 (symbol_key(symbol), value)
             })
             .collect::<BTreeMap<_, _>>();
@@ -1385,13 +1387,15 @@ fn calls_for_trace(
     calls.into_iter().collect()
 }
 
-pub(crate) fn build_linked_ir(
+pub(crate) fn build_linked_ir_for_source(
     resolver: &ReferenceResolver,
     symbol_prefix: &str,
     svd: &MmioRegisterMap,
+    source: &str,
+    namespace_identities: bool,
 ) -> LinkedIrReport {
     let mut functions = Vec::new();
-    let identities = IrIdentityCatalog::new(resolver);
+    let identities = IrIdentityCatalog::new(resolver, namespace_identities.then_some(source));
     for symbol in resolver
         .symbols
         .iter()
@@ -1427,6 +1431,7 @@ pub(crate) fn build_linked_ir(
                 let pseudo =
                     render_pseudo(&function_identity, &trace, &calls, &call_graph_blockers);
                 functions.push(LinkedIrFunction {
+                    source: source.to_owned(),
                     identity: function_identity.clone(),
                     member: symbol.member.clone(),
                     symbol: symbol.name.clone(),
@@ -1438,7 +1443,17 @@ pub(crate) fn build_linked_ir(
                     complete: trace.is_reference_eligible(),
                     exact: trace.is_exact(),
                     return_value: trace.return_value.canonical(),
-                    dependencies: trace.reference_dependencies.clone(),
+                    dependencies: trace
+                        .reference_dependencies
+                        .iter()
+                        .map(|dependency| {
+                            if namespace_identities {
+                                format!("{source}::{dependency}")
+                            } else {
+                                dependency.clone()
+                            }
+                        })
+                        .collect(),
                     calls,
                     context_accesses,
                     context_fields,
@@ -1449,6 +1464,7 @@ pub(crate) fn build_linked_ir(
                 });
             }
             Err(error) => functions.push(LinkedIrFunction {
+                source: source.to_owned(),
                 identity: function_identity.clone(),
                 member: symbol.member.clone(),
                 symbol: symbol.name.clone(),
@@ -1475,6 +1491,19 @@ pub(crate) fn build_linked_ir(
         }
     }
 
+    summarize_linked_ir(functions)
+}
+
+pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {
+    let functions = reports
+        .into_iter()
+        .flat_map(|report| report.functions)
+        .collect();
+    summarize_linked_ir(functions)
+}
+
+fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
+    functions.sort_by(|left, right| left.identity.cmp(&right.identity));
     let exported_functions = functions
         .iter()
         .filter(|function| function.binding == "global-or-weak")
@@ -1642,7 +1671,7 @@ mod tests {
             windows: Vec::new(),
         };
 
-        let identities = IrIdentityCatalog::new(&resolver);
+        let identities = IrIdentityCatalog::new(&resolver, None);
         let graph = explore_direct_calls(&parent, &resolver, &identities, &map);
         let calls = graph.calls.into_iter().collect::<Vec<_>>();
 
@@ -1691,7 +1720,7 @@ mod tests {
         };
         let mut calls = BTreeSet::new();
         let resolver = empty_resolver();
-        let identities = IrIdentityCatalog::new(&resolver);
+        let identities = IrIdentityCatalog::new(&resolver, None);
         let mut pseudo = String::new();
 
         collect_call_event(&event, &resolver, &identities, &mut calls);
@@ -1895,7 +1924,7 @@ mod tests {
             windows: Vec::new(),
         };
 
-        let report = build_linked_ir(&resolver, "private_", &map);
+        let report = build_linked_ir_for_source(&resolver, "private_", &map, "primary", false);
 
         assert_eq!(report.exported_functions, 0);
         assert_eq!(report.local_functions, 2);
@@ -1908,6 +1937,25 @@ mod tests {
             [
                 ("private_helper@0x00001000", "local"),
                 ("private_helper@0x00002000", "local"),
+            ]
+        );
+
+        let project_report = merge_linked_ir(vec![
+            build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true),
+            build_linked_ir_for_source(&resolver, "private_", &map, "rom", true),
+        ]);
+        assert_eq!(project_report.functions.len(), 4);
+        assert_eq!(
+            project_report
+                .functions
+                .iter()
+                .map(|function| (function.source.as_str(), function.identity.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("libphy", "libphy::private_helper@0x00001000"),
+                ("libphy", "libphy::private_helper@0x00002000"),
+                ("rom", "rom::private_helper@0x00001000"),
+                ("rom", "rom::private_helper@0x00002000"),
             ]
         );
     }

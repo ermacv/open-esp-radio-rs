@@ -90,6 +90,27 @@ cargo vendor-code-validator ir export \
   --json-report /tmp/libphy.ir.json
 ```
 
+A project inventory can aggregate several independently linked or relocatable
+inputs in one report. Multiple inputs must have stable source names:
+
+```console
+cargo vendor-code-validator ir export \
+  --target-spec validation/esp32s31/target.spec \
+  --artifact rom="$ESP32S31_ROM_ELF" \
+  --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
+  --artifact libpp="$ESP32S31_LIBPP_ARCHIVE" \
+  --pseudo-rust /tmp/vendor-project.pseudo.rs \
+  --json-report /tmp/vendor-project.ir.json
+```
+
+Project identities are namespaced, for example `rom::ets_delay_us` and
+`libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
+across sources. Each named primary is analyzed in its own address space;
+schema v8 records `"linkage_mode": "independent-artifacts"` and does not claim
+that unresolved calls between separate archives were linked. Use one linked
+ELF primary plus `--companion` inputs when cross-image addresses and relocations
+belong to one executable address space.
+
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,
 branches, internal calls, diagnostic calls, scratch buffers, and named

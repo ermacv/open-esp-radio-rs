@@ -158,6 +158,13 @@ containing callers, ABI targets and replacement hints. This index is a
 migration inventory for manual analysis; it does not weaken the per-function
 completeness or reference-eligibility checks.
 
+Project export may aggregate several named primary artifacts. Function IDs are
+source-namespaced and report summaries span all inputs, but each primary keeps
+an independent address space. The machine-readable `linkage_mode` makes that
+boundary explicit. A linked ELF with companions remains the mode for genuine
+cross-image address and relocation resolution; resolving undefined symbols
+across independent static archives requires a later project linker layer.
+
 ### Shared model
 
 - observable effect IR: memory, MMIO, calls, delays, fences and state ranges;

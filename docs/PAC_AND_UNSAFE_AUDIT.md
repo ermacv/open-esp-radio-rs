@@ -115,21 +115,29 @@ path. Raw legacy submission has been removed: a legacy queue can be prepared
 and started only with the phased capabilities. A raw but DMA-range-valid
 A-MPDU PLCP0 can still bypass the intended TX owner through HT/HE.
 
-`esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owner needed for
-the internal-buffer half of that migration. It retains a static descriptor
-array and aligned MPDU buffers, distinguishes completion from confirmed queue
-detach, and issues phased authority only after validating that every chain
-entry belongs to those internal buffers. Descriptor-only and external
-zero-copy backing intentionally receive no capability yet; they require a
-token that also retains every `StableDmaBacking` lease before LMAC can be
-migrated without weakening the proof.
+`esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owners needed for
+both backing strategies. Internally buffered aggregates retain a static
+descriptor array and aligned MPDU buffers. Descriptor-only zero-copy
+aggregates use `RetainedAmpduDma<B>`, which owns every `StableDmaBacking`
+lease referenced by the published chain. Both paths distinguish completion
+from confirmed queue detach and issue separate prepare/start capabilities
+only after validating the entire chain. Dropping an external owner after the
+hardware edge deliberately forgets the leases unless detach was confirmed,
+so a Rust destructor cannot return potentially DMA-visible memory.
+
+This primitive is not wired into LMAC yet. The current
+`RetainedDmaAmpduTx` wrapper still retains leases and descriptor metadata at
+the upper layer, and HT/HE submission therefore still uses the temporary raw
+entry points. The next migration must move that wrapper onto
+`RetainedAmpduDma<B>` rather than introducing a second retention mechanism.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 
-1. move A-MPDU descriptor arrays and every separately retained zero-copy
-   backing into the chip DMA leaf;
-2. give aggregate prepare/start the same distinct phased capabilities;
+1. move the LMAC A-MPDU metadata owner onto the chip DMA leaf's existing
+   internal or retained-external owner;
+2. pass its existing aggregate prepare/start capabilities through the LMAC
+   transaction;
 3. remove the remaining raw HT/HE `TxHardware` and `RadioRegisters`
    submission methods once no production or validation caller depends on
    them;

@@ -1,12 +1,12 @@
-//! Pinned descriptor and internal-buffer ownership for one TX A-MPDU.
+//! Pinned descriptor and backing ownership for one TX A-MPDU.
 //!
-//! This lower owner deliberately covers only internally backed aggregates.
-//! External zero-copy leases need an additional retained-backing proof before
-//! they may receive the same prepare/start capabilities.
+//! Internally buffered aggregates retain their static arena directly.
+//! External zero-copy aggregates receive prepare/start authority only through
+//! an owner which also retains every referenced [`StableDmaBacking`] lease.
 
-use core::{marker::PhantomPinned, pin::Pin};
+use core::{marker::PhantomPinned, mem, pin::Pin};
 
-use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaRange};
+use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRange};
 use pin_project::pin_project;
 
 use crate::descriptor::{
@@ -36,6 +36,15 @@ pub enum AmpduDmaStorageError {
 /// One internal A-MPDU descriptor entry, excluding its derived addresses.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AmpduInternalDescriptor {
+    pub buffer_capacity: u32,
+    pub transfer_length: u32,
+}
+
+/// One descriptor backed by a retained external DMA lease.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AmpduExternalDescriptor {
+    pub backing_index: u8,
+    pub dma_offset: usize,
     pub buffer_capacity: u32,
     pub transfer_length: u32,
 }
@@ -324,6 +333,15 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
             .map(Descriptor::next_address)
     }
 
+    pub fn descriptor_buffer_address(&self, index: usize) -> Option<u32> {
+        self.storage
+            .as_ref()
+            .get_ref()
+            .descriptors
+            .get(index)
+            .map(Descriptor::buffer_address)
+    }
+
     pub fn cancel(&mut self) -> Result<(), AmpduDmaStorageError> {
         self.clear_to_free(AmpduDmaState::Reserved)
     }
@@ -389,6 +407,286 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, 
     }
 }
 
+/// Aggregate DMA owner which retains every externally referenced allocation.
+///
+/// The descriptor arena remains in static chip storage while `B` may be a
+/// movable lease object whose underlying allocation is stable. Moving this
+/// owner is safe: descriptor addresses never point at the lease object, only
+/// at the allocation guaranteed by its unsafe [`StableDmaBacking`] contract.
+pub struct RetainedAmpduDma<B, const SLOTS: usize, const BUFFER_SIZE: usize> {
+    dma: Option<PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>>,
+    backings: [Option<B>; SLOTS],
+    held: usize,
+}
+
+impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> RetainedAmpduDma<B, SLOTS, BUFFER_SIZE> {
+    pub fn new(dma: PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>) -> Self {
+        Self {
+            dma: Some(dma),
+            backings: [const { None }; SLOTS],
+            held: 0,
+        }
+    }
+
+    pub fn state(&self) -> AmpduDmaState {
+        self.dma().state()
+    }
+
+    pub const fn held_backing_count(&self) -> usize {
+        self.held
+    }
+
+    pub fn begin(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().begin()
+    }
+
+    pub fn push_backing(&mut self, backing: B) -> Result<u8, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Reserved {
+            return Err(AmpduDmaStorageError::State);
+        }
+        let index = self.held;
+        let backing_index = u8::try_from(index).map_err(|_| AmpduDmaStorageError::Count)?;
+        let slot = self
+            .backings
+            .get_mut(index)
+            .ok_or(AmpduDmaStorageError::Count)?;
+        if slot.is_some() {
+            return Err(AmpduDmaStorageError::Busy);
+        }
+        *slot = Some(backing);
+        self.held += 1;
+        Ok(backing_index)
+    }
+
+    pub fn reserved_backing_mut(&mut self, index: u8) -> Result<&mut B, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Reserved {
+            return Err(AmpduDmaStorageError::State);
+        }
+        self.backings
+            .get_mut(usize::from(index))
+            .and_then(Option::as_mut)
+            .ok_or(AmpduDmaStorageError::Count)
+    }
+
+    pub fn detached_backing_mut(&mut self, index: u8) -> Result<&mut B, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Detached {
+            return Err(AmpduDmaStorageError::State);
+        }
+        self.backings
+            .get_mut(usize::from(index))
+            .and_then(Option::as_mut)
+            .ok_or(AmpduDmaStorageError::Count)
+    }
+
+    pub fn cancel(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().cancel()?;
+        self.drop_backings();
+        Ok(())
+    }
+
+    pub fn mark_completed(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().mark_completed()
+    }
+
+    pub fn mark_detached(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().mark_detached()
+    }
+
+    pub fn release_detached(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().release_detached()?;
+        self.drop_backings();
+        Ok(())
+    }
+
+    pub fn release_aborted(&mut self) -> Result<(), AmpduDmaStorageError> {
+        self.dma_mut().release_aborted()?;
+        self.drop_backings();
+        Ok(())
+    }
+
+    pub fn quarantine(&mut self) {
+        self.dma_mut().quarantine();
+    }
+
+    #[allow(clippy::result_large_err)]
+    pub fn try_into_dma(mut self) -> Result<PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>, Self> {
+        if self.state() != AmpduDmaState::Free || self.held != 0 {
+            return Err(self);
+        }
+        Ok(self
+            .dma
+            .take()
+            .expect("retained aggregate owner contains its DMA arena"))
+    }
+
+    fn dma(&self) -> &PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE> {
+        self.dma
+            .as_ref()
+            .expect("retained aggregate owner contains its DMA arena")
+    }
+
+    fn dma_mut(&mut self) -> &mut PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE> {
+        self.dma
+            .as_mut()
+            .expect("retained aggregate owner contains its DMA arena")
+    }
+
+    fn drop_backings(&mut self) {
+        for backing in &mut self.backings[..self.held] {
+            drop(backing.take());
+        }
+        self.held = 0;
+    }
+
+    fn forget_backings(&mut self) {
+        for backing in &mut self.backings[..self.held] {
+            if let Some(backing) = backing.take() {
+                mem::forget(backing);
+            }
+        }
+        self.held = 0;
+    }
+}
+
+impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
+    RetainedAmpduDma<B, SLOTS, BUFFER_SIZE>
+{
+    /// Publish a complete chain whose entries resolve into retained leases.
+    pub fn publish_external_chain(
+        &mut self,
+        entries: &[AmpduExternalDescriptor],
+    ) -> Result<RetainedAmpduDmaPublication<'_, B, SLOTS, BUFFER_SIZE>, AmpduDmaStorageError> {
+        if self.state() != AmpduDmaState::Reserved {
+            return Err(AmpduDmaStorageError::State);
+        }
+        if entries.is_empty() || entries.len() > SLOTS {
+            return Err(AmpduDmaStorageError::Count);
+        }
+
+        let mut buffer_addresses = [0_u32; SLOTS];
+        for (index, entry) in entries.iter().enumerate() {
+            if entry.buffer_capacity == 0
+                || entry.transfer_length == 0
+                || entry.transfer_length > entry.buffer_capacity
+            {
+                return Err(AmpduDmaStorageError::InvalidLength);
+            }
+            let backing = self
+                .backings
+                .get_mut(usize::from(entry.backing_index))
+                .and_then(Option::as_mut)
+                .ok_or(AmpduDmaStorageError::Count)?;
+            let bytes = backing.stable_dma_region().into_mut_slice();
+            let capacity = usize::try_from(entry.buffer_capacity)
+                .map_err(|_| AmpduDmaStorageError::Address)?;
+            let _end = entry
+                .dma_offset
+                .checked_add(capacity)
+                .filter(|end| *end <= bytes.len())
+                .ok_or(AmpduDmaStorageError::Address)?;
+            let address = bytes
+                .as_ptr()
+                .addr()
+                .checked_add(entry.dma_offset)
+                .ok_or(AmpduDmaStorageError::Address)?;
+            buffer_addresses[index] = external_dma_address(address, entry.buffer_capacity)?;
+            self.dma()
+                .binding
+                .descriptor_address(index)
+                .ok_or(AmpduDmaStorageError::Address)?;
+        }
+
+        for (index, entry) in entries.iter().enumerate() {
+            let next_address = if index + 1 == entries.len() {
+                0
+            } else {
+                self.dma()
+                    .binding
+                    .descriptor_address(index + 1)
+                    .ok_or(AmpduDmaStorageError::Address)?
+            };
+            let mut word0 = tx_owned_word(entry.buffer_capacity, entry.transfer_length)
+                .ok_or(AmpduDmaStorageError::InvalidLength)?;
+            if next_address != 0 {
+                word0 &= !BIT_30;
+            }
+            self.dma().storage.as_ref().get_ref().descriptors[index].publish(
+                word0,
+                buffer_addresses[index],
+                next_address,
+            );
+        }
+
+        Ok(RetainedAmpduDmaPublication { owner: self })
+    }
+}
+
+impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
+    for RetainedAmpduDma<B, SLOTS, BUFFER_SIZE>
+{
+    fn drop(&mut self) {
+        if self.dma.is_none() {
+            self.drop_backings();
+            return;
+        }
+        if matches!(
+            self.state(),
+            AmpduDmaState::HardwareOwned | AmpduDmaState::Completed | AmpduDmaState::ResetRequired
+        ) {
+            self.forget_backings();
+        } else {
+            self.drop_backings();
+        }
+    }
+}
+
+#[cfg(target_pointer_width = "32")]
+fn external_dma_address(address: usize, capacity: u32) -> Result<u32, AmpduDmaStorageError> {
+    let address = u32::try_from(address).map_err(|_| AmpduDmaStorageError::Address)?;
+    dma_range_valid(address, capacity)
+        .then_some(address)
+        .ok_or(AmpduDmaStorageError::Address)
+}
+
+#[cfg(not(target_pointer_width = "32"))]
+fn external_dma_address(address: usize, _capacity: u32) -> Result<u32, AmpduDmaStorageError> {
+    // Native models have no asynchronous DMA actor. Truncation supplies only
+    // a model descriptor image for host state-machine tests.
+    Ok(address as u32)
+}
+
+pub struct RetainedAmpduDmaPublication<'owner, B, const SLOTS: usize, const BUFFER_SIZE: usize> {
+    owner: &'owner mut RetainedAmpduDma<B, SLOTS, BUFFER_SIZE>,
+}
+
+#[allow(
+    unsafe_code,
+    reason = "publication token is coupled to the owner retaining every external lease"
+)]
+unsafe impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize> PreparedTxDma
+    for RetainedAmpduDmaPublication<'_, B, SLOTS, BUFFER_SIZE>
+{
+    fn descriptor_head(&self) -> u32 {
+        self.owner.dma().binding.descriptor_base
+    }
+}
+
+impl<B, const SLOTS: usize, const BUFFER_SIZE: usize>
+    RetainedAmpduDmaPublication<'_, B, SLOTS, BUFFER_SIZE>
+{
+    pub fn commit<F>(self, start: F)
+    where
+        F: FnOnce(&AmpduDmaStart<'_>),
+    {
+        let owner = self.owner;
+        let dma = owner.dma_mut();
+        *dma.storage.as_mut().project().state = AmpduDmaState::HardwareOwned;
+        start(&AmpduDmaStart {
+            binding: &dma.binding,
+        });
+    }
+}
+
 pub struct AmpduDmaPublication<'owner, const SLOTS: usize, const BUFFER_SIZE: usize> {
     owner: &'owner mut PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>,
 }
@@ -422,7 +720,10 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> AmpduDmaPublication<'_, SLOTS
 mod tests {
     extern crate std;
 
-    use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
+    use open_esp_radio_dma::{
+        HardwareOwnedTxDma, PreparedTxDma, StableDmaBacking, StableDmaRegion,
+    };
+    use std::{boxed::Box, cell::Cell, rc::Rc};
 
     use super::*;
     use crate::descriptor::{length, size};
@@ -435,6 +736,46 @@ mod tests {
             std::boxed::Box::leak(std::boxed::Box::new(AmpduDmaStorage::new())),
             DESCRIPTOR_BASE,
             BUFFER_BASE,
+        )
+        .unwrap()
+    }
+
+    struct TestBacking {
+        bytes: Box<[u8; 128]>,
+        drops: Rc<Cell<usize>>,
+    }
+
+    impl TestBacking {
+        fn new(drops: Rc<Cell<usize>>) -> Self {
+            Self {
+                bytes: Box::new([0; 128]),
+                drops,
+            }
+        }
+    }
+
+    impl Drop for TestBacking {
+        fn drop(&mut self) {
+            self.drops.set(self.drops.get() + 1);
+        }
+    }
+
+    #[allow(
+        unsafe_code,
+        reason = "test backing owns one non-moving boxed allocation"
+    )]
+    unsafe impl StableDmaBacking for TestBacking {
+        fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
+            // SAFETY: moving `TestBacking` does not move its boxed allocation.
+            unsafe { StableDmaRegion::new(&mut self.bytes[..]) }
+        }
+    }
+
+    fn descriptor_only_storage() -> PinnedAmpduDmaStorage<2, 0> {
+        AmpduDmaStorage::pin_static_model(
+            Box::leak(Box::new(AmpduDmaStorage::new())),
+            DESCRIPTOR_BASE,
+            0,
         )
         .unwrap()
     }
@@ -508,5 +849,111 @@ mod tests {
     fn zero_slot_arena_is_rejected() {
         let storage = std::boxed::Box::leak(std::boxed::Box::new(AmpduDmaStorage::<0, 64>::new()));
         assert!(AmpduDmaStorage::pin_static_model(storage, DESCRIPTOR_BASE, BUFFER_BASE).is_err());
+    }
+
+    #[test]
+    fn external_chain_retains_backings_through_detach() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        let first = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        let second = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        owner.reserved_backing_mut(first).unwrap().bytes[8] = 0x11;
+        owner.reserved_backing_mut(second).unwrap().bytes[16] = 0x22;
+        let entries = [
+            AmpduExternalDescriptor {
+                backing_index: first,
+                dma_offset: 8,
+                buffer_capacity: 64,
+                transfer_length: 40,
+            },
+            AmpduExternalDescriptor {
+                backing_index: second,
+                dma_offset: 16,
+                buffer_capacity: 64,
+                transfer_length: 48,
+            },
+        ];
+        let publication = owner.publish_external_chain(&entries).unwrap();
+        assert_eq!(publication.descriptor_head(), DESCRIPTOR_BASE);
+        publication.commit(|start| assert_eq!(start.descriptor_head(), DESCRIPTOR_BASE));
+        assert_eq!(owner.state(), AmpduDmaState::HardwareOwned);
+        assert_eq!(drops.get(), 0);
+
+        owner.mark_completed().unwrap();
+        assert!(owner.detached_backing_mut(first).is_err());
+        owner.mark_detached().unwrap();
+        assert_eq!(owner.detached_backing_mut(first).unwrap().bytes[8], 0x11);
+        owner.release_detached().unwrap();
+        assert_eq!(owner.state(), AmpduDmaState::Free);
+        assert_eq!(drops.get(), 2);
+    }
+
+    #[test]
+    fn dropping_hardware_owned_external_chain_forgets_backings() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+        owner
+            .publish_external_chain(&[AmpduExternalDescriptor {
+                backing_index: backing,
+                dma_offset: 0,
+                buffer_capacity: 64,
+                transfer_length: 32,
+            }])
+            .unwrap()
+            .commit(|_| {});
+
+        drop(owner);
+        assert_eq!(drops.get(), 0);
+    }
+
+    #[test]
+    fn dropping_reserved_external_chain_releases_backings() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+
+        drop(owner);
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn invalid_external_chain_is_not_partially_published() {
+        let drops = Rc::new(Cell::new(0));
+        let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
+        owner.begin().unwrap();
+        let backing = owner.push_backing(TestBacking::new(drops.clone())).unwrap();
+
+        assert!(matches!(
+            owner.publish_external_chain(&[AmpduExternalDescriptor {
+                backing_index: backing,
+                dma_offset: 96,
+                buffer_capacity: 64,
+                transfer_length: 32,
+            }]),
+            Err(AmpduDmaStorageError::Address)
+        ));
+        assert_eq!(owner.state(), AmpduDmaState::Reserved);
+        assert_eq!(owner.held_backing_count(), 1);
+        assert_eq!(owner.dma().descriptor_word0(0), Some(0));
+        assert_eq!(owner.dma().descriptor_buffer_address(0), Some(0));
+        assert_eq!(drops.get(), 0);
+
+        owner.cancel().unwrap();
+        assert_eq!(drops.get(), 1);
+    }
+
+    #[test]
+    fn free_retained_owner_returns_its_dma_arena() {
+        let owner = RetainedAmpduDma::<TestBacking, 2, 0>::new(descriptor_only_storage());
+        let dma = match owner.try_into_dma() {
+            Ok(dma) => dma,
+            Err(_) => panic!("free owner must return its arena"),
+        };
+
+        assert_eq!(dma.state(), AmpduDmaState::Free);
     }
 }

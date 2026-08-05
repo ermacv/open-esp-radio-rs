@@ -4303,7 +4303,7 @@ pub mod phy_frequency_channel_oracle {
         #[doc = "Field `MINIMUM_POWER_INDEX` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
         pub type MinimumPowerIndexR = crate::FieldReader;
         #[doc = "Field `MINIMUM_POWER_INDEX` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_tx_min_pwr(-11) writes signed six-bit value 0x35."]
-        pub type MinimumPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type MinimumPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `HE_PARENT_ENABLE_UNKNOWN` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
         pub type HeParentEnableUnknownR = crate::BitReader;
         #[doc = "Field `HE_PARENT_ENABLE_UNKNOWN` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. The complete HE init parent sets bit 17 through a separate fresh-read RMW."]
@@ -19196,7 +19196,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `BSSID_BYTE_5` reader - "]
         pub type BssidByte5R = crate::FieldReader;
         #[doc = "Field `BSSID_BYTE_5` writer - "]
-        pub type BssidByte5W<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type BssidByte5W<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `MULTI_BSSID_ENABLE` reader - "]
         pub type MultiBssidEnableR = crate::BitReader;
         #[doc = "Field `MULTI_BSSID_ENABLE` writer - "]
@@ -19204,7 +19204,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `MULTI_BSSID_MASK` reader - "]
         pub type MultiBssidMaskR = crate::FieldReader;
         #[doc = "Field `MULTI_BSSID_MASK` writer - "]
-        pub type MultiBssidMaskW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type MultiBssidMaskW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `CO_HOSTED_ENABLE` reader - "]
         pub type CoHostedEnableR = crate::BitReader;
         #[doc = "Field `CO_HOSTED_ENABLE` writer - "]
@@ -19363,7 +19363,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `HIGH_ADDRESS_UNKNOWN` reader - "]
         pub type HighAddressUnknownR = crate::FieldReader;
         #[doc = "Field `HIGH_ADDRESS_UNKNOWN` writer - "]
-        pub type HighAddressUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type HighAddressUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 16:23"]
             #[inline(always)]
@@ -19550,7 +19550,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `MODE_UNKNOWN` reader - "]
         pub type ModeUnknownR = crate::FieldReader;
         #[doc = "Field `MODE_UNKNOWN` writer - "]
-        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type ModeUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 30:31"]
             #[inline(always)]
@@ -19709,7 +19709,8 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `BSR_ACI_HIGH_COMPARISON_METHOD` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_INIT,BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete init replaces the field with one; complete get/set leaves prove its width; complete dbg_read_bsr_info names the field CMP_BSR_METHOD."]
         pub type BsrAciHighComparisonMethodR = crate::FieldReader;
         #[doc = "Field `BSR_ACI_HIGH_COMPARISON_METHOD` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_INIT,BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete init replaces the field with one; complete get/set leaves prove its width; complete dbg_read_bsr_info names the field CMP_BSR_METHOD."]
-        pub type BsrAciHighComparisonMethodW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type BsrAciHighComparisonMethodW<'a, REG> =
+            crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `PREAC_DISABLE_LOW_AC_TX_WHEN_EMPTY` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete dbg_read_bsr_info names this PREAC_DIS_LOWACTX EMPTY."]
         pub type PreacDisableLowAcTxWhenEmptyR = crate::BitReader;
         #[doc = "Field `PREAC_DISABLE_LOW_AC_TX_WHEN_EMPTY` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_BSR_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete dbg_read_bsr_info names this PREAC_DIS_LOWACTX EMPTY."]
@@ -20043,7 +20044,7 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `MPDU_LENGTH_OFFSET` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
         pub type MpduLengthOffsetR = crate::FieldReader<u16>;
         #[doc = "Field `MPDU_LENGTH_OFFSET` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_INIT_SUFFIX,BLOB_LIBPP_HAL_RX_MISC_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]."]
-        pub type MpduLengthOffsetW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16>;
+        pub type MpduLengthOffsetW<'a, REG> = crate::FieldWriter<'a, REG, 9, u16, crate::Safe>;
         #[doc = "Field `HE_USE_SOFTWARE_TXOP` reader - "]
         pub type HeUseSoftwareTxopR = crate::BitReader;
         #[doc = "Field `HE_USE_SOFTWARE_TXOP` writer - "]
@@ -20222,11 +20223,11 @@ pub mod wifi_mac_he_init_suffix {
         #[doc = "Field `HIGH_WINDOW` reader - "]
         pub type HighWindowR = crate::FieldReader;
         #[doc = "Field `HIGH_WINDOW` writer - "]
-        pub type HighWindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type HighWindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `LOW_WINDOW` reader - "]
         pub type LowWindowR = crate::FieldReader;
         #[doc = "Field `LOW_WINDOW` writer - "]
-        pub type LowWindowW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type LowWindowW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 18:24"]
             #[inline(always)]
@@ -31704,6 +31705,16 @@ pub mod zero_register_write {
         // qualify a complete zero write to this ordinary register.
         unsafe {
             registers.policy_control().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_HE_INIT_SUFFIX`.`HE_SCRATCH%s`.
+    #[inline]
+    pub fn clear_mac_he_mpdu_length_link(registers: &crate::WifiMacHeInitSuffix, index: usize) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.he_scratch(index).write_with_zero(|writer| writer);
         }
     }
 }

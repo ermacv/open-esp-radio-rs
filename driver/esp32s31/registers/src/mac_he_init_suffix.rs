@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the complete post-power `hal_he_init` suffix.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// One hardware TX MPDU-length link-table entry.
@@ -50,7 +52,7 @@ impl RadioRegisters {
         control.modify(|_, w| w.qos_data_update_bsr().set_bit());
         control.modify(|_, w| w.preac_no_resource_enable_bsr().clear_bit());
         control.modify(|_, w| w.ac_empty_single_bsr().clear_bit());
-        control.modify(|_, w| unsafe { w.bsr_aci_high_comparison_method().bits(1) });
+        control.modify(|_, w| w.bsr_aci_high_comparison_method().set(1));
     }
 
     /// Apply the raw ER-SU-Disable bit parsed from the BSS's HE Operation.
@@ -84,7 +86,7 @@ impl RadioRegisters {
         self.peripherals
             .wifi_mac_he_init_suffix
             .he_default_control()
-            .modify(|_, w| unsafe { w.default_pe_duration().bits(duration & 0x07) });
+            .modify(|_, w| w.default_pe_duration().set(duration & 0x07));
     }
 
     /// Apply the complete hardware-visible `hal_he_init` suffix.
@@ -102,27 +104,22 @@ impl RadioRegisters {
         init.ersu_and_vht_control()
             .modify(|_, w| w.auto_ack_allow_ersu().set_bit());
         let ack = init.ersu_ack_rate();
-        ack.modify(|_, w| unsafe { w.rate_0().bits(0x80) });
-        ack.modify(|_, w| unsafe { w.rate_1().bits(0x80) });
-        ack.modify(|_, w| unsafe { w.rate_2().bits(0x80) });
-        ack.modify(|_, w| unsafe { w.rate_3().bits(0x80) });
+        ack.modify(|_, w| w.rate_0().set(0x80));
+        ack.modify(|_, w| w.rate_1().set(0x80));
+        ack.modify(|_, w| w.rate_2().set(0x80));
+        ack.modify(|_, w| w.rate_3().set(0x80));
 
         // Complete hal_set_tx_min_pwr(-11), then the parent field update.
         self.peripherals
             .phy_frequency_channel_oracle
             .channel_tx_offset_control()
-            .modify(|_, w| unsafe { w.minimum_power_index().bits(0x35) });
+            .modify(|_, w| w.minimum_power_index().set(0x35));
         init.he_default_control()
-            .modify(|_, w| unsafe { w.mpdu_length_offset().bits(0x17c) });
+            .modify(|_, w| w.mpdu_length_offset().set(0x17c));
 
         // The parent clears this complete 120-word aperture in ascending order.
         for word in 0..120 {
-            // SAFETY: the complete parent proves zero as the full 32-bit image
-            // of every TX MPDU-length link-table word. This deliberately
-            // clears both named fields and the still-unknown high bits.
-            unsafe {
-                init.he_scratch(word).write_with_zero(|w| w.bits(0));
-            }
+            super::svd::zero_register_write::clear_mac_he_mpdu_length_link(init, word);
         }
 
         // Physical protection words are traversed high-to-low.
@@ -142,22 +139,22 @@ impl RadioRegisters {
         init.feature_edges().modify(|_, w| w.enable_1().set_bit());
         init.feature_edges().modify(|_, w| w.enable_0().set_bit());
         init.tx_mode_control()
-            .modify(|_, w| unsafe { w.mode_unknown().bits(1) });
+            .modify(|_, w| w.mode_unknown().set(1));
 
         // Complete hal_he_set_bcast_ru(0x7fd, 0, 0): six independent RMWs.
         let broadcast_low = init.broadcast_ru_low();
         broadcast_low.modify(|_, w| w.enable().set_bit());
-        broadcast_low.modify(|_, w| unsafe { w.value().bits(0x7fd) });
+        broadcast_low.modify(|_, w| w.value().set(0x7fd));
         let broadcast_high = init.broadcast_ru_high();
         broadcast_high.modify(|_, w| w.low_enable().set_bit());
-        broadcast_high.modify(|_, w| unsafe { w.low_value().bits(0) });
+        broadcast_high.modify(|_, w| w.low_value().set(0));
         broadcast_high.modify(|_, w| w.high_enable().set_bit());
-        broadcast_high.modify(|_, w| unsafe { w.high_value().bits(0) });
+        broadcast_high.modify(|_, w| w.high_value().set(0));
 
         // Complete hal_he_set_uora_parameter with packed argument byte 0x2b.
         let uora = init.uora_control();
-        uora.modify(|_, w| unsafe { w.low_window().bits(7) });
-        uora.modify(|_, w| unsafe { w.high_window().bits(31) });
+        uora.modify(|_, w| w.low_window().set(7));
+        uora.modify(|_, w| w.high_window().set(31));
 
         self.peripherals
             .phy_frequency_channel_oracle
@@ -178,13 +175,10 @@ impl RadioRegisters {
         // the same bit.
         if multi.read().co_hosted_enable().bit_is_clear() {
             multi.modify(|_, w| w.multi_bssid_enable().clear_bit());
-            multi.modify(|r, w| unsafe {
-                w.multi_bssid_mask()
-                    .bits(r.multi_bssid_mask().bits() | 0xff)
-            });
-            multi.modify(|_, w| unsafe { w.bssid_byte_5().bits(0) });
+            multi.modify(|r, w| w.multi_bssid_mask().set(r.multi_bssid_mask().bits() | 0xff));
+            multi.modify(|_, w| w.bssid_byte_5().set(0));
             init.multi_bssid_high()
-                .modify(|_, w| unsafe { w.high_address_unknown().bits(0) });
+                .modify(|_, w| w.high_address_unknown().set(0));
             for physical in (0..8).rev() {
                 init.queue_control(physical)
                     .modify(|_, w| w.qos_null_to_translated_bss().clear_bit());
@@ -195,10 +189,7 @@ impl RadioRegisters {
         // guard read and the repeated hosted-mask OR.
         if multi.read().multi_bssid_enable().bit_is_clear() {
             multi.modify(|_, w| w.co_hosted_enable().clear_bit());
-            multi.modify(|r, w| unsafe {
-                w.multi_bssid_mask()
-                    .bits(r.multi_bssid_mask().bits() | 0xff)
-            });
+            multi.modify(|r, w| w.multi_bssid_mask().set(r.multi_bssid_mask().bits() | 0xff));
         }
     }
 }

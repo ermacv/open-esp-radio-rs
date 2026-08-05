@@ -344,6 +344,10 @@
              peripheral="WIFI_MAC_CRYPTO_CONTROL"
              register="POLICY_CONTROL"
              source="BLOB_LIBPP_HAL_CRYPTO_INIT"/>
+      <write name="clear_mac_he_mpdu_length_link"
+             peripheral="WIFI_MAC_HE_INIT_SUFFIX"
+             register="HE_SCRATCH%s"
+             source="BLOB_LIBPP_HAL_HE_INIT_SUFFIX"/>
     </openEspRadioZeroRegisterWrites>
     <openEspRadioMaskedRegisterModifies>
       <modify name="publish_pbus_force_test"

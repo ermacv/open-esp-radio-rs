@@ -137,7 +137,7 @@ fn field_candidate_summary(report: &LinkedIrReport) -> (usize, usize, usize, usi
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-mmio-linkage=direct-producer-return-bit-intersection\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=two-stage-exact-bit-projection-with-comparison-values\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=path-polarity-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -517,9 +517,20 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                         scope.paths.len(),
                         format_guard_paths(&scope.paths),
                     );
-                    for (producer, mmio) in guard_mmio_links(&scope.paths) {
+                    for (
+                        site,
+                        condition,
+                        operation,
+                        taken,
+                        producer,
+                        operand,
+                        comparison_value,
+                        source_comparison_value,
+                        mmio,
+                    ) in guard_mmio_links(&scope.paths)
+                    {
                         println!(
-                            "EFFECT-ACTION-GUARD-MMIO\t{}\t{}\tscope={}\tproducer={}\taddress={:#010x}\tregister={}\tresult-bits={:#010x}\tregister-bits={:#010x}\tinverted={}",
+                            "EFFECT-ACTION-GUARD-MMIO\t{}\t{}\tscope={}\tproducer={}\taddress={:#010x}\tregister={}\tresult-bits={:#010x}\tregister-bits={:#010x}\tsite={:#010x}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tsource-comparison-value={}\tresult-comparison-value={}\tregister-comparison-value={}\tinverted={}",
                             function.identity,
                             action.operation,
                             scope.function,
@@ -528,6 +539,38 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                             mmio.register,
                             mmio.result_bits,
                             mmio.register_bits,
+                            site,
+                            condition,
+                            operation,
+                            taken,
+                            effective_branch_operation(operation, taken),
+                            operand,
+                            optional_hex_text(comparison_value),
+                            optional_hex_text(source_comparison_value),
+                            optional_hex_text(mmio.result_comparison_value),
+                            optional_hex_text(mmio.register_comparison_value),
+                            mmio.inverted,
+                        );
+                    }
+                    for (site, condition, operation, taken, mmio) in
+                        guard_direct_mmio_links(&scope.paths)
+                    {
+                        println!(
+                            "EFFECT-ACTION-GUARD-DIRECT-MMIO\t{}\t{}\tscope={}\taddress={:#010x}\tregister={}\tregister-bits={:#010x}\tsite={:#010x}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
+                            function.identity,
+                            action.operation,
+                            scope.function,
+                            mmio.address,
+                            mmio.register,
+                            mmio.register_bits,
+                            site,
+                            condition,
+                            operation,
+                            taken,
+                            effective_branch_operation(operation, taken),
+                            mmio.operand,
+                            optional_hex_text(mmio.comparison_value),
+                            optional_hex_text(mmio.register_comparison_value),
                             mmio.inverted,
                         );
                     }
@@ -688,7 +731,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                     value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
                 };
                 println!(
-                    "MMIO-FIELD-PREDICATE\t{:#010x}\tbits={}-{}\tkind={}\tfunction={}\tproducer={}\tsite={}\tpath={}\tcondition={}\toperation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
+                    "MMIO-FIELD-PREDICATE\t{:#010x}\tbits={}-{}\tkind={}\tfunction={}\tproducer={}\tsite={}\tpath={}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
                     register.address,
                     candidate.least_significant_bit,
                     candidate.most_significant_bit,
@@ -701,10 +744,31 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                     evidence.path.as_deref().unwrap_or("-"),
                     evidence.condition,
                     evidence.operation,
+                    evidence
+                        .taken
+                        .map_or_else(|| "-".to_owned(), |taken| taken.to_string()),
+                    evidence.effective_operation.unwrap_or("-"),
                     evidence.operand.unwrap_or("-"),
                     optional_hex(evidence.comparison_value),
                     optional_hex(evidence.register_comparison_value),
                     evidence.inverted,
+                );
+            }
+            for evidence in &candidate.semantic_evidence {
+                println!(
+                    "MMIO-FIELD-SEMANTIC\t{:#010x}\tbits={}-{}\tkind={}\troot={}\toperation={}\tpredicate-function={}\tproducer={}\tsite={:#010x}\tcondition={}\ttaken={}\teffective-operation={}",
+                    register.address,
+                    candidate.least_significant_bit,
+                    candidate.most_significant_bit,
+                    evidence.kind,
+                    evidence.root,
+                    evidence.operation,
+                    evidence.predicate_function,
+                    evidence.producer.as_deref().unwrap_or("-"),
+                    evidence.site,
+                    evidence.condition,
+                    evidence.taken,
+                    evidence.effective_operation,
                 );
             }
         }
@@ -877,11 +941,15 @@ fn write_pseudo(
             for evidence in &candidate.predicate_evidence {
                 writeln!(
                     output,
-                    "//   PREDICATE: kind={} function={} condition=({}) operation={} comparison={} register-value={}{}",
+                    "//   PREDICATE: kind={} function={} condition=({}) operation={} taken={} effective={} comparison={} register-value={}{}",
                     evidence.kind,
                     evidence.function,
                     evidence.condition,
                     evidence.operation,
+                    evidence
+                        .taken
+                        .map_or_else(|| "-".to_owned(), |taken| taken.to_string()),
+                    evidence.effective_operation.unwrap_or("-"),
                     evidence
                         .comparison_value
                         .map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}")),
@@ -890,6 +958,24 @@ fn write_pseudo(
                         |value| format!("{value:#010x}")
                     ),
                     if evidence.inverted { " inverted" } else { "" },
+                )
+                .expect("writing to String cannot fail");
+            }
+            for evidence in &candidate.semantic_evidence {
+                writeln!(
+                    output,
+                    "//   GUARDED-SEMANTIC-PATH: {} via {} in {} at {:#010x} when effective={} [{} taken={}]{}",
+                    evidence.operation,
+                    evidence.root,
+                    evidence.predicate_function,
+                    evidence.site,
+                    evidence.effective_operation,
+                    evidence.condition,
+                    evidence.taken,
+                    evidence
+                        .producer
+                        .as_ref()
+                        .map_or_else(String::new, |producer| format!(" producer={producer}")),
                 )
                 .expect("writing to String cannot fail");
             }
@@ -980,15 +1066,36 @@ fn write_pseudo(
                             format_guard_paths(&scope.paths)
                         )
                         .expect("writing to String cannot fail");
-                        for (producer, mmio) in guard_mmio_links(&scope.paths) {
+                        for (
+                            site,
+                            condition,
+                            operation,
+                            taken,
+                            producer,
+                            operand,
+                            comparison_value,
+                            source_comparison_value,
+                            mmio,
+                        ) in guard_mmio_links(&scope.paths)
+                        {
                             writeln!(
                                 output,
-                                "//     MMIO-PREDICATE-SOURCE: {}@{:#010x} result-bits={:#010x} register-bits={:#010x} producer={}{}",
+                                "//     MMIO-PREDICATE-SOURCE: {}@{:#010x} result-bits={:#010x} register-bits={:#010x} producer={} site={:#010x} operation={} taken={} effective={} operand={} comparison={} source-value={} result-value={} register-value={} condition=({}){}",
                                 mmio.register,
                                 mmio.address,
                                 mmio.result_bits,
                                 mmio.register_bits,
                                 producer,
+                                site,
+                                operation,
+                                taken,
+                                effective_branch_operation(operation, taken),
+                                operand,
+                                optional_hex_text(comparison_value),
+                                optional_hex_text(source_comparison_value),
+                                optional_hex_text(mmio.result_comparison_value),
+                                optional_hex_text(mmio.register_comparison_value),
+                                condition,
                                 if mmio.inverted { " inverted" } else { "" },
                             )
                             .expect("writing to String cannot fail");
@@ -998,13 +1105,17 @@ fn write_pseudo(
                         {
                             writeln!(
                                 output,
-                                "//     DIRECT-MMIO-PREDICATE: {}@{:#010x} register-bits={:#010x} site={:#010x} operation={} taken={} condition=({}){}",
+                                "//     DIRECT-MMIO-PREDICATE: {}@{:#010x} register-bits={:#010x} site={:#010x} operation={} taken={} effective={} operand={} comparison={} register-value={} condition=({}){}",
                                 mmio.register,
                                 mmio.address,
                                 mmio.register_bits,
                                 site,
                                 operation,
                                 taken,
+                                effective_branch_operation(operation, taken),
+                                mmio.operand,
+                                optional_hex_text(mmio.comparison_value),
+                                optional_hex_text(mmio.register_comparison_value),
                                 condition,
                                 if mmio.inverted { " inverted" } else { "" },
                             )
@@ -1190,20 +1301,44 @@ fn format_guard_paths(paths: &[LinkedCallGuardPath]) -> String {
         .join(" || ")
 }
 
-fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<(String, LinkedCallGuardMmioSource)> {
+fn optional_hex_text(value: Option<u32>) -> String {
+    value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
+}
+
+type ProducerMmioGuardLink = (
+    u32,
+    String,
+    &'static str,
+    bool,
+    String,
+    &'static str,
+    Option<u32>,
+    Option<u32>,
+    LinkedCallGuardMmioSource,
+);
+
+fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<ProducerMmioGuardLink> {
     paths
         .iter()
         .flat_map(|path| &path.guards)
-        .flat_map(|guard| &guard.result_sources)
-        .flat_map(|source| {
-            source.mmio_sources.iter().cloned().map(|mmio| {
-                (
-                    source
-                        .target
-                        .clone()
-                        .unwrap_or_else(|| "unknown".to_owned()),
-                    mmio,
-                )
+        .flat_map(|guard| {
+            guard.result_sources.iter().flat_map(|source| {
+                source.mmio_sources.iter().cloned().map(|mmio| {
+                    (
+                        guard.site,
+                        guard.condition.clone(),
+                        guard.operation,
+                        guard.taken,
+                        source
+                            .target
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_owned()),
+                        source.operand,
+                        source.comparison_value,
+                        source.source_comparison_value,
+                        mmio,
+                    )
+                })
             })
         })
         .collect::<BTreeSet<_>>()
@@ -1338,10 +1473,15 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
             write_string(output, guard.operation);
             write!(
                 output,
-                ", \"taken\": {}, \"result_sources\": [",
-                guard.taken
+                ", \"taken\": {}, \"effective_operation\": ",
+                guard.taken,
             )
             .expect("writing to String cannot fail");
+            write_string(
+                output,
+                effective_branch_operation(guard.operation, guard.taken),
+            );
+            output.push_str(", \"result_sources\": [");
             for (source_index, source) in guard.result_sources.iter().enumerate() {
                 if source_index != 0 {
                     output.push_str(", ");
@@ -1351,12 +1491,20 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
                 write!(output, ", \"token\": {}, \"target\": ", source.token)
                     .expect("writing to String cannot fail");
                 write_optional_string(output, source.target.as_deref());
+                output.push_str(", \"operand\": ");
+                write_string(output, source.operand);
+                output.push_str(", \"value_bits\": ");
+                write_optional_hex(output, source.value_bits);
                 write!(
                     output,
-                    ", \"source_bits\": \"{:#010x}\", \"producer_return_exact\": ",
-                    source.source_bits
+                    ", \"source_bits\": \"{:#010x}\", \"inverted\": {}, \"comparison_value\": ",
+                    source.source_bits, source.inverted,
                 )
                 .expect("writing to String cannot fail");
+                write_optional_hex(output, source.comparison_value);
+                output.push_str(", \"source_comparison_value\": ");
+                write_optional_hex(output, source.source_comparison_value);
+                output.push_str(", \"producer_return_exact\": ");
                 if let Some(exact) = source.producer_return_exact {
                     write!(output, "{exact}").expect("writing to String cannot fail");
                 } else {
@@ -1376,12 +1524,16 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
                     write_string(output, &mmio.register);
                     write!(
                         output,
-                        ", \"result_bits\": \"{:#010x}\", \"register_bits\": \"{:#010x}\", \"inverted\": {}}}",
+                        ", \"result_bits\": \"{:#010x}\", \"register_bits\": \"{:#010x}\", \"inverted\": {}, \"result_comparison_value\": ",
                         mmio.result_bits,
                         mmio.register_bits,
                         mmio.inverted,
                     )
                     .expect("writing to String cannot fail");
+                    write_optional_hex(output, mmio.result_comparison_value);
+                    output.push_str(", \"register_comparison_value\": ");
+                    write_optional_hex(output, mmio.register_comparison_value);
+                    output.push('}');
                 }
                 output.push_str("]}");
             }
@@ -1559,7 +1711,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 25,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 26,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1608,10 +1760,10 @@ fn write_json_report(
         "  \"cfg_guard_expression_mode\": \"pseudo-rust-aligned-bit-masks-with-symbolic-fallback\",\n",
     );
     output.push_str(
-        "  \"cfg_guard_result_source_mode\": \"bit-provenance-with-producer-targets\",\n",
+        "  \"cfg_guard_result_source_mode\": \"bit-provenance-with-operand-comparison-mapping-and-producer-targets\",\n",
     );
     output.push_str(
-        "  \"cfg_guard_mmio_linkage_mode\": \"direct-producer-return-bit-intersection\",\n",
+        "  \"cfg_guard_mmio_linkage_mode\": \"two-stage-exact-bit-projection-with-comparison-values\",\n",
     );
     output.push_str(
         "  \"mmio_field_candidate_mode\": \"contiguous-subregister-write-poll-and-direct-guard-evidence\",\n",
@@ -1619,6 +1771,7 @@ fn write_json_report(
     output.push_str(
         "  \"direct_mmio_predicate_mode\": \"exact-bit-provenance-with-constant-comparison-mapping\",\n",
     );
+    output.push_str("  \"semantic_field_guard_mode\": \"path-polarity-preserving\",\n");
     output.push_str("  \"direct_mmio_predicate_completeness_claim\": false,\n");
     output.push_str("  \"mmio_field_semantics_claim\": false,\n");
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
@@ -1806,6 +1959,14 @@ fn write_json_report(
                 write_string(&mut output, &evidence.condition);
                 output.push_str(", \"operation\": ");
                 write_string(&mut output, evidence.operation);
+                output.push_str(", \"taken\": ");
+                if let Some(taken) = evidence.taken {
+                    write!(output, "{taken}").expect("writing to String cannot fail");
+                } else {
+                    output.push_str("null");
+                }
+                output.push_str(", \"effective_operation\": ");
+                write_optional_string(&mut output, evidence.effective_operation);
                 output.push_str(", \"operand\": ");
                 write_optional_string(&mut output, evidence.operand);
                 output.push_str(", \"comparison_value\": ");
@@ -1820,6 +1981,35 @@ fn write_json_report(
             write_strings(&mut output, &candidate.semantic_operations);
             output.push_str(", \"semantic_roots\": ");
             write_strings(&mut output, &candidate.semantic_roots);
+            output.push_str(", \"semantic_evidence\": [");
+            for (evidence_index, evidence) in candidate.semantic_evidence.iter().enumerate() {
+                if evidence_index != 0 {
+                    output.push_str(", ");
+                }
+                output.push_str("{\"kind\": ");
+                write_string(&mut output, evidence.kind);
+                output.push_str(", \"root\": ");
+                write_string(&mut output, &evidence.root);
+                output.push_str(", \"operation\": ");
+                write_string(&mut output, &evidence.operation);
+                output.push_str(", \"predicate_function\": ");
+                write_string(&mut output, &evidence.predicate_function);
+                output.push_str(", \"producer\": ");
+                write_optional_string(&mut output, evidence.producer.as_deref());
+                write!(
+                    output,
+                    ", \"site\": \"{:#010x}\", \"condition\": ",
+                    evidence.site,
+                )
+                .expect("writing to String cannot fail");
+                write_string(&mut output, &evidence.condition);
+                write!(output, ", \"taken\": {}", evidence.taken)
+                    .expect("writing to String cannot fail");
+                output.push_str(", \"effective_operation\": ");
+                write_string(&mut output, evidence.effective_operation);
+                output.push('}');
+            }
+            output.push(']');
             output.push('}');
         }
         output.push_str("], \"functions\": ");

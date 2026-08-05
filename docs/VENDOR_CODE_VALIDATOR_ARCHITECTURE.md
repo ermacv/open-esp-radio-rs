@@ -256,8 +256,11 @@ removed; symbolic conditions are not assigned guessed register, bit or event
 semantics. Aligned bits derived from one symbolic source are losslessly
 canonicalized to an ordinary mask expression; non-uniform bit provenance keeps
 the existing explicit symbolic fallback. Guard atoms separately retain
-call-result provenance as a producer identity, trace-local result token and
-source-bit mask. Producer identities share the function-identity namespace,
+call-result provenance as a producer identity, trace-local result token,
+operand, compared-value bit mask and source-bit mask. For equality and
+inequality against a constant, exact bit provenance also projects the constant
+into producer-result coordinates. Producer identities share the
+function-identity namespace,
 which provides a structural join to the producer's return and MMIO inventory
 without making the condition string into an API. An unresolved producer stays
 explicit.
@@ -272,8 +275,10 @@ orthogonal to function/control-flow completeness.
 For a guard result produced by a selected function, the linked layer intersects
 the guard's tested result bits with direct MMIO ranges in that function's
 return provenance. The resulting evidence retains both result and register
-masks, so shifted and inverted mappings do not get mistaken for aligned raw
-register tests. It intentionally does not guess through unknown arithmetic or
+masks and projects a known comparison value into both coordinate systems.
+Caller-side and producer-side inversion are composed, so shifted or inverted
+mappings do not get mistaken for aligned raw register tests. It intentionally
+does not guess through unknown arithmetic or
 perform transitive return-call substitution. Missing guard evidence likewise
 stays explicit, and the report makes no CFG guard completeness claim because
 exploration is bounded. Consequently this is deliberately not a total
@@ -304,11 +309,13 @@ The project-wide index also forms conservative field candidates by joining
 equal contiguous subregister masks from writes, poll predicates, direct local
 MMIO predicates and exact guard-result links to an MMIO-backed producer return.
 Evidence classes retain separate shape counts and structured predicate records.
-Candidates link access and predicate functions; when a guarded semantic action
-is reachable, they also link its operation and effect-summary root for
-navigation in generated pseudo-source. Full-register masks remain separate
-counters and do not become fields. Guard evidence is accepted only for an
-address with one observed access width. This join does not infer register or
+Guarded records preserve whether the branch was taken and the effective
+comparison after complementing a false branch. Candidates link access and
+predicate functions; when a guarded semantic action is reachable, they also
+retain structured site, condition, polarity, operation and effect-summary root
+evidence for navigation in generated pseudo-source. Full-register masks remain
+separate counters and do not become fields. Guard evidence is accepted only for
+an address with one observed access width. This join does not infer register or
 field names, merge adjacent hardware fields, recover W1C or reset semantics, or
 guess through arithmetic and transitive return calls.
 

@@ -2,9 +2,7 @@
 
 use core::{
     cell::UnsafeCell,
-    marker::PhantomPinned,
     pin::Pin,
-    ptr,
     sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     task::{Context, Poll},
 };
@@ -14,7 +12,10 @@ use embassy_sync::{
     blocking_mutex::raw::RawMutex,
     channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError},
 };
-use open_esp_radio_dma::{StableDmaBacking, StableDmaRegion};
+use open_esp_radio_dma::{
+    DmaIndexReturn, PinnedDmaTxNetworkLease, PinnedDmaTxPool, PinnedDmaTxRadioLease,
+    ReturningStableDmaBacking,
+};
 
 use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
 
@@ -104,150 +105,6 @@ impl<const FRAME_CAPACITY: usize> PinnedRxSlot<FRAME_CAPACITY> {
 #[allow(unsafe_code, reason = "RX slot state machine is its Sync boundary")]
 unsafe impl<const FRAME_CAPACITY: usize> Sync for PinnedRxSlot<FRAME_CAPACITY> {}
 
-#[repr(C)]
-struct PinnedTxBytes<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> {
-    headroom: [u8; HEADROOM],
-    ethernet: [u8; FRAME_CAPACITY],
-    trailer: [u8; TRAILER],
-}
-
-impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
-    PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>
-{
-    const fn new() -> Self {
-        Self {
-            headroom: [0; HEADROOM],
-            ethernet: [0; FRAME_CAPACITY],
-            trailer: [0; TRAILER],
-        }
-    }
-}
-
-#[repr(C, align(16))]
-struct PinnedTxSlot<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> {
-    bytes: UnsafeCell<PinnedTxBytes<FRAME_CAPACITY, HEADROOM, TRAILER>>,
-    length: AtomicUsize,
-    state: AtomicU8,
-}
-
-impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize>
-    PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>
-{
-    const fn new() -> Self {
-        Self {
-            bytes: UnsafeCell::new(PinnedTxBytes::new()),
-            length: AtomicUsize::new(0),
-            state: AtomicU8::new(SLOT_FREE),
-        }
-    }
-
-    fn claim_network(&self) {
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_FREE,
-                SLOT_NETWORK,
-                Ordering::AcqRel,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_FREE),
-            "free-channel entry did not name a free pinned TX slot"
-        );
-    }
-
-    fn publish_ready(&self, length: usize) {
-        self.length.store(length, Ordering::Relaxed);
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_NETWORK,
-                SLOT_READY,
-                Ordering::Release,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_NETWORK),
-            "only the embassy-net token may publish a pinned TX slot"
-        );
-    }
-
-    fn claim_radio(&self) {
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_READY,
-                SLOT_RADIO,
-                Ordering::Acquire,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_READY),
-            "ready-channel entry did not name a ready pinned TX slot"
-        );
-    }
-
-    fn release_network(&self) {
-        assert_eq!(
-            self.state.compare_exchange(
-                SLOT_NETWORK,
-                SLOT_FREE,
-                Ordering::AcqRel,
-                Ordering::Acquire
-            ),
-            Ok(SLOT_NETWORK),
-            "only an unconsumed network token may return this TX slot"
-        );
-    }
-
-    fn release_radio(&self) {
-        assert_eq!(
-            self.state
-                .compare_exchange(SLOT_RADIO, SLOT_FREE, Ordering::AcqRel, Ordering::Acquire),
-            Ok(SLOT_RADIO),
-            "only the radio lease may return this TX slot"
-        );
-        self.length.store(0, Ordering::Relaxed);
-    }
-
-    fn length(&self) -> usize {
-        self.length.load(Ordering::Acquire)
-    }
-
-    #[allow(
-        unsafe_code,
-        reason = "TX slot exposes one contiguous view to its unique state owner"
-    )]
-    fn storage(&self) -> &[u8] {
-        // SAFETY: callers hold either the unique network token or unique radio
-        // lease selected by `state`. `PinnedTxBytes` is `repr(C)` and all
-        // three adjacent fields have byte alignment, so the complete object
-        // is one contiguous byte region without padding.
-        unsafe {
-            let bytes = &*self.bytes.get();
-            debug_assert_eq!(
-                core::mem::size_of_val(bytes),
-                HEADROOM + FRAME_CAPACITY + TRAILER
-            );
-            core::slice::from_raw_parts(
-                ptr::addr_of!(bytes.headroom).cast::<u8>(),
-                HEADROOM + FRAME_CAPACITY + TRAILER,
-            )
-        }
-    }
-
-    fn storage_mut_ptr(&self) -> *mut u8 {
-        self.bytes.get().cast::<u8>()
-    }
-
-    const fn storage_capacity(&self) -> usize {
-        HEADROOM + FRAME_CAPACITY + TRAILER
-    }
-}
-
-// SAFETY: `bytes` is accessed only by the single stage owner represented by
-// `state`. Ownership moves through the bounded free/ready channels with
-// acquire/release transitions. No public method can create two slot leases.
-#[allow(unsafe_code, reason = "TX slot state machine is its Sync boundary")]
-unsafe impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> Sync
-    for PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>
-{
-}
-
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
 ///
 /// RX is copied once from the protocol adapter directly into its final slot;
@@ -290,46 +147,12 @@ pub type PinnedResources<
 /// This is separate from [`PinnedResources`] so a platform linker can place
 /// only the DMA-visible bytes in internal SRAM while keeping RX queues and
 /// Embassy synchronization state in ordinary memory.
-pub struct PinnedTxPool<
+pub type PinnedTxPool<
     const FRAME_CAPACITY: usize,
     const HEADROOM: usize,
     const TRAILER: usize,
     const QUEUE_DEPTH: usize,
-> {
-    slots: [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
-    _pin: PhantomPinned,
-}
-
-impl<
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    pub const fn new() -> Self {
-        Self {
-            slots: [const { PinnedTxSlot::new() }; QUEUE_DEPTH],
-            _pin: PhantomPinned,
-        }
-    }
-
-    pub fn pin_static(storage: &'static mut Self) -> Pin<&'static mut Self> {
-        Pin::static_mut(storage)
-    }
-}
-
-impl<
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> Default for PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    fn default() -> Self {
-        Self::new()
-    }
-}
+> = PinnedDmaTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>;
 
 impl<
     M: RawMutex,
@@ -401,8 +224,8 @@ impl<
                 .try_send(index as u8)
                 .expect("an empty free queue accepts every pool index");
         }
-        let pool = Pin::into_ref(pool);
-        let slots: &'resources _ = &pool.get_ref().slots;
+        let pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH> =
+            Pin::into_ref(pool).get_ref();
         let resources: &Self = self;
 
         (
@@ -413,7 +236,7 @@ impl<
                 free_tx: resources.free_tx.receiver(),
                 free_tx_return: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.sender(),
-                slots,
+                tx_pool: pool,
                 link: &resources.link,
                 station_address,
                 reserved_tx: None,
@@ -426,7 +249,7 @@ impl<
                 rx_slots: &resources.rx_slots,
                 free_tx: resources.free_tx.sender(),
                 ready_tx: resources.ready_tx.receiver(),
-                slots,
+                tx_pool: pool,
                 link: &resources.link,
             },
         )
@@ -463,7 +286,7 @@ pub struct SplitPinnedDevice<
     free_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
     free_tx_return: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; TX_QUEUE_DEPTH],
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
     station_address: [u8; 6],
     reserved_tx: Option<u8>,
@@ -523,12 +346,11 @@ impl<
             .reserved_tx
             .take()
             .expect("TX token requires a reserved pool index");
-        self.slots[usize::from(index)].claim_network();
+        let lease = self.tx_pool.claim_network(index);
         PinnedTransmitToken {
             free_tx: self.free_tx_return,
             ready_tx: self.ready_tx,
-            slots: self.slots,
-            index: Some(index),
+            lease: Some(lease),
             _reservation: &mut self.tx_reservation,
         }
     }
@@ -615,8 +437,7 @@ pub struct PinnedTransmitToken<
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
-    index: Option<u8>,
+    lease: Option<PinnedDmaTxNetworkLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>>,
     _reservation: &'device mut (),
 }
 
@@ -629,10 +450,6 @@ impl<
 > embassy_net_driver::TxToken
     for PinnedTransmitToken<'_, '_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
-    #[allow(
-        unsafe_code,
-        reason = "consuming the unique TX token initializes its reserved slot"
-    )]
     fn consume<R, F>(mut self, length: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
@@ -641,16 +458,8 @@ impl<
             length <= FRAME_CAPACITY,
             "embassy-net requested a frame larger than pinned driver capabilities"
         );
-        let index = self.index.take().expect("TX token consumed once");
-        let slot = &self.slots[usize::from(index)];
-        // SAFETY: consuming the unique network token gives this call exclusive
-        // access to the slot selected by `index`. The slot remains pinned and
-        // no radio lease exists before `publish_ready`.
-        let storage = unsafe {
-            core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), slot.storage_capacity())
-        };
-        let result = f(&mut storage[HEADROOM..HEADROOM + length]);
-        slot.publish_ready(length);
+        let lease = self.lease.take().expect("TX token consumed once");
+        let (index, result) = lease.publish(length, f);
         if let Err(TrySendError::Full(_)) = self.ready_tx.try_send(index) {
             unreachable!("one ready entry exists per non-free pinned TX slot");
         }
@@ -667,8 +476,8 @@ impl<
 > Drop for PinnedTransmitToken<'_, '_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
 {
     fn drop(&mut self) {
-        if let Some(index) = self.index.take() {
-            self.slots[usize::from(index)].release_network();
+        if let Some(lease) = self.lease.take() {
+            let index = lease.release();
             if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
                 unreachable!("dropped pinned TX token returns its unique index");
             }
@@ -879,10 +688,10 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize> Drop
     for PinnedRxPublisher<'_, M, FRAME_CAPACITY, QUEUE_DEPTH>
 {
     fn drop(&mut self) {
-        if let Some(index) = self.reserved_rx.take() {
-            if let Err(TrySendError::Full(_)) = self.free_rx_return.try_send(index) {
-                unreachable!("reserved pinned RX index was lost");
-            }
+        if let Some(index) = self.reserved_rx.take()
+            && let Err(TrySendError::Full(_)) = self.free_rx_return.try_send(index)
+        {
+            unreachable!("reserved pinned RX index was lost");
         }
     }
 }
@@ -902,7 +711,7 @@ pub struct SplitPinnedRadioRunner<
     rx_slots: &'resources [PinnedRxSlot<FRAME_CAPACITY>; RX_QUEUE_DEPTH],
     free_tx: Sender<'resources, M, u8, TX_QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, TX_QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; TX_QUEUE_DEPTH],
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
     link: &'resources SharedLinkState<M>,
 }
 
@@ -978,7 +787,7 @@ impl<
         PinnedTxConsumer {
             free_tx: self.free_tx,
             ready_tx: self.ready_tx,
-            slots: self.slots,
+            tx_pool: self.tx_pool,
         }
     }
 
@@ -1020,7 +829,7 @@ pub struct PinnedTxConsumer<
 > {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
     ready_tx: Receiver<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
+    tx_pool: &'resources PinnedTxPool<FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
 }
 
 impl<
@@ -1036,14 +845,12 @@ impl<
         &self,
     ) -> Option<PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>> {
         match self.ready_tx.try_receive() {
-            Ok(index) => {
-                self.slots[usize::from(index)].claim_radio();
-                Some(PinnedTxFrame {
+            Ok(index) => Some(ReturningStableDmaBacking::new(
+                self.tx_pool.claim_radio(index),
+                PinnedTxReturn {
                     free_tx: self.free_tx,
-                    slots: self.slots,
-                    index: Some(index),
-                })
-            }
+                },
+            )),
             Err(TryReceiveError::Empty) => None,
         }
     }
@@ -1052,12 +859,12 @@ impl<
         &self,
     ) -> PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH> {
         let index = self.ready_tx.receive().await;
-        self.slots[usize::from(index)].claim_radio();
-        PinnedTxFrame {
-            free_tx: self.free_tx,
-            slots: self.slots,
-            index: Some(index),
-        }
+        ReturningStableDmaBacking::new(
+            self.tx_pool.claim_radio(index),
+            PinnedTxReturn {
+                free_tx: self.free_tx,
+            },
+        )
     }
 
     pub fn queue_len(&self) -> usize {
@@ -1065,122 +872,33 @@ impl<
     }
 }
 
-/// Unique radio-side lease for one permanently located TX allocation.
-///
-/// Dropping the lease is the explicit ownership edge that returns the slot to
-/// `embassy-net`. A chip-specific DMA wrapper must therefore retain this value
-/// through completion, BlockAck processing and any retry.
-pub struct PinnedTxFrame<
-    'resources,
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> {
+/// Queue-return capability paired with a lower-level pinned DMA lease.
+#[doc(hidden)]
+pub struct PinnedTxReturn<'resources, M: RawMutex, const QUEUE_DEPTH: usize> {
     free_tx: Sender<'resources, M, u8, QUEUE_DEPTH>,
-    slots: &'resources [PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER>; QUEUE_DEPTH],
-    index: Option<u8>,
 }
 
-impl<
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    fn slot(&self) -> &PinnedTxSlot<FRAME_CAPACITY, HEADROOM, TRAILER> {
-        &self.slots[usize::from(self.index.expect("live pinned TX lease"))]
-    }
-
-    pub const fn ethernet_offset(&self) -> usize {
-        HEADROOM
-    }
-
-    pub fn ethernet_length(&self) -> usize {
-        self.slot().length()
-    }
-
-    /// Compatibility name for the complete Ethernet-frame length.
-    pub fn len(&self) -> usize {
-        self.ethernet_length()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.ethernet_length() == 0
-    }
-
-    pub fn ethernet(&self) -> &[u8] {
-        let length = self.ethernet_length();
-        &self.slot().storage()[HEADROOM..HEADROOM + length]
-    }
-
-    /// Compatibility name for the radio-owned Ethernet view.
-    pub fn as_slice(&self) -> &[u8] {
-        self.ethernet()
-    }
-
-    pub fn ethernet_mut(&mut self) -> &mut [u8] {
-        let length = self.ethernet_length();
-        &mut self.storage_mut()[HEADROOM..HEADROOM + length]
-    }
-
-    /// Complete headroom + Ethernet capacity + hardware trailer allocation.
-    #[allow(
-        unsafe_code,
-        reason = "mutable radio lease owns one permanently located TX slot"
-    )]
-    pub fn storage_mut(&mut self) -> &mut [u8] {
-        let slot = self.slot();
-        // SAFETY: `&mut self` is the unique live radio lease for this slot.
-        // The state machine prevents a network token from existing until this
-        // lease is dropped, and the backing pool remains pinned throughout.
-        unsafe { core::slice::from_raw_parts_mut(slot.storage_mut_ptr(), slot.storage_capacity()) }
-    }
-
-    pub const fn trailer_capacity(&self) -> usize {
-        TRAILER
-    }
-}
-
-// SAFETY: every `PinnedTxFrame` is a unique SLOT_RADIO lease into a separately
-// pinned `PinnedTxPool`. Moving this handle never moves its backing bytes, and
-// dropping it is the only safe operation that releases the allocation.
-#[allow(
-    unsafe_code,
-    reason = "pinned TX pool proves the stable DMA backing contract"
-)]
-unsafe impl<
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> StableDmaBacking for PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    fn stable_dma_region(&mut self) -> StableDmaRegion<'_> {
-        // SAFETY: the pool, rather than this movable lease handle, owns the
-        // allocation. It remains pinned until all radio leases are returned.
-        unsafe { StableDmaRegion::new(self.storage_mut()) }
-    }
-}
-
-impl<
-    M: RawMutex,
-    const FRAME_CAPACITY: usize,
-    const HEADROOM: usize,
-    const TRAILER: usize,
-    const QUEUE_DEPTH: usize,
-> Drop for PinnedTxFrame<'_, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
-{
-    fn drop(&mut self) {
-        if let Some(index) = self.index.take() {
-            self.slots[usize::from(index)].release_radio();
-            if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
-                unreachable!("radio lease returns its unique pinned TX index");
-            }
+impl<M: RawMutex, const QUEUE_DEPTH: usize> DmaIndexReturn for PinnedTxReturn<'_, M, QUEUE_DEPTH> {
+    fn return_index(&self, index: u8) {
+        if let Err(TrySendError::Full(_)) = self.free_tx.try_send(index) {
+            unreachable!("radio lease returns its unique pinned TX index");
         }
     }
 }
+
+/// Unique radio-side lease for one permanently located TX allocation.
+///
+/// Dropping the lease first releases DMA ownership and then returns the index
+/// to `embassy-net`. Chip-specific LMAC code retains this value through final
+/// completion, BlockAck processing and any retry.
+pub type PinnedTxFrame<
+    'resources,
+    M,
+    const FRAME_CAPACITY: usize,
+    const HEADROOM: usize,
+    const TRAILER: usize,
+    const QUEUE_DEPTH: usize,
+> = ReturningStableDmaBacking<
+    PinnedDmaTxRadioLease<'resources, FRAME_CAPACITY, HEADROOM, TRAILER>,
+    PinnedTxReturn<'resources, M, QUEUE_DEPTH>,
+>;

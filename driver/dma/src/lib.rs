@@ -9,6 +9,13 @@
 //! [`StableDmaBacking`] at its own audited memory boundary; chip LMAC code can
 //! then retain that owner instead of relying on an external lifetime comment.
 
+mod pinned_tx;
+
+pub use pinned_tx::{
+    DmaIndexReturn, IndexedStableDmaLease, PinnedDmaTxNetworkLease, PinnedDmaTxPool,
+    PinnedDmaTxRadioLease, ReturningStableDmaBacking,
+};
+
 /// Exclusive view of one DMA-capable region at its stable address.
 ///
 /// The view itself is ordinary borrowed memory. Address stability beyond this

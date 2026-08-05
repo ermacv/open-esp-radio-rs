@@ -24,7 +24,7 @@ must not be copied into the driver.
 ## Already promoted in this audit
 
 The complete ordinary RX ownership transaction now lives in
-`open-esp-radio-esp32s31-wifi-mac::rx_pool`:
+`open-esp-radio-esp32s31-wifi-lmac::rx_pool`:
 
 1. consume one non-`Copy` `RxCompletedDescriptor`;
 2. copy its received length into a 32-by-1,700-byte kind-7 staging pool;
@@ -37,7 +37,7 @@ concrete static DMA array and restores that array's sentinels. The ordering is
 no longer duplicated there.
 
 The fixed FIFO of staged ownership tokens is also
-`open-esp-radio-esp32s31-wifi-mac::rx_pool::RxFrameQueue`; the application no longer
+`open-esp-radio-esp32s31-wifi-lmac::rx_pool::RxFrameQueue`; the application no longer
 implements a second queue. Its bounded `IrqSink` publishes the RX Embassy
 signal before the TX signal from the same interrupt snapshot. `IrqState`
 remains available for a task-side dispatcher, but is intentionally not
@@ -140,7 +140,7 @@ already lived in `HeDcmRate` and `StaTxRatePolicy` before the run. Details are
 in `docs/hil/2026-07-31-he20-dcm-ldpc-connected.md`.
 
 The executor-neutral BlockAck decision is now also driver-owned as
-`open-esp-radio-esp32s31-wifi-mac::tx_runtime::AmpduRetryState`. Both the internal
+`open-esp-radio-esp32s31-wifi-lmac::tx_runtime::AmpduRetryState`. Both the internal
 DMA A-MPDU path and the referenced `embassy-net` path use the same bounded
 owner for 12-bit sequence-number wrap, cumulative acknowledged/attempted MPDU
 accounting, partial-BlockAck retry masks, retained-sequence compaction, the
@@ -309,7 +309,7 @@ priority:
 - long A-MPDU preparation must yield after a finite MPDU unit when RX work is
   already pending.
 
-The fixed token queue already lives in `open-esp-radio-esp32s31-wifi-mac`.
+The fixed token queue already lives in `open-esp-radio-esp32s31-wifi-lmac`.
 `EmbassyMacIrqRuntime` now joins the executor-neutral `IrqState` to two
 coalescing Embassy wakes, owns the RX/TX interrupt classification and counts
 RX publications. The application no longer implements `IrqSink` or maps raw

@@ -13,31 +13,35 @@ only opt-in exception.
 
 | Path | Purpose |
 | --- | --- |
-| `crates/radio` | Application-facing `open-esp-radio` facade |
-| `crates/wifi/` | Chip-independent Wi-Fi protocols |
-| `crates/wifi/lifecycle` | Chip/executor-independent STA scan, attempt, reconnect and backoff ownership |
-| `crates/integration/` | Reusable network, runtime and ecosystem adapters |
-| `crates/integration/esp32s31/wifi-embassy` | ESP32-S31 Wi-Fi/Embassy runtime composition |
-| `crates/integration/esp32s31/wifi-esp-hal` | Optional `esp-hal` Wi-Fi singleton adapter |
-| `crates/esp32s31/svd` | Generated register-access crate |
-| `crates/esp32s31/pac` | Radio register ownership and transactions |
-| `crates/esp32s31/hal` | Finite hardware operations and async boundaries |
-| `crates/esp32s31/phy` | PHY initialization and calibration state machines |
-| `crates/esp32s31/wifi/mac` | ESP32-S31 Wi-Fi MAC, RX/TX and rate control |
+| [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
+| `driver/radio` | Feature-selecting `open-esp-radio` facade and re-exports |
+| `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
+| `driver/wifi/lmac` | Executor-independent HMAC/LMAC service, VIF and status contract |
+| `driver/wifi/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
+| `driver/integration/` | Reusable network, runtime and ecosystem adapters |
+| `driver/integration/esp32s31/wifi-embassy` | ESP32-S31 Wi-Fi/Embassy runtime composition |
+| `driver/integration/esp32s31/wifi-esp-hal` | Optional `esp-hal` Wi-Fi singleton adapter |
+| `driver/esp32s31/pac` | Generated peripheral-access crate |
+| `driver/esp32s31/registers` | Handwritten typed radio register transactions |
+| `driver/esp32s31/hal` | Finite hardware operations and async boundaries |
+| `driver/esp32s31/phy` | PHY initialization and calibration state machines |
+| `driver/esp32s31/wifi/lmac` | ESP32-S31 Wi-Fi LMAC, DMA, IRQ, RX/TX and rate control |
+| `driver/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
 | `hil/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
+| `hil/esp32s31/telemetry` | ESP32-S31 HIL counter and report implementations for production observation events |
+| `hil/protocol` | Typed host/HIL command and telemetry protocol |
 | `tools/vendor-code-validator` | Compiled vendor/Rust analysis, reference generation and validation workflows |
 | `tools` | Capability ledger, PAC generator, HIL runner and source-only artifact audit |
 | `svd` | Editable ESP32-S31 radio register description |
 
-Chip-wide packages follow `open-esp-radio-esp32s31-<layer>`. Protocol-specific
-hardware adds the protocol before its layer, for example
-`open-esp-radio-esp32s31-wifi-mac`. Directory names stay short because their
-hierarchy already supplies the project, chip and protocol context.
+Chip package names follow `open-esp-radio-<chip>-<layer>`; protocol-specific
+hardware inserts the protocol before the layer, as in
+`open-esp-radio-esp32s31-wifi-lmac`.
 
 The core workspace does not own board startup, PSRAM/flash placement or a
-network executor. Reusable adapters live under `crates/integration/`; concrete
+network executor. Reusable adapters live under `driver/integration/`; concrete
 board policy and the real `embassy-net`/smoltcp test application live under
-`hil/`. The source tree remains chip-first (`crates/esp32s31/phy`) so one chip's
+`hil/`. The source tree remains chip-first (`driver/esp32s31/phy`) so one chip's
 PAC, radio PHY and protocol backends evolve together. A cross-chip PHY core
 will be extracted only after another backend establishes a concrete shared API.
 
@@ -53,14 +57,15 @@ cargo test --workspace
 cargo capability-ledger check --manifest capabilities/esp32s31-wifi-sta.ledger
 cargo pac-gen --check
 tools/audit-source-only.sh
+(cd examples/esp32s31-station && cargo check --release)
 ```
 
 All workspaces and generated PAC code use Rust edition 2024, Cargo resolver 3
 and its formatting style. The current ESP32-S31 platform branch sets the
 workspace MSRV to Rust 1.97.1. The repository toolchain is pinned to that
 stable patch release so host, generated-code and embedded checks agree.
-The last command additionally needs the stable embedded target and `llvm-nm`.
-It validates generated PAC reproducibility, the compiled PHY artifact's
+The source-only audit additionally needs the stable embedded target and
+`llvm-nm`. It validates generated PAC reproducibility, the compiled PHY artifact's
 external symbols and its dependency tree. It deliberately does not inspect
 Rust source text for required or forbidden function names.
 

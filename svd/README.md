@@ -23,11 +23,11 @@ cargo pac-gen
 ```
 
 This deterministically assembles the aggregate and generates
-`crates/esp32s31/svd/src/lib.rs`. `cargo pac-gen --check` verifies both files,
+`driver/esp32s31/pac/src/lib.rs`. `cargo pac-gen --check` verifies both files,
 checks that every template reference has exactly one fragment definition, and
 rejects a peripheral whose base address is outside its declared physical
 window. A direct edit of either generated file therefore fails CI.
-`crates/esp32s31/pac/src/power.rs` is the shrinking compatibility
+`driver/esp32s31/registers/src/power.rs` is the shrinking compatibility
 facade for code not yet moved to the generated API; it must not acquire
 official system peripherals already delegated to `esp-hal`.
 

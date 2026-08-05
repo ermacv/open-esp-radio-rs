@@ -475,7 +475,7 @@ fn rom_sta_tsf_snapshot_manifest_names_the_complete_coherent_transaction() {
     let entry = manifest.resolve("rom", "hal_get_sta_tsf").entry.unwrap();
     assert_eq!(
         entry.rust_component.as_deref(),
-        Some("open_esp_radio_esp32s31_pac::RadioRegisters::station_tsf")
+        Some("open_esp_radio_esp32s31_registers::RadioRegisters::station_tsf")
     );
     assert_eq!(
         entry.binding.as_ref().unwrap().rust_probe,

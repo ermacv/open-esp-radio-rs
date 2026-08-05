@@ -13,7 +13,7 @@ cargo capability-ledger check \
 
 Each capability has five independent axes:
 
-- `implementation`: a production owner exists under `crates/*/src`;
+- `implementation`: a production owner exists under `driver/*/src`;
 - `host-proof`: named host tests exercise the capability contract;
 - `vendor-proof`: roots have executable validator contracts, are only mapped
   to reviewed source anchors, or are explicitly outside vendor comparison;

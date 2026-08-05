@@ -6,7 +6,7 @@ default-protocol wifi
 function libpp hal_pwr_interrupt_get_event
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::hal_pwr_interrupt_get_event
+rust-component open_esp_radio_esp32s31_registers::generated::hal_pwr_interrupt_get_event
 binding v1
 rust-probe open_libpp_power_irq_trace_hal_pwr_interrupt_get_event
 compare-return true
@@ -16,7 +16,7 @@ effect mmio-read 32 0x2010d8bc required
 function libpp hal_pwr_interrupt_clr_event
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::hal_pwr_interrupt_clr_event
+rust-component open_esp_radio_esp32s31_registers::generated::hal_pwr_interrupt_clr_event
 binding v1
 rust-probe open_libpp_power_irq_trace_hal_pwr_interrupt_clr_event
 effect-contract exact-effects-v1

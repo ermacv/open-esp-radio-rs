@@ -14,11 +14,12 @@ use embassy_net::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use open_esp_radio::{
+    esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
     esp32s31::{
         hal::RadioRegisters,
-        pac::MacInterruptSetup,
         phy::phy_cold::PhyColdState,
-        wifi::mac::{
+        registers::MacInterruptSetup,
+        wifi::lmac::{
             crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot},
             init::MAC_COLD_RX_INTERRUPT_MASK,
             rx::RxIngressConfig,
@@ -38,6 +39,7 @@ use open_esp_radio::{
             connected_sta_teardown::{
                 Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
             },
+            control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
             cooperative_tx::CooperativeTxHardware,
             embassy_irq::{
                 EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
@@ -45,12 +47,10 @@ use open_esp_radio::{
             embassy_rx::EmbassyEsp32s31RxReloadDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             runner::WifiRunner,
-            rx_backend::{
-                ConnectedControlPublisher, ConnectedControlResources, EmbassyNetConnectedRxSink,
-                Esp32s31RxEpochResources, Esp32s31StoppedRx,
-            },
+            network_rx::EmbassyNetConnectedRxSink,
+            rx_backend::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
             rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
-            sta_peer_port::Esp32s31ConnectedStaPeer,
+            sta_tx_epoch::Esp32s31StaTxEpochExt,
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
             },
@@ -524,7 +524,7 @@ pub async fn run_connected(
             reorder_commands: reorder_receiver,
             reorder_storage: &RX_REORDER_STORAGE,
             reorder_scratch: None,
-            pipeline_counters: None,
+            pipeline_observer: None,
         },
     );
 

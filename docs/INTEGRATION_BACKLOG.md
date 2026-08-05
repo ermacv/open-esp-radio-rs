@@ -360,7 +360,7 @@ The first reconnect seam is now production-owned:
   first epoch. A second connected teardown recreates the same typed frontier
   once more, proving at compile time that no reconnect phase needs another
   PAC singleton or static allocation;
-- `open-esp-radio-wifi-lifecycle` now owns the executor- and chip-independent
+- `open-esp-radio-wifi-sta` now owns the executor- and chip-independent
   outer attempt loop. `StaLifecycleService` consumes one caller-defined owner
   across attempt, retry/backoff, disconnect and stop edges, applies bounded
   exponential retry policy, and returns that exact owner on stop, exhaustion
@@ -410,7 +410,7 @@ The first reconnect seam is now production-owned:
   fresh Open Authentication transaction on `CooperativeTxHardware`. The
   resulting target then completed the second Association/WPA2 epoch. This
   proves the running transaction and candidate transfer. The concrete
-  `Esp32s31RunningScanPort` which binds PHY retune, cooperative hardware,
+  `Esp32s31ScanPort` which binds PHY retune, cooperative hardware,
   stopped RX, polling control TX, Embassy dwell timing, scan storage and SSID
   selection now lives in the ESP32-S31 Embassy integration crate. HIL supplies
   only its returned epoch owners, fixed storage, station policy and diagnostic
@@ -517,7 +517,7 @@ reset-required candidates and need their own typed frontier rather than the
 drop-and-continue result.
 
 The first capability-driven HMAC/LMAC contract is now source owned.
-`ieee80211::mac_service` represents granular operation ownership and resource
+`open-esp-radio-wifi-lmac` represents granular operation ownership and resource
 limits without chip conditionals, while
 `ESP32S31_MAC_SERVICE_CAPABILITIES` derives BA and aggregate limits from the
 owners that enforce them. `Esp32s31ConnectedStaPort` publishes that profile.
@@ -604,7 +604,7 @@ window larger than the board-selected `RxReorderFrameStorage` slot count, so
 the compact 8-slot profile is no longer held together by convention.
 
 The application candidate-refresh composition gap is closed. Its typed owner
-now remains disconnected until `Esp32s31RunningScanPort` returns hardware, RX,
+now remains disconnected until `Esp32s31ScanPort` returns hardware, RX,
 ordinary TX, scan scratch and a fresh candidate; only then may
 `prepare_reconnect` split the stopped RX resources for the next join. The smoke
 test rediscovered the same AP, so cross-BSSID and changed-channel recovery are

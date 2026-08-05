@@ -37,10 +37,10 @@ llvm-nm --defined-only --format=posix "$artifact" 2>/dev/null |
     sort -u >"$audit_dir/defined"
 comm -23 "$audit_dir/undefined" "$audit_dir/defined" >"$audit_dir/external"
 
-# The final artifact may refer to its source-only HAL/PAC dependencies and to
+# The final artifact may refer to its source-only HAL/register dependencies and to
 # compiler/core support only. Radio ROM or vendor archive symbols fail closed.
 if rg -v \
-    '^(_R.*open_esp_radio_esp32s31_(hal|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
+    '^(_R.*open_esp_radio_esp32s31_(hal|registers|pac).*|_ZN.*open_esp_radio_esp32s31_(hal|registers|pac).*|_RNv.*core.*(panic.*|len_mismatch_fail.*)|_ZN.*core.*(panic.*|len_mismatch_fail.*)|__u?divdi3|mem(cmp|cpy|move|set))$' \
     "$audit_dir/external"
 then
     echo "unexpected external symbol in source-only radio rlib" >&2
@@ -61,7 +61,7 @@ dependency_tree="$(
         --prefix none
 )"
 if printf '%s\n' "$dependency_tree" |
-    rg -v '^(open-esp-radio-esp32s31-(phy|hal|pac|svd)|vcell) v'
+    rg -v '^(open-esp-radio-esp32s31-(phy|hal|registers|pac)|vcell) v'
 then
     echo "non-workspace dependency survived source-only build" >&2
     exit 1
@@ -75,13 +75,16 @@ production_packages=(
     open-esp-radio
     open-esp-radio-embassy-net
     open-esp-radio-esp32s31-hal
-    open-esp-radio-esp32s31-pac
+    open-esp-radio-esp32s31-registers
     open-esp-radio-esp32s31-phy
-    open-esp-radio-esp32s31-svd
+    open-esp-radio-esp32s31-pac
     open-esp-radio-esp32s31-wifi-embassy
     open-esp-radio-esp32s31-wifi-esp-hal
-    open-esp-radio-esp32s31-wifi-mac
+    open-esp-radio-esp32s31-wifi-lmac
+    open-esp-radio-esp32s31-wifi-sta
     open-esp-radio-ieee80211
+    open-esp-radio-wifi-lmac
+    open-esp-radio-wifi-sta
     open-esp-radio-wpa2
 )
 for package in "${production_packages[@]}"; do
@@ -91,7 +94,7 @@ for package in "${production_packages[@]}"; do
         --edges normal,build \
         --prefix none >"$audit_dir/dependencies-$package"
     if rg \
-        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|.*trace-probes|.*vendor-oracle))' \
+        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|hil-(protocol|.*telemetry)|.*trace-probes|.*vendor-oracle))' \
         "$audit_dir/dependencies-$package"
     then
         echo "qualification dependency survived in production package $package" >&2
@@ -99,16 +102,44 @@ for package in "${production_packages[@]}"; do
     fi
 done
 
-if rg -n 'core::hint::spin_loop|spin_loop\(' crates --glob '*.rs'
+# Station policy and chip-specific station composition are deliberately below
+# every executor/network adapter. Keep the rule executable as those crates
+# absorb more code from the former monolithic Embassy composition.
+for package in open-esp-radio-wifi-sta open-esp-radio-esp32s31-wifi-sta; do
+    cargo tree \
+        --package "$package" \
+        --target "$target_triple" \
+        --edges normal,build \
+        --prefix none >"$audit_dir/dependencies-$package-layer"
+    if rg \
+        '^(embassy-|esp-hal |open-esp-radio-(embassy-net|esp32s31-wifi-embassy|hil-))' \
+        "$audit_dir/dependencies-$package-layer"
+    then
+        echo "runtime or HIL dependency survived in station layer $package" >&2
+        exit 1
+    fi
+done
+
+if rg -n 'core::hint::spin_loop|spin_loop\(' driver --glob '*.rs'
 then
     echo "production source contains a CPU spin loop" >&2
+    exit 1
+fi
+
+# Production documentation names stable evidence IDs and public symbols. Local
+# oracle paths, artifact digests and paths into an earlier private firmware
+# tree are qualification policy and must stay under validation/HIL.
+if rg -n '(?i)(_oracles/|sha-?256|[0-9a-f]{64}|esp32s31_rust/|firmware/esp32s31/)' \
+    driver --glob '*.rs' --glob '*.md' --glob '*.toml'
+then
+    echo "qualification artifact identity survived in production source" >&2
     exit 1
 fi
 
 # Build the exact final image from the locked dependencies. A sibling esp-hal
 # checkout is a useful HIL development override, but using it here would both
 # mutate the embedded lockfile and make this policy gate machine-dependent.
-ESP_HAL_ROOT="$audit_dir/no-local-esp-hal" cargo hil build radio
+env -u ESP_HAL_ROOT cargo hil build radio
 
 runtime_elf="target/hil/esp32s31/psram-code-psram-data-open-radio-hil/cargo/runtime/$target_triple/release/open-esp-radio-hil-esp32s31-runtime"
 test -f "$runtime_elf"

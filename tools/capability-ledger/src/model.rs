@@ -672,9 +672,9 @@ fn validate_capability(
         .into());
     }
     for owner in &capability.owners {
-        if !is_rust_source_under(&owner.path, "crates") {
+        if !is_rust_source_under(&owner.path, "driver") {
             return Err(format!(
-                "owner {} for {} is not production Rust under crates/*/src",
+                "owner {} for {} is not production Rust under driver/*/src",
                 owner.path.display(),
                 capability.id
             )
@@ -707,11 +707,11 @@ fn validate_capability(
         .into());
     }
     for test in &capability.tests {
-        if !test.path.starts_with("crates")
+        if !test.path.starts_with("driver")
             || test.path.extension().and_then(|value| value.to_str()) != Some("rs")
         {
             return Err(format!(
-                "test {} for {} is not Rust under crates",
+                "test {} for {} is not Rust under driver",
                 test.path.display(),
                 capability.id
             )
@@ -892,8 +892,8 @@ host-proof covered
 vendor-proof qualified
 hil-proof qualified
 async-proof bounded
-owner crates/radio/src/channel.rs Channel
-test crates/radio/src/channel.rs completes_channel
+owner driver/radio/src/channel.rs Channel
+test driver/radio/src/channel.rs completes_channel
 vendor-root archive set_channel
 hil-evidence docs/hil/record.md HIL_CHANNEL
 "#;
@@ -933,7 +933,7 @@ hil-evidence docs/hil/record.md HIL_CHANNEL
     #[test]
     fn rejects_parent_paths_in_references() {
         let input = COMPLETE.replace(
-            "crates/radio/src/channel.rs Channel",
+            "driver/radio/src/channel.rs Channel",
             "../radio/src/channel.rs Channel",
         );
         let error = Ledger::parse(&input).unwrap_err();

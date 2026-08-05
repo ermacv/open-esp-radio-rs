@@ -14,23 +14,35 @@ use esp_hal::{
     efuse::{self, InterfaceMacAddress},
     rng::{Rng, Trng},
 };
+use open_esp_radio::esp32s31::wifi::sta::attempt::{
+    Esp32s31StaAttempt, Esp32s31StaAttemptObserver, Esp32s31StaAttemptOutcome,
+    Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
+};
+use open_esp_radio::esp32s31::wifi::sta::scan::{
+    Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError,
+};
+use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
+use open_esp_radio::esp32s31::wifi::sta::cold_start::{
+    Esp32s31ColdStartConfig, start_esp32s31_station_radio,
+};
+use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
+use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
     esp32s31::{
         hal::{Radio, RadioRegisters},
-        pac::MacInterruptSetup,
         phy::{
             NoopPhyTargetObserver, PhyCalibrationIdentity, PhyTxTargetPowerProfile,
             phy_cold::PhyColdState, phy_rfpll::phy_get_rf_cal_version,
         },
-        wifi::mac::{
+        registers::MacInterruptSetup,
+        wifi::lmac::{
             init::initialize_promiscuous_receive,
             scan::{ScanObservation, ScanRecord, ScanTable},
             tx::TxSlot,
         },
     },
     integration::esp32s31::wifi_embassy::{
-        cold_start::{Esp32s31ColdStartConfig, start_esp32s31_station_radio},
-        control_tx::{ControlTxConfig, Esp32s31ControlTx},
+        control_tx::Esp32s31ControlTx,
         phy_delay::EmbassyEsp32s31PhyDelay,
         preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
         rx_backend::Esp32s31RxDmaStorage,
@@ -38,21 +50,14 @@ use open_esp_radio::{
             EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError,
             Esp32s31ScanPortParts, Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
         },
-        sta_attempt::{
-            Esp32s31StaAttempt, Esp32s31StaAttemptObserver, Esp32s31StaAttemptOutcome,
-            Esp32s31StaAttemptStage,
-        },
         sta_attempt_target::{
-            Esp32s31StaAttemptRadio, Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation,
-            Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner, Esp32s31StaAttemptTargetPort,
+            Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
+            Esp32s31StaAttemptTargetPort,
         },
-        sta_scan::{
-            Esp32s31RunningScanRx, Esp32s31RunningScanTx, Esp32s31ScanFrameObserver,
-            Esp32s31ScanRx, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
-            Esp32s31StaScanError,
-        },
-        sta_scan_target::{Esp32s31ColdScanTx, Esp32s31ScanPhy},
-        sta_tx_epoch::Esp32s31StaTxEpoch,
+        scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
+        scan_tx::Esp32s31RunningScanTx,
+        scan_target::Esp32s31ColdScanTx,
+        sta_tx_epoch::Esp32s31StaTxEpochExt,
         station::{
             Esp32s31Station, Esp32s31StationCommand, Esp32s31StationCommandReceiver,
             Esp32s31StationConfig, Esp32s31StationControlResources, Esp32s31StationExit,
@@ -62,7 +67,7 @@ use open_esp_radio::{
     },
     wifi::{
         ieee80211::station::{StaAssociationPreference, StaSequenceCounter, StaTxSequenceCounters},
-        lifecycle::{
+        sta::{
             scan::{StaCandidateScanExit, StaCandidateScanService},
             station::{
                 StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
@@ -112,7 +117,7 @@ type ControlTx = Esp32s31ControlTx<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    open_esp_radio::integration::esp32s31::wifi_embassy::single_mpdu_tx::EmbassyWifiTxTimer,
+    open_esp_radio::integration::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = Esp32s31StaTxEpoch<ControlTx>;
@@ -247,9 +252,9 @@ impl<'control, 'state, 'security>
     async fn run_connected_epoch(
         &mut self,
         owner: ProductionStationOwner<'state, 'security>,
-        peer: open_esp_radio::integration::esp32s31::wifi_embassy::sta_peer_port::Esp32s31ConnectedStaPeer,
-        pairwise: open_esp_radio::esp32s31::wifi::mac::crypto::StaPairwiseCcmpSlot,
-        group: open_esp_radio::esp32s31::wifi::mac::crypto::StaGroupCcmpSlot,
+        peer: open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
+        pairwise: open_esp_radio::esp32s31::wifi::lmac::crypto::StaPairwiseCcmpSlot,
+        group: open_esp_radio::esp32s31::wifi::lmac::crypto::StaGroupCcmpSlot,
     ) -> StaAttemptOutcome<ProductionStationOwner<'state, 'security>, Esp32s31StaAttemptStage> {
         let ProductionStationOwner {
             phase,
@@ -334,8 +339,7 @@ impl<'control, 'state, 'security> StaLifecycleBackend
     for ProductionStationBackend<'control, ProductionStationOwner<'state, 'security>>
 {
     type Owner = ProductionStationOwner<'state, 'security>;
-    type Error =
-        open_esp_radio::integration::esp32s31::wifi_embassy::sta_attempt::Esp32s31StaAttemptStage;
+    type Error = open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptStage;
 
     fn run_attempt(
         &mut self,
@@ -363,27 +367,27 @@ impl<'control, 'state, 'security> StaLifecycleBackend
             let mut owner = owner;
             loop {
                 let ProductionStationOwner {
-                phase,
-                phy,
-                platform,
-                rx_storage,
-                tx_storage,
-                scan_table,
-                frame,
-                station_address,
-                access_point,
-                pmk,
-                supplicant_nonce,
-                sequences,
-                ethernet,
+                    phase,
+                    phy,
+                    platform,
+                    rx_storage,
+                    tx_storage,
+                    scan_table,
+                    frame,
+                    station_address,
+                    access_point,
+                    pmk,
+                    supplicant_nonce,
+                    sequences,
+                    ethernet,
                 } = owner;
                 let outcome = match phase {
-                ProductionStationPhase::Initial {
-                    hardware,
-                    receive,
-                    network,
-                } => {
-                    let attempt_owner: StationAttemptOwner<'_, '_, '_, '_, '_> =
+                    ProductionStationPhase::Initial {
+                        hardware,
+                        receive,
+                        network,
+                    } => {
+                        let attempt_owner: StationAttemptOwner<'_, '_, '_, '_, '_> =
                         Esp32s31StaAttemptTargetOwner::new(
                             Esp32s31StaAttemptRadio::new(
                                 hardware,
@@ -408,126 +412,129 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                 pmk,
                                 supplicant_nonce,
                                 sequences,
-                                message4_protection: open_esp_radio::integration::esp32s31::wifi_embassy::wpa2_port::Esp32s31Wpa2Message4Protection::Unprotected,
+                                message4_protection: open_esp_radio::esp32s31::wifi::sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
                             },
                         );
-                    let mut attempt = Esp32s31StaAttempt::with_observer(
-                        Esp32s31StaAttemptTargetPort::<
-                            StationAttemptOwner<'_, '_, '_, '_, '_>,
-                        >::new(),
-                        ProductionAttemptObserver,
-                    );
-                    match attempt.run(attempt_owner).await {
-                        Esp32s31StaAttemptOutcome::Failed(failure) => {
-                            let (owner, stage, disposition, error, progress) = failure.into_parts();
-                            esp_println::println!(
-                                "open-radio: station attempt failed stage={stage:?} \
-                                 disposition={disposition:?} completed={} error={error:?}",
-                                progress.completed_count()
+                        let mut attempt =
+                            Esp32s31StaAttempt::with_observer(
+                                Esp32s31StaAttemptTargetPort::<
+                                    StationAttemptOwner<'_, '_, '_, '_, '_>,
+                                >::new(),
+                                ProductionAttemptObserver,
                             );
-                            let (radio, storage, station, security) = owner.into_parts();
-                            let Esp32s31StaAttemptRadio {
-                                hardware,
-                                channel,
-                                receive,
-                                rx_storage,
-                                transmit: _,
-                            } = radio;
-                            let (phy, platform, _) = channel.into_parts();
-                            StaAttemptOutcome::Failed {
-                                owner: ProductionStationOwner {
-                                    phase: ProductionStationPhase::Initial {
-                                        hardware,
-                                        receive,
-                                        network,
-                                    },
-                                    phy,
-                                    platform,
+                        match attempt.run(attempt_owner).await {
+                            Esp32s31StaAttemptOutcome::Failed(failure) => {
+                                let (owner, stage, disposition, error, progress) =
+                                    failure.into_parts();
+                                esp_println::println!(
+                                    "open-radio: station attempt failed stage={stage:?} \
+                                 disposition={disposition:?} completed={} error={error:?}",
+                                    progress.completed_count()
+                                );
+                                let (radio, storage, station, security) = owner.into_parts();
+                                let Esp32s31StaAttemptRadio {
+                                    hardware,
+                                    channel,
+                                    receive,
                                     rx_storage,
-                                    tx_storage,
-                                    scan_table,
-                                    frame: storage.frame,
-                                    station_address: station.station_address,
-                                    access_point: station.access_point,
-                                    pmk: security.pmk,
-                                    supplicant_nonce: security.supplicant_nonce,
-                                    sequences: security.sequences,
-                                    ethernet,
-                                },
-                                failure: StaAttemptFailure::new(
-                                    stage.lifecycle_stage(),
-                                    disposition,
-                                    stage,
-                                ),
+                                    transmit: _,
+                                } = radio;
+                                let (phy, platform, _) = channel.into_parts();
+                                StaAttemptOutcome::Failed {
+                                    owner: ProductionStationOwner {
+                                        phase: ProductionStationPhase::Initial {
+                                            hardware,
+                                            receive,
+                                            network,
+                                        },
+                                        phy,
+                                        platform,
+                                        rx_storage,
+                                        tx_storage,
+                                        scan_table,
+                                        frame: storage.frame,
+                                        station_address: station.station_address,
+                                        access_point: station.access_point,
+                                        pmk: security.pmk,
+                                        supplicant_nonce: security.supplicant_nonce,
+                                        sequences: security.sequences,
+                                        ethernet,
+                                    },
+                                    failure: StaAttemptFailure::new(
+                                        stage.lifecycle_stage(),
+                                        disposition,
+                                        stage,
+                                    ),
+                                }
+                            }
+                            Esp32s31StaAttemptOutcome::Connected {
+                                connected,
+                                progress,
+                            } => {
+                                let connected_owner = connected.into_owner();
+                                let report = connected_owner.report();
+                                esp_println::println!(
+                                    "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
+                                    progress.completed_count(),
+                                    report.authentication.is_some(),
+                                    report.association.is_some(),
+                                    report.wpa2.is_some(),
+                                    report.message4.is_some()
+                                );
+                                let mut connected_owner = connected_owner;
+                                let peer = connected_owner
+                                    .take_connected_peer()
+                                    .expect("successful station attempt owns its peer");
+                                let (pairwise, group) = connected_owner
+                                    .take_installed_keys()
+                                    .expect("successful station attempt owns both CCMP keys");
+                                let (radio, storage, station, security) =
+                                    connected_owner.into_parts();
+                                let Esp32s31StaAttemptRadio {
+                                    hardware,
+                                    channel,
+                                    receive,
+                                    rx_storage,
+                                    transmit: _,
+                                } = radio;
+                                let (phy, platform, _) = channel.into_parts();
+                                self.run_connected_epoch(
+                                    ProductionStationOwner {
+                                        phase: ProductionStationPhase::Initial {
+                                            hardware,
+                                            receive,
+                                            network,
+                                        },
+                                        phy,
+                                        platform,
+                                        rx_storage,
+                                        tx_storage,
+                                        scan_table,
+                                        frame: storage.frame,
+                                        station_address: station.station_address,
+                                        access_point: station.access_point,
+                                        pmk: security.pmk,
+                                        supplicant_nonce: security.supplicant_nonce,
+                                        sequences: security.sequences,
+                                        ethernet,
+                                    },
+                                    peer,
+                                    pairwise,
+                                    group,
+                                )
+                                .await
                             }
                         }
-                        Esp32s31StaAttemptOutcome::Connected {
-                            connected,
-                            progress,
-                        } => {
-                            let connected_owner = connected.into_owner();
-                            let report = connected_owner.report();
-                            esp_println::println!(
-                                "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
-                                progress.completed_count(),
-                                report.authentication.is_some(),
-                                report.association.is_some(),
-                                report.wpa2.is_some(),
-                                report.message4.is_some()
-                            );
-                            let mut connected_owner = connected_owner;
-                            let peer = connected_owner
-                                .take_connected_peer()
-                                .expect("successful station attempt owns its peer");
-                            let (pairwise, group) = connected_owner
-                                .take_installed_keys()
-                                .expect("successful station attempt owns both CCMP keys");
-                            let (radio, storage, station, security) = connected_owner.into_parts();
-                            let Esp32s31StaAttemptRadio {
-                                hardware,
-                                channel,
-                                receive,
-                                rx_storage,
-                                transmit: _,
-                            } = radio;
-                            let (phy, platform, _) = channel.into_parts();
-                            self.run_connected_epoch(
-                                ProductionStationOwner {
-                                    phase: ProductionStationPhase::Initial {
-                                        hardware,
-                                        receive,
-                                        network,
-                                    },
-                                    phy,
-                                    platform,
-                                    rx_storage,
-                                    tx_storage,
-                                    scan_table,
-                                    frame: storage.frame,
-                                    station_address: station.station_address,
-                                    access_point: station.access_point,
-                                    pmk: security.pmk,
-                                    supplicant_nonce: security.supplicant_nonce,
-                                    sequences: security.sequences,
-                                    ethernet,
-                                },
-                                peer,
-                                pairwise,
-                                group,
-                            )
-                            .await
-                        }
                     }
-                }
-                ProductionStationPhase::Reconnected {
-                    epoch: mut reconnect,
-                    network,
-                } => {
-                    let (hardware, receive_slot) = reconnect.hardware_and_rx_mut();
-                    let receive = match receive_slot.take() {
-                        Ok(receive) => receive,
-                        Err(_) => {
-                            return StaAttemptOutcome::Failed {
+                    ProductionStationPhase::Reconnected {
+                        epoch: mut reconnect,
+                        network,
+                    } => {
+                        let (hardware, receive_slot) = reconnect.hardware_and_rx_mut();
+                        let receive = match receive_slot.take() {
+                            Ok(receive) => receive,
+                            Err(_) => {
+                                return StaAttemptOutcome::Failed {
                                 owner: ProductionStationOwner {
                                     phase: ProductionStationPhase::Reconnected {
                                         epoch: reconnect,
@@ -547,14 +554,14 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                     ethernet,
                                 },
                                 failure: StaAttemptFailure::new(
-                                    open_esp_radio::wifi::lifecycle::station::StaLifecycleStage::Hardware,
-                                    open_esp_radio::wifi::lifecycle::station::StaFailureDisposition::Terminal,
+                                    open_esp_radio::wifi::sta::station::StaLifecycleStage::Hardware,
+                                    open_esp_radio::wifi::sta::station::StaFailureDisposition::Terminal,
                                     Esp32s31StaAttemptStage::Candidate,
                                 ),
                             };
-                        }
-                    };
-                    let attempt_owner: ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_> =
+                            }
+                        };
+                        let attempt_owner: ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_> =
                         Esp32s31StaAttemptTargetOwner::new(
                         Esp32s31StaAttemptRadio::new(
                             hardware,
@@ -579,189 +586,193 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                         pmk,
                         supplicant_nonce,
                         sequences,
-                        message4_protection: open_esp_radio::integration::esp32s31::wifi_embassy::wpa2_port::Esp32s31Wpa2Message4Protection::Unprotected,
+                        message4_protection: open_esp_radio::esp32s31::wifi::sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
                         },
                     );
-                    let mut attempt = Esp32s31StaAttempt::with_observer(
-                        Esp32s31StaAttemptTargetPort::<
-                            ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_>,
-                        >::new(),
-                        ProductionAttemptObserver,
-                    );
-                    match attempt.run(attempt_owner).await {
-                        Esp32s31StaAttemptOutcome::Failed(failure) => {
-                            let (owner, stage, disposition, error, progress) = failure.into_parts();
-                            esp_println::println!(
-                                "open-radio: reconnect attempt failed stage={stage:?} \
+                        let mut attempt = Esp32s31StaAttempt::with_observer(
+                            Esp32s31StaAttemptTargetPort::<
+                                ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_>,
+                            >::new(),
+                            ProductionAttemptObserver,
+                        );
+                        match attempt.run(attempt_owner).await {
+                            Esp32s31StaAttemptOutcome::Failed(failure) => {
+                                let (owner, stage, disposition, error, progress) =
+                                    failure.into_parts();
+                                esp_println::println!(
+                                    "open-radio: reconnect attempt failed stage={stage:?} \
                                  disposition={disposition:?} completed={} error={error:?}",
-                                progress.completed_count()
-                            );
-                            let (radio, storage, station, security) = owner.into_parts();
-                            let Esp32s31StaAttemptRadio {
-                                hardware: _,
-                                channel,
-                                receive,
-                                rx_storage,
-                                transmit: _,
-                            } = radio;
-                            let (phy, platform, _) = channel.into_parts();
-                            let (_, receive_slot) = reconnect.hardware_and_rx_mut();
-                            *receive_slot = receive;
-                            StaAttemptOutcome::Failed {
-                                owner: ProductionStationOwner {
-                                    phase: ProductionStationPhase::Reconnected {
-                                        epoch: reconnect,
-                                        network,
+                                    progress.completed_count()
+                                );
+                                let (radio, storage, station, security) = owner.into_parts();
+                                let Esp32s31StaAttemptRadio {
+                                    hardware: _,
+                                    channel,
+                                    receive,
+                                    rx_storage,
+                                    transmit: _,
+                                } = radio;
+                                let (phy, platform, _) = channel.into_parts();
+                                let (_, receive_slot) = reconnect.hardware_and_rx_mut();
+                                *receive_slot = receive;
+                                StaAttemptOutcome::Failed {
+                                    owner: ProductionStationOwner {
+                                        phase: ProductionStationPhase::Reconnected {
+                                            epoch: reconnect,
+                                            network,
+                                        },
+                                        phy,
+                                        platform,
+                                        rx_storage,
+                                        tx_storage,
+                                        scan_table,
+                                        frame: storage.frame,
+                                        station_address: station.station_address,
+                                        access_point: station.access_point,
+                                        pmk: security.pmk,
+                                        supplicant_nonce: security.supplicant_nonce,
+                                        sequences: security.sequences,
+                                        ethernet,
                                     },
+                                    failure: StaAttemptFailure::new(
+                                        stage.lifecycle_stage(),
+                                        disposition,
+                                        stage,
+                                    ),
+                                }
+                            }
+                            Esp32s31StaAttemptOutcome::Connected {
+                                connected,
+                                progress,
+                            } => {
+                                let connected_owner = connected.into_owner();
+                                let report = connected_owner.report();
+                                esp_println::println!(
+                                    "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
+                                    progress.completed_count(),
+                                    report.authentication.is_some(),
+                                    report.association.is_some(),
+                                    report.wpa2.is_some(),
+                                    report.message4.is_some()
+                                );
+                                let mut connected_owner = connected_owner;
+                                let peer = connected_owner
+                                    .take_connected_peer()
+                                    .expect("successful reconnect owns its peer");
+                                let (pairwise, group) = connected_owner
+                                    .take_installed_keys()
+                                    .expect("successful reconnect owns both CCMP keys");
+                                let (radio, storage, station, security) =
+                                    connected_owner.into_parts();
+                                let Esp32s31StaAttemptRadio {
+                                    hardware: _,
+                                    channel,
+                                    receive,
+                                    rx_storage,
+                                    transmit: _,
+                                } = radio;
+                                let (phy, platform, _) = channel.into_parts();
+                                let (_, receive_slot) = reconnect.hardware_and_rx_mut();
+                                *receive_slot = receive;
+                                self.run_connected_epoch(
+                                    ProductionStationOwner {
+                                        phase: ProductionStationPhase::Reconnected {
+                                            epoch: reconnect,
+                                            network,
+                                        },
+                                        phy,
+                                        platform,
+                                        rx_storage,
+                                        tx_storage,
+                                        scan_table,
+                                        frame: storage.frame,
+                                        station_address: station.station_address,
+                                        access_point: station.access_point,
+                                        pmk: security.pmk,
+                                        supplicant_nonce: security.supplicant_nonce,
+                                        sequences: security.sequences,
+                                        ethernet,
+                                    },
+                                    peer,
+                                    pairwise,
+                                    group,
+                                )
+                                .await
+                            }
+                        }
+                    }
+                    ProductionStationPhase::RunningScan(disconnected) => {
+                        if !context.refresh_candidate {
+                            return StaAttemptOutcome::Failed {
+                                owner: ProductionStationOwner {
+                                    phase: ProductionStationPhase::RunningScan(disconnected),
                                     phy,
                                     platform,
                                     rx_storage,
                                     tx_storage,
                                     scan_table,
-                                    frame: storage.frame,
-                                    station_address: station.station_address,
-                                    access_point: station.access_point,
-                                    pmk: security.pmk,
-                                    supplicant_nonce: security.supplicant_nonce,
-                                    sequences: security.sequences,
+                                    frame,
+                                    station_address,
+                                    access_point,
+                                    pmk,
+                                    supplicant_nonce,
+                                    sequences,
                                     ethernet,
                                 },
                                 failure: StaAttemptFailure::new(
-                                    stage.lifecycle_stage(),
-                                    disposition,
-                                    stage,
+                                    StaLifecycleStage::CandidateSelection,
+                                    StaFailureDisposition::Terminal,
+                                    Esp32s31StaAttemptStage::Candidate,
                                 ),
-                            }
+                            };
                         }
-                        Esp32s31StaAttemptOutcome::Connected {
-                            connected,
-                            progress,
-                        } => {
-                            let connected_owner = connected.into_owner();
-                            let report = connected_owner.report();
-                            esp_println::println!(
-                                "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
-                                progress.completed_count(),
-                                report.authentication.is_some(),
-                                report.association.is_some(),
-                                report.wpa2.is_some(),
-                                report.message4.is_some()
-                            );
-                            let mut connected_owner = connected_owner;
-                            let peer = connected_owner
-                                .take_connected_peer()
-                                .expect("successful reconnect owns its peer");
-                            let (pairwise, group) = connected_owner
-                                .take_installed_keys()
-                                .expect("successful reconnect owns both CCMP keys");
-                            let (radio, storage, station, security) = connected_owner.into_parts();
-                            let Esp32s31StaAttemptRadio {
-                                hardware: _,
-                                channel,
-                                receive,
-                                rx_storage,
-                                transmit: _,
-                            } = radio;
-                            let (phy, platform, _) = channel.into_parts();
-                            let (_, receive_slot) = reconnect.hardware_and_rx_mut();
-                            *receive_slot = receive;
-                            self.run_connected_epoch(
-                                ProductionStationOwner {
-                                    phase: ProductionStationPhase::Reconnected {
-                                        epoch: reconnect,
-                                        network,
-                                    },
+
+                        let Esp32s31RunningScanEpochParts {
+                            retained,
+                            hardware,
+                            rx,
+                        } = disconnected.into_running_scan_parts();
+                        let control = tx_storage
+                            .take_control()
+                            .expect("connected teardown returned the ordinary TX owner");
+                        let interrupt_setup = self
+                            .interrupt_epoch
+                            .setup()
+                            .expect("running scan requires a quiesced interrupt epoch");
+                        let scan_owner = Esp32s31ScanPort::new(
+                            Esp32s31ScanRadio::new(
+                                Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
                                     phy,
                                     platform,
-                                    rx_storage,
-                                    tx_storage,
-                                    scan_table,
-                                    frame: storage.frame,
-                                    station_address: station.station_address,
-                                    access_point: station.access_point,
-                                    pmk: security.pmk,
-                                    supplicant_nonce: security.supplicant_nonce,
-                                    sequences: security.sequences,
-                                    ethernet,
-                                },
-                                peer,
-                                pairwise,
-                                group,
-                            )
-                            .await
-                        }
-                    }
-                }
-                ProductionStationPhase::RunningScan(disconnected) => {
-                    if !context.refresh_candidate {
-                        return StaAttemptOutcome::Failed {
-                            owner: ProductionStationOwner {
-                                phase: ProductionStationPhase::RunningScan(disconnected),
-                                phy,
-                                platform,
-                                rx_storage,
-                                tx_storage,
+                                    NoopPhyTargetObserver,
+                                ),
+                                hardware,
+                                Esp32s31RunningScanRx::from_stopped(rx),
+                                Esp32s31RunningScanTx::new(control, interrupt_setup),
+                            ),
+                            Esp32s31ScanStorage::new(
                                 scan_table,
                                 frame,
+                                ProductionScanObserver,
+                                sequences.non_qos_mut(),
+                            ),
+                            Esp32s31ScanStation::new(
                                 station_address,
-                                access_point,
-                                pmk,
-                                supplicant_nonce,
-                                sequences,
-                                ethernet,
-                            },
-                            failure: StaAttemptFailure::new(
-                                StaLifecycleStage::CandidateSelection,
-                                StaFailureDisposition::Terminal,
-                                Esp32s31StaAttemptStage::Candidate,
-                            ),
-                        };
-                    }
-
-                    let Esp32s31RunningScanEpochParts {
-                        retained,
-                        hardware,
-                        rx,
-                    } = disconnected.into_running_scan_parts();
-                    let control = tx_storage
-                        .take_control()
-                        .expect("connected teardown returned the ordinary TX owner");
-                    let interrupt_setup = self
-                        .interrupt_epoch
-                        .setup()
-                        .expect("running scan requires a quiesced interrupt epoch");
-                    let scan_owner = Esp32s31ScanPort::new(
-                        Esp32s31ScanRadio::new(
-                            Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
-                                phy,
-                                platform,
-                                NoopPhyTargetObserver,
-                            ),
-                            hardware,
-                            Esp32s31RunningScanRx::from_stopped(rx),
-                            Esp32s31RunningScanTx::new(control, interrupt_setup),
-                        ),
-                        Esp32s31ScanStorage::new(
-                            scan_table,
-                            frame,
-                            ProductionScanObserver,
-                            sequences.non_qos_mut(),
-                        ),
-                        Esp32s31ScanStation::new(
-                            station_address,
-                            STA_SSID.as_bytes(),
-                            &PROBE_REQUEST_RATES,
-                        )
-                        .with_descriptor_capacity(PROBE_TX_DESCRIPTOR_CAPACITY),
-                        EmbassyEsp32s31ScanTimer,
-                    );
-                    let scan_config = Esp32s31StaScanConfig::new(SCAN_DWELL_MS)
-                        .expect("running scan dwell must be nonzero");
-                    let mut scan =
-                        StaCandidateScanService::new(Esp32s31StaScanBackend::new(scan_config));
-                    let scan_started = Instant::now();
-                    let (scan_owner, scan_result) =
-                        match scan.run(scan_owner, &SCAN_CHANNELS).await {
+                                STA_SSID.as_bytes(),
+                                &PROBE_REQUEST_RATES,
+                            )
+                            .with_descriptor_capacity(PROBE_TX_DESCRIPTOR_CAPACITY),
+                            EmbassyEsp32s31ScanTimer,
+                        );
+                        let scan_config = Esp32s31StaScanConfig::new(SCAN_DWELL_MS)
+                            .expect("running scan dwell must be nonzero");
+                        let mut scan =
+                            StaCandidateScanService::new(Esp32s31StaScanBackend::new(scan_config));
+                        let scan_started = Instant::now();
+                        let (scan_owner, scan_result) = match scan
+                            .run(scan_owner, &SCAN_CHANNELS)
+                            .await
+                        {
                             StaCandidateScanExit::Selected {
                                 owner,
                                 candidate,
@@ -821,82 +832,83 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                             }
                         };
 
-                    let Esp32s31ScanPortParts {
-                        phy: scan_phy,
-                        hardware,
-                        rx,
-                        tx,
-                        table: scan_table,
-                        frame,
-                        telemetry,
-                        ..
-                    } = scan_owner.into_parts();
-                    let (phy, platform, _) = scan_phy.into_parts();
-                    let rx = rx.into_stopped().unwrap_or_else(|rx| {
-                        panic!(
-                            "running scan did not return a halted RX owner: {:?}",
-                            rx.phase()
-                        )
-                    });
-                    let (control, tx_summary) = tx.into_parts();
-                    tx_storage
-                        .restore_control(control)
-                        .unwrap_or_else(|_| panic!("running scan returned over a live TX owner"));
-                    esp_println::println!(
-                        "open-radio: running scan owners returned raw={} rings={} tx={} failures={}",
-                        telemetry.raw_frames,
-                        telemetry.ring_epochs,
-                        tx_summary.completions,
-                        tx_summary.failures,
-                    );
-                    let disconnected = retained.restore(hardware, rx);
-                    let returned_owner = |phase, access_point| ProductionStationOwner {
-                        phase,
-                        phy,
-                        platform,
-                        rx_storage,
-                        tx_storage,
-                        scan_table,
-                        frame,
-                        station_address,
-                        access_point,
-                        pmk,
-                        supplicant_nonce,
-                        sequences,
-                        ethernet,
-                    };
-                    match scan_result {
-                        Ok(candidate) => {
-                            let (network, epoch) = disconnected
-                                .prepare_reconnect::<EmbassyEsp32s31PreconnectedRxDelay>();
-                            owner = returned_owner(
-                                ProductionStationPhase::Reconnected {
-                                    epoch,
-                                    network: StationNetwork::Running(network),
-                                },
-                                candidate,
-                            );
-                            continue;
+                        let Esp32s31ScanPortParts {
+                            phy: scan_phy,
+                            hardware,
+                            rx,
+                            tx,
+                            table: scan_table,
+                            frame,
+                            telemetry,
+                            ..
+                        } = scan_owner.into_parts();
+                        let (phy, platform, _) = scan_phy.into_parts();
+                        let rx = rx.into_stopped().unwrap_or_else(|rx| {
+                            panic!(
+                                "running scan did not return a halted RX owner: {:?}",
+                                rx.phase()
+                            )
+                        });
+                        let (control, tx_summary) = tx.into_parts();
+                        tx_storage.restore_control(control).unwrap_or_else(|_| {
+                            panic!("running scan returned over a live TX owner")
+                        });
+                        esp_println::println!(
+                            "open-radio: running scan owners returned raw={} rings={} tx={} failures={}",
+                            telemetry.raw_frames,
+                            telemetry.ring_epochs,
+                            tx_summary.completions,
+                            tx_summary.failures,
+                        );
+                        let disconnected = retained.restore(hardware, rx);
+                        let returned_owner = |phase, access_point| ProductionStationOwner {
+                            phase,
+                            phy,
+                            platform,
+                            rx_storage,
+                            tx_storage,
+                            scan_table,
+                            frame,
+                            station_address,
+                            access_point,
+                            pmk,
+                            supplicant_nonce,
+                            sequences,
+                            ethernet,
+                        };
+                        match scan_result {
+                            Ok(candidate) => {
+                                let (network, epoch) = disconnected
+                                    .prepare_reconnect::<EmbassyEsp32s31PreconnectedRxDelay>(
+                                );
+                                owner = returned_owner(
+                                    ProductionStationPhase::Reconnected {
+                                        epoch,
+                                        network: StationNetwork::Running(network),
+                                    },
+                                    candidate,
+                                );
+                                continue;
+                            }
+                            Err(None) => StaAttemptOutcome::Stopped {
+                                owner: returned_owner(
+                                    ProductionStationPhase::RunningScan(disconnected),
+                                    access_point,
+                                ),
+                            },
+                            Err(Some(disposition)) => StaAttemptOutcome::Failed {
+                                owner: returned_owner(
+                                    ProductionStationPhase::RunningScan(disconnected),
+                                    access_point,
+                                ),
+                                failure: StaAttemptFailure::new(
+                                    StaLifecycleStage::CandidateSelection,
+                                    disposition,
+                                    Esp32s31StaAttemptStage::Candidate,
+                                ),
+                            },
                         }
-                        Err(None) => StaAttemptOutcome::Stopped {
-                            owner: returned_owner(
-                                ProductionStationPhase::RunningScan(disconnected),
-                                access_point,
-                            ),
-                        },
-                        Err(Some(disposition)) => StaAttemptOutcome::Failed {
-                            owner: returned_owner(
-                                ProductionStationPhase::RunningScan(disconnected),
-                                access_point,
-                            ),
-                            failure: StaAttemptFailure::new(
-                                StaLifecycleStage::CandidateSelection,
-                                disposition,
-                                Esp32s31StaAttemptStage::Candidate,
-                            ),
-                        },
                     }
-                }
                 };
                 return outcome;
             }
@@ -978,7 +990,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         tx_slot,
         phy.tx_target_power_profile(),
         tx_entropy as fn() -> u32,
-        open_esp_radio::integration::esp32s31::wifi_embassy::single_mpdu_tx::EmbassyWifiTxTimer,
+        open_esp_radio::integration::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
         ControlTxConfig {
             unicast_attempt_limit: 4,
             completion_timeout_us: TX_COMPLETION_TIMEOUT_US,

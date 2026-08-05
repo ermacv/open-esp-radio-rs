@@ -323,12 +323,7 @@ pub async fn receive_station_epoch_cycle() -> u32 {
 /// Unlike text diagnostics, this event is serialized by the protocol owner
 /// and retains the command request ID used by the host qualifier.
 pub async fn complete_station_epoch_cycle(request_id: u32, evidence: StationEpochEvidence) {
-    publish_event_reliably(
-        0,
-        request_id,
-        Event::StationEpochCompleted(evidence),
-    )
-    .await;
+    publish_event_reliably(0, request_id, Event::StationEpochCompleted(evidence)).await;
 }
 
 /// Reliably publish one unsolicited station generation/link edge.

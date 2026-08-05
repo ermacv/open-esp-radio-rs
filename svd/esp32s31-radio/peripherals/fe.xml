@@ -836,7 +836,7 @@
         </register>
         <register>
           <name>TX_GAIN_COMPENSATION_AUX</name>
-          <description>SOURCE[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Pinned _oracles/libphy.a[phy_reg.o] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation.</description>
+          <description>SOURCE[BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW]; CONFIDENCE[instruction-exact-semantics-unknown]. Pinned libphy.a[phy_reg.o] phy_start_tx_tone_step_new writes the full zero image while disabling TX-gain compensation.</description>
           <addressOffset>0x0414</addressOffset><size>32</size><access>write-only</access>
           <fields>
             <field><name>AUXILIARY_IMAGE_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth></field>

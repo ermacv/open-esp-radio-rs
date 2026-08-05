@@ -14,33 +14,33 @@ compile_error!("profile-psram-data and profile-sram-data are mutually exclusive"
 #[cfg(not(any(feature = "profile-psram-data", feature = "profile-sram-data")))]
 compile_error!("select profile-psram-data or profile-sram-data");
 
+#[cfg(feature = "open-radio-hil")]
+use core::sync::atomic::{AtomicPtr, Ordering};
 use core::{
     arch::{asm, global_asm},
     ffi::CStr,
     ptr,
 };
-#[cfg(feature = "open-radio-hil")]
-use core::sync::atomic::{AtomicPtr, Ordering};
 
 #[cfg(feature = "open-radio-hil")]
 use embassy_executor::SendSpawner;
 #[cfg(feature = "boot-smoke")]
 use embassy_time::{Duration, Timer};
+#[cfg(feature = "open-radio-hil")]
+use esp_hal::system::{CpuControl, Stack};
 use esp_hal::{
     interrupt::software::SoftwareInterruptControl,
     timer::{OneShotTimer, timg::TimerGroup},
 };
-#[cfg(feature = "open-radio-hil")]
-use esp_hal::system::{CpuControl, Stack};
 use open_esp_radio_esp32s31_embassy_runtime::Executor;
 use static_cell::StaticCell;
 
 #[cfg(feature = "open-radio-hil")]
 mod console;
 #[cfg(feature = "open-radio-hil")]
-mod radio_hil;
-#[cfg(feature = "open-radio-hil")]
 mod radio_fault;
+#[cfg(feature = "open-radio-hil")]
+mod radio_hil;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -282,9 +282,7 @@ extern "C" fn runtime_main() -> ! {
                         })
                 },
             )
-            .unwrap_or_else(|_| {
-                fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-core-start\r\n")
-            });
+            .unwrap_or_else(|_| fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-core-start\r\n"));
         // The HIL runtime owns both cores until reset. Dropping this guard
         // would park Core 1 while its Embassy executor still owns tasks.
         core::mem::forget(guard);
@@ -342,8 +340,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
-            let Ok(hil) =
-                open_radio_hil_task(spawner, app_spawner, radio, trng, trng_source)
+            let Ok(hil) = open_radio_hil_task(spawner, app_spawner, radio, trng, trng_source)
             else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=radio-task-allocation\r\n");
             };

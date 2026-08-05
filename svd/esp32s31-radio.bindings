@@ -1,5 +1,5 @@
 pac-binding-index 2
-crate open_esp_radio_esp32s31_svd
+crate open_esp_radio_esp32s31_pac
 register 0x2010001c 32 read-write PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL PHY_FREQUENCY_CHANNEL_ORACLE PhyFrequencyChannelOracle phy_frequency_channel_oracle - frequency_control - -
 field 0x2010001c PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL CHANNEL_INDEX channel_index - 0 8 read-write
 field 0x2010001c PHY_FREQUENCY_CHANNEL_ORACLE.FREQUENCY_CONTROL MEMORY_ADDRESS_LOW_UNKNOWN memory_address_low_unknown - 8 10 read-write

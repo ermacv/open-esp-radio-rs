@@ -1692,7 +1692,7 @@ The recovered implementation matches complete rev0 ROM
 descriptor/buffer sentinel state, rotate the next head beyond the retained
 tail, publish the accepted last descriptor and ring the RX reload doorbell.
 The Rust ownership boundary is
-`open-esp-radio-esp32s31-wifi-mac::rx::{RxRingStopped,RxRingLive}`; the application
+`open-esp-radio-esp32s31-wifi-lmac::rx::{RxRingStopped,RxRingLive}`; the application
 only binds its static descriptor and buffer storage to that owner.
 
 EAPOL M4 TX completion is also not the controlled-port boundary. It proves
@@ -1711,7 +1711,7 @@ returned status 0, its protected response was accepted, and no EAPOL message
 
 SOURCE[HIL_OPEN_STA_HANDSHAKE_LIVE_RING_2026_07_29]: ESP32-S31 rev0,
 `psram-code-psram-data --open-radio-hil`, five cold-reset serial records;
-`crates/esp32s31/wifi/mac/src/rx.rs`; complete rev0 ROM
+`driver/esp32s31/wifi/lmac/src/rx.rs`; complete rev0 ROM
 `wDev_AppendRxBlocks` and `hal_mac_rx_set_last_desc`; promoted migration
 parent of `f233006`,
 `migration/esp32s31-hybrid-runtime/src/wdev.rs::{prepare_rx_recycle_chain,

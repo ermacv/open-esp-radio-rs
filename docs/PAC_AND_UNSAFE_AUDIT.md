@@ -10,11 +10,11 @@ retained as a [dated archive snapshot](archive/migration/2026-07-27-pac-and-unsa
 
 `svd/esp32s31-radio.svd` is the editable source for undocumented radio
 registers in the `0x2010_0000..0x201f_ffff` decode window. `cargo pac-gen`
-generates `open-esp-radio-esp32s31-svd`; `cargo pac-gen --check` verifies that
+generates `open-esp-radio-esp32s31-pac`; `cargo pac-gen --check` verifies that
 the checked-in generated crate is reproducible and that every described span
 fits the permitted MMIO window.
 
-`open-esp-radio-esp32s31-pac::RadioRegisters` privately owns the generated
+`open-esp-radio-esp32s31-registers::RadioRegisters` privately owns the generated
 radio singleton and exposes finite semantic operations. The official
 `esp-hal` PAC remains the sole register owner for chip-level dependencies such
 as `MODEM_SYSCON`, `MODEM_LPCON`, `HP_SYS_CLKRST`, `PMU`, `LP_AON_CLK_RST`,
@@ -34,10 +34,10 @@ separately from peripheral singleton ownership.
 
 | Owner | Why unsafe is required | Required invariant |
 | --- | --- | --- |
-| generated `esp32s31/svd` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
-| `esp32s31/pac` | bounded `svd2rust` field writes whose safe API cannot express recovered numeric encodings | each value is masked or range-bounded and its source is recorded in SVD/PAC comments |
+| generated `esp32s31/pac` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
+| `esp32s31/registers` | bounded `svd2rust` field writes whose safe API cannot express recovered numeric encodings | each value is masked or range-bounded and its source is recorded in SVD/PAC comments |
 | `esp32s31/hal::Radio` | initial singleton claim and explicit adoption after an external comparison oracle initialized the radio | the integration token is unique and no vendor/open driver accesses the peripheral concurrently |
-| `esp32s31/wifi/mac` | volatile DMA descriptors, intrusive RX ownership, pinned TX/A-MPDU storage and referenced buffers | DMA-visible storage does not move or alias; ownership changes only at the documented descriptor/completion edges |
+| `esp32s31/wifi/lmac` | volatile DMA descriptors, intrusive RX ownership, pinned TX/A-MPDU storage and referenced buffers | DMA-visible storage does not move or alias; ownership changes only at the documented descriptor/completion edges |
 | `integration/network/embassy-net` | pinned copy-free network slots stored behind `UnsafeCell` | atomic slot state gives exactly one network or radio owner and acquire/release publication brackets byte access |
 | `integration/esp32s31/wifi-embassy` | joins pinned network leases to S31 TX DMA storage | a lease outlives hardware ownership and is released only after completion and detach |
 | `integration/esp32s31/wifi-esp-hal` | official PAC raw field writers and volatile PHY-I2C command access | encodings fit the official fields; singleton tokens retained by `EspHalRadioPeripheral` prove exclusive access |

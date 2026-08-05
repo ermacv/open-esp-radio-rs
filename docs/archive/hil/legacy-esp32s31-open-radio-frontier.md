@@ -257,7 +257,7 @@ The records contained real SSID, BSSID, RSSI, channel, RSN, HT, and HE data.
 At each channel transition the HIL confirms that `RX_ENABLE` is clear before
 rebuilding the list, retunes through `PhyChipChannelTransition`, and only then
 republishes DMA ownership. The scanner and management-frame parser are live
-`open-esp-radio-esp32s31-wifi-mac` modules; the copy under `migration/` is no
+`open-esp-radio-esp32s31-wifi-lmac` modules; the copy under `migration/` is no
 longer the application path.
 
 The generated radio clock/power PAC was then qualified with

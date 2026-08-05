@@ -10,8 +10,8 @@ description = "Host build, placement-audit and HIL runner for open ESP radio"
 
 [dependencies]
 libc = "0.2"
-open-esp-radio-hil-protocol = { path = "../../crates/hil-protocol" }
-open-esp-radio-ieee80211 = { path = "../../crates/wifi/ieee80211" }
+open-esp-radio-hil-protocol = { path = "../../hil/protocol" }
+open-esp-radio-ieee80211 = { path = "../../driver/wifi/ieee80211" }
 serialport = { version = "4.8.1", default-features = false }
 sha2 = "0.10.9"
 zeroize = "1.8.1"

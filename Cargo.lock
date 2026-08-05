@@ -1075,10 +1075,13 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-lifecycle",
+ "open-esp-radio-wifi-lmac",
+ "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
 ]
 
@@ -1098,14 +1101,15 @@ dependencies = [
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-registers",
 ]
 
 [[package]]
 name = "open-esp-radio-esp32s31-pac"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-svd",
+ "critical-section",
+ "vcell",
 ]
 
 [[package]]
@@ -1116,11 +1120,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-svd"
+name = "open-esp-radio-esp32s31-registers"
 version = "0.1.0"
 dependencies = [
- "critical-section",
- "vcell",
+ "open-esp-radio-esp32s31-pac",
 ]
 
 [[package]]
@@ -1132,11 +1135,13 @@ dependencies = [
  "embassy-time",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-lifecycle",
+ "open-esp-radio-wifi-lmac",
+ "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
 ]
 
@@ -1146,18 +1151,32 @@ version = "0.1.0"
 dependencies = [
  "esp-hal",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi-lmac",
  "static_cell",
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-wifi-mac"
+name = "open-esp-radio-esp32s31-wifi-lmac"
 version = "0.1.0"
 dependencies = [
- "open-esp-radio-esp32s31-pac",
+ "open-esp-radio-esp32s31-registers",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-lmac",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-sta",
+ "open-esp-radio-wpa2",
 ]
 
 [[package]]
@@ -1198,14 +1217,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-wifi-lifecycle"
+name = "open-esp-radio-wifi-lmac"
 version = "0.1.0"
+dependencies = [
+ "open-esp-radio-ieee80211",
+]
+
+[[package]]
+name = "open-esp-radio-wifi-sta"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-ieee80211",
+]
 
 [[package]]
 name = "open-esp-radio-wpa2"
 version = "0.1.0"
 dependencies = [
  "aes",
+ "embassy-futures",
  "hmac",
  "pbkdf2",
  "sha1",
@@ -1245,7 +1275,7 @@ name = "open-radio-vendor-harness-esp32s31-semantic"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-phy",
- "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-esp32s31-wifi-lmac",
  "open-esp-radio-ieee80211",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",

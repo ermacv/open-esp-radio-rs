@@ -8,15 +8,13 @@
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
-use open_esp_radio::integration::network::embassy_net::{
-    PinnedTxConsumer, PinnedTxFrame, RawMutex,
-};
+use open_esp_radio::esp32s31::wifi::lmac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT};
 use open_esp_radio::integration::esp32s31::wifi_embassy::runner::{
     WifiControlContext, WifiControlProgress, WifiRunnerBackend, WifiRxProgress, WifiTxProgress,
     WifiTxWake,
 };
-use open_esp_radio::esp32s31::wifi::mac::irq::{
-    MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+use open_esp_radio::integration::network::embassy_net::{
+    PinnedTxConsumer, PinnedTxFrame, RawMutex,
 };
 use open_esp_radio_hil_protocol::StationFaultInjection;
 
@@ -150,8 +148,15 @@ where
 {
     type Error = FaultInjectingBackendError<B::Error>;
 
-    fn service_rx(&mut self) -> impl core::future::Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
-        async move { self.inner.service_rx().await.map_err(FaultInjectingBackendError::Inner) }
+    fn service_rx(
+        &mut self,
+    ) -> impl core::future::Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+        async move {
+            self.inner
+                .service_rx()
+                .await
+                .map_err(FaultInjectingBackendError::Inner)
+        }
     }
 
     fn service_control<'a>(
@@ -227,14 +232,12 @@ where
                 events: MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT,
             };
             match self.inner.service_tx(contradictory).await {
-                Err(source) => Err(FaultInjectingBackendError::InjectedTxAfterPublication {
-                    fault,
-                    source,
-                }),
-                Ok(progress) => Err(FaultInjectingBackendError::InjectionContractViolation {
-                    fault,
-                    progress,
-                }),
+                Err(source) => {
+                    Err(FaultInjectingBackendError::InjectedTxAfterPublication { fault, source })
+                }
+                Ok(progress) => {
+                    Err(FaultInjectingBackendError::InjectionContractViolation { fault, progress })
+                }
             }
         }
     }

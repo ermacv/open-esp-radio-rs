@@ -1034,7 +1034,7 @@ fn access_label(access: Option<Access>) -> &'static str {
 
 fn generate_binding_index(input: &str) -> Result<String, Box<dyn Error>> {
     let addresses = expanded_register_map(input)?;
-    let mut output = String::from("pac-binding-index 2\ncrate open_esp_radio_esp32s31_svd\n");
+    let mut output = String::from("pac-binding-index 2\ncrate open_esp_radio_esp32s31_pac\n");
     for (address, registers) in addresses {
         for register in registers {
             let peripheral_type = type_binding_name(&register.peripheral);
@@ -1110,7 +1110,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
 
     let root = repository_root();
-    let output_path = root.join("crates/esp32s31/svd/src/lib.rs");
+    let output_path = root.join("driver/esp32s31/pac/src/lib.rs");
     let binding_index_path = root.join("svd/esp32s31-radio.bindings");
     let assembled = radio_svd::assemble(&root)?;
     radio_svd::synchronize_aggregate(&assembled, check)?;

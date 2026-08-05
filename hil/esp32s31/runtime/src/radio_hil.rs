@@ -25,13 +25,30 @@ use embassy_time::{Duration, Instant, Timer, with_timeout};
 use esp_hal::efuse::{self, InterfaceMacAddress};
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
+use open_esp_radio::esp32s31::wifi::sta::association::Esp32s31StaAssociationProfile;
+use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
+use open_esp_radio::esp32s31::wifi::sta::cold_start::{
+    Esp32s31ColdStartConfig, Esp32s31ColdStartFailure, start_esp32s31_station_radio,
+};
+use open_esp_radio::esp32s31::wifi::sta::join::Esp32s31StaJoinObserver;
+use open_esp_radio::esp32s31::wifi::sta::peer::{
+    Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink,
+};
+use open_esp_radio::esp32s31::wifi::sta::scan::{
+    Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError,
+};
+use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
+use open_esp_radio::esp32s31::wifi::sta::{
+    attempt::{
+        Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptSecurity,
+        Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
+    },
+    tx_epoch::Esp32s31StaTxEpoch,
+    wpa2::Esp32s31Wpa2Message4Protection,
+};
 use open_esp_radio::{
     esp32s31::{
         hal::{ColdRadioRegisters, Radio, RadioRegisters},
-        pac::{
-            MacInterruptSetup,
-            mac::{self as mac_pac, init as mac_registers},
-        },
         phy::{
             PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterRunError, PhyRfBoundary,
             PhyTargetObserver,
@@ -39,7 +56,11 @@ use open_esp_radio::{
             phy_rfpll::phy_get_rf_cal_version,
             target_executor::PhyTargetPortError,
         },
-        wifi::mac::{
+        registers::{
+            MacInterruptSetup,
+            mac::{self as mac_pac, init as mac_registers},
+        },
+        wifi::lmac::{
             connected_rx::{ConnectedRxEvent, ConnectedRxSink},
             crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
             he::He20PeerHardware,
@@ -85,53 +106,40 @@ use open_esp_radio::{
             connected_sta_teardown::{
                 Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
             },
-            cold_start::{
-                Esp32s31ColdStartConfig, Esp32s31ColdStartFailure,
-                start_esp32s31_station_radio,
-            },
-            control_tx::{ControlTxConfig, ControlTxError, Esp32s31ControlTx},
+            control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
+            control_tx::{ControlTxError, Esp32s31ControlTx},
             cooperative_tx::CooperativeTxHardware,
             embassy_irq::{
                 EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
             },
             embassy_rx::RxReloadDelay,
+            network_rx::{EmbassyNetConnectedRxSink, RxEnqueueCounters},
             phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
             preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
             runner::WifiRunner,
-            running_scan::{
-                EmbassyEsp32s31RunningScanTimer, Esp32s31RunningScanParts, Esp32s31RunningScanPort,
-                Esp32s31RunningScanPortError, Esp32s31RunningScanRadio, Esp32s31RunningScanStation,
-                Esp32s31RunningScanStorage,
-            },
             rx_backend::{
-                ConnectedControlPublisher, ConnectedControlResources, ESP32S31_RX_BUFFER_SIZE,
-                EmbassyNetConnectedRxSink, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
-                Esp32s31StoppedRx, RxEnqueueCounters,
+                ESP32S31_RX_BUFFER_SIZE, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
+                Esp32s31StoppedRx,
             },
             rx_reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
             },
-            rx_telemetry::{RxPipelineCounterSnapshot, RxPipelineCounters},
             scan_port::{
-                EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts,
-                Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
+                EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError,
+                Esp32s31ScanPortParts, Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
             },
-            single_mpdu_tx::{EmbassyWifiTxTimer, SingleMpduTxError, TxResetReason},
-            sta_attempt::{Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptStage},
+            scan_rx::{
+                Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx,
+                Esp32s31ScanRxError,
+            },
+            scan_target::Esp32s31ColdScanTx,
+            scan_tx::Esp32s31RunningScanTx,
+            single_mpdu_tx::{SingleMpduTxError, TxResetReason},
             sta_attempt_target::{
-                Esp32s31StaAttemptRadio, Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation,
-                Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
+                Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
                 Esp32s31StaAttemptTargetPort,
             },
-            sta_join_port::{Esp32s31StaAssociationProfile, Esp32s31StaJoinObserver},
-            sta_peer_port::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink},
-            sta_scan::{
-                Esp32s31RunningScanRx, Esp32s31RunningScanTx, Esp32s31ScanFrameObserver,
-                Esp32s31ScanRx, Esp32s31ScanRxError, Esp32s31StaScanBackend, Esp32s31StaScanConfig,
-                Esp32s31StaScanError,
-            },
-            sta_scan_target::{Esp32s31ColdScanTx, Esp32s31ScanPhy},
-            sta_tx_epoch::Esp32s31StaTxEpoch,
+            sta_tx_epoch::Esp32s31StaTxEpochExt,
             staged_rx::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
             },
@@ -147,7 +155,7 @@ use open_esp_radio::{
                 Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch,
                 Esp32s31ReconnectedStaEpochParts, Esp32s31RunningScanEpochParts,
             },
-            wpa2_port::Esp32s31Wpa2Message4Protection,
+            tx_time::EmbassyWifiTxTimer,
         },
         network::embassy_net::{
             PinnedTxPool as OpenRadioNetworkTxPool, SplitPinnedDevice as OpenRadioNetworkDevice,
@@ -156,15 +164,15 @@ use open_esp_radio::{
         },
     },
     wifi::ieee80211::{
-        mac_service::MacRxEvidence,
         scan::best_matching_ssid,
         station::{
             STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPhy, StaAssociationPreference,
             StaSequenceCounter, StaTxSequenceCounters,
         },
     },
-    wifi::lifecycle::scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError},
-    wifi::lifecycle::station::{
+    wifi::lmac::MacRxEvidence,
+    wifi::sta::scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError},
+    wifi::sta::station::{
         StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
         StaBackoffReason, StaFailureDisposition, StaLifecycleBackend, StaLifecycleStage,
         StaNextCandidate, StaReconnectPolicy,
@@ -177,6 +185,9 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
         EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
     },
 };
+use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::{
+    RxPipelineCounterSnapshot, RxPipelineCounters,
+};
 use open_esp_radio_hil_protocol::{
     Capabilities, Completion as HilCompletion, Direction as HilDirection, Event as HilEvent,
     FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkCredentials, NetworkInfo, ServiceInfo,
@@ -186,8 +197,7 @@ use open_esp_radio_hil_protocol::{
 };
 
 use crate::radio_fault::{
-    ArmedStationFault, FaultInjectingBackendError, FaultInjectingWifiBackend,
-    STATION_FAULT_CONTROL,
+    ArmedStationFault, FaultInjectingBackendError, FaultInjectingWifiBackend, STATION_FAULT_CONTROL,
 };
 
 mod phy_diagnostics;
@@ -487,7 +497,7 @@ const UNICAST_TX_ATTEMPT_LIMIT: u8 = 4;
 // still-unwired HT PLCP and A-MPDU paths.
 //
 // SOURCE: the hardware code is `WIFI_PHY_RATE_54M = 0x0c` in the sibling
-// esp-wifi-sys S31 oracle; open-esp-radio-esp32s31-wifi-mac::tx::LegacyRate records
+// esp-wifi-sys S31 oracle; open-esp-radio-esp32s31-wifi-lmac::tx::LegacyRate records
 // the complete typed mapping and blob/ROM provenance.
 //
 // `OPEN_RADIO_LEGACY_RATE_MBIT` is deliberately limited to the non-HT OFDM
@@ -1014,7 +1024,7 @@ type RadioHilStaAttemptOwner<'hardware, 'transmit, 'state, 'scratch, 'security, 
         RX_BUFFER_STORAGE_SIZE,
     >;
 type RadioHilRunningScanPortError =
-    Esp32s31RunningScanPortError<PhyTargetPortError, Esp32s31ScanRxError, ControlTxError>;
+    Esp32s31ScanPortError<PhyTargetPortError, Esp32s31ScanRxError, ControlTxError>;
 type RadioHilStationController<'resources> =
     Esp32s31StationController<'resources, CriticalSectionRawMutex>;
 type RadioHilStationCommandReceiver<'resources> =
@@ -1077,7 +1087,9 @@ struct RadioHilConnectedEpochReturn<'fixture, 'security> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RadioHilConnectedExit {
-    Disconnected { beacon_lost: bool },
+    Disconnected {
+        beacon_lost: bool,
+    },
     ReconnectRequested,
     StationStopped(Esp32s31StationCommand),
     InjectedTxFault {
@@ -1757,9 +1769,7 @@ impl OpenRadioRxAmpduSnapshot {
     fn wrapping_delta_since(self, earlier: Self) -> Self {
         Self {
             ampdu_frames: self.ampdu_frames.wrapping_sub(earlier.ampdu_frames),
-            not_ampdu_frames: self
-                .not_ampdu_frames
-                .wrapping_sub(earlier.not_ampdu_frames),
+            not_ampdu_frames: self.not_ampdu_frames.wrapping_sub(earlier.not_ampdu_frames),
             hardware_ampdu_frames: self
                 .hardware_ampdu_frames
                 .wrapping_sub(earlier.hardware_ampdu_frames),
@@ -1839,8 +1849,7 @@ impl OpenRadioRxAmpduCounters {
 }
 
 #[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
-static OPEN_RADIO_RX_A_MPDU_COUNTERS: OpenRadioRxAmpduCounters =
-    OpenRadioRxAmpduCounters::new();
+static OPEN_RADIO_RX_A_MPDU_COUNTERS: OpenRadioRxAmpduCounters = OpenRadioRxAmpduCounters::new();
 
 #[derive(Clone, Copy, Default)]
 struct OpenRadioRxOrderSnapshot {
@@ -2389,15 +2398,12 @@ impl<S: ConnectedRxSink> ConnectedRxSink for HilConnectedRxObserver<S> {
             if is_probe_reply {
                 let s_mpdu = match metadata.s_mpdu {
                     MacRxEvidence::HardwareObserved(s_mpdu) => u32::from(s_mpdu),
-                    MacRxEvidence::ProtocolValidated(_) | MacRxEvidence::Unavailable => {
-                        u32::MAX
-                    }
+                    MacRxEvidence::ProtocolValidated(_) | MacRxEvidence::Unavailable => u32::MAX,
                 };
                 OPEN_RADIO_LAN_PROBE_RX_S_MPDU.store(s_mpdu, Ordering::Relaxed);
                 OPEN_RADIO_LAN_PROBE_RESPONSE.store(true, Ordering::Release);
             }
-            let benchmark_udp =
-                ipv4_udp_destination_port(frame) == Some(OPEN_RADIO_UDP_RX_PORT);
+            let benchmark_udp = ipv4_udp_destination_port(frame) == Some(OPEN_RADIO_UDP_RX_PORT);
             if benchmark_udp {
                 OPEN_RADIO_RX_S_MPDU_COUNTERS.observe(metadata.s_mpdu);
                 OPEN_RADIO_RX_A_MPDU_COUNTERS.observe(metadata.ampdu);
@@ -2590,14 +2596,8 @@ async fn run_open_radio_udp_benchmark(
             Timer::after_secs(60).await;
         },
         RadioHilBenchmarkBuffers::Tcp { rx, tx, read } => {
-            run_open_radio_tcp_rx_benchmark(
-                stack,
-                registers,
-                &mut **rx,
-                &mut **tx,
-                &mut **read,
-            )
-            .await
+            run_open_radio_tcp_rx_benchmark(stack, registers, &mut **rx, &mut **tx, &mut **read)
+                .await
         }
         RadioHilBenchmarkBuffers::UdpRx {
             rx_metadata,
@@ -3841,37 +3841,31 @@ enum RadioHilBenchmarkBuffers {
     },
     UdpRx {
         rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH],
-        rx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        rx: &'static mut [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
         tx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH],
-        tx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        tx: &'static mut [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
     },
     UdpTx {
         rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH],
-        rx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        rx: &'static mut [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
         tx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH],
-        tx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        tx: &'static mut [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
         packet: &'static mut [u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
     },
     Bidirectional {
         tx_rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH],
-        tx_rx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        tx_rx:
+            &'static mut [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
         tx_tx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH],
-        tx_tx: &'static mut
-            [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        tx_tx:
+            &'static mut [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
         packet: &'static mut [u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-        rx_rx_metadata:
-            &'static mut [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
-        rx_rx: &'static mut
-            [u8; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-        rx_tx_metadata:
-            &'static mut [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH],
-        rx_tx: &'static mut
-            [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        rx_rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
+        rx_rx: &'static mut [u8; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH
+                         * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+        rx_tx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH],
+        rx_tx: &'static mut [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH
+                         * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
     },
 }
 
@@ -3879,44 +3873,34 @@ impl RadioHilBenchmarkBuffers {
     fn init() -> Self {
         if OPEN_RADIO_TCP_RX_BENCH {
             Self::Tcp {
-                rx: OPEN_RADIO_TCP_RX_BUFFER
-                    .init_with(|| [0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]),
-                tx: OPEN_RADIO_TCP_TX_BUFFER
-                    .init_with(|| [0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]),
-                read: OPEN_RADIO_TCP_READ_BUFFER
-                    .init_with(|| [0; OPEN_RADIO_TCP_READ_CAPACITY]),
+                rx: OPEN_RADIO_TCP_RX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]),
+                tx: OPEN_RADIO_TCP_TX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]),
+                read: OPEN_RADIO_TCP_READ_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_READ_CAPACITY]),
             }
         } else if OPEN_RADIO_RAW_MAC_BENCH {
             Self::Raw
         } else if OPEN_RADIO_BIDIRECTIONAL_BENCH {
             Self::Bidirectional {
-                tx_rx_metadata: OPEN_RADIO_UDP_RX_METADATA.init_with(|| {
-                    [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]
-                }),
+                tx_rx_metadata: OPEN_RADIO_UDP_RX_METADATA
+                    .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]),
                 tx_rx: OPEN_RADIO_UDP_RX_BUFFER.init_with(|| {
                     [0; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
                 }),
-                tx_tx_metadata: OPEN_RADIO_UDP_TX_METADATA.init_with(|| {
-                    [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]
-                }),
+                tx_tx_metadata: OPEN_RADIO_UDP_TX_METADATA
+                    .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]),
                 tx_tx: OPEN_RADIO_UDP_TX_BUFFER.init_with(|| {
                     [0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
                 }),
-                packet: OPEN_RADIO_UDP_PACKET
-                    .init_with(|| [0x5a; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]),
-                rx_rx_metadata: OPEN_RADIO_BIDIRECTIONAL_RX_METADATA.init_with(|| {
-                    [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH]
-                }),
+                packet: OPEN_RADIO_UDP_PACKET.init_with(|| [0x5a; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]),
+                rx_rx_metadata: OPEN_RADIO_BIDIRECTIONAL_RX_METADATA
+                    .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH]),
                 rx_rx: OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH
-                        * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
+                    [0; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
                 }),
-                rx_tx_metadata: OPEN_RADIO_BIDIRECTIONAL_TX_METADATA.init_with(|| {
-                    [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH]
-                }),
+                rx_tx_metadata: OPEN_RADIO_BIDIRECTIONAL_TX_METADATA
+                    .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH]),
                 rx_tx: OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH
-                        * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
+                    [0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
                 }),
             }
         } else {
@@ -4113,7 +4097,7 @@ async fn run_connected_network<'fixture, 'security>(
                 staged_rx_sender,
                 OpenRadioRxReloadDelay,
             )
-            .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS)
+            .with_pipeline_observer(&OPEN_RADIO_RX_PIPELINE_COUNTERS)
             .with_live_ring(rx_ring);
             // The production aggregate owner is descriptor-only
             // (`BUFFER_SIZE == 0`), so constructing it in the static cell does
@@ -4180,7 +4164,7 @@ async fn run_connected_network<'fixture, 'security>(
         },
     )
     .with_counters(&OPEN_RADIO_RX_ENQUEUE_COUNTERS)
-    .with_pipeline_counters(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
+    .with_pipeline_observer(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
     let (rx_reorder_sender, rx_reorder_receiver) = OPEN_RADIO_RX_REORDER_COMMANDS.split();
     let rx_protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
         &connected_plan,
@@ -4193,7 +4177,7 @@ async fn run_connected_network<'fixture, 'security>(
             reorder_commands: rx_reorder_receiver,
             reorder_storage: &OPEN_RADIO_RX_REORDER_STORAGE,
             reorder_scratch: None,
-            pipeline_counters: Some(&OPEN_RADIO_RX_PIPELINE_COUNTERS),
+            pipeline_observer: Some(&OPEN_RADIO_RX_PIPELINE_COUNTERS),
         },
     );
 
@@ -4234,8 +4218,7 @@ async fn run_connected_network<'fixture, 'security>(
     );
     let rx_protocol = drivers.protocol;
     let backend = FaultInjectingWifiBackend::new(drivers.backend, &STATION_FAULT_CONTROL);
-    let mut radio_runner =
-        WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
+    let mut radio_runner = WifiRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, backend);
 
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {
@@ -4317,39 +4300,37 @@ async fn run_connected_network<'fixture, 'security>(
         Esp32s31ConnectedStationExit::StationStopped(command) => {
             RadioHilConnectedExit::StationStopped(command)
         }
-        Esp32s31ConnectedStationExit::HardwareFailure(error) => {
-            match error {
-                FaultInjectingBackendError::InjectedTxAfterPublication { fault, source } => {
-                    let reset_required = injected_tx_source_requires_reset(&source);
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result={} stage=production-runner-fault \
+        Esp32s31ConnectedStationExit::HardwareFailure(error) => match error {
+            FaultInjectingBackendError::InjectedTxAfterPublication { fault, source } => {
+                let reset_required = injected_tx_source_requires_reset(&source);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result={} stage=production-runner-fault \
                          injection={:?} request_id={} reset_required={} source={source:?}",
-                        if reset_required { "PASS" } else { "FAIL" },
-                        fault.injection,
-                        fault.request_id,
-                        u8::from(reset_required),
-                    ));
-                    RadioHilConnectedExit::InjectedTxFault {
-                        fault,
-                        reset_required,
-                    }
-                }
-                FaultInjectingBackendError::Inner(error) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
-                    ));
-                    RadioHilConnectedExit::HardwareFailure
-                }
-                FaultInjectingBackendError::InjectionContractViolation { fault, progress } => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner-fault \
-                         injection={:?} request_id={} contract_progress={progress:?}",
-                        fault.injection, fault.request_id,
-                    ));
-                    RadioHilConnectedExit::HardwareFailure
+                    if reset_required { "PASS" } else { "FAIL" },
+                    fault.injection,
+                    fault.request_id,
+                    u8::from(reset_required),
+                ));
+                RadioHilConnectedExit::InjectedTxFault {
+                    fault,
+                    reset_required,
                 }
             }
-        }
+            FaultInjectingBackendError::Inner(error) => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
+                ));
+                RadioHilConnectedExit::HardwareFailure
+            }
+            FaultInjectingBackendError::InjectionContractViolation { fault, progress } => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner-fault \
+                         injection={:?} request_id={} contract_progress={progress:?}",
+                    fault.injection, fault.request_id,
+                ));
+                RadioHilConnectedExit::HardwareFailure
+            }
+        },
     };
     // Close hardware publication before stopping the protocol consumer. The
     // radio runner no longer schedules RX/control; masking both CPU and
@@ -4465,7 +4446,11 @@ async fn run_connected_network<'fixture, 'security>(
                     "OPEN_RADIO_PHY_HIL result={} stage=production-station-fault-frontier \
                      injection={:?} request_id={} runner_returned=1 tasks_stopped=1 \
                      rx_dma_stopped=1 tx_reset_required={} source_reset_required={}",
-                    if evidence.is_complete() { "PASS" } else { "FAIL" },
+                    if evidence.is_complete() {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    },
                     fault.injection,
                     fault.request_id,
                     u8::from(tx_owner_reset_required),
@@ -4539,12 +4524,10 @@ async fn run_connected_network<'fixture, 'security>(
                 },
             })
         }
-        RadioHilConnectedExit::ReconnectRequested => {
-            Some(StationLifecycleEvent::Disconnected {
-                generation,
-                reason: StationDisconnectReason::ReconnectRequested,
-            })
-        }
+        RadioHilConnectedExit::ReconnectRequested => Some(StationLifecycleEvent::Disconnected {
+            generation,
+            reason: StationDisconnectReason::ReconnectRequested,
+        }),
         RadioHilConnectedExit::StationStopped(_)
         | RadioHilConnectedExit::InjectedTxFault { .. }
         | RadioHilConnectedExit::HardwareFailure => None,
@@ -4671,14 +4654,14 @@ async fn qualify_disconnected_running_scan(
     let control = tx_storage
         .take_control()
         .expect("connected teardown returned the ordinary TX owner");
-    let scan_owner = Esp32s31RunningScanPort::new(
-        Esp32s31RunningScanRadio::new(
+    let scan_owner = Esp32s31ScanPort::new(
+        Esp32s31ScanRadio::new(
             Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(state, platform, HilPhyObserver),
             hardware,
             RunningScanRx::from_stopped(rx),
             RunningScanTx::new(control, interrupt_setup),
         ),
-        Esp32s31RunningScanStorage::new(
+        Esp32s31ScanStorage::new(
             scan_table,
             scan_frame,
             RadioHilRunningScanFrameObserver {
@@ -4687,9 +4670,9 @@ async fn qualify_disconnected_running_scan(
             },
             sequence,
         ),
-        Esp32s31RunningScanStation::new(station_address, target_ssid, &PROBE_REQUEST_RATES)
+        Esp32s31ScanStation::new(station_address, target_ssid, &PROBE_REQUEST_RATES)
             .with_descriptor_capacity(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
-        EmbassyEsp32s31RunningScanTimer,
+        EmbassyEsp32s31ScanTimer,
     );
     let scan_config =
         Esp32s31StaScanConfig::new(SCAN_DWELL_MS).expect("fixed HIL scan dwell policy is nonzero");
@@ -4770,7 +4753,7 @@ async fn qualify_disconnected_running_scan(
         }
     };
 
-    let Esp32s31RunningScanParts {
+    let Esp32s31ScanPortParts {
         phy,
         hardware,
         rx,
@@ -5032,8 +5015,7 @@ fn connected_attempt_outcome<'fixture, 'security>(
         security,
     };
     match exit {
-        RadioHilConnectedExit::Disconnected { .. }
-        | RadioHilConnectedExit::ReconnectRequested => {
+        RadioHilConnectedExit::Disconnected { .. } | RadioHilConnectedExit::ReconnectRequested => {
             StaAttemptOutcome::Disconnected {
                 owner: RadioHilStaLifecycleOwner::RunningScan(owner),
                 next_candidate: StaNextCandidate::Refresh,
@@ -5048,15 +5030,16 @@ fn connected_attempt_outcome<'fixture, 'security>(
                 owner: RadioHilStaLifecycleOwner::RunningScan(owner),
             }
         }
-        RadioHilConnectedExit::InjectedTxFault { .. }
-        | RadioHilConnectedExit::HardwareFailure => StaAttemptOutcome::Failed {
-            owner: RadioHilStaLifecycleOwner::RunningScan(owner),
-            failure: StaAttemptFailure::new(
-                StaLifecycleStage::Hardware,
-                StaFailureDisposition::Terminal,
-                RadioHilStaLifecycleFailure::ConnectedHardware,
-            ),
-        },
+        RadioHilConnectedExit::InjectedTxFault { .. } | RadioHilConnectedExit::HardwareFailure => {
+            StaAttemptOutcome::Failed {
+                owner: RadioHilStaLifecycleOwner::RunningScan(owner),
+                failure: StaAttemptFailure::new(
+                    StaLifecycleStage::Hardware,
+                    StaFailureDisposition::Terminal,
+                    RadioHilStaLifecycleFailure::ConnectedHardware,
+                ),
+            }
+        }
     }
 }
 
@@ -5206,9 +5189,7 @@ const fn protocol_station_failure_reason(
             StationAttemptFailureReason::PeerProtocol
         }
         RadioHilStaLifecycleFailure::RunningScanTransaction(_)
-        | RadioHilStaLifecycleFailure::ConnectedHardware => {
-            StationAttemptFailureReason::Hardware
-        }
+        | RadioHilStaLifecycleFailure::ConnectedHardware => StationAttemptFailureReason::Hardware,
         RadioHilStaLifecycleFailure::CandidateRefreshContract
         | RadioHilStaLifecycleFailure::RunningScanPlan(_)
         | RadioHilStaLifecycleFailure::InvalidEpochOwner => {
@@ -5311,14 +5292,12 @@ impl<'control, 'fixture, 'security> StaLifecycleBackend
                 }
             };
             if let StaAttemptOutcome::Failed { failure, .. } = &outcome {
-                crate::console::publish_station_lifecycle(
-                    StationLifecycleEvent::AttemptFailed {
-                        generation: context.generation,
-                        attempt: context.attempt,
-                        stage: protocol_station_failure_stage(failure.stage),
-                        reason: protocol_station_failure_reason(failure.error),
-                    },
-                )
+                crate::console::publish_station_lifecycle(StationLifecycleEvent::AttemptFailed {
+                    generation: context.generation,
+                    attempt: context.attempt,
+                    stage: protocol_station_failure_stage(failure.stage),
+                    reason: protocol_station_failure_reason(failure.error),
+                })
                 .await;
             }
             outcome

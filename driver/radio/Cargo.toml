@@ -1,0 +1,52 @@
+[package]
+name = "open-esp-radio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Application facade for the source-only Rust ESP radio stack"
+
+[features]
+default = ["esp32s31-wifi"]
+wifi = [
+    "dep:open-esp-radio-ieee80211",
+    "dep:open-esp-radio-wifi-lmac",
+    "dep:open-esp-radio-wifi-sta",
+    "dep:open-esp-radio-wpa2",
+]
+integration-embassy-net = ["dep:open-esp-radio-embassy-net"]
+esp32s31 = [
+    "dep:open-esp-radio-esp32s31-hal",
+    "dep:open-esp-radio-esp32s31-pac",
+    "dep:open-esp-radio-esp32s31-registers",
+    "dep:open-esp-radio-esp32s31-phy",
+]
+esp32s31-wifi = [
+    "esp32s31",
+    "wifi",
+    "dep:open-esp-radio-esp32s31-wifi-lmac",
+    "dep:open-esp-radio-esp32s31-wifi-sta",
+]
+esp32s31-wifi-embassy = [
+    "esp32s31-wifi",
+    "integration-embassy-net",
+    "dep:open-esp-radio-esp32s31-wifi-embassy",
+]
+
+[dependencies]
+open-esp-radio-embassy-net = { path = "../integration/network/embassy-net", optional = true }
+open-esp-radio-esp32s31-hal = { path = "../esp32s31/hal", optional = true }
+open-esp-radio-esp32s31-pac = { path = "../esp32s31/pac", optional = true }
+open-esp-radio-esp32s31-wifi-lmac = { path = "../esp32s31/wifi/lmac", optional = true }
+open-esp-radio-esp32s31-wifi-sta = { path = "../esp32s31/wifi/sta", optional = true }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../integration/esp32s31/wifi-embassy", optional = true }
+open-esp-radio-esp32s31-registers = { path = "../esp32s31/registers", optional = true }
+open-esp-radio-esp32s31-phy = { path = "../esp32s31/phy", optional = true }
+open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
+open-esp-radio-wifi-lmac = { path = "../wifi/lmac", optional = true }
+open-esp-radio-wifi-sta = { path = "../wifi/sta", optional = true }
+open-esp-radio-wpa2 = { path = "../wifi/wpa2", optional = true }
+
+[lints]
+workspace = true

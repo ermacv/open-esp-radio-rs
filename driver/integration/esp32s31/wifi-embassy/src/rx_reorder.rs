@@ -1,0 +1,390 @@
+//! Typed control-plane handoff for receive BlockAck reordering.
+//!
+//! ADDBA/DELBA processing owns protocol and PAC state in the connected
+//! control task. Staged frame leases belong exclusively to the RX protocol
+//! task, which moves only genuinely out-of-order MPDUs into an independent
+//! cold backing. The bounded mailbox carries only the semantic agreement edge
+//! between those owners; it never carries a frame pointer or C context.
+
+use core::{
+    cell::UnsafeCell,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
+use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_esp32s31_wifi_lmac::rx::RxSegment;
+
+/// One command per possible RX agreement plus replacement/teardown slack.
+///
+/// The command path is not a packet queue. Capacity only has to cover finite
+/// control-plane progress while the RX protocol task is scheduled elsewhere.
+pub const RX_REORDER_COMMAND_CAPACITY: usize = 16;
+
+/// Vendor receive reorder age before the first buffered run crosses a gap.
+///
+/// Complete `libnet80211.a[ieee80211_ht.o]::ieee80211_ampdu_reorder` calls
+/// `ieee80211_ampdu_start_age_timer(0x493e0)` exactly when the first frame is
+/// retained. The call is routed through the microsecond OSI timer-arm slot, so
+/// the source-owned Embassy replacement keeps the same 300,000-us edge.
+pub const RX_REORDER_GAP_TIMEOUT_MICROS: u64 = 300_000;
+
+/// One logical slot for every sequence position in the vendor maximum window.
+pub const RX_REORDER_BACKING_SLOT_COUNT: usize = 64;
+/// Ephemeral owner identity used only while an in-order frame crosses
+/// `ingest`. It is never retained in the reorder state or mapped to PSRAM.
+pub(crate) const RX_REORDER_CURRENT_SLOT: usize = RX_REORDER_BACKING_SLOT_COUNT;
+pub(crate) const RX_REORDER_SLOT_DOMAIN: usize = RX_REORDER_BACKING_SLOT_COUNT + 1;
+const RX_REORDER_BACKING_BITMAP_WORDS: usize = 2;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxReorderStorageError {
+    Exhausted,
+    TooLong(usize),
+}
+
+#[repr(C, align(4))]
+struct RxReorderSlot<const CAPACITY: usize>(UnsafeCell<[u8; CAPACITY]>);
+
+impl<const CAPACITY: usize> RxReorderSlot<CAPACITY> {
+    const fn new() -> Self {
+        Self(UnsafeCell::new([0; CAPACITY]))
+    }
+}
+
+// SAFETY: bytes are exposed only through one live reservation/frame token.
+unsafe impl<const CAPACITY: usize> Sync for RxReorderSlot<CAPACITY> {}
+
+/// CPU-only backing for MPDUs that actually cross a BlockAck sequence gap.
+///
+/// The ordinary SRAM staging lease remains the zero-extra-copy fast path for
+/// in-order frames. Only a retained frame is copied here, after which its hot
+/// staging credit is returned immediately to the DMA/protocol handoff.
+pub struct RxReorderFrameStorage<
+    const CAPACITY: usize,
+    const SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
+    slots: [RxReorderSlot<CAPACITY>; SLOTS],
+    claimed: [AtomicUsize; RX_REORDER_BACKING_BITMAP_WORDS],
+}
+
+impl<const CAPACITY: usize, const SLOTS: usize> RxReorderFrameStorage<CAPACITY, SLOTS> {
+    pub const fn new() -> Self {
+        assert!(SLOTS != 0, "RX reorder storage must not be empty");
+        assert!(
+            SLOTS <= RX_REORDER_BACKING_SLOT_COUNT,
+            "RX reorder storage exceeds the MAC slot domain"
+        );
+        Self {
+            slots: [const { RxReorderSlot::new() }; SLOTS],
+            claimed: [const { AtomicUsize::new(0) }; RX_REORDER_BACKING_BITMAP_WORDS],
+        }
+    }
+
+    pub fn try_reserve(
+        &self,
+    ) -> Result<RxReorderReservation<'_, CAPACITY, SLOTS>, RxReorderStorageError> {
+        let slot = (0..SLOTS)
+            .find(|&slot| self.try_claim(slot))
+            .ok_or(RxReorderStorageError::Exhausted)?;
+        Ok(RxReorderReservation {
+            storage: self,
+            slot,
+            live: true,
+        })
+    }
+
+    pub fn available_slots(&self) -> usize {
+        SLOTS.saturating_sub(
+            self.claimed
+                .iter()
+                .map(|word| word.load(Ordering::Acquire).count_ones() as usize)
+                .sum(),
+        )
+    }
+
+    fn try_claim(&self, slot: usize) -> bool {
+        let (word, bit) = reorder_bitmap_word_and_bit(slot);
+        self.claimed[word].fetch_or(bit, Ordering::AcqRel) & bit == 0
+    }
+
+    fn release(&self, slot: usize) -> bool {
+        let (word, bit) = reorder_bitmap_word_and_bit(slot);
+        self.claimed[word].fetch_and(!bit, Ordering::AcqRel) & bit != 0
+    }
+}
+
+impl<const CAPACITY: usize, const SLOTS: usize> Default for RxReorderFrameStorage<CAPACITY, SLOTS> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Claimed logical sequence slot before the reorder state decides whether the
+/// current SRAM staging frame must be retained.
+pub struct RxReorderReservation<'storage, const CAPACITY: usize, const SLOTS: usize> {
+    storage: &'storage RxReorderFrameStorage<CAPACITY, SLOTS>,
+    slot: usize,
+    live: bool,
+}
+
+impl<'storage, const CAPACITY: usize, const SLOTS: usize>
+    RxReorderReservation<'storage, CAPACITY, SLOTS>
+{
+    pub const fn slot(&self) -> usize {
+        self.slot
+    }
+
+    pub fn copy_from(
+        mut self,
+        segment: RxSegment<'_>,
+    ) -> Result<RxReorderFrame<'storage, CAPACITY, SLOTS>, (RxReorderStorageError, Self)> {
+        if segment.buffer.len() > CAPACITY {
+            return Err((RxReorderStorageError::TooLong(segment.buffer.len()), self));
+        }
+        // SAFETY: this reservation uniquely owns the selected slot, and the
+        // length check bounds the complete copy.
+        unsafe {
+            (&mut *self.storage.slots[self.slot].0.get())[..segment.buffer.len()]
+                .copy_from_slice(segment.buffer);
+        }
+        self.live = false;
+        Ok(RxReorderFrame {
+            storage: self.storage,
+            slot: self.slot,
+            descriptor_address: segment.descriptor_address,
+            descriptor_word0: segment.descriptor_word0,
+            next_descriptor_address: segment.next_descriptor_address,
+            length: segment.buffer.len(),
+        })
+    }
+}
+
+impl<const CAPACITY: usize, const SLOTS: usize> Drop for RxReorderReservation<'_, CAPACITY, SLOTS> {
+    fn drop(&mut self) {
+        if self.live {
+            let released = self.storage.release(self.slot);
+            debug_assert!(released);
+        }
+    }
+}
+
+/// Unique retained MPDU owner in the cold PSRAM reorder backing.
+pub struct RxReorderFrame<'storage, const CAPACITY: usize, const SLOTS: usize> {
+    storage: &'storage RxReorderFrameStorage<CAPACITY, SLOTS>,
+    slot: usize,
+    descriptor_address: u32,
+    descriptor_word0: u32,
+    next_descriptor_address: u32,
+    length: usize,
+}
+
+impl<const CAPACITY: usize, const SLOTS: usize> RxReorderFrame<'_, CAPACITY, SLOTS> {
+    pub const fn slot(&self) -> usize {
+        self.slot
+    }
+
+    pub fn segment(&self) -> RxSegment<'_> {
+        // SAFETY: this token uniquely retains the claimed backing slot.
+        let bytes = unsafe { &*self.storage.slots[self.slot].0.get() };
+        RxSegment {
+            descriptor_address: self.descriptor_address,
+            descriptor_word0: self.descriptor_word0,
+            buffer: &bytes[..self.length],
+            next_descriptor_address: self.next_descriptor_address,
+        }
+    }
+}
+
+impl<const CAPACITY: usize, const SLOTS: usize> Drop for RxReorderFrame<'_, CAPACITY, SLOTS> {
+    fn drop(&mut self) {
+        let released = self.storage.release(self.slot);
+        debug_assert!(released);
+    }
+}
+
+const fn reorder_bitmap_word_and_bit(slot: usize) -> (usize, usize) {
+    let bits = usize::BITS as usize;
+    (slot / bits, 1_usize << (slot % bits))
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxReorderCommand {
+    /// Install or replace the receive reorder state for one QoS TID.
+    Start {
+        tid: u8,
+        starting_sequence: u16,
+        window: u16,
+    },
+    /// Flush and remove the receive reorder state for one QoS TID.
+    Stop { tid: u8 },
+    /// Flush every agreement when the connected ownership epoch ends.
+    StopAll,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxReorderCommandError {
+    Full(RxReorderCommand),
+}
+
+pub type RxReorderCommandSender<'resources, M> =
+    Sender<'resources, M, RxReorderCommand, RX_REORDER_COMMAND_CAPACITY>;
+pub type RxReorderCommandReceiver<'resources, M> =
+    Receiver<'resources, M, RxReorderCommand, RX_REORDER_COMMAND_CAPACITY>;
+
+/// Static storage shared by the connected control and RX protocol tasks.
+pub struct RxReorderCommandResources<M: RawMutex> {
+    commands: Channel<M, RxReorderCommand, RX_REORDER_COMMAND_CAPACITY>,
+}
+
+impl<M: RawMutex> RxReorderCommandResources<M> {
+    pub const fn new() -> Self {
+        Self {
+            commands: Channel::new(),
+        }
+    }
+
+    pub fn split(
+        &self,
+    ) -> (
+        RxReorderCommandSender<'_, M>,
+        RxReorderCommandReceiver<'_, M>,
+    ) {
+        (self.commands.sender(), self.commands.receiver())
+    }
+}
+
+impl<M: RawMutex> Default for RxReorderCommandResources<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn try_send_rx_reorder_command<M: RawMutex>(
+    sender: &RxReorderCommandSender<'_, M>,
+    command: RxReorderCommand,
+) -> Result<(), RxReorderCommandError> {
+    sender.try_send(command).map_err(|error| match error {
+        TrySendError::Full(command) => RxReorderCommandError::Full(command),
+    })
+}
+
+pub fn try_receive_rx_reorder_command<M: RawMutex>(
+    receiver: &RxReorderCommandReceiver<'_, M>,
+) -> Option<RxReorderCommand> {
+    match receiver.try_receive() {
+        Ok(command) => Some(command),
+        Err(TryReceiveError::Empty) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use open_esp_radio_embassy_net::NoopRawMutex;
+
+    use super::*;
+
+    #[test]
+    fn mailbox_preserves_owned_agreement_edges_in_order() {
+        let resources = RxReorderCommandResources::<NoopRawMutex>::new();
+        let (sender, receiver) = resources.split();
+        let start = RxReorderCommand::Start {
+            tid: 3,
+            starting_sequence: 0x0ffe,
+            window: 32,
+        };
+        try_send_rx_reorder_command(&sender, start).unwrap();
+        try_send_rx_reorder_command(&sender, RxReorderCommand::Stop { tid: 3 }).unwrap();
+        try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll).unwrap();
+
+        assert_eq!(try_receive_rx_reorder_command(&receiver), Some(start));
+        assert_eq!(
+            try_receive_rx_reorder_command(&receiver),
+            Some(RxReorderCommand::Stop { tid: 3 })
+        );
+        assert_eq!(
+            try_receive_rx_reorder_command(&receiver),
+            Some(RxReorderCommand::StopAll)
+        );
+        assert_eq!(try_receive_rx_reorder_command(&receiver), None);
+    }
+
+    #[test]
+    fn full_mailbox_returns_the_unpublished_command() {
+        let resources = RxReorderCommandResources::<NoopRawMutex>::new();
+        let (sender, _receiver) = resources.split();
+        for tid in 0..RX_REORDER_COMMAND_CAPACITY {
+            try_send_rx_reorder_command(&sender, RxReorderCommand::Stop { tid: tid as u8 })
+                .unwrap();
+        }
+        assert_eq!(
+            try_send_rx_reorder_command(&sender, RxReorderCommand::StopAll),
+            Err(RxReorderCommandError::Full(RxReorderCommand::StopAll))
+        );
+    }
+
+    #[test]
+    fn retained_backing_copies_metadata_and_returns_its_logical_slot() {
+        let storage = RxReorderFrameStorage::<16>::new();
+        let reservation = storage.try_reserve().unwrap();
+        let slot = reservation.slot();
+        let bytes = [1, 2, 3, 4, 5];
+        let frame = match reservation.copy_from(RxSegment {
+            descriptor_address: 0x1000,
+            descriptor_word0: 0x2000,
+            buffer: &bytes,
+            next_descriptor_address: 0x3000,
+        }) {
+            Ok(frame) => frame,
+            Err((error, _reservation)) => panic!("retained copy failed: {error:?}"),
+        };
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT - 1);
+        assert_eq!(frame.slot(), slot);
+        assert_eq!(frame.segment().buffer, bytes);
+        assert_eq!(frame.segment().descriptor_word0, 0x2000);
+        drop(frame);
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+    }
+
+    #[test]
+    fn board_profile_selects_the_allocated_reorder_slot_count() {
+        let storage = RxReorderFrameStorage::<16, 3>::new();
+        assert_eq!(storage.available_slots(), 3);
+        let first = storage.try_reserve().unwrap();
+        let second = storage.try_reserve().unwrap();
+        let third = storage.try_reserve().unwrap();
+        assert_eq!(storage.available_slots(), 0);
+        assert!(matches!(
+            storage.try_reserve(),
+            Err(RxReorderStorageError::Exhausted)
+        ));
+        drop((first, second, third));
+        assert_eq!(storage.available_slots(), 3);
+        assert_eq!(
+            core::mem::size_of::<RxReorderFrameStorage<16, 3>>(),
+            3 * 16 + 2 * core::mem::size_of::<AtomicUsize>()
+        );
+    }
+
+    #[test]
+    fn unmaterialized_reservation_and_oversize_copy_release_the_slot() {
+        let storage = RxReorderFrameStorage::<4>::new();
+        drop(storage.try_reserve().unwrap());
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+
+        let bytes = [0; 5];
+        let reservation = storage.try_reserve().unwrap();
+        let (error, reservation) = match reservation.copy_from(RxSegment {
+            descriptor_address: 0,
+            descriptor_word0: 0,
+            buffer: &bytes,
+            next_descriptor_address: 0,
+        }) {
+            Ok(_frame) => panic!("oversize retained copy unexpectedly succeeded"),
+            Err(failure) => failure,
+        };
+        assert_eq!(error, RxReorderStorageError::TooLong(5));
+        drop(reservation);
+        assert_eq!(storage.available_slots(), RX_REORDER_BACKING_SLOT_COUNT);
+    }
+}

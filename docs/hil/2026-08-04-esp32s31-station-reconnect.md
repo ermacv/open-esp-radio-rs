@@ -126,7 +126,7 @@ benchmark/protocol signal adapter. Host tests prove both exact owner return
 and the distinct reset-required deadline outcome.
 
 This repetition also qualifies the extracted
-`Esp32s31RunningScanPort`. PHY retune, cooperative register access, stopped RX
+`Esp32s31ScanPort`. PHY retune, cooperative register access, stopped RX
 restart, polling Probe TX, one-millisecond Embassy dwell ticks, scan-table
 observation and exact-SSID selection now live in the reusable integration
 crate. `radio_hil.rs` supplies the returned owners and HIL evidence observer

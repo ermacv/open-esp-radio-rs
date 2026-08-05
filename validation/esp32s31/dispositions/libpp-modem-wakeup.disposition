@@ -7,7 +7,7 @@ default-protocol wifi
 function libpp pwr_hal_set_mac_modem_beacon_miss_timeout
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_beacon_miss_timeout
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_beacon_miss_timeout
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_timeout
 effect-contract exact-effects-v1
@@ -17,7 +17,7 @@ effect mmio-write 32 0x2010d854 required
 function libpp pwr_hal_set_mac_modem_beacon_miss_limit
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_beacon_miss_limit
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_beacon_miss_limit
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_limit
 effect-contract exact-effects-v1
@@ -27,7 +27,7 @@ effect mmio-write 32 0x2010d838 required
 function libpp pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable
 effect-contract exact-effects-v1
@@ -37,7 +37,7 @@ effect mmio-write 32 0x2010d838 required
 function libpp pwr_hal_set_mac_modem_state_sleep_limit
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_state_sleep_limit
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_state_sleep_limit
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_state_sleep_limit
 effect-contract exact-effects-v1
@@ -47,7 +47,7 @@ effect mmio-write 32 0x2010d838 required
 function libpp pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable
 effect-contract exact-effects-v1
@@ -57,7 +57,7 @@ effect mmio-write 32 0x2010d838 required
 function libpp pwr_hal_set_mac_modem_state_wakeup_protect_enable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_state_wakeup_protect_enable
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_state_wakeup_protect_enable
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_protect_enable
 effect-contract exact-effects-v1
@@ -67,7 +67,7 @@ effect mmio-write 32 0x2010d858 required
 function libpp pwr_hal_set_mac_modem_state_wakeup_protect_early_time
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_state_wakeup_protect_early_time
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_state_wakeup_protect_early_time
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_state_wakeup_protect_early_time
 effect-contract exact-effects-v1
@@ -77,7 +77,7 @@ effect mmio-write 32 0x2010d83c required
 function libpp pwr_hal_set_mac_modem_tbtt_auto_period_enable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_tbtt_auto_period_enable
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_tbtt_auto_period_enable
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_enable
 effect-contract exact-effects-v1
@@ -87,7 +87,7 @@ effect mmio-write 32 0x2010d83c required
 function libpp pwr_hal_set_mac_modem_tbtt_auto_period_disable
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_tbtt_auto_period_disable
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_tbtt_auto_period_disable
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_disable
 effect-contract exact-effects-v1
@@ -97,7 +97,7 @@ effect mmio-write 32 0x2010d83c required
 function libpp pwr_hal_set_mac_modem_tbtt_auto_period_interval
 disposition direct
 protocol wifi
-rust-component open_esp_radio_esp32s31_pac::generated::pwr_hal_set_mac_modem_tbtt_auto_period_interval
+rust-component open_esp_radio_esp32s31_registers::generated::pwr_hal_set_mac_modem_tbtt_auto_period_interval
 binding v1
 rust-probe open_libpp_power_trace_pwr_hal_set_mac_modem_tbtt_auto_period_interval
 effect-contract exact-effects-v1

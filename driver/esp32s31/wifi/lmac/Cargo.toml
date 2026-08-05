@@ -1,0 +1,24 @@
+[package]
+name = "open-esp-radio-esp32s31-wifi-lmac"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Allocation-free source-owned ESP32-S31 Wi-Fi MAC primitives"
+
+[features]
+default = []
+large-rx-pool-48 = []
+rx-ba-window-8 = []
+# Recovered ESF pointer-layout adapters retained only for oracle comparison.
+# The owned TX path must not enable this in production firmware.
+vendor-layout-compat = []
+
+[dependencies]
+open-esp-radio-esp32s31-registers = { path = "../../registers" }
+open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
+open-esp-radio-wifi-lmac = { path = "../../../wifi/lmac" }
+
+[lints]
+workspace = true

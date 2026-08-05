@@ -8,8 +8,8 @@ This directory is the test harness, not another radio-driver layer. It owns
 the concrete board clock tree, boot flow, flash and PSRAM placement, Embassy
 executor, and the full `embassy-net`/smoltcp application used for traffic
 tests. Reusable network-driver and ESP32-S31 platform bindings live under
-`../../crates/integration`; PAC/HAL/PHY/Wi-Fi behavior lives under
-`../../crates/esp32s31` and `../../crates/wifi`.
+`../../driver/integration`; PAC/HAL/PHY/Wi-Fi behavior lives under
+`../../driver/esp32s31` and `../../driver/wifi`.
 
 The authoritative performance profile is `psram-code-psram-data`. Its image
 has two stages:
@@ -19,7 +19,7 @@ has two stages:
    while its stack, DMA objects and interrupt closure remain in internal SRAM.
 
 Board electrical settings, credentials, traffic generation and PASS/FAIL
-reporting belong here. PHY/MAC/STA behavior belongs in `../../crates` and must
+reporting belong here. PHY/MAC/STA behavior belongs in `../../driver` and must
 be moved there before a new behavior is entered in the canonical feature
 ledger.
 
@@ -28,6 +28,11 @@ HIL-only PHY observation is isolated in
 observer breadcrumbs and UART evidence callbacks, but no radio transition.
 The main `radio_hil.rs` file consumes that observer while keeping the station
 ownership flow separate from diagnostic register inventories.
+
+The `telemetry` member similarly owns the concrete atomic counters, IRQ-time
+correlation and interval snapshots for the typed RX observations published by
+the reusable integration crate. It is chip-specific HIL policy, not a generic
+driver dependency.
 
 The closed vendor oracle is never a dependency of this workspace. It is an
 explicitly excluded sibling workspace at `../vendor-oracle/esp32s31` and is

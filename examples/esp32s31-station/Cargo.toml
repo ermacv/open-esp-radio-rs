@@ -16,9 +16,9 @@ esp-backtrace = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "rt", "unstable"] }
 esp-println = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["auto", "esp32s31", "log-04"] }
-open-esp-radio = { path = "../../crates/radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
-open-esp-radio-esp32s31-embassy-runtime = { path = "../../crates/integration/esp32s31/embassy-runtime", features = ["esp32s31"] }
-open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../crates/integration/esp32s31/wifi-esp-hal", features = ["esp32s31"] }
+open-esp-radio = { path = "../../driver/radio", default-features = false, features = ["esp32s31-wifi-embassy"] }
+open-esp-radio-esp32s31-embassy-runtime = { path = "../../driver/integration/esp32s31/embassy-runtime", features = ["esp32s31"] }
+open-esp-radio-esp32s31-wifi-esp-hal = { path = "../../driver/integration/esp32s31/wifi-esp-hal", features = ["esp32s31"] }
 static_cell = "2.1.1"
 
 [profile.release]

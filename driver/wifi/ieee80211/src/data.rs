@@ -523,15 +523,12 @@ pub fn decapsulate_amsdu_subframe(
 
 /// Copy one validated MSDU into caller-owned Ethernet storage.
 ///
-/// This finite copy/validation leaf is SRAM-resident on S31 PSRAM-code
-/// builds. SOURCE\[HIL_OPEN_HE20_RX_RING_STARVATION_2026_07_29]: the complete
-/// post-CCMP receive path executed from PSRAM plateaued at 63.1..65.3 Mbit/s
-/// while the MAC reported an additional raw interrupt bit under load.
+/// SOURCE\[HIL_OPEN_HE20_RX_RING_STARVATION_2026_07_29]: the complete post-CCMP
+/// receive path executed from PSRAM plateaued at 63.1..65.3 Mbit/s while the
+/// MAC reported an additional raw interrupt bit under load. Code placement is
+/// deliberately left to the final image/linker policy rather than embedded in
+/// this hardware-independent protocol crate.
 #[inline(never)]
-#[cfg_attr(
-    target_arch = "riscv32",
-    unsafe(link_section = ".rwtext.open_radio_rx_hot")
-)]
 pub fn decapsulate_data(
     role: DataInterfaceRole,
     mpdu: &[u8],

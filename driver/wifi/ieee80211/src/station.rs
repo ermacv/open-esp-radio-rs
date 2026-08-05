@@ -394,10 +394,6 @@ impl StaRxDuplicateFilter {
     /// a QoS data TID. An invalid TID is treated as a new non-QoS frame so a
     /// malformed caller value cannot poison a valid QoS history slot.
     #[inline(never)]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn is_duplicate(&mut self, retry: bool, sequence_control: u16, tid: Option<u8>) -> bool {
         let index = match tid {
             Some(tid @ 0..=15) => usize::from(tid) + 1,

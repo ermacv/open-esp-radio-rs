@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 //! Hardware-independent IEEE 802.11 protocol building blocks.
 //!

@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 //! Portable contract between IEEE 802.11 protocol code and a Wi-Fi LMAC.
 //!

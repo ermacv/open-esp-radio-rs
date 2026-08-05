@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 //! ESP32-S31 Wi-Fi station composition.
 //!

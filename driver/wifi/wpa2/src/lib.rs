@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 //! Allocation-free WPA2-Personal protocol primitives.
 //!

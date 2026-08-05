@@ -1,4 +1,5 @@
 #![no_std]
+#![forbid(unsafe_code)]
 
 //! Executor- and chip-independent Wi-Fi station MLME and policy.
 //!

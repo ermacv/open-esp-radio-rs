@@ -24,7 +24,6 @@ pub mod control_tx;
 pub mod cooperative_tx;
 pub mod embassy_irq;
 pub mod embassy_rx;
-pub mod embassy_tx;
 #[cfg(target_arch = "riscv32")]
 mod join_time;
 pub mod network_rx;

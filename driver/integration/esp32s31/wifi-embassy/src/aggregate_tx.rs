@@ -1222,19 +1222,29 @@ mod tests {
         ) {
         }
 
-        fn prepare_ht_tx(&mut self, _queue: u8, _program: MacHtTxProgram) -> bool {
+        fn prepare_bound_ht_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            _queue: u8,
+            _program: MacHtTxProgram,
+        ) -> bool {
             self.ht_publications += 1;
             true
         }
 
-        fn start_ht_tx(&mut self, _queue: u8, _plcp0: u32) {}
+        fn start_bound_ht_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
 
-        fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
+        fn prepare_bound_he_tx(
+            &mut self,
+            _dma: &dyn PreparedTxDma,
+            _queue: u8,
+            _program: MacHeTxProgram,
+        ) -> bool {
             self.he_publications += 1;
             true
         }
 
-        fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
+        fn start_bound_he_tx(&mut self, _dma: &dyn HardwareOwnedTxDma, _queue: u8, _plcp0: u32) {}
 
         fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
             self.ordinary_completion.take()

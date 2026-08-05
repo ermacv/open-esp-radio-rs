@@ -151,20 +151,30 @@ impl TxHardware for CooperativeTxHardware<'_, '_> {
         TxHardware::start_bound_legacy_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
-    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
-        TxHardware::prepare_ht_tx(&mut **self.registers.borrow_mut(), queue, program)
+    fn prepare_bound_ht_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_ht_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
     }
 
-    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_ht_tx(&mut **self.registers.borrow_mut(), queue, plcp0);
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_ht_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
-    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
-        TxHardware::prepare_he_tx(&mut **self.registers.borrow_mut(), queue, program)
+    fn prepare_bound_he_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHeTxProgram,
+    ) -> bool {
+        TxHardware::prepare_bound_he_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
     }
 
-    fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_he_tx(&mut **self.registers.borrow_mut(), queue, plcp0);
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        TxHardware::start_bound_he_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {

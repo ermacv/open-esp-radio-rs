@@ -402,7 +402,7 @@ impl RadioRegisters {
     /// This is deliberately separate from the legacy routine: an HT PPDU has
     /// two additional vector words and three descriptor-count RMW edges which
     /// must not be silently omitted by a shared "mostly legacy" formatter.
-    pub fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+    fn prepare_ht_mac_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         assert!(program.descriptor_count_a <= 0x7f);
         assert!(program.descriptor_count_b <= 0x7f);
@@ -523,7 +523,7 @@ impl RadioRegisters {
     ///
     /// This is separate from HT because HE publishes two different vector
     /// words and deliberately does not write the non-HE DATA_LENGTH word.
-    pub fn prepare_he_mac_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
+    fn prepare_he_mac_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
         assert!(queue < ORDINARY_QUEUE_COUNT);
         assert!(program.descriptor_count_a <= 0x7f);
         assert!(program.descriptor_count_b <= 0x7f);
@@ -653,14 +653,6 @@ impl RadioRegisters {
             .config(bank)
             .modify(|_, w| w.interface().set(program.interface));
         true
-    }
-
-    pub fn start_ht_mac_tx(&mut self, queue: u8, plcp0: u32) {
-        self.start_prepared_mac_tx(queue, plcp0);
-    }
-
-    pub fn start_he_mac_tx(&mut self, queue: u8, plcp0: u32) {
-        self.start_prepared_mac_tx(queue, plcp0);
     }
 
     fn start_prepared_mac_tx(&mut self, queue: u8, _plcp0: u32) {

@@ -173,11 +173,6 @@ pub trait TxHardware {
     fn tx_descriptor_address(&self, cpu_address: u32) -> u32 {
         cpu_address
     }
-    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool;
-    fn start_ht_tx(&mut self, queue: u8, plcp0: u32);
-    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool;
-    fn start_he_tx(&mut self, queue: u8, plcp0: u32);
-
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -190,31 +185,29 @@ pub trait TxHardware {
     fn prepare_bound_ht_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
-        queue: u8,
+        _queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
         assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
-        self.prepare_ht_tx(queue, program)
+        false
     }
 
-    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, _queue: u8, plcp0: u32) {
         assert_tx_dma_head(dma.descriptor_head(), plcp0);
-        self.start_ht_tx(queue, plcp0);
     }
 
     fn prepare_bound_he_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
-        queue: u8,
+        _queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
         assert_tx_dma_head(dma.descriptor_head(), program.plcp0);
-        self.prepare_he_tx(queue, program)
+        false
     }
 
-    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+    fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, _queue: u8, plcp0: u32) {
         assert_tx_dma_head(dma.descriptor_head(), plcp0);
-        self.start_he_tx(queue, plcp0);
     }
     /// Copy a submitted HE vector when the backend exposes typed readback.
     ///
@@ -238,22 +231,6 @@ fn assert_tx_dma_head(authority_head: u32, plcp0: u32) {
 }
 
 impl TxHardware for RadioRegisters {
-    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
-        self.prepare_ht_mac_tx(queue, program)
-    }
-
-    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
-        self.start_ht_mac_tx(queue, plcp0);
-    }
-
-    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
-        self.prepare_he_mac_tx(queue, program)
-    }
-
-    fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
-        self.start_he_mac_tx(queue, plcp0);
-    }
-
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
@@ -317,22 +294,6 @@ impl TxHardware for RadioRegisters {
 }
 
 impl TxHardware for ColdRadioRegisters {
-    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
-        TxHardware::prepare_ht_tx(&mut **self, queue, program)
-    }
-
-    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_ht_tx(&mut **self, queue, plcp0);
-    }
-
-    fn prepare_he_tx(&mut self, queue: u8, program: MacHeTxProgram) -> bool {
-        TxHardware::prepare_he_tx(&mut **self, queue, program)
-    }
-
-    fn start_he_tx(&mut self, queue: u8, plcp0: u32) {
-        TxHardware::start_he_tx(&mut **self, queue, plcp0);
-    }
-
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,

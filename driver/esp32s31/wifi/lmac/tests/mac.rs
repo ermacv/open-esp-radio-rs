@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use open_esp_radio_dma::{HardwareOwnedTxDma, PreparedTxDma};
 use open_esp_radio_esp32s31_registers::{
-    MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-    MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
-    Register32,
+    MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters,
+    MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, Register32,
     mac::{self, init as mac_init},
 };
 use open_esp_radio_esp32s31_wifi_lmac::{
@@ -654,7 +653,16 @@ impl TxHardware for MockMmio {
         true
     }
 
-    fn prepare_ht_tx(&mut self, queue: u8, program: MacHtTxProgram) -> bool {
+    fn prepare_bound_ht_tx(
+        &mut self,
+        dma: &dyn PreparedTxDma,
+        queue: u8,
+        program: MacHtTxProgram,
+    ) -> bool {
+        assert_eq!(
+            dma.descriptor_head() & 0x000f_ffff,
+            program.plcp0 & 0x000f_ffff
+        );
         let index = usize::from(queue);
         if self.read32(mac::TX_Q_CONTROL[index]) & TX_Q_ENABLE_VALID != 0 {
             return false;
@@ -748,7 +756,8 @@ impl TxHardware for MockMmio {
         Mmio::fence(self);
     }
 
-    fn start_ht_tx(&mut self, queue: u8, plcp0: u32) {
+    fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
+        assert_eq!(dma.descriptor_head() & 0x000f_ffff, plcp0 & 0x000f_ffff);
         Mmio::fence(self);
         self.write32(
             mac::TX_Q_CONTROL[usize::from(queue)],
@@ -756,12 +765,6 @@ impl TxHardware for MockMmio {
         );
         Mmio::fence(self);
     }
-
-    fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
-        false
-    }
-
-    fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
         let index = usize::from(queue);

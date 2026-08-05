@@ -138,22 +138,21 @@ hardware edge deliberately forgets the leases unless detach was confirmed,
 so a Rust destructor cannot return potentially DMA-visible memory.
 
 The old internally buffered `HtAmpduTxStorage` descriptor path remains as a
-transitional validation/model API. Its raw HT/HE `TxHardware` and
-`RadioRegisters` prepare/start methods are therefore still public even though
-the station, Embassy integration and HIL no longer call them. Raw legacy
-submission has already been removed. The remaining escape hatch is now
-isolated from the production owner graph but must still be deleted before the
-whole public TX API can be called capability-closed.
+transitional formatter/model API, but it can no longer submit hardware. Its
+legacy `submit`, `submit_he` and `submit_he_smpdu` entry points are deprecated
+and fail closed; `TxHardware` no longer contains raw HT/HE prepare/start
+operations, and the corresponding register methods are private helpers behind
+the capability-bound calls. Raw legacy submission had already been removed.
+The public TX hardware API is therefore capability-closed for legacy, HT and
+HE.
 
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 
-1. move any still-required internally buffered A-MPDU model onto the lower
-   DMA leaf, or retire it if external leases are the only production policy;
-2. remove the remaining raw HT/HE `TxHardware` and `RadioRegisters`
-   submission methods once no production or validation caller depends on
-   them;
-3. add a recoverable reset authority only after the complete MAC/DMA shutdown
+1. remove the dead descriptor publication code from the transitional upper
+   formatter, then move any still-required internally buffered hardware path
+   onto the lower DMA leaf;
+2. add a recoverable reset authority only after the complete MAC/DMA shutdown
    order is qualified; until then quarantine remains terminal.
 
 The reset-required/quarantine rule remains unchanged during this extraction:
@@ -161,8 +160,8 @@ no backing becomes reusable merely because its Rust queue owner was dropped.
 
 The application facade exposes this lower composition layer explicitly as
 `esp32s31::wifi::dma`, alongside `lmac` and `sta`; it is not re-exported as if
-DMA allocation were LMAC policy. The temporary raw HT/HE methods are now the
-only known public TX submission escape hatch above this boundary.
+DMA allocation were LMAC policy. No known public TX submission method above
+this boundary accepts an unowned raw descriptor address.
 
 ## Layer rules
 

@@ -205,8 +205,8 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_registers::{
-        MacHeTxProgram, MacHtTxProgram, MacLegacyTxProgram, MacTxCompletionRegisters,
-        MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+        MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason,
+        MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_lmac::{
         tx::{HardwareOwnedTxDma, PreparedTxDma, TxSlot},
@@ -247,20 +247,6 @@ mod tests {
         ) {
             self.publications = self.publications.saturating_add(1);
         }
-
-        fn prepare_ht_tx(&mut self, _queue: u8, _program: MacHtTxProgram) -> bool {
-            true
-        }
-
-        fn start_ht_tx(&mut self, _queue: u8, _plcp0: u32) {
-            self.publications = self.publications.saturating_add(1);
-        }
-
-        fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
-            false
-        }
-
-        fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
 
         fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
             self.completion.take()

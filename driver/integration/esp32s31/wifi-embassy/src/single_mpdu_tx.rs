@@ -496,8 +496,8 @@ mod tests {
     };
 
     use open_esp_radio_esp32s31_registers::{
-        MacHeTxProgram, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
-        MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+        MacKeyInstallOutcome, MacLegacyTxProgram, MacTxCompletionRegisters, MacTxDetachOutcome,
+        MacTxDetachReason, MacTxQueueDetached,
     };
     use open_esp_radio_esp32s31_wifi_lmac::{
         crypto::{CcmpKeyHardware, install_sta_pairwise_ccmp},
@@ -553,20 +553,6 @@ mod tests {
         ) {
             self.publications += 1;
         }
-
-        fn prepare_ht_tx(&mut self, _queue: u8, _program: MacHtTxProgram) -> bool {
-            self.prepare
-        }
-
-        fn start_ht_tx(&mut self, _queue: u8, _plcp0: u32) {
-            self.publications += 1;
-        }
-
-        fn prepare_he_tx(&mut self, _queue: u8, _program: MacHeTxProgram) -> bool {
-            false
-        }
-
-        fn start_he_tx(&mut self, _queue: u8, _plcp0: u32) {}
 
         fn take_tx_completion(&mut self, _queue: u8) -> Option<MacTxCompletionRegisters> {
             self.completion.take()

@@ -377,6 +377,9 @@ pub enum HtAmpduTxError {
     DetachFailed,
     TimeoutNotPending,
     ResetRequired,
+    /// A retired upper-only submission entry cannot manufacture lower DMA
+    /// ownership authority.
+    DmaCapabilityRequired,
     /// The lower descriptor/backing owner rejected a lifecycle or range edge.
     DmaStorage(AmpduDmaStorageError),
 }
@@ -1685,6 +1688,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     }
 
     /// Publish and start one A-MPDU while retaining every backing allocation.
+    #[deprecated(note = "use RetainedDmaAmpduTx::submit with HtAmpduTxResources")]
     pub fn submit<H: HtAmpduHardware>(
         self: Pin<&mut Self>,
         hardware: &mut H,
@@ -1776,22 +1780,15 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             interface: config.interface,
         };
         let queue_index = queue.index();
-        if !hardware.prepare_ht_tx(queue_index, program) {
-            return Err(HtAmpduTxError::QueueActive);
-        }
-        let storage = self.project();
-        *storage.queue = queue;
-        *storage.aggregate_length = aggregate.bytes;
-        *storage.detached = false;
-        *storage.state = TxSlotState::HardwareOwned;
-        hardware.start_ht_tx(queue_index, image.plcp0);
-        Ok(())
+        let _ = (hardware, queue_index, program, image.plcp0);
+        Err(HtAmpduTxError::DmaCapabilityRequired)
     }
 
     /// Publish and start one HE20 SU A-MPDU with the same pinned ownership
     /// and completion/BlockAck ordering as [`Self::submit`].
+    #[deprecated(note = "use RetainedDmaAmpduTx::submit_he with HtAmpduTxResources")]
     pub fn submit_he<H: HtAmpduHardware>(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         hardware: &mut H,
         cookie: TxCookie,
         queue: LegacyTxQueue,
@@ -1885,38 +1882,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             interface: config.interface,
         };
         let queue_index = queue.index();
-        if !hardware.prepare_he_tx(queue_index, program) {
-            return Err(HtAmpduTxError::QueueActive);
-        }
-        let psdu_lengths = &storage.psdu_lengths[..count];
-        if let Some(trigger) = trigger {
-            let publication_snapshot = hardware
-                .prepare_he_trigger_based_queue(
-                    trigger.policy,
-                    trigger.reservation,
-                    trigger.tid,
-                    psdu_lengths,
-                    trigger.queued_msdu_bytes,
-                )
-                .map_err(HtAmpduTxError::TriggerBased)?;
-            let storage = self.as_mut().project();
-            *storage.trigger_reservation = Some(trigger.reservation);
-            // SOURCE: complete blob/ROM `mac_tx_set_tb` make the BSR valid
-            // bitmap their final publication edge. The following ordinary
-            // HE queue doorbell can immediately consume and clear both BSR
-            // value and validity, as observed by
-            // HIL_OPEN_HE_TB_QUEUE_PUBLICATION_2026_07_30. Preserve the
-            // PAC-backed readback at the only deterministic boundary: after
-            // publication and before `start_he_tx`.
-            *storage.trigger_publication_snapshot = Some(publication_snapshot);
-        }
-        let storage = self.project();
-        *storage.queue = queue;
-        *storage.aggregate_length = aggregate.bytes;
-        *storage.detached = false;
-        *storage.state = TxSlotState::HardwareOwned;
-        hardware.start_he_tx(queue_index, image.plcp0);
-        Ok(())
+        let _ = (hardware, queue_index, program, image.plcp0, trigger);
+        Err(HtAmpduTxError::DmaCapabilityRequired)
     }
 
     /// Publish and start one HE20 SU S-MPDU.
@@ -1925,6 +1892,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// The PP blob gives HE single MPDU its own DMA-metadata and HE-SIG-A2
     /// layout, even though both paths reuse the same pinned descriptor and
     /// eight-byte private metadata storage.
+    #[deprecated(note = "single-MPDU HE must use a capability-bound TxSlot")]
     pub fn submit_he_smpdu<H: HtAmpduHardware>(
         mut self: Pin<&mut Self>,
         hardware: &mut H,
@@ -2031,15 +1999,8 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             interface: config.interface,
         };
         let queue_index = queue.index();
-        if !hardware.prepare_he_tx(queue_index, program) {
-            return Err(HtAmpduTxError::QueueActive);
-        }
-        *storage.queue = queue;
-        *storage.aggregate_length = config.apep_length();
-        *storage.detached = false;
-        *storage.state = TxSlotState::HardwareOwned;
-        hardware.start_he_tx(queue_index, image.plcp0);
-        Ok(())
+        let _ = (hardware, queue_index, program, image.plcp0);
+        Err(HtAmpduTxError::DmaCapabilityRequired)
     }
 
     /// Sample BlockAck and transfer a completed aggregate back to software.
@@ -4143,17 +4104,11 @@ mod tests {
 
         fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
 
-        fn prepare_ht_tx(&mut self, _: u8, _: MacHtTxProgram) -> bool {
+        fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
             true
         }
 
-        fn start_ht_tx(&mut self, _: u8, _: u32) {}
-
-        fn prepare_he_tx(&mut self, _: u8, _: MacHeTxProgram) -> bool {
-            false
-        }
-
-        fn start_he_tx(&mut self, _: u8, _: u32) {}
+        fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
 
         fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
             None

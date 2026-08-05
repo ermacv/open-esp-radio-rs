@@ -177,6 +177,18 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 mask(access.dynamic_mask),
             );
         }
+        for delay in &function.delays {
+            println!(
+                "DELAY\t{}\tordinal={}\tmicros={}\tconstant-micros={}\tpath={}",
+                function.identity,
+                delay.ordinal,
+                delay.micros,
+                delay
+                    .constant_micros
+                    .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                delay.path,
+            );
+        }
         for field in &function.context_fields {
             println!(
                 "CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\tpaths={}\tvalues={}",
@@ -221,6 +233,57 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
                 "IR-DIAGNOSTIC\t{}\tcall-graph\t{blocker}",
                 function.identity
             );
+        }
+        let summary = &function.effect_summary;
+        println!(
+            "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tblockers={}",
+            function.identity,
+            summary.call_graph_closed,
+            summary.max_depth,
+            summary.reachable_functions.join(","),
+            summary.recursive_functions.join(","),
+            summary.mmio_registers.len(),
+            summary.delays.len(),
+            summary.semantic_operations.len(),
+            summary.blockers.len(),
+        );
+        for mmio in &summary.mmio_registers {
+            println!(
+                "EFFECT-MMIO\t{}\t{:#010x}\twidth={}\taccess-shapes={}\taccesses={}\tmodes={}\torigins={}",
+                function.identity,
+                mmio.address,
+                mmio.width,
+                mmio.access_shapes,
+                mmio.accesses.join("|"),
+                mmio.modes.join("|"),
+                mmio.origins.join(","),
+            );
+        }
+        for delay in &summary.delays {
+            println!(
+                "EFFECT-DELAY\t{}\tmicros={}\tconstant-micros={}\tdelay-shapes={}\torigins={}",
+                function.identity,
+                delay.micros,
+                delay
+                    .constant_micros
+                    .map_or_else(|| "-".to_owned(), |value| value.to_string()),
+                delay.delay_shapes,
+                delay.origins.join(","),
+            );
+        }
+        for semantic in &summary.semantic_operations {
+            println!(
+                "EFFECT-SEMANTIC\t{}\t{}\tcall-shapes={}\ttargets={}\treplacements={}\torigins={}",
+                function.identity,
+                semantic.operation,
+                semantic.call_shapes,
+                semantic.targets.join("|"),
+                semantic.replacement_hints.join(" | "),
+                semantic.origins.join(","),
+            );
+        }
+        for blocker in &summary.blockers {
+            println!("EFFECT-BLOCKER\t{}\t{}", function.identity, blocker);
         }
     }
     for register in &report.mmio_registers {
@@ -272,7 +335,7 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         );
     }
     println!(
-        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -280,6 +343,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         report.mmio_registers.len(),
         report.mmio_functions,
         report.mmio_access_shapes,
+        report.delay_functions,
+        report.delay_shapes,
         report.context_functions,
         report.context_fields,
         report.context_accesses,
@@ -292,6 +357,8 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         report.project_linked_calls,
         report.ambiguous_project_calls,
         report.unresolved_calls,
+        report.closed_effect_summaries,
+        report.recursive_effect_summaries,
     );
 }
 
@@ -309,12 +376,42 @@ fn write_pseudo(path: &Path, artifacts: &[IrArtifactInput], report: &LinkedIrRep
     }
     if artifacts.len() > 1 {
         output.push_str(
-            "// Named primary artifacts use independent address spaces; unique exported-symbol call edges may be associated, but addresses and callee effects are not linked.\n",
+            "// Named primary artifacts use independent address spaces; unique exported-symbol edges provide reachable effect inventories without argument or address substitution.\n",
         );
     }
     output
         .push_str("// This is analysis IR, not compilable Rust and not a completeness claim.\n\n");
     for function in &report.functions {
+        let summary = &function.effect_summary;
+        writeln!(
+            output,
+            "// REACHABLE-EFFECTS: call-graph-closed={} max-depth={} functions={} mmio={} delays={} semantics={} blockers={}",
+            summary.call_graph_closed,
+            summary.max_depth,
+            summary.reachable_functions.len(),
+            summary.mmio_registers.len(),
+            summary.delays.len(),
+            summary.semantic_operations.len(),
+            summary.blockers.len(),
+        )
+        .expect("writing to String cannot fail");
+        if !summary.reachable_functions.is_empty() {
+            writeln!(
+                output,
+                "// REACHABLE-FUNCTIONS: {}",
+                summary.reachable_functions.join(" | ")
+            )
+            .expect("writing to String cannot fail");
+        }
+        for semantic in &summary.semantic_operations {
+            writeln!(
+                output,
+                "// REACHABLE-SEMANTIC: {} via {}",
+                semantic.operation,
+                semantic.origins.join(" | ")
+            )
+            .expect("writing to String cannot fail");
+        }
         output.push_str(&function.pseudo);
         output.push('\n');
     }
@@ -348,7 +445,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 11,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 12,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -369,6 +466,8 @@ fn write_json_report(
         },
     );
     output.push_str(",\n");
+    output
+        .push_str("  \"effect_summary_mode\": \"reachable-inventory-no-argument-substitution\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
     for (index, artifact) in artifacts.iter().enumerate() {
         if index != 0 {
@@ -393,7 +492,7 @@ fn write_json_report(
     write_string(&mut output, entry_contract.id());
     writeln!(
         output,
-        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}}},",
+        ",\n  \"summary\": {{\"artifacts\": {}, \"functions\": {}, \"exported\": {}, \"local\": {}, \"mmio_registers\": {}, \"mmio_functions\": {}, \"mmio_access_shapes\": {}, \"delay_functions\": {}, \"delay_shapes\": {}, \"context_functions\": {}, \"context_fields\": {}, \"context_accesses\": {}, \"semantic_operations\": {}, \"semantic_calls\": {}, \"complete\": {}, \"structured\": {}, \"internal_calls\": {}, \"external_calls\": {}, \"project_linked_calls\": {}, \"ambiguous_project_calls\": {}, \"unresolved_calls\": {}, \"closed_effect_summaries\": {}, \"recursive_effect_summaries\": {}}},",
         artifacts.len(),
         report.functions.len(),
         report.exported_functions,
@@ -401,6 +500,8 @@ fn write_json_report(
         report.mmio_registers.len(),
         report.mmio_functions,
         report.mmio_access_shapes,
+        report.delay_functions,
+        report.delay_shapes,
         report.context_functions,
         report.context_fields,
         report.context_accesses,
@@ -413,6 +514,8 @@ fn write_json_report(
         report.project_linked_calls,
         report.ambiguous_project_calls,
         report.unresolved_calls,
+        report.closed_effect_summaries,
+        report.recursive_effect_summaries,
     )
     .expect("writing to String cannot fail");
     output.push_str("  \"mmio_registers\": [");
@@ -611,6 +714,24 @@ fn write_json_report(
             }
             output.push('}');
         }
+        output.push_str("], \"delays\": [");
+        for (delay_index, delay) in function.delays.iter().enumerate() {
+            if delay_index != 0 {
+                output.push_str(", ");
+            }
+            write!(output, "{{\"ordinal\": {}, \"path\": ", delay.ordinal)
+                .expect("writing to String cannot fail");
+            write_string(&mut output, &delay.path);
+            output.push_str(", \"micros\": ");
+            write_string(&mut output, &delay.micros);
+            output.push_str(", \"constant_micros\": ");
+            if let Some(micros) = delay.constant_micros {
+                write!(output, "{micros}").expect("writing to String cannot fail");
+            } else {
+                output.push_str("null");
+            }
+            output.push('}');
+        }
         output.push_str("], \"context_fields\": [");
         for (field_index, field) in function.context_fields.iter().enumerate() {
             if field_index != 0 {
@@ -672,7 +793,80 @@ fn write_json_report(
             }
             output.push('}');
         }
-        output.push_str("], \"direct_blockers\": ");
+        output.push_str("], \"effect_summary\": {");
+        let summary = &function.effect_summary;
+        write!(
+            output,
+            "\"call_graph_closed\": {}, \"max_depth\": {}, \"reachable_functions\": ",
+            summary.call_graph_closed, summary.max_depth
+        )
+        .expect("writing to String cannot fail");
+        write_strings(&mut output, &summary.reachable_functions);
+        output.push_str(", \"recursive_functions\": ");
+        write_strings(&mut output, &summary.recursive_functions);
+        output.push_str(", \"blockers\": ");
+        write_strings(&mut output, &summary.blockers);
+        output.push_str(", \"mmio_registers\": [");
+        for (mmio_index, mmio) in summary.mmio_registers.iter().enumerate() {
+            if mmio_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"address\": \"{:#010x}\", \"width\": {}, \"access_shapes\": {}, \"accesses\": ",
+                mmio.address, mmio.width, mmio.access_shapes
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &mmio.accesses);
+            output.push_str(", \"modes\": ");
+            write_strings(&mut output, &mmio.modes);
+            output.push_str(", \"origins\": ");
+            write_strings(&mut output, &mmio.origins);
+            output.push('}');
+        }
+        output.push_str("], \"delays\": [");
+        for (delay_index, delay) in summary.delays.iter().enumerate() {
+            if delay_index != 0 {
+                output.push_str(", ");
+            }
+            output.push_str("{\"micros\": ");
+            write_string(&mut output, &delay.micros);
+            output.push_str(", \"constant_micros\": ");
+            if let Some(micros) = delay.constant_micros {
+                write!(output, "{micros}").expect("writing to String cannot fail");
+            } else {
+                output.push_str("null");
+            }
+            write!(
+                output,
+                ", \"delay_shapes\": {}, \"origins\": ",
+                delay.delay_shapes
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &delay.origins);
+            output.push('}');
+        }
+        output.push_str("], \"semantic_operations\": [");
+        for (semantic_index, semantic) in summary.semantic_operations.iter().enumerate() {
+            if semantic_index != 0 {
+                output.push_str(", ");
+            }
+            output.push_str("{\"operation\": ");
+            write_string(&mut output, &semantic.operation);
+            write!(
+                output,
+                ", \"call_shapes\": {}, \"targets\": ",
+                semantic.call_shapes
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &semantic.targets);
+            output.push_str(", \"replacement_hints\": ");
+            write_strings(&mut output, &semantic.replacement_hints);
+            output.push_str(", \"origins\": ");
+            write_strings(&mut output, &semantic.origins);
+            output.push('}');
+        }
+        output.push_str("]}, \"direct_blockers\": ");
         write_strings(&mut output, &function.direct_blockers);
         output.push_str(", \"reference_blockers\": ");
         write_strings(&mut output, &function.reference_blockers);

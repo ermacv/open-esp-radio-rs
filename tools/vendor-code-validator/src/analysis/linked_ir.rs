@@ -114,6 +114,53 @@ pub(crate) struct LinkedMmioRegister {
     pub(crate) functions: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedDelay {
+    pub(crate) ordinal: usize,
+    pub(crate) path: String,
+    pub(crate) micros: String,
+    pub(crate) constant_micros: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedSummaryMmio {
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) access_shapes: usize,
+    pub(crate) accesses: Vec<&'static str>,
+    pub(crate) modes: Vec<&'static str>,
+    pub(crate) origins: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedSummaryDelay {
+    pub(crate) micros: String,
+    pub(crate) constant_micros: Option<u32>,
+    pub(crate) delay_shapes: usize,
+    pub(crate) origins: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedSummarySemantic {
+    pub(crate) operation: String,
+    pub(crate) call_shapes: usize,
+    pub(crate) targets: Vec<String>,
+    pub(crate) replacement_hints: Vec<String>,
+    pub(crate) origins: Vec<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(crate) struct LinkedEffectSummary {
+    pub(crate) call_graph_closed: bool,
+    pub(crate) max_depth: usize,
+    pub(crate) reachable_functions: Vec<String>,
+    pub(crate) recursive_functions: Vec<String>,
+    pub(crate) blockers: Vec<String>,
+    pub(crate) mmio_registers: Vec<LinkedSummaryMmio>,
+    pub(crate) delays: Vec<LinkedSummaryDelay>,
+    pub(crate) semantic_operations: Vec<LinkedSummarySemantic>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SemanticBoundary {
     pub(crate) operation: String,
@@ -140,8 +187,10 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) dependencies: Vec<String>,
     pub(crate) calls: Vec<LinkedCall>,
     pub(crate) mmio_accesses: Vec<LinkedMmioAccess>,
+    pub(crate) delays: Vec<LinkedDelay>,
     pub(crate) context_accesses: Vec<ContextAccess>,
     pub(crate) context_fields: Vec<ContextField>,
+    pub(crate) effect_summary: LinkedEffectSummary,
     pub(crate) call_graph_blockers: Vec<String>,
     pub(crate) direct_blockers: Vec<String>,
     pub(crate) reference_blockers: Vec<String>,
@@ -154,6 +203,8 @@ pub(crate) struct LinkedIrReport {
     pub(crate) mmio_registers: Vec<LinkedMmioRegister>,
     pub(crate) mmio_functions: usize,
     pub(crate) mmio_access_shapes: usize,
+    pub(crate) delay_functions: usize,
+    pub(crate) delay_shapes: usize,
     pub(crate) semantic_boundaries: Vec<SemanticBoundary>,
     pub(crate) semantic_calls: usize,
     pub(crate) exported_functions: usize,
@@ -168,6 +219,8 @@ pub(crate) struct LinkedIrReport {
     pub(crate) project_linked_calls: usize,
     pub(crate) ambiguous_project_calls: usize,
     pub(crate) unresolved_calls: usize,
+    pub(crate) closed_effect_summaries: usize,
+    pub(crate) recursive_effect_summaries: usize,
 }
 
 fn identity(member: Option<&str>, symbol: &str) -> String {
@@ -1240,6 +1293,96 @@ fn mmio_accesses_for_trace(trace: &FunctionAnalysis) -> Vec<LinkedMmioAccess> {
     output
 }
 
+fn collect_delay_from_event(
+    event: &DraftReferenceEvent,
+    path: &str,
+    output: &mut Vec<LinkedDelay>,
+) {
+    match event {
+        DraftReferenceEvent::DelayMicros { micros } => output.push(LinkedDelay {
+            ordinal: output.len(),
+            path: path.to_owned(),
+            micros: micros.canonical(),
+            constant_micros: micros.as_constant(),
+        }),
+        DraftReferenceEvent::BoundedPoll {
+            body, on_exhausted, ..
+        } => {
+            collect_delays_from_flow(body, &nested_path(path, "bounded-poll"), output);
+            if let Some(event) = on_exhausted.as_deref() {
+                collect_delay_from_event(event, &nested_path(path, "poll-exhausted"), output);
+            }
+        }
+        DraftReferenceEvent::PollFlow { body, .. } => {
+            collect_delays_from_flow(body, &nested_path(path, "poll"), output);
+        }
+        DraftReferenceEvent::SymmetricCalibrationSearch {
+            settle_micros,
+            initial_read,
+            setup,
+            write_candidate,
+            sample,
+            ..
+        } => {
+            output.push(LinkedDelay {
+                ordinal: output.len(),
+                path: nested_path(path, "calibration-settle"),
+                micros: SymbolicValue::Constant(*settle_micros).canonical(),
+                constant_micros: Some(*settle_micros),
+            });
+            for (scope, flow) in [
+                ("calibration-initial-read", initial_read),
+                ("calibration-setup", setup),
+                ("calibration-write-candidate", write_candidate),
+                ("calibration-sample", sample),
+            ] {
+                collect_delays_from_flow(flow, &nested_path(path, scope), output);
+            }
+        }
+        DraftReferenceEvent::ComposedCall { symbol, flow, .. }
+        | DraftReferenceEvent::ComposedCallWithScratch { symbol, flow, .. } => {
+            collect_delays_from_flow(flow, &nested_path(path, &format!("call {symbol}")), output);
+        }
+        _ => {}
+    }
+}
+
+fn collect_delays_from_flow(flow: &DraftReferenceFlow, path: &str, output: &mut Vec<LinkedDelay>) {
+    for event in &flow.events {
+        collect_delay_from_event(event, path, output);
+    }
+    if let DraftReferenceTerminator::Branch {
+        condition,
+        taken,
+        not_taken,
+    } = &flow.terminator
+    {
+        let condition = branch_expression(condition);
+        collect_delays_from_flow(
+            taken,
+            &nested_path(path, &format!("if {condition}")),
+            output,
+        );
+        collect_delays_from_flow(
+            not_taken,
+            &nested_path(path, &format!("if !({condition})")),
+            output,
+        );
+    }
+}
+
+fn delays_for_trace(trace: &FunctionAnalysis) -> Vec<LinkedDelay> {
+    let mut output = Vec::new();
+    if let Some(flow) = trace.reference_flow.as_ref() {
+        collect_delays_from_flow(flow, "entry", &mut output);
+    } else {
+        for event in &trace.reference_events {
+            collect_delay_from_event(event, "entry", &mut output);
+        }
+    }
+    output
+}
+
 #[derive(Clone, Default)]
 struct RenderState {
     mmio_reads: u32,
@@ -1779,6 +1922,7 @@ pub(crate) fn build_linked_ir_for_source(
                 let context_accesses = context_accesses_for_trace(&trace);
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
+                let delays = delays_for_trace(&trace);
                 let calls = if direct_calls.is_empty() {
                     calls_for_trace(&trace, resolver, &identities)
                 } else {
@@ -1819,8 +1963,10 @@ pub(crate) fn build_linked_ir_for_source(
                         .collect(),
                     calls,
                     mmio_accesses,
+                    delays,
                     context_accesses,
                     context_fields,
+                    effect_summary: LinkedEffectSummary::default(),
                     call_graph_blockers,
                     direct_blockers: trace.blockers.clone(),
                     reference_blockers: trace.reference_blockers.clone(),
@@ -1843,8 +1989,10 @@ pub(crate) fn build_linked_ir_for_source(
                 dependencies: Vec::new(),
                 calls: direct_calls.into_iter().collect(),
                 mmio_accesses: Vec::new(),
+                delays: Vec::new(),
                 context_accesses: Vec::new(),
                 context_fields: Vec::new(),
+                effect_summary: LinkedEffectSummary::default(),
                 call_graph_blockers,
                 direct_blockers: vec![error.to_string()],
                 reference_blockers: Vec::new(),
@@ -1895,12 +2043,12 @@ pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {
                     call.kind = "project-linked";
                     call.target = target.clone();
                     call.semantics = Some(
-                        "unique exported project definition; edge linked without composing callee effects"
+                        "unique exported project definition; edge linked without substituting callee arguments, returns or addresses"
                             .to_owned(),
                     );
                     linked_dependencies.push(target.clone());
                     project_notes.push(format!(
-                        "// PROJECT-LINKED-CALL: {symbol} -> {target}; callee effects are not composed"
+                        "// PROJECT-LINKED-CALL: {symbol} -> {target}; reachable effects are inventoried without argument substitution"
                     ));
                 }
                 [] => {
@@ -1929,6 +2077,265 @@ pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {
             project_notes.dedup();
             function.pseudo = format!("{}\n{}", project_notes.join("\n"), function.pseudo);
         }
+    }
+}
+
+fn recursive_call_graph_nodes(adjacency: &[Vec<usize>]) -> BTreeSet<usize> {
+    let mut visited = vec![false; adjacency.len()];
+    let mut finished = Vec::with_capacity(adjacency.len());
+    for start in 0..adjacency.len() {
+        if visited[start] {
+            continue;
+        }
+        visited[start] = true;
+        let mut stack = vec![(start, 0_usize)];
+        while let Some((node, next_target)) = stack.last_mut() {
+            if *next_target < adjacency[*node].len() {
+                let target = adjacency[*node][*next_target];
+                *next_target += 1;
+                if !visited[target] {
+                    visited[target] = true;
+                    stack.push((target, 0));
+                }
+            } else {
+                let (node, _) = stack.pop().expect("DFS stack is non-empty");
+                finished.push(node);
+            }
+        }
+    }
+
+    let mut reverse = vec![Vec::new(); adjacency.len()];
+    for (source, targets) in adjacency.iter().enumerate() {
+        for &target in targets {
+            reverse[target].push(source);
+        }
+    }
+    let mut assigned = vec![false; adjacency.len()];
+    let mut recursive = BTreeSet::new();
+    for &start in finished.iter().rev() {
+        if assigned[start] {
+            continue;
+        }
+        assigned[start] = true;
+        let mut component = Vec::new();
+        let mut stack = vec![start];
+        while let Some(node) = stack.pop() {
+            component.push(node);
+            for &target in &reverse[node] {
+                if !assigned[target] {
+                    assigned[target] = true;
+                    stack.push(target);
+                }
+            }
+        }
+        let self_recursive = component.len() == 1
+            && adjacency[component[0]]
+                .iter()
+                .any(|target| *target == component[0]);
+        if component.len() > 1 || self_recursive {
+            recursive.extend(component);
+        }
+    }
+    recursive
+}
+
+#[derive(Default)]
+struct SummaryMmioAccumulator {
+    access_shapes: usize,
+    accesses: BTreeSet<&'static str>,
+    modes: BTreeSet<&'static str>,
+    origins: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct SummaryDelayAccumulator {
+    delay_shapes: usize,
+    origins: BTreeSet<String>,
+}
+
+#[derive(Default)]
+struct SummarySemanticAccumulator {
+    call_shapes: usize,
+    targets: BTreeSet<String>,
+    replacement_hints: BTreeSet<String>,
+    origins: BTreeSet<String>,
+}
+
+fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
+    let identities = functions
+        .iter()
+        .enumerate()
+        .map(|(index, function)| (function.identity.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut source_symbols = BTreeMap::<(String, String), Vec<usize>>::new();
+    for (index, function) in functions.iter().enumerate() {
+        source_symbols
+            .entry((function.source.clone(), function.symbol.clone()))
+            .or_default()
+            .push(index);
+    }
+
+    let mut adjacency = vec![Vec::new(); functions.len()];
+    let mut local_blockers = vec![BTreeSet::<String>::new(); functions.len()];
+    for (index, function) in functions.iter().enumerate() {
+        if !function.complete {
+            local_blockers[index]
+                .insert(format!("incomplete function body: {}", function.identity));
+        }
+        for blocker in &function.call_graph_blockers {
+            local_blockers[index].insert(format!("{}: {blocker}", function.identity));
+        }
+        for call in &function.calls {
+            match call.kind {
+                "internal" | "project-linked" => {
+                    let target = identities.get(&call.target).copied().or_else(|| {
+                        let candidates =
+                            source_symbols.get(&(function.source.clone(), call.target.clone()))?;
+                        (candidates.len() == 1).then_some(candidates[0])
+                    });
+                    if let Some(target) = target {
+                        adjacency[index].push(target);
+                    } else {
+                        local_blockers[index].insert(format!(
+                            "callee is outside the exported IR: {} -> {}",
+                            function.identity, call.target
+                        ));
+                    }
+                }
+                "unresolved" => {
+                    local_blockers[index].insert(format!(
+                        "unresolved call edge: {} -> {}",
+                        function.identity, call.target
+                    ));
+                }
+                "external" | "diagnostic" if call.semantic_operation.is_none() => {
+                    local_blockers[index].insert(format!(
+                        "opaque semantic boundary: {} -> {}",
+                        function.identity, call.target
+                    ));
+                }
+                "external" | "diagnostic" => {}
+                kind => {
+                    local_blockers[index].insert(format!(
+                        "unsupported call edge {kind}: {} -> {}",
+                        function.identity, call.target
+                    ));
+                }
+            }
+        }
+        adjacency[index].sort_unstable();
+        adjacency[index].dedup();
+    }
+    let recursive_nodes = recursive_call_graph_nodes(&adjacency);
+
+    let summaries = (0..functions.len())
+        .map(|root| {
+            let mut depths = vec![None; functions.len()];
+            depths[root] = Some(0);
+            let mut queue = VecDeque::from([root]);
+            while let Some(source) = queue.pop_front() {
+                let next_depth = depths[source].expect("queued function has a depth") + 1;
+                for &target in &adjacency[source] {
+                    if depths[target].is_none() {
+                        depths[target] = Some(next_depth);
+                        queue.push_back(target);
+                    }
+                }
+            }
+            let reachable = depths
+                .iter()
+                .enumerate()
+                .filter_map(|(index, depth)| depth.map(|depth| (index, depth)))
+                .collect::<Vec<_>>();
+            let mut blockers = BTreeSet::new();
+            let mut mmio = BTreeMap::<(u32, u8), SummaryMmioAccumulator>::new();
+            let mut delays = BTreeMap::<(String, Option<u32>), SummaryDelayAccumulator>::new();
+            let mut semantics = BTreeMap::<String, SummarySemanticAccumulator>::new();
+            for &(index, _) in &reachable {
+                let function = &functions[index];
+                blockers.extend(local_blockers[index].iter().cloned());
+                for access in &function.mmio_accesses {
+                    let entry = mmio.entry((access.address, access.width)).or_default();
+                    entry.access_shapes += 1;
+                    entry.accesses.insert(access.access);
+                    entry.modes.insert(access.mode);
+                    entry.origins.insert(function.identity.clone());
+                }
+                for delay in &function.delays {
+                    let entry = delays
+                        .entry((delay.micros.clone(), delay.constant_micros))
+                        .or_default();
+                    entry.delay_shapes += 1;
+                    entry.origins.insert(function.identity.clone());
+                }
+                for call in &function.calls {
+                    let Some(operation) = call.semantic_operation.as_ref() else {
+                        continue;
+                    };
+                    let entry = semantics.entry(operation.clone()).or_default();
+                    entry.call_shapes += 1;
+                    entry.targets.insert(call.target.clone());
+                    if let Some(replacement) = call.replacement_hint.as_ref() {
+                        entry.replacement_hints.insert(replacement.clone());
+                    }
+                    entry.origins.insert(function.identity.clone());
+                }
+            }
+            let reachable_functions = reachable
+                .iter()
+                .filter(|(index, _)| *index != root)
+                .map(|(index, _)| functions[*index].identity.clone())
+                .collect();
+            let recursive_functions = reachable
+                .iter()
+                .filter(|(index, _)| recursive_nodes.contains(index))
+                .map(|(index, _)| functions[*index].identity.clone())
+                .collect();
+            LinkedEffectSummary {
+                call_graph_closed: blockers.is_empty(),
+                max_depth: reachable
+                    .iter()
+                    .map(|(_, depth)| *depth)
+                    .max()
+                    .unwrap_or_default(),
+                reachable_functions,
+                recursive_functions,
+                blockers: blockers.into_iter().collect(),
+                mmio_registers: mmio
+                    .into_iter()
+                    .map(|((address, width), entry)| LinkedSummaryMmio {
+                        address,
+                        width,
+                        access_shapes: entry.access_shapes,
+                        accesses: entry.accesses.into_iter().collect(),
+                        modes: entry.modes.into_iter().collect(),
+                        origins: entry.origins.into_iter().collect(),
+                    })
+                    .collect(),
+                delays: delays
+                    .into_iter()
+                    .map(|((micros, constant_micros), entry)| LinkedSummaryDelay {
+                        micros,
+                        constant_micros,
+                        delay_shapes: entry.delay_shapes,
+                        origins: entry.origins.into_iter().collect(),
+                    })
+                    .collect(),
+                semantic_operations: semantics
+                    .into_iter()
+                    .map(|(operation, entry)| LinkedSummarySemantic {
+                        operation,
+                        call_shapes: entry.call_shapes,
+                        targets: entry.targets.into_iter().collect(),
+                        replacement_hints: entry.replacement_hints.into_iter().collect(),
+                        origins: entry.origins.into_iter().collect(),
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+    for (function, summary) in functions.iter_mut().zip(summaries) {
+        function.effect_summary = summary;
     }
 }
 
@@ -1975,6 +2382,7 @@ fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
 
 fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
     functions.sort_by(|left, right| left.identity.cmp(&right.identity));
+    populate_effect_summaries(&mut functions);
     let mmio_functions = functions
         .iter()
         .filter(|function| !function.mmio_accesses.is_empty())
@@ -1983,6 +2391,11 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .iter()
         .map(|function| function.mmio_accesses.len())
         .sum();
+    let delay_functions = functions
+        .iter()
+        .filter(|function| !function.delays.is_empty())
+        .count();
+    let delay_shapes = functions.iter().map(|function| function.delays.len()).sum();
     let mut mmio_index = BTreeMap::<(u32, u8), MmioRegisterAccumulator>::new();
     for function in &functions {
         for access in &function.mmio_accesses {
@@ -2105,6 +2518,14 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         .flat_map(|function| &function.calls)
         .filter(|call| call.kind == "unresolved")
         .count();
+    let closed_effect_summaries = functions
+        .iter()
+        .filter(|function| function.effect_summary.call_graph_closed)
+        .count();
+    let recursive_effect_summaries = functions
+        .iter()
+        .filter(|function| !function.effect_summary.recursive_functions.is_empty())
+        .count();
     let semantic_calls = functions
         .iter()
         .flat_map(|function| &function.calls)
@@ -2144,6 +2565,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         mmio_registers,
         mmio_functions,
         mmio_access_shapes,
+        delay_functions,
+        delay_shapes,
         semantic_boundaries,
         semantic_calls,
         exported_functions,
@@ -2158,6 +2581,8 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
         project_linked_calls,
         ambiguous_project_calls,
         unresolved_calls,
+        closed_effect_summaries,
+        recursive_effect_summaries,
     }
 }
 
@@ -2185,6 +2610,39 @@ mod tests {
             exported_symbol_keys: BTreeSet::new(),
             relocated_calls: BTreeMap::new(),
             pointer_context: direct::StructuralPointerContext::default(),
+        }
+    }
+
+    fn linked_test_function(
+        source: &str,
+        symbol: &str,
+        binding: &'static str,
+        calls: Vec<LinkedCall>,
+    ) -> LinkedIrFunction {
+        LinkedIrFunction {
+            source: source.to_owned(),
+            identity: format!("{source}::{symbol}"),
+            member: None,
+            symbol: symbol.to_owned(),
+            binding,
+            address: None,
+            object_offset: 0,
+            size: 4,
+            flow_kind: "partial",
+            complete: false,
+            exact: false,
+            return_value: "unknown".to_owned(),
+            dependencies: Vec::new(),
+            calls,
+            mmio_accesses: Vec::new(),
+            delays: Vec::new(),
+            context_accesses: Vec::new(),
+            context_fields: Vec::new(),
+            effect_summary: LinkedEffectSummary::default(),
+            call_graph_blockers: Vec::new(),
+            direct_blockers: Vec::new(),
+            reference_blockers: Vec::new(),
+            pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
         }
     }
 
@@ -2630,32 +3088,6 @@ mod tests {
 
     #[test]
     fn project_call_linking_requires_one_exported_definition() {
-        let function = |source: &str,
-                        symbol: &str,
-                        binding: &'static str,
-                        calls: Vec<LinkedCall>| LinkedIrFunction {
-            source: source.to_owned(),
-            identity: format!("{source}::{symbol}"),
-            member: None,
-            symbol: symbol.to_owned(),
-            binding,
-            address: None,
-            object_offset: 0,
-            size: 4,
-            flow_kind: "partial",
-            complete: false,
-            exact: false,
-            return_value: "unknown".to_owned(),
-            dependencies: Vec::new(),
-            calls,
-            mmio_accesses: Vec::new(),
-            context_accesses: Vec::new(),
-            context_fields: Vec::new(),
-            call_graph_blockers: Vec::new(),
-            direct_blockers: Vec::new(),
-            reference_blockers: Vec::new(),
-            pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
-        };
         let unresolved = || LinkedCall {
             kind: "unresolved",
             target: "vendor_child".to_owned(),
@@ -2672,13 +3104,13 @@ mod tests {
         };
 
         let mut unique = vec![
-            summarize_linked_ir(vec![function(
+            summarize_linked_ir(vec![linked_test_function(
                 "parent",
                 "vendor_parent",
                 "global-or-weak",
                 vec![unresolved()],
             )]),
-            summarize_linked_ir(vec![function(
+            summarize_linked_ir(vec![linked_test_function(
                 "child",
                 "vendor_child",
                 "global-or-weak",
@@ -2693,19 +3125,19 @@ mod tests {
         assert!(!parent.complete);
 
         let mut ambiguous = vec![
-            summarize_linked_ir(vec![function(
+            summarize_linked_ir(vec![linked_test_function(
                 "parent",
                 "vendor_parent",
                 "global-or-weak",
                 vec![unresolved()],
             )]),
-            summarize_linked_ir(vec![function(
+            summarize_linked_ir(vec![linked_test_function(
                 "child-a",
                 "vendor_child",
                 "global-or-weak",
                 Vec::new(),
             )]),
-            summarize_linked_ir(vec![function(
+            summarize_linked_ir(vec![linked_test_function(
                 "child-b",
                 "vendor_child",
                 "global-or-weak",
@@ -2719,5 +3151,179 @@ mod tests {
             call.project_candidates,
             ["child-a::vendor_child", "child-b::vendor_child"]
         );
+    }
+
+    #[test]
+    fn reachable_effect_summary_keeps_cross_artifact_provenance() {
+        let unresolved = LinkedCall {
+            kind: "unresolved",
+            target: "vendor_child".to_owned(),
+            site: Some(0),
+            tail: false,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            replacement_hint: None,
+            project_symbol: Some("vendor_child".to_owned()),
+            project_candidates: Vec::new(),
+            arguments: Vec::new(),
+            typed_arguments: Vec::new(),
+        };
+        let mut child = linked_test_function(
+            "child",
+            "vendor_child",
+            "global-or-weak",
+            vec![LinkedCall {
+                kind: "external",
+                target: "wifi_osi::ets_delay_us".to_owned(),
+                site: None,
+                tail: false,
+                result_modeled: true,
+                semantics: Some("reviewed delay boundary".to_owned()),
+                semantic_operation: Some("time.delay-micros".to_owned()),
+                replacement_hint: Some("Rust async timer".to_owned()),
+                project_symbol: None,
+                project_candidates: Vec::new(),
+                arguments: vec!["const:0x00000014".to_owned()],
+                typed_arguments: Vec::new(),
+            }],
+        );
+        child.complete = true;
+        child.exact = true;
+        child.mmio_accesses.push(LinkedMmioAccess {
+            ordinal: 0,
+            address: 0x6000_1000,
+            width: 32,
+            register: "UNKNOWN_60001000".to_owned(),
+            access: "write",
+            mode: "static",
+            path: "entry".to_owned(),
+            address_expression: None,
+            guard: None,
+            value: Some("const:0x00000001".to_owned()),
+            modified_mask: Some(u32::MAX),
+            preserved_mask: None,
+            inverted_mask: None,
+            forced_zero_mask: Some(u32::MAX - 1),
+            forced_one_mask: Some(1),
+            read_derived_mask: None,
+            dynamic_mask: None,
+        });
+        child.delays.push(LinkedDelay {
+            ordinal: 0,
+            path: "entry".to_owned(),
+            micros: "const:0x00000014".to_owned(),
+            constant_micros: Some(20),
+        });
+
+        let mut reports = vec![
+            summarize_linked_ir(vec![linked_test_function(
+                "parent",
+                "vendor_parent",
+                "global-or-weak",
+                vec![unresolved],
+            )]),
+            summarize_linked_ir(vec![child]),
+        ];
+        link_project_calls(&mut reports);
+        let report = merge_linked_ir(reports);
+        let parent = report
+            .functions
+            .iter()
+            .find(|function| function.identity == "parent::vendor_parent")
+            .unwrap();
+
+        assert_eq!(
+            parent.effect_summary.reachable_functions,
+            ["child::vendor_child"]
+        );
+        assert_eq!(parent.effect_summary.max_depth, 1);
+        assert!(!parent.effect_summary.call_graph_closed);
+        assert_eq!(parent.effect_summary.mmio_registers.len(), 1);
+        assert_eq!(
+            parent.effect_summary.mmio_registers[0].origins,
+            ["child::vendor_child"]
+        );
+        assert_eq!(parent.effect_summary.delays[0].constant_micros, Some(20));
+        assert_eq!(
+            parent.effect_summary.semantic_operations[0].operation,
+            "time.delay-micros"
+        );
+        assert_eq!(
+            parent.effect_summary.semantic_operations[0].origins,
+            ["child::vendor_child"]
+        );
+    }
+
+    #[test]
+    fn recursive_effect_summary_reaches_a_fixed_point() {
+        let internal = |target: &str| LinkedCall {
+            kind: "internal",
+            target: target.to_owned(),
+            site: Some(0),
+            tail: false,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            arguments: Vec::new(),
+            typed_arguments: Vec::new(),
+        };
+        let mut first = linked_test_function(
+            "rom",
+            "first",
+            "global-or-weak",
+            vec![internal("rom::second")],
+        );
+        first.complete = true;
+        let mut second = linked_test_function(
+            "rom",
+            "second",
+            "global-or-weak",
+            vec![internal("rom::first")],
+        );
+        second.complete = true;
+
+        let report = summarize_linked_ir(vec![first, second]);
+        assert_eq!(report.closed_effect_summaries, 2);
+        assert_eq!(report.recursive_effect_summaries, 2);
+        for function in &report.functions {
+            assert!(function.effect_summary.call_graph_closed);
+            assert_eq!(
+                function.effect_summary.recursive_functions,
+                ["rom::first", "rom::second"]
+            );
+            assert_eq!(function.effect_summary.reachable_functions.len(), 1);
+            assert_eq!(function.effect_summary.max_depth, 1);
+        }
+    }
+
+    #[test]
+    fn delay_inventory_preserves_nested_path_and_constant() {
+        let flow = DraftReferenceFlow {
+            events: vec![DraftReferenceEvent::ComposedCall {
+                token: 1,
+                symbol: "delay_child".to_owned(),
+                arguments: Box::new([]),
+                flow: Box::new(DraftReferenceFlow {
+                    events: vec![DraftReferenceEvent::DelayMicros {
+                        micros: SymbolicValue::Constant(20),
+                    }],
+                    terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+                }),
+                result_modeled: true,
+            }],
+            terminator: DraftReferenceTerminator::Return(SymbolicValue::Constant(0)),
+        };
+        let mut delays = Vec::new();
+        collect_delays_from_flow(&flow, "entry", &mut delays);
+
+        assert_eq!(delays.len(), 1);
+        assert_eq!(delays[0].ordinal, 0);
+        assert_eq!(delays[0].path, "entry / call delay_child");
+        assert_eq!(delays[0].micros, "const:0x00000014");
+        assert_eq!(delays[0].constant_micros, Some(20));
     }
 }

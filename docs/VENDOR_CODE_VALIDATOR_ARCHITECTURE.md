@@ -169,8 +169,16 @@ As a narrower navigation aid, project IR associates an unresolved call
 relocation with a callee only when one exported definition exists across all
 named inputs. It ignores local definitions and leaves duplicate global/weak
 definitions ambiguous. This produces a `project-linked` call-graph edge but
-does not compose arguments, return values, addresses or callee effects; the
-caller therefore retains its reference blocker and incomplete status.
+does not substitute arguments, return values or addresses; the caller therefore
+retains its reference blocker and incomplete status.
+
+The exploratory layer may follow those resolved edges to produce a reachable
+effect inventory. The fixed-point summary groups MMIO, delay and typed semantic
+shapes by the functions in which they were recovered, and identifies recursive
+components. It is closed only when every reachable function body and edge is
+closed. This propagation is intentionally provenance-only: it neither maps
+caller context fields into callee arguments nor turns the inventory into an
+effect-equivalence claim.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

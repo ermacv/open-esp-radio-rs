@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v11 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v12 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -116,8 +116,20 @@ unresolved call relocation becomes `project-linked` only when exactly one
 exported definition with that symbol exists across all inputs. Multiple weak or
 global definitions remain ambiguous, and local definitions are never selected.
 `project_call_linkage` records this policy. The edge is useful for navigation,
-but arguments, return propagation and callee effects are not composed, so the
+but arguments, return propagation and addresses are not substituted, so the
 original reference blocker and incomplete function status remain intact.
+
+Every function also has an `effect_summary` reachable inventory. It follows
+resolved internal and unique project edges to a fixed point, including through
+recursive components, and groups MMIO access shapes, delay shapes and semantic
+operations by their originating functions. `call_graph_closed` is true only
+when every reached function body and traversed edge is complete; otherwise
+`blockers` names the incomplete bodies, unresolved edges or omitted callees.
+This is deliberately not an effect-equivalence proof: counts describe recovered
+IR shapes, mutually exclusive paths may coexist, and no context pointer or call
+argument is projected into a callee. Top-level
+`effect_summary_mode: "reachable-inventory-no-argument-substitution"` makes
+that boundary machine-readable.
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,

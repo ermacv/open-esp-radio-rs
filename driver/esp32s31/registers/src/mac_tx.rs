@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for ordinary EDCA TX queue transactions.
 
+#![forbid(unsafe_code)]
+
 use super::{RadioRegisters, device_fence, mac_tx_queue};
 
 const ORDINARY_QUEUE_COUNT: u8 = 4;
@@ -225,16 +227,14 @@ impl RadioRegisters {
         // vector write in the recovered lmacSetTxFrame parent.
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.timeout().bits(program.timeout) });
+            .modify(|_, w| w.timeout().set(program.timeout));
 
-        // SAFETY: the recovered formatter publishes each complete image.
-        unsafe {
-            control.write_with_zero(|w| w.bits(program.plcp0));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .plcp1(bank)
-                .write_with_zero(|w| w.bits(program.plcp1));
-        }
+        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
+        super::svd::register_image_write::publish_mac_tx_plcp1(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.plcp1,
+        );
         self.peripherals
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
@@ -242,17 +242,16 @@ impl RadioRegisters {
         control_bank
             .protection(bank)
             .modify(|_, w| w.software_cts().clear_bit());
-        // SAFETY: the complete hal_mac_tx_set_ppdu leaf stores whole words.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .length_control(bank)
-                .write_with_zero(|w| w.bits(program.length_control));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .power(bank)
-                .write_with_zero(|w| w.bits(program.power));
-        }
+        super::svd::register_image_write::publish_mac_tx_length_control(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.length_control,
+        );
+        super::svd::register_image_write::publish_mac_tx_power(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.power,
+        );
 
         // SOURCE: complete
         // `libpp.a[hal_mac.o]::mac_tx_set_pti` and
@@ -264,25 +263,25 @@ impl RadioRegisters {
         // be coalesced.
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
+            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
         let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
+        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
+        pti.modify(|_, w| w.count().set(program.priority_count));
 
         // SOURCE: complete hal_mac_tx_config_edca. Preserve three distinct
         // hardware edges in the recovered order.
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.aifsn().bits(program.aifsn) });
+            .modify(|_, w| w.aifsn().set(program.aifsn));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.contention_window().bits(program.contention_window) });
+            .modify(|_, w| w.contention_window().set(program.contention_window));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.interface().bits(program.interface) });
+            .modify(|_, w| w.interface().set(program.interface));
         true
     }
 
@@ -315,14 +314,13 @@ impl RadioRegisters {
         // hal_mac_tx_set_ppdu non-HE HT branch.
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.timeout().bits(program.timeout) });
-        unsafe {
-            control.write_with_zero(|w| w.bits(program.plcp0));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .plcp1(bank)
-                .write_with_zero(|w| w.bits(program.plcp1));
-        }
+            .modify(|_, w| w.timeout().set(program.timeout));
+        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
+        super::svd::register_image_write::publish_mac_tx_plcp1(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.plcp1,
+        );
         self.peripherals
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
@@ -336,22 +334,19 @@ impl RadioRegisters {
         // 0x2a into count A and its second lane, and byte 0x2e into count B.
         // Keep the three fresh-read hardware edges distinct. In particular,
         // these fields do not belong to the 0x20104d64 protection word above.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .ht_signal(bank)
-                .write_with_zero(|w| w.bits(program.ht_signal));
-        }
+        super::svd::register_image_write::publish_mac_tx_ht_signal(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.ht_signal,
+        );
         let descriptor_counts = self
             .peripherals
             .wifi_mac_tx_queue_vector
             .ht_descriptor_counts(bank);
+        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
+        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(program.descriptor_count_b));
         descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_a().bits(program.descriptor_count_a) });
-        descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_b().bits(program.descriptor_count_b) });
-        descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_a_copy().bits(program.descriptor_count_a) });
+            .modify(|_, w| w.descriptor_count_a_copy().set(program.descriptor_count_a));
 
         // SOURCE: complete mac_tx_set_htsig offsets 0x1da..0x21a. The peer's
         // finite spacing value from rcUpdateAMPDUParam is copied into the
@@ -360,54 +355,55 @@ impl RadioRegisters {
         // HIL_VENDOR_ACTIVE_HT_VECTOR_2026_07_29 observed value 40 in all
         // three fields (whole word 0x0280_a028) on a hardware-owned HT queue.
         let protection = control_bank.protection(bank);
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw40()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw80()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
 
         // SOURCE: complete mac_tx_set_len followed by the HT power branch in
         // hal_mac_tx_set_ppdu.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .length_control(bank)
-                .write_with_zero(|w| w.bits(program.length_control));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .data_length(bank)
-                .write_with_zero(|w| w.bits(program.data_length));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .power(bank)
-                .write_with_zero(|w| w.bits(program.power));
-        }
+        super::svd::register_image_write::publish_mac_tx_length_control(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.length_control,
+        );
+        super::svd::register_image_write::publish_mac_tx_data_length(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.data_length,
+        );
+        super::svd::register_image_write::publish_mac_tx_power(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.power,
+        );
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
+            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
         let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
+        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
+        pti.modify(|_, w| w.count().set(program.priority_count));
 
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.aifsn().bits(program.aifsn) });
+            .modify(|_, w| w.aifsn().set(program.aifsn));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.contention_window().bits(program.contention_window) });
+            .modify(|_, w| w.contention_window().set(program.contention_window));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.interface().bits(program.interface) });
+            .modify(|_, w| w.interface().set(program.interface));
         true
     }
 
@@ -437,15 +433,13 @@ impl RadioRegisters {
 
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.timeout().bits(program.timeout) });
-        // SAFETY: the complete vendor formatter publishes both whole words.
-        unsafe {
-            control.write_with_zero(|w| w.bits(program.plcp0));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .plcp1(bank)
-                .write_with_zero(|w| w.bits(program.plcp1));
-        }
+            .modify(|_, w| w.timeout().set(program.timeout));
+        super::svd::register_image_write::publish_mac_tx_control(control_bank, bank, program.plcp0);
+        super::svd::register_image_write::publish_mac_tx_plcp1(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.plcp1,
+        );
         self.peripherals
             .wifi_mac_he_init_suffix
             .queue_control(4 + bank)
@@ -456,50 +450,47 @@ impl RadioRegisters {
         // then replaces the three finite channel-width minimum-MPDU lanes.
         let protection = control_bank.protection(bank);
         protection.modify(|_, w| w.software_cts().clear_bit());
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw20()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw40()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
-        protection.modify(|_, w| unsafe {
+        protection.modify(|_, w| {
             w.minimum_mpdu_length_cbw80()
-                .bits(program.protection_spacing)
+                .set(program.protection_spacing)
         });
 
         // SOURCE: complete mac_tx_set_hesig stores A1 then A2/length before
         // publishing the same three descriptor-count edges used by HT.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .he_su_signal_a1(bank)
-                .write_with_zero(|w| w.bits(program.he_signal_a1));
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .he_su_signal_a2_length(bank)
-                .write_with_zero(|w| w.bits(program.he_signal_a2_length));
-        }
+        super::svd::register_image_write::publish_mac_tx_he_signal_a1(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.he_signal_a1,
+        );
+        super::svd::register_image_write::publish_mac_tx_he_signal_a2_length(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.he_signal_a2_length,
+        );
         let descriptor_counts = self
             .peripherals
             .wifi_mac_tx_queue_vector
             .ht_descriptor_counts(bank);
+        descriptor_counts.modify(|_, w| w.descriptor_count_a().set(program.descriptor_count_a));
+        descriptor_counts.modify(|_, w| w.descriptor_count_b().set(program.descriptor_count_b));
         descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_a().bits(program.descriptor_count_a) });
-        descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_b().bits(program.descriptor_count_b) });
-        descriptor_counts
-            .modify(|_, w| unsafe { w.descriptor_count_a_copy().bits(program.descriptor_count_a) });
+            .modify(|_, w| w.descriptor_count_a_copy().set(program.descriptor_count_a));
 
         // HE reaches mac_tx_set_len for LENGTH_CONTROL, but its flag-bit-31
         // branch intentionally skips the non-HE DATA_LENGTH register.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .length_control(bank)
-                .write_with_zero(|w| w.bits(program.length_control));
-        }
+        super::svd::register_image_write::publish_mac_tx_length_control(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.length_control,
+        );
         // SOURCE: complete `libpp.a[hal_mac_tx.o]::
         // hal_mac_tx_set_ppdu` calls complete
         // `libpp.a[hal_mac_ctl.o]::hal_he_set_htc` immediately after
@@ -510,12 +501,11 @@ impl RadioRegisters {
         let (he_control, software_he_control_enabled) = program
             .software_he_control
             .map_or((0, false), |image| (image, true));
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .he_control(bank)
-                .write_with_zero(|w| w.bits(he_control));
-        }
+        super::svd::register_image_write::publish_mac_tx_he_control(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            he_control,
+        );
         self.peripherals
             .wifi_mac_tx_queue_vector
             .he_control_config(bank)
@@ -525,32 +515,31 @@ impl RadioRegisters {
             });
         // The complete parent selects and publishes the data/RTS power pair
         // only after the HE-Control leaf returns.
-        unsafe {
-            self.peripherals
-                .wifi_mac_tx_queue_vector
-                .power(bank)
-                .write_with_zero(|w| w.bits(program.power));
-        }
+        super::svd::register_image_write::publish_mac_tx_power(
+            &self.peripherals.wifi_mac_tx_queue_vector,
+            bank,
+            program.power,
+        );
 
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.scheduler_priority().bits(program.scheduler_priority) });
+            .modify(|_, w| w.scheduler_priority().set(program.scheduler_priority));
         let pti = self.peripherals.wifi_mac_tx_queue_vector.pti(bank);
-        pti.modify(|_, w| unsafe { w.pti_2().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_1().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_0().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.pti_3().bits(program.packet_priority) });
-        pti.modify(|_, w| unsafe { w.count().bits(program.priority_count) });
+        pti.modify(|_, w| w.pti_2().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_1().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_0().set(program.packet_priority));
+        pti.modify(|_, w| w.pti_3().set(program.packet_priority));
+        pti.modify(|_, w| w.count().set(program.priority_count));
 
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.aifsn().bits(program.aifsn) });
+            .modify(|_, w| w.aifsn().set(program.aifsn));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.contention_window().bits(program.contention_window) });
+            .modify(|_, w| w.contention_window().set(program.contention_window));
         control_bank
             .config(bank)
-            .modify(|_, w| unsafe { w.interface().bits(program.interface) });
+            .modify(|_, w| w.interface().set(program.interface));
         true
     }
 
@@ -630,13 +619,10 @@ impl RadioRegisters {
         let alternate = completion.alternate(bank).read().bits();
         let trigger_flow = mac_tx_queue::trigger_flow_state(common) & (1_u32 << queue) != 0;
         let clear = common.complete_clear().read().bits();
-        // SAFETY: the complete recovery writes the preserved register image
-        // with only this bounded ordinary-queue completion bit asserted.
-        unsafe {
-            common
-                .complete_clear()
-                .write_with_zero(|w| w.bits(clear | completion_mask));
-        }
+        super::svd::full_register_write::mac_tx_complete_clear_image(
+            common,
+            clear | completion_mask,
+        );
         device_fence();
         Some(MacTxCompletionRegisters {
             aux_a,
@@ -709,12 +695,7 @@ impl RadioRegisters {
         if was_valid {
             let _ = mac_tx_queue::disable_queue(queue_control, queue);
         }
-        // SAFETY: bounded queue maps to one instruction-proven W1C timeout bit.
-        unsafe {
-            common
-                .queue_state_clear()
-                .write_with_zero(|w| w.bits(timeout_mask));
-        }
+        super::svd::full_register_write::mac_tx_queue_state_clear(common, timeout_mask);
         device_fence();
         Some(
             !mac_tx_queue::queue_enabled(queue_control, queue)
@@ -739,12 +720,7 @@ impl RadioRegisters {
         let queue_control = &self.peripherals.wifi_mac_tx_queue_control;
         let _ = mac_tx_queue::disable_queue(queue_control, u32::from(queue));
         device_fence();
-        // SAFETY: the bounded queue maps to one low-nibble W1C collision bit.
-        unsafe {
-            common
-                .queue_state_clear()
-                .write_with_zero(|w| w.bits(collision_mask));
-        }
+        super::svd::full_register_write::mac_tx_queue_state_clear(common, collision_mask);
         device_fence();
         !mac_tx_queue::queue_enabled(queue_control, u32::from(queue))
             && !mac_tx_queue::queue_valid(queue_control, u32::from(queue))

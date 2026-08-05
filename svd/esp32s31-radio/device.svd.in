@@ -199,6 +199,16 @@
              register="SATURATION_GAIN_HIGH"
              field="OPAQUE_VALUE"
              source="BLOB_LIBPHY_PHY_REG_UPDATE_NEW"/>
+      <write name="mac_tx_complete_clear_image"
+             peripheral="WIFI_MAC_TX_COMMON"
+             register="COMPLETE_CLEAR"
+             field="STATE"
+             source="BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX"/>
+      <write name="mac_tx_queue_state_clear"
+             peripheral="WIFI_MAC_TX_COMMON"
+             register="QUEUE_STATE_CLEAR"
+             field="EVENTS"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
       <write name="open_frontend_clock_gates"
@@ -299,6 +309,44 @@
              value="0x00000404"
              source="ROM_REV0_PHY_AGC"/>
     </openEspRadioFixedRegisterImages>
+    <openEspRadioRegisterImageWrites>
+      <write name="publish_mac_tx_control"
+             peripheral="WIFI_MAC_TX_QUEUE_CONTROL"
+             register="CONTROL%s"
+             source="BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX"/>
+      <write name="publish_mac_tx_plcp1"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="PLCP1%s"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
+      <write name="publish_mac_tx_ht_signal"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="HT_SIGNAL%s"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
+      <write name="publish_mac_tx_he_signal_a1"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="HE_SU_SIGNAL_A1%s"
+             source="BLOB_LIBPP_HAL_HE_TX"/>
+      <write name="publish_mac_tx_he_signal_a2_length"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="HE_SU_SIGNAL_A2_LENGTH%s"
+             source="BLOB_LIBPP_HAL_HE_TX"/>
+      <write name="publish_mac_tx_he_control"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="HE_CONTROL%s"
+             source="BLOB_LIBPP_HAL_HE_TX,BLOB_LIBNET80211_HE_CONTROL_TX"/>
+      <write name="publish_mac_tx_power"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="POWER%s"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
+      <write name="publish_mac_tx_data_length"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="DATA_LENGTH%s"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
+      <write name="publish_mac_tx_length_control"
+             peripheral="WIFI_MAC_TX_QUEUE_VECTOR"
+             register="LENGTH_CONTROL%s"
+             source="BLOB_LIBPP_HAL_MAC_TX"/>
+    </openEspRadioRegisterImageWrites>
     <openEspRadioZeroBasedFieldWrites>
       <write name="ersu_ack_rate_baseline"
              peripheral="WIFI_MAC_HE_INIT_SUFFIX"

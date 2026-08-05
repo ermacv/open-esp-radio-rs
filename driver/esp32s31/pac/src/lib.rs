@@ -13520,7 +13520,7 @@ pub mod wifi_mac_tx_common {
         #[doc = "Register `QUEUE_STATE_CLEAR` writer"]
         pub type W = crate::W<QueueStateClearSpec>;
         #[doc = "Field `EVENTS` writer - "]
-        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -13535,7 +13535,7 @@ pub mod wifi_mac_tx_common {
         }
         #[doc = "`write(|w| ..)` method takes [`queue_state_clear::W`](W) writer structure"]
         impl crate::Writable for QueueStateClearSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "QUEUE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBPP_HAL_TX_TRIGGER_FLOW,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact-partial\\]. Per-queue timeout and trigger-flow state. The complete trigger-flow HAL getter returns the entire high byte; the complete completion dispatcher then right-shifts it by the completed queue number and tests bit zero.\n\nYou can [`read`](crate::Reg::read) this register and get [`queue_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@queue_state`] module"]
@@ -13595,7 +13595,7 @@ pub mod wifi_mac_tx_common {
         #[doc = "Field `STATE` reader - "]
         pub type StateR = crate::FieldReader<u32>;
         #[doc = "Field `STATE` writer - "]
-        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type StateW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -13619,7 +13619,7 @@ pub mod wifi_mac_tx_common {
         impl crate::Readable for CompleteClearSpec {}
         #[doc = "`write(|w| ..)` method takes [`complete_clear::W`](W) writer structure"]
         impl crate::Writable for CompleteClearSpec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "COMPLETE_STATE (r) register accessor: SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,MIGRATION_LMAC_TX\\]; CONFIDENCE\\[instruction-exact\\]. Low four bits report completed ordinary queues 0..3.\n\nYou can [`read`](crate::Reg::read) this register and get [`complete_state::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@complete_state`] module"]
@@ -13745,15 +13745,18 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW20` reader - First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
         pub type MinimumMpduLengthCbw20R = crate::FieldReader<u16>;
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW20` writer - First copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
-        pub type MinimumMpduLengthCbw20W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type MinimumMpduLengthCbw20W<'a, REG> =
+            crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW40` reader - Second copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
         pub type MinimumMpduLengthCbw40R = crate::FieldReader<u16>;
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW40` writer - Second copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
-        pub type MinimumMpduLengthCbw40W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type MinimumMpduLengthCbw40W<'a, REG> =
+            crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW80` reader - Third copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
         pub type MinimumMpduLengthCbw80R = crate::FieldReader<u16>;
         #[doc = "Field `MINIMUM_MPDU_LENGTH_CBW80` writer - Third copy of the HT peer-derived or HE rate/density-derived minimum MPDU/subframe value."]
-        pub type MinimumMpduLengthCbw80W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type MinimumMpduLengthCbw80W<'a, REG> =
+            crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `SOFTWARE_RTS` reader - SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
         pub type SoftwareRtsR = crate::BitReader;
         #[doc = "Field `SOFTWARE_RTS` writer - SOURCE\\[BLOB_LIBPP_HAL_HE_MU_EDCA_DEBUG\\]; CONFIDENCE\\[instruction-exact\\]. Complete dbg_read_txq_conf2 names bit 30 SW_RTS."]
@@ -13846,23 +13849,23 @@ pub mod wifi_mac_tx_queue_control {
         #[doc = "Field `TIMEOUT` reader - "]
         pub type TimeoutR = crate::FieldReader<u16>;
         #[doc = "Field `TIMEOUT` writer - "]
-        pub type TimeoutW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type TimeoutW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         #[doc = "Field `CONTENTION_WINDOW` reader - "]
         pub type ContentionWindowR = crate::FieldReader<u16>;
         #[doc = "Field `CONTENTION_WINDOW` writer - "]
-        pub type ContentionWindowW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type ContentionWindowW<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         #[doc = "Field `INTERFACE` reader - "]
         pub type InterfaceR = crate::FieldReader;
         #[doc = "Field `INTERFACE` writer - "]
-        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type InterfaceW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         #[doc = "Field `AIFSN` reader - "]
         pub type AifsnR = crate::FieldReader;
         #[doc = "Field `AIFSN` writer - "]
-        pub type AifsnW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type AifsnW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `SCHEDULER_PRIORITY` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
         pub type SchedulerPriorityR = crate::FieldReader;
         #[doc = "Field `SCHEDULER_PRIORITY` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,BLOB_LIBCOEX_PTI_TABLE,HIL_OPEN_AUTH_PTI_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Complete mac_tx_set_pti writes the unsigned minimum of packet PTI and coexistence event-one PTI here. This scheduler value is independent of the four original packet-PTI lanes in the vector bank; for Authentication and Association both values resolve to one. Open HIL read scheduler one in five reset-to-connect repetitions."]
-        pub type SchedulerPriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type SchedulerPriorityW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:11"]
             #[inline(always)]
@@ -14614,23 +14617,23 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `PTI_0` reader - "]
         pub type Pti0R = crate::FieldReader;
         #[doc = "Field `PTI_0` writer - "]
-        pub type Pti0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Pti0W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `PTI_1` reader - "]
         pub type Pti1R = crate::FieldReader;
         #[doc = "Field `PTI_1` writer - "]
-        pub type Pti1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Pti1W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `PTI_2` reader - "]
         pub type Pti2R = crate::FieldReader;
         #[doc = "Field `PTI_2` writer - "]
-        pub type Pti2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Pti2W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `PTI_3` reader - "]
         pub type Pti3R = crate::FieldReader;
         #[doc = "Field `PTI_3` writer - "]
-        pub type Pti3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Pti3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `COUNT` reader - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
         pub type CountR = crate::FieldReader<u16>;
         #[doc = "Field `COUNT` writer - SOURCE\\[BLOB_LIBPP_HAL_MAC_TX,HIL_OPEN_HT_AMPDU_32_RETRY_2026_07_29\\]; CONFIDENCE\\[instruction-exact-hil-qualified\\]. Descriptor metadata byte 0x22 passed to hal_set_tx_pti; not the A-MPDU MPDU/descriptor count."]
-        pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16>;
+        pub type CountW<'a, REG> = crate::FieldWriter<'a, REG, 12, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
@@ -15447,15 +15450,15 @@ pub mod wifi_mac_tx_queue_vector {
         #[doc = "Field `DESCRIPTOR_COUNT_A` reader - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
         pub type DescriptorCountAR = crate::FieldReader;
         #[doc = "Field `DESCRIPTOR_COUNT_A` writer - Seven-bit descriptor byte 0x2a copied by complete mac_tx_set_htsig."]
-        pub type DescriptorCountAW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type DescriptorCountAW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `DESCRIPTOR_COUNT_B` reader - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
         pub type DescriptorCountBR = crate::FieldReader;
         #[doc = "Field `DESCRIPTOR_COUNT_B` writer - Seven-bit descriptor byte 0x2e copied by complete mac_tx_set_htsig."]
-        pub type DescriptorCountBW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type DescriptorCountBW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` reader - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
         pub type DescriptorCountACopyR = crate::FieldReader;
         #[doc = "Field `DESCRIPTOR_COUNT_A_COPY` writer - Second copy of descriptor byte 0x2a written by complete mac_tx_set_htsig."]
-        pub type DescriptorCountACopyW<'a, REG> = crate::FieldWriter<'a, REG, 7>;
+        pub type DescriptorCountACopyW<'a, REG> = crate::FieldWriter<'a, REG, 7, u8, crate::Safe>;
         #[doc = "Field `HIGH_UNKNOWN` reader - "]
         pub type HighUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `HIGH_UNKNOWN` writer - "]
@@ -31234,6 +31237,32 @@ pub mod full_register_write {
                 .write_with_zero(|writer| writer.opaque_value().set(value));
         }
     }
+
+    /// Write every bit of `WIFI_MAC_TX_COMMON`.`COMPLETE_CLEAR` through its full-width field.
+    #[inline]
+    pub fn mac_tx_complete_clear_image(registers: &crate::WifiMacTxCommon, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .complete_clear()
+                .write_with_zero(|writer| writer.state().set(value));
+        }
+    }
+
+    /// Write every bit of `WIFI_MAC_TX_COMMON`.`QUEUE_STATE_CLEAR` through its full-width field.
+    #[inline]
+    pub fn mac_tx_queue_state_clear(registers: &crate::WifiMacTxCommon, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .queue_state_clear()
+                .write_with_zero(|writer| writer.events().set(value));
+        }
+    }
 }
 
 /// Safe, SVD-declared complete-register writes of fixed enumerated values.
@@ -31469,6 +31498,155 @@ pub mod fixed_register_image {
             registers
                 .rf_rx_saturation_config()
                 .write_with_zero(|writer| writer.bits(0x00000404));
+        }
+    }
+}
+
+/// Safe, SVD-declared writes of dynamic complete-register images.
+pub mod register_image_write {
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_CONTROL`.`CONTROL%s`.
+    #[inline]
+    pub fn publish_mac_tx_control(
+        registers: &crate::WifiMacTxQueueControl,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .control(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`PLCP1%s`.
+    #[inline]
+    pub fn publish_mac_tx_plcp1(registers: &crate::WifiMacTxQueueVector, index: usize, image: u32) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .plcp1(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HT_SIGNAL%s`.
+    #[inline]
+    pub fn publish_mac_tx_ht_signal(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .ht_signal(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A1%s`.
+    #[inline]
+    pub fn publish_mac_tx_he_signal_a1(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .he_su_signal_a1(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_SU_SIGNAL_A2_LENGTH%s`.
+    #[inline]
+    pub fn publish_mac_tx_he_signal_a2_length(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .he_su_signal_a2_length(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`HE_CONTROL%s`.
+    #[inline]
+    pub fn publish_mac_tx_he_control(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .he_control(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`POWER%s`.
+    #[inline]
+    pub fn publish_mac_tx_power(registers: &crate::WifiMacTxQueueVector, index: usize, image: u32) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .power(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`DATA_LENGTH%s`.
+    #[inline]
+    pub fn publish_mac_tx_data_length(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .data_length(index)
+                .write_with_zero(|writer| writer.bits(image));
+        }
+    }
+
+    /// Publish a caller-built complete image to `WIFI_MAC_TX_QUEUE_VECTOR`.`LENGTH_CONTROL%s`.
+    #[inline]
+    pub fn publish_mac_tx_length_control(
+        registers: &crate::WifiMacTxQueueVector,
+        index: usize,
+        image: u32,
+    ) {
+        // SAFETY: generator validation proves that the target is an
+        // ordinary writable 32-bit register. The SVD extension and
+        // its provenance qualify this semantic whole-image operation.
+        unsafe {
+            registers
+                .length_control(index)
+                .write_with_zero(|writer| writer.bits(image));
         }
     }
 }

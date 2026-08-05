@@ -61,10 +61,19 @@ pub(crate) struct LinkedSemanticContract {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedCallGuardResultSource {
+    pub(crate) kind: &'static str,
+    pub(crate) token: u32,
+    pub(crate) target: Option<String>,
+    pub(crate) source_bits: u32,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCallGuard {
     pub(crate) site: u32,
     pub(crate) condition: String,
     pub(crate) taken: bool,
+    pub(crate) result_sources: Vec<LinkedCallGuardResultSource>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -1037,7 +1046,10 @@ fn normalize_guard_paths(
                 for (guard_index, (left, right)) in
                     left.guards.iter().zip(&right.guards).enumerate()
                 {
-                    if left.site != right.site || left.condition != right.condition {
+                    if left.site != right.site
+                        || left.condition != right.condition
+                        || left.result_sources != right.result_sources
+                    {
                         compatible = false;
                         break;
                     }
@@ -1386,17 +1398,81 @@ struct DirectCallGraph {
     blockers: BTreeSet<String>,
 }
 
-fn current_guard_path(guards: &BTreeMap<(u32, String), bool>) -> LinkedCallGuardPath {
+type DirectGuardState = BTreeMap<(u32, String), (bool, Vec<LinkedCallGuardResultSource>)>;
+
+fn current_guard_path(guards: &DirectGuardState) -> LinkedCallGuardPath {
     LinkedCallGuardPath {
         guards: guards
             .iter()
-            .map(|((site, condition), taken)| LinkedCallGuard {
-                site: *site,
-                condition: condition.clone(),
-                taken: *taken,
-            })
+            .map(
+                |((site, condition), (taken, result_sources))| LinkedCallGuard {
+                    site: *site,
+                    condition: condition.clone(),
+                    taken: *taken,
+                    result_sources: result_sources.clone(),
+                },
+            )
             .collect(),
     }
+}
+
+fn collect_guard_result_source_bits(
+    value: &SymbolicValue,
+    sources: &mut BTreeMap<(&'static str, u32), u32>,
+) {
+    let mut recovered_bits = false;
+    for source in value.bits() {
+        let (kind, token, bit) = match source {
+            BitSource::CallResult {
+                call_token, bit, ..
+            } => ("call-result", call_token, bit),
+            BitSource::ExternalResult {
+                call_token, bit, ..
+            } => ("external-result", call_token, bit),
+            _ => continue,
+        };
+        *sources.entry((kind, token)).or_default() |= 1_u32 << bit;
+        recovered_bits = true;
+    }
+    if recovered_bits {
+        return;
+    }
+    match value {
+        SymbolicValue::Expression { left, right, .. } => {
+            collect_guard_result_source_bits(left, sources);
+            collect_guard_result_source_bits(right, sources);
+        }
+        SymbolicValue::WideSignedDivide {
+            dividend_low,
+            dividend_high,
+            divisor_low,
+            divisor_high,
+            ..
+        } => {
+            for value in [dividend_low, dividend_high, divisor_low, divisor_high] {
+                collect_guard_result_source_bits(value, sources);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn guard_result_sources(
+    condition: &BranchCondition,
+    call_results: &BTreeMap<u32, String>,
+) -> Vec<LinkedCallGuardResultSource> {
+    let mut sources = BTreeMap::new();
+    collect_guard_result_source_bits(&condition.left, &mut sources);
+    collect_guard_result_source_bits(&condition.right, &mut sources);
+    sources
+        .into_iter()
+        .map(|((kind, token), source_bits)| LinkedCallGuardResultSource {
+            kind,
+            token,
+            target: call_results.get(&token).cloned(),
+            source_bits,
+        })
+        .collect()
 }
 
 fn call_result_identity(
@@ -1470,7 +1546,7 @@ fn collect_guarded_direct_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
-    guards: &mut BTreeMap<(u32, String), bool>,
+    guards: &mut DirectGuardState,
     call_results: &mut BTreeMap<u32, String>,
     calls: &mut BTreeSet<LinkedCall>,
 ) {
@@ -1480,7 +1556,7 @@ fn collect_guarded_direct_event(
                 condition.site,
                 name_call_results(&branch_expression(condition), call_results),
             ),
-            *taken,
+            (*taken, guard_result_sources(condition, call_results)),
         );
         return;
     }
@@ -4294,6 +4370,7 @@ mod tests {
                     site: 0x10,
                     condition: "arg0 != 0".to_owned(),
                     taken,
+                    result_sources: Vec::new(),
                 }],
             }]);
             call
@@ -4312,6 +4389,7 @@ mod tests {
             site,
             condition: condition.to_owned(),
             taken,
+            result_sources: Vec::new(),
         };
         let paths = normalize_guard_paths([
             LinkedCallGuardPath {
@@ -4414,6 +4492,35 @@ mod tests {
         assert_eq!(
             pseudo_value(&SymbolicValue::Bits(Box::new(bits))),
             "(call10 & 0x000000f0)"
+        );
+    }
+
+    #[test]
+    fn cfg_guard_result_sources_link_masks_to_producer_targets() {
+        let mut bits = [BitSource::Constant(false); 32];
+        for (bit, source) in bits.iter_mut().enumerate().take(8).skip(4) {
+            *source = BitSource::CallResult {
+                call_token: 10,
+                bit: bit as u8,
+                inverted: false,
+            };
+        }
+        let condition = BranchCondition {
+            site: 0x20,
+            operation: BranchOperation::NotEqual,
+            left: SymbolicValue::Bits(Box::new(bits)),
+            right: SymbolicValue::Constant(0),
+        };
+        let call_results = BTreeMap::from([(10, "hal::interrupt_status".to_owned())]);
+
+        assert_eq!(
+            guard_result_sources(&condition, &call_results),
+            [LinkedCallGuardResultSource {
+                kind: "call-result",
+                token: 10,
+                target: Some("hal::interrupt_status".to_owned()),
+                source_bits: 0x0000_00f0,
+            }]
         );
     }
 
@@ -4953,6 +5060,7 @@ mod tests {
                         site: 0x08,
                         condition: "arg1 != 0".to_owned(),
                         taken: true,
+                        result_sources: Vec::new(),
                     }],
                 }]),
             }
@@ -5022,6 +5130,7 @@ mod tests {
                     site: 0x0c,
                     condition: "arg2 == 1".to_owned(),
                     taken: false,
+                    result_sources: Vec::new(),
                 }],
             }]),
         });

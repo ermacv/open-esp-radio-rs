@@ -255,11 +255,16 @@ provenance. Only exact complementary alternatives and absorbed supersets are
 removed; symbolic conditions are not assigned guessed register, bit or event
 semantics. Aligned bits derived from one symbolic source are losslessly
 canonicalized to an ordinary mask expression; non-uniform bit provenance keeps
-the existing explicit symbolic fallback. Missing guard evidence stays
-explicit, and the report makes no CFG guard completeness claim because
-exploration is bounded. Consequently this is deliberately not a total
-execution trace: mutually exclusive paths coexist, dynamic loop counts are not
-inferred and recursive revisits are bounded exactly like context projection.
+the existing explicit symbolic fallback. Guard atoms separately retain
+call-result provenance as a producer identity, trace-local result token and
+source-bit mask. Producer identities share the function-identity namespace,
+which provides a structural join to the producer's return and MMIO inventory
+without making the condition string into an API. An unresolved producer stays
+explicit. Missing guard evidence likewise stays explicit, and the report makes
+no CFG guard completeness claim because exploration is bounded. Consequently
+this is deliberately not a total execution trace: mutually exclusive paths
+coexist, dynamic loop counts are not inferred and recursive revisits are
+bounded exactly like context projection.
 
 The linked report also projects reference-flow MMIO into per-function access
 shapes and a project-wide `(address, width)` register index. Static accesses,

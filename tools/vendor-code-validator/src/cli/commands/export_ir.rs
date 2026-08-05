@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-producer-targets\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -856,8 +856,29 @@ fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>)
             )
             .expect("writing to String cannot fail");
             write_string(output, &guard.condition);
-            write!(output, ", \"taken\": {}}}", guard.taken)
+            write!(
+                output,
+                ", \"taken\": {}, \"result_sources\": [",
+                guard.taken
+            )
+            .expect("writing to String cannot fail");
+            for (source_index, source) in guard.result_sources.iter().enumerate() {
+                if source_index != 0 {
+                    output.push_str(", ");
+                }
+                output.push_str("{\"kind\": ");
+                write_string(output, source.kind);
+                write!(output, ", \"token\": {}, \"target\": ", source.token)
+                    .expect("writing to String cannot fail");
+                write_optional_string(output, source.target.as_deref());
+                write!(
+                    output,
+                    ", \"source_bits\": \"{:#010x}\"}}",
+                    source.source_bits
+                )
                 .expect("writing to String cannot fail");
+            }
+            output.push_str("]}");
         }
         output.push_str("]}");
     }
@@ -1024,7 +1045,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 21,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 22,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -1068,6 +1089,9 @@ fn write_json_report(
     );
     output.push_str(
         "  \"cfg_guard_expression_mode\": \"pseudo-rust-aligned-bit-masks-with-symbolic-fallback\",\n",
+    );
+    output.push_str(
+        "  \"cfg_guard_result_source_mode\": \"bit-provenance-with-producer-targets\",\n",
     );
     output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");

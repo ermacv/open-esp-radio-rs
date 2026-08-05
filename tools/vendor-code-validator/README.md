@@ -94,7 +94,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v21 records the selection mode plus root and
+`reachable-internal`, and schema v22 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v21 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v22 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v21 records
+symbolic states. Schema v22 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -199,6 +199,14 @@ than guessed domain names. Aligned bit provenance from one value is rendered
 losslessly as a normal mask expression such as `(result & 0x0000000f)`;
 mixed, shifted or otherwise non-uniform provenance remains an explicit
 `symbolic(...)` expression. `cfg_guard_expression_mode` records this policy.
+Each structured guard atom also carries `result_sources`: the call-result kind,
+trace-local token, resolved producer target and exact source-bit mask recovered
+from symbolic bit provenance. The target is the same stable identity used by
+`functions[].identity`, so consumers can join a guard operand to the producer's
+return value and MMIO inventory without parsing the rendered expression.
+Missing producer resolution remains `null`, and the metadata field
+`cfg_guard_result_source_mode: "bit-provenance-with-producer-targets"` makes the
+join contract explicit.
 
 The top-level
 `semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings"`

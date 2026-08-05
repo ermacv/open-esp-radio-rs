@@ -188,6 +188,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         })
     }
 
+    open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
     /// Copy one completed DMA frame and begin returning its descriptor to
     /// hardware.
     ///
@@ -207,14 +208,6 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     /// TX preparation and delivered 10.036-Mbit/s RX plus 67.942-Mbit/s TX.
     /// The preceding parse-before-recycle path produced `BUFFER_FULL`.
     #[inline(never)]
-    #[allow(
-        unsafe_code,
-        reason = "qualified target linker placement for the RX hot path"
-    )]
-    #[cfg_attr(
-        target_arch = "riscv32",
-        unsafe(link_section = ".rwtext.open_radio_rx_hot")
-    )]
     pub fn stage_recycle<'pool, const COUNT: usize, M, F>(
         &'pool self,
         completed: RxCompletedDescriptor,
@@ -241,7 +234,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
             frame: Some(radio_frame),
             reload_samples: 0,
         })
-    }
+    }}
 
     /// Copy one complete RX unit, then atomically recycle all DMA descriptors
     /// that carried it. `copy_segment` receives the zero-based unit segment

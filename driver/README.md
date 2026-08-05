@@ -18,7 +18,8 @@ driver/
 │   ├── hal/                semantic hardware operations
 │   ├── phy/                RF/baseband state machines
 │   └── wifi/
-│       ├── lmac/           Wi-Fi LMAC: DMA, IRQ, queues and TX/RX
+│       ├── dma/            audited DMA representation and chip placement
+│       ├── lmac/           safe Wi-Fi LMAC: IRQ, queues and TX/RX policy
 │       └── sta/            executor-independent S31 station composition
 └── integration/            reusable runtime and ecosystem adapters
 ```
@@ -39,7 +40,10 @@ The hardware directory names now follow their responsibilities:
 - `esp32s31/pac` is the generated PAC in conventional embedded-Rust terms;
 - `esp32s31/registers` is a handwritten register-transaction layer, not the
   generated PAC;
-- `esp32s31/wifi/lmac` is the chip-specific LMAC implementation;
+- `esp32s31/wifi/dma` owns the S31 descriptor representation, RX ring/storage
+  and the target linker-placement primitive needed by the qualified hot path;
+- `esp32s31/wifi/lmac` is the safe chip-specific LMAC implementation above
+  that leaf;
 - `esp32s31/wifi/sta` owns S31 station composition that has no executor or
   network-stack dependency, including Association PHY/power selection,
   associated-peer WMM/HT/HE/rate-control programming and the platform ports
@@ -111,11 +115,17 @@ observation and error contracts likewise live in `esp32s31/wifi/sta::join`.
 The local `sta_join_port` is now only their retained-DMA/control-TX binding.
 
 The RX descriptor/buffer arena itself now lives in
-`esp32s31/wifi/lmac::rx_storage`. `wifi-embassy::rx_backend` selects the
+`esp32s31/wifi/dma::rx_storage`. `wifi-embassy::rx_backend` selects the
 qualified large-RX dimensions and owns the asynchronous ring/staging epoch;
 `network_rx` owns the network-stack sink and `control_mailbox` owns the
 bounded semantic-event handoff. The RX backend no longer defines the chip DMA
 memory representation or unrelated consumers.
+
+Non-test `esp32s31/wifi/lmac` code forbids `unsafe`. Necessary pointer and
+linker invariants terminate in the audited chip DMA leaf (or, below it, in the
+generated PAC/runtime); safe ownership leases and typed descriptors cross the
+boundary upward. Test-only raw DMA fixtures remain visible as the next cleanup
+target and are not part of a firmware build.
 
 RX qualification now follows that boundary: `wifi-embassy` defines typed
 `RxPipelineObservation` events and an optional observer interface, while the

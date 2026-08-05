@@ -895,12 +895,8 @@ pub fn first_segment_layout(
     })
 }
 
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
 #[inline(never)]
-#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-#[cfg_attr(
-    target_arch = "riscv32",
-    unsafe(link_section = ".rwtext.open_radio_rx_hot")
-)]
 fn extract_mpdu_allowing_consumed_trailer(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
@@ -971,7 +967,7 @@ fn extract_mpdu_allowing_consumed_trailer(
         },
         consumed_trailer_length,
     ))
-}
+}}
 
 fn extract_mpdu(
     segments: &[RxSegment<'_>],
@@ -1077,6 +1073,7 @@ pub fn extract_data(
     })
 }
 
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
 /// Extracts one unfragmented CCMP data MPDU after hardware MIC verification.
 ///
 /// Unlike [`extract_data`], this entry requires the Protected bit. A returned
@@ -1090,11 +1087,6 @@ pub fn extract_data(
 /// `ccmp_decap` invariant: only bytes after the logical payload boundary may
 /// be absent. Unprotected extraction remains strict.
 #[inline(never)]
-#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-#[cfg_attr(
-    target_arch = "riscv32",
-    unsafe(link_section = ".rwtext.open_radio_rx_hot")
-)]
 pub fn extract_ccmp_data(
     segments: &[RxSegment<'_>],
     config: RxIngressConfig,
@@ -1103,8 +1095,9 @@ pub fn extract_ccmp_data(
     let (frame, consumed_trailer_length) =
         extract_mpdu_allowing_consumed_trailer(segments, config, output, CCMP_MIC_SIZE)?;
     validate_ccmp_data(&output[..frame.length], frame, consumed_trailer_length)
-}
+}}
 
+open_esp_radio_esp32s31_wifi_dma::place_rx_hot_path! {
 /// Validate and borrow one contiguous CCMP MPDU from independently owned RX
 /// storage.
 ///
@@ -1113,11 +1106,6 @@ pub fn extract_ccmp_data(
 /// units must continue through the copying extractor so no non-contiguous
 /// bytes can escape as a slice.
 #[inline(never)]
-#[allow(unsafe_code, reason = "qualified RX hot-path linker placement")]
-#[cfg_attr(
-    target_arch = "riscv32",
-    unsafe(link_section = ".rwtext.open_radio_rx_hot")
-)]
 pub fn view_ccmp_data<'frame>(
     segment: &RxSegment<'frame>,
     config: RxIngressConfig,
@@ -1159,7 +1147,7 @@ pub fn view_ccmp_data<'frame>(
     };
     let frame = validate_ccmp_data(mpdu, metadata, consumed_trailer_length)?;
     Ok(RxCcmpDataView { mpdu, frame })
-}
+}}
 
 fn validate_ccmp_data(
     mpdu: &[u8],

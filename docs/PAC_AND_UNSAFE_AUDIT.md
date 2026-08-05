@@ -115,6 +115,15 @@ path. Raw legacy submission has been removed: a legacy queue can be prepared
 and started only with the phased capabilities. A raw but DMA-range-valid
 A-MPDU PLCP0 can still bypass the intended TX owner through HT/HE.
 
+`esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owner needed for
+the internal-buffer half of that migration. It retains a static descriptor
+array and aligned MPDU buffers, distinguishes completion from confirmed queue
+detach, and issues phased authority only after validating that every chain
+entry belongs to those internal buffers. Descriptor-only and external
+zero-copy backing intentionally receive no capability yet; they require a
+token that also retains every `StableDmaBacking` lease before LMAC can be
+migrated without weakening the proof.
+
 Do not fix this by adding an unchecked address token in LMAC. The required
 order is:
 

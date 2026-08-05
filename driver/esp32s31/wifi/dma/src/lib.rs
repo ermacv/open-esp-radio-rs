@@ -11,6 +11,7 @@ pub mod descriptor;
 pub mod rx_dma;
 pub mod rx_ring;
 pub mod rx_storage;
+pub mod tx_ampdu_storage;
 pub mod tx_storage;
 
 /// Place one qualified RX hot-path item in executable internal RAM on S31.

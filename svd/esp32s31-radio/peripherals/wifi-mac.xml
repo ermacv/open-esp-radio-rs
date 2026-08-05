@@ -1100,8 +1100,8 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Complete hal_init replaces RX-active and RX-ACK nibbles through two separate setter RMWs.</description>
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>RX_ACTIVE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Complete hal_init passes zero to hal_set_rx_active_pti.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>RX_ACK</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. PTI returned for event three and published by hal_set_rx_ack_pti.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>RX_ACTIVE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Complete hal_init passes zero to hal_set_rx_active_pti.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>RX_ACK</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. PTI returned for event three and published by hal_set_rx_ack_pti.</description><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
 
           </fields>
         </register>
@@ -1110,14 +1110,14 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. Seven trigger-based PTIs and one beamforming PTI, each published through a separate fresh-read RMW by complete setters.</description>
           <addressOffset>0xad8</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>TB_4</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_6</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_5</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_3</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_2</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_1</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>TB_0</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>BEAMFORMING_0</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>TB_4</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_6</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_5</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_3</name><bitOffset>12</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_2</name><bitOffset>16</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_1</name><bitOffset>20</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>TB_0</name><bitOffset>24</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>BEAMFORMING_0</name><bitOffset>28</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
@@ -1125,10 +1125,10 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. Two ordinary and two multi-target beamforming PTI fields, programmed through four separate fresh-read RMWs.</description>
           <addressOffset>0xadc</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>BEAMFORMING_2</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>BEAMFORMING_1</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>MULTI_TARGET_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth></field>
-            <field><name>MULTI_TARGET_0</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field.</description><bitOffset>12</bitOffset><bitWidth>10</bitWidth></field>
+            <field><name>BEAMFORMING_2</name><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>BEAMFORMING_1</name><bitOffset>4</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>MULTI_TARGET_1</name><bitOffset>8</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
+            <field><name>MULTI_TARGET_0</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field.</description><bitOffset>12</bitOffset><bitWidth>10</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3ff</maximum></range></writeConstraint></field>
 
           </fields>
         </register>
@@ -1137,7 +1137,7 @@
           <description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. Common COEX enable/default PTI word updated by three separate setter RMWs.</description>
           <addressOffset>0xae0</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>WIFI_DEFAULT_PTI</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. PTI returned for event fifteen.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth></field>
+            <field><name>WIFI_DEFAULT_PTI</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE]; CONFIDENCE[instruction-exact]. PTI returned for event fifteen.</description><bitOffset>0</bitOffset><bitWidth>4</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0xf</maximum></range></writeConstraint></field>
             <field><name>DEFAULT_PTI_ENABLE</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Set by hal_coex_enable_default_pti(1).</description><bitOffset>4</bitOffset><bitWidth>1</bitWidth></field>
             <field><name>COEX_PTI_INIT_UNKNOWN</name><description>SOURCE[BLOB_LIBPP_HAL_INIT_COEX]; CONFIDENCE[instruction-exact]. Set by complete hal_coex_pti_init.</description><bitOffset>5</bitOffset><bitWidth>1</bitWidth></field>
 

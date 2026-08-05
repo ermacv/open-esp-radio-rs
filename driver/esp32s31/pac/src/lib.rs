@@ -20662,11 +20662,11 @@ pub mod wifi_mac_coex_init {
         #[doc = "Field `RX_ACTIVE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
         pub type RxActiveR = crate::FieldReader;
         #[doc = "Field `RX_ACTIVE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
-        pub type RxActiveW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type RxActiveW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `RX_ACK` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
         pub type RxAckR = crate::FieldReader;
         #[doc = "Field `RX_ACK` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact\\]. PTI returned for event three and published by hal_set_rx_ack_pti."]
-        pub type RxAckW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type RxAckW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3 - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_init passes zero to hal_set_rx_active_pti."]
             #[inline(always)]
@@ -20716,35 +20716,35 @@ pub mod wifi_mac_coex_init {
         #[doc = "Field `TB_4` reader - "]
         pub type Tb4R = crate::FieldReader;
         #[doc = "Field `TB_4` writer - "]
-        pub type Tb4W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb4W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_6` reader - "]
         pub type Tb6R = crate::FieldReader;
         #[doc = "Field `TB_6` writer - "]
-        pub type Tb6W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb6W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_5` reader - "]
         pub type Tb5R = crate::FieldReader;
         #[doc = "Field `TB_5` writer - "]
-        pub type Tb5W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb5W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_3` reader - "]
         pub type Tb3R = crate::FieldReader;
         #[doc = "Field `TB_3` writer - "]
-        pub type Tb3W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb3W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_2` reader - "]
         pub type Tb2R = crate::FieldReader;
         #[doc = "Field `TB_2` writer - "]
-        pub type Tb2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb2W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_1` reader - "]
         pub type Tb1R = crate::FieldReader;
         #[doc = "Field `TB_1` writer - "]
-        pub type Tb1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb1W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `TB_0` reader - "]
         pub type Tb0R = crate::FieldReader;
         #[doc = "Field `TB_0` writer - "]
-        pub type Tb0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Tb0W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BEAMFORMING_0` reader - "]
         pub type Beamforming0R = crate::FieldReader;
         #[doc = "Field `BEAMFORMING_0` writer - "]
-        pub type Beamforming0W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Beamforming0W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
@@ -20853,19 +20853,19 @@ pub mod wifi_mac_coex_init {
         #[doc = "Field `BEAMFORMING_2` reader - "]
         pub type Beamforming2R = crate::FieldReader;
         #[doc = "Field `BEAMFORMING_2` writer - "]
-        pub type Beamforming2W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Beamforming2W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `BEAMFORMING_1` reader - "]
         pub type Beamforming1R = crate::FieldReader;
         #[doc = "Field `BEAMFORMING_1` writer - "]
-        pub type Beamforming1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type Beamforming1W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `MULTI_TARGET_1` reader - "]
         pub type MultiTarget1R = crate::FieldReader;
         #[doc = "Field `MULTI_TARGET_1` writer - "]
-        pub type MultiTarget1W<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type MultiTarget1W<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `MULTI_TARGET_0` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
         pub type MultiTarget0R = crate::FieldReader<u16>;
         #[doc = "Field `MULTI_TARGET_0` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete hal_set_beamf_mt_pti replaces bits 21:12 with its unmasked first argument; cold PTI values occupy only the low nibble of this ten-bit field."]
-        pub type MultiTarget0W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16>;
+        pub type MultiTarget0W<'a, REG> = crate::FieldWriter<'a, REG, 10, u16, crate::Safe>;
         impl R {
             #[doc = "Bits 0:3"]
             #[inline(always)]
@@ -20934,7 +20934,7 @@ pub mod wifi_mac_coex_init {
         #[doc = "Field `WIFI_DEFAULT_PTI` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact\\]. PTI returned for event fifteen."]
         pub type WifiDefaultPtiR = crate::FieldReader;
         #[doc = "Field `WIFI_DEFAULT_PTI` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX,BLOB_LIBCOEX_PTI_TABLE\\]; CONFIDENCE\\[instruction-exact\\]. PTI returned for event fifteen."]
-        pub type WifiDefaultPtiW<'a, REG> = crate::FieldWriter<'a, REG, 4>;
+        pub type WifiDefaultPtiW<'a, REG> = crate::FieldWriter<'a, REG, 4, u8, crate::Safe>;
         #[doc = "Field `DEFAULT_PTI_ENABLE` reader - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Set by hal_coex_enable_default_pti(1)."]
         pub type DefaultPtiEnableR = crate::BitReader;
         #[doc = "Field `DEFAULT_PTI_ENABLE` writer - SOURCE\\[BLOB_LIBPP_HAL_INIT_COEX\\]; CONFIDENCE\\[instruction-exact\\]. Set by hal_coex_enable_default_pti(1)."]

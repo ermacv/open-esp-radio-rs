@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the complete cold COEX/PTI transaction.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 impl RadioRegisters {
@@ -23,37 +25,32 @@ impl RadioRegisters {
         coex.default_control()
             .modify(|_, w| w.default_pti_enable().set_bit());
 
-        // SAFETY: zero and the masked callback images fit the generated
-        // nibbles. Preserve the separate setter RMWs from complete hal_init.
-        coex.rx_pti()
-            .modify(|_, w| unsafe { w.rx_active().bits(0) });
-        coex.rx_pti()
-            .modify(|_, w| unsafe { w.rx_ack().bits(rx_ack & 0x0f) });
+        // Preserve the separate setter RMWs from complete hal_init.
+        coex.rx_pti().modify(|_, w| w.rx_active().set(0));
+        coex.rx_pti().modify(|_, w| w.rx_ack().set(rx_ack & 0x0f));
         coex.default_control()
-            .modify(|_, w| unsafe { w.wifi_default_pti().bits(wifi_default & 0x0f) });
+            .modify(|_, w| w.wifi_default_pti().set(wifi_default & 0x0f));
 
         let tb_and_beamforming = coex.ofdma_tb_and_beamforming();
         // Complete hal_set_tb_pti uses argument order 0,1,2,3,5,6,4.
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_0().bits(tb[0] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_1().bits(tb[1] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_2().bits(tb[2] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_3().bits(tb[3] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_5().bits(tb[5] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_6().bits(tb[6] & 0x0f) });
-        tb_and_beamforming.modify(|_, w| unsafe { w.tb_4().bits(tb[4] & 0x0f) });
+        tb_and_beamforming.modify(|_, w| w.tb_0().set(tb[0] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_1().set(tb[1] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_2().set(tb[2] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_3().set(tb[3] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_5().set(tb[5] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_6().set(tb[6] & 0x0f));
+        tb_and_beamforming.modify(|_, w| w.tb_4().set(tb[4] & 0x0f));
 
         // Complete hal_set_beamf_pti spans the high nibble of the preceding
         // word and the low two nibbles of the following word.
-        tb_and_beamforming.modify(|_, w| unsafe { w.beamforming_0().bits(beamforming[0] & 0x0f) });
+        tb_and_beamforming.modify(|_, w| w.beamforming_0().set(beamforming[0] & 0x0f));
         let beamforming_control = coex.beamforming();
-        beamforming_control.modify(|_, w| unsafe { w.beamforming_1().bits(beamforming[1] & 0x0f) });
-        beamforming_control.modify(|_, w| unsafe { w.beamforming_2().bits(beamforming[2] & 0x0f) });
+        beamforming_control.modify(|_, w| w.beamforming_1().set(beamforming[1] & 0x0f));
+        beamforming_control.modify(|_, w| w.beamforming_2().set(beamforming[2] & 0x0f));
 
         // The complete multi-target setter writes argument one first, then
         // writes the unmasked eight-bit argument zero into a ten-bit field.
-        beamforming_control
-            .modify(|_, w| unsafe { w.multi_target_1().bits(multi_target[1] & 0x0f) });
-        beamforming_control
-            .modify(|_, w| unsafe { w.multi_target_0().bits(u16::from(multi_target[0])) });
+        beamforming_control.modify(|_, w| w.multi_target_1().set(multi_target[1] & 0x0f));
+        beamforming_control.modify(|_, w| w.multi_target_0().set(u16::from(multi_target[0])));
     }
 }

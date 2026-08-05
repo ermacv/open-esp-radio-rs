@@ -6,8 +6,6 @@
 //! contention state, power profile and clock through
 //! [`Esp32s31SingleMpduTx`]; no parallel HIL TX state exists.
 
-#![allow(unsafe_code, reason = "referenced TX DMA ownership boundary")]
-
 use core::{
     future::Future,
     mem,
@@ -701,6 +699,10 @@ where
         }
     }
 
+    #[allow(
+        unsafe_code,
+        reason = "referenced TX commit until the retained-backing owner moves below this adapter"
+    )]
     fn push_frame(
         &mut self,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,

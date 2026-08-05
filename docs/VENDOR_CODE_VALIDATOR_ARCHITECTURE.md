@@ -244,8 +244,18 @@ replacement hint and the exact contract/evidence identifier that authorized
 the label. A separate lexical site-path array gives a stable source-order key
 from the report root through nested calls; missing instruction sites remain
 explicit rather than receiving invented offsets. Pointer arguments reuse
-affine root bindings; scalar values retain their recovered symbolic form. This
-is deliberately not a total execution trace: mutually exclusive paths coexist,
+affine root bindings; scalar values retain their recovered symbolic form.
+
+Exploratory forced branch decisions are attached to direct calls as minimized
+DNF guard paths. Semantic projection keeps them factorized by the function in
+which they were observed: scopes compose conjunctively, paths within one scope
+compose disjunctively, and decisions within a path compose conjunctively. This
+avoids multiplying alternatives at every nested call while retaining lexical
+provenance. Only exact complementary alternatives and absorbed supersets are
+removed; symbolic conditions are not assigned guessed register, bit or event
+semantics. Missing guard evidence stays explicit, and the report makes no CFG
+guard completeness claim because exploration is bounded. Consequently this is
+deliberately not a total execution trace: mutually exclusive paths coexist,
 dynamic loop counts are not inferred and recursive revisits are bounded exactly
 like context projection.
 

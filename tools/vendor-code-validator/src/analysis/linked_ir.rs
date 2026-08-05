@@ -61,6 +61,24 @@ pub(crate) struct LinkedSemanticContract {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedCallGuard {
+    pub(crate) site: u32,
+    pub(crate) condition: String,
+    pub(crate) taken: bool,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedCallGuardPath {
+    pub(crate) guards: Vec<LinkedCallGuard>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkedCallGuardScope {
+    pub(crate) function: String,
+    pub(crate) paths: Vec<LinkedCallGuardPath>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct LinkedCall {
     pub(crate) kind: &'static str,
     pub(crate) target: String,
@@ -78,6 +96,7 @@ pub(crate) struct LinkedCall {
     pub(crate) arguments: Vec<String>,
     pub(crate) argument_bindings: Vec<LinkedArgumentBinding>,
     pub(crate) typed_arguments: Vec<LinkedCallArgument>,
+    pub(crate) guard_paths: Option<Vec<LinkedCallGuardPath>>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -235,6 +254,7 @@ pub(crate) struct LinkedProjectedSemanticAction {
     pub(crate) site: Option<u32>,
     pub(crate) argument_shapes: usize,
     pub(crate) arguments: Vec<LinkedProjectedCallArgument>,
+    pub(crate) guard_scopes: Option<Vec<LinkedCallGuardScope>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -884,6 +904,117 @@ fn merged_typed_argument_value(
     format!("varies-across-{argument_shapes}-shapes")
 }
 
+fn normalize_guard_paths(
+    paths: impl IntoIterator<Item = LinkedCallGuardPath>,
+) -> Vec<LinkedCallGuardPath> {
+    let mut paths = paths
+        .into_iter()
+        .map(|mut path| {
+            path.guards.sort();
+            path.guards.dedup();
+            path
+        })
+        .collect::<BTreeSet<_>>();
+
+    loop {
+        let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+        let mut consensus = None;
+        'pairs: for (index, left) in snapshot.iter().enumerate() {
+            for right in &snapshot[index + 1..] {
+                if left.guards.len() != right.guards.len() {
+                    continue;
+                }
+                let mut differing = None;
+                let mut compatible = true;
+                for (guard_index, (left, right)) in
+                    left.guards.iter().zip(&right.guards).enumerate()
+                {
+                    if left.site != right.site || left.condition != right.condition {
+                        compatible = false;
+                        break;
+                    }
+                    if left.taken != right.taken && differing.replace(guard_index).is_some() {
+                        compatible = false;
+                        break;
+                    }
+                }
+                if compatible && let Some(differing) = differing {
+                    let mut guards = left.guards.clone();
+                    guards.remove(differing);
+                    consensus = Some(LinkedCallGuardPath { guards });
+                    break 'pairs;
+                }
+            }
+        }
+        let Some(consensus) = consensus else {
+            break;
+        };
+        let previous_len = paths.len();
+        paths.insert(consensus);
+        let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+        paths.retain(|path| {
+            !snapshot.iter().any(|candidate| {
+                candidate != path
+                    && candidate.guards.len() <= path.guards.len()
+                    && candidate
+                        .guards
+                        .iter()
+                        .all(|guard| path.guards.contains(guard))
+            })
+        });
+        if paths.len() == previous_len {
+            break;
+        }
+    }
+
+    let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+    paths.retain(|path| {
+        !snapshot.iter().any(|candidate| {
+            candidate != path
+                && candidate.guards.len() <= path.guards.len()
+                && candidate
+                    .guards
+                    .iter()
+                    .all(|guard| path.guards.contains(guard))
+        })
+    });
+    paths.into_iter().collect()
+}
+
+fn merged_guard_paths(calls: &[LinkedCall]) -> Option<Vec<LinkedCallGuardPath>> {
+    let mut paths = Vec::new();
+    for call in calls {
+        paths.extend(call.guard_paths.as_ref()?.iter().cloned());
+    }
+    Some(normalize_guard_paths(paths))
+}
+
+fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
+    let mut shapes = BTreeMap::<
+        (
+            Vec<String>,
+            Vec<LinkedArgumentBinding>,
+            Vec<(usize, String)>,
+        ),
+        usize,
+    >::new();
+    for call in calls {
+        let shape = (
+            call.arguments.clone(),
+            call.argument_bindings.clone(),
+            call.typed_arguments
+                .iter()
+                .map(|argument| (argument.position, argument.value.clone()))
+                .collect(),
+        );
+        shapes
+            .entry(shape)
+            .and_modify(|count| *count = (*count).max(call.argument_shapes))
+            .or_insert(call.argument_shapes);
+    }
+    shapes.into_values().sum()
+}
+
 fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<LinkedCall> {
     let mut groups = BTreeMap::<LinkedCallIdentity, Vec<LinkedCall>>::new();
     for call in calls {
@@ -896,7 +1027,7 @@ fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<LinkedCall>
     groups
         .into_values()
         .map(|calls| {
-            let argument_shapes = calls.iter().map(|call| call.argument_shapes).sum();
+            let argument_shapes = distinct_argument_shape_count(&calls);
             let argument_count = calls
                 .iter()
                 .map(|call| call.arguments.len())
@@ -923,6 +1054,7 @@ fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<LinkedCall>
             call.argument_shapes = argument_shapes;
             call.arguments = arguments;
             call.argument_bindings = argument_bindings;
+            call.guard_paths = merged_guard_paths(&calls);
             call
         })
         .collect()
@@ -964,6 +1096,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: external_typed_arguments(*function, arguments),
+            guard_paths: None,
         }),
         DraftReferenceEvent::DiagnosticCall {
             function,
@@ -990,6 +1123,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         DraftReferenceEvent::Call {
             site,
@@ -1017,6 +1151,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         DraftReferenceEvent::TailCall {
             site,
@@ -1044,6 +1179,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         DraftReferenceEvent::ComposedCall {
             symbol,
@@ -1067,6 +1203,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         DraftReferenceEvent::ScratchCall {
             site,
@@ -1098,6 +1235,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         DraftReferenceEvent::ComposedCallWithScratch {
             symbol,
@@ -1125,6 +1263,7 @@ fn collect_call_event(
             arguments: canonical_arguments(arguments),
             argument_bindings: affine_argument_bindings(arguments),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         }),
         _ => None,
     };
@@ -1137,6 +1276,109 @@ fn collect_call_event(
 struct DirectCallGraph {
     calls: BTreeSet<LinkedCall>,
     blockers: BTreeSet<String>,
+}
+
+fn current_guard_path(guards: &BTreeMap<(u32, String), bool>) -> LinkedCallGuardPath {
+    LinkedCallGuardPath {
+        guards: guards
+            .iter()
+            .map(|((site, condition), taken)| LinkedCallGuard {
+                site: *site,
+                condition: condition.clone(),
+                taken: *taken,
+            })
+            .collect(),
+    }
+}
+
+fn call_result_identity(
+    event: &DraftReferenceEvent,
+    identities: &IrIdentityCatalog,
+) -> Option<(u32, String)> {
+    match event {
+        DraftReferenceEvent::Call { token, target, .. }
+        | DraftReferenceEvent::ScratchCall { token, target, .. }
+        | DraftReferenceEvent::TailCall { token, target, .. } => {
+            Some((*token, identities.target(*target)))
+        }
+        DraftReferenceEvent::ComposedCall { token, symbol, .. }
+        | DraftReferenceEvent::ComposedCallWithScratch { token, symbol, .. } => {
+            Some((*token, symbol.clone()))
+        }
+        DraftReferenceEvent::ExternalCall {
+            token,
+            table,
+            function,
+            ..
+        } => Some((
+            *token,
+            format!("{}::{}", table.spec().id, function.spec().c_name),
+        )),
+        _ => None,
+    }
+}
+
+fn name_call_results(expression: &str, call_results: &BTreeMap<u32, String>) -> String {
+    let bytes = expression.as_bytes();
+    let mut output = String::with_capacity(expression.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index..].starts_with(b"call") {
+            let digits_start = index + 4;
+            let mut digits_end = digits_start;
+            while digits_end < bytes.len() && bytes[digits_end].is_ascii_digit() {
+                digits_end += 1;
+            }
+            if digits_end != digits_start
+                && let Ok(token) = expression[digits_start..digits_end].parse::<u32>()
+                && let Some(target) = call_results.get(&token)
+            {
+                output.push_str("result_of_");
+                output.push_str(&pseudo_identifier(target));
+                output.push('_');
+                output.push_str(&token.to_string());
+                index = digits_end;
+                continue;
+            }
+        }
+        let character = expression[index..]
+            .chars()
+            .next()
+            .expect("index is within the expression");
+        output.push(character);
+        index += character.len_utf8();
+    }
+    output
+}
+
+fn collect_guarded_direct_event(
+    event: &DraftReferenceEvent,
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+    guards: &mut BTreeMap<(u32, String), bool>,
+    call_results: &mut BTreeMap<u32, String>,
+    calls: &mut BTreeSet<LinkedCall>,
+) {
+    if let DraftReferenceEvent::BranchDecision { condition, taken } = event {
+        guards.insert(
+            (
+                condition.site,
+                name_call_results(&branch_expression(condition), call_results),
+            ),
+            *taken,
+        );
+        return;
+    }
+
+    let mut event_calls = BTreeSet::new();
+    collect_call_event(event, resolver, identities, &mut event_calls);
+    for mut call in event_calls {
+        call.guard_paths = Some(vec![current_guard_path(guards)]);
+        calls.insert(call);
+    }
+    if let Some((token, target)) = call_result_identity(event, identities) {
+        call_results.insert(token, target);
+    }
 }
 
 fn explore_direct_calls(
@@ -1172,8 +1414,17 @@ fn explore_direct_calls(
                 continue;
             }
         };
+        let mut guards = BTreeMap::new();
+        let mut call_results = BTreeMap::new();
         for event in &trace.reference_events {
-            collect_call_event(event, resolver, identities, &mut result.calls);
+            collect_guarded_direct_event(
+                event,
+                resolver,
+                identities,
+                &mut guards,
+                &mut call_results,
+                &mut result.calls,
+            );
         }
         for relocation in symbol.relocations.iter().filter(|relocation| {
             matches!(
@@ -1211,6 +1462,7 @@ fn explore_direct_calls(
                     arguments: Vec::new(),
                     argument_bindings: Vec::new(),
                     typed_arguments: Vec::new(),
+                    guard_paths: Some(vec![current_guard_path(&guards)]),
                 });
             }
         }
@@ -2300,9 +2552,13 @@ fn render_pseudo(
             .semantic_contract
             .as_ref()
             .map_or("-", |contract| contract.id.as_str());
+        let guard_paths = call
+            .guard_paths
+            .as_ref()
+            .map_or_else(|| "unknown".to_owned(), |paths| paths.len().to_string());
         writeln!(
             output,
-            "// DIRECT-CALL {site}: {} {}{} [argument-shapes={}] [semantic={semantic}] [contract={contract}]",
+            "// DIRECT-CALL {site}: {} {}{} [argument-shapes={}] [cfg-guard-paths={guard_paths}] [semantic={semantic}] [contract={contract}]",
             call.kind,
             call.target,
             if call.tail { " [tail]" } else { "" },
@@ -2720,6 +2976,7 @@ struct SummaryCallEdge {
     target: usize,
     site: Option<u32>,
     bindings: Vec<LinkedArgumentBinding>,
+    guard_paths: Option<Vec<LinkedCallGuardPath>>,
 }
 
 #[derive(Default)]
@@ -2747,6 +3004,7 @@ struct ContextProjectionState {
     argument_map: Vec<Option<(u8, i32)>>,
     visited_functions: Vec<usize>,
     site_path: Vec<Option<u32>>,
+    guard_scopes: Option<Vec<LinkedCallGuardScope>>,
     path: String,
 }
 
@@ -2812,6 +3070,23 @@ fn project_call_arguments(
         .collect()
 }
 
+fn extend_guard_scopes(
+    scopes: Option<&[LinkedCallGuardScope]>,
+    function: &str,
+    guard_paths: Option<&[LinkedCallGuardPath]>,
+) -> Option<Vec<LinkedCallGuardScope>> {
+    let mut scopes = scopes?.to_vec();
+    let paths = guard_paths?;
+    if paths.iter().any(|path| path.guards.is_empty()) {
+        return Some(scopes);
+    }
+    scopes.push(LinkedCallGuardScope {
+        function: function.to_owned(),
+        paths: paths.to_vec(),
+    });
+    Some(scopes)
+}
+
 fn project_context_fields(
     root: usize,
     functions: &[LinkedIrFunction],
@@ -2834,6 +3109,7 @@ fn project_context_fields(
         argument_map: root_arguments,
         visited_functions: vec![root],
         site_path: Vec::new(),
+        guard_scopes: Some(Vec::new()),
         path: functions[root].identity.clone(),
     }]);
     let mut blockers = BTreeSet::new();
@@ -2883,6 +3159,11 @@ fn project_context_fields(
                     &mut blockers,
                     &boundary,
                     &state.path,
+                ),
+                guard_scopes: extend_guard_scopes(
+                    state.guard_scopes.as_deref(),
+                    &function.identity,
+                    call.guard_paths.as_deref(),
                 ),
             });
         }
@@ -3005,6 +3286,11 @@ fn project_context_fields(
             visited_functions.push(edge.target);
             let mut site_path = state.site_path.clone();
             site_path.push(edge.site);
+            let guard_scopes = extend_guard_scopes(
+                state.guard_scopes.as_deref(),
+                &function.identity,
+                edge.guard_paths.as_deref(),
+            );
             let site = edge
                 .site
                 .map_or_else(|| "composed".to_owned(), |site| format!("{site:#010x}"));
@@ -3013,6 +3299,7 @@ fn project_context_fields(
                 argument_map,
                 visited_functions,
                 site_path,
+                guard_scopes,
                 path: format!(
                     "{} --call@{}--> {}",
                     state.path, site, functions[edge.target].identity
@@ -3119,6 +3406,7 @@ fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                             target,
                             site: call.site,
                             bindings: call.argument_bindings.clone(),
+                            guard_paths: call.guard_paths.clone(),
                         });
                     } else {
                         local_blockers[index].insert(format!(
@@ -3864,6 +4152,7 @@ mod tests {
                 direction: "input-output",
                 value: second_argument.to_owned(),
             }],
+            guard_paths: None,
         };
 
         let calls = compact_calls([variant("arg1+0x4", 1), variant("arg3+0x4", 3)]);
@@ -3881,6 +4170,74 @@ mod tests {
                 offset: 0,
                 expression: "arg0".to_owned(),
             }]
+        );
+
+        let guarded = |taken| {
+            let mut call = variant("arg1+0x4", 1);
+            call.guard_paths = Some(vec![LinkedCallGuardPath {
+                guards: vec![LinkedCallGuard {
+                    site: 0x10,
+                    condition: "arg0 != 0".to_owned(),
+                    taken,
+                }],
+            }]);
+            call
+        };
+        let guarded = compact_calls([guarded(true), guarded(false)]);
+        assert_eq!(guarded[0].argument_shapes, 1);
+        assert_eq!(
+            guarded[0].guard_paths,
+            Some(vec![LinkedCallGuardPath { guards: Vec::new() }])
+        );
+    }
+
+    #[test]
+    fn cfg_guard_paths_minimize_complementary_branches_without_weakening_other_clauses() {
+        let guard = |site, condition: &str, taken| LinkedCallGuard {
+            site,
+            condition: condition.to_owned(),
+            taken,
+        };
+        let paths = normalize_guard_paths([
+            LinkedCallGuardPath {
+                guards: vec![
+                    guard(0x10, "arg0 != 0", true),
+                    guard(0x20, "arg1 == 3", true),
+                ],
+            },
+            LinkedCallGuardPath {
+                guards: vec![
+                    guard(0x10, "arg0 != 0", true),
+                    guard(0x20, "arg1 == 3", false),
+                ],
+            },
+            LinkedCallGuardPath {
+                guards: vec![
+                    guard(0x10, "arg0 != 0", true),
+                    guard(0x20, "arg1 == 3", true),
+                    guard(0x30, "arg2 < 4", true),
+                ],
+            },
+        ]);
+
+        assert_eq!(
+            paths,
+            [LinkedCallGuardPath {
+                guards: vec![guard(0x10, "arg0 != 0", true)],
+            }]
+        );
+    }
+
+    #[test]
+    fn cfg_guard_names_call_results_without_token_prefix_collisions() {
+        let call_results = BTreeMap::from([
+            (1, "vendor::one".to_owned()),
+            (10, "vendor::ten".to_owned()),
+        ]);
+
+        assert_eq!(
+            name_call_results("call1 | call10 | callback", &call_results),
+            "result_of_vendor__one_1 | result_of_vendor__ten_10 | callback"
         );
     }
 
@@ -4247,6 +4604,7 @@ mod tests {
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         };
 
         let mut unique = vec![
@@ -4318,6 +4676,7 @@ mod tests {
             arguments: Vec::new(),
             argument_bindings: Vec::new(),
             typed_arguments: Vec::new(),
+            guard_paths: None,
         };
         let mut child = linked_test_function(
             "child",
@@ -4340,6 +4699,7 @@ mod tests {
                 arguments: vec!["const:0x00000014".to_owned()],
                 argument_bindings: Vec::new(),
                 typed_arguments: Vec::new(),
+                guard_paths: None,
             }],
         );
         child.complete = true;
@@ -4456,6 +4816,13 @@ mod tests {
                     expression: format!("arg{caller_argument}{offset:+#x}"),
                 }],
                 typed_arguments: Vec::new(),
+                guard_paths: Some(vec![LinkedCallGuardPath {
+                    guards: vec![LinkedCallGuard {
+                        site: 0x08,
+                        condition: "arg1 != 0".to_owned(),
+                        taken: true,
+                    }],
+                }]),
             }
         };
         let mut root = linked_test_function(
@@ -4518,6 +4885,13 @@ mod tests {
                 direction: "input-output",
                 value: "arg0 + 0x4".to_owned(),
             }],
+            guard_paths: Some(vec![LinkedCallGuardPath {
+                guards: vec![LinkedCallGuard {
+                    site: 0x0c,
+                    condition: "arg2 == 1".to_owned(),
+                    taken: false,
+                }],
+            }]),
         });
         leaf.context_accesses.push(ContextAccess {
             argument: 0,
@@ -4584,6 +4958,12 @@ mod tests {
         assert_eq!(action.arguments[0].binding, "affine-root-context");
         assert_eq!(action.arguments[0].root_argument, Some(2));
         assert_eq!(action.arguments[0].root_offset, Some(0x1c));
+        let guard_scopes = action.guard_scopes.as_ref().unwrap();
+        assert_eq!(guard_scopes.len(), 3);
+        assert_eq!(guard_scopes[0].function, "rom::root");
+        assert_eq!(guard_scopes[1].function, "rom::middle");
+        assert_eq!(guard_scopes[2].function, "rom::leaf");
+        assert!(!guard_scopes[2].paths[0].guards[0].taken);
         assert_eq!(report.trampoline_slots.len(), 1);
         assert_eq!(report.trampoline_slots[0].call_shapes, 1);
     }
@@ -4612,6 +4992,7 @@ mod tests {
                 expression: "arg0".to_owned(),
             }],
             typed_arguments: Vec::new(),
+            guard_paths: None,
         };
         let mut first = linked_test_function(
             "rom",

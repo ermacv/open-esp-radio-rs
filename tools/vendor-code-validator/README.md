@@ -94,7 +94,7 @@ cargo vendor-code-validator ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v19 records the selection mode plus root and
+`reachable-internal`, and schema v20 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -116,7 +116,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v19 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v20 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,7 +144,7 @@ iteration counts. The JSON records this policy as
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v19 records
+symbolic states. Schema v20 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -184,13 +184,31 @@ origin, static call site, target, typed argument values, replacement hint and
 any affine projection back to root arguments. It also carries the exact
 contract source, stable ID and evidence rule that justified the semantic name.
 The `site_path` array records the lexical call-site chain from the report root
-to the action, and actions are stably ordered by that chain. The top-level
-`semantic_action_mode: "lexical-site-paths-affine-root-bindings"` is explicit
-because this is a path-qualified manual-analysis inventory, not a total runtime
-order. A `null` site means the backend recovered a composed boundary but not a
-standalone instruction address. Mutually exclusive paths can both contribute
-actions, loops are represented by recovered shapes rather than iteration
-counts, and recursive revisits stop at the projection boundary.
+to the action, and actions are stably ordered by that chain.
+
+Direct call records additionally expose recovered `cfg_guard_paths` in
+disjunctive normal form: paths are alternatives and the decisions inside one
+path are conjunctive. During semantic projection these are retained as
+`cfg_guard_scopes`, with an AND between function scopes and an OR between the
+paths inside one scope. Keeping the formula factorized avoids an artificial
+cross product across nested calls and preserves the function in which each
+decision was made. Complementary alternatives and absorbed supersets are
+minimized mechanically; conditions themselves remain low-level symbolic
+expressions and call results receive stable descriptive identifiers rather
+than guessed domain names.
+
+The top-level
+`semantic_action_mode: "lexical-site-paths-factorized-cfg-guards-affine-root-bindings"`
+and `cfg_guard_mode` describe this representation. A `null` guard field means
+that CFG evidence was unavailable; an empty path means unconditional with
+respect to the recovered decisions. `cfg_guard_completeness_claim: false` is
+intentional: the guards are evidence from explored forced branch decisions,
+not a claim that bounded symbolic exploration enumerated every feasible path.
+Likewise, a `null` site means the backend recovered a composed boundary but not
+a standalone instruction address. This remains a path-qualified
+manual-analysis inventory, not a total runtime order. Mutually exclusive paths
+can both contribute actions, loops are represented by recovered shapes rather
+than iteration counts, and recursive revisits stop at the projection boundary.
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
 compilable output. It renders recovered MMIO/RAM effects, delays, polls,

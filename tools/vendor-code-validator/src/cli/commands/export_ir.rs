@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_reachable: bool) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-affine-root-bindings\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -156,8 +156,12 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 .semantic_contract
                 .as_ref()
                 .map_or("-", |contract| contract.evidence.as_str());
+            let guard_paths = call
+                .guard_paths
+                .as_ref()
+                .map_or_else(|| "unknown".to_owned(), |paths| paths.len().to_string());
             println!(
-                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\t{}",
+                "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\tcfg-guard-paths={}\t{}",
                 function.identity,
                 call.kind,
                 call.target,
@@ -174,8 +178,19 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 call.project_candidates.join("|"),
                 call.argument_shapes,
                 call.argument_bindings.len(),
+                guard_paths,
                 call.semantics.as_deref().unwrap_or("-"),
             );
+            if call.semantic_operation.is_some()
+                && let Some(paths) = call.guard_paths.as_deref()
+            {
+                println!(
+                    "CALL-GUARD\t{}\t{}\t{}",
+                    function.identity,
+                    call.target,
+                    format_guard_paths(paths),
+                );
+            }
             for argument in &call.typed_arguments {
                 println!(
                     "CALL-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}",
@@ -354,13 +369,18 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 .contract
                 .as_ref()
                 .map_or("-", |contract| contract.evidence.as_str());
+            let guard_scopes = action
+                .guard_scopes
+                .as_ref()
+                .map_or_else(|| "unknown".to_owned(), |scopes| scopes.len().to_string());
             println!(
-                "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\tsite-path={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
+                "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\tsite-path={}\tcfg-guard-scopes={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
                 function.identity,
                 action.operation,
                 action.target,
                 site,
                 format_site_path(&action.site_path),
+                guard_scopes,
                 action.argument_shapes,
                 action.origin,
                 action.path,
@@ -369,6 +389,18 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport, include_
                 semantic_evidence,
                 action.replacement_hint.as_deref().unwrap_or("-"),
             );
+            if let Some(scopes) = action.guard_scopes.as_deref() {
+                for scope in scopes {
+                    println!(
+                        "EFFECT-ACTION-GUARD\t{}\t{}\tscope={}\talternatives={}\texpression={}",
+                        function.identity,
+                        action.operation,
+                        scope.function,
+                        scope.paths.len(),
+                        format_guard_paths(&scope.paths),
+                    );
+                }
+            }
             for argument in &action.arguments {
                 println!(
                     "EFFECT-ACTION-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
@@ -670,6 +702,21 @@ fn write_pseudo(
                 format_site_path(&action.site_path)
             )
             .expect("writing to String cannot fail");
+            match action.guard_scopes.as_deref() {
+                Some([]) => output.push_str("//   when: true\n"),
+                Some(scopes) => {
+                    for scope in scopes {
+                        writeln!(
+                            output,
+                            "//   when in {}: {}",
+                            scope.function,
+                            format_guard_paths(&scope.paths)
+                        )
+                        .expect("writing to String cannot fail");
+                    }
+                }
+                None => output.push_str("//   when: unknown (CFG guard unavailable)\n"),
+            }
             for argument in &action.arguments {
                 let projected = match (argument.root_argument, argument.root_offset) {
                     (Some(root_argument), Some(root_offset)) => {
@@ -758,6 +805,84 @@ fn format_site_path(site_path: &[Option<u32>]) -> String {
         .map(|site| site.map_or_else(|| "unknown".to_owned(), |site| format!("{site:#010x}")))
         .collect::<Vec<_>>()
         .join(" -> ")
+}
+
+fn format_guard_path(path: &LinkedCallGuardPath) -> String {
+    if path.guards.is_empty() {
+        return "true".to_owned();
+    }
+    path.guards
+        .iter()
+        .map(|guard| {
+            if guard.taken {
+                format!("({})", guard.condition)
+            } else {
+                format!("!({})", guard.condition)
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" && ")
+}
+
+fn format_guard_paths(paths: &[LinkedCallGuardPath]) -> String {
+    paths
+        .iter()
+        .map(|path| format!("({})", format_guard_path(path)))
+        .collect::<Vec<_>>()
+        .join(" || ")
+}
+
+fn write_guard_paths(output: &mut String, paths: Option<&[LinkedCallGuardPath]>) {
+    let Some(paths) = paths else {
+        output.push_str("null");
+        return;
+    };
+    output.push('[');
+    for (path_index, path) in paths.iter().enumerate() {
+        if path_index != 0 {
+            output.push_str(", ");
+        }
+        output.push_str("{\"expression\": ");
+        write_string(output, &format_guard_path(path));
+        output.push_str(", \"guards\": [");
+        for (guard_index, guard) in path.guards.iter().enumerate() {
+            if guard_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"site\": \"{:#010x}\", \"condition\": ",
+                guard.site
+            )
+            .expect("writing to String cannot fail");
+            write_string(output, &guard.condition);
+            write!(output, ", \"taken\": {}}}", guard.taken)
+                .expect("writing to String cannot fail");
+        }
+        output.push_str("]}");
+    }
+    output.push(']');
+}
+
+fn write_guard_scopes(output: &mut String, scopes: Option<&[LinkedCallGuardScope]>) {
+    let Some(scopes) = scopes else {
+        output.push_str("null");
+        return;
+    };
+    output.push('[');
+    for (scope_index, scope) in scopes.iter().enumerate() {
+        if scope_index != 0 {
+            output.push_str(", ");
+        }
+        output.push_str("{\"function\": ");
+        write_string(output, &scope.function);
+        output.push_str(", \"expression\": ");
+        write_string(output, &format_guard_paths(&scope.paths));
+        output.push_str(", \"paths\": ");
+        write_guard_paths(output, Some(&scope.paths));
+        output.push('}');
+    }
+    output.push(']');
 }
 
 fn write_trampoline(output: &mut String, trampoline: &LinkedTrampoline) {
@@ -899,7 +1024,7 @@ fn write_json_report(
     include_reachable: bool,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 19,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 20,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -935,7 +1060,13 @@ fn write_json_report(
     output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
     output.push_str("  \"diagnostic_compaction_mode\": \"exact-semicolon-fragment-inventory\",\n");
     output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
-    output.push_str("  \"semantic_action_mode\": \"lexical-site-paths-affine-root-bindings\",\n");
+    output.push_str(
+        "  \"semantic_action_mode\": \"lexical-site-paths-factorized-cfg-guards-affine-root-bindings\",\n",
+    );
+    output.push_str(
+        "  \"cfg_guard_mode\": \"forced-branch-paths-minimized-dnf-factorized-by-function\",\n",
+    );
+    output.push_str("  \"cfg_guard_completeness_claim\": false,\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
     for (index, artifact) in artifacts.iter().enumerate() {
@@ -1198,7 +1329,9 @@ fn write_json_report(
                 write_string(&mut output, &binding.expression);
                 output.push('}');
             }
-            output.push_str("], \"typed_arguments\": [");
+            output.push_str("], \"cfg_guard_paths\": ");
+            write_guard_paths(&mut output, call.guard_paths.as_deref());
+            output.push_str(", \"typed_arguments\": [");
             for (argument_index, argument) in call.typed_arguments.iter().enumerate() {
                 if argument_index != 0 {
                     output.push_str(", ");
@@ -1442,6 +1575,8 @@ fn write_json_report(
                 }
             }
             output.push(']');
+            output.push_str(", \"cfg_guard_scopes\": ");
+            write_guard_scopes(&mut output, action.guard_scopes.as_deref());
             write!(
                 output,
                 ", \"argument_shapes\": {}, \"arguments\": ",

@@ -1,5 +1,7 @@
 //! Generated-PAC ownership for the complete cold MAC TX-power publication.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// Number of two-byte rate entries produced by complete `hal_init_tx_pwr`.
@@ -181,25 +183,17 @@ impl RadioRegisters {
             PartialRuPowerSlot::Packed { word, lane } => {
                 let register = init.tb_ru_power(word);
                 match lane {
-                    // SAFETY: MacTxPowerIndex proves the value fits each
-                    // generated six-bit field.
-                    0 => register.modify(|_, w| unsafe { w.power_0().bits(power.value()) }),
-                    // SAFETY: same six-bit invariant.
-                    1 => register.modify(|_, w| unsafe { w.power_1().bits(power.value()) }),
-                    // SAFETY: same six-bit invariant.
-                    2 => register.modify(|_, w| unsafe { w.power_2().bits(power.value()) }),
-                    // SAFETY: same six-bit invariant.
-                    3 => register.modify(|_, w| unsafe { w.power_3().bits(power.value()) }),
-                    // SAFETY: same six-bit invariant.
-                    4 => register.modify(|_, w| unsafe { w.power_4().bits(power.value()) }),
+                    0 => register.modify(|_, w| w.power_0().set(power.value())),
+                    1 => register.modify(|_, w| w.power_1().set(power.value())),
+                    2 => register.modify(|_, w| w.power_2().set(power.value())),
+                    3 => register.modify(|_, w| w.power_3().set(power.value())),
+                    4 => register.modify(|_, w| w.power_4().set(power.value())),
                     _ => unreachable!(),
                 };
             }
             PartialRuPowerSlot::Tail => {
-                // SAFETY: MacTxPowerIndex proves the value fits the generated
-                // six-bit field.
                 init.tb_ru_power_tail()
-                    .modify(|_, w| unsafe { w.power_index().bits(power.value()) });
+                    .modify(|_, w| w.power_index().set(power.value()));
             }
         }
     }
@@ -214,18 +208,18 @@ impl RadioRegisters {
 
         // Complete hal_init_tb_power: rates 16..=25, one six-bit field per RMW.
         let tb0 = init.tb_power(0);
-        tb0.modify(|_, w| unsafe { w.power_0().bits(table.primary_index(16)) });
-        tb0.modify(|_, w| unsafe { w.power_1().bits(table.primary_index(17)) });
-        tb0.modify(|_, w| unsafe { w.power_2().bits(table.primary_index(18)) });
-        tb0.modify(|_, w| unsafe { w.power_3().bits(table.primary_index(19)) });
+        tb0.modify(|_, w| w.power_0().set(table.primary_index(16)));
+        tb0.modify(|_, w| w.power_1().set(table.primary_index(17)));
+        tb0.modify(|_, w| w.power_2().set(table.primary_index(18)));
+        tb0.modify(|_, w| w.power_3().set(table.primary_index(19)));
         let tb1 = init.tb_power(1);
-        tb1.modify(|_, w| unsafe { w.power_0().bits(table.primary_index(20)) });
-        tb1.modify(|_, w| unsafe { w.power_1().bits(table.primary_index(21)) });
-        tb1.modify(|_, w| unsafe { w.power_2().bits(table.primary_index(22)) });
-        tb1.modify(|_, w| unsafe { w.power_3().bits(table.primary_index(23)) });
+        tb1.modify(|_, w| w.power_0().set(table.primary_index(20)));
+        tb1.modify(|_, w| w.power_1().set(table.primary_index(21)));
+        tb1.modify(|_, w| w.power_2().set(table.primary_index(22)));
+        tb1.modify(|_, w| w.power_3().set(table.primary_index(23)));
         let tb2 = init.tb_power(2);
-        tb2.modify(|_, w| unsafe { w.power_0().bits(table.primary_index(24)) });
-        tb2.modify(|_, w| unsafe { w.power_1().bits(table.primary_index(25)) });
+        tb2.modify(|_, w| w.power_0().set(table.primary_index(24)));
+        tb2.modify(|_, w| w.power_1().set(table.primary_index(25)));
 
         // Complete hal_init_imrsp_power. Each tuple is
         // (format, encoded rate, table lookup rate). The blob replaces these
@@ -244,10 +238,9 @@ impl RadioRegisters {
         ];
         for (word, (format, encoded_rate, lookup_rate)) in RESPONSE.into_iter().enumerate() {
             let response = init.immediate_response(word);
-            response.modify(|_, w| unsafe { w.format_unknown().bits(format) });
-            response.modify(|_, w| unsafe { w.rate_index().bits(encoded_rate) });
-            response
-                .modify(|_, w| unsafe { w.power_index().bits(table.primary_index(lookup_rate)) });
+            response.modify(|_, w| w.format_unknown().set(format));
+            response.modify(|_, w| w.rate_index().set(encoded_rate));
+            response.modify(|_, w| w.power_index().set(table.primary_index(lookup_rate)));
         }
 
         // Complete hal_init_tb_ru_power and the complete setter jump tables.
@@ -262,29 +255,29 @@ impl RadioRegisters {
 
         // Selectors 0..=8.
         let ru0 = init.tb_ru_power(0);
-        ru0.modify(|_, w| unsafe { w.power_0().bits(delta_10) });
-        ru0.modify(|_, w| unsafe { w.power_1().bits(delta_10) });
-        ru0.modify(|_, w| unsafe { w.power_2().bits(delta_10) });
-        ru0.modify(|_, w| unsafe { w.power_3().bits(delta_10) });
-        ru0.modify(|_, w| unsafe { w.power_4().bits(delta_10) });
+        ru0.modify(|_, w| w.power_0().set(delta_10));
+        ru0.modify(|_, w| w.power_1().set(delta_10));
+        ru0.modify(|_, w| w.power_2().set(delta_10));
+        ru0.modify(|_, w| w.power_3().set(delta_10));
+        ru0.modify(|_, w| w.power_4().set(delta_10));
         let ru1 = init.tb_ru_power(1);
-        ru1.modify(|_, w| unsafe { w.power_0().bits(delta_10) });
-        ru1.modify(|_, w| unsafe { w.power_1().bits(delta_10) });
-        ru1.modify(|_, w| unsafe { w.power_2().bits(delta_10) });
-        ru1.modify(|_, w| unsafe { w.power_3().bits(delta_10) });
+        ru1.modify(|_, w| w.power_0().set(delta_10));
+        ru1.modify(|_, w| w.power_1().set(delta_10));
+        ru1.modify(|_, w| w.power_2().set(delta_10));
+        ru1.modify(|_, w| w.power_3().set(delta_10));
 
         // Selectors 37..=40.
-        ru1.modify(|_, w| unsafe { w.power_4().bits(delta_7) });
+        ru1.modify(|_, w| w.power_4().set(delta_7));
         let ru2 = init.tb_ru_power(2);
-        ru2.modify(|_, w| unsafe { w.power_0().bits(delta_7) });
-        ru2.modify(|_, w| unsafe { w.power_1().bits(delta_7) });
-        ru2.modify(|_, w| unsafe { w.power_2().bits(delta_7) });
+        ru2.modify(|_, w| w.power_0().set(delta_7));
+        ru2.modify(|_, w| w.power_1().set(delta_7));
+        ru2.modify(|_, w| w.power_2().set(delta_7));
 
         // Selectors 53, 54 and 61.
-        ru2.modify(|_, w| unsafe { w.power_3().bits(delta_4) });
-        ru2.modify(|_, w| unsafe { w.power_4().bits(delta_4) });
+        ru2.modify(|_, w| w.power_3().set(delta_4));
+        ru2.modify(|_, w| w.power_4().set(delta_4));
         init.tb_ru_power_tail()
-            .modify(|_, w| unsafe { w.power_index().bits(base & 0x3f) });
+            .modify(|_, w| w.power_index().set(base & 0x3f));
     }
 }
 

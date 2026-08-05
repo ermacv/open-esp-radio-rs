@@ -18796,15 +18796,15 @@ pub mod wifi_mac_tx_power_init {
         #[doc = "Field `POWER_INDEX` reader - PHY gain-table index selected for the response rate; not dBm."]
         pub type PowerIndexR = crate::FieldReader;
         #[doc = "Field `POWER_INDEX` writer - PHY gain-table index selected for the response rate; not dBm."]
-        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `RATE_INDEX` reader - "]
         pub type RateIndexR = crate::FieldReader;
         #[doc = "Field `RATE_INDEX` writer - "]
-        pub type RateIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type RateIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `FORMAT_UNKNOWN` reader - Zero for the six legacy response words and two for the four HE response words."]
         pub type FormatUnknownR = crate::FieldReader;
         #[doc = "Field `FORMAT_UNKNOWN` writer - Zero for the six legacy response words and two for the four HE response words."]
-        pub type FormatUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2>;
+        pub type FormatUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 2, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 8:13 - PHY gain-table index selected for the response rate; not dBm."]
             #[inline(always)]
@@ -18863,19 +18863,19 @@ pub mod wifi_mac_tx_power_init {
         #[doc = "Field `POWER_0` reader - "]
         pub type Power0R = crate::FieldReader;
         #[doc = "Field `POWER_0` writer - "]
-        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_1` reader - "]
         pub type Power1R = crate::FieldReader;
         #[doc = "Field `POWER_1` writer - "]
-        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_2` reader - "]
         pub type Power2R = crate::FieldReader;
         #[doc = "Field `POWER_2` writer - "]
-        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_3` reader - "]
         pub type Power3R = crate::FieldReader;
         #[doc = "Field `POWER_3` writer - "]
-        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:5"]
             #[inline(always)]
@@ -18944,7 +18944,7 @@ pub mod wifi_mac_tx_power_init {
         #[doc = "Field `POWER_INDEX` reader - "]
         pub type PowerIndexR = crate::FieldReader;
         #[doc = "Field `POWER_INDEX` writer - "]
-        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type PowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 24:29"]
             #[inline(always)]
@@ -18983,23 +18983,23 @@ pub mod wifi_mac_tx_power_init {
         #[doc = "Field `POWER_0` reader - "]
         pub type Power0R = crate::FieldReader;
         #[doc = "Field `POWER_0` writer - "]
-        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power0W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_1` reader - "]
         pub type Power1R = crate::FieldReader;
         #[doc = "Field `POWER_1` writer - "]
-        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power1W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_2` reader - "]
         pub type Power2R = crate::FieldReader;
         #[doc = "Field `POWER_2` writer - "]
-        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power2W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_3` reader - "]
         pub type Power3R = crate::FieldReader;
         #[doc = "Field `POWER_3` writer - "]
-        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power3W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `POWER_4` reader - "]
         pub type Power4R = crate::FieldReader;
         #[doc = "Field `POWER_4` writer - "]
-        pub type Power4W<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type Power4W<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:5"]
             #[inline(always)]

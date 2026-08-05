@@ -948,10 +948,10 @@
           <addressOffset>0x00</addressOffset><size>32</size><access>read-write</access>
           <fields>
 
-            <field><name>POWER_INDEX</name><description>PHY gain-table index selected for the response rate; not dBm.</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>POWER_INDEX</name><description>PHY gain-table index selected for the response rate; not dBm.</description><bitOffset>8</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
 
-            <field><name>RATE_INDEX</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>FORMAT_UNKNOWN</name><description>Zero for the six legacy response words and two for the four HE response words.</description><bitOffset>22</bitOffset><bitWidth>2</bitWidth></field>
+            <field><name>RATE_INDEX</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>FORMAT_UNKNOWN</name><description>Zero for the six legacy response words and two for the four HE response words.</description><bitOffset>22</bitOffset><bitWidth>2</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>3</maximum></range></writeConstraint></field>
 
           </fields>
         </register>
@@ -960,28 +960,28 @@
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT]; CONFIDENCE[instruction-exact]. Three trigger-based power words populated from rates 16 through 25. Each used six-bit field is updated through a separate RMW.</description>
           <addressOffset>0x28</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_1</name><bitOffset>8</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_2</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_3</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_1</name><bitOffset>8</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_2</name><bitOffset>16</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_3</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
           </fields>
         </register>
         <register>
           <name>TB_RU_POWER_TAIL</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER]; CONFIDENCE[instruction-exact]. Complete hal_init_tb_ru_power publishes the unadjusted rate-16 power at raw Trigger RU selector 61. Complete runtime get/set leaves address this same six-bit field; selector 62 is rejected.</description>
           <addressOffset>0x34</addressOffset><size>32</size><access>read-write</access>
-          <fields><field><name>POWER_INDEX</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth></field></fields>
+          <fields><field><name>POWER_INDEX</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field></fields>
         </register>
         <register><dim>3</dim><dimIncrement>0x04</dimIncrement><dimIndex>0-2</dimIndex>
           <name>TB_RU_POWER%s</name>
           <description>SOURCE[BLOB_LIBPP_HAL_TX_POWER_INIT,BLOB_LIBNET80211_PARTIAL_RU_MAX_POWER]; CONFIDENCE[instruction-exact]. Packed trigger-based resource-unit power deltas selected by raw Trigger RU allocation. Complete runtime get/set jump tables admit only selectors 0 through 8, 37 through 40, 53, 54 and 61; the first fifteen selectors occupy these packed words and selector 61 occupies TB_RU_POWER_TAIL.</description>
           <addressOffset>0x38</addressOffset><size>32</size><access>read-write</access>
           <fields>
-            <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_1</name><bitOffset>6</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_2</name><bitOffset>12</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_3</name><bitOffset>18</bitOffset><bitWidth>6</bitWidth></field>
-            <field><name>POWER_4</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth></field>
+            <field><name>POWER_0</name><bitOffset>0</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_1</name><bitOffset>6</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_2</name><bitOffset>12</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_3</name><bitOffset>18</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
+            <field><name>POWER_4</name><bitOffset>24</bitOffset><bitWidth>6</bitWidth><writeConstraint><range><minimum>0</minimum><maximum>0x3f</maximum></range></writeConstraint></field>
 
           </fields>
         </register>

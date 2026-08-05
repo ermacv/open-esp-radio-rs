@@ -121,6 +121,10 @@ image/control, session lifecycle, modeled calls, and memory/MMIO policy are
 separate test modules over shared synthetic fixtures. Test names and coverage
 are retained; only their source ownership changed.
 
+Reference-codegen regressions are also grouped by value rendering, generated
+scaffolding, memory-transfer compaction, composed calls, and polling. Shared
+fixtures remain explicit, and the set of executed assertions is unchanged.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

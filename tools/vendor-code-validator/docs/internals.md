@@ -197,6 +197,23 @@ Fixtures with cross-family meaning remain in `tests/mod.rs`; individual test
 modules do not construct competing definitions of the executable-image
 invariants.
 
+## RISC-V codegen test layout
+
+`backend-riscv/src/codegen/tests/mod.rs` owns the shared trace-to-program
+generation helper. Test modules follow the renderer policies they protect:
+
+| Module | Responsibility |
+| --- | --- |
+| `tests/value.rs` | Symbolic expressions, branch conditions, and static/indexed read-token validation |
+| `tests/generation.rs` | Self-contained output scaffolding, incomplete-flow rejection, and ordered RAM operations |
+| `tests/memory.rs` | Proven byte/word transfer compaction and value-escape constraints |
+| `tests/calls.rs` | Composed-call scoping, result escape, and reviewed wide division |
+| `tests/polls.rs` | Bounded-poll rendering and exhaustion diagnostics |
+
+Memory-transfer fixtures remain owned by the memory test module; the one
+composed-call escape regression that consumes such a fixture imports it
+explicitly instead of duplicating the flow.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -242,9 +259,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/codegen/tests.rs`: group MMIO/value, memory-transfer,
-  composed-call, poll/control-flow, and generated-source regressions around
-  shared flow fixtures.
+- `backend-riscv/src/codegen/mod.rs`: separate the generated Rust runtime
+  scaffold from render state/value-address helpers while retaining the public
+  `codegen::generate` facade.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

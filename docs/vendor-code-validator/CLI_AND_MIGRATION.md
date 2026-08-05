@@ -116,6 +116,11 @@ share a single `RenderState`, preserving event order, call/read token numbering,
 and one-time external-table validation while making each lowering policy
 reviewable in isolation.
 
+Concrete-execution regressions now mirror the implementation boundaries:
+image/control, session lifecycle, modeled calls, and memory/MMIO policy are
+separate test modules over shared synthetic fixtures. Test names and coverage
+are retained; only their source ownership changed.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

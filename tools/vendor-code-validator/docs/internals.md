@@ -180,6 +180,23 @@ silently bypass code generation. All family renderers mutate the same
 `RenderState` in stream order; token namespaces and external-table validation
 therefore still have one ordered owner.
 
+## RISC-V concrete-execution test layout
+
+Shared synthetic image/SVD construction lives in
+`backend-riscv/src/execution/tests/mod.rs`; regression cases are grouped by
+the policy boundary they exercise:
+
+| Module | Responsibility |
+| --- | --- |
+| `tests/image_and_control.rs` | Code-closure identity, relocation resolution, branch pruning, calls, and ordered control flow |
+| `tests/session.rs` | Warm/cold reset, persistent state, external mutation, ownership, and ordered RAM timelines |
+| `tests/calls.rs` | Unresolved calls and scenario-provided modeled return sequences |
+| `tests/memory.rs` | Poison/BSS/read-only memory, MMIO responses, atomics, stack fill, fences, and observed-memory projection |
+
+Fixtures with cross-family meaning remain in `tests/mod.rs`; individual test
+modules do not construct competing definitions of the executable-image
+invariants.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -225,9 +242,9 @@ pseudo-Rust, and terminal views consistent.
 
 Line count is only a signal, but the next useful responsibility reviews are:
 
-- `backend-riscv/src/execution/tests.rs`: group image/call, session-lifecycle,
-  memory-policy, and instruction/event regressions without duplicating shared
-  synthetic-image fixtures.
+- `backend-riscv/src/codegen/tests.rs`: group MMIO/value, memory-transfer,
+  composed-call, poll/control-flow, and generated-source regressions around
+  shared flow fixtures.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

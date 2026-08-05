@@ -1,5 +1,7 @@
 //! Ownership-bound access to the shared PHY table-memory aperture.
 
+#![forbid(unsafe_code)]
+
 use super::RadioRegisters;
 
 /// One packed PBUS-memory group boundary.
@@ -50,40 +52,26 @@ impl RadioRegisters {
             let pair = usize::from(boundary.group >> 1);
             let group_boundary = self.peripherals.phy_memory.group_boundary(pair);
             if boundary.group & 1 == 0 {
-                // SAFETY: both values are u8 and therefore fit the generated
-                // eight-bit fields.
-                group_boundary.modify(|_, w| unsafe {
+                group_boundary.modify(|_, w| {
                     w.even_group_first_entry()
-                        .bits(boundary.first_entry)
+                        .set(boundary.first_entry)
                         .even_group_last_entry()
-                        .bits(boundary.last_entry)
+                        .set(boundary.last_entry)
                 });
             } else {
-                // SAFETY: both values are u8 and therefore fit the generated
-                // eight-bit fields.
-                group_boundary.modify(|_, w| unsafe {
+                group_boundary.modify(|_, w| {
                     w.odd_group_first_entry()
-                        .bits(boundary.first_entry)
+                        .set(boundary.first_entry)
                         .odd_group_last_entry()
-                        .bits(boundary.last_entry)
+                        .set(boundary.last_entry)
                 });
             }
         }
 
-        // SAFETY: the full-width OPAQUE_DATA field accepts every u32 image;
-        // write_with_zero is required because the write-only register has no
-        // meaningful reset value.
-        unsafe {
-            self.peripherals
-                .phy_memory
-                .data_0()
-                .write_with_zero(|w| w.opaque_data().bits(data));
-        }
-        // SAFETY: split_pbus_command bounds the index to u8. The remaining
-        // generated fields are single bits.
-        self.peripherals.phy_memory.command().modify(|_, w| unsafe {
+        super::svd::full_register_write::phy_memory_data_0(&self.peripherals.phy_memory, data);
+        self.peripherals.phy_memory.command().modify(|_, w| {
             w.memory_index()
-                .bits(memory_index)
+                .set(memory_index)
                 .gain_write_or_pbus_command_bit_8()
                 .bit(command_bit_8)
                 .pbus_command_bit_9()
@@ -104,12 +92,10 @@ impl RadioRegisters {
 
     /// Configure the shared CFR/gain-memory base index through one fresh RMW.
     pub fn configure_table_memory_base_index(&mut self, index: u8) {
-        // SAFETY: index is a u8 and therefore fits the generated eight-bit
-        // field.
         self.peripherals
             .phy_clock_oracle
             .table_memory_index_source()
-            .modify(|_, w| unsafe { w.base_index().bits(index) });
+            .modify(|_, w| w.base_index().set(index));
     }
 
     /// Apply complete rev0 ROM `phy_force_pwr_index` through its two ordered
@@ -120,24 +106,16 @@ impl RadioRegisters {
             .phy_clock_oracle
             .table_memory_index_source();
         control.modify(|_, w| w.force_power_enable().bit(enabled & 1 != 0));
-        // SAFETY: retaining the low six bits fits the generated field.
-        control.modify(|_, w| unsafe { w.forced_power_index().bits(index as u8 & 0x3f) });
+        control.modify(|_, w| w.forced_power_index().set(index as u8 & 0x3f));
     }
 
     /// Publish one TX-CFR entry and its complete set/clear commit pulse.
     pub fn program_tx_cfr_entry(&mut self, data: u32, index: u8) {
-        // SAFETY: the full-width OPAQUE_DATA field accepts every u32 image.
-        unsafe {
-            self.peripherals
-                .phy_memory
-                .data_0()
-                .write_with_zero(|w| w.opaque_data().bits(data));
-        }
-        // SAFETY: index is a u8 and fits the generated eight-bit field.
+        super::svd::full_register_write::phy_memory_data_0(&self.peripherals.phy_memory, data);
         self.peripherals
             .phy_memory
             .command()
-            .modify(|_, w| unsafe { w.memory_index().bits(index) });
+            .modify(|_, w| w.memory_index().set(index));
         self.peripherals
             .phy_memory
             .command()
@@ -150,31 +128,16 @@ impl RadioRegisters {
 
     /// Publish one three-word gain-memory entry in complete ROM order.
     pub fn program_gain_memory_entry(&mut self, words: [u32; 3], index: u8) {
-        // SAFETY: every OPAQUE_DATA field is full-width and accepts every u32
-        // image; write_with_zero is the generated API for write-only words
-        // whose reset values are not evidenced.
-        unsafe {
-            self.peripherals
-                .phy_memory
-                .data_0()
-                .write_with_zero(|w| w.opaque_data().bits(words[0]));
-            self.peripherals
-                .phy_memory
-                .data_1()
-                .write_with_zero(|w| w.opaque_data().bits(words[1]));
-            self.peripherals
-                .phy_memory
-                .data_2()
-                .write_with_zero(|w| w.opaque_data().bits(words[2]));
-        }
+        let memory = &self.peripherals.phy_memory;
+        super::svd::full_register_write::phy_memory_data_0(memory, words[0]);
+        super::svd::full_register_write::phy_memory_data_1(memory, words[1]);
+        super::svd::full_register_write::phy_memory_data_2(memory, words[2]);
 
-        // SAFETY: zero fits the eleven-bit field and index is exactly the
-        // generated eight-bit field width.
-        self.peripherals.phy_memory.command().modify(|_, w| unsafe {
+        self.peripherals.phy_memory.command().modify(|_, w| {
             w.gain_command_low_zero_unknown()
-                .bits(0)
+                .set(0)
                 .memory_index()
-                .bits(index)
+                .set(index)
                 .gain_write_or_pbus_command_bit_8()
                 .set_bit()
         });

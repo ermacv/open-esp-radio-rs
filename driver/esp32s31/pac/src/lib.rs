@@ -3414,11 +3414,12 @@ pub mod phy_memory {
         #[doc = "Field `GAIN_COMMAND_LOW_ZERO_UNKNOWN` reader - SOURCE\\[ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Gain-memory writes clear bits 10:0; their individual meanings are unknown."]
         pub type GainCommandLowZeroUnknownR = crate::FieldReader<u16>;
         #[doc = "Field `GAIN_COMMAND_LOW_ZERO_UNKNOWN` writer - SOURCE\\[ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-semantics-unknown\\]. Gain-memory writes clear bits 10:0; their individual meanings are unknown."]
-        pub type GainCommandLowZeroUnknownW<'a, REG> = crate::FieldWriter<'a, REG, 11, u16>;
+        pub type GainCommandLowZeroUnknownW<'a, REG> =
+            crate::FieldWriter<'a, REG, 11, u16, crate::Safe>;
         #[doc = "Field `MEMORY_INDEX` reader - SOURCE\\[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Low eight bits of the PBUS command and complete CFR/gain memory index."]
         pub type MemoryIndexR = crate::FieldReader;
         #[doc = "Field `MEMORY_INDEX` writer - SOURCE\\[ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Low eight bits of the PBUS command and complete CFR/gain memory index."]
-        pub type MemoryIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type MemoryIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `GAIN_WRITE_OR_PBUS_COMMAND_BIT_8` reader - SOURCE\\[ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Gain-memory write selector or PBUS command bit 8."]
         pub type GainWriteOrPbusCommandBit8R = crate::BitReader;
         #[doc = "Field `GAIN_WRITE_OR_PBUS_COMMAND_BIT_8` writer - SOURCE\\[ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Gain-memory write selector or PBUS command bit 8."]
@@ -3509,7 +3510,7 @@ pub mod phy_memory {
         #[doc = "Register `DATA_0` writer"]
         pub type W = crate::W<Data0Spec>;
         #[doc = "Field `OPAQUE_DATA` writer - "]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -3524,7 +3525,7 @@ pub mod phy_memory {
         }
         #[doc = "`write(|w| ..)` method takes [`data_0::W`](W) writer structure"]
         impl crate::Writable for Data0Spec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "DATA_1 (w) register accessor: SOURCE\\[ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Second gain-memory data word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_1::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_1`] module"]
@@ -3535,7 +3536,7 @@ pub mod phy_memory {
         #[doc = "Register `DATA_1` writer"]
         pub type W = crate::W<Data1Spec>;
         #[doc = "Field `OPAQUE_DATA` writer - "]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -3550,7 +3551,7 @@ pub mod phy_memory {
         }
         #[doc = "`write(|w| ..)` method takes [`data_1::W`](W) writer structure"]
         impl crate::Writable for Data1Spec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "DATA_2 (w) register accessor: SOURCE\\[ROM_REV0_PHY_WRITE_GAIN_MEM\\]; CONFIDENCE\\[instruction-exact-partial\\]. Third gain-memory data word.\n\nYou can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`data_2::W`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@data_2`] module"]
@@ -3561,7 +3562,7 @@ pub mod phy_memory {
         #[doc = "Register `DATA_2` writer"]
         pub type W = crate::W<Data2Spec>;
         #[doc = "Field `OPAQUE_DATA` writer - "]
-        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32>;
+        pub type OpaqueDataW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl W {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -3576,7 +3577,7 @@ pub mod phy_memory {
         }
         #[doc = "`write(|w| ..)` method takes [`data_2::W`](W) writer structure"]
         impl crate::Writable for Data2Spec {
-            type Safety = crate::Unsafe;
+            type Safety = crate::Safe;
         }
     }
     #[doc = "GROUP_BOUNDARY (rw) register accessor: SOURCE\\[ROM_REV0_PHY_SET_PBUS_MEM,ROM_REV0_PHY_WRITE_PBUS_MEM,ROM_REV0_PHY_SAVE_PBUS_REG\\]; CONFIDENCE\\[instruction-exact\\]. Packed first/last entry indices for one even/odd PBUS-memory group pair. Six words describe all twelve groups.\n\nYou can [`read`](crate::Reg::read) this register and get [`group_boundary::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`group_boundary::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@group_boundary`] module"]
@@ -3591,19 +3592,19 @@ pub mod phy_memory {
         #[doc = "Field `EVEN_GROUP_FIRST_ENTRY` reader - "]
         pub type EvenGroupFirstEntryR = crate::FieldReader;
         #[doc = "Field `EVEN_GROUP_FIRST_ENTRY` writer - "]
-        pub type EvenGroupFirstEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type EvenGroupFirstEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `EVEN_GROUP_LAST_ENTRY` reader - "]
         pub type EvenGroupLastEntryR = crate::FieldReader;
         #[doc = "Field `EVEN_GROUP_LAST_ENTRY` writer - "]
-        pub type EvenGroupLastEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type EvenGroupLastEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `ODD_GROUP_FIRST_ENTRY` reader - "]
         pub type OddGroupFirstEntryR = crate::FieldReader;
         #[doc = "Field `ODD_GROUP_FIRST_ENTRY` writer - "]
-        pub type OddGroupFirstEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type OddGroupFirstEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         #[doc = "Field `ODD_GROUP_LAST_ENTRY` reader - "]
         pub type OddGroupLastEntryR = crate::FieldReader;
         #[doc = "Field `ODD_GROUP_LAST_ENTRY` writer - "]
-        pub type OddGroupLastEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type OddGroupLastEntryW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 0:7"]
             #[inline(always)]
@@ -11365,7 +11366,7 @@ pub mod phy_clock_oracle {
         #[doc = "Field `FORCED_POWER_INDEX` reader - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
         pub type ForcedPowerIndexR = crate::FieldReader;
         #[doc = "Field `FORCED_POWER_INDEX` writer - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
-        pub type ForcedPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6>;
+        pub type ForcedPowerIndexW<'a, REG> = crate::FieldWriter<'a, REG, 6, u8, crate::Safe>;
         #[doc = "Field `FORCE_POWER_ENABLE` reader - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
         pub type ForcePowerEnableR = crate::BitReader;
         #[doc = "Field `FORCE_POWER_ENABLE` writer - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bit 23 with the low bit of its first argument."]
@@ -11373,7 +11374,7 @@ pub mod phy_clock_oracle {
         #[doc = "Field `BASE_INDEX` reader - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
         pub type BaseIndexR = crate::FieldReader;
         #[doc = "Field `BASE_INDEX` writer - SOURCE\\[ROM_REV0_PHY_FE_REG_INIT,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW\\]; CONFIDENCE\\[instruction-exact\\]. Eight-bit table-memory base index; the complete front-end initializer writes 0xa0."]
-        pub type BaseIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8>;
+        pub type BaseIndexW<'a, REG> = crate::FieldWriter<'a, REG, 8, u8, crate::Safe>;
         impl R {
             #[doc = "Bits 17:22 - SOURCE\\[ROM_REV0_PHY_FORCE_PWR_INDEX\\]; CONFIDENCE\\[instruction-exact\\]. Complete phy_force_pwr_index replaces bits 22:17 with the low six bits of its second argument."]
             #[inline(always)]
@@ -31098,6 +31099,45 @@ pub mod full_register_write {
             registers
                 .rx_descriptor_base()
                 .write_with_zero(|writer| writer.address().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_0` through its full-width field.
+    #[inline]
+    pub fn phy_memory_data_0(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_0()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_1` through its full-width field.
+    #[inline]
+    pub fn phy_memory_data_1(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_1()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
+        }
+    }
+
+    /// Write every bit of `PHY_MEMORY`.`DATA_2` through its full-width field.
+    #[inline]
+    pub fn phy_memory_data_2(registers: &crate::PhyMemory, value: u32) {
+        // SAFETY: generator validation proves that this is the only field,
+        // it covers all 32 bits and accepts every `u32`; no zero-filled
+        // reserved or partially described bits remain.
+        unsafe {
+            registers
+                .data_2()
+                .write_with_zero(|writer| writer.opaque_data().set(value));
         }
     }
 }

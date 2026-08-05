@@ -169,6 +169,21 @@
              register="RX_DESCRIPTOR_BASE"
              field="ADDRESS"
              source="ROM_REV0_WDEV_APPEND_RX_BLOCKS,BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"/>
+      <write name="phy_memory_data_0"
+             peripheral="PHY_MEMORY"
+             register="DATA_0"
+             field="OPAQUE_DATA"
+             source="ROM_REV0_PHY_WRITE_PBUS_MEM,BLOB_LIBPHY_PHY_SET_TX_CFR_MEM,ROM_REV0_PHY_WRITE_GAIN_MEM"/>
+      <write name="phy_memory_data_1"
+             peripheral="PHY_MEMORY"
+             register="DATA_1"
+             field="OPAQUE_DATA"
+             source="ROM_REV0_PHY_WRITE_GAIN_MEM"/>
+      <write name="phy_memory_data_2"
+             peripheral="PHY_MEMORY"
+             register="DATA_2"
+             field="OPAQUE_DATA"
+             source="ROM_REV0_PHY_WRITE_GAIN_MEM"/>
     </openEspRadioFullRegisterWrites>
     <openEspRadioFixedRegisterWrites>
       <write name="open_frontend_clock_gates"

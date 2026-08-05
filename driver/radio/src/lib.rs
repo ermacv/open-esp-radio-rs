@@ -7,9 +7,13 @@ extern crate std;
 #[cfg(feature = "wifi")]
 pub mod wifi {
     pub use open_esp_radio_ieee80211 as ieee80211;
-    pub use open_esp_radio_wifi_lmac as lmac;
+    pub use open_esp_radio_wifi_softmac as softmac;
     pub use open_esp_radio_wifi_sta as sta;
     pub use open_esp_radio_wpa2 as wpa2;
+
+    /// Compatibility alias for the former ambiguous layer name.
+    #[doc(hidden)]
+    pub use open_esp_radio_wifi_softmac as lmac;
 }
 
 #[cfg(any(feature = "adapter-embassy-net", feature = "esp32s31-wifi-embassy"))]
@@ -42,8 +46,12 @@ pub mod esp32s31 {
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
         pub use open_esp_radio_esp32s31_wifi_dma as dma;
-        pub use open_esp_radio_esp32s31_wifi_lmac as lmac;
+        pub use open_esp_radio_esp32s31_wifi_mac as mac;
         pub use open_esp_radio_esp32s31_wifi_sta as sta;
+
+        /// Compatibility alias for the former chip-backend name.
+        #[doc(hidden)]
+        pub use open_esp_radio_esp32s31_wifi_mac as lmac;
 
         #[cfg(feature = "esp32s31-wifi-embassy")]
         pub mod embassy {

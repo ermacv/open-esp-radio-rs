@@ -7,20 +7,23 @@ generators and vendor comparison fixtures do not.
 ```text
 driver/
 ├── radio/                  public facade and feature selection
+├── common/
+│   └── dma/                shared audited DMA ownership primitives
 ├── wifi/                   portable Wi-Fi protocol code
 │   ├── ieee80211/          frame handling and current HMAC mechanisms
-│   ├── lmac/               executor-independent HMAC/LMAC contract
+│   ├── softmac/            executor-independent SoftMAC/backend contract
 │   ├── sta/                STA MLME, scan/reconnect and power policy
 │   └── wpa2/               WPA2 protocol, transactions and cryptographic state
-├── esp32s31/               ESP32-S31 hardware backend
-│   ├── pac/                generated register API
-│   ├── registers/          handwritten register transactions
-│   ├── hal/                semantic hardware operations
-│   ├── phy/                RF/baseband state machines
-│   └── wifi/
-│       ├── dma/            audited DMA representation and chip placement
-│       ├── lmac/           safe Wi-Fi LMAC: IRQ, queues and TX/RX policy
-│       └── sta/            executor-independent S31 station composition
+├── chips/
+│   └── esp32s31/           ESP32-S31 hardware backend
+│       ├── pac/            generated register API
+│       ├── registers/      handwritten register transactions
+│       ├── hal/            semantic hardware operations
+│       ├── phy/            RF/baseband state machines
+│       └── wifi/
+│           ├── dma/        audited DMA representation and chip placement
+│           ├── mac/        safe Wi-Fi MAC backend: IRQ, queues and TX/RX policy
+│           └── sta/        executor-independent S31 station composition
 └── adapters/               reusable runtime and ecosystem adapters
 ```
 
@@ -29,7 +32,7 @@ Dependencies point down this list of responsibilities:
 ```text
 application
     -> facade / adapters
-    -> portable Wi-Fi policy and chip Wi-Fi LMAC
+    -> portable Wi-Fi policy and chip Wi-Fi MAC backend
     -> chip PHY and semantic hardware operations
     -> register transactions
     -> generated register API
@@ -37,14 +40,14 @@ application
 
 The hardware directory names now follow their responsibilities:
 
-- `esp32s31/pac` is the generated PAC in conventional embedded-Rust terms;
-- `esp32s31/registers` is a handwritten register-transaction layer, not the
+- `chips/esp32s31/pac` is the generated PAC in conventional embedded-Rust terms;
+- `chips/esp32s31/registers` is a handwritten register-transaction layer, not the
   generated PAC;
-- `esp32s31/wifi/dma` owns the S31 descriptor representation, RX ring/storage
+- `chips/esp32s31/wifi/dma` owns the S31 descriptor representation, RX ring/storage
   and the target linker-placement primitive needed by the qualified hot path;
-- `esp32s31/wifi/lmac` is the safe chip-specific LMAC implementation above
+- `chips/esp32s31/wifi/mac` is the safe chip-specific MAC backend above
   that leaf;
-- `esp32s31/wifi/sta` owns S31 station composition that has no executor or
+- `chips/esp32s31/wifi/sta` owns S31 station composition that has no executor or
   network-stack dependency, including Association PHY/power selection,
   associated-peer WMM/HT/HE/rate-control programming and the platform ports
   plus the unique epoch and persistent channel owner consumed by STA
@@ -61,17 +64,17 @@ audited foundations rather than implicit exceptions in upper layers.
 
 TX BlockAck now demonstrates the intended boundary: `wifi/ieee80211::block_ack`
 owns the action codec and one generic agreement state machine, while
-`esp32s31/wifi/lmac::tx_ampdu::block_ack` owns the vendor STA TID order, S31
+`chips/esp32s31/wifi/mac::tx_ampdu::block_ack` owns the vendor STA TID order, S31
 completion-register normalization and fixed TX-slot batch. Neither layer owns
 DMA backing; that authority remains in the chip DMA leaf.
 
 The S31 TX A-MPDU path is split by execution phase under
-`esp32s31/wifi/lmac/src/tx_ampdu/`:
+`chips/esp32s31/wifi/mac/src/tx_ampdu/`:
 
 - `request` defines typed frame layout, size and HE policy inputs;
 - `capacity` performs read-only slot, backing, APEP and TXOP admission;
 - `length` owns incremental and replayed aggregate byte accounting;
-- `commit` is the only safe LMAC module that encodes the private S31 TX
+- `commit` is the only safe MAC-backend module that encodes the private S31 TX
   metadata prefix and advances per-slot metadata;
 - `submission` validates the complete batch and produces typed HT/HE register
   programs without publishing DMA or touching hardware;
@@ -88,7 +91,7 @@ The S31 TX A-MPDU path is split by execution phase under
 backends may reuse portable BlockAck semantics, but must supply their own
 metadata, queue geometry, register planning and DMA ownership adapters.
 
-`wifi/lmac` owns only the portable boundary: VIF/channel-context identity,
+`wifi/softmac` owns only the portable boundary: VIF/channel-context identity,
 implemented-role capabilities and normalized TX/RX plans/status. It does not
 own a scheduler, DMA buffers or an executor. The current S31 station plan is a
 real consumer of that VIF binding; unsupported AP and monitor roles remain
@@ -101,7 +104,7 @@ inside the station owner.
 
 The intended multi-chip, multi-protocol shape is chip-first for hardware and
 protocol-first for portable logic. A future ESP32-C5 backend is therefore a
-peer of `esp32s31`, while portable BLE and IEEE 802.15.4 implementations are
+peer of `chips/esp32s31`, while portable BLE and IEEE 802.15.4 implementations are
 peers of `wifi`. Shared RF power, clocks, calibration and radio arbitration
 may be extracted only from concrete common behaviour. Wi-Fi, BLE and
 IEEE 802.15.4 timing/MAC semantics remain separate.
@@ -113,7 +116,7 @@ not driver API.
 
 ## Next extraction order
 
-The remaining large `adapters/esp32s31/wifi-embassy` crate is not yet a
+The remaining large `adapters/embassy/esp32s31-wifi` crate is not yet a
 clean adapter. Continue with dependency cuts, not bulk file moves:
 
 1. split the large connected adapter files by mechanism: aggregation,
@@ -122,21 +125,21 @@ clean adapter. Continue with dependency cuts, not bulk file moves:
    `wifi-embassy`;
 2. split frame codecs from common HMAC only when the new HMAC contract has a
    real STA consumer and a simulated test backend;
-3. add AP MLME as a peer of `wifi/sta`, and monitor as a non-blocking LMAC tap.
+3. add AP MLME as a peer of `wifi/sta`, and monitor as a non-blocking MAC tap.
 
 The WPA2 deadline/key-publication runner now lives in portable `wifi/wpa2`.
-`adapters/esp32s31/wifi-embassy` retains only the Embassy clock plus the
+`adapters/embassy/esp32s31-wifi` retains only the Embassy clock plus the
 concrete retained-RX and control-TX adapters; WPA2 replay, timeout and rollback
 semantics no longer acquire an executor dependency through their source path.
 
 Authentication/Association timing and retry sequencing now live in portable
 `wifi/sta::join`; the Embassy adapter contributes only its clock and
 the concrete S31 RX/TX port. The complete S31 pre-connected attempt ordering,
-inputs and value-only report live in `esp32s31/wifi/sta::attempt`.
+inputs and value-only report live in `chips/esp32s31/wifi/sta::attempt`.
 
 The complete S31 scan ordering and cleanup contract now lives in
-`esp32s31/wifi/sta::scan`. Its dwell unit is executor-neutral; the Embassy
-the Embassy adapter supplies the one-millisecond timer plus concrete PHY, RX-DMA and
+`chips/esp32s31/wifi/sta::scan`. Its dwell unit is executor-neutral; the
+Embassy adapter supplies the one-millisecond timer plus concrete PHY, RX-DMA and
 probe-TX owners. Host tests of mandatory RX stop and owner return therefore no
 longer compile through the runtime adapter.
 The concrete adapter is now explicit rather than hidden behind aliases:
@@ -145,20 +148,20 @@ The concrete adapter is now explicit rather than hidden behind aliases:
 RISC-V hardware bindings.
 
 The executor-independent Authentication/Association RX, control-TX,
-observation and error contracts likewise live in `esp32s31/wifi/sta::join`.
+observation and error contracts likewise live in `chips/esp32s31/wifi/sta::join`.
 The local `sta_join_port` is now only their retained-DMA/control-TX binding.
 
 The RX descriptor/buffer arena itself now lives in
-`esp32s31/wifi/dma::rx_storage`. `wifi-embassy::rx_backend` selects the
+`chips/esp32s31/wifi/dma::rx_storage`. `wifi-embassy::rx_backend` selects the
 qualified large-RX dimensions and owns the asynchronous ring/staging epoch;
 `network_rx` owns the network-stack sink and `control_mailbox` owns the
 bounded semantic-event handoff. The RX backend no longer defines the chip DMA
 memory representation or unrelated consumers.
 
-The complete `esp32s31/wifi/lmac` crate, including its tests, forbids `unsafe`.
+The complete `chips/esp32s31/wifi/mac` crate, including its tests, forbids `unsafe`.
 Necessary pointer and linker invariants terminate in the audited chip DMA leaf
 (or, below it, in the generated PAC/runtime); safe ownership leases and typed
-descriptors cross the boundary upward. LMAC tests use those same safe leases
+descriptors cross the boundary upward. MAC-backend tests use those same safe leases
 instead of defining privileged mock allocations.
 
 RX qualification now follows that boundary: `wifi-embassy` defines typed

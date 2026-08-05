@@ -9,7 +9,7 @@ the concrete board clock tree, boot flow, flash and PSRAM placement, Embassy
 executor, and the full `embassy-net`/smoltcp application used for traffic
 tests. Reusable network-driver and ESP32-S31 platform bindings live under
 `../../../driver/adapters`; PAC/HAL/PHY/Wi-Fi behavior lives under
-`../../../driver/esp32s31` and `../../../driver/wifi`.
+`../../../driver/chips/esp32s31` and `../../../driver/wifi`.
 
 The authoritative performance profile is `psram-code-psram-data`. Its image
 has two stages:

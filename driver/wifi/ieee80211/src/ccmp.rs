@@ -1,7 +1,7 @@
 //! Hardware-independent CCMP header encoding.
 //!
 //! Packet-number allocation, key-slot mapping and hardware publication belong
-//! to the concrete LMAC. This module only encodes an already allocated
+//! to the concrete MAC backend. This module only encodes an already allocated
 //! 48-bit packet number and logical key identifier.
 
 pub const CCMP_HEADER_LEN: usize = 8;

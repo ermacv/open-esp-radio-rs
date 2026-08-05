@@ -29,16 +29,16 @@ and does not weaken the single-owner runtime rule above.
 Wi-Fi DMA descriptors are SRAM shared with the MAC DMA engine, not MMIO. Their
 memory-safety proof therefore terminates in the portable DMA-ownership crate
 and the ESP32-S31 Wi-Fi DMA leaf, separately from peripheral singleton
-ownership. LMAC and runtime/network composition receive only typed leases.
+ownership. The MAC backend and runtime/network composition receive only typed leases.
 
 ## Current unsafe boundaries
 
 | Owner | Why unsafe is required | Required invariant |
 | --- | --- | --- |
-| generated `esp32s31/pac` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
-| `driver/dma` | pinned TX/RX storage behind `UnsafeCell`, state-specific leases and stable-address capability construction | the atomic state machine admits exactly one owner; a live radio lease retains a non-moving, non-aliased allocation |
-| `esp32s31/wifi/dma` | volatile RX buffer ownership and target linker placement for qualified hot code | completed/recycle tokens follow descriptor ownership; `.rwtext.*` maps to aligned executable internal SRAM |
-| `adapters/esp32s31/embassy-runtime` | executor polling, software-interrupt adoption and exported Embassy ABI/linker symbols | application supplies the unique interrupt/timer resources; exported names and sections match the board runtime/linker contract |
+| generated `driver/chips/esp32s31/pac` | generated singleton, register pointers, array access and raw field writers | generated addresses and layouts match the reviewed SVD; only one `Peripherals` owner exists |
+| `driver/common/dma` | pinned TX/RX storage behind `UnsafeCell`, state-specific leases and stable-address capability construction | the atomic state machine admits exactly one owner; a live radio lease retains a non-moving, non-aliased allocation |
+| `driver/chips/esp32s31/wifi/dma` | volatile RX buffer ownership and target linker placement for qualified hot code | completed/recycle tokens follow descriptor ownership; `.rwtext.*` maps to aligned executable internal SRAM |
+| `adapters/embassy/esp32s31-platform` | executor polling, software-interrupt adoption and exported Embassy ABI/linker symbols | application supplies the unique interrupt/timer resources; exported names and sections match the board runtime/linker contract |
 
 Rust 2024 also requires `unsafe(...)` around attributes such as
 `link_section`. Those attributes control target placement but are not pointer
@@ -46,10 +46,10 @@ or aliasing operations. They still require review because changing placement
 can break the HIL timing and memory contract.
 
 Every other driver crate forbids unsafe code at its crate root. In particular,
-register transactions, HAL, PHY, chip LMAC/STA, portable Wi-Fi, Embassy Wi-Fi
+register transactions, HAL, PHY, chip MAC/STA, portable Wi-Fi, Embassy Wi-Fi
 composition, the network adapter and the `esp-hal` adapter are safe consumers
-of these boundaries. LMAC hot-path section placement is requested through a
-macro owned by the chip DMA leaf; LMAC does not locally waive its prohibition.
+of these boundaries. MAC hot-path section placement is requested through a
+macro owned by the chip DMA leaf; the MAC crate does not locally waive its prohibition.
 
 Portable WPA2 code uses safe zeroization for secret-bearing types. No portable
 protocol or role layer owns a volatile register, DMA pointer or target linker
@@ -96,8 +96,8 @@ There is no standalone raw target walker-enable entry point.
 ## TX ownership frontier
 
 Ordinary TX now reaches the phased capability boundary. Its descriptor and
-buffer live in `esp32s31/wifi/dma::tx_storage::TxDmaStorage`; production
-compositions pin that lower allocation in static SRAM and give LMAC only the
+buffer live in `chips/esp32s31/wifi/dma::tx_storage::TxDmaStorage`; production
+compositions pin that lower allocation in static SRAM and give the MAC backend only the
 movable `PinnedTxDmaStorage` owner. `TxSlot::new_model` exists solely in native
 models with no asynchronous DMA actor and is absent on 32-bit targets.
 
@@ -127,7 +127,7 @@ inside those leases, publishes only through `PreparedTxDma`, records lower
 hardware ownership before the doorbell receives `HardwareOwnedTxDma`, and
 requires the detach proof before retry or release.
 
-`esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owners needed for
+`chips/esp32s31/wifi/dma::tx_ampdu_storage` now supplies the lower owners needed for
 both backing strategies. Internally buffered aggregates retain a static
 descriptor array and aligned MPDU buffers. Descriptor-only zero-copy
 aggregates use `RetainedAmpduDma<B>`, which owns every `StableDmaBacking`
@@ -158,7 +158,7 @@ models, not runtime capabilities. They now live in a native-only `model`
 module together with their raw descriptor constants and are absent from the
 32-bit production API.
 
-Do not fix this by adding an unchecked address token in LMAC. The required
+Do not fix this by adding an unchecked address token in the MAC backend. The required
 order is:
 
 1. move any future internally buffered hardware path onto the lower DMA leaf
@@ -170,8 +170,8 @@ The reset-required/quarantine rule remains unchanged during this extraction:
 no backing becomes reusable merely because its Rust queue owner was dropped.
 
 The application facade exposes this lower composition layer explicitly as
-`esp32s31::wifi::dma`, alongside `lmac` and `sta`; it is not re-exported as if
-DMA allocation were LMAC policy. No known public TX submission method above
+`esp32s31::wifi::dma`, alongside `mac` and `sta`; it is not re-exported as if
+DMA allocation were MAC policy. No known public TX submission method above
 this boundary accepts an unowned raw descriptor address.
 
 ## Layer rules

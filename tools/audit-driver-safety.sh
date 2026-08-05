@@ -7,11 +7,11 @@ cd "$repo_root"
 # Unsafe is an implementation detail of these audited foundations. The PAC is
 # generated; the other leaves deny unsafe by default and reopen it only around
 # individually justified operations.
-generated_unsafe_leaf="driver/esp32s31/pac"
+generated_unsafe_leaf="driver/chips/esp32s31/pac"
 audited_unsafe_leaves=(
-    "driver/dma"
-    "driver/esp32s31/wifi/dma"
-    "driver/adapters/esp32s31/embassy-runtime"
+    "driver/common/dma"
+    "driver/chips/esp32s31/wifi/dma"
+    "driver/adapters/embassy/esp32s31-platform"
 )
 
 is_audited_unsafe_leaf() {
@@ -84,7 +84,7 @@ mapfile -t all_allowing_sources < <(
     rg -l -U '#\[allow\([^]]*\bunsafe_code\b[^]]*\)\]' \
         driver \
         --glob '*.rs' \
-        --glob '!esp32s31/pac/**' || true
+        --glob '!chips/esp32s31/pac/**' || true
 )
 for source in "${all_allowing_sources[@]}"; do
     allowed=false

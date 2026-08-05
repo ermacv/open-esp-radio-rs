@@ -491,7 +491,7 @@ const UNICAST_TX_ATTEMPT_LIMIT: u8 = 4;
 // still-unwired HT PLCP and A-MPDU paths.
 //
 // SOURCE: the hardware code is `WIFI_PHY_RATE_54M = 0x0c` in the sibling
-// esp-wifi-sys S31 oracle; open-esp-radio-esp32s31-wifi-lmac::tx::LegacyRate records
+// esp-wifi-sys S31 oracle; open-esp-radio-esp32s31-wifi-mac::tx::LegacyRate records
 // the complete typed mapping and blob/ROM provenance.
 //
 // `OPEN_RADIO_LEGACY_RATE_MBIT` is deliberately limited to the non-HT OFDM

@@ -517,7 +517,7 @@ reset-required candidates and need their own typed frontier rather than the
 drop-and-continue result.
 
 The first capability-driven HMAC/LMAC contract is now source owned.
-`open-esp-radio-wifi-lmac` represents granular operation ownership and resource
+`open-esp-radio-wifi-softmac` represents granular operation ownership and resource
 limits without chip conditionals, while
 `ESP32S31_MAC_SERVICE_CAPABILITIES` derives BA and aggregate limits from the
 owners that enforce them. `Esp32s31ConnectedStaPort` publishes that profile.

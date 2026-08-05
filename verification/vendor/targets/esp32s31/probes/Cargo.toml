@@ -11,11 +11,11 @@ publish = false
 
 [workspace.dependencies]
 embassy-futures = "0.1.2"
-open-esp-radio-esp32s31-hal = { path = "../../../../../driver/esp32s31/hal" }
-open-esp-radio-esp32s31-registers = { path = "../../../../../driver/esp32s31/registers", features = ["validation-probes"] }
-open-esp-radio-esp32s31-phy = { path = "../../../../../driver/esp32s31/phy" }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/esp32s31/wifi-embassy" }
-open-esp-radio-esp32s31-wifi-lmac = { path = "../../../../../driver/esp32s31/wifi/lmac", features = ["validation-raw-dma"] }
+open-esp-radio-esp32s31-hal = { path = "../../../../../driver/chips/esp32s31/hal" }
+open-esp-radio-esp32s31-registers = { path = "../../../../../driver/chips/esp32s31/registers", features = ["validation-probes"] }
+open-esp-radio-esp32s31-phy = { path = "../../../../../driver/chips/esp32s31/phy" }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../../driver/adapters/embassy/esp32s31-wifi" }
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../../../driver/chips/esp32s31/wifi/mac", features = ["validation-raw-dma"] }
 open-esp-radio-ieee80211 = { path = "../../../../../driver/wifi/ieee80211" }
 open-esp-radio-wifi-sta = { path = "../../../../../driver/wifi/sta" }
 

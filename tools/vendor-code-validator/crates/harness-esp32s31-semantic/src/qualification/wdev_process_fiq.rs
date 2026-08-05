@@ -13,7 +13,7 @@ use std::{
     path::Path,
 };
 
-use open_esp_radio_esp32s31_wifi_lmac::irq::{
+use open_esp_radio_esp32s31_wifi_mac::irq::{
     HANDLED_MAC_MASK, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK, MAC_INT_RX_SUCCESS,
     MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
 };

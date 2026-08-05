@@ -15,19 +15,22 @@ only opt-in exception.
 | --- | --- |
 | [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
 | `driver/radio` | Feature-selecting `open-esp-radio` facade and re-exports |
+| `driver/common/dma` | Shared audited DMA ownership primitives |
 | `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
-| `driver/wifi/lmac` | Executor-independent HMAC/LMAC service, VIF and status contract |
+| `driver/wifi/softmac` | Executor-independent SoftMAC service, VIF and status contract |
 | `driver/wifi/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
 | `driver/adapters/` | Reusable network, runtime and ecosystem adapters |
-| `driver/adapters/esp32s31/wifi-embassy` | ESP32-S31 Wi-Fi/Embassy runtime composition |
-| `driver/adapters/esp32s31/wifi-esp-hal` | Optional `esp-hal` Wi-Fi singleton adapter |
-| `driver/esp32s31/pac` | Generated peripheral-access crate |
-| `driver/esp32s31/registers` | Handwritten typed radio register transactions |
-| `driver/esp32s31/hal` | Finite hardware operations and async boundaries |
-| `driver/esp32s31/phy` | PHY initialization and calibration state machines |
-| `driver/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
-| `driver/esp32s31/wifi/lmac` | Safe ESP32-S31 Wi-Fi LMAC, IRQ, RX/TX policy and rate control |
-| `driver/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
+| `driver/adapters/embassy-net` | Executor-neutral `embassy-net-driver` frame ownership |
+| `driver/adapters/embassy/esp32s31-platform` | ESP32-S31 Embassy executor/time platform binding |
+| `driver/adapters/embassy/esp32s31-wifi` | ESP32-S31 Wi-Fi/Embassy runtime composition |
+| `driver/adapters/esp-hal/esp32s31-wifi` | Optional `esp-hal` Wi-Fi singleton adapter |
+| `driver/chips/esp32s31/pac` | Generated peripheral-access crate |
+| `driver/chips/esp32s31/registers` | Handwritten typed radio register transactions |
+| `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |
+| `driver/chips/esp32s31/phy` | PHY initialization and calibration state machines |
+| `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
+| `driver/chips/esp32s31/wifi/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
+| `driver/chips/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
 | [`hil/`](hil/README.md) | Hardware target/host infrastructure and typed HIL protocol |
 | `hil/targets/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
 | `hil/targets/esp32s31/telemetry` | ESP32-S31 HIL counter and report implementations for production observation events |
@@ -42,12 +45,12 @@ only opt-in exception.
 
 Chip package names follow `open-esp-radio-<chip>-<layer>`; protocol-specific
 hardware inserts the protocol before the layer, as in
-`open-esp-radio-esp32s31-wifi-lmac`.
+`open-esp-radio-esp32s31-wifi-mac`.
 
 The core workspace does not own board startup, PSRAM/flash placement or a
 network executor. Reusable adapters live under `driver/adapters/`; concrete
 board policy and the real `embassy-net`/smoltcp test application live under
-`hil/`. The source tree remains chip-first (`driver/esp32s31/phy`) so one chip's
+`hil/`. The source tree remains chip-first (`driver/chips/esp32s31/phy`) so one chip's
 PAC, radio PHY and protocol backends evolve together. A cross-chip PHY core
 will be extracted only after another backend establishes a concrete shared API.
 

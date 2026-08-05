@@ -11,7 +11,7 @@ description = "Application facade for the source-only Rust ESP radio stack"
 default = ["esp32s31-wifi"]
 wifi = [
     "dep:open-esp-radio-ieee80211",
-    "dep:open-esp-radio-wifi-lmac",
+    "dep:open-esp-radio-wifi-softmac",
     "dep:open-esp-radio-wifi-sta",
     "dep:open-esp-radio-wpa2",
 ]
@@ -28,7 +28,7 @@ esp32s31-wifi = [
     "esp32s31",
     "wifi",
     "dep:open-esp-radio-esp32s31-wifi-dma",
-    "dep:open-esp-radio-esp32s31-wifi-lmac",
+    "dep:open-esp-radio-esp32s31-wifi-mac",
     "dep:open-esp-radio-esp32s31-wifi-sta",
 ]
 esp32s31-wifi-embassy = [
@@ -38,21 +38,21 @@ esp32s31-wifi-embassy = [
 ]
 validation-raw-dma = [
     "esp32s31-wifi",
-    "open-esp-radio-esp32s31-wifi-lmac/validation-raw-dma",
+    "open-esp-radio-esp32s31-wifi-mac/validation-raw-dma",
 ]
 
 [dependencies]
-open-esp-radio-embassy-net = { path = "../adapters/network/embassy-net", optional = true }
-open-esp-radio-esp32s31-hal = { path = "../esp32s31/hal", optional = true }
-open-esp-radio-esp32s31-pac = { path = "../esp32s31/pac", optional = true }
-open-esp-radio-esp32s31-wifi-dma = { path = "../esp32s31/wifi/dma", optional = true }
-open-esp-radio-esp32s31-wifi-lmac = { path = "../esp32s31/wifi/lmac", optional = true }
-open-esp-radio-esp32s31-wifi-sta = { path = "../esp32s31/wifi/sta", optional = true }
-open-esp-radio-esp32s31-wifi-embassy = { path = "../adapters/esp32s31/wifi-embassy", optional = true }
-open-esp-radio-esp32s31-registers = { path = "../esp32s31/registers", optional = true }
-open-esp-radio-esp32s31-phy = { path = "../esp32s31/phy", optional = true }
+open-esp-radio-embassy-net = { path = "../adapters/embassy-net", optional = true }
+open-esp-radio-esp32s31-hal = { path = "../chips/esp32s31/hal", optional = true }
+open-esp-radio-esp32s31-pac = { path = "../chips/esp32s31/pac", optional = true }
+open-esp-radio-esp32s31-wifi-dma = { path = "../chips/esp32s31/wifi/dma", optional = true }
+open-esp-radio-esp32s31-wifi-mac = { path = "../chips/esp32s31/wifi/mac", optional = true }
+open-esp-radio-esp32s31-wifi-sta = { path = "../chips/esp32s31/wifi/sta", optional = true }
+open-esp-radio-esp32s31-wifi-embassy = { path = "../adapters/embassy/esp32s31-wifi", optional = true }
+open-esp-radio-esp32s31-registers = { path = "../chips/esp32s31/registers", optional = true }
+open-esp-radio-esp32s31-phy = { path = "../chips/esp32s31/phy", optional = true }
 open-esp-radio-ieee80211 = { path = "../wifi/ieee80211", optional = true }
-open-esp-radio-wifi-lmac = { path = "../wifi/lmac", optional = true }
+open-esp-radio-wifi-softmac = { path = "../wifi/softmac", optional = true }
 open-esp-radio-wifi-sta = { path = "../wifi/sta", optional = true }
 open-esp-radio-wpa2 = { path = "../wifi/wpa2", optional = true }
 

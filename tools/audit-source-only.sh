@@ -84,10 +84,10 @@ production_packages=(
     open-esp-radio-esp32s31-wifi-embassy
     open-esp-radio-esp32s31-wifi-dma
     open-esp-radio-esp32s31-wifi-esp-hal
-    open-esp-radio-esp32s31-wifi-lmac
+    open-esp-radio-esp32s31-wifi-mac
     open-esp-radio-esp32s31-wifi-sta
     open-esp-radio-ieee80211
-    open-esp-radio-wifi-lmac
+    open-esp-radio-wifi-softmac
     open-esp-radio-wifi-sta
     open-esp-radio-wpa2
 )

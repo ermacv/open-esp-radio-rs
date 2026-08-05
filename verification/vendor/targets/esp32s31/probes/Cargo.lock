@@ -330,23 +330,23 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
- "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
  "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-lmac",
+ "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
 ]
 
 [[package]]
-name = "open-esp-radio-esp32s31-wifi-lmac"
+name = "open-esp-radio-esp32s31-wifi-mac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-ieee80211",
- "open-esp-radio-wifi-lmac",
+ "open-esp-radio-wifi-softmac",
  "pin-project",
 ]
 
@@ -357,7 +357,7 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
- "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
@@ -376,7 +376,7 @@ dependencies = [
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi-embassy",
- "open-esp-radio-esp32s31-wifi-lmac",
+ "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-sta",
 ]
@@ -389,7 +389,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "open-esp-radio-wifi-lmac"
+name = "open-esp-radio-wifi-softmac"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-ieee80211",

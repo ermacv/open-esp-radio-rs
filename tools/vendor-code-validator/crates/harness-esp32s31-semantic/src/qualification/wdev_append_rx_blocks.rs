@@ -13,7 +13,7 @@ use std::{
     path::Path,
 };
 
-use open_esp_radio_esp32s31_wifi_lmac::rx::RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT;
+use open_esp_radio_esp32s31_wifi_mac::rx::RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT;
 use open_radio_vendor_backend_riscv::ReferenceResolver;
 use open_radio_vendor_validator_semantic::{
     DriverAdapterQualification, EffectDisposition, EffectPolicy, EffectSelector, OmissionReason,

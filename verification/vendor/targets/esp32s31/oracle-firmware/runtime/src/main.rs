@@ -1012,7 +1012,7 @@ async fn run_open_mac_rx(
     // SIGNAL owns MPDU+FCS (30+4 = 0x22). The 0x00b6 value visible in vendor
     // submissions belongs to vendor-private metadata and cannot be replayed
     // as the raw PLCP length: the direct-q0 HIL then never completed.
-    // SOURCE: `driver/esp32s31/wifi/lmac/src/tx.rs`
+    // SOURCE: `driver/chips/esp32s31/wifi/mac/src/tx.rs`
     // `management_1m_from_mpdu_length` and live `hybrid-power5.log`.
     let mut config = LegacyTxConfig::management_1m_from_mpdu_length(frame_length as u16).unwrap();
     config.data_power = 5;

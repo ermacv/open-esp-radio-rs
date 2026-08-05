@@ -15,6 +15,6 @@ Module map:
 
 This is not a generic 802.11 frame crate and it is not an ESP32 backend.
 Frame parsing/building belongs in `driver/wifi/ieee80211`; ESP32-S31 ordering
-and hardware ownership belong in `driver/esp32s31/wifi/sta`; clocks, tasks,
+and hardware ownership belong in `driver/chips/esp32s31/wifi/sta`; clocks, tasks,
 DMA wakeups and network leases belong in an integration crate.
 

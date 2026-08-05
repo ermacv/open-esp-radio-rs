@@ -1,0 +1,21 @@
+[package]
+name = "open-esp-radio-esp32s31-registers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Handwritten typed ESP32-S31 radio register transactions"
+
+[features]
+validation-probes = ["open-esp-radio-esp32s31-pac/validation-probes"]
+
+[dependencies]
+open-esp-radio-dma = { path = "../../../common/dma" }
+open-esp-radio-esp32s31-pac = { path = "../pac", features = ["critical-section"] }
+
+[dev-dependencies]
+open-esp-radio-esp32s31-pac = { path = "../pac", features = ["validation-probes"] }
+
+[lints]
+workspace = true

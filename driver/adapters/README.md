@@ -5,13 +5,16 @@ Rust ecosystems. They are production-reusable boundaries, not board support
 or test harnesses.
 
 ```text
-network/embassy-net
+embassy-net
     executor-neutral frame ownership for embassy-net-driver
 
-esp32s31/wifi-embassy
+embassy/esp32s31-platform
+    scheduler-free Embassy executor/time binding for ESP32-S31
+
+embassy/esp32s31-wifi
     ESP32-S31 Wi-Fi DMA, IRQ and Embassy runtime composition
 
-esp32s31/wifi-esp-hal
+esp-hal/esp32s31-wifi
     esp-hal peripheral-singleton binding for the ESP32-S31 Wi-Fi backend
 ```
 

@@ -10,19 +10,19 @@ the core driver layers.
 open-esp-radio (facade)
 ├── Wi-Fi protocols
 │   ├── open-esp-radio-ieee80211
-│   ├── open-esp-radio-wifi-lmac
+│   ├── open-esp-radio-wifi-softmac
 │   ├── open-esp-radio-wifi-sta
 │   └── open-esp-radio-wpa2
 └── ESP32-S31
-    ├── wifi-sta ──> wifi-lmac + phy
-    ├── wifi-lmac ──────────┬──> lmac contract ──> ieee80211
+    ├── wifi-sta ──> wifi-mac + phy
+    ├── wifi-mac ───────────┬──> softmac contract ──> ieee80211
     │                       └──> registers ──> generated PAC
     └── phy ──> hal ───────────> registers ──> generated PAC
 
 Reusable adapters
 ├── embassy-net adapter ──> embassy-net-driver + embassy-sync
-├── S31 Wi-Fi/Embassy   ──> adapter + S31 Wi-Fi LMAC/HAL/registers
-└── S31 Wi-Fi/esp-hal   ──> S31 Wi-Fi LMAC/PHY/HAL + esp-hal
+├── S31 Wi-Fi/Embassy   ──> adapter + S31 Wi-Fi MAC/HAL/registers
+└── S31 Wi-Fi/esp-hal   ──> S31 Wi-Fi MAC/PHY/HAL + esp-hal
 
 Production application
 └── examples/esp32s31-station
@@ -42,15 +42,16 @@ Test harness (HIL)
 | `registers` | Register geometry and finite typed transactions | Async scheduling or protocol state |
 | `hal` | Typed power/clock/I2C/PBus operations and hardware boundaries | Board startup or an executor |
 | `phy` | Shared RF/baseband calibration plus the currently qualified Wi-Fi profile | Protocol MAC state or raw peripheral ownership |
-| `wifi-lmac` | 802.11 DMA descriptors, RX/TX state, interrupts, EDCA, BlockAck and rates | PHY calibration or non-Wi-Fi MAC policy |
-| `esp32s31/wifi/sta` | S31 station startup, persistent channel authority, Association/peer policy and executor-independent STA TX ownership | Embassy, a network stack, board allocation or HIL policy |
+| `chips/esp32s31/wifi/mac` | 802.11 DMA descriptors, RX/TX state, interrupts, EDCA, BlockAck and rates | PHY calibration or non-Wi-Fi MAC policy |
+| `chips/esp32s31/wifi/sta` | S31 station startup, persistent channel authority, Association/peer policy and executor-independent STA TX ownership | Embassy, a network stack, board allocation or HIL policy |
 | `ieee80211` | Portable frame formats and protocol state | Chip registers |
-| `wifi/lmac` | Portable VIF/channel-context identity, capability profile and normalized TX/RX contracts | DMA, IRQ, chip registers or executor scheduling |
+| `wifi/softmac` | Portable VIF/channel-context identity, capability profile and normalized TX/RX contracts | DMA, IRQ, chip registers or executor scheduling |
 | `wifi/sta` | Portable STA MLME, scan/reconnect, beacon-loss and power-save decisions | Chip registers, DMA, executor timers or AP policy |
 | `wpa2` | Portable WPA2-Personal state, transaction runners and key material | Radio hardware or an executor |
-| `adapters/network/embassy-net` | Bounded `embassy-net-driver` ownership adapter | A concrete chip or full network stack |
-| `adapters/esp32s31/wifi-embassy` | Wi-Fi DMA epochs/network leases, async TX and IRQ wakeups | Chip DMA memory representation, board startup or network policy |
-| `adapters/esp32s31/wifi-esp-hal` | `esp-hal` singleton binding for the ESP32-S31 Wi-Fi backend | Board, PSRAM/flash or executor policy |
+| `adapters/embassy-net` | Bounded `embassy-net-driver` ownership adapter | A concrete chip or full network stack |
+| `adapters/embassy/esp32s31-platform` | Embassy executor/time ABI binding | Wi-Fi protocol, network or board policy |
+| `adapters/embassy/esp32s31-wifi` | Wi-Fi DMA epochs/network leases, async TX and IRQ wakeups | Chip DMA memory representation, board startup or network policy |
+| `adapters/esp-hal/esp32s31-wifi` | `esp-hal` singleton binding for the ESP32-S31 Wi-Fi backend | Board, PSRAM/flash or executor policy |
 | `radio` | Public composition and re-exports | Board/bootstrap policy |
 | `examples/esp32s31-station` | Normal board allocation, executor, credentials and application network services | HIL commands, benchmark policy or reusable radio behavior |
 | `hil/targets/esp32s31` | Test board clocks, boot, memory placement, executor, real `embassy-net`/smoltcp scenarios | Reusable radio implementation |
@@ -70,9 +71,9 @@ The boundary is not one boolean per feature. ESP32-S31, for example, captures
 a transmit BlockAck in hardware but selects and retains missing MPDUs in
 software. It executes a timed transmit attempt in hardware, while Rust owns the
 retry budget, rate ladder and contention-window update. The portable
-`open-esp-radio-wifi-lmac` contract therefore describes each operation
+`open-esp-radio-wifi-softmac` contract therefore describes each operation
 independently. The exact current backend profile is
-`esp32s31::wifi::lmac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES` and is
+`esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES` and is
 also returned by `Esp32s31ConnectedStaPort::capabilities()`.
 
 | Operation | Current ESP32-S31 owner |
@@ -140,9 +141,9 @@ domain: its volatile cells are shared memory, not peripheral registers.
 ## Multiple chips and radio protocols
 
 ESP32-S31 is the first backend, not the project boundary. New chips belong
-under `driver/<chip>/`; portable protocol logic belongs under
+under `driver/chips/<chip>/`; portable protocol logic belongs under
 `driver/<protocol>/`. A chip/protocol-specific implementation belongs under
-`driver/<chip>/<protocol>/`, as the current Wi-Fi LMAC does.
+`driver/chips/<chip>/<protocol>/`, as the current Wi-Fi MAC backend does.
 
 Bluetooth/BLE, IEEE 802.15.4 and coexistence must not be added to the Wi-Fi MAC
 crate. They will have their own protocol and chip-specific layers. `pac`, `hal`
@@ -153,10 +154,10 @@ extracted only after a second protocol or chip supplies concrete requirements.
 
 Portable Wi-Fi remains under `driver/wifi/`; future portable Bluetooth and
 IEEE 802.15.4 code should receive peer protocol roots. Chip implementations
-belong under `driver/<chip>/<protocol>/`. Coexistence policy that coordinates
+belong under `driver/chips/<chip>/<protocol>/`. Coexistence policy that coordinates
 physical radios belongs at chip scope rather than inside any one protocol MAC.
 
-The hierarchy is deliberately chip-first: `driver/esp32s31/phy`, not
+The hierarchy is deliberately chip-first: `driver/chips/esp32s31/phy`, not
 `driver/phy/esp32s31`. PAC, HAL, PHY, Wi-Fi, future Bluetooth/802.15.4 and
 coexistence code all need one coherent view of a chip. Putting chips under a
 generic PHY root would also encourage chip feature switches throughout one
@@ -202,35 +203,35 @@ The facade features preserve those boundaries. `wifi` selects only portable
 `adapter-embassy-net` adds only the generic network adapter, and
 `esp32s31-wifi-embassy` opts into the complete S31 Wi-Fi/Embassy composition.
 
-The S31 STA TX boundary follows the same split. `esp32s31/wifi/sta::tx`
+The S31 STA TX boundary follows the same split. `chips/esp32s31/wifi/sta::tx`
 defines entropy, calibrated-power and monotonic-time ports plus the resource
 bundle and finite pre-connected policy. The Embassy adapter implements
 only the time port in `tx_time`; board code supplies entropy and the owned PHY
 calibration profile. Association PHY and HE power fields are derived in
-`esp32s31/wifi/sta::association`, not in the executor adapter.
+`chips/esp32s31/wifi/sta::association`, not in the executor adapter.
 The station-wide unique control-TX owner follows the same rule: its epoch
-state is in `esp32s31/wifi/sta::tx_epoch`; the Embassy adapter contributes
+state is in `chips/esp32s31/wifi/sta::tx_epoch`; the Embassy adapter contributes
 only the extension which constructs `Esp32s31ControlTx` from a runtime-owned
 descriptor slot and later reconstructs it from returned resources.
 The persistent `PhyColdState`/platform/observer owner used for cold scan,
 running scan and reconnect is similarly defined in
-`esp32s31/wifi/sta::channel`; adapter modules only implement their scan
+`chips/esp32s31/wifi/sta::channel`; adapter modules only implement their scan
 and attempt traits for that owner.
 The finite scan transaction and mandatory RX cleanup order live in
-`esp32s31/wifi/sta::scan`. It expresses dwell in abstract ticks; only the
+`chips/esp32s31/wifi/sta::scan`. It expresses dwell in abstract ticks; only the
 the Embassy adapter maps those ticks to an executor clock and binds the concrete
 RX-DMA and probe-TX owners.
 
 ## Transitional debt
 
-`driver/esp32s31/phy/src/radio_hal.rs` still contains finite MMIO leaves whose
+`driver/chips/esp32s31/phy/src/radio_hal.rs` still contains finite MMIO leaves whose
 final home is HAL/PAC. Moving them is structural work and must preserve PHY
 state-machine behaviour. The current boundary and remaining unsafe inventory
 are recorded in [the PAC audit](PAC_AND_UNSAFE_AUDIT.md).
 
 The current `ieee80211` crate contains portable frame/state components but is
 not yet a complete generic HMAC. Some vendor-derived rate, BA and station
-composition remains in the ESP32-S31 LMAC/Embassy crates. Extraction should
+composition remains in the ESP32-S31 MAC/Embassy crates. Extraction should
 follow the explicit service contract and a second consumer or deterministic
 simulation test, not a directory-only rename.
 

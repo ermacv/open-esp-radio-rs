@@ -91,7 +91,7 @@ effect mmio-write 32 0x20104080 required
 function libpp wDev_AppendRxBlocks
 disposition replaced-by-composition
 protocol wifi
-rust-component open_esp_radio_esp32s31_wifi_lmac::rx_pool::RxStagePool::stage_recycle
+rust-component open_esp_radio_esp32s31_wifi_mac::rx_pool::RxStagePool::stage_recycle
 binding v1
 rust-probe open_libpp_rx_trace_wdev_append_rx_blocks
 driver-adapter esp32s31-wdev-append-rx-blocks-v1

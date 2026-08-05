@@ -2850,7 +2850,7 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
 
     let root = repository_root();
-    let output_path = root.join("driver/esp32s31/pac/src/lib.rs");
+    let output_path = root.join("driver/chips/esp32s31/pac/src/lib.rs");
     let binding_index_path = root.join("svd/esp32s31-radio.bindings");
     let assembled = radio_svd::assemble(&root)?;
     radio_svd::synchronize_aggregate(&assembled, check)?;

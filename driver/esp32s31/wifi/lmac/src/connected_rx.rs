@@ -20,9 +20,10 @@ use open_esp_radio_wifi_lmac::{MacRxCryptoStatus, MacRxEvidence, MacRxMetadata};
 
 use crate::{
     rx::{
-        PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, RxSegment,
-        decode_normalized_rx_metadata, extract_control, extract_management, view_ccmp_data,
+        PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
+        extract_control, extract_management, view_ccmp_data,
     },
+    rx_ring::RxSegment,
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
 };

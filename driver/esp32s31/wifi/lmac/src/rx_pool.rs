@@ -18,10 +18,11 @@ use core::marker::PhantomData;
 
 use crate::{
     descriptor::length as descriptor_length,
-    rx::{
-        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit, RxDma,
-        RxPhyInfo, RxReloadObservation, RxRingError, RxRingLive, RxSegment,
-        decode_normalized_rx_metadata,
+    rx::{RxPhyInfo, decode_normalized_rx_metadata},
+    rx_dma::RxDma,
+    rx_ring::{
+        RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit,
+        RxReloadObservation, RxRingError, RxRingLive, RxSegment,
     },
     rx_storage::RxDmaCompletedUnit,
 };

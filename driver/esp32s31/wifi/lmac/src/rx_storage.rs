@@ -8,8 +8,9 @@ use core::cell::UnsafeCell;
 
 use crate::{
     descriptor::Descriptor,
-    rx::{
-        RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxCompletedUnit, RxCompletedUnitFrontier, RxDma,
+    rx_dma::RxDma,
+    rx_ring::{
+        RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxCompletedUnit, RxCompletedUnitFrontier,
         RxLiveAppend, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
         prepare_recycled_buffer,
     },

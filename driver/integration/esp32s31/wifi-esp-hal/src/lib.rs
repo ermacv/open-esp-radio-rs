@@ -1,5 +1,6 @@
 #![no_std]
 #![cfg(feature = "esp32s31")]
+#![forbid(unsafe_code)]
 
 //! ESP-HAL ownership adapter for the open ESP32-S31 radio driver.
 //!
@@ -112,11 +113,11 @@ impl PowerClockControl for EspHalRadioPeripheral {
     }
 
     fn select_hp_active_modem_icg(&mut self) {
-        // SAFETY: code 2 fits this two-bit official PAC field. The value and
-        // operation are from the qualified esp-hal S31 clock implementation.
+        // Code 2 and the field constraint come from the qualified esp-hal S31
+        // clock implementation.
         PMU::regs()
             .hp_active_icg_modem()
-            .write(|w| unsafe { w.hp_active_dig_icg_modem_code().bits(2) });
+            .write(|w| w.hp_active_dig_icg_modem_code().set(2));
     }
 
     fn apply_modem_icg_selection(&mut self) {
@@ -138,41 +139,35 @@ impl PowerClockControl for EspHalRadioPeripheral {
     }
 
     fn configure_hp_active_modem_clock_map(&mut self) {
-        // SAFETY: values 4/6 fit the official four-bit fields and reproduce
-        // the qualified esp-hal S31 clock implementation.
-        MODEM_SYSCON::regs()
-            .clk_conf_power_st()
-            .modify(|_, w| unsafe {
-                w.clk_zb_st_map()
-                    .bits(4)
-                    .clk_fe_st_map()
-                    .bits(6)
-                    .clk_bt_st_map()
-                    .bits(4)
-                    .clk_wifi_st_map()
-                    .bits(6)
-                    .clk_modem_peri_st_map()
-                    .bits(4)
-                    .clk_modem_apb_st_map()
-                    .bits(6)
-            });
+        // Values 4/6 reproduce the qualified esp-hal S31 clock implementation.
+        MODEM_SYSCON::regs().clk_conf_power_st().modify(|_, w| {
+            w.clk_zb_st_map()
+                .set(4)
+                .clk_fe_st_map()
+                .set(6)
+                .clk_bt_st_map()
+                .set(4)
+                .clk_wifi_st_map()
+                .set(6)
+                .clk_modem_peri_st_map()
+                .set(4)
+                .clk_modem_apb_st_map()
+                .set(6)
+        });
     }
 
     fn configure_shared_modem_clock_map(&mut self) {
-        // SAFETY: value 6 fits all official four-bit fields and reproduces
-        // the qualified esp-hal S31 clock implementation.
-        MODEM_LPCON::regs()
-            .clk_conf_power_st()
-            .modify(|_, w| unsafe {
-                w.clk_wifipwr_st_map()
-                    .bits(6)
-                    .clk_coex_st_map()
-                    .bits(6)
-                    .clk_i2c_mst_st_map()
-                    .bits(6)
-                    .clk_lp_apb_st_map()
-                    .bits(6)
-            });
+        // Value 6 reproduces the qualified esp-hal S31 clock implementation.
+        MODEM_LPCON::regs().clk_conf_power_st().modify(|_, w| {
+            w.clk_wifipwr_st_map()
+                .set(6)
+                .clk_coex_st_map()
+                .set(6)
+                .clk_i2c_mst_st_map()
+                .set(6)
+                .clk_lp_apb_st_map()
+                .set(6)
+        });
     }
 
     fn configure_modem_source_clocks(&mut self) {
@@ -309,12 +304,12 @@ impl PowerClockControl for EspHalRadioPeripheral {
 
 impl PhyPreludePlatformControl for EspHalRadioPeripheral {
     fn configure_fixed_xtal_40mhz_tick(&mut self) {
-        // SAFETY: 39 fits the official six-bit field. Complete pinned
-        // libphy.a[phy_init.o]::phy_get_xtal_freq replaces the target with
-        // frequency_mhz - 1; ESP32-S31 has a fixed 40 MHz crystal contract.
+        // Complete pinned libphy.a[phy_init.o]::phy_get_xtal_freq replaces the
+        // constrained target with frequency_mhz - 1; ESP32-S31 has a fixed
+        // 40 MHz crystal contract.
         MODEM_LPCON::regs()
             .tick_conf()
-            .modify(|_, w| unsafe { w.modem_pwr_tick_target().bits(39) });
+            .modify(|_, w| w.modem_pwr_tick_target().set(39));
     }
 }
 
@@ -351,21 +346,20 @@ impl PhyWifiBbControl for EspHalRadioPeripheral {
     fn set_bss_cbw_40_digital(&mut self, enabled: bool) {
         // SOURCE[ROM_REV0_PHY_FREQUENCY_CHANNEL]. The recovered field is two
         // bits wide but the complete digital helper writes only encodings 0/1.
-        // SAFETY: both values fit the official two-bit PAC field.
         MODEM_SYSCON::regs()
             .wifi_bb_cfg()
-            .modify(|_, w| unsafe { w.bss_cbw_40_digital_unknown().bits(u8::from(enabled)) });
+            .modify(|_, w| w.bss_cbw_40_digital_unknown().set(u8::from(enabled)));
     }
 
     fn set_bb_agc_update_encoding(&mut self, encoding: u8) {
         // SOURCE[ROM_REV0_PHY_AGC,BLOB_LIBPHY_PHY_BB_INIT]. The two complete
         // bodies write encodings 7 and 1 respectively.
         debug_assert!(encoding <= 7);
-        // SAFETY: the assertion documents the recovered three-bit range; all
-        // driver call sites use only the instruction-evidenced values 1/7.
+        // The PAC constraint and assertion retain the recovered three-bit
+        // range; all driver call sites use instruction-evidenced values 1/7.
         MODEM_SYSCON::regs()
             .wifi_bb_cfg()
-            .modify(|_, w| unsafe { w.bb_agc_update_enable_unknown().bits(encoding) });
+            .modify(|_, w| w.bb_agc_update_enable_unknown().set(encoding));
     }
 
     fn set_mac_baseband_enabled(&mut self, enabled: bool) {
@@ -381,10 +375,9 @@ impl PhyPmuControl for EspHalRadioPeripheral {
     fn set_rf_circuit_power(&mut self, enabled: bool) {
         // SOURCE[BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW]; the complete ESP32-S31
         // libphy.a[phy_reg.o] body writes all 16 RF-circuit power bits.
-        // SAFETY: both possible values fit the official 16-bit PAC field.
         PMU::regs()
             .rf_pwc()
-            .modify(|_, w| unsafe { w.xpd_rf_circuit().bits(if enabled { u16::MAX } else { 0 }) });
+            .modify(|_, w| w.xpd_rf_circuit().set(if enabled { u16::MAX } else { 0 }));
     }
 
     fn set_bb_i2c_power_tie(&mut self, enabled: bool) {
@@ -428,10 +421,9 @@ impl PhyPmuControl for EspHalRadioPeripheral {
         // SOURCE[ROM_REV0_PHY_OPEN_FE_BB_CLK]. Its complete no-call ROM body
         // sets bits 3:0 and HP_ACTIVE_XPD_BB_I2C (bit 22). The new PAC field
         // deliberately keeps the low nibble's semantics marked unknown.
-        // SAFETY: 0x0f fits the four-bit evidence-only field.
-        PMU::regs().hp_active_hp_ck_power().modify(|_, w| unsafe {
+        PMU::regs().hp_active_hp_ck_power().modify(|_, w| {
             w.rom_open_fe_bb_unknown_low()
-                .bits(0x0f)
+                .set(0x0f)
                 .hp_active_xpd_bb_i2c()
                 .set_bit()
         });
@@ -443,20 +435,18 @@ impl PhyPowerDetectorPlatformControl for EspHalRadioPeripheral {
         // SOURCE[ROM_REV0_PHY_POWER_DETECTOR]. Complete `phy_pwdet_reg_init`
         // and `phy_pwdet_sar2_init` replace the official three-bit
         // LP_AON_CLKRST field with encoding four.
-        // SAFETY: 4 fits the official three-bit PAC field.
         LP_AON_CLK_RST::regs()
             .rtc_sar2_pwdet_cct()
-            .modify(|_, w| unsafe { w.rtc_sar2_pwdet_cct().bits(4) });
+            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(4));
     }
 
     fn select_power_detector_calibration_mode(&mut self) {
         // SOURCE[ROM_REV0_PHY_POWER_DETECTOR]. Complete
         // `phy_txcal_debuge_mode_` replaces the same official field with
         // encoding two after enabling PWDET.
-        // SAFETY: 2 fits the official three-bit PAC field.
         LP_AON_CLK_RST::regs()
             .rtc_sar2_pwdet_cct()
-            .modify(|_, w| unsafe { w.rtc_sar2_pwdet_cct().bits(2) });
+            .modify(|_, w| w.rtc_sar2_pwdet_cct().set(2));
     }
 }
 
@@ -511,9 +501,10 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
     fn configure_phy_i2c_host_map(&mut self) {
         // SOURCE[BLOB_LIBPHY_PHY_I2C]. The complete S31 host callback
         // replaces ANA_CONF2 bits 17:4 with 0x3fa0.
-        I2C_ANA_MST::regs()
-            .ana_conf2()
-            .modify(|r, w| unsafe { w.bits((r.bits() & 0xfffc_000f) | 0x0003_fa00) });
+        I2C_ANA_MST::regs().ana_conf2().modify(|r, w| {
+            w.ana_conf2()
+                .set((r.ana_conf2().bits() & 0x00fc_000f) | 0x0003_fa00)
+        });
     }
 
     fn pulse_phy_i2c_master_reset(&mut self, host: PhyI2cHost) {
@@ -540,9 +531,13 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
     fn publish_phy_i2c_read_mask(&mut self, read_mask: u16) {
         // SOURCE[BLOB_LIBPHY_PHY_I2C]. The callback publishes the complete
         // 32-bit complement, including the ANA_STATUS1 byte.
-        I2C_ANA_MST::regs()
-            .ana_conf1()
-            .write(|w| unsafe { w.bits(!u32::from(read_mask)) });
+        let image = !u32::from(read_mask);
+        I2C_ANA_MST::regs().ana_conf1().write(|w| {
+            w.ana_conf1()
+                .set(image & 0x00ff_ffff)
+                .ana_status1()
+                .set((image >> 24) as u8)
+        });
     }
 
     fn publish_phy_i2c_command(
@@ -556,25 +551,25 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
         // SOURCE[ROM_REV0_PHY_I2C]. Complete read/write leaves publish the
         // three bytes, direction bit and START_OR_RESET in one full word.
         match host {
-            PhyI2cHost::Host0 => I2C_ANA_MST::regs().i2c0_ctrl().write(|w| unsafe {
+            PhyI2cHost::Host0 => I2C_ANA_MST::regs().i2c0_ctrl().write(|w| {
                 w.slave_addr()
-                    .bits(block)
+                    .set(block)
                     .slave_reg_addr()
-                    .bits(register)
+                    .set(register)
                     .data()
-                    .bits(value)
+                    .set(value)
                     .read_write()
                     .bit(write)
                     .start_or_reset()
                     .set_bit()
             }),
-            PhyI2cHost::Host1 => I2C_ANA_MST::regs().i2c1_ctrl().write(|w| unsafe {
+            PhyI2cHost::Host1 => I2C_ANA_MST::regs().i2c1_ctrl().write(|w| {
                 w.slave_addr()
-                    .bits(block)
+                    .set(block)
                     .slave_reg_addr()
-                    .bits(register)
+                    .set(register)
                     .data()
-                    .bits(value)
+                    .set(value)
                     .read_write()
                     .bit(write)
                     .start_or_reset()
@@ -597,20 +592,18 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
         }
         // SOURCE[ROM_REV0_PHY_I2C]. First fresh RMW for each of the three
         // complete phy_i2c_clk_sel timing words.
-        unsafe {
-            match index {
-                0 => I2C_ANA_MST::regs()
-                    .i2c0_ctrl1()
-                    .modify(|_, w| w.i2c0_sda_side_guard().bits(value)),
-                1 => I2C_ANA_MST::regs()
-                    .i2c1_ctrl1()
-                    .modify(|_, w| w.i2c1_sda_side_guard().bits(value)),
-                2 => I2C_ANA_MST::regs()
-                    .hw_i2c_ctrl()
-                    .modify(|_, w| w.hw_i2c_sda_side_guard().bits(value)),
-                _ => return false,
-            };
-        }
+        match index {
+            0 => I2C_ANA_MST::regs()
+                .i2c0_ctrl1()
+                .modify(|_, w| w.i2c0_sda_side_guard().set(value)),
+            1 => I2C_ANA_MST::regs()
+                .i2c1_ctrl1()
+                .modify(|_, w| w.i2c1_sda_side_guard().set(value)),
+            2 => I2C_ANA_MST::regs()
+                .hw_i2c_ctrl()
+                .modify(|_, w| w.hw_i2c_sda_side_guard().set(value)),
+            _ => return false,
+        };
         true
     }
 
@@ -619,20 +612,18 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
             return false;
         }
         // SOURCE[ROM_REV0_PHY_I2C]. Second fresh RMW for each timing word.
-        unsafe {
-            match index {
-                0 => I2C_ANA_MST::regs()
-                    .i2c0_ctrl1()
-                    .modify(|_, w| w.i2c0_scl_pulse_dur().bits(value)),
-                1 => I2C_ANA_MST::regs()
-                    .i2c1_ctrl1()
-                    .modify(|_, w| w.i2c1_scl_pulse_dur().bits(value)),
-                2 => I2C_ANA_MST::regs()
-                    .hw_i2c_ctrl()
-                    .modify(|_, w| w.hw_i2c_scl_pulse_dur().bits(value)),
-                _ => return false,
-            };
-        }
+        match index {
+            0 => I2C_ANA_MST::regs()
+                .i2c0_ctrl1()
+                .modify(|_, w| w.i2c0_scl_pulse_dur().set(value)),
+            1 => I2C_ANA_MST::regs()
+                .i2c1_ctrl1()
+                .modify(|_, w| w.i2c1_scl_pulse_dur().set(value)),
+            2 => I2C_ANA_MST::regs()
+                .hw_i2c_ctrl()
+                .modify(|_, w| w.hw_i2c_scl_pulse_dur().set(value)),
+            _ => return false,
+        };
         true
     }
 
@@ -643,7 +634,7 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
         // SOURCE[ROM_REV0_PHY_I2C]. Complete phy_i2cmst_reg_init selects 2.
         I2C_ANA_MST::regs()
             .ana_conf0()
-            .modify(|_, w| unsafe { w.phy_register_mode().bits(mode) });
+            .modify(|_, w| w.phy_register_mode().set(mode));
         true
     }
 
@@ -659,7 +650,7 @@ impl PhyI2cMasterControl for EspHalRadioPeripheral {
         // SOURCE[ROM_REV0_PHY_I2C]. Complete phy_bbpll_cal uses only 1/2.
         I2C_ANA_MST::regs()
             .ana_conf0()
-            .modify(|_, w| unsafe { w.bbpll_cal_mode_unknown().bits(mode) });
+            .modify(|_, w| w.bbpll_cal_mode_unknown().set(mode));
     }
 }
 

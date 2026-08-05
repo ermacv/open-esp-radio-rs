@@ -680,7 +680,7 @@ dependencies = [
 [[package]]
 name = "esp32s31"
 version = "0.1.0"
-source = "git+https://github.com/ermacv/esp-pacs?rev=3df8dc705#3df8dc70514a55d2cf4d03283a39d7178fc50ca0"
+source = "git+https://github.com/ermacv/esp-pacs?rev=d0fb94ef3#d0fb94ef39e992ca0b5fed51cb98a34c8aa8bcd5"
 dependencies = [
  "critical-section",
  "vcell",

@@ -19,17 +19,17 @@
   <peripherals>
     <peripheral>
       <name>MODEM_SYSCON</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,S31_MODEM_SYSCON_STRUCT]. Platform-owned modem system configuration.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_SYSCON_STRUCT]. Platform-owned modem system configuration.</description>
       <baseAddress>0x20109c00</baseAddress>
       <registers>
         <register>
           <name>CLK_CONF1</name>
-          <description>SOURCE[ESP32S31_PAC_3DF8DC7]. Exact platform-PAC register name and access. Wi-Fi, Bluetooth and front-end clock-enable word.</description>
+          <description>SOURCE[ESP32S31_PAC_D0FB94E]. Exact platform-PAC register name and access. Wi-Fi, Bluetooth and front-end clock-enable word.</description>
           <addressOffset>0x14</addressOffset><size>32</size><access>read-write</access>
         </register>
         <register>
           <name>WIFI_BB_CFG</name>
-          <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]. Wi-Fi baseband configuration fields reached by the PHY call graph.</description>
+          <description>SOURCE[ESP32S31_PAC_D0FB94E,ROM_REV0_PHY_FREQUENCY_CHANNEL,BLOB_LIBPHY_PHY_BB_INIT]. Wi-Fi baseband configuration fields reached by the PHY call graph.</description>
           <addressOffset>0x18</addressOffset><size>32</size><access>read-write</access><resetValue>0x00000000</resetValue>
           <fields>
             <field><name>COLD_START_CLEAR_UNKNOWN</name><bitOffset>0</bitOffset><bitWidth>1</bitWidth></field>
@@ -44,7 +44,7 @@
 
     <peripheral>
       <name>MODEM_LPCON</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,S31_MODEM_LPCON_STRUCT]. Exact complete platform-owned modem low-power configuration block from the pinned ESP32-S31 PAC.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,S31_MODEM_LPCON_STRUCT]. Exact complete platform-owned modem low-power configuration block from the pinned ESP32-S31 PAC.</description>
       <baseAddress>0x2010F000</baseAddress>
       <registers>
         <register>
@@ -682,7 +682,7 @@
 
     <peripheral>
       <name>I2C_ANA_MST</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_I2C,BLOB_LIBPHY_PHY_I2C]. Platform-owned analog-register I2C master.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,ROM_REV0_PHY_I2C,BLOB_LIBPHY_PHY_I2C]. Platform-owned analog-register I2C master.</description>
       <baseAddress>0x2010f800</baseAddress>
       <registers>
         <register>
@@ -773,7 +773,7 @@
 
     <peripheral>
       <name>PMU</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW,ROM_REV0_PHY_OPEN_FE_BB_CLK]. Platform-owned power-management registers reached by radio initialization.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW,ROM_REV0_PHY_OPEN_FE_BB_CLK]. Platform-owned power-management registers reached by radio initialization.</description>
       <baseAddress>0x20704000</baseAddress>
       <registers>
         <register>
@@ -815,7 +815,7 @@
 
     <peripheral>
       <name>LP_AON_CLKRST</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_POWER_DETECTOR]. Platform-owned low-power always-on clock/reset registers.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,ROM_REV0_PHY_POWER_DETECTOR]. Platform-owned low-power always-on clock/reset registers.</description>
       <baseAddress>0x20701000</baseAddress>
       <registers>
         <register>
@@ -831,7 +831,7 @@
 
     <peripheral>
       <name>LP_PERICLKRST</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Platform-owned low-power peripheral clock/reset registers.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,BLOB_LIBPHY_PHY_TSENS_READ_INIT]. Platform-owned low-power peripheral clock/reset registers.</description>
       <baseAddress>0x20710000</baseAddress>
       <registers>
         <register>
@@ -848,7 +848,7 @@
 
     <peripheral>
       <name>LP_TSENS</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7,ROM_REV0_PHY_TSENS]. Platform-owned low-power temperature sensor.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E,ROM_REV0_PHY_TSENS]. Platform-owned low-power temperature sensor.</description>
       <baseAddress>0x20818000</baseAddress>
       <registers>
         <register>
@@ -882,12 +882,12 @@
 
     <peripheral>
       <name>EFUSE</name>
-      <description>SOURCE[ESP32S31_PAC_3DF8DC7]. Platform-owned eFuse controller. Only the two exact read-only MAC words reached by the PHY ROM call graph are mirrored here.</description>
+      <description>SOURCE[ESP32S31_PAC_D0FB94E]. Platform-owned eFuse controller. Only the two exact read-only MAC words reached by the PHY ROM call graph are mirrored here.</description>
       <baseAddress>0x20715000</baseAddress>
       <registers>
         <register>
           <name>RD_MAC_SYS0</name>
-          <description>SOURCE[ESP32S31_PAC_3DF8DC7]. Exact platform-PAC register and field: low 32 bits of the system MAC address.</description>
+          <description>SOURCE[ESP32S31_PAC_D0FB94E]. Exact platform-PAC register and field: low 32 bits of the system MAC address.</description>
           <addressOffset>0x50</addressOffset><size>32</size><access>read-only</access>
           <fields>
             <field><name>MAC_0</name><bitOffset>0</bitOffset><bitWidth>32</bitWidth><access>read-only</access></field>
@@ -895,7 +895,7 @@
         </register>
         <register>
           <name>RD_MAC_SYS1</name>
-          <description>SOURCE[ESP32S31_PAC_3DF8DC7]. Exact platform-PAC register and fields: high 16 system-MAC bits and the 16 extended MAC bits.</description>
+          <description>SOURCE[ESP32S31_PAC_D0FB94E]. Exact platform-PAC register and fields: high 16 system-MAC bits and the 16 extended MAC bits.</description>
           <addressOffset>0x54</addressOffset><size>32</size><access>read-only</access>
           <fields>
             <field><name>MAC_1</name><bitOffset>0</bitOffset><bitWidth>16</bitWidth><access>read-only</access></field>
@@ -907,7 +907,7 @@
   </peripherals>
   <vendorExtensions>
     <openEspRadioProvenance>
-      <source id="ESP32S31_PAC_3DF8DC7">ermacv/esp-pacs commit 3df8dc70514a55d2cf4d03283a39d7178fc50ca0, pinned by Cargo.lock; ESP32-S31 SVD and generated PAC definitions.</source>
+      <source id="ESP32S31_PAC_D0FB94E">ermacv/esp-pacs commit d0fb94ef39e992ca0b5fed51cb98a34c8aa8bcd5, pinned by Cargo.lock; ESP32-S31 SVD and generated PAC definitions with qualified radio-field write constraints.</source>
       <source id="S31_MODEM_LPCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, ESP32-S31 modem_lpcon_struct.h; cross-check for the pinned PAC layout.</source>
       <source id="S31_MODEM_SYSCON_STRUCT">esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, ESP32-S31 modem_syscon_struct.h.</source>
       <source id="ROM_REV0_PHY_I2C">Pinned ESP32-S31 rev0 ROM PHY-I2C bodies.</source>

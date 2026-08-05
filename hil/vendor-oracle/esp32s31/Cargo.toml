@@ -28,4 +28,4 @@ panic = "abort"
 strip = false
 
 [patch."https://github.com/esp-rs/esp-pacs"]
-esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "3df8dc705" }
+esp32s31 = { git = "https://github.com/ermacv/esp-pacs", rev = "d0fb94ef3" }

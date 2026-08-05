@@ -79,7 +79,7 @@ block/register/data layout.
 | `S31_MODEM_SYSCON_STRUCT` | Pinned `esp-wifi-sys` commit `2585f278`, S31 `modem_syscon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_MODEM_LPCON_STRUCT` | Same commit, S31 `modem_lpcon_struct.h`, SHA-256 recorded in the SVD |
 | `S31_PMU_HEADERS` | Official ESP-IDF S31 `pmu_reg.h` pinned to the commit recorded in the SVD, plus local hashed copies in `esp-wifi-sys` |
-| `S31_ESP_PACS_SVD` | `ermacv/esp-pacs` commit `3df8dc705` (the S31 platform work and evidenced PMU access corrections), ESP32-S31 generated SVD |
+| `S31_ESP_PACS_SVD` | `ermacv/esp-pacs` commit `d0fb94ef3` (the S31 platform work, evidenced PMU access corrections and qualified radio-field write constraints), ESP32-S31 generated SVD |
 | `ROM_REV0_PHY_OPEN_FE_BB_CLK` | Complete 0x38-byte rev0 ROM body at `0x2f823ec0` |
 | `ROM_REV0_PHY_FE_REG_INIT` | Complete 0xf6-byte rev0 ROM `phy_fe_reg_init` body at `0x2f827740` |
 | `ROM_REV0_PHY_PBUS` | Complete PBus mode/force bodies and read address/shift jump tables |

@@ -83,6 +83,24 @@ constants, and semantic trace builders for one domain. Artifact
 authentication remains a caller-owned precondition; these summaries only
 match the reviewed symbol metadata and body/schema constraints they declare.
 
+## RISC-V reference-analysis layout
+
+`backend-riscv/src/reference_analysis/mod.rs` is the entry facade for
+reference-trace resolution. It selects a reviewed summary, a structural trace,
+or bounded symbolic-CFG recovery and then delegates composition:
+
+| Module | Responsibility |
+| --- | --- |
+| `inline.rs` | Argument substitution and token remapping for a flat callee summary |
+| `flatten.rs` | Stateful straight-line call composition, caller private stack, and call-result rewriting |
+| `flow.rs` | Bounded CFG exploration, scoped calls, and recursive flow composition |
+| `resolver.rs` | Artifact symbol catalog, preferred identities, relocations, and entry-point resolution |
+
+The facade owns path selection and fail-closed blocker attribution. `inline`
+does not resolve symbols, `flatten` does not explore branches, and `resolver`
+does not implement event semantics. Recursive callee analysis returns through
+the facade so the same selection and blocker rules apply at every call depth.
+
 ## Linked-IR source layout
 
 `analysis/linked_ir.rs` is the façade for building, merging, and
@@ -130,9 +148,7 @@ Line count is only a signal, but the next useful responsibility reviews are:
 
 - `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
   small and move any remaining decoding/control-flow policy into its existing
-  phase modules;
-- `backend-riscv/src/reference_analysis/mod.rs`: keep CFG orchestration apart
-  from resolution/composition rules.
+  phase modules.
 
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or

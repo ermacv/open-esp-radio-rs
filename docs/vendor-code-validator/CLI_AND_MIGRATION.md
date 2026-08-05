@@ -91,6 +91,12 @@ analog-I2C/host-table traces have separate modules. A small facade retains the
 single explicit recognition order required for auditing and backend hooks, so
 the split does not create competing registries or change summary selection.
 
+RISC-V reference analysis now separates flat callee-summary substitution,
+stateful caller/private-stack flattening, bounded CFG/scoped-call composition,
+and artifact symbol resolution. Its facade retains the fail-closed choice
+between reviewed, structural, and symbolic-CFG paths and is also the recursive
+entry point for callee analysis.
+
 ## Backend feasibility notes
 
 The `object` crate already recognizes RISC-V, Arm and Xtensa ELF machine

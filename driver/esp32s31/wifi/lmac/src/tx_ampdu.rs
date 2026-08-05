@@ -399,6 +399,21 @@ struct CompletedFrameLayout {
     hardware_mic_length: u8,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RetryFrameLocation {
+    index: usize,
+    buffer_address: usize,
+    capacity: usize,
+}
+
+fn retry_backing_offset(bytes: &[u8], location: RetryFrameLocation) -> Option<usize> {
+    let offset = location.buffer_address.checked_sub(bytes.as_ptr().addr())?;
+    offset
+        .checked_add(location.capacity)
+        .filter(|end| *end <= bytes.len())
+        .map(|_| offset)
+}
+
 impl HtAmpduTxCompletion {
     /// Return whether a completed A-MPDU positively acknowledges one MPDU.
     ///
@@ -654,16 +669,29 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
     /// `lmacProcessLongRetryFail` writes four immediately before entering the
     /// A-MPDU retry leaf. Only the compacted byte/subframe count and the next
     /// EDCA backoff are expected to change before republication.
-    #[allow(
-        unsafe_code,
-        reason = "detached state returns retained DMA backing to software ownership"
-    )]
     pub fn retain_for_ampdu_retry(
         mut self: Pin<&mut Self>,
         cookie: TxCookie,
         retry_mask: u32,
     ) -> Result<HtAmpduLength, HtAmpduTxError> {
-        let storage = self.as_ref().get_ref();
+        let locations = self.as_ref().retry_frame_locations(cookie, retry_mask)?;
+        for location in locations.iter().flatten() {
+            if !self.as_ref().get_ref().internal_frame_matches(*location) {
+                return Err(HtAmpduTxError::BackingUnavailable {
+                    index: location.index as u8,
+                });
+            }
+        }
+        self.as_mut().mark_internal_retry_frames(&locations);
+        self.compact_retry_metadata(locations)
+    }
+
+    fn retry_frame_locations(
+        self: Pin<&Self>,
+        cookie: TxCookie,
+        retry_mask: u32,
+    ) -> Result<[Option<RetryFrameLocation>; SLOTS], HtAmpduTxError> {
+        let storage = self.get_ref();
         if storage.state != TxSlotState::Completed || storage.active != cookie || !storage.detached
         {
             return Err(HtAmpduTxError::Stale);
@@ -689,12 +717,53 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
             }
         }
 
-        let storage = self.as_mut().project();
-        let mut destination = 0_usize;
+        let mut locations = [None; SLOTS];
         for source in 0..old_count {
             if retry_mask & (1_u32 << source) == 0 {
                 continue;
             }
+            let capacity = usize::from(storage.descriptor_capacities[source]);
+            if TX_AMPDU_METADATA_SIZE + 2 > capacity {
+                return Err(HtAmpduTxError::BackingUnavailable {
+                    index: source as u8,
+                });
+            }
+            locations[source] = Some(RetryFrameLocation {
+                index: source,
+                buffer_address: storage.buffer_addresses[source],
+                capacity,
+            });
+        }
+        Ok(locations)
+    }
+
+    fn internal_frame_matches(&self, location: RetryFrameLocation) -> bool {
+        let buffer = &self.buffers[location.index].0;
+        location.buffer_address == buffer.as_ptr().addr() && location.capacity <= buffer.len()
+    }
+
+    fn mark_internal_retry_frames(
+        mut self: Pin<&mut Self>,
+        locations: &[Option<RetryFrameLocation>; SLOTS],
+    ) {
+        let storage = self.as_mut().project();
+        for location in locations.iter().flatten() {
+            if location.buffer_address == storage.buffers[location.index].0.as_ptr().addr()
+                && location.capacity <= storage.buffers[location.index].0.len()
+            {
+                storage.buffers[location.index].0[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+            }
+        }
+    }
+
+    fn compact_retry_metadata(
+        mut self: Pin<&mut Self>,
+        locations: [Option<RetryFrameLocation>; SLOTS],
+    ) -> Result<HtAmpduLength, HtAmpduTxError> {
+        let storage = self.as_mut().project();
+        let mut destination = 0_usize;
+        for location in locations.iter().flatten() {
+            let source = location.index;
             if destination != source {
                 storage.buffer_addresses[destination] = storage.buffer_addresses[source];
                 storage.frame_lengths[destination] = storage.frame_lengths[source];
@@ -705,17 +774,6 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 storage.empty_delimiters[destination] = storage.empty_delimiters[source];
                 storage.descriptor_capacities[destination] = storage.descriptor_capacities[source];
             }
-            // Frame Control byte one starts after the private metadata prefix;
-            // bit three is IEEE 802.11 Retry.
-            let buffer_address = storage.buffer_addresses[destination];
-            let capacity = usize::from(storage.descriptor_capacities[destination]);
-            // SAFETY: the detached completion state returned every retained
-            // backing allocation to software. Internal buffers are pinned by
-            // this owner; referenced buffers remain pinned by the wrapper
-            // required by `commit_referenced_frame`.
-            let buffer =
-                unsafe { core::slice::from_raw_parts_mut(buffer_address as *mut u8, capacity) };
-            buffer[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
             destination += 1;
         }
         *storage.count = u8::try_from(destination)
@@ -2418,6 +2476,82 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             ));
         }
         Err(HtAmpduTxError::BackingUnavailable { index })
+    }
+
+    /// Retain selected MPDUs and set their Retry bit through the allocation
+    /// owner rather than by reconstructing slices from descriptor addresses.
+    pub fn retain_for_ampdu_retry(
+        &mut self,
+        cookie: TxCookie,
+        retry_mask: u32,
+    ) -> Result<HtAmpduLength, HtAmpduTxError> {
+        let locations = self
+            .storage
+            .as_ref()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_ref()
+            .retry_frame_locations(cookie, retry_mask)?;
+
+        // Resolve every selected frame before mutating any of them. A stale
+        // address therefore fails closed without a partially rewritten batch.
+        for location in locations.iter().flatten() {
+            let internal = self
+                .storage
+                .as_ref()
+                .expect("retained DMA owner keeps storage until teardown")
+                .as_ref()
+                .get_ref()
+                .internal_frame_matches(*location);
+            if internal {
+                continue;
+            }
+            let found = self.backings[..self.held].iter_mut().any(|backing| {
+                let Some(backing) = backing.as_mut() else {
+                    return false;
+                };
+                let bytes = backing.stable_dma_region().into_mut_slice();
+                retry_backing_offset(bytes, *location).is_some()
+            });
+            if !found {
+                return Err(HtAmpduTxError::BackingUnavailable {
+                    index: location.index as u8,
+                });
+            }
+        }
+
+        self.storage
+            .as_mut()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_mut()
+            .mark_internal_retry_frames(&locations);
+        for location in locations.iter().flatten() {
+            let internal = self
+                .storage
+                .as_ref()
+                .expect("retained DMA owner keeps storage until teardown")
+                .as_ref()
+                .get_ref()
+                .internal_frame_matches(*location);
+            if internal {
+                continue;
+            }
+            for backing in &mut self.backings[..self.held] {
+                let Some(backing) = backing.as_mut() else {
+                    continue;
+                };
+                let bytes = backing.stable_dma_region().into_mut_slice();
+                let Some(offset) = retry_backing_offset(bytes, *location) else {
+                    continue;
+                };
+                bytes[offset + TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+                break;
+            }
+        }
+        self.storage
+            .as_mut()
+            .expect("retained DMA owner keeps storage until teardown")
+            .as_mut()
+            .compact_retry_metadata(locations)
     }
 
     /// Commit one HT frame and retain its stable backing in the same owner.

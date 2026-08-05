@@ -912,10 +912,7 @@ where
             let current_subframes = self.ampdu.frame_count();
             let decision = active.retry.observe(completion, current_subframes)?;
             if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
-                let aggregate = self
-                    .ampdu
-                    .as_mut()
-                    .retain_for_ampdu_retry(cookie, retry_mask)?;
+                let aggregate = self.ampdu.retain_for_ampdu_retry(cookie, retry_mask)?;
                 self.ordinary
                     .ordinary_mut()
                     .record_retry_failure(LegacyTxQueue::BestEffort);

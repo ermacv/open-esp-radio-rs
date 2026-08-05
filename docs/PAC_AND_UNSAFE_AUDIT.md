@@ -93,6 +93,31 @@ builds and exist only under the explicit `validation-raw-dma` feature; those
 harness calls manufacture synthetic authority under their unsafe contract.
 There is no standalone raw target walker-enable entry point.
 
+## TX ownership frontier
+
+TX has not yet reached the same capability boundary. Ordinary `TxSlot` and
+`HtAmpduTxStorage` retain their descriptors and buffers in safe LMAC, while
+`MacLegacyTxProgram`, `MacHtTxProgram` and `MacHeTxProgram` carry a PLCP0 word
+whose low bits encode the descriptor-chain head. The production compositions
+allocate these owners statically, but the public types do not carry that proof
+to `TxHardware` or to the safe `RadioRegisters` prepare/start methods. A raw
+but DMA-range-valid PLCP0 can therefore still bypass the intended TX owner.
+
+Do not fix this by adding an unchecked address token in LMAC. The required
+order is:
+
+1. move the ordinary pinned descriptor/buffer owner into
+   `esp32s31/wifi/dma` and make it return a non-forgeable `TxDmaBinding`;
+2. keep queue selection, rate/PLCP formatting, retry policy and completion
+   semantics in LMAC over that lower storage lease;
+3. require the binding at both `TxHardware` and `RadioRegisters`, validating
+   that the PLCP0 head belongs to the retained descriptor range;
+4. apply the same owner to A-MPDU descriptor arrays and every separately
+   retained zero-copy backing before closing the public register escape hatch.
+
+The reset-required/quarantine rule remains unchanged during this extraction:
+no backing becomes reusable merely because its Rust queue owner was dropped.
+
 ## Layer rules
 
 - All crates above the three audited leaves are compiled with

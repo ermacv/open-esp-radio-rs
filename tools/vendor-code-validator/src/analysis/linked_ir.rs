@@ -87,6 +87,15 @@ pub(crate) struct LinkedMmioAccess {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedMmioBitRange {
+    pub(crate) least_significant_bit: u8,
+    pub(crate) most_significant_bit: u8,
+    pub(crate) mask: u32,
+    pub(crate) write_shapes: usize,
+    pub(crate) functions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedMmioRegister {
     pub(crate) address: u32,
     pub(crate) width: u8,
@@ -96,6 +105,10 @@ pub(crate) struct LinkedMmioRegister {
     pub(crate) poll_shapes: usize,
     pub(crate) static_shapes: usize,
     pub(crate) indexed_candidate_shapes: usize,
+    pub(crate) whole_register_write_shapes: usize,
+    pub(crate) read_modify_write_shapes: usize,
+    pub(crate) write_masks: Vec<u32>,
+    pub(crate) candidate_bit_ranges: Vec<LinkedMmioBitRange>,
     pub(crate) functions: Vec<String>,
 }
 
@@ -1809,7 +1822,37 @@ struct MmioRegisterAccumulator {
     poll_shapes: usize,
     static_shapes: usize,
     indexed_candidate_shapes: usize,
+    whole_register_write_shapes: usize,
+    read_modify_write_shapes: usize,
+    write_masks: BTreeSet<u32>,
+    candidate_bit_ranges: BTreeMap<(u8, u8, u32), (usize, BTreeSet<String>)>,
     functions: BTreeSet<String>,
+}
+
+fn candidate_bit_ranges(mask: u32, width: u8) -> Vec<(u8, u8, u32)> {
+    let mask = mask & width_mask(width);
+    let mut output = Vec::new();
+    let mut bit = 0_u8;
+    while bit < width {
+        if mask & (1_u32 << bit) == 0 {
+            bit += 1;
+            continue;
+        }
+        let first = bit;
+        while bit + 1 < width && mask & (1_u32 << (bit + 1)) != 0 {
+            bit += 1;
+        }
+        let last = bit;
+        let range_width = last - first + 1;
+        let range_mask = if range_width == 32 {
+            u32::MAX
+        } else {
+            ((1_u32 << range_width) - 1) << first
+        };
+        output.push((first, last, range_mask));
+        bit += 1;
+    }
+    output
 }
 
 fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
@@ -1831,7 +1874,22 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             entry.names.insert(access.register.clone());
             match access.access {
                 "read" => entry.read_shapes += 1,
-                "write" => entry.write_shapes += 1,
+                "write" => {
+                    entry.write_shapes += 1;
+                    let modified_mask = access.modified_mask.unwrap_or(width_mask(access.width));
+                    entry.write_masks.insert(modified_mask);
+                    entry.whole_register_write_shapes +=
+                        usize::from(modified_mask == width_mask(access.width));
+                    let register_derived_mask = access.preserved_mask.unwrap_or_default()
+                        | access.inverted_mask.unwrap_or_default()
+                        | access.read_derived_mask.unwrap_or_default();
+                    entry.read_modify_write_shapes += usize::from(register_derived_mask != 0);
+                    for range in candidate_bit_ranges(modified_mask, access.width) {
+                        let candidate = entry.candidate_bit_ranges.entry(range).or_default();
+                        candidate.0 += 1;
+                        candidate.1.insert(function.identity.clone());
+                    }
+                }
                 "poll" => entry.poll_shapes += 1,
                 _ => unreachable!("linked MMIO access has a closed access vocabulary"),
             }
@@ -1854,6 +1912,25 @@ fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
             poll_shapes: entry.poll_shapes,
             static_shapes: entry.static_shapes,
             indexed_candidate_shapes: entry.indexed_candidate_shapes,
+            whole_register_write_shapes: entry.whole_register_write_shapes,
+            read_modify_write_shapes: entry.read_modify_write_shapes,
+            write_masks: entry.write_masks.into_iter().collect(),
+            candidate_bit_ranges: entry
+                .candidate_bit_ranges
+                .into_iter()
+                .map(
+                    |(
+                        (least_significant_bit, most_significant_bit, mask),
+                        (write_shapes, functions),
+                    )| LinkedMmioBitRange {
+                        least_significant_bit,
+                        most_significant_bit,
+                        mask,
+                        write_shapes,
+                        functions: functions.into_iter().collect(),
+                    },
+                )
+                .collect(),
             functions: entry.functions.into_iter().collect(),
         })
         .collect();
@@ -2242,6 +2319,14 @@ mod tests {
 
     #[test]
     fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
+        assert_eq!(
+            candidate_bit_ranges(0x3000_00f3, 32),
+            [
+                (0, 1, 0x0000_0003),
+                (4, 7, 0x0000_00f0),
+                (28, 29, 0x3000_0000),
+            ]
+        );
         let address = 0x2010_7030;
         let write_value = SymbolicValue::register_read(0, address, 32, false)
             .and(0xffff_fff0)

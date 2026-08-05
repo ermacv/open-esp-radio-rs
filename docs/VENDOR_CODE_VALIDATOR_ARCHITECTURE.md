@@ -170,6 +170,10 @@ shapes and a project-wide `(address, width)` register index. Static accesses,
 bounded indexed candidates and poll shapes retain path, address-expression and
 write-bit provenance. This connects the manual pseudo-source to the register
 inventory without treating candidate sets as dynamic occurrence counts.
+Distinct write masks are retained at the register level and split into
+contiguous candidate bit ranges linked back to their producing functions.
+Whole-register and read-modify-write shapes are counted separately, without
+promoting those mechanical masks to a peripheral-semantics claim.
 
 ### Shared model
 

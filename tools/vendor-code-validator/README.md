@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v9 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v10 records `"linkage_mode": "independent-artifacts"` and does not claim
 that unresolved calls between separate archives were linked. Use one linked
 ELF primary plus `--companion` inputs when cross-image addresses and relocations
 belong to one executable address space.
@@ -129,6 +129,13 @@ facts by `(address, width)` and lists all using functions. Counts are explicitly
 access *shapes*, not runtime execution counts. An indexed candidate records one
 possible register selected by a proven bounded address expression; it is not a
 claim that every candidate is touched in one invocation.
+
+For writes, the register index retains every distinct `write_mask`, counts
+whole-register and read-modify-write shapes, and splits modified masks into
+contiguous `candidate_bit_ranges`. Each range lists the functions that produced
+it. These ranges are mechanical field candidates only; adjacent fields may be
+merged and no access policy such as W1C, reset value or semantic name is
+inferred.
 
 External ABI slots carry a harness-owned semantic overlay: an opaque operation
 name, typed/named input/output arguments, return type and optional replacement

@@ -217,8 +217,28 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
         }
     }
     for register in &report.mmio_registers {
+        let write_masks = register
+            .write_masks
+            .iter()
+            .map(|mask| format!("{mask:#010x}"))
+            .collect::<Vec<_>>()
+            .join("|");
+        let candidate_bit_ranges = register
+            .candidate_bit_ranges
+            .iter()
+            .map(|range| {
+                format!(
+                    "{}-{}:{:#010x}@{}",
+                    range.least_significant_bit,
+                    range.most_significant_bit,
+                    range.mask,
+                    range.functions.join(",")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("|");
         println!(
-            "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tstatic-shapes={}\tindexed-candidates={}\tfunctions={}",
+            "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tstatic-shapes={}\tindexed-candidates={}\twhole-register-writes={}\trmw-writes={}\twrite-masks={}\tcandidate-bit-ranges={}\tfunctions={}",
             register.address,
             register.width,
             register.names.join("|"),
@@ -227,6 +247,10 @@ fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
             register.poll_shapes,
             register.static_shapes,
             register.indexed_candidate_shapes,
+            register.whole_register_write_shapes,
+            register.read_modify_write_shapes,
+            write_masks,
+            candidate_bit_ranges,
             register.functions.join(","),
         );
     }
@@ -315,7 +339,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 9,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 10,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -385,14 +409,40 @@ fn write_json_report(
         write_strings(&mut output, &register.names);
         write!(
             output,
-            ", \"read_shapes\": {}, \"write_shapes\": {}, \"poll_shapes\": {}, \"static_shapes\": {}, \"indexed_candidate_shapes\": {}, \"functions\": ",
+            ", \"read_shapes\": {}, \"write_shapes\": {}, \"poll_shapes\": {}, \"static_shapes\": {}, \"indexed_candidate_shapes\": {}, \"whole_register_write_shapes\": {}, \"read_modify_write_shapes\": {}, \"write_masks\": [",
             register.read_shapes,
             register.write_shapes,
             register.poll_shapes,
             register.static_shapes,
             register.indexed_candidate_shapes,
+            register.whole_register_write_shapes,
+            register.read_modify_write_shapes,
         )
         .expect("writing to String cannot fail");
+        for (mask_index, mask) in register.write_masks.iter().enumerate() {
+            if mask_index != 0 {
+                output.push_str(", ");
+            }
+            write_string(&mut output, &format!("{mask:#010x}"));
+        }
+        output.push_str("], \"candidate_bit_ranges\": [");
+        for (range_index, range) in register.candidate_bit_ranges.iter().enumerate() {
+            if range_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"least_significant_bit\": {}, \"most_significant_bit\": {}, \"mask\": \"{:#010x}\", \"write_shapes\": {}, \"functions\": ",
+                range.least_significant_bit,
+                range.most_significant_bit,
+                range.mask,
+                range.write_shapes,
+            )
+            .expect("writing to String cannot fail");
+            write_strings(&mut output, &range.functions);
+            output.push('}');
+        }
+        output.push_str("], \"functions\": ");
         write_strings(&mut output, &register.functions);
         output.push('}');
     }

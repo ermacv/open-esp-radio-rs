@@ -1,0 +1,97 @@
+# Validator internals
+
+The binary entry point only translates the library result into an exit code.
+The implementation is split by responsibility:
+
+- `crates/core` is a zero-dependency, architecture-neutral contract model;
+- `crates/model` owns architecture-neutral symbolic/reference IR, indexed-MMIO
+  proofs and the SVD-derived register catalog;
+- `crates/semantic` owns architecture-neutral effect-policy, qualification
+  request/result and evidence-source interfaces;
+- `crates/backend-riscv` owns ELF decoding, RISC-V relocations, reference CFG
+  analysis, code generation, concrete RV32 execution and image auditing;
+- `crates/harness-esp32s31` owns the external ABI versions and lifecycle
+  fixture data and depends only on core;
+- `crates/harness-esp32s31-semantic` owns reviewed summaries, typed
+  qualification and the only validator-side dependency on the production PHY;
+- `analysis` contains the thin architecture-facing artifact service;
+- `orchestration` owns cross-layer workflows such as compiling and
+  independently re-extracting a generated reference;
+- `verification` owns profiles, dispositions, evidence and comparisons;
+- `harnesses::esp32s31` is a thin registry facade over the two ESP32-S31
+  harness crates;
+- `validation/esp32s31` owns the checked target/profile/disposition data;
+- `cli` parses a typed top-level command and dispatches it to those services.
+
+The backend depends only on the neutral core/model crates. Chip-specific
+secondary-return recognition and reviewed summaries are supplied through the
+typed `RiscvHarnessSpec`; the backend contains no platform registry. The
+facade does not depend directly on the production PHY: that dependency ends at
+the ESP32-S31 semantic harness boundary.
+
+The hierarchical workflows are `inspect`, `mmio`, `ir`, `reference`, `execute`,
+`verify`, and `image`. Legacy flat command spellings remain accepted during
+the migration. The remaining orchestration and additional-backend work is
+tracked in
+[`docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md`](../../../docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md).
+
+## Linked-IR source layout
+
+`analysis/linked_ir.rs` is the façade for building, merging, and
+project-linking reports. Its child modules own one analysis phase each:
+
+| Module | Responsibility |
+| --- | --- |
+| `model.rs` | Stable linked-IR report types |
+| `identity.rs` | Function identity catalog and diagnostic compaction |
+| `calls.rs` | Call normalization, typed arguments, and semantic annotations |
+| `direct_trace.rs` | Direct call-graph exploration and guarded MMIO provenance |
+| `provenance.rs` | Return-bit provenance and wrapper traversal |
+| `effects.rs` | Direct MMIO, delay, and context-access extraction |
+| `summary.rs` | Reachable effect/context/event-dispatch projection |
+| `register_index.rs` | Register inventory and candidate-field aggregation |
+| `pseudo.rs` | Best-effort pseudo-Rust rendering |
+| `tests/...` | Tests grouped by calls, guards, MMIO flow, summaries, and recursion |
+
+The façade is the only module that schedules symbols and assembles a complete
+`LinkedIrReport`. Analysis modules may consume the stable model and shared
+helpers, but report rendering does not feed facts back into analysis.
+
+## IR export source layout
+
+`cli/commands/export_ir.rs` parses options, invokes linked analysis, and
+selects outputs. Rendering and input validation are separate:
+
+| Module | Responsibility |
+| --- | --- |
+| `input.rs` | Artifact syntax, source names, and namespace validation |
+| `human.rs` | Tabular terminal report |
+| `pseudo.rs` | Pseudo-Rust file output |
+| `render_common.rs` | Shared guard/MMIO formatting and traversal |
+| `json_report.rs` | JSON document orchestration |
+| `json_report/values.rs` | JSON encoders for individual IR values |
+| `tests.rs` | CLI input compatibility and validation tests |
+
+Renderers are consumers of `LinkedIrReport`; they must not independently
+recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,
+pseudo-Rust, and terminal views consistent.
+
+## Remaining large-file review
+
+Line count is only a signal, but the next useful responsibility reviews are:
+
+- `backend-riscv/src/static_analysis/mod.rs`: keep the trace orchestrator
+  small and move any remaining decoding/control-flow policy into its existing
+  phase modules;
+- `model/src/ir/trace.rs`: separate stable observable-event data from
+  normalization and query helpers if they evolve independently;
+- `harness-esp32s31-semantic/src/reviewed_summaries.rs`: group reviewed
+  summaries by subsystem while retaining one explicit registry;
+- `semantic/src/effect_contract.rs`: separate the policy model, canonical
+  comparison, and report diagnostics when each boundary has dedicated tests;
+- `backend-riscv/src/reference_analysis/mod.rs`: keep CFG orchestration apart
+  from resolution/composition rules.
+
+These should be split only at ownership and invariant boundaries. Moving a
+contiguous block into another file without reducing shared mutable state or
+clarifying the dependency direction is not an architectural improvement.

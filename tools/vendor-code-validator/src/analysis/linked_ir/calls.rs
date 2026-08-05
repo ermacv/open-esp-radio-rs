@@ -1,0 +1,712 @@
+//! Call normalization, semantic annotations, and flow call collection.
+
+use super::*;
+
+pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
+    arguments.iter().map(SymbolicValue::canonical).collect()
+}
+
+pub(super) fn affine_argument_bindings(arguments: &[SymbolicValue]) -> Vec<LinkedArgumentBinding> {
+    arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(position, value)| {
+            let (caller_argument, offset) = value.caller_memory_location()?;
+            Some(LinkedArgumentBinding {
+                position,
+                caller_argument,
+                offset,
+                expression: match offset.cmp(&0) {
+                    std::cmp::Ordering::Less => {
+                        format!("arg{caller_argument} - {:#x}", offset.unsigned_abs())
+                    }
+                    std::cmp::Ordering::Equal => format!("arg{caller_argument}"),
+                    std::cmp::Ordering::Greater => {
+                        format!("arg{caller_argument} + {offset:#x}")
+                    }
+                },
+            })
+        })
+        .collect()
+}
+
+pub(super) fn external_typed_arguments(
+    function: crate::ExternalFunctionRef,
+    arguments: &[SymbolicValue],
+) -> Vec<LinkedCallArgument> {
+    let function = function.spec();
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(position, value)| {
+            let semantic = function.semantic.arguments.get(position);
+            LinkedCallArgument {
+                position,
+                name: semantic.map_or_else(
+                    || format!("arg{position}"),
+                    |argument| argument.name.to_owned(),
+                ),
+                c_type: semantic
+                    .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
+                direction: semantic
+                    .map_or("unknown", |argument| external_direction(argument.direction)),
+                value: value.canonical(),
+            }
+        })
+        .collect()
+}
+
+pub(super) fn direct_semantic_typed_arguments(
+    function: &crate::DirectSemanticFunctionSpec,
+    arguments: &[String],
+) -> Vec<LinkedCallArgument> {
+    arguments
+        .iter()
+        .take(usize::from(function.argument_count))
+        .enumerate()
+        .map(|(position, value)| {
+            let semantic = function.semantic.arguments.get(position);
+            LinkedCallArgument {
+                position,
+                name: semantic.map_or_else(
+                    || format!("arg{position}"),
+                    |argument| argument.name.to_owned(),
+                ),
+                c_type: semantic
+                    .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
+                direction: semantic
+                    .map_or("unknown", |argument| external_direction(argument.direction)),
+                value: value.clone(),
+            }
+        })
+        .collect()
+}
+
+pub(super) fn branch_operation(operation: BranchOperation) -> &'static str {
+    match operation {
+        BranchOperation::Equal => "equal",
+        BranchOperation::NotEqual => "not-equal",
+        BranchOperation::LessSigned => "less-signed",
+        BranchOperation::GreaterEqualSigned => "greater-equal-signed",
+        BranchOperation::LessUnsigned => "less-unsigned",
+        BranchOperation::GreaterEqualUnsigned => "greater-equal-unsigned",
+    }
+}
+
+pub(crate) fn effective_branch_operation(operation: &'static str, taken: bool) -> &'static str {
+    if taken {
+        return operation;
+    }
+    match operation {
+        "equal" => "not-equal",
+        "not-equal" => "equal",
+        "less-signed" => "greater-equal-signed",
+        "greater-equal-signed" => "less-signed",
+        "less-unsigned" => "greater-equal-unsigned",
+        "greater-equal-unsigned" => "less-unsigned",
+        _ => unreachable!("branch operations have a closed vocabulary"),
+    }
+}
+
+pub(super) fn format_guard_literal(guard: &LinkedCallGuard) -> String {
+    if guard.taken {
+        format!("({})", guard.condition)
+    } else {
+        format!("!({})", guard.condition)
+    }
+}
+
+pub(crate) fn format_guard_path(path: &LinkedCallGuardPath) -> String {
+    let expression = path
+        .guards
+        .iter()
+        .map(format_guard_literal)
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if expression.is_empty() {
+        "true".to_owned()
+    } else {
+        expression
+    }
+}
+
+pub(crate) fn format_guard_paths(paths: &[LinkedCallGuardPath]) -> String {
+    if paths.is_empty() {
+        return "false".to_owned();
+    }
+    paths
+        .iter()
+        .map(|path| format!("({})", format_guard_path(path)))
+        .collect::<Vec<_>>()
+        .join(" || ")
+}
+
+pub(super) fn format_guard_path_without(path: &LinkedCallGuardPath, excluded: usize) -> String {
+    let expression = path
+        .guards
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != excluded)
+        .map(|(_, guard)| format_guard_literal(guard))
+        .collect::<Vec<_>>()
+        .join(" && ");
+    if expression.is_empty() {
+        "true".to_owned()
+    } else {
+        expression
+    }
+}
+
+pub(super) fn branch_expression(condition: &BranchCondition) -> String {
+    let left = pseudo_value(&condition.left);
+    let right = pseudo_value(&condition.right);
+    match condition.operation {
+        BranchOperation::Equal => format!("{left} == {right}"),
+        BranchOperation::NotEqual => format!("{left} != {right}"),
+        BranchOperation::LessSigned => format!("({left} as i32) < ({right} as i32)"),
+        BranchOperation::GreaterEqualSigned => format!("({left} as i32) >= ({right} as i32)"),
+        BranchOperation::LessUnsigned => format!("{left} < {right}"),
+        BranchOperation::GreaterEqualUnsigned => format!("{left} >= {right}"),
+    }
+}
+
+pub(super) fn external_semantics(event: &DraftReferenceEvent) -> Option<String> {
+    let DraftReferenceEvent::ExternalCall {
+        table, function, ..
+    } = event
+    else {
+        return None;
+    };
+    let table = table.spec();
+    let function = function.spec();
+    Some(format!(
+        "table={} version={} slot={:#x} args={} return={:?} operation={}",
+        table.id,
+        table.version,
+        function.offset,
+        function.argument_count,
+        function.return_model,
+        function.semantic.operation,
+    ))
+}
+
+pub(super) fn external_return_model(model: ExternalReturnModel) -> String {
+    match model {
+        ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
+        ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
+        ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
+            format!("private-stack-output-u8:arg{pointer_argument}")
+        }
+        ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
+    }
+}
+
+pub(super) fn linked_trampoline(
+    table: crate::ExternalTableRef,
+    function: crate::ExternalFunctionRef,
+) -> LinkedTrampoline {
+    let table = table.spec();
+    let function = function.spec();
+    LinkedTrampoline {
+        table: table.id.to_owned(),
+        pointer_symbol: table.pointer_symbol.to_owned(),
+        backing_symbol: table.backing_symbol.to_owned(),
+        version: table.version,
+        magic: table.magic,
+        table_size: table.size,
+        magic_offset: table.magic_offset,
+        function_id: function.id.to_owned(),
+        slot: function.offset,
+        c_name: function.c_name.to_owned(),
+        argument_count: function.argument_count,
+        return_model: external_return_model(function.return_model),
+        operation: function.semantic.operation.to_owned(),
+        return_type: function.semantic.return_type.to_owned(),
+        replacement_hint: function.semantic.replacement.map(str::to_owned),
+    }
+}
+
+pub(super) fn linked_event_dispatch_contract(
+    semantic: crate::ExternalSemanticSpec,
+) -> Option<LinkedEventDispatchContract> {
+    let dispatch = semantic.event_dispatch?;
+    Some(LinkedEventDispatchContract {
+        mechanism: dispatch.mechanism,
+        execution_context: dispatch.execution_context,
+        receiver: dispatch.receiver,
+        argument_roles: dispatch
+            .argument_roles
+            .iter()
+            .map(|binding| LinkedEventDispatchArgumentRole {
+                role: binding.role,
+                argument: binding.argument,
+            })
+            .collect(),
+    })
+}
+
+pub(super) fn external_direction(direction: crate::ExternalArgumentDirection) -> &'static str {
+    match direction {
+        crate::ExternalArgumentDirection::Input => "input",
+        crate::ExternalArgumentDirection::Output => "output",
+        crate::ExternalArgumentDirection::InputOutput => "input-output",
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct LinkedCallIdentity {
+    kind: &'static str,
+    target: String,
+    site: Option<u32>,
+    tail: bool,
+    result_modeled: bool,
+    semantics: Option<String>,
+    semantic_operation: Option<String>,
+    semantic_contract: Option<LinkedSemanticContract>,
+    replacement_hint: Option<String>,
+    project_symbol: Option<String>,
+    project_candidates: Vec<String>,
+    trampoline: Option<LinkedTrampoline>,
+    typed_signature: Vec<(usize, String, String, &'static str)>,
+}
+
+impl From<&LinkedCall> for LinkedCallIdentity {
+    fn from(call: &LinkedCall) -> Self {
+        Self {
+            kind: call.kind,
+            target: call.target.clone(),
+            site: call.site,
+            tail: call.tail,
+            result_modeled: call.result_modeled,
+            semantics: call.semantics.clone(),
+            semantic_operation: call.semantic_operation.clone(),
+            semantic_contract: call.semantic_contract.clone(),
+            replacement_hint: call.replacement_hint.clone(),
+            project_symbol: call.project_symbol.clone(),
+            project_candidates: call.project_candidates.clone(),
+            trampoline: call.trampoline.clone(),
+            typed_signature: call
+                .typed_arguments
+                .iter()
+                .map(|argument| {
+                    (
+                        argument.position,
+                        argument.name.clone(),
+                        argument.c_type.clone(),
+                        argument.direction,
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+pub(super) fn merged_argument_value(
+    calls: &[LinkedCall],
+    position: usize,
+    argument_shapes: usize,
+) -> String {
+    if let Some(first) = calls[0].arguments.get(position)
+        && calls
+            .iter()
+            .all(|call| call.arguments.get(position) == Some(first))
+    {
+        return first.clone();
+    }
+    format!("varies-across-{argument_shapes}-shapes")
+}
+
+pub(super) fn merged_typed_argument_value(
+    calls: &[LinkedCall],
+    position: usize,
+    argument_shapes: usize,
+) -> String {
+    fn value(call: &LinkedCall, position: usize) -> Option<&str> {
+        call.typed_arguments
+            .iter()
+            .find(|argument| argument.position == position)
+            .map(|argument| argument.value.as_str())
+    }
+
+    if let Some(first) = value(&calls[0], position)
+        && calls
+            .iter()
+            .all(|call| value(call, position) == Some(first))
+    {
+        return first.to_owned();
+    }
+    format!("varies-across-{argument_shapes}-shapes")
+}
+
+pub(super) fn normalize_guard_paths(
+    paths: impl IntoIterator<Item = LinkedCallGuardPath>,
+) -> Vec<LinkedCallGuardPath> {
+    let mut paths = paths
+        .into_iter()
+        .map(|mut path| {
+            path.guards.sort();
+            path.guards.dedup();
+            path
+        })
+        .collect::<BTreeSet<_>>();
+
+    loop {
+        let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+        let mut consensus = None;
+        'pairs: for (index, left) in snapshot.iter().enumerate() {
+            for right in &snapshot[index + 1..] {
+                if left.guards.len() != right.guards.len() {
+                    continue;
+                }
+                let mut differing = None;
+                let mut compatible = true;
+                for (guard_index, (left, right)) in
+                    left.guards.iter().zip(&right.guards).enumerate()
+                {
+                    if left.site != right.site
+                        || left.condition != right.condition
+                        || left.result_sources != right.result_sources
+                    {
+                        compatible = false;
+                        break;
+                    }
+                    if left.taken != right.taken && differing.replace(guard_index).is_some() {
+                        compatible = false;
+                        break;
+                    }
+                }
+                if compatible && let Some(differing) = differing {
+                    let mut guards = left.guards.clone();
+                    guards.remove(differing);
+                    consensus = Some(LinkedCallGuardPath { guards });
+                    break 'pairs;
+                }
+            }
+        }
+        let Some(consensus) = consensus else {
+            break;
+        };
+        let previous_len = paths.len();
+        paths.insert(consensus);
+        let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+        paths.retain(|path| {
+            !snapshot.iter().any(|candidate| {
+                candidate != path
+                    && candidate.guards.len() <= path.guards.len()
+                    && candidate
+                        .guards
+                        .iter()
+                        .all(|guard| path.guards.contains(guard))
+            })
+        });
+        if paths.len() == previous_len {
+            break;
+        }
+    }
+
+    let snapshot = paths.iter().cloned().collect::<Vec<_>>();
+    paths.retain(|path| {
+        !snapshot.iter().any(|candidate| {
+            candidate != path
+                && candidate.guards.len() <= path.guards.len()
+                && candidate
+                    .guards
+                    .iter()
+                    .all(|guard| path.guards.contains(guard))
+        })
+    });
+    paths.into_iter().collect()
+}
+
+pub(super) fn merged_guard_paths(calls: &[LinkedCall]) -> Option<Vec<LinkedCallGuardPath>> {
+    let mut paths = Vec::new();
+    for call in calls {
+        paths.extend(call.guard_paths.as_ref()?.iter().cloned());
+    }
+    Some(normalize_guard_paths(paths))
+}
+
+pub(super) fn distinct_argument_shape_count(calls: &[LinkedCall]) -> usize {
+    let mut shapes = BTreeMap::<
+        (
+            Vec<String>,
+            Vec<LinkedArgumentBinding>,
+            Vec<(usize, String)>,
+        ),
+        usize,
+    >::new();
+    for call in calls {
+        let shape = (
+            call.arguments.clone(),
+            call.argument_bindings.clone(),
+            call.typed_arguments
+                .iter()
+                .map(|argument| (argument.position, argument.value.clone()))
+                .collect(),
+        );
+        shapes
+            .entry(shape)
+            .and_modify(|count| *count = (*count).max(call.argument_shapes))
+            .or_insert(call.argument_shapes);
+    }
+    shapes.into_values().sum()
+}
+
+pub(super) fn compact_calls(calls: impl IntoIterator<Item = LinkedCall>) -> Vec<LinkedCall> {
+    let mut groups = BTreeMap::<LinkedCallIdentity, Vec<LinkedCall>>::new();
+    for call in calls {
+        groups
+            .entry(LinkedCallIdentity::from(&call))
+            .or_default()
+            .push(call);
+    }
+
+    groups
+        .into_values()
+        .map(|calls| {
+            let argument_shapes = distinct_argument_shape_count(&calls);
+            let argument_count = calls
+                .iter()
+                .map(|call| call.arguments.len())
+                .max()
+                .unwrap_or_default();
+            let arguments = (0..argument_count)
+                .map(|position| merged_argument_value(&calls, position, argument_shapes))
+                .collect();
+            let argument_bindings = calls[0]
+                .argument_bindings
+                .iter()
+                .filter(|binding| {
+                    calls[1..]
+                        .iter()
+                        .all(|call| call.argument_bindings.contains(binding))
+                })
+                .cloned()
+                .collect();
+            let mut call = calls[0].clone();
+            for argument in &mut call.typed_arguments {
+                argument.value =
+                    merged_typed_argument_value(&calls, argument.position, argument_shapes);
+            }
+            call.argument_shapes = argument_shapes;
+            call.arguments = arguments;
+            call.argument_bindings = argument_bindings;
+            call.guard_paths = merged_guard_paths(&calls);
+            call
+        })
+        .collect()
+}
+
+pub(super) fn collect_call_event(
+    event: &DraftReferenceEvent,
+    resolver: &ReferenceResolver,
+    identities: &IrIdentityCatalog,
+    calls: &mut BTreeSet<LinkedCall>,
+) {
+    let call = match event {
+        DraftReferenceEvent::ExternalCall {
+            table,
+            function,
+            arguments,
+            ..
+        } => Some(LinkedCall {
+            kind: "external",
+            target: format!("{}::{}", table.spec().id, function.spec().c_name),
+            site: None,
+            tail: false,
+            result_modeled: matches!(
+                function.spec().return_model,
+                ExternalReturnModel::Constant(_) | ExternalReturnModel::SymbolicU32
+            ),
+            semantics: external_semantics(event),
+            semantic_operation: Some(function.spec().semantic.operation.to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "registered-external-table-slot",
+                id: format!("{}::{}", table.spec().id, function.spec().id),
+                evidence: "exact-pointer-cell-and-slot".to_owned(),
+                event_dispatch: linked_event_dispatch_contract(function.spec().semantic),
+            }),
+            replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: Some(linked_trampoline(*table, *function)),
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: external_typed_arguments(*function, arguments),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::DiagnosticCall {
+            function,
+            arguments,
+            ..
+        } => Some(LinkedCall {
+            kind: "diagnostic",
+            target: function.clone(),
+            site: None,
+            tail: false,
+            result_modeled: false,
+            semantics: Some("diagnostic/logging boundary".to_owned()),
+            semantic_operation: Some("diagnostic.emit".to_owned()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "registered-diagnostic-symbol",
+                id: function.clone(),
+                evidence: "relocated-symbol-and-reviewed-arity".to_owned(),
+                event_dispatch: None,
+            }),
+            replacement_hint: Some("Rust logging/assertion boundary".to_owned()),
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::Call {
+            site,
+            target,
+            arguments,
+            ..
+        } => Some(LinkedCall {
+            kind: if resolver.symbols_by_address.contains_key(target) {
+                "internal"
+            } else {
+                "unresolved"
+            },
+            target: identities.target(*target),
+            site: Some(*site),
+            tail: false,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::TailCall {
+            site,
+            target,
+            arguments,
+            ..
+        } => Some(LinkedCall {
+            kind: if resolver.symbols_by_address.contains_key(target) {
+                "internal"
+            } else {
+                "unresolved"
+            },
+            target: identities.target(*target),
+            site: Some(*site),
+            tail: true,
+            result_modeled: false,
+            semantics: None,
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::ComposedCall {
+            symbol,
+            arguments,
+            result_modeled,
+            ..
+        } => Some(LinkedCall {
+            kind: "internal",
+            target: symbol.clone(),
+            site: None,
+            tail: false,
+            result_modeled: *result_modeled,
+            semantics: Some("callee body was composed by the reference resolver".to_owned()),
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::ScratchCall {
+            site,
+            target,
+            arguments,
+            scratch_argument,
+            scratch_size,
+            ..
+        } => Some(LinkedCall {
+            kind: if resolver.symbols_by_address.contains_key(target) {
+                "internal"
+            } else {
+                "unresolved"
+            },
+            target: identities.target(*target),
+            site: Some(*site),
+            tail: false,
+            result_modeled: false,
+            semantics: Some(format!(
+                "scratch argument={scratch_argument} size={scratch_size}"
+            )),
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        DraftReferenceEvent::ComposedCallWithScratch {
+            symbol,
+            arguments,
+            result_modeled,
+            scratch_argument,
+            scratch_size,
+            ..
+        } => Some(LinkedCall {
+            kind: "internal",
+            target: symbol.clone(),
+            site: None,
+            tail: false,
+            result_modeled: *result_modeled,
+            semantics: Some(format!(
+                "composed callee with scratch argument={scratch_argument} size={scratch_size}"
+            )),
+            semantic_operation: None,
+            semantic_contract: None,
+            replacement_hint: None,
+            project_symbol: None,
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
+        _ => None,
+    };
+    if let Some(call) = call {
+        calls.insert(call);
+    }
+}

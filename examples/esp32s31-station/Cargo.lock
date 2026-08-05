@@ -1360,6 +1360,7 @@ version = "0.1.0"
 dependencies = [
  "open-esp-radio-dma",
  "open-esp-radio-esp32s31-registers",
+ "pin-project",
  "vcell",
 ]
 

@@ -118,6 +118,16 @@ order is:
 The reset-required/quarantine rule remains unchanged during this extraction:
 no backing becomes reusable merely because its Rust queue owner was dropped.
 
+The first extraction primitive now exists as
+`esp32s31/wifi/dma::tx_storage`: `TxDmaStorage::pin_static` consumes a unique
+static descriptor/buffer allocation and returns a movable owner carrying two
+private `StableDmaRange` values. Its publication token records
+`HardwareOwned` before it exposes the start-only callback token, and completed
+or aborted backing remains unavailable until an explicit release transition.
+This does not yet close the TX escape hatch: ordinary `TxSlot`, A-MPDU storage,
+`TxHardware` and `RadioRegisters` still need to be migrated onto that owner in
+the order above.
+
 ## Layer rules
 
 - All crates above the three audited leaves are compiled with

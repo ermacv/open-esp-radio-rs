@@ -194,6 +194,18 @@ impl<
             live: true,
         }
     }
+
+    /// Number of slots retained by a network, ready-queue or radio stage.
+    ///
+    /// This is observation only and grants no right to recover a quarantined
+    /// radio slot. A platform reset path needs a separate ownership proof
+    /// before such a transition can be added.
+    pub fn claimed_slots(&self) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| slot.state.load(Ordering::Acquire) != SLOT_FREE)
+            .count()
+    }
 }
 
 impl<
@@ -434,5 +446,87 @@ impl<const FRAME_CAPACITY: usize, const HEADROOM: usize, const TRAILER: usize> D
         if self.live {
             self.slot.release_radio();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use core::cell::Cell;
+
+    use super::*;
+
+    type TestPool = PinnedDmaTxPool<32, 8, 4, 1>;
+
+    struct ReturnProbe<'pool> {
+        pool: &'pool TestPool,
+        returned: &'pool Cell<Option<u8>>,
+    }
+
+    impl DmaIndexReturn for ReturnProbe<'_> {
+        fn return_index(&self, index: u8) {
+            assert_eq!(
+                self.pool.slots[usize::from(index)]
+                    .state
+                    .load(Ordering::Acquire),
+                SLOT_FREE,
+                "the backing must release its slot before queue publication"
+            );
+            self.returned.set(Some(index));
+        }
+    }
+
+    fn prepared_radio(pool: &TestPool) -> PinnedDmaTxRadioLease<'_, 32, 8, 4> {
+        let network = pool.claim_network(0);
+        let (index, ()) = network.publish(4, |frame| frame.copy_from_slice(&[1, 2, 3, 4]));
+        pool.claim_radio(index)
+    }
+
+    #[test]
+    fn dropped_stage_leases_restore_the_slot() {
+        let pool = TestPool::new();
+        drop(pool.claim_network(0));
+
+        let radio = prepared_radio(&pool);
+        assert_eq!(radio.ethernet(), &[1, 2, 3, 4]);
+        drop(radio);
+
+        assert_eq!(pool.claim_network(0).release(), 0);
+    }
+
+    #[test]
+    fn returning_backing_releases_before_publishing_its_index() {
+        let pool = TestPool::new();
+        let returned = Cell::new(None);
+        let backing = ReturningStableDmaBacking::new(
+            prepared_radio(&pool),
+            ReturnProbe {
+                pool: &pool,
+                returned: &returned,
+            },
+        );
+
+        assert_eq!(returned.get(), None);
+        drop(backing);
+        assert_eq!(returned.get(), Some(0));
+        assert_eq!(pool.claim_network(0).release(), 0);
+    }
+
+    #[test]
+    fn forgotten_backing_remains_quarantined() {
+        let pool = TestPool::new();
+        let returned = Cell::new(None);
+        let backing = ReturningStableDmaBacking::new(
+            prepared_radio(&pool),
+            ReturnProbe {
+                pool: &pool,
+                returned: &returned,
+            },
+        );
+
+        core::mem::forget(backing);
+
+        assert_eq!(returned.get(), None);
+        assert_eq!(pool.claimed_slots(), 1);
+        assert_eq!(pool.slots[0].state.load(Ordering::Acquire), SLOT_RADIO);
     }
 }

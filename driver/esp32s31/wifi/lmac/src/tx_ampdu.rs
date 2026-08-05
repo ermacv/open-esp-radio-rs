@@ -3723,6 +3723,42 @@ mod tests {
         assert_eq!(pool.claim_network(0).release(), 0);
     }
 
+    #[test]
+    fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
+        let storage = HtAmpduTxStorage::<2, 0>::new();
+        let mut storage = core::pin::pin!(storage);
+        let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
+        let network = pool.claim_network(0);
+        let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |bytes| {
+            bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
+        });
+        let backing = pool.claim_radio(index);
+
+        {
+            let mut owner = RetainedDmaAmpduTx::new(storage.as_mut());
+            let cookie = owner.as_mut().begin().unwrap();
+            owner
+                .commit_ht(
+                    cookie,
+                    backing,
+                    0,
+                    32,
+                    8,
+                    0,
+                    HtRate::new(
+                        crate::tx::HtMcs::Mcs0,
+                        crate::tx::HtGuardInterval::Long800Ns,
+                        crate::tx::HtChannelWidth::Mhz20,
+                    ),
+                )
+                .unwrap();
+            *owner.as_mut().project().state = TxSlotState::HardwareOwned;
+        }
+
+        assert_eq!(storage.state(), TxSlotState::HardwareOwned);
+        assert_eq!(pool.claimed_slots(), 1);
+    }
+
     const CONFIG: TxBlockAckConfig = TxBlockAckConfig {
         tid: 7,
         window: 32,

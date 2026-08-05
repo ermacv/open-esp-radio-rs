@@ -55,6 +55,23 @@ Portable WPA2 code uses safe zeroization for secret-bearing types. No portable
 protocol or role layer owns a volatile register, DMA pointer or target linker
 attribute.
 
+## DMA failure frontier
+
+Normal TX lease destruction releases the pool slot before publishing its
+index back to a producer queue. If an A-MPDU owner is destroyed while its
+descriptor remains `HardwareOwned` or `ResetRequired`, it instead forgets the
+retained backing and leaves the slot claimed. This is an intentional
+fail-closed quarantine: reusing that memory would be unsound while the walker
+may still hold its address.
+
+The current tree has no token proving that a complete platform radio reset has
+stopped every DMA actor. Consequently a quarantined slot cannot be recovered
+within the same process; the application must enter its terminal reset/reboot
+path. `PinnedDmaTxPool::claimed_slots` is observation for diagnostics and does
+not grant reset authority. A future recoverable reset path must first introduce
+an unforgeable reset-completion owner and test the complete MAC/DMA shutdown
+ordering before it can consume quarantined leases.
+
 ## Layer rules
 
 - All crates above the three audited leaves are compiled with

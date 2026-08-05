@@ -77,7 +77,7 @@ fn validate_artifact_inputs(artifacts: &[IrArtifactInput], companions: &[PathBuf
 
 fn print_report(artifacts: &[IrArtifactInput], report: &LinkedIrReport) {
     println!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tcall-compaction=stable-identity-universal-affine-bindings\tcontext-projection=affine-simple-call-paths\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -650,6 +650,39 @@ fn write_trampoline(output: &mut String, trampoline: &LinkedTrampoline) {
     output.push('}');
 }
 
+fn write_diagnostics(output: &mut String, diagnostics: &[LinkedDiagnostic]) {
+    output.push('[');
+    for (diagnostic_index, diagnostic) in diagnostics.iter().enumerate() {
+        if diagnostic_index != 0 {
+            output.push_str(", ");
+        }
+        output.push_str("{\"rendered\": ");
+        write_string(output, &diagnostic.rendered);
+        write!(
+            output,
+            ", \"original_fragments\": {}, \"unique_fragments\": {}, \"fragments\": [",
+            diagnostic.original_fragments,
+            diagnostic.fragments.len(),
+        )
+        .expect("writing to String cannot fail");
+        for (fragment_index, fragment) in diagnostic.fragments.iter().enumerate() {
+            if fragment_index != 0 {
+                output.push_str(", ");
+            }
+            write!(
+                output,
+                "{{\"first_ordinal\": {}, \"occurrences\": {}, \"message\": ",
+                fragment.first_ordinal, fragment.occurrences,
+            )
+            .expect("writing to String cannot fail");
+            write_string(output, &fragment.message);
+            output.push('}');
+        }
+        output.push_str("]}");
+    }
+    output.push(']');
+}
+
 fn write_json_report(
     path: &Path,
     artifacts: &[IrArtifactInput],
@@ -659,7 +692,7 @@ fn write_json_report(
     report: &LinkedIrReport,
 ) -> Result<()> {
     let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 15,\n  \"command\": \"ir-export\",\n");
+    output.push_str("{\n  \"schema_version\": 16,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
     output.push_str("  \"linkage_mode\": ");
     write_string(
@@ -682,6 +715,7 @@ fn write_json_report(
     output.push_str(",\n");
     output.push_str("  \"effect_summary_mode\": \"reachable-inventory-origin-preserving\",\n");
     output.push_str("  \"call_compaction_mode\": \"stable-identity-universal-affine-bindings\",\n");
+    output.push_str("  \"diagnostic_compaction_mode\": \"exact-semicolon-fragment-inventory\",\n");
     output.push_str("  \"context_projection_mode\": \"affine-simple-call-paths\",\n");
     output.push_str("  \"trampoline_inventory_mode\": \"registered-versioned-slots-only\",\n");
     output.push_str("  \"completeness_claim\": false,\n  \"artifacts\": [");
@@ -1231,6 +1265,15 @@ fn write_json_report(
         write_strings(&mut output, &function.reference_blockers);
         output.push_str(", \"call_graph_blockers\": ");
         write_strings(&mut output, &function.call_graph_blockers);
+        output.push_str(
+            ", \"diagnostics\": {\"mode\": \"exact-semicolon-fragment-inventory\", \"direct\": ",
+        );
+        write_diagnostics(&mut output, &function.direct_diagnostics);
+        output.push_str(", \"reference\": ");
+        write_diagnostics(&mut output, &function.reference_diagnostics);
+        output.push_str(", \"call_graph\": ");
+        write_diagnostics(&mut output, &function.call_graph_diagnostics);
+        output.push('}');
         output.push_str(", \"pseudo\": ");
         write_string(&mut output, &function.pseudo);
         output.push('}');

@@ -193,6 +193,16 @@ projection; disagreement removes the binding instead of selecting one path's
 value. These shape counts describe recovered IR alternatives, not dynamic
 execution multiplicity.
 
+Backend blocker construction remains lossless and participates unchanged in
+reference eligibility. At the exploratory linked-report boundary, exact
+semicolon-delimited diagnostic fragments are compacted into a first-occurrence
+inventory. The linked representation retains the source fragment count,
+occurrence count and first ordinal for each exact fragment; human and pseudo
+views render repeated fragments once with an explicit count. This prevents
+symbolic path multiplication from dominating manual-analysis output without
+pretending to recover semantic categories, dynamic execution frequency or the
+full ordering of later duplicates.
+
 The exploratory layer may follow those resolved edges to produce a reachable
 effect inventory. The fixed-point summary groups MMIO, delay and typed semantic
 shapes by the functions in which they were recovered, and identifies recursive

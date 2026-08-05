@@ -106,7 +106,7 @@ cargo vendor-code-validator ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v15 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v16 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -131,6 +131,17 @@ and downstream context projection fails closed if the callee needs it. Shape
 counts are distinct recovered IR forms, not runtime call counts or loop
 iteration counts. The JSON records this policy as
 `call_compaction_mode: "stable-identity-universal-affine-bindings"`.
+
+Exploratory blocker messages can contain thousands of repeated exact clauses
+when branch recovery reaches the same unsupported call or jump through many
+symbolic states. Schema v16 records
+`diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
+function's structured `diagnostics` keeps the original fragment count, every
+unique exact fragment, its number of occurrences and its first ordinal. The
+legacy blocker arrays and pseudo-source use the compact `rendered` form with an
+explicit `[repeated N times]` suffix. This is mechanical report compaction, not
+semantic parsing: later duplicate ordering is not retained, counts are not
+runtime occurrence counts, and backend completeness remains fail-closed.
 
 Every function also has an `effect_summary` reachable inventory. It follows
 resolved internal and unique project edges to a fixed point, including through

@@ -249,6 +249,20 @@ pub(crate) struct SemanticBoundary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedDiagnosticFragment {
+    pub(crate) first_ordinal: usize,
+    pub(crate) occurrences: usize,
+    pub(crate) message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkedDiagnostic {
+    pub(crate) rendered: String,
+    pub(crate) original_fragments: usize,
+    pub(crate) fragments: Vec<LinkedDiagnosticFragment>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -269,6 +283,9 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) context_accesses: Vec<ContextAccess>,
     pub(crate) context_fields: Vec<ContextField>,
     pub(crate) effect_summary: LinkedEffectSummary,
+    pub(crate) call_graph_diagnostics: Vec<LinkedDiagnostic>,
+    pub(crate) direct_diagnostics: Vec<LinkedDiagnostic>,
+    pub(crate) reference_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) call_graph_blockers: Vec<String>,
     pub(crate) direct_blockers: Vec<String>,
     pub(crate) reference_blockers: Vec<String>,
@@ -308,6 +325,61 @@ pub(crate) struct LinkedIrReport {
 
 fn identity(member: Option<&str>, symbol: &str) -> String {
     member.map_or_else(|| symbol.to_owned(), |member| format!("{member}:{symbol}"))
+}
+
+fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
+    let mut fragment_indices = BTreeMap::<&str, usize>::new();
+    let mut fragments = Vec::<LinkedDiagnosticFragment>::new();
+    let mut original_fragments = 0;
+
+    for (ordinal, fragment) in message.split("; ").enumerate() {
+        original_fragments += 1;
+        if let Some(index) = fragment_indices.get(fragment).copied() {
+            fragments[index].occurrences += 1;
+        } else {
+            fragment_indices.insert(fragment, fragments.len());
+            fragments.push(LinkedDiagnosticFragment {
+                first_ordinal: ordinal,
+                occurrences: 1,
+                message: fragment.to_owned(),
+            });
+        }
+    }
+
+    let rendered = fragments
+        .iter()
+        .map(|fragment| {
+            if fragment.occurrences == 1 {
+                fragment.message.clone()
+            } else {
+                format!(
+                    "{} [repeated {} times]",
+                    fragment.message, fragment.occurrences
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+
+    LinkedDiagnostic {
+        rendered,
+        original_fragments,
+        fragments,
+    }
+}
+
+fn compact_diagnostics(messages: &[String]) -> Vec<LinkedDiagnostic> {
+    messages
+        .iter()
+        .map(|message| compact_diagnostic(message))
+        .collect()
+}
+
+fn rendered_diagnostics(diagnostics: &[LinkedDiagnostic]) -> Vec<String> {
+    diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.rendered.clone())
+        .collect()
 }
 
 type SymbolKey = (Option<String>, String, u64);
@@ -2114,14 +2186,16 @@ fn render_pseudo(
     identity: &str,
     trace: &FunctionAnalysis,
     calls: &[LinkedCall],
+    direct_blockers: &[String],
+    reference_blockers: &[String],
     call_graph_blockers: &[String],
 ) -> String {
     let mut output = String::new();
     writeln!(output, "// vendor symbol: {identity}").unwrap();
-    for blocker in &trace.blockers {
+    for blocker in direct_blockers {
         writeln!(output, "// DIRECT-BLOCKER: {blocker}").unwrap();
     }
-    for blocker in &trace.reference_blockers {
+    for blocker in reference_blockers {
         writeln!(output, "// REFERENCE-BLOCKER: {blocker}").unwrap();
     }
     for blocker in call_graph_blockers {
@@ -2212,7 +2286,9 @@ pub(crate) fn build_linked_ir_for_source(
             calls: direct_calls,
             blockers,
         } = explore_direct_calls(symbol, resolver, &identities, svd);
-        let call_graph_blockers = blockers.into_iter().collect::<Vec<_>>();
+        let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
+        let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
+        let call_graph_blockers = rendered_diagnostics(&call_graph_diagnostics);
         match resolver.trace_symbol(symbol, svd) {
             Ok(trace) => {
                 let context_accesses = context_accesses_for_trace(&trace);
@@ -2231,8 +2307,18 @@ pub(crate) fn build_linked_ir_for_source(
                 } else {
                     "partial"
                 };
-                let pseudo =
-                    render_pseudo(&function_identity, &trace, &calls, &call_graph_blockers);
+                let direct_diagnostics = compact_diagnostics(&trace.blockers);
+                let reference_diagnostics = compact_diagnostics(&trace.reference_blockers);
+                let direct_blockers = rendered_diagnostics(&direct_diagnostics);
+                let reference_blockers = rendered_diagnostics(&reference_diagnostics);
+                let pseudo = render_pseudo(
+                    &function_identity,
+                    &trace,
+                    &calls,
+                    &direct_blockers,
+                    &reference_blockers,
+                    &call_graph_blockers,
+                );
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
@@ -2263,40 +2349,50 @@ pub(crate) fn build_linked_ir_for_source(
                     context_accesses,
                     context_fields,
                     effect_summary: LinkedEffectSummary::default(),
+                    call_graph_diagnostics,
+                    direct_diagnostics,
+                    reference_diagnostics,
                     call_graph_blockers,
-                    direct_blockers: trace.blockers.clone(),
-                    reference_blockers: trace.reference_blockers.clone(),
+                    direct_blockers,
+                    reference_blockers,
                     pseudo,
                 });
             }
-            Err(error) => functions.push(LinkedIrFunction {
-                source: source.to_owned(),
-                identity: function_identity.clone(),
-                member: symbol.member.clone(),
-                symbol: symbol.name.clone(),
-                binding,
-                address: symbol.addresses_resolved.then_some(symbol.address as u32),
-                object_offset: symbol.address as u32,
-                size: symbol.bytes.len(),
-                flow_kind: "unavailable",
-                complete: false,
-                exact: false,
-                return_value: "unknown".to_owned(),
-                dependencies: Vec::new(),
-                calls: compact_calls(direct_calls),
-                mmio_accesses: Vec::new(),
-                delays: Vec::new(),
-                context_accesses: Vec::new(),
-                context_fields: Vec::new(),
-                effect_summary: LinkedEffectSummary::default(),
-                call_graph_blockers,
-                direct_blockers: vec![error.to_string()],
-                reference_blockers: Vec::new(),
-                pseudo: format!(
-                    "// vendor symbol: {function_identity}\n// DECODE-BLOCKER: {error}\nfn {}(args: [u32; 16]) -> u32 {{ unknown }}\n",
-                    pseudo_identifier(&function_identity)
-                ),
-            }),
+            Err(error) => {
+                let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
+                let direct_blockers = rendered_diagnostics(&direct_diagnostics);
+                functions.push(LinkedIrFunction {
+                    source: source.to_owned(),
+                    identity: function_identity.clone(),
+                    member: symbol.member.clone(),
+                    symbol: symbol.name.clone(),
+                    binding,
+                    address: symbol.addresses_resolved.then_some(symbol.address as u32),
+                    object_offset: symbol.address as u32,
+                    size: symbol.bytes.len(),
+                    flow_kind: "unavailable",
+                    complete: false,
+                    exact: false,
+                    return_value: "unknown".to_owned(),
+                    dependencies: Vec::new(),
+                    calls: compact_calls(direct_calls),
+                    mmio_accesses: Vec::new(),
+                    delays: Vec::new(),
+                    context_accesses: Vec::new(),
+                    context_fields: Vec::new(),
+                    effect_summary: LinkedEffectSummary::default(),
+                    call_graph_diagnostics,
+                    direct_diagnostics,
+                    reference_diagnostics: Vec::new(),
+                    call_graph_blockers,
+                    direct_blockers,
+                    reference_blockers: Vec::new(),
+                    pseudo: format!(
+                        "// vendor symbol: {function_identity}\n// DECODE-BLOCKER: {error}\nfn {}(args: [u32; 16]) -> u32 {{ unknown }}\n",
+                        pseudo_identifier(&function_identity)
+                    ),
+                });
+            }
         }
     }
 
@@ -3319,6 +3415,9 @@ mod tests {
             context_accesses: Vec::new(),
             context_fields: Vec::new(),
             effect_summary: LinkedEffectSummary::default(),
+            call_graph_diagnostics: Vec::new(),
+            direct_diagnostics: Vec::new(),
+            reference_diagnostics: Vec::new(),
             call_graph_blockers: Vec::new(),
             direct_blockers: Vec::new(),
             reference_blockers: Vec::new(),
@@ -3534,6 +3633,38 @@ mod tests {
     }
 
     #[test]
+    fn diagnostic_compaction_counts_exact_fragments_and_keeps_first_ordinals() {
+        let diagnostic = compact_diagnostic(
+            "symbolic-cfg: unsupported effects; repeated call; unique jump; repeated call; repeated call",
+        );
+
+        assert_eq!(diagnostic.original_fragments, 5);
+        assert_eq!(diagnostic.fragments.len(), 3);
+        assert_eq!(diagnostic.fragments[0].first_ordinal, 0);
+        assert_eq!(diagnostic.fragments[0].occurrences, 1);
+        assert_eq!(diagnostic.fragments[1].first_ordinal, 1);
+        assert_eq!(diagnostic.fragments[1].occurrences, 3);
+        assert_eq!(diagnostic.fragments[1].message, "repeated call");
+        assert_eq!(diagnostic.fragments[2].first_ordinal, 2);
+        assert_eq!(
+            diagnostic.rendered,
+            "symbolic-cfg: unsupported effects; repeated call [repeated 3 times]; unique jump"
+        );
+    }
+
+    #[test]
+    fn diagnostic_compaction_leaves_a_single_fragment_unchanged() {
+        let diagnostic = compact_diagnostic("decoder stopped at unsupported instruction");
+
+        assert_eq!(diagnostic.original_fragments, 1);
+        assert_eq!(diagnostic.fragments.len(), 1);
+        assert_eq!(
+            diagnostic.rendered,
+            "decoder stopped at unsupported instruction"
+        );
+    }
+
+    #[test]
     fn pseudo_value_renders_register_images_as_read_modify_write_expressions() {
         let value = SymbolicValue::RegisterImage {
             read_token: 3,
@@ -3588,7 +3719,7 @@ mod tests {
             unresolved_branch: None,
         };
 
-        let pseudo = render_pseudo("vendor_parent", &trace, &[], &[]);
+        let pseudo = render_pseudo("vendor_parent", &trace, &[], &[], &[], &[]);
         assert!(
             pseudo.contains("let call0 = vendor_child(arg0);"),
             "{pseudo}"
@@ -3643,7 +3774,7 @@ mod tests {
 
         let accesses = context_accesses_for_trace(&trace);
         let fields = context_fields_for_accesses(&accesses);
-        let pseudo = render_pseudo("update_context", &trace, &[], &[]);
+        let pseudo = render_pseudo("update_context", &trace, &[], &[], &[], &[]);
 
         assert_eq!(accesses.len(), 1);
         assert_eq!(accesses[0].argument, 2);

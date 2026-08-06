@@ -64,8 +64,6 @@ cargo vendor-code-validator registers review \
 cargo vendor-code-validator registers export-svd \
   --project verification/vendor/targets/esp32s31/vendor-validator.toml \
   --check
-
-cargo pac-gen --check
 ```
 
 The clean SVD is written to `svd/esp32s31-radio.svd`. Discovery evidence
@@ -117,9 +115,8 @@ the functional catalogs under `registers/evidence/`. Validation resolves every
 source used by the model and API pack, and checks evidence ranges plus all
 modeled registers against `memory.toml`. `registers/lints.toml` retains the
 ESP32-S31 policy against synthetic `PRESERVED` fields without imposing that
-naming rule on generic projects. The legacy `pac-addon.xml` is now only a
-redundant transition gate; none of its metadata enters the clean SVD. The
-current parity and deletion criteria are recorded in
+naming rule on generic projects. The retired generator migration and current
+publication ownership are recorded in
 [`pac-gen-migration.md`](../../../../tools/vendor-code-validator/docs/pac-gen-migration.md).
 
 The project does own the neutral PAC address/path index. Regenerate or verify

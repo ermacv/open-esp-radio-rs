@@ -358,11 +358,10 @@ select an explicit reviewed pack.
 
 For ESP32-S31, the clean SVD output is checked at `svd/esp32s31-radio.svd`.
 The project-owned generator and `registers/api.toml` reproduce the complete
-production PAC byte-for-byte. During migration, `cargo pac-gen --check` remains
-as a redundant parity gate for the remaining historical lint policy. Project
-validation already owns provenance, confidence, evidence ranges, MMIO coverage,
-platform SVD parsing and structural register invariants. No add-on metadata is
-embedded into the clean SVD. The retirement matrix is documented in
+production PAC byte-for-byte. Project validation owns provenance, confidence,
+evidence ranges, MMIO coverage, platform SVD parsing and structural register
+invariants. No project metadata is embedded into the clean SVD. The completed
+legacy-generator retirement is documented in
 [`pac-gen-migration.md`](pac-gen-migration.md).
 
 ## PAC binding index

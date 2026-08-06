@@ -11,7 +11,7 @@ description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"
-description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_reg_check body, size 0x3d2. Its fixed loop bounds and block-name strings prove the half-open hardware dump ranges recorded in openEspRadioEvidenceRanges; they do not name individual registers."
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_reg_check body, size 0x3d2. Its fixed loop bounds and block-name strings prove the half-open hardware dump ranges recorded in the project evidence catalogs; they do not name individual registers."
 
 [[sources]]
 id = "BLOB_LIBPHY_PHY_DEBUG_I2C"

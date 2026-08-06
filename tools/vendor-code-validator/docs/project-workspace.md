@@ -251,9 +251,8 @@ encoding that backend restriction into the project format.
 For `mmio discover`, project MMIO regions become `--range` defaults when no
 explicit range is present. SVD remains optional: without it, findings use
 `UNMAPPED` names while retaining addresses, widths, users, and write-pattern
-candidates. An ordinary CMSIS-SVD without the historical
-`openEspRadioAddressWindows` extension is accepted; the project memory map is
-the primary source of address classification.
+candidates. CMSIS-SVD contains hardware description only; the project memory
+map is the source of address classification.
 
 ```console
 cargo vendor-code-validator mmio discover \

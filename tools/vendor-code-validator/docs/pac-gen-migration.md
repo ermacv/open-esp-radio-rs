@@ -1,9 +1,8 @@
-# Legacy `pac-gen` retirement matrix
+# Retired `pac-gen` responsibility matrix
 
 The project manifest is the canonical entry point for register validation and
-publication. `tools/pac-gen` is no longer allowed to acquire new semantics. It
-remains temporarily so removal can be based on explicit parity rather than on
-the current equality of generated files alone.
+publication. The legacy `tools/pac-gen` crate and `pac-addon.xml` were removed
+after every responsibility below had an executable project-owned replacement.
 
 ## Responsibility matrix
 
@@ -28,33 +27,24 @@ otherwise valid CMSIS-SVD aliases, until an explicit alias model is designed.
 That is stricter than silently accepting an unmarked alias and is sufficient
 for the current ESP32-S31 catalog, which contains no register aliases.
 
-## Deletion criteria
+## Current publication gate
 
-The legacy crate and `pac-addon.xml` can be removed together when all of these
-conditions hold:
+Keep these canonical gates green:
 
-1. Keep these canonical gates green:
-
-   ```console
-   cargo vendor-code-validator registers validate \
-     --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-     --deny-unreviewed
-   cargo vendor-code-validator registers export-svd \
-     --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-     --check --deny-unreviewed
-   cargo vendor-code-validator registers generate-pac \
-     --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-     --check --deny-unreviewed
-   cargo vendor-code-validator registers generate-bindings \
-     --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-     --check --deny-unreviewed
-   ```
-
-2. In one removal change, delete `tools/pac-gen`, `pac-addon.xml`, the Cargo
-   workspace member and alias, and the legacy invocation in
-   `tools/audit-source-only.sh`.
-3. Run the register-model/validator test suites and the complete source-only
-   audit after deletion.
+```console
+cargo vendor-code-validator registers validate \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --deny-unreviewed
+cargo vendor-code-validator registers export-svd \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
+cargo vendor-code-validator registers generate-pac \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
+cargo vendor-code-validator registers generate-bindings \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
+```
 
 Target-specific RTOS, NVS, logging and delay semantics are unrelated to this
 migration. They remain interface/function semantic catalogs and must not move

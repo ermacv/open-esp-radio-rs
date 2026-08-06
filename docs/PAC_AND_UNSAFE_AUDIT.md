@@ -8,11 +8,12 @@ retained as a [dated archive snapshot](archive/migration/2026-07-27-pac-and-unsa
 
 ## Register ownership
 
-`svd/esp32s31-radio.svd` is the editable source for undocumented radio
-registers in the `0x2010_0000..0x201f_ffff` decode window. `cargo pac-gen`
-generates `open-esp-radio-esp32s31-pac`; `cargo pac-gen --check` verifies that
-the checked-in generated crate is reproducible and that every described span
-fits the permitted MMIO window.
+`verification/vendor/targets/esp32s31/registers/device.toml` and its fragments
+are the editable source for undocumented radio registers in the
+`0x2010_0000..0x201f_ffff` decode window. The project-owned `registers`
+commands validate the model and generate the clean SVD, PAC and binding index.
+`registers validate --deny-unreviewed` proves that every described span fits
+the project MMIO map before publication.
 
 `open-esp-radio-esp32s31-registers::RadioRegisters` privately owns the generated
 radio singleton and exposes finite semantic operations. The official
@@ -195,7 +196,8 @@ this boundary accepts an unowned raw descriptor address.
 
 For a change touching registers, DMA storage, pinning, or placement:
 
-1. run `cargo pac-gen --check` when the SVD or generated PAC changes;
+1. run `registers validate`, `export-svd --check`, `generate-pac --check` and
+   `generate-bindings --check` through the ESP32-S31 project manifest;
 2. run the workspace tests and lints;
 3. inspect new `unsafe` occurrences and ensure the invariant is stated next
    to the operation;

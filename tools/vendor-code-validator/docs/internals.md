@@ -35,8 +35,7 @@ Register discovery facts and coverage remain in the validator facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
 attach reviewed safe PAC transactions through `[registers.api]` and evidence
 catalogs through `[registers.evidence]`; their contents remain target-owned.
-The historical `pac-addon.xml` is now only a migration oracle and is not an
-input to the project-owned generator.
+The project-owned register commands are the only SVD/PAC publication path.
 
 The hierarchical workflows are `inspect`, `mmio`, `ir`, `reference`, `execute`,
 `verify`, and `image`. Legacy flat command spellings remain accepted during

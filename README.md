@@ -65,7 +65,12 @@ for current status, reference material and archived migration reports.
 cargo fmt --all -- --check
 cargo test --workspace
 cargo qualification check --manifest qualification/targets/esp32s31/wifi-sta.ledger
-cargo pac-gen --check
+cargo vendor-code-validator registers validate \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --deny-unreviewed
+cargo vendor-code-validator registers generate-pac \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
 tools/audit-source-only.sh
 (cd examples/esp32s31-station && cargo check --release)
 ```

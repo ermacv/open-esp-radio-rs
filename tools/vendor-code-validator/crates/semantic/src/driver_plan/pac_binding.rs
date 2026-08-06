@@ -1,4 +1,4 @@
-//! Parser for the target-supplied `pac-gen` binding index.
+//! Parser for the project-generated PAC binding index.
 
 use std::{
     collections::{BTreeMap, BTreeSet},

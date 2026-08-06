@@ -1256,16 +1256,6 @@ name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
 [[package]]
-name = "open-esp-radio-pac-gen"
-version = "0.1.0"
-dependencies = [
- "open-esp-radio-register-model",
- "roxmltree",
- "svd-parser",
- "svd2rust",
-]
-
-[[package]]
 name = "open-esp-radio-qualification-check"
 version = "0.1.0"
 

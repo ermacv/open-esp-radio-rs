@@ -73,7 +73,7 @@ The first two boundary slices are complete:
   values, observable/reference IR, indexed-MMIO proofs and the SVD-derived
   register catalog;
 - `open-esp-radio-register-model` owns the target-neutral editable register
-  schema and clean SVD encoder used by both validator projects and `pac-gen`;
+  schema, clean SVD encoder and reusable PAC/evidence publication formats;
 - the facade owns generated MMIO facts and the `registers review` join report;
   function names, write-pattern provenance and draft placeholders never enter
   the shared register model or release SVD/PAC;

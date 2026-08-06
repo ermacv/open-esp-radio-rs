@@ -12,7 +12,6 @@ tools/audit-driver-safety.sh
 
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
-cargo pac-gen --check
 cargo vendor-code-validator registers validate \
     --project verification/vendor/targets/esp32s31/vendor-validator.toml \
     --deny-unreviewed
@@ -109,7 +108,7 @@ for package in "${production_packages[@]}"; do
         --edges normal,build \
         --prefix none >"$audit_dir/dependencies-$package"
     if rg \
-        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(pac-gen|hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
+        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
         "$audit_dir/dependencies-$package"
     then
         echo "qualification dependency survived in production package $package" >&2

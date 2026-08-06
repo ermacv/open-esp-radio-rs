@@ -480,9 +480,9 @@ contains three complete `phy_debug.o` functions that materially extend the
 map:
 
 - `phy_reg_check` (`0x3d2` bytes) walks fixed, word-aligned, half-open ranges
-  and prints the block names. These ranges are now recorded as
-  `openEspRadioEvidenceRanges` in the SVD. They prove finite occupied dump
-  windows, not individual register names.
+  and prints the block names. These ranges are recorded in the project
+  evidence catalogs and checked against `memory.toml`. They prove finite
+  occupied dump windows, not individual register names.
 - `phy_i2c_check` (`0x1f6` bytes) proves ten bank IDs, hosts and index bounds.
   `PHY_I2C_COMMAND_RAM.BLOCK` now exposes those IDs as enumerated values.
 - `phy_pbus_print` (`0xf4` bytes) associates selector/path pairs with RFRX,

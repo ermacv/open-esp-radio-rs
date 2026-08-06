@@ -1,5 +1,4 @@
 [alias]
-pac-gen = "run --quiet -p open-esp-radio-pac-gen --"
 hil = "run --quiet -p open-esp-radio-hil-runner --"
 qualification = "run --quiet -p open-esp-radio-qualification-check --"
 vendor-code-validator = "run --quiet -p open-radio-vendor-code-validator --"

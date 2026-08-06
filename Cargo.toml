@@ -20,7 +20,6 @@ members = [
     "hil/host/runner",
     "tools/qualification-check",
     "tools/register-model",
-    "tools/pac-gen",
     "tools/vendor-code-validator",
     "tools/vendor-code-validator/crates/backend-riscv",
     "tools/vendor-code-validator/crates/core",

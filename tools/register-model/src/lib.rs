@@ -11,6 +11,25 @@ use std::{
 use serde::{Deserialize, Serialize};
 use svd_rs::{Device, MaybeArray, Peripheral, RegisterCluster, RegisterProperties, ValidateLevel};
 
+mod model_validation;
+mod pac_api;
+mod pac_api_render;
+mod pac_api_svd;
+mod pac_bindings;
+mod register_evidence;
+mod register_lints;
+
+pub use pac_api::{
+    FixedRegisterImage, FixedRegisterWrite, FullRegisterWrite, InterruptSnapshot,
+    MaskedRegisterModify, PacApiOptions, PacApiPack, RegisterImageWrite, ZeroBasedFieldWrite,
+    ZeroRegisterWrite,
+};
+pub use pac_bindings::{generate_pac_binding_index, validate_pac_crate_name};
+pub use register_evidence::{
+    RegisterEvidenceCatalog, RegisterEvidenceRange, RegisterEvidenceSet, RegisterEvidenceSource,
+};
+pub use register_lints::RegisterLintPack;
+
 pub type Error = Box<dyn std::error::Error>;
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -135,7 +154,10 @@ impl RegisterModel {
             .flat_map(|fragment| fragment.review)
             .collect();
         let device = build_device(&manifest.device, peripherals)?;
-        Ok(Self { device, review })
+        model_validation::validate_device(&device)?;
+        let model = Self { device, review };
+        model.register_identities()?;
+        Ok(model)
     }
 
     pub fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
@@ -181,11 +203,16 @@ impl RegisterModel {
                 }
             }
         }
+        validate_expanded_register_layout(&output)?;
         Ok(output)
     }
 
     pub fn review(&self) -> &[ReviewAnnotation] {
         &self.review
+    }
+
+    pub fn validate_lints(&self, pack: &RegisterLintPack) -> Result<()> {
+        pack.validate_device(&self.device)
     }
 }
 
@@ -403,6 +430,40 @@ fn collect_registers(
     Ok(())
 }
 
+fn validate_expanded_register_layout(registers: &BTreeMap<(u64, u32), String>) -> Result<()> {
+    let mut previous: Option<(u64, u64, &str)> = None;
+    for ((address, width), identity) in registers {
+        if !(1..=128).contains(width) {
+            return Err(format!(
+                "register {identity} at {address:#010x} has unsupported width {width}"
+            )
+            .into());
+        }
+        let size_bytes = u64::from(*width).div_ceil(8);
+        if address % size_bytes != 0 {
+            return Err(format!(
+                "register {identity} at {address:#010x} is not aligned to {size_bytes} bytes"
+            )
+            .into());
+        }
+        let end = address
+            .checked_add(size_bytes)
+            .ok_or("register model address overflow")?;
+        if let Some((previous_start, previous_end, previous_identity)) = previous
+            && *address < previous_end
+        {
+            return Err(format!(
+                "physical register ranges overlap: {previous_identity} at \
+                 {previous_start:#010x}..{previous_end:#010x} and {identity} at \
+                 {address:#010x}..{end:#010x}; explicit alias support is required"
+            )
+            .into());
+        }
+        previous = Some((*address, end, identity));
+    }
+    Ok(())
+}
+
 fn merge_properties(parent: RegisterProperties, child: RegisterProperties) -> RegisterProperties {
     let mut merged = parent;
     if child.size.is_some() {
@@ -469,4 +530,31 @@ fn count_fields(children: &[RegisterCluster]) -> usize {
             }
         })
         .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expanded_layout_rejects_unaligned_and_overlapping_registers() {
+        let unaligned = BTreeMap::from([((0x1001, 32), "RADIO.UNALIGNED".to_owned())]);
+        assert!(
+            validate_expanded_register_layout(&unaligned)
+                .unwrap_err()
+                .to_string()
+                .contains("not aligned")
+        );
+
+        let overlapping = BTreeMap::from([
+            ((0x1000, 64), "RADIO.WIDE".to_owned()),
+            ((0x1004, 32), "RADIO.NARROW".to_owned()),
+        ]);
+        assert!(
+            validate_expanded_register_layout(&overlapping)
+                .unwrap_err()
+                .to_string()
+                .contains("physical register ranges overlap")
+        );
+    }
 }

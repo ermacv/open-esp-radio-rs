@@ -91,8 +91,9 @@ pub(super) fn run_register_command(
     command: Command,
     arguments: Vec<String>,
     project: &crate::project::ProjectSpec,
+    memory_map: Option<&crate::MemoryMap>,
 ) -> Result<bool> {
-    registers::run(command, arguments, project)
+    registers::run(command, arguments, project, memory_map)
 }
 
 pub(super) fn run_ir_build(
@@ -127,6 +128,7 @@ pub(super) fn run(
         | Command::RegisterReview
         | Command::RegisterExportSvd
         | Command::RegisterGeneratePac
+        | Command::RegisterGenerateBindings
         | Command::BuildIr
         | Command::SymbolInventory
         | Command::InterfaceDiscover => {

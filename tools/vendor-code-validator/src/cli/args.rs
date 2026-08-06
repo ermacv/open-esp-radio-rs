@@ -19,6 +19,7 @@ pub(crate) enum Command {
     RegisterReview,
     RegisterExportSvd,
     RegisterGeneratePac,
+    RegisterGenerateBindings,
     SymbolInventory,
     InterfaceDiscover,
     InterfaceInitPack,
@@ -96,6 +97,10 @@ impl Command {
             ("registers", Some("generate-pac")) => {
                 remaining.remove(0);
                 Self::RegisterGeneratePac
+            }
+            ("registers", Some("generate-bindings")) => {
+                remaining.remove(0);
+                Self::RegisterGenerateBindings
             }
             ("symbols", Some("inventory")) => {
                 remaining.remove(0);
@@ -251,6 +256,7 @@ impl Command {
                 | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
+                | Self::RegisterGenerateBindings
         )
     }
 
@@ -272,6 +278,7 @@ impl Command {
                 | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
+                | Self::RegisterGenerateBindings
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -288,14 +295,12 @@ impl Command {
                 | Self::FunctionValidate
                 | Self::FunctionReview
                 | Self::RegisterInitOverlay
-                | Self::RegisterInitModel
-                | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
-                | Self::RegisterValidate
                 | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
+                | Self::RegisterGenerateBindings
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -313,10 +318,10 @@ impl Command {
                 | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
-                | Self::RegisterValidate
                 | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
+                | Self::RegisterGenerateBindings
                 | Self::SymbolInventory
                 | Self::InterfaceDiscover
                 | Self::AuditDirectTargets
@@ -338,6 +343,7 @@ impl Command {
                 | Self::RegisterReview
                 | Self::RegisterExportSvd
                 | Self::RegisterGeneratePac
+                | Self::RegisterGenerateBindings
         )
     }
 
@@ -358,6 +364,7 @@ impl Command {
             | Self::RegisterReview
             | Self::RegisterExportSvd
             | Self::RegisterGeneratePac
+            | Self::RegisterGenerateBindings
             | Self::SymbolInventory
             | Self::InterfaceDiscover
             | Self::BuildIr => false,
@@ -650,14 +657,20 @@ mod tests {
 
     #[test]
     fn parses_register_workspace_commands() {
-        for (name, command) in [
-            ("init-overlay", Command::RegisterInitOverlay),
-            ("init-model", Command::RegisterInitModel),
-            ("import-svd", Command::RegisterImportSvd),
-            ("validate", Command::RegisterValidate),
-            ("review", Command::RegisterReview),
-            ("export-svd", Command::RegisterExportSvd),
-            ("generate-pac", Command::RegisterGeneratePac),
+        for (name, command, uses_memory_map, uses_register_catalog) in [
+            ("init-overlay", Command::RegisterInitOverlay, false, false),
+            ("init-model", Command::RegisterInitModel, true, false),
+            ("import-svd", Command::RegisterImportSvd, true, false),
+            ("validate", Command::RegisterValidate, true, true),
+            ("review", Command::RegisterReview, false, false),
+            ("export-svd", Command::RegisterExportSvd, false, false),
+            ("generate-pac", Command::RegisterGeneratePac, false, false),
+            (
+                "generate-bindings",
+                Command::RegisterGenerateBindings,
+                false,
+                false,
+            ),
         ] {
             let invocation = Invocation::parse([
                 "registers".to_owned(),
@@ -667,6 +680,11 @@ mod tests {
             ])
             .unwrap();
             assert_eq!(invocation.command, command);
+            assert_eq!(invocation.command.uses_memory_map(), uses_memory_map);
+            assert_eq!(
+                invocation.command.uses_register_catalog(),
+                uses_register_catalog
+            );
         }
     }
 

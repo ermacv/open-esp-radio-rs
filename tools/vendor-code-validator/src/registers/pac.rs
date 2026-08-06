@@ -10,7 +10,7 @@ use svd2rust::{
     config::{Config, RustEdition},
 };
 
-use crate::Result;
+use crate::{Result, registers::PacApiPack};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PacTarget {
@@ -58,7 +58,12 @@ impl PacEdition {
     }
 }
 
-pub(crate) fn generate_pac(svd: &str, target: PacTarget, edition: PacEdition) -> Result<String> {
+pub(crate) fn generate_pac_with_api(
+    svd: &str,
+    target: PacTarget,
+    edition: PacEdition,
+    api: Option<&PacApiPack>,
+) -> Result<String> {
     let mut config = Config::default();
     config.target = match target {
         PacTarget::None => Target::None,
@@ -69,7 +74,13 @@ pub(crate) fn generate_pac(svd: &str, target: PacTarget, edition: PacEdition) ->
         PacEdition::E2024 => RustEdition::E2024,
     };
     config.strict = true;
-    let source = svd2rust::generate(svd, &config)?.lib_rs;
+    let mut source = svd2rust::generate(svd, &config)?.lib_rs;
+    if api.is_some_and(|api| api.options.allow_clippy_empty_docs) {
+        source.insert_str(0, "#![allow(clippy::empty_docs)]\n");
+    }
+    if let Some(api) = api {
+        source.push_str(&api.render_rust(svd)?);
+    }
     format_generated(&source, edition)
 }
 
@@ -131,7 +142,7 @@ mod tests {
   </peripherals>
 </device>
 "#;
-        let source = generate_pac(svd, PacTarget::None, PacEdition::E2024).unwrap();
+        let source = generate_pac_with_api(svd, PacTarget::None, PacEdition::E2024, None).unwrap();
         assert!(source.contains("pub mod radio"));
         assert!(source.contains("pub struct Peripherals"));
     }

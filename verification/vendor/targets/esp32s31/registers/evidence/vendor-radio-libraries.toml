@@ -1,0 +1,193 @@
+# Reviewed register evidence: vendor radio libraries.
+schema = 1
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_start_tx_tone_step_new body, size 0xc2."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_XTAL_DUTY_CAL"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_cal.o phy_xtal_duty_cal body, size 0x392."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_reg_check body, size 0x3d2. Its fixed loop bounds and block-name strings prove the half-open hardware dump ranges recorded in openEspRadioEvidenceRanges; they do not name individual registers."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_DEBUG_I2C"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_i2c_check body, size 0x1f6. Its ten calls prove each logical bank name, block ID, selected host and half-open register-index range."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_DEBUG_PBUS"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_debug.o phy_pbus_print body, size 0xf4. Its finite calls and strings associate selector/path pairs with RFRX, RFTX, BB and DCO groups."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BLE_TX_CONFIG_CHECK"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; complete bt_bb_v2.o ble_tx_config_check body, size 0x1c0. Its loads, masks and pinned field-name strings prove the BLE TX timing fields, including RF_ON_BT_DELAY and PA_ON_BT_DELAY in the canonical FECTRL word at 0x20100870."
+
+[[sources]]
+id = "BLOB_LIBBTBB_BT_CTE_ACCESSORS"
+description = "_oracles/libbtbb.a sha256 ebd67c6a32081d0fcd143bbb0ed53f962fc587058e20eceb59012beae47528df; bt_cte.o public getter/setter pairs. Matching independent masks provide instruction-exact CTE and BTAGC field geometry; these BT-only registers remain evidence for a separate canonical BT-radio SVD rather than duplicate singleton peripherals in this Wi-Fi-oriented map."
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_I2C"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_i2c.o callbacks and phy_i2c_master_cmd_mem_init"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_GET_XTAL_FREQ"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o phy_get_xtal_freq body, size 0x40"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_RXIQ_CAL_INIT"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_gain.o phy_rxiq_cal_init body, size 0x198"
+
+[[sources]]
+id = "BLOB_LIBPHY_REGISTER_CHIPV7_PHY"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o register_chipv7_phy body, size 0x1e6, and relocation graph"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_RFPLL_CHANNEL"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rfpll.o phy_chip_set_chan body, size 0x10e, and its finite ROM leaf call graph"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_cfr_mem body, size 0x76"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_SET_TX_GAIN_MEM_NEW"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_gain.o phy_set_tx_gain_mem_new body and complete ROM phy_write_gain_mem leaf"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_OPEN_I2C_XPD_NEW"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_open_i2c_xpd_new body"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_REG_UPDATE_NEW"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_init.o phy_reg_update_new body, complete phy_reg.o phy_set_ftm_en tail and complete rev0 ROM phy_wifi_agc_sat_gain at 0x2f827db0 size 0x0c"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_SET_RX_GAIN_TABLE"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_gain.o phy_set_rx_gain_table body, including the final two register limit writes at offsets 0x1fe through 0x246"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_SET_RX_COMP_NEW"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_set_rx_comp_new body, size 0x28"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_DC_MEM_CLR"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_dc_mem_clr body, size 0x1c"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"
+description = "_oracles/libphy.a phy_init.o phy_close_fe_bb_clk, complete 0x20-byte body"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_BB_INIT"
+description = "_oracles/libphy.a phy_init.o phy_bb_init, complete 0x16a-byte body and relocation graph"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_BASEBAND_CONFIG"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_bb_txpwr_track size 0xf4 and phy_txgain_comp_pacfg_new size 0x54"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_CFR_CONTROL"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_iccfr_en size 0x2c, phy_force_iccfr size 0x7a and phy_config_hccfr size 0x38"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_FE_REG_UPDATE"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_reg.o phy_fe_reg_update size 0x32"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_TXDC_PWDET"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_tx_cal.o phy_txdc_cal_pwdet_init size 0x208"
+
+[[sources]]
+id = "BLOB_LIBPHY_PHY_CHECK_RX_SAT"
+description = "_oracles/libphy.a sha256 51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223; complete phy_rx_cal.o phy_check_rx_sat body, size 0x76, and relocation graph"
+
+[[sources]]
+id = "BLOB_LIBCOEX_PTI_TABLE"
+description = "_oracles/libcoexist.a sha256 4b00fc4258ac3a7bef3ecd6c0f402d38afde9aafe50ceaf07951406cff576276; complete coexist_api.o coex_pti_get tail-calls complete coexist_core.o coex_core_pti_get size 0x1e, which bounds-checks only the output pointer and copies coex_pti_tab[event]. The complete 48-byte coex_pti_tab object in coexist_core.o .dram1.2 gives cold defaults event 1 = 5, event 3 = 7, event 10 = 3 and event 15 = 1. These are the only events queried by complete hal_init and hal_set_ofdma_sequence_pti. Runtime coexistence may mutate the table, so the PAC fields do not hardcode these policy values."
+
+[[ranges]]
+name = "FECOEX"
+start = 0x20100000
+end-exclusive = 0x20100058
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+[[ranges]]
+name = "FEDATA"
+start = 0x20100400
+end-exclusive = 0x2010048c
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "FECTRL"
+start = 0x20100800
+end-exclusive = 0x201008e4
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "FEDATA_WIFI"
+start = 0x20100c00
+end-exclusive = 0x20100c58
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BTMAC"
+start = 0x20101400
+end-exclusive = 0x20101fb8
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BT_V3_2"
+start = 0x20102000
+end-exclusive = 0x20102200
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BTAGC"
+start = 0x20102800
+end-exclusive = 0x2010290c
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "ZBBB"
+start = 0x20102c00
+end-exclusive = 0x20102c4c
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "IEEE802154_REG"
+start = 0x20103000
+end-exclusive = 0x201031a4
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "AGC"
+start = 0x20107000
+end-exclusive = 0x2010720c
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BBTX"
+start = 0x20107400
+end-exclusive = 0x20107480
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "NRX"
+start = 0x20107800
+end-exclusive = 0x20107a44
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BB"
+start = 0x20107c00
+end-exclusive = 0x20107d50
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]
+
+[[ranges]]
+name = "BRX"
+start = 0x20108000
+end-exclusive = 0x2010809c
+sources = ["BLOB_LIBPHY_PHY_DEBUG_REG_CHECK"]

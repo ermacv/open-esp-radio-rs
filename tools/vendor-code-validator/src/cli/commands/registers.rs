@@ -3,19 +3,29 @@
 use super::super::*;
 use crate::{project::ProjectSpec, registers::*};
 
-pub(super) fn run(command: Command, arguments: Vec<String>, project: &ProjectSpec) -> Result<bool> {
+mod publication;
+
+use publication::{export_svd, generate_bindings, generate_pac_source};
+
+pub(super) fn run(
+    command: Command,
+    arguments: Vec<String>,
+    project: &ProjectSpec,
+    memory_map: Option<&MemoryMap>,
+) -> Result<bool> {
     let paths = project
         .registers
         .as_ref()
         .ok_or("project has no [registers] table; configure facts and model paths first")?;
     match command {
         Command::RegisterInitOverlay => init_overlay(arguments, project, paths),
-        Command::RegisterInitModel => init_model(arguments, project, paths),
-        Command::RegisterImportSvd => import_svd(arguments, project, paths),
-        Command::RegisterValidate => validate(arguments, paths),
+        Command::RegisterInitModel => init_model(arguments, project, memory_map, paths),
+        Command::RegisterImportSvd => import_svd(arguments, memory_map, paths),
+        Command::RegisterValidate => validate(arguments, memory_map, paths),
         Command::RegisterReview => review(arguments, paths),
         Command::RegisterExportSvd => export_svd(arguments, paths),
         Command::RegisterGeneratePac => generate_pac_source(arguments, paths),
+        Command::RegisterGenerateBindings => generate_bindings(arguments, paths),
         _ => unreachable!("register command dispatcher received another command"),
     }
 }
@@ -90,6 +100,7 @@ fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths
 fn init_model(
     arguments: Vec<String>,
     project: &ProjectSpec,
+    memory_map: Option<&MemoryMap>,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
     let mut output = None;
@@ -115,9 +126,8 @@ fn init_model(
     let output = output.as_deref().unwrap_or(&paths.model);
     let address_space = match address_space {
         Some(address_space) => address_space,
-        None => project
-            .load_memory_map()?
-            .map(|memory| memory.default_address_space)
+        None => memory_map
+            .map(|memory| memory.default_address_space.clone())
             .unwrap_or_else(|| "cpu".to_owned()),
     };
     let facts = RegisterFacts::load(&paths.facts)?;
@@ -135,7 +145,7 @@ fn init_model(
 
 fn import_svd(
     arguments: Vec<String>,
-    project: &ProjectSpec,
+    memory_map: Option<&MemoryMap>,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
     let mut input = None;
@@ -169,9 +179,8 @@ fn import_svd(
     let output = output.as_deref().unwrap_or(&paths.model);
     let address_space = match address_space {
         Some(address_space) => address_space,
-        None => project
-            .load_memory_map()?
-            .map(|memory| memory.default_address_space)
+        None => memory_map
+            .map(|memory| memory.default_address_space.clone())
             .unwrap_or_else(|| "cpu".to_owned()),
     };
     let summary = import_svd_model(&input, output, &address_space)?;
@@ -219,6 +228,7 @@ fn init_overlay(
 
 fn validate(
     arguments: Vec<String>,
+    memory_map: Option<&MemoryMap>,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
     let deny_unreviewed = match arguments.as_slice() {
@@ -228,6 +238,41 @@ fn validate(
     };
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let summary = print_summary(&workspace, paths)?;
+    let api_pack = validate_pac_api(paths)?;
+    if let Some(pack) = &api_pack {
+        println!(
+            "PAC-API\tstatus=valid\tschema={}\toperations={}\tsources={}\tpack={}",
+            pack.schema,
+            pack.operation_count(),
+            pack.source_ids().len(),
+            paths
+                .api_pack
+                .as_deref()
+                .expect("loaded API pack has a configured path")
+                .display()
+        );
+    }
+    if let Some(pack) = validate_register_lints(paths)? {
+        println!(
+            "REGISTER-LINTS\tstatus=valid\tschema={}\tforbidden-field-name-substrings={}\tpack={}",
+            pack.schema,
+            pack.forbidden_field_name_substrings.len(),
+            paths
+                .lint_pack
+                .as_deref()
+                .expect("validated lint pack has a configured path")
+                .display()
+        );
+    }
+    if let Some(evidence) = validate_register_evidence(paths, memory_map)? {
+        println!(
+            "REGISTER-EVIDENCE\tstatus=valid\tcatalogs={}\tconfidence-levels={}\tsources={}\tranges={}",
+            paths.evidence_catalogs.len(),
+            evidence.confidence_levels.len(),
+            evidence.sources.len(),
+            evidence.ranges.len()
+        );
+    }
     if deny_unreviewed && summary.unreviewed != 0 {
         eprintln!(
             "REGISTER-WORKSPACE\tstatus=unreviewed\tcount={}",
@@ -235,135 +280,6 @@ fn validate(
         );
         return Ok(false);
     }
-    Ok(true)
-}
-
-fn export_svd(
-    arguments: Vec<String>,
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<bool> {
-    let mut output = None;
-    let mut profile = SvdExportProfile::Release;
-    let mut check = false;
-    let mut deny_unreviewed = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--profile" => {
-                profile = match take_value(&mut arguments, "--profile")?.as_str() {
-                    "audit" => SvdExportProfile::Audit,
-                    "release" => SvdExportProfile::Release,
-                    value => {
-                        return Err(format!(
-                            "registers export-svd profile must be \"audit\" or \"release\", got {value:?}"
-                        )
-                        .into());
-                    }
-                };
-            }
-            "--reviewed-only" => profile = SvdExportProfile::Release,
-            "--deny-unreviewed" => deny_unreviewed = true,
-            "--check" => check = true,
-            _ => return Err(format!("unknown registers export-svd option: {argument}").into()),
-        }
-    }
-    let output = output
-        .as_deref()
-        .or(paths.svd_output.as_deref())
-        .ok_or("registers export-svd requires --output PATH or [registers.svd] output")?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let workspace_summary = print_summary(&workspace, paths)?;
-    if deny_unreviewed && workspace_summary.unreviewed != 0 {
-        return Err(format!(
-            "release SVD denied {} unreviewed MMIO observations",
-            workspace_summary.unreviewed
-        )
-        .into());
-    }
-    let (contents, summary) = workspace.render_svd(profile)?;
-    super::super::generated_output::write_or_check(output, &contents, check, "SVD")?;
-    println!(
-        "SVD\tstatus={}\tprofile={}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
-        if check { "verified" } else { "written" },
-        profile.label(),
-        summary.peripherals,
-        summary.registers,
-        summary.fields,
-        output.display()
-    );
-    Ok(true)
-}
-
-fn generate_pac_source(
-    arguments: Vec<String>,
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<bool> {
-    let mut output = None;
-    let mut target = None;
-    let mut edition = None;
-    let mut check = false;
-    let mut deny_unreviewed = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--target" => {
-                target = Some(PacTarget::parse(&take_value(&mut arguments, "--target")?)?);
-            }
-            "--edition" => {
-                edition = Some(PacEdition::parse(&take_value(
-                    &mut arguments,
-                    "--edition",
-                )?)?);
-            }
-            "--check" => check = true,
-            "--deny-unreviewed" => deny_unreviewed = true,
-            _ => return Err(format!("unknown registers generate-pac option: {argument}").into()),
-        }
-    }
-    let configured = paths.pac.as_ref();
-    let output = output
-        .as_deref()
-        .or_else(|| configured.map(|pac| pac.output.as_path()))
-        .ok_or("registers generate-pac requires --output PATH or [registers.pac] output")?;
-    let target = target
-        .map(Ok)
-        .unwrap_or_else(|| PacTarget::parse(configured.map_or("none", |pac| &pac.target)))?;
-    let edition = edition
-        .map(Ok)
-        .unwrap_or_else(|| PacEdition::parse(configured.map_or("2024", |pac| &pac.edition)))?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let workspace_summary = print_summary(&workspace, paths)?;
-    if deny_unreviewed && workspace_summary.unreviewed != 0 {
-        return Err(format!(
-            "PAC generation denied {} unreviewed MMIO observations",
-            workspace_summary.unreviewed
-        )
-        .into());
-    }
-    let (svd, svd_summary) = workspace.render_svd(SvdExportProfile::Release)?;
-    let source = generate_pac(&svd, target, edition)?;
-    super::super::generated_output::write_or_check(output, &source, check, "PAC")?;
-    println!(
-        "PAC\tstatus={}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tpath={}",
-        if check { "verified" } else { "written" },
-        target.label(),
-        edition.label(),
-        svd_summary.peripherals,
-        svd_summary.registers,
-        output.display()
-    );
     Ok(true)
 }
 

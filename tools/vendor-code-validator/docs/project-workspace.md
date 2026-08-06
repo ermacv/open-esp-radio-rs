@@ -41,6 +41,16 @@ output = "generated/pac/src/lib.rs"
 target = "none"
 edition = "2024"
 
+[registers.bindings]
+output = "generated/svd/device.bindings"
+crate-name = "device_pac"
+
+[registers.api]
+pack = "registers/api.toml"
+
+[registers.evidence]
+catalogs = ["registers/evidence.toml"]
+
 [interfaces]
 facts = "generated/findings/interfaces.json"
 pack = "interfaces/reviewed.toml"
@@ -267,7 +277,7 @@ Commands now request the knowledge they actually consume:
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
 | `functions init-pack` / `validate` / `review` | no | no | no |
-| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | no | no | no |
+| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` / `generate-bindings` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
 | `ir build` | yes | optional | optional enrichment |

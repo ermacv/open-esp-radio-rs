@@ -8,7 +8,7 @@ use std::{
 use toml_edit::{DocumentMut, Item};
 
 use crate::{
-    MemoryMap, Result,
+    Result,
     project_ir::{ProjectIrProfile, load_ir_profiles},
 };
 
@@ -22,6 +22,10 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) review_ir_reports: Vec<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,
     pub(crate) pac: Option<PacOutputSpec>,
+    pub(crate) bindings: Option<PacBindingsOutputSpec>,
+    pub(crate) api_pack: Option<PathBuf>,
+    pub(crate) lint_pack: Option<PathBuf>,
+    pub(crate) evidence_catalogs: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -29,6 +33,12 @@ pub(crate) struct PacOutputSpec {
     pub(crate) output: PathBuf,
     pub(crate) target: String,
     pub(crate) edition: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PacBindingsOutputSpec {
+    pub(crate) output: PathBuf,
+    pub(crate) crate_name: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -171,6 +181,59 @@ impl ProjectSpec {
                         })
                     })
                     .transpose()?;
+                let bindings = table
+                    .get("bindings")
+                    .map(|item| -> Result<PacBindingsOutputSpec> {
+                        let bindings = item
+                            .as_table()
+                            .ok_or("project registers.bindings must be a table")?;
+                        let crate_name = bindings
+                            .get("crate-name")
+                            .and_then(Item::as_str)
+                            .ok_or("project registers.bindings requires string \"crate-name\"")?;
+                        open_esp_radio_register_model::validate_pac_crate_name(crate_name)?;
+                        Ok(PacBindingsOutputSpec {
+                            output: resolve_path(
+                                base,
+                                bindings.get("output").and_then(Item::as_str).ok_or(
+                                    "project registers.bindings requires string \"output\"",
+                                )?,
+                            ),
+                            crate_name: crate_name.to_owned(),
+                        })
+                    })
+                    .transpose()?;
+                let api_pack = table
+                    .get("api")
+                    .map(|item| -> Result<PathBuf> {
+                        let api = item
+                            .as_table()
+                            .ok_or("project registers.api must be a table")?;
+                        Ok(resolve_path(
+                            base,
+                            api.get("pack")
+                                .and_then(Item::as_str)
+                                .ok_or("project registers.api requires string \"pack\"")?,
+                        ))
+                    })
+                    .transpose()?;
+                let evidence_catalogs =
+                    nested_path_array(table, base, "evidence", "catalogs")?;
+                let lint_pack = table
+                    .get("lints")
+                    .map(|item| -> Result<PathBuf> {
+                        let lints = item
+                            .as_table()
+                            .ok_or("project registers.lints must be a table")?;
+                        Ok(resolve_path(
+                            base,
+                            lints
+                                .get("pack")
+                                .and_then(Item::as_str)
+                                .ok_or("project registers.lints requires string \"pack\"")?,
+                        ))
+                    })
+                    .transpose()?;
                 Ok(RegisterWorkspacePaths {
                     facts: resolve_path(
                         base,
@@ -184,6 +247,10 @@ impl ProjectSpec {
                     review_ir_reports,
                     svd_output,
                     pac,
+                    bindings,
+                    api_pack,
+                    lint_pack,
+                    evidence_catalogs,
                 })
             })
             .transpose()?;
@@ -322,10 +389,6 @@ impl ProjectSpec {
             interfaces,
             functions,
         })
-    }
-
-    pub(crate) fn load_memory_map(&self) -> Result<Option<MemoryMap>> {
-        self.memory_map.as_deref().map(MemoryMap::load).transpose()
     }
 
     pub(crate) fn function_ir_reports(&self) -> Result<Vec<(String, PathBuf)>> {
@@ -478,6 +541,19 @@ output = "generated/pac/src/lib.rs"
 target = "none"
 edition = "2024"
 
+[registers.bindings]
+output = "generated/device.bindings"
+crate-name = "fixture_pac"
+
+[registers.api]
+pack = "registers/api.toml"
+
+[registers.lints]
+pack = "registers/lints.toml"
+
+[registers.evidence]
+catalogs = ["registers/evidence.toml"]
+
 [interfaces]
 facts = "generated/interfaces.json"
 pack = "interfaces/reviewed.toml"
@@ -526,6 +602,13 @@ output = "generated/function-review.md"
                     target: "none".to_owned(),
                     edition: "2024".to_owned(),
                 }),
+                bindings: Some(PacBindingsOutputSpec {
+                    output: directory.join("generated/device.bindings"),
+                    crate_name: "fixture_pac".to_owned(),
+                }),
+                api_pack: Some(directory.join("registers/api.toml")),
+                lint_pack: Some(directory.join("registers/lints.toml")),
+                evidence_catalogs: vec![directory.join("registers/evidence.toml")],
             })
         );
         assert_eq!(

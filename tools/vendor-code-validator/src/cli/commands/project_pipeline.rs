@@ -87,7 +87,7 @@ pub(super) fn run(
                 Vec::new()
             };
             execute("register-validation", StageSuccess::Verified, || {
-                super::registers::run(Command::RegisterValidate, arguments, project)
+                super::registers::run(Command::RegisterValidate, arguments, project, memory_map)
             })
         }
     };
@@ -108,7 +108,12 @@ pub(super) fn run(
             StageOutcome::Blocked("linked-ir did not complete".to_owned())
         }
         Some(_) => execute("register-review", mode.generated_success(), || {
-            super::registers::run(Command::RegisterReview, mode.check_argument(), project)
+            super::registers::run(
+                Command::RegisterReview,
+                mode.check_argument(),
+                project,
+                memory_map,
+            )
         }),
     };
     report("register-review", &register_review, &mut summary);

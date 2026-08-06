@@ -9,6 +9,7 @@ mod overlay_parse;
 #[cfg(test)]
 mod overlay_tests;
 mod pac;
+mod project_validation;
 mod review;
 mod review_draft;
 mod review_ir;
@@ -22,11 +23,12 @@ mod workspace;
 pub(crate) use facts::*;
 pub(crate) use model_import::*;
 pub(crate) use open_esp_radio_register_model::{
-    ModelDevice, RegisterModel, RegisterModelFragment, RegisterModelManifest, ReviewAnnotation,
-    SvdExportSummary,
+    ModelDevice, PacApiPack, RegisterEvidenceSet, RegisterLintPack, RegisterModel,
+    RegisterModelFragment, RegisterModelManifest, ReviewAnnotation, SvdExportSummary,
 };
 pub(crate) use overlay::*;
 pub(crate) use pac::*;
+pub(crate) use project_validation::*;
 pub(crate) use review::*;
 pub(crate) use svd::*;
 pub(crate) use workspace::*;

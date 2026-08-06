@@ -1275,6 +1275,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "svd-encoder",
+ "svd-parser",
  "svd-rs",
  "toml_edit",
 ]

@@ -16,7 +16,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor | build | check\n  functions  init-pack | validate | review\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor | build | check\n  functions  init-pack | validate | review\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac | generate-bindings\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
@@ -52,6 +52,7 @@ pub(crate) fn run() -> Result<bool> {
             | Command::RegisterReview
             | Command::RegisterExportSvd
             | Command::RegisterGeneratePac
+            | Command::RegisterGenerateBindings
             | Command::BuildIr
     ) && project.is_none()
     {
@@ -270,6 +271,7 @@ pub(crate) fn run() -> Result<bool> {
             | Command::RegisterReview
             | Command::RegisterExportSvd
             | Command::RegisterGeneratePac
+            | Command::RegisterGenerateBindings
     ) {
         return commands::run_register_command(
             command,
@@ -277,6 +279,7 @@ pub(crate) fn run() -> Result<bool> {
             project
                 .as_ref()
                 .expect("register commands require a loaded project"),
+            memory_map.as_ref(),
         );
     }
     if command == Command::BuildIr {

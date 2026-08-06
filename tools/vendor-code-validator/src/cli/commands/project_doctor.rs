@@ -9,6 +9,7 @@ use crate::{
     project::ProjectSpec,
     registers::{
         ProjectRegisterWorkspace, RegisterFacts, RegisterModel, inspect_register_review_ir,
+        validate_pac_api, validate_register_evidence, validate_register_lints,
     },
     run_spec::RunSpec,
 };
@@ -138,7 +139,7 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 {
                     Ok((summary, format)) => {
                         println!(
-                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\treview-ir-reports={}\tsvd-output={}\tpac-output={}",
+                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\treview-ir-reports={}\tsvd-output={}\tpac-output={}\tbindings-output={}\tbindings-crate={}",
                             format,
                             summary.ranges,
                             summary.observed,
@@ -161,7 +162,15 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                             paths.pac.as_ref().map_or_else(
                                 || "-".to_owned(),
                                 |pac| pac.output.display().to_string()
-                            )
+                            ),
+                            paths.bindings.as_ref().map_or_else(
+                                || "-".to_owned(),
+                                |bindings| bindings.output.display().to_string()
+                            ),
+                            paths
+                                .bindings
+                                .as_ref()
+                                .map_or("-", |bindings| bindings.crate_name.as_str())
                         );
                         if !paths.review_ir_reports.is_empty() {
                             let missing_project_outputs =
@@ -243,6 +252,100 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 );
             }
         },
+    }
+
+    match context
+        .project
+        .registers
+        .as_ref()
+        .and_then(|paths| paths.api_pack.as_deref().map(|pack| (paths, pack)))
+    {
+        None => println!("CAPABILITY\tpac-api\tnot-configured"),
+        Some((_, path)) if !path.is_file() => {
+            warnings += 1;
+            println!(
+                "CAPABILITY\tpac-api\tnot-initialized\tpack={}",
+                path.display()
+            );
+        }
+        Some((paths, path)) => match validate_pac_api(paths) {
+            Ok(Some(pack)) => println!(
+                "CAPABILITY\tpac-api\tavailable\tschema={}\toperations={}\tsources={}\tperipheral-ownership={}\tdevice-access={}\tpack={}",
+                pack.schema,
+                pack.operation_count(),
+                pack.source_ids().len(),
+                pack.options.peripheral_ownership,
+                pack.options.device_access,
+                path.display()
+            ),
+            Ok(None) => unreachable!("PAC API path was configured before validation"),
+            Err(error) => {
+                errors += 1;
+                println!(
+                    "CAPABILITY\tpac-api\tinvalid\tpack={}\terror={error}",
+                    path.display()
+                );
+            }
+        },
+    }
+
+    match context
+        .project
+        .registers
+        .as_ref()
+        .and_then(|paths| paths.lint_pack.as_deref().map(|pack| (paths, pack)))
+    {
+        None => println!("CAPABILITY\tregister-lints\tnot-configured"),
+        Some((_, path)) if !path.is_file() => {
+            warnings += 1;
+            println!(
+                "CAPABILITY\tregister-lints\tnot-initialized\tpack={}",
+                path.display()
+            );
+        }
+        Some((paths, path)) => match validate_register_lints(paths) {
+            Ok(Some(pack)) => println!(
+                "CAPABILITY\tregister-lints\tavailable\tschema={}\tforbidden-field-name-substrings={}\tpack={}",
+                pack.schema,
+                pack.forbidden_field_name_substrings.len(),
+                path.display()
+            ),
+            Ok(None) => unreachable!("register lint path was configured before validation"),
+            Err(error) => {
+                errors += 1;
+                println!(
+                    "CAPABILITY\tregister-lints\tinvalid\tpack={}\terror={error}",
+                    path.display()
+                );
+            }
+        },
+    }
+
+    match context.project.registers.as_ref() {
+        None => println!("CAPABILITY\tregister-evidence\tnot-configured"),
+        Some(paths) if paths.evidence_catalogs.is_empty() => {
+            println!("CAPABILITY\tregister-evidence\tnot-configured")
+        }
+        Some(paths) => {
+            let result = validate_register_evidence(paths, context.memory_map);
+            match result {
+                Ok(Some(evidence)) => println!(
+                    "CAPABILITY\tregister-evidence\tavailable\tcatalogs={}\tconfidence-levels={}\tsources={}\tranges={}",
+                    paths.evidence_catalogs.len(),
+                    evidence.confidence_levels.len(),
+                    evidence.sources.len(),
+                    evidence.ranges.len()
+                ),
+                Ok(None) => unreachable!("evidence catalogs were configured before validation"),
+                Err(error) => {
+                    errors += 1;
+                    println!(
+                        "CAPABILITY\tregister-evidence\tinvalid\tcatalogs={}\terror={error}",
+                        paths.evidence_catalogs.len()
+                    );
+                }
+            }
+        }
     }
 
     match &context.project.interfaces {

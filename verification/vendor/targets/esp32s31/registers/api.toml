@@ -1,0 +1,618 @@
+# Reviewed ESP32-S31 safe PAC transactions; no discovery facts or hardware metadata.
+schema = 1
+
+[options]
+peripheral-ownership = true
+device-access = true
+allow-clippy-empty-docs = true
+
+[[interrupt-snapshots]]
+name = "mac_interrupt"
+peripheral = "WIFI_MAC_INTERRUPT"
+status-register = "STATUS"
+clear-register = "CLEAR"
+clear-field = "EVENTS"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_GET_EVENT", "BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
+
+[[interrupt-snapshots]]
+name = "mac_power_interrupt"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+status-register = "STATUS"
+clear-register = "CLEAR"
+clear-field = "EVENTS"
+sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
+
+[[full-register-writes]]
+name = "mac_interrupt_enable"
+peripheral = "WIFI_MAC_INTERRUPT"
+register = "ENABLE"
+field = "EVENT_MASK"
+sources = ["BLOB_LIBPP_HAL_ENABLE_MAC", "BLOB_LIBPP_HAL_INIT_TAIL"]
+
+[[full-register-writes]]
+name = "mac_interrupt_clear"
+peripheral = "WIFI_MAC_INTERRUPT"
+register = "CLEAR"
+field = "EVENTS"
+sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
+
+[[full-register-writes]]
+name = "mac_power_interrupt_clear"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+register = "CLEAR"
+field = "EVENTS"
+sources = ["BLOB_LIBPP_HAL_PWR_INTERRUPT"]
+
+[[full-register-writes]]
+name = "station_tsf_value_low"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+register = "VALUE_LOW"
+field = "VALUE"
+sources = ["BLOB_LIBPP_HAL_TSF"]
+
+[[full-register-writes]]
+name = "station_tsf_value_high"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+register = "VALUE_HIGH"
+field = "VALUE"
+sources = ["BLOB_LIBPP_HAL_TSF"]
+
+[[full-register-writes]]
+name = "rx_descriptor_base"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_DESCRIPTOR_BASE"
+field = "ADDRESS"
+sources = ["ROM_REV0_WDEV_APPEND_RX_BLOCKS", "BLOB_LIBPP_MAC_RXBUF_INIT_PREFIX"]
+
+[[full-register-writes]]
+name = "phy_memory_data_0"
+peripheral = "PHY_MEMORY"
+register = "DATA_0"
+field = "OPAQUE_DATA"
+sources = ["ROM_REV0_PHY_WRITE_PBUS_MEM", "BLOB_LIBPHY_PHY_SET_TX_CFR_MEM", "ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "phy_memory_data_1"
+peripheral = "PHY_MEMORY"
+register = "DATA_1"
+field = "OPAQUE_DATA"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "phy_memory_data_2"
+peripheral = "PHY_MEMORY"
+register = "DATA_2"
+field = "OPAQUE_DATA"
+sources = ["ROM_REV0_PHY_WRITE_GAIN_MEM"]
+
+[[full-register-writes]]
+name = "frequency_parameter_0"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_PARAMETER_0_OPAQUE"
+field = "OPAQUE_VALUE"
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[full-register-writes]]
+name = "agc_saturation_gain_low"
+peripheral = "PHY_AGC_ORACLE"
+register = "SATURATION_GAIN_LOW"
+field = "OPAQUE_VALUE"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[full-register-writes]]
+name = "agc_saturation_gain_high"
+peripheral = "PHY_AGC_ORACLE"
+register = "SATURATION_GAIN_HIGH"
+field = "OPAQUE_VALUE"
+sources = ["BLOB_LIBPHY_PHY_REG_UPDATE_NEW"]
+
+[[full-register-writes]]
+name = "mac_tx_complete_clear_image"
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "COMPLETE_CLEAR"
+field = "STATE"
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+
+[[full-register-writes]]
+name = "mac_tx_queue_state_clear"
+peripheral = "WIFI_MAC_TX_COMMON"
+register = "QUEUE_STATE_CLEAR"
+field = "EVENTS"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[fixed-register-writes]]
+name = "open_frontend_clock_gates"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_CLOCK_GATE_OPAQUE"
+field = "STATE"
+variant = "OPEN"
+sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK"]
+
+[[fixed-register-writes]]
+name = "close_frontend_clock_gates"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "FE_CLOCK_GATE_OPAQUE"
+field = "STATE"
+variant = "CLOSED"
+sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
+
+[[fixed-register-writes]]
+name = "open_baseband_clock_gates"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "BB_CLOCK_GATE_OPAQUE"
+field = "STATE"
+variant = "OPEN"
+sources = ["ROM_REV0_PHY_OPEN_FE_BB_CLK"]
+
+[[fixed-register-writes]]
+name = "close_baseband_clock_gates"
+peripheral = "PHY_CLOCK_ORACLE"
+register = "BB_CLOCK_GATE_OPAQUE"
+field = "STATE"
+variant = "CLOSED"
+sources = ["BLOB_LIBPHY_PHY_CLOSE_FE_BB_CLK"]
+
+[[fixed-register-writes]]
+name = "mask_mac_power_interrupts"
+peripheral = "WIFI_MAC_POWER_INTERRUPT"
+register = "ENABLE"
+field = "EVENT_MASK"
+variant = "MASKED"
+sources = ["BLOB_LIBPP_HAL_TSF_TIMER"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_8070"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8070_OPAQUE"
+value = 0x000008c7
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_78a4"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_78A4_OPAQUE"
+value = 0x0001721f
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_8010"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8010_OPAQUE"
+value = 0x000852a1
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_8018"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8018_OPAQUE"
+value = 0x00600030
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_801c"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_801C_OPAQUE"
+value = 0x010000a0
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_8020"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8020_OPAQUE"
+value = 0x00000180
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_8028"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_8028_OPAQUE"
+value = 0xc0403020
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_802c"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_802C_OPAQUE"
+value = 0x01000080
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_rx_11b_path_control_0"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_0"
+value = 0xfe3fe1fe
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_agc_update_7048"
+peripheral = "PHY_AGC_ORACLE"
+register = "AGC_UPDATE_7048_OPAQUE"
+value = 0xff7da4f3
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_rx_11b_window_control"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_WINDOW_CONTROL"
+value = 0x06acc7c8
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_rx_11b_path_control_1"
+peripheral = "PHY_AGC_ORACLE"
+register = "RX_11B_PATH_CONTROL_1"
+value = 0xb2208553
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_rf_rx_saturation_config"
+peripheral = "PHY_AGC_ORACLE"
+register = "RF_RX_SATURATION_CONFIG"
+value = 0x00000404
+sources = ["ROM_REV0_PHY_AGC"]
+
+[[fixed-register-images]]
+name = "initialize_tx_pa_table"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_PA_TABLE_OPAQUE"
+value = 0x0661a45f
+sources = ["ROM_REV0_PHY_REGISTER_INITIALIZATION"]
+
+[[fixed-register-images]]
+name = "initialize_power_detector_table_0"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_0_OPAQUE"
+value = 0x0f0f0fff
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[fixed-register-images]]
+name = "initialize_power_detector_table_1"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+value = 0x00ff0f64
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_control"
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+register = "CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX", "MIGRATION_LMAC_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_plcp1"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "PLCP1%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_ht_signal"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HT_SIGNAL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_he_signal_a1"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_SU_SIGNAL_A1%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_he_signal_a2_length"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_SU_SIGNAL_A2_LENGTH%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_he_control"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "HE_CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_HE_TX", "BLOB_LIBNET80211_HE_CONTROL_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_power"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "POWER%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_data_length"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "DATA_LENGTH%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[register-image-writes]]
+name = "publish_mac_tx_length_control"
+peripheral = "WIFI_MAC_TX_QUEUE_VECTOR"
+register = "LENGTH_CONTROL%s"
+sources = ["BLOB_LIBPP_HAL_MAC_TX"]
+
+[[register-image-writes]]
+name = "publish_power_detector_table_1_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_TABLE_1"
+sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
+
+[[register-image-writes]]
+name = "publish_power_detector_control_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_CONTROL"
+sources = ["BLOB_LIBPHY_PHY_TXDC_PWDET"]
+
+[[register-image-writes]]
+name = "restore_txiq_tone_control"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+[[zero-based-field-writes]]
+name = "ersu_ack_rate_baseline"
+peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
+register = "ERSU_ACK_RATE"
+fields = ["RATE_0", "RATE_1", "RATE_2", "RATE_3"]
+sources = ["BLOB_LIBPP_HAL_BF_CONFIG"]
+
+[[zero-based-field-writes]]
+name = "rx_block_ack_peer_head"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_PEER_HEAD"
+fields = ["PEER_ADDRESS_HEAD"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
+name = "rx_block_ack_peer_tail_and_policy"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_PEER_TAIL_AND_POLICY"
+fields = ["PEER_ADDRESS_TAIL", "INTERFACE", "WINDOW"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
+name = "rx_block_ack_active_control"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_CONTROL"
+fields = ["ENABLE", "TID", "WRITE", "VALID"]
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-based-field-writes]]
+name = "phy_i2c_command_memory"
+peripheral = "PHY_I2C_COMMAND_RAM"
+register = "COMMAND_MEMORY%s"
+fields = ["BLOCK", "REGISTER", "DATA"]
+sources = ["ESP_IDF_ESP32S31_MODEM_REG_BASE", "BLOB_LIBPHY_PHY_I2C"]
+
+[[zero-based-field-writes]]
+name = "mac_bssid_address_low"
+peripheral = "WIFI_MAC_BSSID_POLICY"
+register = "BSSID_LOW%s"
+fields = ["BYTES_0_3"]
+sources = ["BLOB_LIBPP_HAL_MAC_SET_BSSID"]
+
+[[zero-based-field-writes]]
+name = "mac_interface_address_low"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+register = "ADDRESS_LOW%s"
+fields = ["BYTES_0_3"]
+sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR"]
+
+[[zero-based-field-writes]]
+name = "mac_interface_address_high"
+peripheral = "WIFI_MAC_INTERFACE_ADDRESS"
+register = "ADDRESS_HIGH%s"
+fields = ["BYTES_4_5"]
+sources = ["BLOB_LIBPP_HAL_MAC_SET_ADDR"]
+
+[[zero-based-field-writes]]
+name = "mac_last_rx_buffer_entry_control"
+peripheral = "WIFI_MAC_LAST_RX_BUFFER"
+register = "ENTRY_CONTROL%s"
+fields = ["IMAGE_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
+
+[[zero-based-field-writes]]
+name = "mac_last_rx_buffer_entry_parameter_a"
+peripheral = "WIFI_MAC_LAST_RX_BUFFER"
+register = "ENTRY_PARAMETER_A%s"
+fields = ["IMAGE_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
+
+[[zero-based-field-writes]]
+name = "mac_last_rx_buffer_entry_parameter_b"
+peripheral = "WIFI_MAC_LAST_RX_BUFFER"
+register = "ENTRY_PARAMETER_B%s"
+fields = ["IMAGE_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_LAST_RXBUF_INIT"]
+
+[[zero-based-field-writes]]
+name = "mac_crypto_interface_control"
+peripheral = "WIFI_MAC_CRYPTO_CONTROL"
+register = "INTERFACE_CONTROL%s"
+fields = ["CONTROL_LOW_UNKNOWN", "MODE_HIGH_UNKNOWN"]
+sources = ["BLOB_LIBPP_HAL_CRYPTO", "BLOB_LIBPP_HAL_CRYPTO_INIT"]
+
+[[zero-based-field-writes]]
+name = "mac_crypto_key_valid_bitmap"
+peripheral = "WIFI_MAC_CRYPTO_CONTROL"
+register = "KEY_VALID_BITMAP"
+fields = ["VALID_ENTRIES"]
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+
+[[zero-based-field-writes]]
+name = "mac_key_table_entry_word"
+peripheral = "WIFI_MAC_KEY_TABLE"
+register = "ENTRY_WORD%s"
+fields = ["VALUE"]
+sources = ["BLOB_LIBPP_HAL_CRYPTO"]
+
+[[zero-based-field-writes]]
+name = "mac_he_trigger_queue_control"
+peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
+register = "QUEUE_CONTROL%s"
+fields = ["QOS_NULL_TO_TRANSLATED_BSS", "TRIGGER_BASED_ENABLE", "MU_EDCA_TIMER_SELECT", "MPDU_LENGTH_LINK_ADDRESS", "TID"]
+sources = ["BLOB_LIBPP_MAC_TX_SET_TB", "ROM_REV0_MAC_TX_SET_TB"]
+
+[[zero-based-field-writes]]
+name = "mac_he_obss_narrow_band_ru_disable_bitmap"
+peripheral = "WIFI_MAC_HE_OBSS_NARROW_BAND_RU"
+register = "DISABLE_BITMAP"
+fields = ["VALUE"]
+sources = ["BLOB_LIBPP_HAL_HE_OBSS_NARROW_BAND_RU"]
+
+[[zero-based-field-writes]]
+name = "mac_ack_rate_table"
+peripheral = "WIFI_MAC_TXRX_CALLBACKS"
+register = "ACK_RATE_TABLE"
+fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
+
+[[zero-based-field-writes]]
+name = "mac_cts_rate_table"
+peripheral = "WIFI_MAC_TXRX_CALLBACKS"
+register = "CTS_RATE_TABLE"
+fields = ["BPSK_RATE", "QPSK_RATE", "QAM16_RATE", "HIGH_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
+
+[[zero-based-field-writes]]
+name = "mac_ack_cck_rate_table"
+peripheral = "WIFI_MAC_TXRX_CALLBACKS"
+register = "ACK_CCK_RATE_TABLE"
+fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
+
+[[zero-based-field-writes]]
+name = "mac_cts_cck_rate_table"
+peripheral = "WIFI_MAC_TXRX_CALLBACKS"
+register = "CTS_CCK_RATE_TABLE"
+fields = ["RATE_1M", "RATE_2M", "RATE_2M_SHORT_PREAMBLE", "HIGH_UNKNOWN"]
+sources = ["BLOB_LIBPP_MAC_TXRX_CALLBACKS"]
+
+[[zero-based-field-writes]]
+name = "frequency_parameter_1_initialization"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_PARAMETER_1_STATUS"
+fields = ["BASEBAND_MODE_UNKNOWN", "INIT_LOW_UNKNOWN", "INIT_HIGH_UNKNOWN"]
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[zero-based-field-writes]]
+name = "frequency_memory_data"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "FREQUENCY_MEMORY_DATA"
+fields = ["DATA", "MODE"]
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[zero-based-field-writes]]
+name = "frequency_i2c_number_word"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "I2C_NUMBER_WORD%s"
+fields = ["NUMBER_ADDRESS_0_UNKNOWN", "NUMBER_ADDRESS_1_UNKNOWN", "NUMBER_ADDRESS_2_UNKNOWN", "NUMBER_ADDRESS_3_UNKNOWN", "NUMBER_ADDRESS_4_UNKNOWN", "NUMBER_ADDRESS_5_UNKNOWN", "HIGH_UNKNOWN"]
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[zero-based-field-writes]]
+name = "nrx_frequency_image"
+peripheral = "PHY_FREQUENCY_CHANNEL_ORACLE"
+register = "NRX_FREQUENCY_CONTROL"
+fields = ["FREQUENCY_QUOTIENT_OR_INIT_LOW_UNKNOWN", "SHIFT_LOW_OR_INIT_HIGH_UNKNOWN", "SHIFT_HIGH_UNKNOWN"]
+sources = ["ROM_REV0_PHY_FREQUENCY_CHANNEL"]
+
+[[zero-based-field-writes]]
+name = "power_detector_reference"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "POWER_DETECTOR_REFERENCE"
+fields = ["REFERENCE_CODE"]
+sources = ["ROM_REV0_PHY_POWER_DETECTOR"]
+
+[[zero-register-writes]]
+name = "clear_rx_block_ack_bitmap_low_load"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-register-writes]]
+name = "clear_rx_block_ack_bitmap_high_load"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_BITMAP_HIGH_LOAD"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-register-writes]]
+name = "clear_rx_block_ack_entry_control"
+peripheral = "WIFI_MAC_RX_DMA"
+register = "RX_BLOCK_ACK_ENTRY%s_CONTROL"
+sources = ["BLOB_LIBPP_HAL_MAC_RX_BLOCK_ACK"]
+
+[[zero-register-writes]]
+name = "open_mac_control_cold"
+peripheral = "WIFI_MAC_CONTROL"
+register = "CONTROL"
+sources = ["OPEN_DRIVER_PROMISCUOUS_RX_FRONTIER"]
+
+[[zero-register-writes]]
+name = "clear_mac_crypto_init_aux"
+peripheral = "WIFI_MAC_CRYPTO_CONTROL"
+register = "INIT_AUX_UNKNOWN"
+sources = ["BLOB_LIBPP_HAL_CRYPTO_INIT"]
+
+[[zero-register-writes]]
+name = "clear_mac_crypto_policy"
+peripheral = "WIFI_MAC_CRYPTO_CONTROL"
+register = "POLICY_CONTROL"
+sources = ["BLOB_LIBPP_HAL_CRYPTO_INIT"]
+
+[[zero-register-writes]]
+name = "clear_mac_he_mpdu_length_link"
+peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
+register = "HE_SCRATCH%s"
+sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
+
+[[zero-register-writes]]
+name = "clear_tx_gain_compensation"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION"
+sources = ["BLOB_LIBPHY_PHY_BASEBAND_CONFIG"]
+
+[[zero-register-writes]]
+name = "clear_tx_gain_compensation_aux"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TX_GAIN_COMPENSATION_AUX"
+sources = ["BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[masked-register-modifies]]
+name = "publish_pbus_force_test"
+peripheral = "PHY_PBUS"
+register = "COMMAND"
+preserve-mask = 0xfffe0001
+input-mask = 0x0001fffc
+set-mask = 0x00000002
+sources = ["ROM_REV0_PHY_PBUS", "ROM_REV0_PHY_RX_DCO"]
+
+[[masked-register-modifies]]
+name = "publish_tone_path_0_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+preserve-mask = 0xf0000000
+input-mask = 0x0fffffff
+set-mask = 0x00000000
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[masked-register-modifies]]
+name = "publish_tone_path_1_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_1_CONTROL"
+preserve-mask = 0xf0000000
+input-mask = 0x0fffffff
+set-mask = 0x00000000
+sources = ["ROM_REV0_PHY_START_STOP_TX_TONE", "BLOB_LIBPHY_PHY_START_TX_TONE_STEP_NEW"]
+
+[[masked-register-modifies]]
+name = "publish_txiq_first_mismatch_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+preserve-mask = 0xf0000000
+input-mask = 0x0fffffff
+set-mask = 0x00000000
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]
+
+[[masked-register-modifies]]
+name = "publish_txiq_second_mismatch_image"
+peripheral = "PHY_BASEBAND_CONFIG_ORACLE"
+register = "TONE_PATH_0_CONTROL"
+preserve-mask = 0xf0ffffff
+input-mask = 0x0f000000
+set-mask = 0x00000000
+sources = ["ROM_REV0_PHY_TXIQ_GET_MIS_PWR"]

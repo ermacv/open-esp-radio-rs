@@ -2983,8 +2983,8 @@ mod tests {
         parse_full_register_writes, parse_interrupt_snapshots, parse_masked_register_modifies,
         parse_mmio_windows, parse_register_image_writes, parse_zero_based_field_writes,
         parse_zero_register_writes, type_binding_name, validate_alias_group, validate_confidence,
-        validate_dimension_order, validate_evidence_ranges, validate_names, validate_provenance,
-        validate_model_review_sources, validate_register_aliases, validate_register_layout,
+        validate_dimension_order, validate_evidence_ranges, validate_model_review_sources,
+        validate_names, validate_provenance, validate_register_aliases, validate_register_layout,
         validate_write_semantics,
     };
     use roxmltree::Document;
@@ -3450,10 +3450,8 @@ mod tests {
 
     #[test]
     fn rejects_a_model_review_source_missing_from_the_target_addon() {
-        let document = Document::parse(
-            "<root><source id=\"KNOWN\">defined</source></root>",
-        )
-        .unwrap();
+        let document =
+            Document::parse("<root><source id=\"KNOWN\">defined</source></root>").unwrap();
         let sources = BTreeSet::from(["KNOWN".to_owned(), "MISSING".to_owned()]);
         assert!(validate_model_review_sources(&document, &sources).is_err());
     }

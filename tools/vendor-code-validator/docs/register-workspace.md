@@ -32,12 +32,36 @@ output = "generated/svd/device.svd"
 output = "generated/pac/src/lib.rs"
 target = "none"
 edition = "2024"
+
+[registers.bindings]
+output = "generated/svd/device.bindings"
+crate-name = "device_pac"
+
+[registers.api]
+pack = "registers/api.toml"
+
+[registers.lints]
+pack = "registers/lints.toml"
+
+[registers.evidence]
+catalogs = ["registers/evidence.toml"]
 ```
 
 All paths are relative to `vendor-validator.toml`. PAC target is `none` or
 `riscv`; edition is `2021` or `2024`. Command-line `--output`, `--target` and
-`--edition` override these defaults. Review reports are generated and should
-normally stay under an ignored `generated/` directory.
+`--edition` override these defaults. `crate-name` is the Rust import name
+(normally the Cargo package name with `-` replaced by `_`), not a package name.
+Review reports are generated and should normally stay under an ignored
+`generated/` directory.
+
+The optional lint pack is project policy over an otherwise valid hardware
+model. For example, a target may forbid filler-style field names without
+turning that naming preference into a generic CMSIS-SVD rule:
+
+```toml
+schema = 1
+forbidden-field-name-substrings = ["PRESERVED"]
+```
 
 The old `overlay = "..."` spelling remains accepted for schema 1 projects,
 but new projects should use `model` and schema 2.
@@ -265,6 +289,52 @@ list.
 
 ## Rust PAC generation
 
+### Evidence catalogs
+
+`[registers.evidence].catalogs` contains reviewed source descriptions and an
+optional controlled confidence vocabulary outside both the hardware model and
+safe API policy. Register-model `[[review]]` annotations and API-pack
+`sources = [...]` refer to catalog IDs. Validation rejects undefined IDs and
+confidence levels.
+
+Catalogs may also record coarse half-open address ranges supported by one or
+more sources. These ranges are word-aligned, non-overlapping and must fit
+inside an MMIO region from `memory.toml`. They document evidence coverage; they
+never create registers or fields. Validation separately proves that every
+register in the editable model lies inside the project MMIO map.
+
+### Reviewed safe API pack
+
+The optional `[registers.api].pack` is target-owned reviewed policy layered on
+top of the generic register model. It declares a small vocabulary of safe
+transactions: interrupt sample/ack pairs, full and fixed register writes,
+whole-register images, zero-based field writes, zero writes and partitioned
+masked read-modify-write operations. For example:
+
+```toml
+schema = 1
+
+[options]
+peripheral-ownership = true
+device-access = true
+
+[[masked-register-modifies]]
+name = "publish_command"
+peripheral = "RADIO"
+register = "COMMAND"
+preserve-mask = 0xffff0000
+input-mask = 0x0000fff0
+set-mask = 0x0000000f
+sources = ["REVIEWED_COMMAND_BODY"]
+```
+
+The pack does not define addresses, fields, W1C behavior or reset values. Those
+remain in the editable register model. Loading the pack proves that every
+referenced peripheral/register/field exists in the release SVD and checks the
+required access, width, write constraints, enum variants, modified-write
+semantics and mask partition. RTOS, NVS, logging and delay semantics do not
+belong in this pack.
+
 Generate deterministic, formatted `svd2rust` source from the same in-memory
 release SVD:
 
@@ -282,15 +352,38 @@ cargo vendor-code-validator registers generate-pac \
 ```
 
 The tool uses its pinned `svd2rust` library and `rustfmt`; it does not depend on
-a separately installed `svd2rust` executable. This command intentionally emits
-the generic PAC only. Chip-specific safe helpers, ownership APIs and other
-extensions remain the responsibility of a target add-on.
+a separately installed `svd2rust` executable. A configured API pack is applied
+by default. Use `--no-api-pack` for a plain generic PAC, or `--api-pack PATH` to
+select an explicit reviewed pack.
 
 For ESP32-S31, the clean SVD output is checked at `svd/esp32s31-radio.svd`.
-Production `cargo pac-gen` reads the same schema-2 model through the shared
-`tools/register-model` crate, validates the target-owned
-`registers/pac-addon.xml`, and appends its safe helper API to the generic
-svd2rust output. The add-on is never embedded into the clean SVD.
+The project-owned generator and `registers/api.toml` reproduce the complete
+production PAC byte-for-byte. During migration, `cargo pac-gen --check` remains
+as a redundant parity gate for the remaining historical lint policy. Project
+validation already owns provenance, confidence, evidence ranges, MMIO coverage,
+platform SVD parsing and structural register invariants. No add-on metadata is
+embedded into the clean SVD. The retirement matrix is documented in
+[`pac-gen-migration.md`](pac-gen-migration.md).
+
+## PAC binding index
+
+The optional binding index joins a physical MMIO address to the exact
+svd2rust peripheral, cluster, register and field path generated from the same
+release SVD. It is consumed by driver generation; it contains no target
+semantics or safe transaction policy.
+
+```console
+cargo vendor-code-validator registers generate-bindings \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+```
+
+Use `--check --deny-unreviewed` in CI. `--output` and `--crate-name` override
+`[registers.bindings]`. The command validates the Rust crate identifier and
+does not require a generated SVD file: both SVD and index are rendered from the
+schema-2 model in memory.
+
+For ESP32-S31 this project-owned command reproduces
+`svd/esp32s31-radio.bindings` byte-for-byte.
 
 ## Legacy schema 1 overlay
 

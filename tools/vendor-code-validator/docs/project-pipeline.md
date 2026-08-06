@@ -36,13 +36,14 @@ The pipeline owns only reproducible evidence and read-only validation:
 
 The pipeline deliberately does not initialize or edit the reviewed register
 model, interface pack, or function pack. It also does not export release SVD,
-run svd2rust, or generate a PAC. Those are explicit publication steps because changing a clean
-hardware interface has a different review boundary from refreshing analysis
-evidence:
+run svd2rust, generate a PAC or publish its binding index. Those are explicit
+publication steps because changing a clean hardware interface or reviewed safe
+API pack has a different review boundary from refreshing analysis evidence:
 
 ```console
 cargo vendor-code-validator registers export-svd --project path/to/vendor-validator.toml
 cargo vendor-code-validator registers generate-pac --project path/to/vendor-validator.toml
+cargo vendor-code-validator registers generate-bindings --project path/to/vendor-validator.toml
 ```
 
 This separation prevents an ordinary vendor-artifact refresh from silently

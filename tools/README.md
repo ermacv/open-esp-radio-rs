@@ -4,8 +4,8 @@ This tree is limited to repository-wide generators and policy checks:
 
 | Path | Purpose |
 | --- | --- |
-| `register-model/` | Shared schema-2 register model loader and clean SVD encoder |
-| `pac-gen/` | Reproducible ESP32-S31 PAC generation from the project model and target add-on |
+| `register-model/` | Shared register model, clean SVD, PAC/evidence schemas and generic invariants |
+| `pac-gen/` | Legacy ESP32-S31 parity oracle pending removal |
 | `qualification-check/` | Fail-closed readiness manifest validation |
 | `vendor-code-validator/` | Transitional home of the generic vendor verification engine and CLI |
 | `audit-driver-safety.sh` | Unsafe-code boundary policy |

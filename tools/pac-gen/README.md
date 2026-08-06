@@ -1,4 +1,10 @@
-# ESP32-S31 PAC generator
+# Legacy ESP32-S31 PAC parity oracle
+
+The project-owned `vendor-code-validator registers generate-pac` and
+`generate-bindings` commands are now the canonical generators. This crate is
+kept temporarily as a byte-for-byte transition gate; do not add new helper API
+or evidence metadata here. Current parity and deletion criteria are tracked in
+[`../vendor-code-validator/docs/pac-gen-migration.md`](../vendor-code-validator/docs/pac-gen-migration.md).
 
 `cargo pac-gen` has three deliberately separate inputs:
 
@@ -15,8 +21,8 @@ reference against it, runs the pinned `svd2rust`, appends the reviewed helper
 API, and writes `driver/chips/esp32s31/pac/src/lib.rs` plus
 `svd/esp32s31-radio.bindings`.
 
-Use `cargo pac-gen --check` in CI. It performs the full pipeline without
-accepting changes to any generated output.
+Use `cargo pac-gen --check` only as the legacy parity half of CI. Canonical
+validation and generation use the project manifest.
 
 ## Add-on vocabulary
 
@@ -41,7 +47,8 @@ definition, stale identity or weakened write constraint fails generation.
 
 1. Edit portable hardware semantics in the project TOML fragments.
 2. Keep evidence IDs and confidence in the fragment's `[[review]]` records.
-3. Define new evidence IDs, and only genuinely target-specific helper
-   transactions, in `pac-addon.xml`.
-4. Run `cargo vendor-code-validator registers validate`, then
-   `cargo pac-gen` and `cargo pac-gen --check`.
+3. Define new evidence IDs in `registers/evidence/*.toml` and new safe
+   transactions in `registers/api.toml`.
+4. Run `registers validate`, `generate-pac --check` and
+   `generate-bindings --check`; keep `cargo pac-gen --check` green until the
+   legacy crate is removed.

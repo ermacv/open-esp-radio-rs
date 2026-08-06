@@ -38,6 +38,34 @@ linked-ir = [
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"
 
+[registers.pac]
+output = "../../../../driver/chips/esp32s31/pac/src/lib.rs"
+target = "none"
+edition = "2024"
+
+[registers.bindings]
+output = "../../../../svd/esp32s31-radio.bindings"
+crate-name = "open_esp_radio_esp32s31_pac"
+
+[registers.api]
+pack = "registers/api.toml"
+
+[registers.lints]
+pack = "registers/lints.toml"
+
+[registers.evidence]
+catalogs = [
+    "registers/evidence/policy.toml",
+    "registers/evidence/platform.toml",
+    "registers/evidence/vendor-rom.toml",
+    "registers/evidence/vendor-radio-libraries.toml",
+    "registers/evidence/vendor-libpp.toml",
+    "registers/evidence/vendor-net80211.toml",
+    "registers/evidence/hil-open.toml",
+    "registers/evidence/hil-vendor.toml",
+    "registers/evidence/migration.toml",
+]
+
 [interfaces]
 facts = "generated/findings/interfaces.json"
 pack = "interfaces/reviewed.toml"

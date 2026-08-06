@@ -6,8 +6,8 @@ The implementation is split by responsibility:
 - `crates/core` is a zero-dependency, architecture-neutral contract model;
 - `crates/model` owns architecture-neutral symbolic/reference IR, indexed-MMIO
   proofs and the SVD-derived register catalog;
-- `tools/register-model` owns the editable schema-2 hardware model and clean
-  SVD encoding shared with production `pac-gen`;
+- `tools/register-model` owns the editable schema-2 hardware model, clean SVD
+  encoding, generic model invariants and reusable PAC/evidence pack schemas;
 - `crates/semantic` owns architecture-neutral effect-policy, qualification
   request/result and evidence-source interfaces;
 - `crates/backend-riscv` owns ELF decoding, RISC-V relocations, reference CFG
@@ -32,9 +32,11 @@ facade does not depend directly on the production PHY: that dependency ends at
 the ESP32-S31 semantic harness boundary.
 
 Register discovery facts and coverage remain in the validator facade. The
-shared register-model crate knows neither artifacts nor targets. ESP32-S31 PAC
-helper semantics live in the target pack's `pac-addon.xml` and are consumed
-only by `tools/pac-gen`.
+shared register-model crate knows neither artifacts nor targets. A project may
+attach reviewed safe PAC transactions through `[registers.api]` and evidence
+catalogs through `[registers.evidence]`; their contents remain target-owned.
+The historical `pac-addon.xml` is now only a migration oracle and is not an
+input to the project-owned generator.
 
 The hierarchical workflows are `inspect`, `mmio`, `ir`, `reference`, `execute`,
 `verify`, and `image`. Legacy flat command spellings remain accepted during

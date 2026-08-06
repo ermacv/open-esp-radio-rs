@@ -1,0 +1,42 @@
+# Reviewed register evidence: platform.
+schema = 1
+
+[[sources]]
+id = "S31_MODEM_SYSCON_STRUCT"
+description = "esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_syscon_struct.h, sha256 1d37b7f4748e9b665ed1bf4f25dc85cd20d25fa5ab2726db82766dd0b506f69e"
+
+[[sources]]
+id = "S31_MODEM_LPCON_STRUCT"
+description = "esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, c/include/esp32s31/modem/modem_lpcon_struct.h, sha256 af916837fb4c4ed8092fba78a844cc656299acfd63764a420c4c4fdac3472453"
+
+[[sources]]
+id = "S31_ESP_PACS_SVD"
+description = "local esp-pacs commit f823dd9de91c0b83c5e8e85cbea4749dbabc4a27, esp32s31/pac/esp32s31.svd"
+
+[[sources]]
+id = "S31_REG_BASE"
+description = "esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/include/esp32s31/soc/reg_base.h, sha256 24a0c98ca63b042ed32d42c5566b979d412e04ec7b1b9d305bb7addc12577f9d; names the HP-system 0x205x, LP-system 0x207x and LP-peripheral 0x208x blocks and IEEE802154_REG_BASE in the 0x201x modem/radio window"
+
+[[sources]]
+id = "ESP_IDF_25FE69F_S31_PHY_RETENTION"
+description = "Official ESP-IDF commit 25fe69f946311abdaf9ad56591f25fedbc20ac98. components/esp_phy/esp32s31/phy_init_data.c sha256 03176e75102562df905e7ec342860ddd120443c2bff043f06d66faef4285b217 defines the FECOEX, FEDATA, FECTRL, FEDATA_WIFI, AGC, NRX, BB and BRX retention bases and register counts. components/esp_phy/esp32s31/include/btbb_retention_reg.h sha256 8acdbdff2393e3d4dc15f1a6aedd240afeb95010e50446c9d596a878fc8af7f3 defines the BTAGC/BB_PART_1 base and count."
+
+[[sources]]
+id = "S31_PMU_HEADERS"
+description = "ESP-IDF master commit 102122904ade11fd1ae373848f34ffd7dfb18aeb, components/soc/esp32s31/register/soc/pmu_reg.h; local esp-wifi-sys commit 2585f278d381acc67c529fa730b91739b5461359, pmu_reg.h sha256 b1a04a306b9d7ee908e2f7b083d42b7a634f8687b6ee034cfe6f54f385e0d816 and pmu_struct.h sha256 5fc84c7569f9f24e193b0205728a647768c7c289b39d5ce679c50db7d8352e28"
+
+[[sources]]
+id = "ESP_IDF_ESP32S31_MODEM_REG_BASE"
+description = "Official ESP-IDF master commit 873d612fdeebf5dadc068670d320dbf4bcd742bc, components/soc/esp32s31/include/modem/reg_base.h, sha256 86a9909938d4db06b3d11c4c386a2c3dbdcd9657b6d194a216202b796ada13b9. It defines MODEM_BASE 0x20100000, MODEM_PWR_BASE 0x2010d000 and the FE, WIFI_MAC, WIFI_BB, WIFI_BB_BRX, MODEM_TIMER, MODEM_ETM, MODEM_DATADUMP, MODEM_WIDGETS, MODEM_SYSCON, MODEM_LPCON, I2C_ANA_MST and I2C_ANA_MST_MEM sub-block bases."
+
+[[sources]]
+id = "IEEE80211_HT_SIG"
+description = "IEEE Std 802.11 HT-SIG field layout: HT-SIG1 bit 7 is CBW, with zero selecting 20 MHz and one selecting 40 MHz. This standard semantic is joined only to the instruction-exact descriptor-word1-bit-15 mapping proved by BLOB_LIBPP_HAL_MAC_TX."
+
+[[sources]]
+id = "IEEE80211_HE_PHY_CAP_DCM"
+description = "IEEE 802.11 HE PHY Capabilities byte three field semantics as exposed by Linux include/linux/ieee80211-he.h: bits 1:0 encode DCM maximum TX constellation and bits 4:3 encode DCM maximum RX constellation, with encodings NotSupported, BPSK, QPSK and 16-QAM."
+
+[[sources]]
+id = "ESP_WIFI_SYS_S31_HE_SU_SIG"
+description = "Sibling esp-wifi-sys commit 72b97e6fe55307aa92c8c1edf3fdb3f4df816e80, c/headers/esp32s31/esp_private/esp_wifi_he_types_private.h complete esp_wifi_su_siga1_t and packed esp_wifi_su_siga2_t layouts. These standard field names are joined only to bit positions independently exercised by the complete S31 blob formatter."

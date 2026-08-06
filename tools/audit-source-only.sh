@@ -13,6 +13,17 @@ tools/audit-driver-safety.sh
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
 cargo pac-gen --check
+cargo vendor-code-validator registers validate \
+    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+    --deny-unreviewed
+cargo vendor-code-validator registers generate-pac \
+    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+    --check \
+    --deny-unreviewed
+cargo vendor-code-validator registers generate-bindings \
+    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+    --check \
+    --deny-unreviewed
 
 cargo build \
     -p open-esp-radio-esp32s31-phy \

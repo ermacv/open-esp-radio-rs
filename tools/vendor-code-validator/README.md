@@ -47,7 +47,7 @@ callers authenticate inputs and pass them directly or through a local
 | `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
 | `functions init-pack` / `validate` / `review` | Review function roles and context layouts, then render a source-like reading view | [Function and context packs](docs/function-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
-| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC outputs | [Register workspace](docs/register-workspace.md) |
+| `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` / `generate-bindings` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC/binding outputs | [Register workspace](docs/register-workspace.md) |
 | `ir export` | Produce linked JSON and pseudo-Rust IR for manual analysis | [Linked function IR](docs/linked-ir.md) |
 | `ir build` | Generate or check all project-owned linked-IR profiles | [Project linked-IR builds](docs/project-ir-build.md) |
 | `execute run` / `execute compare` | Execute deterministic scenarios and compare ordered effects | [Execution and profiles](docs/execution-and-profiles.md) |

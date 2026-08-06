@@ -99,14 +99,40 @@ Private artifact paths remain in the local run spec. The generic profile
 format and companion rules are documented in
 [`project-ir-build.md`](../../../../tools/vendor-code-validator/docs/project-ir-build.md).
 
-`cargo pac-gen` reads the same model through `tools/register-model` and applies
-`registers/pac-addon.xml` only while generating the production PAC. The add-on
-owns ESP32-S31 safe compound transactions, ownership helpers and evidence
-metadata; none of these semantics enter the generic register model or clean
-SVD. `registers generate-pac` remains available when an architecture-neutral
-plain svd2rust output is useful for inspection; supply an explicit `--output`
-because this target intentionally configures only the production `pac-gen`
-pipeline.
+`registers/api.toml` owns the reviewed ESP32-S31 safe compound transactions,
+ownership split and device-access helper. The project configures the production
+PAC output, so it can be regenerated or checked directly:
+
+```console
+cargo vendor-code-validator registers generate-pac \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
+```
+
+The pack is cross-validated against the clean schema-2 register model and
+produces the checked-in PAC byte-for-byte. Use `--no-api-pack --output PATH`
+when a plain architecture-neutral svd2rust output is useful for inspection.
+Reviewed provenance, confidence vocabulary and coarse dump ranges now live in
+the functional catalogs under `registers/evidence/`. Validation resolves every
+source used by the model and API pack, and checks evidence ranges plus all
+modeled registers against `memory.toml`. `registers/lints.toml` retains the
+ESP32-S31 policy against synthetic `PRESERVED` fields without imposing that
+naming rule on generic projects. The legacy `pac-addon.xml` is now only a
+redundant transition gate; none of its metadata enters the clean SVD. The
+current parity and deletion criteria are recorded in
+[`pac-gen-migration.md`](../../../../tools/vendor-code-validator/docs/pac-gen-migration.md).
+
+The project does own the neutral PAC address/path index. Regenerate or verify
+it independently of the production PAC:
+
+```console
+cargo vendor-code-validator registers generate-bindings \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --check --deny-unreviewed
+```
+
+This produces `svd/esp32s31-radio.bindings` from the same schema-2 model and
+records the Rust PAC crate name used by `driver generate`.
 
 The project also configures the generic interface workspace. Generate facts
 from a caller-owned run spec, initialize the reviewed pack once, and validate

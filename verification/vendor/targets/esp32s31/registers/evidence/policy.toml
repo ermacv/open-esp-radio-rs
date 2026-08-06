@@ -1,0 +1,10 @@
+# Controlled vocabulary for register-review confidence.
+schema = 1
+confidence-levels = [
+    "block-exact-register-semantics-opaque",
+    "hil-observed",
+    "instruction-exact",
+    "instruction-exact-hil-qualified",
+    "instruction-exact-partial",
+    "instruction-exact-semantics-unknown",
+]

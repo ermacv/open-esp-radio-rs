@@ -1,12 +1,12 @@
 # ESP32-S31 vendor verification target
 
-`vendor-validator.toml` is the preferred project entry point. It composes the
+`vendor-project.toml` is the preferred project entry point. It composes the
 existing target pack with `memory.toml`, whose MMIO regions are independent of
 SVD register names:
 
 ```console
-cargo vendor-code-validator mmio discover \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench mmio discover \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run \
   --json-report /tmp/esp32s31-mmio.json
 ```
@@ -19,20 +19,26 @@ The public project configuration can be checked without proprietary inputs:
 
 ```console
 cd verification/vendor/targets/esp32s31
-cargo vendor-code-validator project doctor
+cargo vendor-binary-workbench project doctor
+
+cargo vendor-binary-workbench project status \
+  --project vendor-project.toml
 ```
 
 The missing run spec is a readiness warning rather than a configuration error.
+The status report therefore shows ready configuration, verification and
+publication phases and incomplete private-input/analysis phases until a local
+run spec is supplied.
 
 With a private run spec, the complete generated-evidence workflow is:
 
 ```console
-cargo vendor-code-validator project build \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench project build \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 
-cargo vendor-code-validator project check \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench project check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 ```
 
@@ -40,30 +46,35 @@ This generates or checks MMIO/interface facts, both linked-IR profiles, and the
 register/function reviews, then validates the reviewed register, interface,
 and function files.
 It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
-code; those remain explicit release steps.
+code. The public register release gate needs no private run spec:
+
+```console
+cargo vendor-binary-workbench project publish \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --check
+```
+
+This strictly validates the model, API, lint and evidence packs, then verifies
+the configured SVD, PAC and binding index as one preflighted publication.
 
 ## Register project
 
 The checked `registers/device.toml` and its peripheral fragments are the
-validator's editable ESP32-S31 radio register model. The validator loads this
+workbench's editable ESP32-S31 radio register model. The workbench loads this
 model directly; generated XML is not required before MMIO discovery, IR
 export, or verification. The separate
 `../../../../svd/esp32s31-platform-radio-deps.svd` project input contributes
 official platform registers used by the radio call graph without transferring
 their runtime ownership to this project.
 
-Inspect the model and configured outputs with:
+Inspect the model and generated review with:
 
 ```console
-cargo vendor-code-validator registers validate \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench registers validate \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-code-validator registers review \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
-
-cargo vendor-code-validator registers export-svd \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-  --check
+cargo vendor-binary-workbench registers review \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 The clean SVD is written to `svd/esp32s31-radio.svd`. Discovery evidence
@@ -79,12 +90,12 @@ profiles. Each primary input receives the other linked ELF as its reviewed
 companion through `run.spec`, then register review merges both reports:
 
 ```console
-cargo vendor-code-validator ir build \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench ir build \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 
-cargo vendor-code-validator registers review \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench registers review \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 This adds poll and predicate field candidates plus links to guarded RTOS,
@@ -95,15 +106,16 @@ the base MMIO-discovery report is wanted.
 
 Private artifact paths remain in the local run spec. The generic profile
 format and companion rules are documented in
-[`project-ir-build.md`](../../../../tools/vendor-code-validator/docs/project-ir-build.md).
+[`project-ir-build.md`](../../../../tools/vendor-binary-workbench/docs/project-ir-build.md).
 
 `registers/api.toml` owns the reviewed ESP32-S31 safe compound transactions,
-ownership split and device-access helper. The project configures the production
-PAC output, so it can be regenerated or checked directly:
+ownership split and device-access helper. `project publish` is the normal
+production gate. The PAC can still be checked directly when diagnosing that
+single stage:
 
 ```console
-cargo vendor-code-validator registers generate-pac \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench registers generate-pac \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check --deny-unreviewed
 ```
 
@@ -117,14 +129,14 @@ modeled registers against `memory.toml`. `registers/lints.toml` retains the
 ESP32-S31 policy against synthetic `PRESERVED` fields without imposing that
 naming rule on generic projects. The retired generator migration and current
 publication ownership are recorded in
-[`pac-gen-migration.md`](../../../../tools/vendor-code-validator/docs/pac-gen-migration.md).
+[`pac-gen-migration.md`](../../../../tools/vendor-binary-workbench/docs/pac-gen-migration.md).
 
-The project does own the neutral PAC address/path index. Regenerate or verify
-it independently of the production PAC:
+The project also owns the neutral PAC address/path index. Diagnose that stage
+independently of the production PAC with:
 
 ```console
-cargo vendor-code-validator registers generate-bindings \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench registers generate-bindings \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check --deny-unreviewed
 ```
 
@@ -136,15 +148,15 @@ from a caller-owned run spec, initialize the reviewed pack once, and validate
 it after edits or vendor updates:
 
 ```console
-cargo vendor-code-validator interfaces discover \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+cargo vendor-binary-workbench interfaces discover \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 
-cargo vendor-code-validator interfaces init-pack \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench interfaces init-pack \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-code-validator interfaces validate \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench interfaces validate \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 Generated facts are ignored because they expose local paths and artifact
@@ -161,14 +173,14 @@ profiles. Generate IR, initialize the pack once, then edit names and roles in
 `functions/reviewed.toml` and regenerate the reading view:
 
 ```console
-cargo vendor-code-validator functions init-pack \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench functions init-pack \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-code-validator functions validate \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench functions validate \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-code-validator functions review \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench functions review \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 The ignored `generated/reports/function-review.md` puts reviewed roles and
@@ -182,8 +194,12 @@ external table ABI/semantics remain in `interfaces/` plus the reusable catalog.
 This directory owns target-specific input for compiled vendor-to-Rust
 verification. It is deliberately outside the generic verification engine.
 
-- `target.spec` selects the RISC-V 32-bit backend, ILP32 calling convention,
-  ESP32-S31 radio harness and Rust recompilation target.
+- `target.spec` selects the generic RISC-V 32-bit backend, ILP32 calling
+  convention and Rust recompilation target.
+- `platform.toml` is the project-mode platform pack: it composes the
+  ESP32-S31 radio harness with reusable RTOS/NVS/logging/delay vocabulary.
+- `interfaces/reviewed.toml` alone binds concrete observed table slots to that
+  vocabulary; the platform pack does not identify vendor layouts.
 - `run.spec.example` documents the separate caller-owned artifact bindings.
 - `profiles/` contains concrete compiled-equivalence scenarios.
 - `dispositions/` maps vendor inventory symbols to Rust components and
@@ -204,12 +220,12 @@ Legacy executable ABI fixtures and lifecycle entry contracts remain compiled
 in the ESP32-S31 semantic harness. New callback-table discovery and review use
 the project interface pack so names and layouts do not enter the generic
 backend. Typed executable contracts live in the generic semantic crate and
-ESP32-S31 qualification adapters live in the target semantic harness. See
-[`docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md`](../../../../docs/VENDOR_CODE_VALIDATOR_ARCHITECTURE.md).
+ESP32-S31 verification adapters live in the target semantic harness. See
+[`docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md`](../../../../docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md).
 
 ## libpp interrupt pilot
 
-The first Wi-Fi vertical slice qualifies two generated PAC leaves and their
+The first Wi-Fi vertical slice verifies two generated PAC leaves and their
 composition in the production MAC IRQ path. Build the caller-owned linked view
 and the Rust probes first:
 
@@ -229,7 +245,7 @@ Then run the focused regression gate. The caller supplies and authenticates
 all three vendor inputs; no artifact path or hash is embedded in the tool:
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -248,14 +264,14 @@ mismatch/incomplete/orphan row, and a passing evidence baseline.
 
 ## WDEVPWR interrupt boundary
 
-The power-interrupt gate qualifies only the masked STATUS read and exact CLEAR
+The power-interrupt gate verifies only the masked STATUS read and exact CLEAR
 write. Production carries the acknowledged image into a separate Embassy
-signal without decoding unqualified cause bits. HIL keeps the complete
+signal without decoding unverified cause bits. HIL keeps the complete
 WDEVPWR enable mask at zero, so this boundary is ready for later power policy
 but does not enable modem sleep.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -282,7 +298,7 @@ before MMIO, and `RadioRegisters::configure_station_modem_wakeup` composes the
 same operations in vendor order without importing vendor PM context.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -297,15 +313,15 @@ cargo vendor-code-validator verify inventory \
 The expected result is ten exact-effect matches and a passing evidence
 baseline. This is not a whole-function equivalence claim for vendor
 `pm_sleep`: RF/PHY and clock gating, wake restoration, TIM/DTIM policy and
-qualified interrupt-cause decoding remain separate required slices.
+verified interrupt-cause decoding remain separate required slices.
 
-The adjacent two-register station TSF wake transaction is qualified
+The adjacent two-register station TSF wake transaction is verified
 separately because it has a closed bool input domain and a non-symmetric
 disable branch: both branches set bit 21 at `0x2010_d830`, while only bit 29 at
 `0x2010_d858` follows the argument.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -329,7 +345,7 @@ production `RadioRegisters::station_tsf` specializes the same safe PAC
 register transaction to both output words.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:rom "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --source-prefix:rom hal_get_sta_tsf \
@@ -349,20 +365,20 @@ branches, `match=1`, and no mismatch, incomplete or orphan probe.
 The next focused gate covers seven production operations: CCA publication,
 trigger-flow sampling, finite enable/valid/invalid/disable queue access, and
 the final TX queue doorbell. The four indexed profiles declare `arg-range 0 0
-3`; all four logical queues must be executed, and the validator proves the
+3`; all four logical queues must be executed, and the verifier proves the
 reversed `CONTROL[3-queue]` mapping without treating the out-of-domain
 assertion as an admissible vendor input.
 
 `hal_mac_txq_enable` is intentionally not labeled whole-function equivalent.
 The vendor root first performs the exact CONTROL read/write, then changes its
 private queue context, has an HE trigger-based branch, and updates vendor
-statistics. The checked adapter therefore qualifies the register prefix,
+statistics. The checked adapter therefore verifies the register prefix,
 requires `embassy-tx-queue-ownership`, records
 `he-trigger-based-tx-disabled` as a current prerequisite, and allows only the
 statistics suffix to be omitted as unused instrumentation.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -377,7 +393,7 @@ cargo vendor-code-validator verify inventory \
 
 The expected focused result is `match=7`, `mismatch=0`, `incomplete=0`,
 `orphan-rust-probe=0`, and a passing evidence baseline. The production
-`start_prepared_mac_tx` calls the same qualified safe PAC transaction between
+`start_prepared_mac_tx` calls the same verified safe PAC transaction between
 its two device fences; vendor context layout and statistics are absent from
 runtime code.
 
@@ -391,7 +407,7 @@ the handwritten `RxRingStopped`/`RxRingLive` types retain lifecycle and
 descriptor memory ownership.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -405,7 +421,7 @@ cargo vendor-code-validator verify inventory \
 
 The expected result is eight exact PAC-leaf matches plus one compiled
 composition match, with no mismatch/incomplete/orphan row. The
-`wDev_AppendRxBlocks` adapter deliberately qualifies an architectural
+`wDev_AppendRxBlocks` adapter deliberately verifies an architectural
 replacement rather than C-layout identity. It pins the vendor chain guard,
 old-tail publication, leaf-call order and exact `0x186a1` reload bound, then
 executes the production Rust descriptor/staging owner for immediate settle,
@@ -417,7 +433,7 @@ statistics are not imported into the runtime.
 
 ## Infrastructure-STA Authentication/Association slice
 
-`ieee80211_sta_new_state` is deliberately qualified as an architectural
+`ieee80211_sta_new_state` is deliberately verified as an architectural
 replacement, not as whole-function or private-layout equivalence. The vendor
 root combines ordinary station management with NVS/configuration reads,
 `g_osi` timers and locks, diagnostics, power/coexistence, mesh branches and
@@ -426,7 +442,7 @@ Authentication/Association protocol state, accepts station configuration from
 its caller, and exposes the deadline to an Embassy executor.
 
 ```console
-cargo vendor-code-validator verify inventory \
+cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact:libnet80211 "$ESP32S31_LIBNET80211_LINKED_ELF" \
   --source-inventory:libnet80211 "$OPEN_ESP_RADIO_ESP32S31_LIBNET80211_ARCHIVE" \
@@ -458,4 +474,4 @@ The three-attempt Authentication limit and 160-ms Association retransmission
 cadence are currently source-owned open-driver policies; the inspected vendor
 root does not establish them. Only the 1,000-ms state deadline is claimed as a
 vendor-anchored timing invariant. NVS, logging, RTOS synchronization, mesh and
-power-state behavior are explicitly outside this qualification boundary.
+power-state behavior are explicitly outside this verification boundary.

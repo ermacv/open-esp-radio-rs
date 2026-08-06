@@ -1,0 +1,16 @@
+[package]
+name = "open-radio-vendor-analysis-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Architecture-neutral symbolic IR and MMIO analysis model for compiled vendor binaries"
+
+[dependencies]
+open-radio-vendor-contracts = { path = "../contracts" }
+roxmltree = "=0.20.0"
+
+[lints]
+workspace = true

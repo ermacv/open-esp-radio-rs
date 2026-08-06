@@ -12,8 +12,9 @@ retained as a [dated archive snapshot](archive/migration/2026-07-27-pac-and-unsa
 are the editable source for undocumented radio registers in the
 `0x2010_0000..0x201f_ffff` decode window. The project-owned `registers`
 commands validate the model and generate the clean SVD, PAC and binding index.
-`registers validate --deny-unreviewed` proves that every described span fits
-the project MMIO map before publication.
+`project publish` validates with strict reviewed coverage before deriving any
+output; `project publish --check` proves that every described span fits the
+project MMIO map and that the checked SVD, PAC and bindings are current.
 
 `open-esp-radio-esp32s31-registers::RadioRegisters` privately owns the generated
 radio singleton and exposes finite semantic operations. The official
@@ -196,8 +197,8 @@ this boundary accepts an unowned raw descriptor address.
 
 For a change touching registers, DMA storage, pinning, or placement:
 
-1. run `registers validate`, `export-svd --check`, `generate-pac --check` and
-   `generate-bindings --check` through the ESP32-S31 project manifest;
+1. run `project configure --check` and `project publish --check` through the
+   ESP32-S31 project manifest;
 2. run the workspace tests and lints;
 3. inspect new `unsafe` occurrences and ensure the invariant is stated next
    to the operation;

@@ -1,0 +1,79 @@
+# Shareable project entry point. Local artifact paths belong in an untracked
+# run spec passed with --run-spec, or in a private copy referenced here.
+schema = 1
+id = "esp32s31-radio-rev0"
+target-spec = "target.spec"
+platform-pack = "platform.toml"
+memory-map = "memory.toml"
+svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
+
+[[analysis.ir]]
+id = "rom-phy"
+sources = ["rom"]
+symbol-prefix = "phy_"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/rom-phy.ir.json"
+pseudo-rust = "generated/reports/rom-phy.pseudo.rs"
+
+[[analysis.ir]]
+id = "archive-phy"
+sources = ["archive"]
+symbol-prefix = "phy_"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/archive-phy.ir.json"
+pseudo-rust = "generated/reports/archive-phy.pseudo.rs"
+
+[registers]
+facts = "generated/findings/mmio.json"
+model = "registers/device.toml"
+
+[registers.review]
+output = "generated/reports/register-review.md"
+linked-ir = [
+    "generated/findings/rom-phy.ir.json",
+    "generated/findings/archive-phy.ir.json",
+]
+
+[registers.svd]
+output = "../../../../svd/esp32s31-radio.svd"
+
+[registers.pac]
+output = "../../../../driver/chips/esp32s31/pac/src/lib.rs"
+target = "none"
+edition = "2024"
+
+[registers.bindings]
+output = "../../../../svd/esp32s31-radio.bindings"
+crate-name = "open_esp_radio_esp32s31_pac"
+
+[registers.api]
+pack = "registers/api.toml"
+
+[registers.lints]
+pack = "registers/lints.toml"
+
+[registers.evidence]
+catalogs = [
+    "registers/evidence/policy.toml",
+    "registers/evidence/platform.toml",
+    "registers/evidence/vendor-rom.toml",
+    "registers/evidence/vendor-radio-libraries.toml",
+    "registers/evidence/vendor-libpp.toml",
+    "registers/evidence/vendor-net80211.toml",
+    "registers/evidence/hil-open.toml",
+    "registers/evidence/hil-vendor.toml",
+    "registers/evidence/migration.toml",
+]
+
+[interfaces]
+facts = "generated/findings/interfaces.json"
+pack = "interfaces/reviewed.toml"
+
+[functions]
+pack = "functions/reviewed.toml"
+profiles = ["rom-phy", "archive-phy"]
+
+[functions.review]
+output = "generated/reports/function-review.md"

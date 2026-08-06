@@ -1,0 +1,12 @@
+[package]
+name = "open-radio-vendor-contracts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Architecture-neutral contracts for compiled vendor-binary analysis and verification"
+
+[lints]
+workspace = true

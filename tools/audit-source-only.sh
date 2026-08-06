@@ -12,17 +12,12 @@ tools/audit-driver-safety.sh
 
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
-cargo vendor-code-validator registers validate \
-    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-    --deny-unreviewed
-cargo vendor-code-validator registers generate-pac \
-    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-    --check \
-    --deny-unreviewed
-cargo vendor-code-validator registers generate-bindings \
-    --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-    --check \
-    --deny-unreviewed
+cargo vendor-binary-workbench project configure \
+    --project verification/vendor/targets/esp32s31/vendor-project.toml \
+    --check
+cargo vendor-binary-workbench project publish \
+    --project verification/vendor/targets/esp32s31/vendor-project.toml \
+    --check
 
 cargo build \
     -p open-esp-radio-esp32s31-phy \
@@ -108,7 +103,7 @@ for package in "${production_packages[@]}"; do
         --edges normal,build \
         --prefix none >"$audit_dir/dependencies-$package"
     if rg \
-        '^(vendor-code-validator|open-radio-vendor-code-validator|open-esp-radio-(hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
+        '^(vendor-(binary-workbench|code-validator)|open-radio-vendor-|open-esp-radio-(hil-runner|hil-(protocol|.*telemetry)|verification-.*-probes|.*vendor-oracle))' \
         "$audit_dir/dependencies-$package"
     then
         echo "qualification dependency survived in production package $package" >&2
@@ -163,7 +158,7 @@ test -f "$runtime_elf"
 # executable sections and reject statically resolved jumps/calls into the
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
-cargo vendor-code-validator image audit-targets \
+cargo vendor-binary-workbench image audit-targets \
     --target-spec verification/vendor/targets/esp32s31/target.spec \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \

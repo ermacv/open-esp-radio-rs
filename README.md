@@ -39,9 +39,9 @@ only opt-in exception.
 | `hil/host/linux-net` | Privileged Linux AP/monitor fixture used only by HIL |
 | [`verification/`](verification/README.md) | Vendor comparison target packs and checked verification inputs |
 | [`qualification/`](qualification/README.md) | Machine-readable readiness claims |
-| `tools/vendor-code-validator` | Compiled vendor/Rust analysis, reference generation and verification workflows |
-| [`tools/`](tools/README.md) | Qualification checker, PAC generator and repository policy audits |
-| `svd` | Editable ESP32-S31 radio register description |
+| `tools/vendor-binary-workbench` | Vendor Binary Workbench: compiled-binary analysis, reviewed models, publication and Rust verification |
+| [`tools/`](tools/README.md) | Qualification checker, register model, Vendor Binary Workbench and repository policy audits |
+| `svd` | Published clean ESP32-S31 hardware descriptions and PAC binding indices |
 
 Chip package names follow `open-esp-radio-<chip>-<layer>`; protocol-specific
 hardware inserts the protocol before the layer, as in
@@ -65,12 +65,12 @@ for current status, reference material and archived migration reports.
 cargo fmt --all -- --check
 cargo test --workspace
 cargo qualification check --manifest qualification/targets/esp32s31/wifi-sta.ledger
-cargo vendor-code-validator registers validate \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-  --deny-unreviewed
-cargo vendor-code-validator registers generate-pac \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
-  --check --deny-unreviewed
+cargo vendor-binary-workbench project configure \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --check
+cargo vendor-binary-workbench project publish \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --check
 tools/audit-source-only.sh
 (cd examples/esp32s31-station && cargo check --release)
 ```

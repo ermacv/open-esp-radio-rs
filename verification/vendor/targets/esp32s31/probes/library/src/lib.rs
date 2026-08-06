@@ -3,8 +3,8 @@
 //! Link-time probes for compiled vendor/Rust MMIO comparison.
 //!
 //! These wrappers are test-harness artifacts, never driver entry points. Fat
-//! LTO inlines the safe HAL leaf into each retained symbol so the vendor-code
-//! validator can compare the resulting instruction-level MMIO transaction
+//! LTO inlines the safe HAL leaf into each retained symbol so the Workbench
+//! verifier can compare the resulting instruction-level MMIO transaction
 //! sequence.
 
 use core::{
@@ -79,7 +79,7 @@ fn panic(_: &core::panic::PanicInfo<'_>) -> ! {
     }
 }
 
-/// Harness-only delay edge intercepted by the vendor-code validator before this body runs.
+/// Harness-only delay edge intercepted by the Workbench verifier before this body runs.
 #[unsafe(no_mangle)]
 #[inline(never)]
 pub extern "C" fn ets_delay_us(micros: u32) {
@@ -108,7 +108,7 @@ pub extern "C" fn open_phy_trace_disable_agc(registers: &mut RadioRegisters) {
 ///
 /// This is deliberately test-only. It executes the production HAL leaves and
 /// exposes the async scheduling edge as an intercepted delay marker. The host
-/// validator independently drives the production typed transition; requiring
+/// verifier independently drives the production typed transition; requiring
 /// both views avoids depending on optimized Rust enum stack padding here.
 #[unsafe(no_mangle)]
 #[inline(never)]

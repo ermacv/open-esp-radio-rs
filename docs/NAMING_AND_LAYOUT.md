@@ -100,8 +100,8 @@ verification/
 └── vendor/
     ├── engine/
     └── targets/esp32s31/
-        ├── project.toml
-        ├── target.toml
+        ├── vendor-project.toml
+        ├── target.spec
         ├── memory.toml
         ├── interfaces/
         ├── profiles/

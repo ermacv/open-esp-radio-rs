@@ -15,15 +15,15 @@ verification/
 ```
 
 The generic engine is temporarily implemented by
-[`tools/vendor-code-validator`](../tools/vendor-code-validator/README.md).
+[`tools/vendor-binary-workbench`](../tools/vendor-binary-workbench/README.md).
 Target packs live here so the engine does not own chip identity, ABI layout,
 SVD selection or reviewed vendor-function policy.
 
 Use the ESP32-S31 project entry point for repository workflows:
 
 ```console
-cargo vendor-code-validator project doctor \
-  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+cargo vendor-binary-workbench project doctor \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 Artifact paths, revisions and authentication remain caller-owned. The target

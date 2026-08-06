@@ -386,8 +386,11 @@ impl PacApiPack {
                     .collect::<String>();
                 (parameters, format!("writer{writes}"))
             };
+            let argument_lint =
+                too_many_arguments_attribute(fields.len(), register_binding.is_array);
             output.push_str(&format!(
                 "\n    /// Write {field_list} in `{}`.`{}` while publishing zero to every other register bit.\n\
+                 {argument_lint}\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}{value_parameters}) {{\n\
                      // SAFETY: the SVD extension explicitly qualifies the zero-based\n\
@@ -467,14 +470,17 @@ impl PacApiPack {
             } else {
                 ("", "")
             };
+            let image_expression = masked_image_expression(
+                binding.preserve_mask,
+                binding.input_mask,
+                binding.set_mask,
+            );
             output.push_str(&format!(
                 "\n    /// Preserve mask 0x{:08x}, accept input mask 0x{:08x}, and set 0x{:08x} in {}.{}.\n\
                  #[inline]\n\
                  pub fn {}(registers: &crate::{peripheral_type}, {index_parameter}input: u32) {{\n\
                      registers.{register}({index_argument}).modify(|reader, writer| {{\n\
-                         let image = (reader.bits() & 0x{:08x})\n\
-                             | (input & 0x{:08x})\n\
-                             | 0x{:08x};\n\
+                         let image = {image_expression};\n\
                          // SAFETY: generator validation proves the three masks are\n\
                          // disjoint and partition every bit of this ordinary register.\n\
                          unsafe {{ writer.bits(image) }}\n\
@@ -486,14 +492,28 @@ impl PacApiPack {
                 binding.peripheral,
                 binding.register,
                 binding.name,
-                binding.preserve_mask,
-                binding.input_mask,
-                binding.set_mask,
             ));
         }
         output.push_str("}\n");
         Ok(output)
     }
+}
+
+fn too_many_arguments_attribute(field_count: usize, is_array: bool) -> &'static str {
+    if field_count + usize::from(is_array) > 6 {
+        "    #[allow(clippy::too_many_arguments, reason = \"reviewed hardware transaction exposes one typed argument per field\")]\n"
+    } else {
+        ""
+    }
+}
+
+fn masked_image_expression(preserve_mask: u32, input_mask: u32, set_mask: u32) -> String {
+    let mut expression =
+        format!("(reader.bits() & 0x{preserve_mask:08x}) | (input & 0x{input_mask:08x})");
+    if set_mask != 0 {
+        expression.push_str(&format!(" | 0x{set_mask:08x}"));
+    }
+    expression
 }
 
 fn remove_dimension_placeholder(value: &str) -> String {
@@ -544,4 +564,29 @@ fn device_access_api() -> &'static str {
              core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);\n\
          }\n\
      }\n"
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn masked_image_omits_a_zero_identity_term() {
+        assert_eq!(
+            masked_image_expression(0xf000_0000, 0x0fff_ffff, 0),
+            "(reader.bits() & 0xf0000000) | (input & 0x0fffffff)"
+        );
+        assert_eq!(
+            masked_image_expression(0xffff_0000, 0x0000_fff0, 0x0000_000f),
+            "(reader.bits() & 0xffff0000) | (input & 0x0000fff0) | 0x0000000f"
+        );
+    }
+
+    #[test]
+    fn wide_typed_hardware_transaction_explains_its_argument_shape() {
+        assert!(too_many_arguments_attribute(6, false).is_empty());
+        assert!(too_many_arguments_attribute(5, true).is_empty());
+        assert!(!too_many_arguments_attribute(7, false).is_empty());
+        assert!(!too_many_arguments_attribute(6, true).is_empty());
+    }
 }

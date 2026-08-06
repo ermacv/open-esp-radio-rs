@@ -216,7 +216,7 @@ impl LinkedOracleSpec {
         let mut stubs = String::new();
         for (index, symbol) in self.stub_symbols.iter().enumerate() {
             stubs.push_str(&format!(
-                "#[unsafe(export_name = {symbol:?})]\n#[inline(never)]\npub extern \"C\" fn linked_oracle_stub_{index}() -> u32 {{\n    // A stub exists only to make the aggregate ELF linkable. Reaching it is\n    // deliberately non-executable so the validator cannot learn invented\n    // return behavior from this fixture.\n    unsafe {{ core::arch::asm!(\"ebreak\", options(noreturn, nomem, nostack)) }}\n}}\n"
+                "#[unsafe(export_name = {symbol:?})]\n#[inline(never)]\npub extern \"C\" fn linked_oracle_stub_{index}() -> u32 {{\n    // A stub exists only to make the aggregate ELF linkable. Reaching it is\n    // deliberately non-executable so the verifier cannot learn invented\n    // return behavior from this fixture.\n    unsafe {{ core::arch::asm!(\"ebreak\", options(noreturn, nomem, nostack)) }}\n}}\n"
             ));
         }
         for (index, symbol) in self.fixture_data_symbols.iter().enumerate() {

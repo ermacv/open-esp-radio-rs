@@ -1,0 +1,7 @@
+# Reusable semantic vocabulary for a generic RV32 embedded project.
+# This pack intentionally selects no chip-specific compiled harness.
+schema = 1
+id = "embedded-riscv"
+architecture = "riscv32"
+calling-convention = "riscv-ilp32"
+semantic-catalogs = ["../catalogs/embedded-semantics.toml"]

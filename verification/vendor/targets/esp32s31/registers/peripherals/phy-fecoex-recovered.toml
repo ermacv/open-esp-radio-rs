@@ -32,8 +32,8 @@ confidence = "block-exact-register-semantics-opaque"
 
 [[review]]
 entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_CONTROL_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_FECOEX_RECOVERED.RF_FREQUENCY_RESULT_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]

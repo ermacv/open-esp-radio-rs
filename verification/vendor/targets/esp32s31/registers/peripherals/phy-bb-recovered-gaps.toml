@@ -40,12 +40,12 @@ confidence = "block-exact-register-semantics-opaque"
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_CONTROL_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_0_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_1_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]

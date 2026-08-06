@@ -51,16 +51,16 @@ confidence = "block-exact-register-semantics-opaque"
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_0_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_1_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_2_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
 entity = "PHY_FECTRL_RECOVERED.ANTENNA_CONFIG_WORD_3_OPAQUE"
-sources = ["ROM_REV0_PHY_VALIDATOR_GAPS"]
+sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]

@@ -1297,24 +1297,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-radio-vendor-analysis-model"
+version = "0.1.0"
+dependencies = [
+ "open-radio-vendor-contracts",
+ "roxmltree",
+]
+
+[[package]]
 name = "open-radio-vendor-backend-riscv"
 version = "0.1.0"
 dependencies = [
  "object",
- "open-radio-vendor-validator-model",
+ "open-radio-vendor-analysis-model",
  "rv-asm",
 ]
 
 [[package]]
-name = "open-radio-vendor-code-validator"
+name = "open-radio-vendor-binary-workbench"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-register-model",
+ "open-radio-vendor-analysis-model",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-harness-esp32s31-semantic",
- "open-radio-vendor-validator-model",
- "open-radio-vendor-validator-semantic",
+ "open-radio-vendor-semantics",
  "serde_json",
  "sha2",
  "svd-parser",
@@ -1324,10 +1332,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-radio-vendor-contracts"
+version = "0.1.0"
+
+[[package]]
 name = "open-radio-vendor-harness-esp32s31"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-validator-core",
+ "open-radio-vendor-contracts",
 ]
 
 [[package]]
@@ -1339,27 +1351,15 @@ dependencies = [
  "open-esp-radio-ieee80211",
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",
- "open-radio-vendor-validator-semantic",
+ "open-radio-vendor-semantics",
  "sha2",
 ]
 
 [[package]]
-name = "open-radio-vendor-validator-core"
-version = "0.1.0"
-
-[[package]]
-name = "open-radio-vendor-validator-model"
+name = "open-radio-vendor-semantics"
 version = "0.1.0"
 dependencies = [
- "open-radio-vendor-validator-core",
- "roxmltree",
-]
-
-[[package]]
-name = "open-radio-vendor-validator-semantic"
-version = "0.1.0"
-dependencies = [
- "open-radio-vendor-validator-model",
+ "open-radio-vendor-analysis-model",
 ]
 
 [[package]]

@@ -33,10 +33,10 @@ change; do not append completed chronology to a live backlog.
 
 ## Research and qualification evidence
 
-- The [vendor code validator](../tools/vendor-code-validator/README.md)
-  inventories vendor functions and reports instruction-level parity gaps
-  directly from binaries.
-- The [validator migration architecture](VENDOR_CODE_VALIDATOR_ARCHITECTURE.md)
+- [Vendor Binary Workbench](../tools/vendor-binary-workbench/README.md)
+  builds reviewable binary IR and MMIO/interface/function evidence, publishes
+  reviewed register artifacts and verifies Rust replacements.
+- The [workbench architecture](VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md)
   separates the generic engine, ISA backends, CLI and chip-specific harnesses.
 - [Register provenance](esp32s31-radio-register-provenance.md) records the
   basis and confidence for recovered register descriptions.

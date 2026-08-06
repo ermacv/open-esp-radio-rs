@@ -1,0 +1,82 @@
+# Project register publication
+
+`project publish` is the release boundary between a reviewed register project
+and its derived public artifacts. It does not analyze vendor binaries and does
+not require a local run spec:
+
+```console
+cargo vendor-binary-workbench project publish \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+Use the non-mutating form in CI:
+
+```console
+cargo vendor-binary-workbench project publish \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --check
+```
+
+## Boundary
+
+Publication consumes only the checked project manifest, register model,
+optional API/lint/evidence packs, and memory map. It never consumes ELF files,
+archives, linked IR, interface semantics or a platform harness.
+
+The command always enforces the equivalent of `registers validate
+--deny-unreviewed`; release publication cannot weaken review coverage through
+a command-line option. Configured outputs are then derived from the same
+schema-2 model:
+
+| Stage | Configuration | Output |
+| --- | --- | --- |
+| `register-validation` | `[registers]`, optional API/lint/evidence packs and memory map | read-only validation |
+| `svd-publication` | `[registers.svd]` | clean release SVD |
+| `pac-publication` | `[registers.pac]`, optional `[registers.api]` | formatted Rust PAC source |
+| `binding-publication` | `[registers.bindings]` | address-to-PAC-path index |
+
+An absent output table is reported as `not-configured`, not as a failure. This
+allows SVD-only and SVD-plus-PAC projects without inventing unused paths. A
+missing `[registers]` workspace is an error because there is no publication
+root. Configured publication paths must be distinct and cannot overwrite the
+register model, facts, review inputs, API/lint packs or evidence catalogs.
+
+## Preflight and failure behavior
+
+After validation, every configured output is rendered in memory before the
+first output is written. If PAC formatting, binding generation, or another
+preparation step fails, all other prepared write stages are reported as
+`blocked` and no generated output is changed. Filesystem failures during the
+subsequent writes are still reported normally; a filesystem cannot provide a
+portable multi-directory transaction.
+
+`--check` never writes. It compares each prepared artifact byte-for-byte with
+the configured file. Missing and stale files fail with the same diagnostics as
+the corresponding individual `registers ... --check` command.
+
+Each stage produces a stable tab-separated status line followed by one
+aggregate line:
+
+```text
+PROJECT-STAGE name=register-validation status=verified reason=-
+PROJECT-STAGE name=svd-publication status=verified reason=-
+PROJECT-STAGE name=pac-publication status=verified reason=-
+PROJECT-STAGE name=binding-publication status=verified reason=-
+PROJECT-PUBLICATION mode=check status=ok written=0 verified=4 failed=0 blocked=0 not-configured=0
+```
+
+Statuses are `written`, `verified`, `failed`, `blocked`, and
+`not-configured`. Any failed or blocked stage makes the process unsuccessful.
+
+## Relationship to other commands
+
+`project build` and `project check` own generated reverse-engineering evidence:
+MMIO facts, interface facts, linked IR and review reports. They intentionally
+cannot publish a public hardware API. `project publish` owns reviewed register
+outputs and intentionally cannot refresh evidence from proprietary inputs.
+
+The individual `registers validate`, `export-svd`, `generate-pac`, and
+`generate-bindings` commands remain useful for debugging one stage, selecting
+an audit SVD profile, disabling an API pack for inspection, or overriding one
+output path. Project CI and release checks should prefer `project publish
+--check` so no configured artifact is accidentally omitted.

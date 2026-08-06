@@ -1,7 +1,6 @@
-# Public target selection for the current ESP32-S31 validator harness.
+# Public generic target selection for ESP32-S31 binary analysis.
 schema 1
 target esp32s31-rev0
-harness esp32s31-radio-v1
 architecture riscv32
 calling-convention riscv-ilp32
 endianness little

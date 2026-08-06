@@ -920,9 +920,5 @@
       <source id="ROM_REV0_PHY_OPEN_FE_BB_CLK">Pinned ESP32-S31 rev0 ROM front-end/baseband clock body.</source>
       <source id="ROM_REV0_PHY_POWER_DETECTOR">Pinned ESP32-S31 rev0 ROM power-detector bodies.</source>
     </openEspRadioProvenance>
-    <openEspRadioAddressWindows>
-      <window name="MODEM_RADIO_CORE" start="0x20100000" endExclusive="0x20200000"/>
-      <window name="LP_PERIPHERAL" start="0x20800000" endExclusive="0x20900000"/>
-    </openEspRadioAddressWindows>
   </vendorExtensions>
 </device>

@@ -1,0 +1,31 @@
+[package]
+name = "open-radio-vendor-binary-workbench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+default-run = "vendor-binary-workbench"
+description = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries"
+
+[[bin]]
+name = "vendor-binary-workbench"
+path = "src/main.rs"
+
+[dependencies]
+open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
+open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31" }
+open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-semantic" }
+open-esp-radio-register-model = { path = "../register-model" }
+open-radio-vendor-analysis-model = { path = "crates/analysis-model" }
+open-radio-vendor-semantics = { path = "crates/semantics" }
+sha2 = "=0.10.9"
+serde_json = "=1.0.151"
+svd-parser = "=0.14.9"
+svd-rs = { version = "=0.14.12", features = ["serde"] }
+svd2rust = { version = "=0.37.1", default-features = false }
+toml_edit = { version = "=0.25.13", features = ["serde"] }
+
+[lints]
+workspace = true

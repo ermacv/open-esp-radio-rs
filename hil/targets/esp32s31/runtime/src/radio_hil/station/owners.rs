@@ -29,7 +29,7 @@ use crate::radio_fault::ArmedStationFault;
 use open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer;
 
 use super::{
-    connected_epoch::RadioHilConnectedTaskBindings,
+    connected_epoch::{RadioHilConnectedEpochBindings, RadioHilConnectedTaskBindings},
     connected_rx_observer::RadioHilConnectedRxBindings,
     network_reporting::RadioHilNetworkReportBindings,
 };
@@ -160,6 +160,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedFixture<'a> {
     pub connected_tasks: RadioHilConnectedTaskBindings,
     pub connected_rx: RadioHilConnectedRxBindings,
     pub network_report: RadioHilNetworkReportBindings,
+    pub connected_epoch: RadioHilConnectedEpochBindings,
 }
 
 pub(in crate::radio_hil) struct RadioHilConnectedTaskFixture<'a> {
@@ -178,6 +179,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedTaskFixture<'a> {
     pub connected_tasks: RadioHilConnectedTaskBindings,
     pub connected_rx: RadioHilConnectedRxBindings,
     pub network_report: RadioHilNetworkReportBindings,
+    pub connected_epoch: RadioHilConnectedEpochBindings,
 }
 
 impl<'a> RadioHilConnectedFixture<'a> {
@@ -204,6 +206,7 @@ impl<'a> RadioHilConnectedFixture<'a> {
                 connected_tasks: self.connected_tasks,
                 connected_rx: self.connected_rx,
                 network_report: self.network_report,
+                connected_epoch: self.connected_epoch,
             },
             self.mmio,
         )

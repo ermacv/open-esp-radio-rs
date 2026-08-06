@@ -142,9 +142,10 @@ The non-symmetric two-register
 `set_station_tsf_wakeup` bool domain is now a separate passing scenario gate;
 it does not broaden the still-missing RF/PHY lifecycle claim.
 
-## 4. Shrink the HIL surface
+## 4. HIL surface and composition boundary
 
-Continue reducing `radio_hil.rs` toward only:
+The responsibility split is complete enough to resume driver feature work.
+Keep `radio_hil.rs` limited to:
 
 - board/resource selection and linker-profile hooks;
 - task spawning, interrupt entry points and logging;
@@ -174,38 +175,22 @@ IPv4/UDP parsing and sequence-interval evidence now live in
 This reduced the facade to 5,471 lines without hiding benchmark dependencies
 behind a wildcard parent-module import.
 
-Connected traffic is now a module tree rather than another block in the
-composition facade. TCP RX, UDP RX/TX, bidirectional session coordination and
-interval reporting have separate owners under `radio_hil/connected_traffic`.
-`UdpSocketBuffers` binds only one socket allocation, the TX/RX session-source
-enums describe where a workload starts and publishes its result, and
-`UdpRxTelemetry` contains only named diagnostic inputs. Static cells, their
-single initialization edge and task placement remain visible in `radio_hil.rs`.
-Reporting receives counters explicitly instead of reaching back through
-`super::*`. The facade is now 4,477 lines; the target image remains 40.06%.
+Connected traffic is now a complete module tree rather than another block in
+the composition facade. TCP RX, UDP RX/TX, bidirectional session coordination,
+interval reporting, socket backing storage, workload selection and the Embassy
+benchmark task live under `radio_hil/connected_traffic`; the concrete runtime
+and its one-time buffer initialization are in `connected_traffic/runtime.rs`.
 
-The first station-qualification split now lives under `radio_hil/station`:
-`owners.rs` contains only typed board/epoch/lifecycle frontiers,
-`reporting.rs` owns progress publication and join diagnostics, and
-`running_scan.rs` owns the HIL running-scan scenario around the production
-scan port. The progress reporter receives its active flag and channel
-explicitly, and running scan receives that reporter rather than reaching into
-composition globals. The old wildcard import in `phy_diagnostics.rs` is also
-gone. `lifecycle.rs` now owns the HIL backend which dispatches typed station
-owners, applies bounded backoff, and maps production lifecycle failures into
-the wire protocol; it does not implement authentication, association or
-reconnect itself. `connected_epoch.rs` binds the independently scheduled
-network and RX-protocol runners to explicit stop/completion signals, while
-`network_reporting.rs` owns DHCP/readiness evidence and the HIL-only LAN
-probe. `connected_rx_observer.rs` forwards the same production RX events while
-recording only explicitly bound probe, ordering, PHY and aggregation evidence.
-Task, report and observer bindings are constructed in the root rather than
-recovered from globals during reconnect. The complete connected owner
-transaction now lives in `connected_epoch/run.rs`: it activates the interrupt
-epoch, assembles production RX/TX/control owners, starts the bound tasks, and
-returns every owner only after finite teardown. Its remaining one-time storage
-allocations name their root-placed static cells explicitly. Static placement
-and top-level scenario selection remain in the facade, now 2,922 lines.
+Station qualification is split by ownership phase under `radio_hil/station`.
+`cold_scan.rs` returns a typed halted-RX handoff, `scenario.rs` composes the
+complete STA lifecycle, and `attempts/{initial,refresh,reconnect}.rs` own the
+three finite attempt paths. `connected_epoch/bindings.rs` names one-time
+storage, persistent services and scenario policy explicitly, so
+`connected_epoch/run.rs` no longer discovers `OPEN_RADIO_*` objects through a
+hidden service locator. Reporting, network readiness, running scan and RX
+observation retain their separate modules. The root facade is now about 1,450
+lines and owns only board memory placement, interrupt entries, shared channels,
+top-level policy and diagnostics. The qualified image remains 40.06%.
 
 The WPA2/connected transition no longer exposes 23–28 positional arguments.
 After extracting key/M4 and peer orchestration, its entry points take coherent
@@ -517,7 +502,7 @@ owner with an empty queue and zero Probe TX failures. Lifecycle publication
 now waits until the exact typed edge has been serialized, rather than merely
 admitted to the UART queue. See the
 [AP-absence qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-absence.md).
-The next slices, in order, are:
+The next slice is:
 
 1. add the complementary deterministic RX failure cell without conflating a
    dropped/corrupt frame with a reset-required DMA owner. RX A-MPDU
@@ -532,10 +517,11 @@ The next slices, in order, are:
    while HE PPDU format now supplies `ProtocolValidated(true)` containment
    rather than pretending to be another hardware field; see the
    [S-MPDU record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md) and
-   [HE containment record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md);
-2. split the remaining HIL facade by fixture responsibility (station
-   qualification, connected traffic, diagnostics and board bootstrap) while
-   keeping only scenario policy, task placement, static storage and reporting.
+   [HE containment record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md).
+
+The HIL facade split is complete. Further file movement is justified only by
+a new ownership boundary; it is no longer a prerequisite for RX recovery,
+monitor/AP roles or multi-chip work.
 
 The connected-TX fault frontier is now qualified. HIL protocol v8 arms one
 fault only after the production backend has published a real network TX

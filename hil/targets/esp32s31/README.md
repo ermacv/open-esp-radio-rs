@@ -34,6 +34,16 @@ correlation and interval snapshots for the typed RX observations published by
 the reusable Embassy adapter. It is chip-specific HIL policy, not a generic
 driver dependency.
 
+The stage-two radio scenario is split by ownership phase under
+`runtime/src/radio_hil`: `station/cold_scan.rs` produces the typed halted-RX
+handoff, `station/scenario.rs` composes the complete STA lifecycle,
+`station/attempts/` owns initial join, candidate refresh and reconnect, and
+`station/connected_epoch/` owns the connected transaction. Static socket
+storage and the selected TCP/UDP/bidirectional workload live in
+`connected_traffic/runtime.rs`. The root `radio_hil.rs` remains the board
+composition root for memory placement, interrupts, shared channels and
+scenario policy; it is not a second driver implementation.
+
 The closed vendor oracle is never a dependency of this workspace. Its isolated
 verification workspace lives at
 `../../../verification/vendor/targets/esp32s31/oracle-firmware` and is

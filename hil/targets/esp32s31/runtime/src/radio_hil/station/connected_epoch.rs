@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod bindings;
 mod run;
 
 use core::future::Future;
@@ -17,6 +18,10 @@ use crate::{
 
 use super::super::connected_traffic::observe_open_radio_task_polls;
 
+pub(in crate::radio_hil) use bindings::{
+    RadioHilConnectedEpochBindings, RadioHilConnectedEpochPolicy, RadioHilConnectedEpochServices,
+    RadioHilConnectedEpochStorage,
+};
 pub(in crate::radio_hil) use run::run_connected_network;
 
 /// HIL executor and cancellation resources shared by one connected epoch.
@@ -53,6 +58,16 @@ impl RadioHilConnectedTaskBindings {
             traffic_stop,
             traffic_stopped,
         }
+    }
+
+    pub(in crate::radio_hil) const fn radio_polls(
+        self,
+    ) -> &'static open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollCounters {
+        self.task_polls.radio()
+    }
+
+    pub(in crate::radio_hil) const fn telemetry_enabled(self) -> bool {
+        self.task_poll_telemetry
     }
 }
 

@@ -18,13 +18,15 @@ use open_esp_radio_hil_protocol::{
     StationAttemptFailureReason, StationFailureStage, StationLifecycleEvent,
 };
 
-use super::RadioHilStaLifecycleOwner;
+use super::{
+    RadioHilStaLifecycleOwner,
+    attempts::{
+        run_initial_station_attempt, run_reconnected_station_attempt, run_running_scan_attempt,
+    },
+};
 use crate::{
     console::emergency_log,
-    radio_hil::{
-        RadioHilRunningScanPortError, RadioHilStationCommandReceiver, run_initial_station_attempt,
-        run_reconnected_station_attempt, run_running_scan_attempt,
-    },
+    radio_hil::{RadioHilRunningScanPortError, RadioHilStationCommandReceiver},
 };
 use open_esp_radio::esp32s31::wifi::sta::{
     attempt::Esp32s31StaAttemptStage, scan::Esp32s31StaScanError,

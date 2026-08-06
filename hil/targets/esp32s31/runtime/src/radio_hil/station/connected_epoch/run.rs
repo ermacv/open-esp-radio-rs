@@ -46,27 +46,19 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     console::emergency_log,
-    radio_fault::{
-        FaultInjectingConnectedServices, FaultInjectingServicesError, STATION_FAULT_CONTROL,
-    },
+    radio_fault::{FaultInjectingConnectedServices, FaultInjectingServicesError},
     radio_hil::{
         ControlResources, HilConnectedRxObserver, NETWORK_FRAME_CAPACITY, NETWORK_RX_QUEUE_DEPTH,
-        NETWORK_TX_QUEUE_DEPTH, OPEN_RADIO_CONNECTED_TASK_STOP_TIMEOUT,
-        OPEN_RADIO_CONNECTED_TRAFFIC_START, OPEN_RADIO_CONTROL_RESOURCES, OPEN_RADIO_IRQ_RUNTIME,
-        OPEN_RADIO_REGISTER_CELL, OPEN_RADIO_RX_PIPELINE_COUNTERS, OPEN_RADIO_RX_REORDER_COMMANDS,
-        OPEN_RADIO_RX_REORDER_STORAGE, OPEN_RADIO_RX_STAGE_POOL, OPEN_RADIO_STACK_RESOURCES,
-        OPEN_RADIO_STAGED_RX_QUEUE, OPEN_RADIO_TASK_POLL_TELEMETRY, OPEN_RADIO_TASK_POLLS,
-        OPEN_RADIO_TX_AGGREGATE_COUNTERS, OPEN_RADIO_TX_AMPDU_DMA_STORAGE,
-        OPEN_RADIO_TX_AMPDU_STORAGE, OpenRadioRxReloadDelay, PERF_AP_PROFILE,
-        RX_BLOCK_ACK_SOFTWARE_WINDOW, RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT,
+        NETWORK_TX_QUEUE_DEPTH, OpenRadioRxReloadDelay, RX_BLOCK_ACK_SOFTWARE_WINDOW,
+        RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT, RadioHilConnectedEpochBindings,
         RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn, RadioHilConnectedExit,
         RadioHilConnectedTaskFixture, RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig,
         RadioHilDisconnectedEpoch, RadioHilRunningNetwork, RadioHilStaNetwork,
-        RadioHilStationCommandReceiver, RadioHilStationEpochProgress, STA_ARP_TARGET_IPV4,
-        STA_HIL_IPV4, StaAssociationSecurity, StaConnectedSession, TX_AMPDU_FRAME_COUNT,
-        connected_network_report_task, connected_network_stack_task, connected_rx_protocol_task,
-        connected_traffic_task, injected_tx_source_requires_reset, observe_open_radio_task_polls,
-        radio_hil_connected_sta_config, station_epoch_reporter,
+        RadioHilStationCommandReceiver, RadioHilStationEpochProgress, StaAssociationSecurity,
+        StaConnectedSession, TX_AMPDU_FRAME_COUNT, connected_network_report_task,
+        connected_network_stack_task, connected_rx_protocol_task,
+        connected_traffic::observe_open_radio_task_polls, connected_traffic_task,
+        injected_tx_source_requires_reset,
     },
 };
 
@@ -98,7 +90,13 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         connected_tasks,
         connected_rx,
         network_report,
+        connected_epoch,
     } = fixture;
+    let RadioHilConnectedEpochBindings {
+        storage,
+        services: epoch_services,
+        policy,
+    } = connected_epoch;
     let StaConnectedSession {
         generation,
         peer,
@@ -107,11 +105,9 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         supplicant_nonce,
         sequences,
     } = session;
-    let connected_plan = Esp32s31ConnectedStaPort::prepare::<TX_AMPDU_FRAME_COUNT>(
-        peer,
-        radio_hil_connected_sta_config(),
-    )
-    .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
+    let connected_plan =
+        Esp32s31ConnectedStaPort::prepare::<TX_AMPDU_FRAME_COUNT>(peer, policy.station)
+            .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
     let link = connected_plan.link();
     let Esp32s31StaConnectedLink {
         station_address,
@@ -129,16 +125,16 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
 
     let (stack, network_runner, stack_runner) = match network {
         RadioHilStaNetwork::Unstarted { device, runner } => {
-            let stack_resources = OPEN_RADIO_STACK_RESOURCES.init(StackResources::new());
+            let stack_resources = storage.stack.init(StackResources::new());
             let mut seed = [0_u8; 8];
             seed[..6].copy_from_slice(&station_address);
             seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
             // Keep the controlled local throughput setup independent of DHCP
             // while preserving DHCP as an end-to-end router test.
-            let network_config = if PERF_AP_PROFILE {
+            let network_config = if let Some((address, gateway)) = policy.static_ipv4 {
                 NetworkConfig::ipv4_static(StaticConfigV4 {
-                    address: Ipv4Cidr::new(Ipv4Address::from_octets(STA_HIL_IPV4), 24),
-                    gateway: Some(Ipv4Address::from_octets(STA_ARP_TARGET_IPV4)),
+                    address: Ipv4Cidr::new(Ipv4Address::from_octets(address), 24),
+                    gateway: Some(Ipv4Address::from_octets(gateway)),
                     dns_servers: Default::default(),
                 })
             } else {
@@ -186,7 +182,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         rate_ampdu_limit,
     ));
 
-    let (staged_rx_sender, staged_rx_receiver) = OPEN_RADIO_STAGED_RX_QUEUE.split();
+    let (staged_rx_sender, staged_rx_receiver) = epoch_services.staged_rx.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
         RadioHilConnectedEpochResources::Initial { registers, rx } => {
             let rx_ring = match rx.try_into_live_with_storage(registers, rx_storage).await {
@@ -205,23 +201,23 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             };
             let rx = Esp32s31RxEpochResources::new(
                 rx_storage,
-                &OPEN_RADIO_RX_STAGE_POOL,
+                epoch_services.rx_stage_pool,
                 staged_rx_sender,
                 OpenRadioRxReloadDelay,
             )
-            .with_pipeline_observer(&OPEN_RADIO_RX_PIPELINE_COUNTERS)
+            .with_pipeline_observer(epoch_services.rx_pipeline)
             .with_live_ring(rx_ring);
             // The production aggregate owner is descriptor-only
             // (`BUFFER_SIZE == 0`), so constructing it in the static cell does
             // not materialize the former 55-KiB payload arena on this task's
             // stack. This edge belongs exclusively to the first epoch.
             let ampdu = HtAmpduTxResources::pin_static(
-                OPEN_RADIO_TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
-                OPEN_RADIO_TX_AMPDU_DMA_STORAGE.init_with(AmpduDmaStorage::new),
+                storage.ampdu_metadata.init_with(HtAmpduTxStorage::new),
+                storage.ampdu_dma.init_with(AmpduDmaStorage::new),
             )
             .expect("A-MPDU metadata and descriptor storage must be valid");
-            let control_resources = OPEN_RADIO_CONTROL_RESOURCES.init(ControlResources::new());
-            let registers = OPEN_RADIO_REGISTER_CELL.init(RefCell::new(registers));
+            let control_resources = storage.control.init(ControlResources::new());
+            let registers = storage.registers.init(RefCell::new(registers));
             (
                 CooperativeRadioHardware::new(registers),
                 rx,
@@ -272,20 +268,20 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         network_rx,
         HilConnectedRxObserver::new(control_publisher, station_address, connected_rx),
     )
-    .with_pipeline_observer(&OPEN_RADIO_RX_PIPELINE_COUNTERS);
-    let (rx_reorder_sender, rx_reorder_receiver) = OPEN_RADIO_RX_REORDER_COMMANDS.split();
+    .with_pipeline_observer(epoch_services.rx_pipeline);
+    let (rx_reorder_sender, rx_reorder_receiver) = epoch_services.rx_reorder_commands.split();
     let rx_protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
         &connected_plan,
         Esp32s31ConnectedStaRxProtocolResources {
             frames: staged_rx_receiver,
-            irq: &OPEN_RADIO_IRQ_RUNTIME,
+            irq: epoch_services.irq,
             sink: rx_sink,
             mpdu: frame,
             ethernet,
             reorder_commands: rx_reorder_receiver,
-            reorder_storage: &OPEN_RADIO_RX_REORDER_STORAGE,
+            reorder_storage: epoch_services.rx_reorder_storage,
             reorder_scratch: None,
-            pipeline_observer: Some(&OPEN_RADIO_RX_PIPELINE_COUNTERS),
+            pipeline_observer: Some(epoch_services.rx_pipeline),
         },
     );
 
@@ -300,7 +296,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             aggregate: tx_ampdu_storage,
             pairwise_key: pairwise_slot,
             sequences: tx_sequences,
-            aggregate_tx_observer: Some(&OPEN_RADIO_TX_AGGREGATE_COUNTERS),
+            aggregate_tx_observer: Some(epoch_services.aggregate_tx),
             network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
         },
     )
@@ -325,8 +321,10 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         },
     );
     let rx_protocol = drivers.protocol;
-    let services = FaultInjectingConnectedServices::new(drivers.services, &STATION_FAULT_CONTROL);
-    let mut radio_runner = ConnectedRunner::new(&OPEN_RADIO_IRQ_RUNTIME, network_runner, services);
+    let connected_services =
+        FaultInjectingConnectedServices::new(drivers.services, epoch_services.faults);
+    let mut radio_runner =
+        ConnectedRunner::new(epoch_services.irq, network_runner, connected_services);
 
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {
@@ -349,7 +347,8 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     let protocol_task = connected_rx_protocol_task(rx_protocol, connected_tasks)
         .unwrap_or_else(|_| panic!("connected RX protocol task allocation failed"));
     protocol_spawner.spawn(protocol_task);
-    OPEN_RADIO_CONNECTED_TRAFFIC_START
+    epoch_services
+        .traffic_start
         .send(RadioHilConnectedTrafficConfig {
             association_phy,
             data_tx_rate: benchmark_tx_rate,
@@ -364,7 +363,9 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     crate::console::publish_station_lifecycle(StationLifecycleEvent::Connected { generation })
         .await;
     if reconnected_epoch {
-        station_epoch_reporter().report(RadioHilStationEpochProgress::ConnectedRunnerStarted);
+        epoch_services
+            .station_reporter
+            .report(RadioHilStationEpochProgress::ConnectedRunnerStarted);
     }
 
     // The radio loop intentionally remains in this parent STA future. Other
@@ -374,8 +375,8 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // the edge and would strand those values in its private task storage.
     let runner_exit = match observe_open_radio_task_polls(
         run_esp32s31_connected_station_epoch(&mut radio_runner, station_control),
-        OPEN_RADIO_TASK_POLLS.radio(),
-        OPEN_RADIO_TASK_POLL_TELEMETRY,
+        connected_tasks.radio_polls(),
+        connected_tasks.telemetry_enabled(),
     )
     .await
     {
@@ -462,7 +463,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     let mut connected_task_group = RadioHilConnectedTaskGroup::new(connected_tasks);
     let stopped_protocol = match stop_esp32s31_connected_task_group(
         &mut connected_task_group,
-        OPEN_RADIO_CONNECTED_TASK_STOP_TIMEOUT,
+        epoch_services.task_stop_timeout,
     )
     .await
     {
@@ -651,7 +652,9 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         crate::console::publish_station_lifecycle(event).await;
     }
     if matches!(runner_exit, RadioHilConnectedExit::ReconnectRequested) {
-        station_epoch_reporter().report(RadioHilStationEpochProgress::RunnerStopped);
+        epoch_services
+            .station_reporter
+            .report(RadioHilStationEpochProgress::RunnerStopped);
     }
     RadioHilConnectedEpochReturn {
         fixture: RadioHilConnectedTaskFixture {
@@ -670,6 +673,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             connected_tasks,
             connected_rx,
             network_report,
+            connected_epoch,
         },
         disconnected,
         security: StaAssociationSecurity {

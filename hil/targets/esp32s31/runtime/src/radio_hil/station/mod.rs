@@ -1,5 +1,7 @@
 #![forbid(unsafe_code)]
 
+mod attempts;
+mod cold_scan;
 mod connected_epoch;
 mod connected_rx_observer;
 mod lifecycle;
@@ -7,10 +9,13 @@ mod network_reporting;
 mod owners;
 mod reporting;
 mod running_scan;
+mod scenario;
 
+pub(in crate::radio_hil) use cold_scan::{RadioHilColdScanHandoff, run_cold_station_scan};
 pub(in crate::radio_hil) use connected_epoch::{
-    RadioHilConnectedTaskBindings, RadioHilConnectedTaskGroup, connected_network_stack_task,
-    connected_rx_protocol_task, run_connected_network,
+    RadioHilConnectedEpochBindings, RadioHilConnectedEpochPolicy, RadioHilConnectedEpochServices,
+    RadioHilConnectedEpochStorage, RadioHilConnectedTaskBindings, RadioHilConnectedTaskGroup,
+    connected_network_stack_task, connected_rx_protocol_task, run_connected_network,
 };
 pub(in crate::radio_hil) use connected_rx_observer::{
     HilConnectedRxObserver, RadioHilConnectedRxBindings,
@@ -36,3 +41,4 @@ pub(in crate::radio_hil) use reporting::{
 pub(in crate::radio_hil) use running_scan::{
     RadioHilRunningScanContext, RadioHilRunningScanFailure, qualify_disconnected_running_scan,
 };
+pub(in crate::radio_hil) use scenario::run_full_station_hil;

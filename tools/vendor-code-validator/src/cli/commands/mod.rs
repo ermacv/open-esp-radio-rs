@@ -15,7 +15,9 @@ mod interface_discovery;
 mod interface_discovery_json;
 mod interface_discovery_options;
 mod interface_pack;
+mod ir_build;
 mod project_doctor;
+mod project_ir_doctor;
 mod qualify_channel;
 mod qualify_rf_init;
 mod registers;
@@ -66,6 +68,16 @@ pub(super) fn run_register_command(
     registers::run(command, arguments, project)
 }
 
+pub(super) fn run_ir_build(
+    arguments: Vec<String>,
+    project: &crate::project::ProjectSpec,
+    run_spec: &crate::run_spec::RunSpec,
+    svd: &MmioRegisterMap,
+    target: &TargetSpec,
+) -> Result<bool> {
+    ir_build::run(arguments, project, run_spec, svd, target)
+}
+
 pub(super) fn run(
     command: Command,
     arguments: Vec<String>,
@@ -83,6 +95,7 @@ pub(super) fn run(
         | Command::RegisterReview
         | Command::RegisterExportSvd
         | Command::RegisterGeneratePac
+        | Command::BuildIr
         | Command::SymbolInventory
         | Command::InterfaceDiscover => {
             unreachable!("project, workspace and discovery commands use specialized dispatch")

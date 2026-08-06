@@ -9,6 +9,7 @@ vendor-code-validator inspect analyze
 vendor-code-validator inspect trace
 vendor-code-validator mmio discover
 vendor-code-validator ir export
+vendor-code-validator ir build
 vendor-code-validator reference generate
 vendor-code-validator reference generate-batch
 vendor-code-validator execute run
@@ -33,6 +34,11 @@ layer adds an address suffix only when two definitions would otherwise have the
 same readable identity. Direct ELF targets and archive call relocations share
 that canonical catalog. Neither inventory recovers stripped function
 boundaries, so the IR report makes no completeness claim.
+
+`ir build` is the project-owned orchestration form of the same exploratory
+analysis. Shareable profiles select source IDs, functions and destinations;
+private paths remain in the local run spec. It renders all selected profiles
+before writing and supports a non-mutating `--check` gate.
 
 ## Migration order
 

@@ -52,6 +52,9 @@ The first two boundary slices are complete:
 - target specs also select a harness and Rust recompilation target explicitly;
 - an optional caller-owned run spec maps input roles to local paths without
   putting those paths in the target pack or command history;
+- shareable project IR profiles own symbol/source selection and generated
+  destinations while the run spec remains the only owner of local artifact
+  paths; `ir build --check` makes those exploratory views reproducible;
 - the ESP32-S31 target spec supplies SVD, profile, disposition and baseline
   defaults, substantially reducing repeated CLI arguments;
 - profiles, dispositions and baselines live under `verification/vendor/targets/esp32s31`, not

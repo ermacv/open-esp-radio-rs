@@ -54,6 +54,8 @@ The implemented review and semantic boundary is documented in
 - loads a checked target pack and an optional local run manifest;
 - loads address spaces and memory regions independently of SVD;
 - binds input roles to paths supplied by the caller;
+- expands project-owned linked-IR profiles into generic analysis requests and
+  checks their generated outputs without learning platform semantics;
 - selects an architecture backend and validates its ABI;
 - invokes one workflow and renders text/JSON reports.
 
@@ -105,6 +107,9 @@ the caller has authenticated the complete input artifact.
 The concrete project and memory-map schemas, precedence rules, and command
 capabilities are documented in
 [`project-workspace.md`](../../tools/vendor-code-validator/docs/project-workspace.md).
+Reproducible linked-IR profile selection and its separation from private run
+bindings are documented in
+[`project-ir-build.md`](../../tools/vendor-code-validator/docs/project-ir-build.md).
 The project may additionally own an editable schema-2 register model. It is
 loaded directly by generic analysis and derives clean SVD/PAC outputs; target
 extensions that generate chip-specific safe APIs remain outside the generic

@@ -3,12 +3,14 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use super::{
     RegisterFacts, RegisterModel, ReviewAnnotation,
     review_draft::{candidate_fields, inferred_access, write_draft},
+    review_ir::RegisterReviewIr,
+    review_ir_markdown::write_ir_evidence,
 };
 use crate::Result;
 
@@ -19,18 +21,41 @@ pub(crate) struct RegisterReviewSummary {
     pub(crate) unreviewed: usize,
     pub(crate) model_only: usize,
     pub(crate) field_candidates: usize,
+    pub(crate) ir_reports: usize,
+    pub(crate) ir_registers: usize,
+    pub(crate) ir_only_registers: usize,
+    pub(crate) ir_field_candidates: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RegisterReviewIrSummary {
+    pub(crate) reports: usize,
+    pub(crate) registers: usize,
+    pub(crate) fields: usize,
+}
+
+pub(crate) fn inspect_register_review_ir(paths: &[PathBuf]) -> Result<RegisterReviewIrSummary> {
+    let ir = RegisterReviewIr::load_all(paths)?;
+    Ok(RegisterReviewIrSummary {
+        reports: ir.reports.len(),
+        registers: ir.registers.len(),
+        fields: ir.field_count(),
+    })
 }
 
 pub(crate) fn render_register_review(
     facts: &RegisterFacts,
     model: &RegisterModel,
+    ir_paths: &[PathBuf],
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
+    let ir = RegisterReviewIr::load_all(ir_paths)?;
     render_report(
         facts,
         &model.register_identities()?,
         model.review(),
+        &ir,
         facts_path,
         model_path,
     )
@@ -40,6 +65,7 @@ fn render_report(
     facts: &RegisterFacts,
     identities: &BTreeMap<(u64, u32), String>,
     annotations: &[ReviewAnnotation],
+    ir: &RegisterReviewIr,
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
@@ -59,15 +85,24 @@ fn render_report(
     let field_candidates = facts
         .registers
         .iter()
-        .map(candidate_fields)
+        .map(|fact| candidate_fields(fact, ir.register(fact.address, fact.width)))
         .map(|fields| fields.len())
         .sum();
+    let ir_only_registers = ir
+        .registers
+        .keys()
+        .filter(|(address, width)| !fact_keys.contains(&(u64::from(*address), u32::from(*width))))
+        .count();
     let summary = RegisterReviewSummary {
         observed: facts.registers.len(),
         reviewed,
         unreviewed: facts.registers.len() - reviewed,
         model_only,
         field_candidates,
+        ir_reports: ir.reports.len(),
+        ir_registers: ir.registers.len(),
+        ir_only_registers,
+        ir_field_candidates: ir.field_count(),
     };
 
     let mut output = String::new();
@@ -79,8 +114,20 @@ fn render_report(
         markdown_code(&model_path.display().to_string())
     )
     .expect("writing to String cannot fail");
+    if !ir.reports.is_empty() {
+        writeln!(
+            output,
+            "Linked-IR evidence: {}.",
+            ir.reports
+                .iter()
+                .map(|path| format!("`{}`", markdown_code(&path.display().to_string())))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .expect("writing to String cannot fail");
+    }
     output.push_str(
-        "This file is derived evidence, not the register database. Edit the model fragments, then regenerate this report. Candidate names, access modes and bit ranges are mechanical starting points; they do not assert hardware semantics, reset values, W1C behavior or completeness.\n\n",
+        "This file is derived evidence, not the register database. Edit the model fragments, then regenerate this report. Candidate names, access modes and bit ranges are mechanical starting points; linked semantic operations are navigation links only. None of them assert hardware semantics, reset values, W1C behavior or completeness.\n\n",
     );
     output.push_str("## Summary\n\n");
     writeln!(output, "- Observed register widths: {}", summary.observed)
@@ -101,8 +148,28 @@ fn render_report(
     .expect("writing to String cannot fail");
     writeln!(
         output,
-        "- Mechanical field candidates: {}",
+        "- Draft field partitions: {}",
         summary.field_candidates
+    )
+    .expect("writing to String cannot fail");
+    writeln!(output, "- Linked-IR reports: {}", summary.ir_reports)
+        .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Linked-IR register widths: {}",
+        summary.ir_registers
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Linked-IR-only register widths: {}",
+        summary.ir_only_registers
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Linked-IR field candidates: {}",
+        summary.ir_field_candidates
     )
     .expect("writing to String cannot fail");
 
@@ -162,6 +229,7 @@ fn render_report(
 
         for fact in registers {
             let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let ir_register = ir.register(fact.address, fact.width);
             writeln!(
                 output,
                 "\n### `{:#010x}/{}` — {}\n",
@@ -220,9 +288,32 @@ fn render_report(
                 )
                 .expect("writing to String cannot fail");
             }
-            if identity.is_none() {
-                write_draft(&mut output, fact, range.start);
+            if let Some(ir_register) = ir_register {
+                output.push('\n');
+                write_ir_evidence(&mut output, ir_register);
             }
+            if identity.is_none() {
+                write_draft(&mut output, fact, range.start, ir_register);
+            }
+        }
+    }
+
+    if ir_only_registers != 0 {
+        output.push_str("\n## Linked-IR-only registers\n\n");
+        output.push_str("These addresses appear in the optional linked-IR inputs but not in the current MMIO discovery facts. They remain navigation evidence, not model entries; refresh `mmio discover` before promoting them.\n\n");
+        output.push_str("| Address | Width | Names | Functions | Field candidates |\n| --- | ---: | --- | --- | ---: |\n");
+        for ((address, width), register) in &ir.registers {
+            if fact_keys.contains(&(u64::from(*address), u32::from(*width))) {
+                continue;
+            }
+            writeln!(
+                output,
+                "| `{address:#010x}` | {width} | {} | {} | {} |",
+                function_list(&register.names),
+                function_list(&register.functions),
+                register.fields.len()
+            )
+            .expect("writing to String cannot fail");
         }
     }
 
@@ -299,6 +390,7 @@ mod tests {
             &facts,
             &BTreeMap::new(),
             &[],
+            &RegisterReviewIr::default(),
             Path::new("mmio.json"),
             Path::new("device.toml"),
         )

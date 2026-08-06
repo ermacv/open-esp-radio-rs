@@ -6,12 +6,34 @@ target-spec = "target.spec"
 memory-map = "memory.toml"
 svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
 
+[[analysis.ir]]
+id = "rom-phy"
+sources = ["rom"]
+symbol-prefix = "phy_"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/rom-phy.ir.json"
+pseudo-rust = "generated/reports/rom-phy.pseudo.rs"
+
+[[analysis.ir]]
+id = "archive-phy"
+sources = ["archive"]
+symbol-prefix = "phy_"
+include-reachable = true
+entry-contract = "esp32s31-phy-registered"
+output = "generated/findings/archive-phy.ir.json"
+pseudo-rust = "generated/reports/archive-phy.pseudo.rs"
+
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
 
 [registers.review]
 output = "generated/reports/register-review.md"
+linked-ir = [
+    "generated/findings/rom-phy.ir.json",
+    "generated/findings/archive-phy.ir.json",
+]
 
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"

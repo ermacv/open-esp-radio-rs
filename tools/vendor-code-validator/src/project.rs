@@ -7,7 +7,10 @@ use std::{
 
 use toml_edit::{DocumentMut, Item};
 
-use crate::{MemoryMap, Result};
+use crate::{
+    MemoryMap, Result,
+    project_ir::{ProjectIrProfile, load_ir_profiles},
+};
 
 pub(crate) const DEFAULT_PROJECT_MANIFEST: &str = "vendor-validator.toml";
 
@@ -16,6 +19,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) facts: PathBuf,
     pub(crate) model: PathBuf,
     pub(crate) review_output: Option<PathBuf>,
+    pub(crate) review_ir_reports: Vec<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,
     pub(crate) pac: Option<PacOutputSpec>,
 }
@@ -42,6 +46,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_configured: bool,
     pub(crate) svd_paths: Vec<PathBuf>,
+    pub(crate) ir_profiles: Vec<ProjectIrProfile>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
 }
@@ -89,6 +94,7 @@ impl ProjectSpec {
             })
             .transpose()?
             .unwrap_or_default();
+        let ir_profiles = load_ir_profiles(&document, base)?;
         let registers = document
             .get("registers")
             .map(|item| -> Result<RegisterWorkspacePaths> {
@@ -114,6 +120,8 @@ impl ProjectSpec {
                     }
                 };
                 let review_output = nested_output_path(table, base, "review")?;
+                let review_ir_reports =
+                    nested_path_array(table, base, "review", "linked-ir")?;
                 let svd_output = nested_output_path(table, base, "svd")?;
                 let pac = table
                     .get("pac")
@@ -165,6 +173,7 @@ impl ProjectSpec {
                     ),
                     model: resolve_path(base, model),
                     review_output,
+                    review_ir_reports,
                     svd_output,
                     pac,
                 })
@@ -223,6 +232,7 @@ impl ProjectSpec {
             memory_map,
             svd_configured,
             svd_paths,
+            ir_profiles,
             registers,
             interfaces,
         })
@@ -250,6 +260,44 @@ fn nested_output_path(
             Ok(resolve_path(base, output))
         })
         .transpose()
+}
+
+fn nested_path_array(
+    table: &toml_edit::Table,
+    base: &Path,
+    table_name: &str,
+    key: &str,
+) -> Result<Vec<PathBuf>> {
+    let Some(item) = table.get(table_name) else {
+        return Ok(Vec::new());
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| format!("project registers.{table_name} must be a table"))?;
+    let Some(item) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    let values = item
+        .as_array()
+        .ok_or_else(|| format!("project registers.{table_name}.{key} must be an array"))?;
+    let mut seen = std::collections::BTreeSet::new();
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let value = value.as_str().ok_or_else(|| {
+                format!("project registers.{table_name}.{key}[{index}] must be a string")
+            })?;
+            let path = resolve_path(base, value);
+            if !seen.insert(path.clone()) {
+                return Err(format!(
+                    "duplicate project registers.{table_name}.{key} path {value:?}"
+                )
+                .into());
+            }
+            Ok(path)
+        })
+        .collect()
 }
 
 fn required_string(document: &DocumentMut, key: &str) -> Result<String> {
@@ -303,12 +351,21 @@ run-spec = "local.run"
 memory-map = "memory.toml"
 svd = ["registers/base.svd"]
 
+[[analysis.ir]]
+id = "vendor"
+sources = ["rom", "archive"]
+symbol-prefix = "phy_"
+include-reachable = true
+output = "generated/vendor.ir.json"
+pseudo-rust = "generated/vendor.pseudo.rs"
+
 [registers]
 facts = "generated/mmio.json"
 model = "registers/reviewed.toml"
 
 [registers.review]
 output = "generated/register-review.md"
+linked-ir = ["generated/vendor.ir.json"]
 
 [registers.svd]
 output = "generated/device.svd"
@@ -335,11 +392,24 @@ semantic-catalogs = ["interfaces/embedded-semantics.toml"]
         assert!(project.svd_configured);
         assert_eq!(project.svd_paths, [directory.join("registers/base.svd")]);
         assert_eq!(
+            project.ir_profiles,
+            [ProjectIrProfile {
+                id: "vendor".to_owned(),
+                sources: vec!["rom".to_owned(), "archive".to_owned()],
+                symbol_prefix: "phy_".to_owned(),
+                include_reachable: true,
+                entry_contract: "none".to_owned(),
+                output: directory.join("generated/vendor.ir.json"),
+                pseudo_rust: Some(directory.join("generated/vendor.pseudo.rs")),
+            }]
+        );
+        assert_eq!(
             project.registers,
             Some(RegisterWorkspacePaths {
                 facts: directory.join("generated/mmio.json"),
                 model: directory.join("registers/reviewed.toml"),
                 review_output: Some(directory.join("generated/register-review.md")),
+                review_ir_reports: vec![directory.join("generated/vendor.ir.json")],
                 svd_output: Some(directory.join("generated/device.svd")),
                 pac: Some(PacOutputSpec {
                     output: directory.join("generated/pac/src/lib.rs"),

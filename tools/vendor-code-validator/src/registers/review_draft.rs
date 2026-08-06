@@ -2,9 +2,14 @@
 
 use std::fmt::Write as _;
 
-use super::RegisterFact;
+use super::{RegisterFact, review_ir::ReviewIrRegister};
 
-pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, range_start: u32) {
+pub(super) fn write_draft(
+    output: &mut String,
+    fact: &RegisterFact,
+    range_start: u32,
+    ir: Option<&ReviewIrRegister>,
+) {
     let offset = fact.address - range_start;
     output.push_str(
         "\nDraft to copy into the appropriate reviewed peripheral fragment and edit:\n\n```toml\n",
@@ -17,9 +22,13 @@ pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, range_start:
     writeln!(output, "size = {}", fact.width).expect("writing to String cannot fail");
     writeln!(output, "access = \"{}\"", inferred_access(fact))
         .expect("writing to String cannot fail");
-    let fields = candidate_fields(fact);
+    let fields = candidate_fields(fact, ir);
     if !fields.is_empty() {
-        output.push_str("\n# Mechanical partition induced by partial-write masks. Split, merge, rename or delete after review.\n");
+        output.push_str(if ir.is_some_and(|ir| !ir.fields.is_empty()) {
+            "\n# Mechanical partition induced by linked-IR field evidence. Split, merge, rename or delete after review.\n"
+        } else {
+            "\n# Mechanical partition induced by partial-write masks. Split, merge, rename or delete after review.\n"
+        });
         for (lsb, width) in fields {
             output.push_str("[[peripherals.registers.register.fields]]\n");
             writeln!(
@@ -36,12 +45,16 @@ pub(super) fn write_draft(output: &mut String, fact: &RegisterFact, range_start:
     output.push_str("```\n");
 }
 
-pub(super) fn candidate_fields(fact: &RegisterFact) -> Vec<(u8, u8)> {
+pub(super) fn candidate_fields(
+    fact: &RegisterFact,
+    ir: Option<&ReviewIrRegister>,
+) -> Vec<(u8, u8)> {
     let full_mask = width_mask(fact.width);
-    let masks = fact
-        .candidate_masks
-        .iter()
-        .copied()
+    let masks = ir
+        .filter(|ir| !ir.fields.is_empty())
+        .map(|ir| ir.fields.values().map(|field| field.mask).collect())
+        .unwrap_or_else(|| fact.candidate_masks.clone())
+        .into_iter()
         .filter(|mask| *mask != 0 && *mask != full_mask)
         .collect::<Vec<_>>();
     let mut output = Vec::new();
@@ -119,9 +132,10 @@ fn identifier(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
+    use crate::registers::review_ir::ReviewFieldEvidence;
 
     #[test]
     fn field_drafts_partition_partial_masks_and_ignore_whole_register_writes() {
@@ -136,10 +150,40 @@ mod tests {
             write_patterns: vec![],
             candidate_masks: vec![0x0f, 0xf0, 0xff],
         };
-        assert_eq!(candidate_fields(&fact), [(0, 4), (4, 4)]);
+        assert_eq!(candidate_fields(&fact, None), [(0, 4), (4, 4)]);
 
         fact.width = 32;
         fact.candidate_masks = vec![u32::MAX];
-        assert!(candidate_fields(&fact).is_empty());
+        assert!(candidate_fields(&fact, None).is_empty());
+    }
+
+    #[test]
+    fn linked_ir_field_boundaries_take_precedence_over_write_only_masks() {
+        let fact = RegisterFact {
+            address: 0x1010,
+            width: 32,
+            catalog_name: "UNMAPPED".to_owned(),
+            reads: 1,
+            writes: 1,
+            read_functions: BTreeSet::new(),
+            write_functions: BTreeSet::new(),
+            write_patterns: vec![],
+            candidate_masks: vec![0xf0],
+        };
+        let ir = ReviewIrRegister {
+            address: fact.address,
+            width: fact.width,
+            fields: BTreeMap::from([(
+                (0, 1, 0x3),
+                ReviewFieldEvidence {
+                    least_significant_bit: 0,
+                    most_significant_bit: 1,
+                    mask: 0x3,
+                    ..ReviewFieldEvidence::default()
+                },
+            )]),
+            ..ReviewIrRegister::default()
+        };
+        assert_eq!(candidate_fields(&fact, Some(&ir)), [(0, 2)]);
     }
 }

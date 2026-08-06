@@ -7,7 +7,9 @@ use crate::{
     interfaces::{InterfaceFacts, InterfaceWorkspace},
     memory_map::{MemoryMap, MemoryRegionKind},
     project::ProjectSpec,
-    registers::{ProjectRegisterWorkspace, RegisterFacts, RegisterModel},
+    registers::{
+        ProjectRegisterWorkspace, RegisterFacts, RegisterModel, inspect_register_review_ir,
+    },
     run_spec::RunSpec,
 };
 
@@ -109,6 +111,11 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
         }
     }
 
+    let (ir_errors, ir_warnings) =
+        super::project_ir_doctor::inspect(context.project, context.run_spec, context.target);
+    errors += ir_errors;
+    warnings += ir_warnings;
+
     match &context.project.registers {
         None => println!("CAPABILITY\tregister-workspace\tnot-configured"),
         Some(paths) if paths.model.is_file() => {
@@ -126,7 +133,7 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                 {
                     Ok((summary, format)) => {
                         println!(
-                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\tsvd-output={}\tpac-output={}",
+                            "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\treview-ir-reports={}\tsvd-output={}\tpac-output={}",
                             format,
                             summary.ranges,
                             summary.observed,
@@ -141,6 +148,7 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                                 .review_output
                                 .as_deref()
                                 .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
+                            paths.review_ir_reports.len(),
                             paths
                                 .svd_output
                                 .as_deref()
@@ -150,6 +158,47 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                                 |pac| pac.output.display().to_string()
                             )
                         );
+                        if !paths.review_ir_reports.is_empty() {
+                            let missing_project_outputs =
+                                paths
+                                    .review_ir_reports
+                                    .iter()
+                                    .filter(|path| !path.is_file())
+                                    .filter(|path| {
+                                        context.project.ir_profiles.iter().any(|profile| {
+                                            profile.output.as_path() == path.as_path()
+                                        })
+                                    })
+                                    .count();
+                            let missing_reports = paths
+                                .review_ir_reports
+                                .iter()
+                                .filter(|path| !path.is_file())
+                                .count();
+                            if missing_reports != 0 && missing_reports == missing_project_outputs {
+                                println!(
+                                    "CAPABILITY\tregister-review-ir\tnot-generated\treports={}\tmissing={missing_reports}",
+                                    paths.review_ir_reports.len()
+                                );
+                            } else {
+                                match inspect_register_review_ir(&paths.review_ir_reports) {
+                                    Ok(ir) => println!(
+                                        "CAPABILITY\tregister-review-ir\tavailable\treports={}\tregisters={}\tfield-candidates={}",
+                                        ir.reports, ir.registers, ir.fields
+                                    ),
+                                    Err(error) => {
+                                        errors += 1;
+                                        println!(
+                                            "CAPABILITY\tregister-review-ir\tinvalid\treports={}\terror={error}",
+                                            paths.review_ir_reports.len()
+                                        );
+                                    }
+                                }
+                            }
+                            for path in &paths.review_ir_reports {
+                                println!("REGISTER-REVIEW-IR\tpath={}", path.display());
+                            }
+                        }
                     }
                     Err(error) => {
                         errors += 1;

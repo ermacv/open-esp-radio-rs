@@ -20,6 +20,10 @@ model = "registers/device.toml"
 
 [registers.review]
 output = "generated/reports/register-review.md"
+linked-ir = [
+    "generated/findings/rom.ir.json",
+    "generated/findings/libraries.ir.json",
+]
 
 [registers.svd]
 output = "generated/svd/device.svd"
@@ -108,6 +112,54 @@ artifact paths and generated placeholder names outside the versioned hardware
 model. CI may check that a committed or separately archived report is current
 with `registers review --check`; `--output PATH` overrides the configured
 destination.
+
+### Linked-IR enrichment
+
+The basic report needs only `mmio discover` facts. Optional schema-v30
+`ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
+carry: poll masks, direct branch predicates, producer-return chains and links
+from register bits to guarded semantic actions.
+
+Generate one project report or several focused reports, then either list them
+under `[registers.review].linked-ir` or pass them explicitly:
+
+```console
+cargo vendor-code-validator ir export \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --symbol-prefix phy_ --include-reachable \
+  --json-report verification/vendor/targets/esp32s31/generated/findings/phy.ir.json
+
+cargo vendor-code-validator registers review \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --ir-report verification/vendor/targets/esp32s31/generated/findings/phy.ir.json
+```
+
+For a repeated workspace, prefer a configured `[[analysis.ir]]` profile and
+`ir build`; the profile output can be the same project-relative path listed in
+`linked-ir`. Before its first build, `project doctor` reports that owned output
+as `not-generated`; an equally missing external report remains an error. See
+[project linked-IR builds](project-ir-build.md).
+
+Repeated `--ir-report` options replace the configured list for that invocation.
+Use `--no-ir-reports` to temporarily generate or check the basic report while
+leaving configured enrichment in the project manifest; it conflicts with an
+explicit `--ir-report`.
+Paths in `linked-ir` are relative to the project manifest; explicit
+`--json-report` and `--ir-report` paths are relative to the process working
+directory, as shown above for a command launched at the repository root.
+Equal `(address, width, bit range)` candidates from multiple reports are merged:
+shape counts are added and function, predicate and semantic evidence is
+deduplicated. Schema, report command, masks and candidate ranges are validated
+strictly; a newer incompatible IR schema fails instead of being guessed.
+
+Linked-IR-only addresses are listed separately and never become drafts until
+they also exist in current MMIO discovery facts. Semantic operation names are
+navigation links showing which recovered actions are guarded by candidate
+bits. They are not field names, access rules or proof of hardware behavior.
+Draft fields prefer linked-IR boundaries when available and otherwise fall
+back to the partial-write masks in MMIO facts. Whole-register masks create no
+field candidate in either path.
 
 Validate the model and its coverage against current facts:
 

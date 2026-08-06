@@ -13,8 +13,11 @@ mod memory_map;
 mod orchestration;
 mod parse;
 mod project;
+mod project_ir;
+mod project_ir_report;
 mod registers;
 mod run_spec;
+mod source_id;
 mod target;
 #[cfg(test)]
 mod test_support;

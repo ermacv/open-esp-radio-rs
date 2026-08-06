@@ -288,6 +288,16 @@ with `direct_mmio_predicate_mode`,
 `direct_mmio_predicate_completeness_claim: false`,
 `mmio_field_candidate_mode` and `mmio_field_semantics_claim: false`.
 
+Schema-v30 JSON reports can be supplied to `registers review` as optional
+enrichment. The register workspace merges their field candidates, predicate
+details and semantic navigation links with artifact-wide MMIO facts while
+keeping all generated evidence outside the reviewed model and release SVD/PAC.
+See [register workspace](register-workspace.md#linked-ir-enrichment).
+
+Repeated exports can be declared once as project-owned profiles and generated
+or checked together with `ir build`. See
+[project linked-IR builds](project-ir-build.md).
+
 ## External ABI and trampolines
 
 The lower-level symbol and definition facts are described in

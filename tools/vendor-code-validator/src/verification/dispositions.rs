@@ -305,15 +305,8 @@ fn directive_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
 }
 
 pub(crate) fn validate_source_id(value: &str, line: usize) -> Result<&str> {
-    if value.is_empty()
-        || !value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
-        })
-        || !value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
-    {
-        return Err(format!("invalid vendor source id {value:?} at line {line}").into());
-    }
-    Ok(value)
+    crate::source_id::validate_source_id(value)
+        .map_err(|_| format!("invalid vendor source id {value:?} at line {line}").into())
 }
 
 impl Manifest {

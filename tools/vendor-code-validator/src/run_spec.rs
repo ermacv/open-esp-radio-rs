@@ -30,7 +30,7 @@ fn is_source_path_role(role: &str) -> bool {
     matches!(
         kind,
         "source-artifact" | "source-inventory" | "source-companion"
-    ) && crate::verification::dispositions::validate_source_id(source, 0).is_ok()
+    ) && crate::source_id::is_source_id(source)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

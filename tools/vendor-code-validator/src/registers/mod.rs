@@ -11,6 +11,9 @@ mod overlay_tests;
 mod pac;
 mod review;
 mod review_draft;
+mod review_ir;
+mod review_ir_markdown;
+mod review_ir_parse;
 mod svd;
 #[cfg(test)]
 mod svd_tests;

@@ -19,15 +19,19 @@ pub(super) fn valid_source_id(value: &str) -> bool {
 }
 
 pub(super) fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput> {
+    named_artifact_path(source, PathBuf::from(path))
+}
+
+pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtifactInput> {
     if !valid_source_id(source) {
         return Err(format!("invalid artifact source id {source:?}").into());
     }
-    if path.is_empty() {
+    if path.as_os_str().is_empty() {
         return Err("artifact path must not be empty".into());
     }
     Ok(IrArtifactInput {
         source: source.to_owned(),
-        path: PathBuf::from(path),
+        path,
         explicitly_named: true,
     })
 }

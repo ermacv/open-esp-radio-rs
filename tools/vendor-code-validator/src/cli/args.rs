@@ -21,6 +21,7 @@ pub(crate) enum Command {
     AuditDirectTargets,
     DiscoverMmio,
     ExportIr,
+    BuildIr,
     QualifyContractChannel,
     QualifyContractRfInit,
     Execute,
@@ -94,6 +95,10 @@ impl Command {
             ("ir", Some("export")) => {
                 remaining.remove(0);
                 Self::ExportIr
+            }
+            ("ir", Some("build")) => {
+                remaining.remove(0);
+                Self::BuildIr
             }
             ("image", Some("audit-targets")) => {
                 remaining.remove(0);
@@ -239,6 +244,7 @@ impl Command {
                 | Self::AuditDirectTargets
                 | Self::DiscoverMmio
                 | Self::ExportIr
+                | Self::BuildIr
         )
     }
 
@@ -306,7 +312,8 @@ impl Command {
             | Self::RegisterExportSvd
             | Self::RegisterGeneratePac
             | Self::SymbolInventory
-            | Self::InterfaceDiscover => false,
+            | Self::InterfaceDiscover
+            | Self::BuildIr => false,
             Self::DiscoverMmio => role
                 .strip_prefix("source-artifact:")
                 .is_some_and(|source| !source.is_empty()),
@@ -654,5 +661,23 @@ mod tests {
                 "vendor.pseudo.rs"
             ]
         );
+
+        let invocation = Invocation::parse([
+            "ir".to_owned(),
+            "build".to_owned(),
+            "--project".to_owned(),
+            "vendor-validator.toml".to_owned(),
+            "--run-spec".to_owned(),
+            "local.run".to_owned(),
+            "--profile".to_owned(),
+            "phy".to_owned(),
+            "--check".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::BuildIr);
+        assert_eq!(invocation.arguments, ["--profile", "phy", "--check"]);
+        assert!(invocation.command.requires_backend());
+        assert!(invocation.command.uses_run_spec());
+        assert!(!invocation.command.requires_mmio_map());
     }
 }

@@ -4,12 +4,11 @@ use std::fmt::Write as _;
 
 use super::*;
 
-pub(super) fn write_pseudo(
-    path: &Path,
+pub(super) fn render_pseudo(
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
     include_reachable: bool,
-) -> Result<()> {
+) -> String {
     let mut output = String::new();
     output.push_str("// Best-effort vendor-code pseudo-Rust generated from:\n");
     for artifact in artifacts {
@@ -465,7 +464,16 @@ pub(super) fn write_pseudo(
         output.push_str(&function.pseudo);
         output.push('\n');
     }
-    fs::write(path, output)?;
+    output
+}
+
+pub(super) fn write_pseudo(
+    path: &Path,
+    artifacts: &[IrArtifactInput],
+    report: &LinkedIrReport,
+    include_reachable: bool,
+) -> Result<()> {
+    fs::write(path, render_pseudo(artifacts, report, include_reachable))?;
     println!("PSEUDO-IR\t{}", path.display());
     Ok(())
 }

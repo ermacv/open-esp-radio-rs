@@ -24,6 +24,8 @@ pub(super) fn run(command: Command, arguments: Vec<String>, project: &ProjectSpe
 
 fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths) -> Result<bool> {
     let mut output = None;
+    let mut ir_reports = Vec::new();
+    let mut no_ir_reports = false;
     let mut check = false;
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
@@ -35,6 +37,21 @@ fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths
                 output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
             }
             "--check" => check = true,
+            "--ir-report" => {
+                if no_ir_reports {
+                    return Err("--ir-report conflicts with --no-ir-reports".into());
+                }
+                ir_reports.push(PathBuf::from(take_value(&mut arguments, "--ir-report")?))
+            }
+            "--no-ir-reports" => {
+                if no_ir_reports {
+                    return Err("duplicate --no-ir-reports".into());
+                }
+                if !ir_reports.is_empty() {
+                    return Err("--no-ir-reports conflicts with --ir-report".into());
+                }
+                no_ir_reports = true;
+            }
             _ => return Err(format!("unknown registers review option: {argument}").into()),
         }
     }
@@ -49,16 +66,24 @@ fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths
     }
     let facts = RegisterFacts::load(&paths.facts)?;
     let model = RegisterModel::load(&paths.model)?;
-    let (contents, summary) = render_register_review(&facts, &model, &paths.facts, &paths.model)?;
+    if ir_reports.is_empty() && !no_ir_reports {
+        ir_reports.clone_from(&paths.review_ir_reports);
+    }
+    let (contents, summary) =
+        render_register_review(&facts, &model, &ir_reports, &paths.facts, &paths.model)?;
     write_or_check(output, &contents, check, "register review")?;
     println!(
-        "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tfield-candidates={}\tpath={}",
+        "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tdraft-field-partitions={}\tir-reports={}\tir-registers={}\tir-only-registers={}\tir-field-candidates={}\tpath={}",
         if check { "verified" } else { "written" },
         summary.observed,
         summary.reviewed,
         summary.unreviewed,
         summary.model_only,
         summary.field_candidates,
+        summary.ir_reports,
+        summary.ir_registers,
+        summary.ir_only_registers,
+        summary.ir_field_candidates,
         output.display()
     );
     Ok(true)

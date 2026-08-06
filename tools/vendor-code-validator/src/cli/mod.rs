@@ -15,7 +15,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
@@ -46,9 +46,10 @@ pub(crate) fn run() -> Result<bool> {
             | Command::RegisterReview
             | Command::RegisterExportSvd
             | Command::RegisterGeneratePac
+            | Command::BuildIr
     ) && project.is_none()
     {
-        return Err("project and reviewed workspace commands require a project manifest".into());
+        return Err("project/workspace commands require a project manifest".into());
     }
     let target_spec = target_spec
         .or_else(|| project.as_ref().map(|project| project.target_spec.clone()))
@@ -244,6 +245,19 @@ pub(crate) fn run() -> Result<bool> {
             project
                 .as_ref()
                 .expect("register commands require a loaded project"),
+        );
+    }
+    if command == Command::BuildIr {
+        return commands::run_ir_build(
+            filtered,
+            project
+                .as_ref()
+                .expect("project IR build requires a loaded project"),
+            run_spec
+                .as_ref()
+                .ok_or("ir build requires a run spec with source artifact bindings")?,
+            &svd,
+            &target,
         );
     }
     commands::run(command, filtered, &svd, &target)

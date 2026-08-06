@@ -17,12 +17,21 @@ target-spec = "target.spec"
 memory-map = "memory.toml"
 svd = ["registers/vendor.svd", "registers/reviewed.svd"]
 
+[[analysis.ir]]
+id = "vendor"
+sources = ["rom", "archive"]
+symbol-prefix = "phy_"
+include-reachable = true
+output = "generated/findings/vendor.ir.json"
+pseudo-rust = "generated/reports/vendor.pseudo.rs"
+
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
 
 [registers.review]
 output = "generated/reports/register-review.md"
+linked-ir = ["generated/findings/vendor.ir.json"]
 
 [registers.svd]
 output = "generated/svd/device.svd"
@@ -62,6 +71,13 @@ Explicit `--run-spec` and `--svd` arguments override project defaults. The old
 `--target-spec` invocation remains supported, but it cannot be combined with
 `--project` because that would create two configuration roots.
 
+Optional `[[analysis.ir]]` profiles give generated linked IR stable IDs,
+source selection and project-relative destinations. `ir build` generates all
+profiles from `source-artifact:ID` bindings in the local run spec; `--check`
+verifies that existing JSON and pseudo-Rust documents match. See
+[project linked-IR builds](project-ir-build.md) for the schema and companion
+rules.
+
 If the project omits the top-level `svd` key, target-spec SVD catalogs remain
 the fallback. An explicit `svd = []` disables that fallback. This is useful
 when the schema-2 register model is the complete catalog; non-empty entries
@@ -78,8 +94,10 @@ workspace. Its `facts` path becomes the default JSON destination of
 `registers init-model` bootstraps it from discovery ranges,
 `registers import-svd` migrates an existing catalog, and `registers review`
 joins generated functions/write patterns to reviewed model identities without
-copying them into the model. Configured review, SVD and PAC outputs let
-generation/check commands run without repeating paths. See
+copying them into the model. Optional `linked-ir` reports add poll, predicate
+and guarded semantic-action evidence to that generated review view. Configured
+review, SVD and PAC outputs let generation/check commands run without repeating
+paths. See
 [register workspace](register-workspace.md) for the model schema, provenance
 boundary and generation workflow.
 
@@ -101,7 +119,8 @@ cargo vendor-code-validator project doctor \
 ```
 
 It reports backend and harness availability, memory/address-space statistics,
-the number of SVD registers, and every local input binding. Existing inputs
+the number of SVD registers, configured IR-profile readiness, and every local
+input binding. Existing inputs
 are parsed through the selected architecture backend. The doctor counts all
 named symbol facts, code definitions, exported definitions, undefined symbols,
 object members, and skipped non-object archive members. Missing or incompatible
@@ -113,7 +132,11 @@ If `[registers]` is configured, the doctor also distinguishes facts that have
 not been generated, a model that has not been initialized, an invalid model,
 legacy schema 1 overlays, and a ready schema 2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
-configured SVD/PAC outputs.
+configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
+as schema-v30 reports and their register/field-candidate counts are reported;
+missing outputs owned by `[[analysis.ir]]` are reported as not generated,
+while missing external inputs or incompatible existing reports are errors
+rather than silently disabling enrichment.
 
 If `[interfaces]` is configured, the doctor distinguishes missing facts, a
 pack that has not been initialized, invalid or stale review, and a ready
@@ -205,12 +228,13 @@ Commands now request the knowledge they actually consume:
 | `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
+| `ir build` | yes | optional | optional enrichment |
 | execute/compare | yes | yes | no |
 | reference/driver/semantic verification | yes | yes | yes |
 
-Without a harness, `ir export` uses a neutral empty contract. It still resolves
+Without a harness, `ir export` and `ir build` use a neutral empty contract. They resolve
 ordinary symbols, relocations, direct calls, control flow, memory, and MMIO,
-but deliberately assigns no platform semantics to external tables or helper
+but deliberately assign no platform semantics to external tables or helper
 functions. A configured harness enriches the same lower-level IR.
 
 ## Current and future ownership

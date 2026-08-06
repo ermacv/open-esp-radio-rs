@@ -8,15 +8,14 @@ mod values;
 
 use values::*;
 
-pub(super) fn write_json_report(
-    path: &Path,
+pub(super) fn render_json_report(
     artifacts: &[IrArtifactInput],
     companions: &[PathBuf],
     symbol_prefix: &str,
     entry_contract: EntryContractRef,
     report: &LinkedIrReport,
     include_reachable: bool,
-) -> Result<()> {
+) -> Result<String> {
     let mut output = String::new();
     output.push_str("{\n  \"schema_version\": 30,\n  \"command\": \"ir-export\",\n");
     output.push_str("  \"analysis_mode\": \"best-effort\",\n");
@@ -897,7 +896,29 @@ pub(super) fn write_json_report(
         });
     }
     output.push_str("  ]\n}\n");
-    fs::write(path, output)?;
+    Ok(output)
+}
+
+pub(super) fn write_json_report(
+    path: &Path,
+    artifacts: &[IrArtifactInput],
+    companions: &[PathBuf],
+    symbol_prefix: &str,
+    entry_contract: EntryContractRef,
+    report: &LinkedIrReport,
+    include_reachable: bool,
+) -> Result<()> {
+    fs::write(
+        path,
+        render_json_report(
+            artifacts,
+            companions,
+            symbol_prefix,
+            entry_contract,
+            report,
+            include_reachable,
+        )?,
+    )?;
     println!("JSON-REPORT\t{}", path.display());
     Ok(())
 }

@@ -58,6 +58,29 @@ copyable drafts for gaps. Users edit reviewed names, fields, access rules,
 reset values and enumerations only in `registers/peripherals/*.toml`; the
 generated report never feeds SVD or PAC generation.
 
+The checked project defines separate `rom-phy` and `archive-phy` linked-IR
+profiles. Each primary input receives the other linked ELF as its reviewed
+companion through `run.spec`, then register review merges both reports:
+
+```console
+cargo vendor-code-validator ir build \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+
+cargo vendor-code-validator registers review \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+```
+
+This adds poll and predicate field candidates plus links to guarded RTOS,
+delay, NVS and logging operations. Those operation names remain navigation
+evidence and are not promoted to SVD semantics. Use `ir build --check` to
+verify both generated views, or `registers review --no-ir-reports` when only
+the base MMIO-discovery report is wanted.
+
+Private artifact paths remain in the local run spec. The generic profile
+format and companion rules are documented in
+[`project-ir-build.md`](../../../../tools/vendor-code-validator/docs/project-ir-build.md).
+
 `cargo pac-gen` reads the same model through `tools/register-model` and applies
 `registers/pac-addon.xml` only while generating the production PAC. The add-on
 owns ESP32-S31 safe compound transactions, ownership helpers and evidence

@@ -23,6 +23,13 @@ pub enum RxStageDiscard {
     TooLong,
 }
 
+/// Result of one bounded publication into the network adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RxNetworkPublicationOutcome {
+    Enqueued,
+    Dropped,
+}
+
 /// Value-only observations emitted by the production RX owner graph.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RxPipelineObservation {
@@ -62,9 +69,10 @@ pub enum RxPipelineObservation {
     ReorderOccupied {
         occupied: u32,
     },
-    NetworkPublished {
+    NetworkPublication {
         bytes: usize,
         micros: u64,
+        outcome: RxNetworkPublicationOutcome,
     },
 }
 

@@ -10,8 +10,8 @@
 #[cfg(test)]
 extern crate std;
 
-pub mod aggregate_observer;
 pub mod aggregate_tx;
+pub mod aggregate_tx_observer;
 pub mod connected_control;
 pub mod connected_runner;
 pub mod connected_rx_protocol;
@@ -33,7 +33,7 @@ mod ordinary_tx;
 pub mod phy_delay;
 pub mod preconnected_rx;
 pub mod rx_dma_service;
-pub mod rx_observer;
+pub mod rx_pipeline_observer;
 pub mod rx_reorder;
 pub mod scan_port;
 pub mod scan_rx;

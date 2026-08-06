@@ -84,8 +84,10 @@ currency is an owned staging lease.
 
 Connected aggregate TX is likewise separated from its optional measurements:
 `aggregate_tx` owns pinned network leases, A-MPDU publication and completion;
-`aggregate_observer` owns only lock-free counters and interval snapshots. The
-observer state cannot affect retry, queue or DMA decisions.
+`aggregate_tx_observer` defines only typed value events and the object-safe
+observer contract. Concrete counters, histograms and interval snapshots live
+in the HIL telemetry crate. Observer state cannot affect retry, queue or DMA
+decisions.
 
 `aggregate_tx` is a facade rather than one transaction-sized source file. Its
 private modules follow the lifetime of one connected TX exchange:

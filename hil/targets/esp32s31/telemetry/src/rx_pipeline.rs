@@ -7,8 +7,9 @@
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use open_esp_radio_esp32s31_wifi_embassy::rx_observer::{
-    RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
+use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::{
+    RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver, RxServiceObservation,
+    RxStageDiscard,
 };
 
 /// Diagnostic observations spanning DMA staging, protocol dispatch and the
@@ -71,6 +72,8 @@ pub struct RxPipelineCounters {
     dispatch_micros: AtomicU32,
     dispatch_lifetime_max_micros: AtomicU32,
     network_publications: AtomicU32,
+    network_enqueued: AtomicU32,
+    network_dropped: AtomicU32,
     network_published_bytes: AtomicU32,
     network_publish_micros: AtomicU32,
     network_publish_lifetime_max_micros: AtomicU32,
@@ -146,6 +149,8 @@ impl RxPipelineCounters {
             dispatch_micros: AtomicU32::new(0),
             dispatch_lifetime_max_micros: AtomicU32::new(0),
             network_publications: AtomicU32::new(0),
+            network_enqueued: AtomicU32::new(0),
+            network_dropped: AtomicU32::new(0),
             network_published_bytes: AtomicU32::new(0),
             network_publish_micros: AtomicU32::new(0),
             network_publish_lifetime_max_micros: AtomicU32::new(0),
@@ -297,6 +302,8 @@ impl RxPipelineCounters {
             dispatch_micros: self.dispatch_micros.load(Ordering::Relaxed),
             dispatch_lifetime_max_micros: self.dispatch_lifetime_max_micros.load(Ordering::Relaxed),
             network_publications: self.network_publications.load(Ordering::Relaxed),
+            network_enqueued: self.network_enqueued.load(Ordering::Relaxed),
+            network_dropped: self.network_dropped.load(Ordering::Relaxed),
             network_published_bytes: self.network_published_bytes.load(Ordering::Relaxed),
             network_publish_micros: self.network_publish_micros.load(Ordering::Relaxed),
             network_publish_lifetime_max_micros: self
@@ -518,8 +525,21 @@ impl RxPipelineCounters {
             .fetch_max(occupied, Ordering::Relaxed);
     }
 
-    pub(crate) fn record_network_publish(&self, bytes: usize, micros: u64) {
+    pub(crate) fn record_network_publish(
+        &self,
+        bytes: usize,
+        micros: u64,
+        outcome: RxNetworkPublicationOutcome,
+    ) {
         self.network_publications.fetch_add(1, Ordering::Relaxed);
+        match outcome {
+            RxNetworkPublicationOutcome::Enqueued => {
+                self.network_enqueued.fetch_add(1, Ordering::Relaxed);
+            }
+            RxNetworkPublicationOutcome::Dropped => {
+                self.network_dropped.fetch_add(1, Ordering::Relaxed);
+            }
+        }
         Self::add_usize(&self.network_published_bytes, bytes);
         Self::record_time(
             &self.network_publish_micros,
@@ -584,9 +604,11 @@ impl RxPipelineObserver for RxPipelineCounters {
             RxPipelineObservation::ReorderOccupied { occupied } => {
                 self.record_reorder_occupied(occupied)
             }
-            RxPipelineObservation::NetworkPublished { bytes, micros } => {
-                self.record_network_publish(bytes, micros)
-            }
+            RxPipelineObservation::NetworkPublication {
+                bytes,
+                micros,
+                outcome,
+            } => self.record_network_publish(bytes, micros, outcome),
         }
     }
 }
@@ -666,6 +688,8 @@ pub struct RxPipelineCounterSnapshot {
     /// Maximum observed since boot, not an interval delta.
     pub dispatch_lifetime_max_micros: u32,
     pub network_publications: u32,
+    pub network_enqueued: u32,
+    pub network_dropped: u32,
     pub network_published_bytes: u32,
     pub network_publish_micros: u32,
     /// Maximum observed since boot, not an interval delta.
@@ -792,6 +816,8 @@ impl RxPipelineCounterSnapshot {
             network_publications: self
                 .network_publications
                 .wrapping_sub(earlier.network_publications),
+            network_enqueued: self.network_enqueued.wrapping_sub(earlier.network_enqueued),
+            network_dropped: self.network_dropped.wrapping_sub(earlier.network_dropped),
             network_published_bytes: self
                 .network_published_bytes
                 .wrapping_sub(earlier.network_published_bytes),
@@ -819,7 +845,9 @@ mod tests {
     use core::sync::atomic::{AtomicU64, Ordering};
 
     use super::{RxPipelineCounters, RxServiceObservation};
-    use open_esp_radio_esp32s31_wifi_embassy::rx_observer::{RxPipelineObserver, RxStageDiscard};
+    use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::{
+        RxNetworkPublicationOutcome, RxPipelineObserver, RxStageDiscard,
+    };
 
     static IRQ_CLOCK: AtomicU64 = AtomicU64::new(0);
     static IRQ_SKEW_CLOCK: AtomicU64 = AtomicU64::new(0);
@@ -852,7 +880,8 @@ mod tests {
         counters.record_stage_discard(RxStageDiscard::Empty);
         counters.record_stage_discard(RxStageDiscard::TooLong);
         counters.record_network_ready_wait(2);
-        counters.record_network_publish(1_514, 13);
+        counters.record_network_publish(1_514, 13, RxNetworkPublicationOutcome::Enqueued);
+        counters.record_network_publish(1_514, 17, RxNetworkPublicationOutcome::Dropped);
         counters.record_dispatch(true, true, 3, 2_750, 31);
         let delta = counters.snapshot().wrapping_delta_since(before);
 
@@ -873,8 +902,11 @@ mod tests {
         assert_eq!(delta.maximum_admitted, 3);
         assert_eq!(delta.service_micros, 70);
         assert_eq!(delta.network_ready_wait_micros, 2);
-        assert_eq!(delta.network_published_bytes, 1_514);
-        assert_eq!(delta.network_publish_micros, 13);
+        assert_eq!(delta.network_publications, 2);
+        assert_eq!(delta.network_enqueued, 1);
+        assert_eq!(delta.network_dropped, 1);
+        assert_eq!(delta.network_published_bytes, 3_028);
+        assert_eq!(delta.network_publish_micros, 30);
         assert_eq!(delta.protocol_data_frames, 1);
         assert_eq!(delta.protocol_amsdu_mpdus, 1);
         assert_eq!(delta.protocol_amsdu_subframes, 3);

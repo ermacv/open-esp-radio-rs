@@ -86,10 +86,12 @@ where
             );
         }
 
-        let preparation_started = self.counters.map(|_| self.ordinary.now_micros());
+        let preparation_started = self.observer.map(|_| self.ordinary.now_micros());
         self.prepare_aggregate(first, network)?;
-        if let (Some(counters), Some(started)) = (self.counters, preparation_started) {
-            counters.record_preparation_time(self.ordinary.now_micros().wrapping_sub(started));
+        if let (Some(observer), Some(started)) = (self.observer, preparation_started) {
+            observer.observe(AggregateTxObservation::PreparationCompleted {
+                micros: self.ordinary.now_micros().wrapping_sub(started),
+            });
         }
         self.publish_initial(hardware)
     }
@@ -103,8 +105,11 @@ where
         let ethernet_length = first.ethernet_length();
         let progress = self.ordinary.start(hardware, first.ethernet())?;
         drop(first);
-        if let Some(counters) = self.counters {
-            counters.record_network_single_mpdu(reason, ethernet_length);
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::NetworkSingleMpdu {
+                reason,
+                ethernet_length,
+            });
         }
         self.active = ConnectedTxActive::Ordinary;
         Ok(progress)
@@ -208,8 +213,11 @@ where
             deadline_micros: 0,
             first_publication_micros: None,
         });
-        if let Some(counters) = self.counters {
-            counters.record_prepared(aggregate.subframes, build_stop);
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::Prepared {
+                subframes: aggregate.subframes,
+                stop: build_stop,
+            });
         }
         Ok(())
     }
@@ -412,12 +420,14 @@ where
                 config,
             )?,
         }
-        if let Some(counters) = self.counters {
+        if let Some(observer) = self.observer {
             let publication_finished = self.ordinary.now_micros();
             if active.first_publication_micros.is_none() {
                 active.first_publication_micros = Some(publication_started);
             }
-            counters.record_publication(publication_finished.wrapping_sub(publication_started));
+            observer.observe(AggregateTxObservation::Published {
+                program_micros: publication_finished.wrapping_sub(publication_started),
+            });
         }
         active.deadline_micros = deadline;
         Ok(())

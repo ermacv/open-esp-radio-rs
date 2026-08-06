@@ -7,4 +7,6 @@ license.workspace = true
 description = "ESP32-S31 qualification observers for open-esp-radio HIL"
 
 [dependencies]
+open-esp-radio-esp32s31-wifi-mac = { path = "../../../../driver/chips/esp32s31/wifi/mac" }
 open-esp-radio-esp32s31-wifi-embassy = { path = "../../../../driver/adapters/embassy/esp32s31-wifi" }
+open-esp-radio-wifi-softmac = { path = "../../../../driver/wifi/softmac" }

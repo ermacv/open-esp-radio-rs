@@ -45,7 +45,8 @@ pub struct Esp32s31ConnectedStaTxResources<
     pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub pairwise_key: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
-    pub counters: Option<&'resources AggregateTxCounters>,
+    /// Optional observation-only hook supplied by the composition root.
+    pub aggregate_tx_observer: Option<&'resources dyn AggregateTxObserver>,
     pub network_domain: Esp32s31ConnectedStaNetworkTxDomain<
         'resources,
         M,
@@ -140,7 +141,7 @@ pub struct Esp32s31ConnectedStaTxHandoffFailure<
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
     pub handoff: ConnectedTxHandoff,
     pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
-    pub counters: Option<&'resources AggregateTxCounters>,
+    pub aggregate_tx_observer: Option<&'resources dyn AggregateTxObserver>,
 }
 
 /// Named control-plane resources for one connected epoch.

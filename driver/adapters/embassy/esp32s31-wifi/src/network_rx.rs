@@ -1,56 +1,16 @@
 //! Bounded connected-RX publication into the Embassy network adapter.
 
-use core::{
-    future::Future,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::future::Future;
 
 use open_esp_radio_embassy_net::{PinnedRxPublisher, RawMutex, RxEnqueueError};
 use open_esp_radio_esp32s31_wifi_mac::connected_rx::{ConnectedRxEvent, ConnectedRxSink};
 
 use crate::{
     connected_rx_protocol::ConnectedRxProtocolSink,
-    rx_observer::{RxPipelineObservation, RxPipelineObserver},
+    rx_pipeline_observer::{
+        RxNetworkPublicationOutcome, RxPipelineObservation, RxPipelineObserver,
+    },
 };
-
-/// One observation of the bounded network RX publication counters.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct RxEnqueueCounterSnapshot {
-    pub enqueued: u32,
-    pub dropped: u32,
-}
-
-/// Optional shared receive-queue telemetry for integration and HIL policy.
-///
-/// The counters do not participate in admission. They only make the sink's
-/// existing local accounting observable while its production owner is inside
-/// a long-running [`crate::connected_runner::ConnectedRunner`].
-pub struct RxEnqueueCounters {
-    enqueued: AtomicU32,
-    dropped: AtomicU32,
-}
-
-impl RxEnqueueCounters {
-    pub const fn new() -> Self {
-        Self {
-            enqueued: AtomicU32::new(0),
-            dropped: AtomicU32::new(0),
-        }
-    }
-
-    pub fn snapshot(&self) -> RxEnqueueCounterSnapshot {
-        RxEnqueueCounterSnapshot {
-            enqueued: self.enqueued.load(Ordering::Relaxed),
-            dropped: self.dropped.load(Ordering::Relaxed),
-        }
-    }
-}
-
-impl Default for RxEnqueueCounters {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// Copies Ethernet events into the bounded network queue and forwards every
 /// semantic event to a protocol observer.
@@ -66,7 +26,6 @@ pub struct EmbassyNetConnectedRxSink<
     enqueued: u32,
     dropped: u32,
     last_enqueue_error: Option<RxEnqueueError>,
-    counters: Option<&'resources RxEnqueueCounters>,
     pipeline_observer: Option<&'resources dyn RxPipelineObserver>,
 }
 
@@ -83,14 +42,8 @@ impl<'resources, M: RawMutex, O, const FRAME_CAPACITY: usize, const QUEUE_DEPTH:
             enqueued: 0,
             dropped: 0,
             last_enqueue_error: None,
-            counters: None,
             pipeline_observer: None,
         }
-    }
-
-    pub fn with_counters(mut self, counters: &'resources RxEnqueueCounters) -> Self {
-        self.counters = Some(counters);
-        self
     }
 
     pub fn with_pipeline_observer(mut self, observer: &'resources dyn RxPipelineObserver) -> Self {
@@ -131,26 +84,23 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
                 frame.ether_type,
                 frame.payload,
             );
-            if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
-                observer.observe(RxPipelineObservation::NetworkPublished {
-                    bytes: frame.payload.len().saturating_add(14),
-                    micros: observer.elapsed_micros_since(started),
-                });
-            }
-            match result {
+            let outcome = match result {
                 Ok(()) => {
                     self.enqueued = self.enqueued.saturating_add(1);
-                    if let Some(counters) = self.counters {
-                        counters.enqueued.fetch_add(1, Ordering::Relaxed);
-                    }
+                    RxNetworkPublicationOutcome::Enqueued
                 }
                 Err(error) => {
                     self.dropped = self.dropped.saturating_add(1);
                     self.last_enqueue_error = Some(error);
-                    if let Some(counters) = self.counters {
-                        counters.dropped.fetch_add(1, Ordering::Relaxed);
-                    }
+                    RxNetworkPublicationOutcome::Dropped
                 }
+            };
+            if let (Some(observer), Some(started)) = (self.pipeline_observer, publish_started) {
+                observer.observe(RxPipelineObservation::NetworkPublication {
+                    bytes: frame.payload.len().saturating_add(14),
+                    micros: observer.elapsed_micros_since(started),
+                    outcome,
+                });
             }
         }
         self.observer.publish(event);
@@ -167,6 +117,7 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
 
 #[cfg(test)]
 mod tests {
+    use core::sync::atomic::{AtomicU64, Ordering};
     use core::task::{Context, Waker};
 
     use open_esp_radio_embassy_net::{
@@ -186,6 +137,22 @@ mod tests {
         }
     }
 
+    #[derive(Default)]
+    struct PipelineObserver {
+        clock: AtomicU64,
+        observations: std::sync::Mutex<std::vec::Vec<RxPipelineObservation>>,
+    }
+
+    impl RxPipelineObserver for PipelineObserver {
+        fn now_micros(&self) -> u64 {
+            self.clock.fetch_add(1, Ordering::Relaxed)
+        }
+
+        fn observe(&self, observation: RxPipelineObservation) {
+            self.observations.lock().unwrap().push(observation);
+        }
+    }
+
     #[test]
     fn sink_has_rx_only_capability_and_reports_bounded_backpressure() {
         const FRAME_CAPACITY: usize = 64;
@@ -199,9 +166,9 @@ mod tests {
         let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
         let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
         let (mut device, runner) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
-        let counters = RxEnqueueCounters::new();
+        let pipeline_observer = PipelineObserver::default();
         let mut sink = EmbassyNetConnectedRxSink::new(runner.rx_publisher(), Observer::default())
-            .with_counters(&counters);
+            .with_pipeline_observer(&pipeline_observer);
         let ethernet = [0_u8; 14];
         let event = ConnectedRxEvent::Ethernet {
             frame: EthernetFrameParts {
@@ -222,11 +189,19 @@ mod tests {
         assert_eq!(sink.dropped(), 1);
         assert_eq!(sink.last_enqueue_error(), Some(RxEnqueueError::QueueFull));
         assert_eq!(
-            counters.snapshot(),
-            RxEnqueueCounterSnapshot {
-                enqueued: 1,
-                dropped: 1,
-            }
+            *pipeline_observer.observations.lock().unwrap(),
+            [
+                RxPipelineObservation::NetworkPublication {
+                    bytes: 14,
+                    micros: 1,
+                    outcome: RxNetworkPublicationOutcome::Enqueued,
+                },
+                RxPipelineObservation::NetworkPublication {
+                    bytes: 14,
+                    micros: 1,
+                    outcome: RxNetworkPublicationOutcome::Dropped,
+                },
+            ]
         );
         assert_eq!(sink.observer().0, 2);
         let mut context = Context::from_waker(Waker::noop());

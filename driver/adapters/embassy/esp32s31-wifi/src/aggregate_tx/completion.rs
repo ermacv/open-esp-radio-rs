@@ -148,9 +148,12 @@ where
                     block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                     ordinary_retry: None,
                 });
-                if let Some(counters) = self.counters {
-                    counters.record_complete(active.retry.acknowledged(), true);
-                    Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+                if let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::Completed {
+                        acknowledged: active.retry.acknowledged(),
+                        individual_retry: true,
+                    });
+                    Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
                 }
                 self.active = ConnectedTxActive::Ordinary;
                 return Ok(progress);
@@ -170,9 +173,12 @@ where
                 block_acknowledged_subframes: u16::from(acknowledged),
                 ordinary_retry: None,
             });
-            if let Some(counters) = self.counters {
-                counters.record_complete(active.retry.acknowledged(), false);
-                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::Completed {
+                    acknowledged: active.retry.acknowledged(),
+                    individual_retry: false,
+                });
+                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -203,9 +209,9 @@ where
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 ordinary_retry: None,
             });
-            if let Some(counters) = self.counters {
-                counters.record_hardware_timeout();
-                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::HardwareTimeout);
+                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -226,9 +232,9 @@ where
                 block_acknowledged_subframes: u16::from(active.retry.acknowledged()),
                 ordinary_retry: None,
             });
-            if let Some(counters) = self.counters {
-                counters.record_collision();
-                Self::record_exchange_time(counters, &active, self.ordinary.now_micros());
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::Collision);
+                Self::record_exchange_time(observer, &active, self.ordinary.now_micros());
             }
             return Ok(WifiTxProgress::Complete);
         }
@@ -238,12 +244,14 @@ where
     }
 
     fn record_exchange_time(
-        counters: &AggregateTxCounters,
+        observer: &dyn AggregateTxObserver,
         active: &AggregateActive<SLOTS>,
         finished_micros: u64,
     ) {
         if let Some(started_micros) = active.first_publication_micros {
-            counters.record_exchange_time(finished_micros.wrapping_sub(started_micros));
+            observer.observe(AggregateTxObservation::ExchangeCompleted {
+                micros: finished_micros.wrapping_sub(started_micros),
+            });
         }
     }
 }

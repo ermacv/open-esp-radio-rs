@@ -165,6 +165,15 @@ observer. The main facade fell from 6,850 to 6,501 lines without moving raw
 diagnostic addresses into a driver crate. Runtime CRC32 `882f93b8` completed
 the cold scan and three controlled reconnect cycles after the source split.
 
+The next responsibility split moved executor-poll residence, MAC IRQ
+classification, RX PHY/aggregation evidence and UDP/MAC order correlation
+into focused modules of `hil/targets/esp32s31/telemetry`. The runtime keeps
+only explicitly placed static instances and observation call sites. Pure
+IPv4/UDP parsing and sequence-interval evidence now live in
+`radio_hil/connected_traffic.rs`; they own neither sockets nor radio state.
+This reduced the facade to 5,471 lines without hiding benchmark dependencies
+behind a wildcard parent-module import.
+
 The WPA2/connected transition no longer exposes 23–28 positional arguments.
 After extracting key/M4 and peer orchestration, its entry points take coherent
 owners: production `Esp32s31ConnectedStaPeer` for peer/BSSID/AID/PHY and

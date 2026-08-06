@@ -1431,6 +1431,8 @@ name = "open-esp-radio-hil-esp32s31-telemetry"
 version = "0.1.0"
 dependencies = [
  "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-wifi-softmac",
 ]
 
 [[package]]

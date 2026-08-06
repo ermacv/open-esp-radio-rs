@@ -36,6 +36,23 @@ use crate::{
 
 use super::*;
 
+#[derive(Default)]
+struct RecordingAggregateTxObserver {
+    observations: std::sync::Mutex<std::vec::Vec<AggregateTxObservation>>,
+}
+
+impl AggregateTxObserver for RecordingAggregateTxObserver {
+    fn observe(&self, observation: AggregateTxObservation) {
+        self.observations.lock().unwrap().push(observation);
+    }
+}
+
+impl RecordingAggregateTxObserver {
+    fn observed(&self, expected: AggregateTxObservation) -> bool {
+        self.observations.lock().unwrap().contains(&expected)
+    }
+}
+
 const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
 const BSSID: [u8; 6] = [0x20, 0x21, 0x22, 0x23, 0x24, 0x25];
 const TEST_FRAME_CAPACITY: usize = 64;
@@ -332,7 +349,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let counters = AggregateTxCounters::new();
+    let observer = RecordingAggregateTxObserver::default();
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
         HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -345,7 +362,7 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
         },
     )
     .unwrap()
-    .with_counters(&counters);
+    .with_observer(&observer);
     tx.set_block_ack_operational(0, true);
 
     assert_eq!(
@@ -354,10 +371,11 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     );
     assert_eq!(hardware.legacy_publications, 1);
     assert_eq!(hardware.ht_publications, 0);
-    assert_eq!(counters.snapshot().network_single_mpdu_started, 1);
-    assert_eq!(
-        counters.snapshot().network_single_fresh_aggregate_capacity,
-        1
+    assert!(
+        observer.observed(AggregateTxObservation::NetworkSingleMpdu {
+            reason: NetworkSingleMpduReason::FreshAggregateCapacity,
+            ethernet_length: 17,
+        })
     );
 }
 
@@ -392,7 +410,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     let mut slot = core::pin::pin!(TxSlot::<2_048>::new_model());
     let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
-    let counters = AggregateTxCounters::new();
+    let observer = RecordingAggregateTxObserver::default();
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
         HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
@@ -405,7 +423,7 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         },
     )
     .unwrap()
-    .with_counters(&counters);
+    .with_observer(&observer);
     tx.set_block_ack_operational(0, true);
 
     assert_eq!(
@@ -414,8 +432,10 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     );
     assert_eq!(hardware.he_publications, 1);
     assert_eq!(hardware.legacy_publications, 0);
-    assert_eq!(counters.snapshot().aggregates_prepared, 1);
-    assert_eq!(counters.snapshot().network_single_mpdu_started, 0);
+    assert!(observer.observed(AggregateTxObservation::Prepared {
+        subframes: 2,
+        stop: AggregateBuildStop::QueueEmpty,
+    }));
 }
 
 #[test]

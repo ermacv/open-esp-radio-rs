@@ -72,14 +72,14 @@ where
             active: ConnectedTxActive::Idle,
             last_aggregate_status: None,
             pending_ordinary_retry: None,
-            counters: None,
+            observer: None,
         })
     }
 
-    /// Attach optional production/HIL observations without changing TX
+    /// Attach optional observations without changing TX
     /// scheduling or completion ownership.
-    pub fn with_counters(mut self, counters: &'ampdu AggregateTxCounters) -> Self {
-        self.counters = Some(counters);
+    pub fn with_observer(mut self, observer: &'ampdu dyn AggregateTxObserver) -> Self {
+        self.observer = Some(observer);
         self
     }
 

@@ -36,7 +36,9 @@ use open_esp_radio_wifi_softmac::{
 };
 
 use crate::{
-    aggregate_observer::{AggregateBuildStop, AggregateTxCounters, NetworkSingleMpduReason},
+    aggregate_tx_observer::{
+        AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
+    },
     connected_control::{ConnectedControlTimer, ConnectedControlTx},
     connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     connected_services::Esp32s31NetworkTxService,
@@ -219,7 +221,7 @@ pub struct Esp32s31ConnectedTx<
     active: ConnectedTxActive<SLOTS>,
     last_aggregate_status: Option<MacAmpduTxStatus<TxPhyRate>>,
     pending_ordinary_retry: Option<MacAmpduTxStatus<TxPhyRate>>,
-    counters: Option<&'ampdu AggregateTxCounters>,
+    observer: Option<&'ampdu dyn AggregateTxObserver>,
 }
 
 mod adapters;

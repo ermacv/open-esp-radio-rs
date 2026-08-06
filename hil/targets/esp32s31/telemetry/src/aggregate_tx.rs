@@ -1,33 +1,22 @@
-//! Optional lock-free observations of connected aggregate TX.
+//! Lock-free ESP32-S31 HIL observations of connected aggregate TX.
 //!
 //! These counters do not participate in scheduling, retry policy or DMA
-//! ownership. They provide a stable observation surface for applications and
-//! HIL without making qualification policy part of the TX owner.
+//! ownership. The production adapter publishes value-only events; this module
+//! selects the histogram, atomics and interval snapshot used by qualification.
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-/// Number of histogram entries required for all legal A-MPDU sizes.
+use open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::{
+    AggregateBuildStop, AggregateTxObservation, AggregateTxObserver, NetworkSingleMpduReason,
+};
+
+/// Number of histogram entries required for all currently legal A-MPDU sizes.
 ///
 /// Index zero is deliberately unused; indexes `1..=32` are the number of
 /// original MPDUs prepared for one aggregate exchange.
 pub const AGGREGATE_TX_HISTOGRAM_BUCKETS: usize = 33;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum NetworkSingleMpduReason {
-    LegacyRate,
-    BlockAckUnavailable,
-    HtNeedsPair,
-    FreshAggregateCapacity,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AggregateBuildStop {
-    FrameLimit,
-    CapacityLimit,
-    QueueEmpty,
-}
-
-/// Lock-free observations of the production connected TX owner.
+/// Lock-free HIL observations of the production connected TX owner.
 ///
 /// The counters are diagnostic only and never participate in scheduling.
 /// Relaxed atomics keep a HIL observer from adding synchronization to the
@@ -222,6 +211,35 @@ impl AggregateTxCounters {
     }
 }
 
+impl AggregateTxObserver for AggregateTxCounters {
+    fn observe(&self, observation: AggregateTxObservation) {
+        match observation {
+            AggregateTxObservation::NetworkSingleMpdu {
+                reason,
+                ethernet_length,
+            } => self.record_network_single_mpdu(reason, ethernet_length),
+            AggregateTxObservation::Prepared { subframes, stop } => {
+                self.record_prepared(subframes, stop);
+            }
+            AggregateTxObservation::PreparationCompleted { micros } => {
+                self.record_preparation_time(micros);
+            }
+            AggregateTxObservation::Published { program_micros } => {
+                self.record_publication(program_micros);
+            }
+            AggregateTxObservation::Completed {
+                acknowledged,
+                individual_retry,
+            } => self.record_complete(acknowledged, individual_retry),
+            AggregateTxObservation::HardwareTimeout => self.record_hardware_timeout(),
+            AggregateTxObservation::Collision => self.record_collision(),
+            AggregateTxObservation::ExchangeCompleted { micros } => {
+                self.record_exchange_time(micros);
+            }
+        }
+    }
+}
+
 impl Default for AggregateTxCounters {
     fn default() -> Self {
         Self::new()
@@ -373,17 +391,29 @@ mod tests {
     fn counters_preserve_distribution_and_timing_deltas() {
         let counters = AggregateTxCounters::new();
         let before = counters.snapshot();
-        counters.record_network_single_mpdu(NetworkSingleMpduReason::BlockAckUnavailable, 42);
-        counters.record_prepared(2, AggregateBuildStop::QueueEmpty);
-        counters.record_prepared(32, AggregateBuildStop::FrameLimit);
-        counters.record_publication(3);
-        counters.record_publication(5);
-        counters.record_complete(31, true);
-        counters.record_hardware_timeout();
-        counters.record_exchange_time(41);
-        counters.record_exchange_time(59);
-        counters.record_preparation_time(7);
-        counters.record_preparation_time(11);
+        counters.observe(AggregateTxObservation::NetworkSingleMpdu {
+            reason: NetworkSingleMpduReason::BlockAckUnavailable,
+            ethernet_length: 42,
+        });
+        counters.observe(AggregateTxObservation::Prepared {
+            subframes: 2,
+            stop: AggregateBuildStop::QueueEmpty,
+        });
+        counters.observe(AggregateTxObservation::Prepared {
+            subframes: 32,
+            stop: AggregateBuildStop::FrameLimit,
+        });
+        counters.observe(AggregateTxObservation::Published { program_micros: 3 });
+        counters.observe(AggregateTxObservation::Published { program_micros: 5 });
+        counters.observe(AggregateTxObservation::Completed {
+            acknowledged: 31,
+            individual_retry: true,
+        });
+        counters.observe(AggregateTxObservation::HardwareTimeout);
+        counters.observe(AggregateTxObservation::ExchangeCompleted { micros: 41 });
+        counters.observe(AggregateTxObservation::ExchangeCompleted { micros: 59 });
+        counters.observe(AggregateTxObservation::PreparationCompleted { micros: 7 });
+        counters.observe(AggregateTxObservation::PreparationCompleted { micros: 11 });
 
         let delta = counters.snapshot().wrapping_delta_since(before);
         assert_eq!(delta.network_single_mpdu_started, 1);

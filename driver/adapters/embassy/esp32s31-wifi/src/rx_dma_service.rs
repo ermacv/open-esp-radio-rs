@@ -25,7 +25,7 @@ use crate::{
     connected_rx_protocol::Esp32s31StagedRxFrame,
     connected_services::Esp32s31ConnectedRxService,
     embassy_rx::{RxReloadDelay, await_staged_rx_reload},
-    rx_observer::{
+    rx_pipeline_observer::{
         RxPipelineObservation, RxPipelineObserver, RxServiceObservation, RxStageDiscard,
     },
 };

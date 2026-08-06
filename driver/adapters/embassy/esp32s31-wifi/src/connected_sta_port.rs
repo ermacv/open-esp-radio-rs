@@ -32,8 +32,8 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 use crate::{
-    aggregate_observer::AggregateTxCounters,
     aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
+    aggregate_tx_observer::AggregateTxObserver,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{
         ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxFrame,
@@ -43,7 +43,7 @@ use crate::{
     control_tx::Esp32s31ControlTx,
     embassy_irq::EmbassyMacIrqRuntime,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
-    rx_observer::RxPipelineObserver,
+    rx_pipeline_observer::RxPipelineObserver,
     rx_reorder::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,

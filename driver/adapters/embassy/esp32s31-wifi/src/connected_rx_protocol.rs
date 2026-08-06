@@ -22,7 +22,7 @@ use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 use crate::{
     embassy_irq::EmbassyMacIrqRuntime,
-    rx_observer::{RxPipelineObservation, RxPipelineObserver},
+    rx_pipeline_observer::{RxPipelineObservation, RxPipelineObserver},
     rx_reorder::{
         RX_REORDER_BACKING_SLOT_COUNT, RX_REORDER_CURRENT_SLOT, RX_REORDER_GAP_TIMEOUT_MICROS,
         RX_REORDER_SLOT_DOMAIN, RxReorderCommand, RxReorderCommandReceiver, RxReorderFrame,

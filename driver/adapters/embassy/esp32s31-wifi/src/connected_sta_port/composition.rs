@@ -149,7 +149,7 @@ impl Esp32s31ConnectedStaPort {
                     control,
                     handoff,
                     aggregate: resources.aggregate,
-                    counters: resources.counters,
+                    aggregate_tx_observer: resources.aggregate_tx_observer,
                 });
             }
         };
@@ -158,8 +158,8 @@ impl Esp32s31ConnectedStaPort {
                 .expect(
                     "connected STA config and idle aggregate storage were validated before handoff",
                 );
-        if let Some(counters) = resources.counters {
-            tx = tx.with_counters(counters);
+        if let Some(observer) = resources.aggregate_tx_observer {
+            tx = tx.with_observer(observer);
         }
         Ok(tx)
     }

@@ -47,6 +47,13 @@ pack = "interfaces/reviewed.toml"
 semantic-catalogs = [
   "../../tools/vendor-code-validator/catalogs/embedded-semantics.toml",
 ]
+
+[functions]
+pack = "functions/reviewed.toml"
+profiles = ["vendor"]
+
+[functions.review]
+output = "generated/reports/function-review.md"
 ```
 
 `target-spec` selects the architecture and ABI. A target may omit `harness`
@@ -108,6 +115,35 @@ Interface facts are regenerated; reviewed table names, versions, slot
 signatures and semantics do not belong in that file. See
 [interface packs](interface-packs.md).
 
+The optional `[functions]` table selects linked-IR profiles and names a
+human-edited pack for function roles and observed context layouts. Optional
+`[functions.review].output` is a generated Markdown reading view that combines
+those reviewed names with pseudo-code and linked evidence. If a validated
+interface pack is present, function review also joins its bindings as
+explicitly association-only navigation links. Register semantics
+remain in the register model, while trampoline ABI and RTOS/NVS/logging/delay
+semantics remain in interface and semantic packs. See
+[function and context packs](function-packs.md).
+
+## Project-wide generation
+
+Once the manifest and local run spec are ready, all configured generated
+evidence can be refreshed with one command:
+
+```console
+cargo vendor-code-validator project build \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+```
+
+`project check` repeats the analyses without writing and verifies byte-stable
+MMIO facts, interface facts, linked IR, pseudo-Rust, register review, and
+function review. Both commands then validate the reviewed register/interface/
+function workspaces read-only.
+They intentionally exclude SVD and PAC publication. See the separate
+[project build and check pipeline](project-pipeline.md) for its dependency and
+failure model.
+
 ## Project diagnostics
 
 Run the doctor before a long analysis:
@@ -142,6 +178,11 @@ If `[interfaces]` is configured, the doctor distinguishes missing facts, a
 pack that has not been initialized, invalid or stale review, and a ready
 workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
+
+If `[functions]` is configured, the doctor checks selected IR outputs, strict
+schema-v30 facts, artifact provenance guards, the pack lifecycle, review
+coverage for root functions/contexts/fields, explicitly accepted incomplete
+evidence, and the configured generated report destination.
 
 From inside a project tree, the short form is sufficient:
 
@@ -225,10 +266,12 @@ Commands now request the knowledge they actually consume:
 | `symbols inventory` | yes | no | no |
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
+| `functions init-pack` / `validate` / `review` | no | no | no |
 | `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | no | no | no |
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
 | `ir build` | yes | optional | optional enrichment |
+| `project build` / `check` | yes | required by MMIO stage | optional IR enrichment |
 | execute/compare | yes | yes | no |
 | reference/driver/semantic verification | yes | yes | yes |
 
@@ -247,4 +290,6 @@ between archive candidates, fully linked ELF truth, and semantic packs. The
 for MMIO facts, reviewed fields, and SVD. Generated interface facts are
 described in [interface discovery](interface-discovery.md); reviewed layouts
 and reusable semantics are described in [interface packs](interface-packs.md).
+Reviewed function roles and context names are described in
+[function and context packs](function-packs.md).
 They remain project files rather than knowledge added to the generic backend.

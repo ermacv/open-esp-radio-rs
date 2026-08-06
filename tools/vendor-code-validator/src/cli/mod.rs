@@ -2,6 +2,7 @@
 
 mod args;
 mod commands;
+mod generated_output;
 mod json;
 
 use std::{
@@ -15,7 +16,7 @@ use args::{Command, Invocation};
 
 pub(crate) fn usage() {
     eprintln!(
-        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
+        "usage: vendor-code-validator GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    doctor | build | check\n  functions  init-pack | validate | review\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | init-overlay | import-svd | validate | review | export-svd | generate-pac\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-validator.toml is used.\nDirect --target-spec/--run-spec invocation remains available for compatibility. Legacy flat command names are temporarily accepted."
     );
 }
 
@@ -37,6 +38,11 @@ pub(crate) fn run() -> Result<bool> {
     if matches!(
         command,
         Command::ProjectDoctor
+            | Command::ProjectBuild
+            | Command::ProjectCheck
+            | Command::FunctionInitPack
+            | Command::FunctionValidate
+            | Command::FunctionReview
             | Command::InterfaceInitPack
             | Command::InterfaceValidate
             | Command::RegisterInitOverlay
@@ -202,6 +208,32 @@ pub(crate) fn run() -> Result<bool> {
                 svd_paths: &svd_paths,
                 svd: &svd,
             },
+        );
+    }
+    if matches!(command, Command::ProjectBuild | Command::ProjectCheck) {
+        return commands::run_project_pipeline(
+            command,
+            filtered,
+            project
+                .as_ref()
+                .expect("project pipeline requires a loaded project"),
+            run_spec.as_ref(),
+            memory_map.as_ref(),
+            &svd,
+            &target,
+        );
+    }
+    if matches!(
+        command,
+        Command::FunctionInitPack | Command::FunctionValidate | Command::FunctionReview
+    ) {
+        return commands::run_function_pack_command(
+            command,
+            filtered,
+            project
+                .as_ref()
+                .expect("function pack commands require a loaded project"),
+            &target,
         );
     }
     if command == Command::SymbolInventory {

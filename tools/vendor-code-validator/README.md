@@ -41,9 +41,11 @@ callers authenticate inputs and pass them directly or through a local
 | --- | --- | --- |
 | Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
+| `project build` / `check` | Generate or non-mutatingly verify project-owned MMIO, interface, IR, and review evidence | [Project pipeline](docs/project-pipeline.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
 | `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
+| `functions init-pack` / `validate` / `review` | Review function roles and context layouts, then render a source-like reading view | [Function and context packs](docs/function-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
 | `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC outputs | [Register workspace](docs/register-workspace.md) |
 | `ir export` | Produce linked JSON and pseudo-Rust IR for manual analysis | [Linked function IR](docs/linked-ir.md) |
@@ -81,7 +83,10 @@ cargo vendor-code-validator interfaces discover \
 
 This report keeps relocation/global-symbol associations, pointer-load chains,
 slot offsets, call sites, and recoverable argument provenance separate from
-RTOS/NVS/logging names supplied by reviewed semantic packs.
+RTOS/NVS/logging names supplied by reviewed semantic packs. Interface
+validation preserves those concrete sites under each reviewed slot, and the
+function review can display the exact caller, instruction, call kind, and
+recovered arguments.
 
 Initialize and validate the separate reviewed layer after configuring
 `[interfaces].pack` and `semantic-catalogs` in the project:

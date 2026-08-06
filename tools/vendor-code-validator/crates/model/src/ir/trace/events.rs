@@ -106,6 +106,7 @@ pub enum DraftReferenceEvent {
     },
     ExternalCall {
         token: u32,
+        site: u32,
         table: ExternalTableRef,
         function: ExternalFunctionRef,
         arguments: Box<[SymbolicValue]>,

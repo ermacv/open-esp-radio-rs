@@ -75,6 +75,15 @@ struct SummaryDelayAccumulator {
     origins: BTreeSet<String>,
 }
 
+struct ProjectContextProjection {
+    complete: bool,
+    blockers: Vec<String>,
+    fields: Vec<LinkedSummaryContextField>,
+    trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
+    semantic_actions: Vec<LinkedProjectedSemanticAction>,
+    event_dispatches: Vec<LinkedEventDispatch>,
+}
+
 #[derive(Default)]
 struct SummarySemanticAccumulator {
     call_shapes: usize,
@@ -285,14 +294,7 @@ fn project_context_fields(
     call_edges: &[Vec<SummaryCallEdge>],
     projection_reachable: &[bool],
     call_graph_closed: bool,
-) -> (
-    bool,
-    Vec<String>,
-    Vec<LinkedSummaryContextField>,
-    Vec<LinkedProjectedTrampolineCall>,
-    Vec<LinkedProjectedSemanticAction>,
-    Vec<LinkedEventDispatch>,
-) {
+) -> ProjectContextProjection {
     let mut root_arguments = vec![None; usize::from(LINKED_CONTEXT_ARGUMENTS)];
     for argument in 0..LINKED_CONTEXT_ARGUMENTS {
         root_arguments[usize::from(argument)] = Some((argument, 0));
@@ -519,14 +521,14 @@ fn project_context_fields(
         .collect();
     let semantic_actions = semantic_actions.into_iter().collect::<Vec<_>>();
     let event_dispatches = project_event_dispatches(&semantic_actions);
-    (
-        call_graph_closed && blockers.is_empty(),
-        blockers.into_iter().collect(),
+    ProjectContextProjection {
+        complete: call_graph_closed && blockers.is_empty(),
+        blockers: blockers.into_iter().collect(),
         fields,
-        trampoline_calls.into_iter().collect(),
+        trampoline_calls: trampoline_calls.into_iter().collect(),
         semantic_actions,
         event_dispatches,
-    )
+    }
 }
 
 fn projection_reachability(functions: &[LinkedIrFunction], adjacency: &[Vec<usize>]) -> Vec<bool> {
@@ -702,14 +704,7 @@ pub(super) fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 .map(|(index, _)| functions[*index].identity.clone())
                 .collect();
             let call_graph_closed = blockers.is_empty();
-            let (
-                context_projection_complete,
-                context_projection_blockers,
-                context_fields,
-                trampoline_calls,
-                semantic_actions,
-                event_dispatches,
-            ) = project_context_fields(
+            let context_projection = project_context_fields(
                 root,
                 functions,
                 &call_edges,
@@ -756,12 +751,12 @@ pub(super) fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                         origins: entry.origins.into_iter().collect(),
                     })
                     .collect(),
-                context_projection_complete,
-                context_projection_blockers,
-                context_fields,
-                trampoline_calls,
-                semantic_actions,
-                event_dispatches,
+                context_projection_complete: context_projection.complete,
+                context_projection_blockers: context_projection.blockers,
+                context_fields: context_projection.fields,
+                trampoline_calls: context_projection.trampoline_calls,
+                semantic_actions: context_projection.semantic_actions,
+                event_dispatches: context_projection.event_dispatches,
             }
         })
         .collect::<Vec<_>>();

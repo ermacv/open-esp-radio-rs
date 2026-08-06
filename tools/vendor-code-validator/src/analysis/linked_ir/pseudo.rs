@@ -526,6 +526,7 @@ pub(super) fn render_event(
         .unwrap(),
         DraftReferenceEvent::ExternalCall {
             token,
+            site,
             table,
             function,
             arguments,
@@ -533,7 +534,7 @@ pub(super) fn render_event(
             let function_spec = function.spec();
             writeln!(
                 output,
-                "{prefix}let external{token} = semantic.{}({}); // ABI {}+{:#x} {}, returns {}; replacement: {}",
+                "{prefix}let external{token} = semantic.{}({}); // site {site:#010x}; ABI {}+{:#x} {}, returns {}; replacement: {}",
                 pseudo_identifier(function_spec.semantic.operation),
                 pseudo_external_arguments(*function, arguments),
                 table.spec().id,

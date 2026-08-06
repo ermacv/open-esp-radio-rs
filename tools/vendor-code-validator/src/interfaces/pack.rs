@@ -88,8 +88,9 @@ impl InterfacePack {
             validate_anchor_evidence(anchor, facts, &matches)?;
             matches_by_anchor.push(matches);
         }
-        let summary = build_summary(self, facts, catalogs, &matched_by, &matches_by_anchor);
         let bindings = build_bindings(self, facts, &matches_by_anchor);
+        let mut summary = build_summary(self, facts, catalogs, &matched_by, &matches_by_anchor);
+        summary.resolved_calls = bindings.iter().map(|binding| binding.calls.len()).sum();
         Ok((summary, bindings))
     }
 }
@@ -214,6 +215,7 @@ fn build_summary(
     let mut summary = InterfaceWorkspaceSummary {
         fact_tables: facts.tables.len(),
         observed_slots: facts.observed_slots(),
+        observed_calls: facts.observed_calls(),
         semantic_operations: catalogs.len(),
         ..InterfaceWorkspaceSummary::default()
     };
@@ -295,6 +297,41 @@ fn build_bindings(
                 .filter(|fact| (fact.offset, fact.width) == (slot.offset, slot.width))
                 .flat_map(|fact| fact.functions.iter().cloned())
                 .collect();
+            let calls = matches
+                .iter()
+                .flat_map(|index| {
+                    let table = &facts.tables[*index];
+                    facts.calls.iter().filter(move |call| {
+                        let Some((call_slot, container)) = call.loads.split_last() else {
+                            return false;
+                        };
+                        call.artifact == table.artifact
+                            && call.root == table.root
+                            && container == table.container_path
+                            && (call_slot.offset, call_slot.width) == (slot.offset, slot.width)
+                    })
+                })
+                .map(|call| super::ResolvedInterfaceCall {
+                    artifact: call.artifact,
+                    member: call.member.clone(),
+                    function: call.function.clone(),
+                    function_address: call.function_address,
+                    site: call.site,
+                    kind: call.kind.clone(),
+                    jalr_offset: call.jalr_offset,
+                    arguments: call
+                        .arguments
+                        .iter()
+                        .map(|argument| super::ResolvedInterfaceArgument {
+                            index: argument.index,
+                            kind: argument.kind.clone(),
+                            expression: argument.expression.clone(),
+                        })
+                        .collect(),
+                })
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             bindings.push(ResolvedInterfaceSlot {
                 anchor: anchor.id.clone(),
                 source: anchor.source.clone(),
@@ -316,6 +353,7 @@ fn build_bindings(
                 variadic: slot.variadic,
                 semantic: slot.semantic.clone(),
                 functions,
+                calls,
             });
         }
     }

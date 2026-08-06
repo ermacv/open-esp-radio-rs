@@ -62,7 +62,9 @@ cargo vendor-code-validator interfaces validate \
 ```
 
 The command prints every resolved reviewed binding with its layout version,
-ABI, semantic operation, and the vendor functions observed using that slot.
+ABI, semantic operation, vendor functions, concrete call-site addresses, call
+kind, and recovered argument expressions. `INTERFACE-BINDING` is the slot
+summary; the following `INTERFACE-CALL` records are the site-level evidence.
 Use `--deny-unreviewed` in CI to return a non-success status while any observed
 slot or declared anchor remains unreviewed.
 
@@ -72,7 +74,9 @@ stale artifact guards, ambiguous selectors, and new unreviewed observations.
 ## Anchor and layout format
 
 An anchor selects observed evidence by logical source, pointer root, and
-container load path. It deliberately does not use call-site addresses:
+container load path. It deliberately does not use call-site addresses as
+stable review keys, but validation retains every current call site matched by
+the selected table and slot:
 
 ```toml
 schema = 1
@@ -205,10 +209,15 @@ remain distinct operations even if both may eventually become an async timer.
 ## Trust boundary
 
 The validated workspace establishes that reviewed metadata is internally
-consistent and still attached to current evidence. It does not prove a C
-prototype, runtime table contents, scheduler behavior, storage durability, or
-Rust equivalence. Those claims belong to later effect contracts and execution
-profiles.
+consistent and still attached to current evidence. For observed slots it also
+proves a structural join from artifact/root/container/slot to each reported
+static call instruction and preserves the recovered register arguments. It
+does not prove that a branch reaches that instruction at runtime, the order of
+calls, a C prototype, runtime table contents, callee behavior, storage
+durability, or Rust equivalence. Those claims belong to higher-level IR,
+effect contracts, and execution profiles. If an optional legacy target
+contract supplies a semantic ID for the same exact caller/site, function
+review fails on disagreement with the interface pack instead of choosing one.
 
 This separation keeps the generic backend useful for any RV32 vendor artifact:
 
@@ -218,7 +227,7 @@ RV32 ELF/archive -> generated interface facts
                               + reusable semantic catalogs
                                          |
                                          v
-                              resolved reviewed bindings
+                      resolved reviewed bindings + call sites
                                          |
                                          v
                            future IR/effect/adapter validation

@@ -54,9 +54,10 @@ fn init_pack(
         target.calling_convention.label(),
     )?;
     println!(
-        "INTERFACE-PACK\tstatus=created\ttables={}\tobserved-slots={}\tpath={}",
+        "INTERFACE-PACK\tstatus=created\ttables={}\tobserved-slots={}\tobserved-calls={}\tpath={}",
         facts.tables.len(),
         facts.observed_slots(),
+        facts.observed_calls(),
         output.display()
     );
     Ok(true)
@@ -87,7 +88,7 @@ fn validate(
     let summary = workspace.summary();
     for binding in workspace.bindings() {
         println!(
-            "INTERFACE-BINDING\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\tfunctions={}",
+            "INTERFACE-BINDING\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\tfunctions={}\tcall-sites={}",
             binding.anchor,
             binding.source,
             binding.layout_version,
@@ -105,12 +106,38 @@ fn validate(
                 .cloned()
                 .collect::<Vec<_>>()
                 .join(","),
+            binding.calls.len(),
         );
+        for call in &binding.calls {
+            println!(
+                "INTERFACE-CALL\tanchor={}\tsource={}\toffset={:+#x}\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#010x}\tsite={:#010x}\tkind={}\tjalr-offset={:+#x}\targuments={}",
+                binding.anchor,
+                binding.source,
+                binding.offset,
+                call.artifact,
+                call.member.as_deref().unwrap_or("-"),
+                call.function,
+                call.function_address,
+                call.site,
+                call.kind,
+                call.jalr_offset,
+                call.arguments
+                    .iter()
+                    .map(|argument| format!(
+                        "a{}:{}={}",
+                        argument.index, argument.kind, argument.expression
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
     }
     println!(
-        "INTERFACE-WORKSPACE\tstatus=valid\tfact-tables={}\tobserved-slots={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\tmanual-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tmanual-slots={}\tsemantic-links={}\tsemantic-operations={}\tartifact-guards={}\truntime-guards={}\tfacts={}\tpack={}",
+        "INTERFACE-WORKSPACE\tstatus=valid\tfact-tables={}\tobserved-slots={}\tobserved-calls={}\tresolved-calls={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\tmanual-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tmanual-slots={}\tsemantic-links={}\tsemantic-operations={}\tartifact-guards={}\truntime-guards={}\tfacts={}\tpack={}",
         summary.fact_tables,
         summary.observed_slots,
+        summary.observed_calls,
+        summary.resolved_calls,
         summary.reviewed_anchors,
         summary.ignored_anchors,
         summary.unreviewed_anchors,

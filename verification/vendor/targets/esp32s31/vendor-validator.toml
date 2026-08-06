@@ -42,3 +42,10 @@ output = "../../../../svd/esp32s31-radio.svd"
 facts = "generated/findings/interfaces.json"
 pack = "interfaces/reviewed.toml"
 semantic-catalogs = ["../../../../tools/vendor-code-validator/catalogs/embedded-semantics.toml"]
+
+[functions]
+pack = "functions/reviewed.toml"
+profiles = ["rom-phy", "archive-phy"]
+
+[functions.review]
+output = "generated/reports/function-review.md"

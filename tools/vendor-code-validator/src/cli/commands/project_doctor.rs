@@ -116,6 +116,11 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
     errors += ir_errors;
     warnings += ir_warnings;
 
+    let (function_errors, function_warnings) =
+        super::project_function_doctor::inspect(context.project);
+    errors += function_errors;
+    warnings += function_warnings;
+
     match &context.project.registers {
         None => println!("CAPABILITY\tregister-workspace\tnot-configured"),
         Some(paths) if paths.model.is_file() => {
@@ -260,18 +265,20 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
             Ok(facts) => match paths.pack.as_deref() {
                 None => {
                     println!(
-                        "CAPABILITY\tinterface-facts\tavailable\ttables={}\tobserved-slots={}\tfacts={}",
+                        "CAPABILITY\tinterface-facts\tavailable\ttables={}\tobserved-slots={}\tobserved-calls={}\tfacts={}",
                         facts.tables.len(),
                         facts.observed_slots(),
+                        facts.observed_calls(),
                         paths.facts.display()
                     );
                 }
                 Some(pack) if !pack.is_file() => {
                     warnings += 1;
                     println!(
-                        "CAPABILITY\tinterface-workspace\tpack-not-initialized\ttables={}\tobserved-slots={}\tfacts={}\tpack={}",
+                        "CAPABILITY\tinterface-workspace\tpack-not-initialized\ttables={}\tobserved-slots={}\tobserved-calls={}\tfacts={}\tpack={}",
                         facts.tables.len(),
                         facts.observed_slots(),
+                        facts.observed_calls(),
                         paths.facts.display(),
                         pack.display()
                     );
@@ -285,9 +292,11 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectDoctorContext<'_>) -> 
                     Ok(workspace) => {
                         let summary = workspace.summary();
                         println!(
-                            "CAPABILITY\tinterface-workspace\tavailable\tfact-tables={}\tobserved-slots={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tsemantic-links={}\tsemantic-operations={}\tfacts={}\tpack={}",
+                            "CAPABILITY\tinterface-workspace\tavailable\tfact-tables={}\tobserved-slots={}\tobserved-calls={}\tresolved-calls={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tsemantic-links={}\tsemantic-operations={}\tfacts={}\tpack={}",
                             summary.fact_tables,
                             summary.observed_slots,
+                            summary.observed_calls,
+                            summary.resolved_calls,
                             summary.reviewed_anchors,
                             summary.ignored_anchors,
                             summary.unreviewed_anchors,

@@ -19,6 +19,21 @@ default JSON destination. That report feeds the editable
 [register workspace and SVD export](register-workspace.md); names and hardware
 semantics stay in the reviewed register model rather than this generated file.
 
+Pass `--check` to render the same discovery in memory and compare it with the
+configured or explicit JSON report. A missing or different report fails
+without writing it:
+
+```console
+cargo vendor-code-validator mmio discover \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run \
+  --check
+```
+
+`--check` therefore requires `--json-report` or a project `[registers].facts`
+default. Use [`project check`](project-pipeline.md) to verify MMIO together
+with the other generated project evidence.
+
 `mmio discover` is a best-effort, artifact-wide inventory for reverse
 engineering register blocks. It accepts multiple ELF/ar inputs and explicit
 half-open address ranges independently of whether every address already has an

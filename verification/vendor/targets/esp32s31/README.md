@@ -24,6 +24,24 @@ cargo vendor-code-validator project doctor
 
 The missing run spec is a readiness warning rather than a configuration error.
 
+With a private run spec, the complete generated-evidence workflow is:
+
+```console
+cargo vendor-code-validator project build \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+
+cargo vendor-code-validator project check \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml \
+  --run-spec /path/to/local.run
+```
+
+This generates or checks MMIO/interface facts, both linked-IR profiles, and the
+register/function reviews, then validates the reviewed register, interface,
+and function files.
+It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
+code; those remain explicit release steps.
+
 ## Register project
 
 The checked `registers/device.toml` and its peripheral fragments are the
@@ -110,7 +128,33 @@ Generated facts are ignored because they expose local paths and artifact
 digests. The reviewed `interfaces/reviewed.toml` is intended to become a
 shareable project asset after manual review. Reusable RTOS, NVS, logging, and
 delay operations come from the tool's semantic catalog; the project pack owns
-only ESP32-S31 anchors, layout versions, and slot ABI.
+only ESP32-S31 anchors, layout versions, and slot ABI. Validation also retains
+the generic discovery evidence for each concrete call site and recovered
+argument expression; those facts do not make the reviewed semantic a runtime
+execution claim.
+
+The same project configures a reviewed function/context workspace over both IR
+profiles. Generate IR, initialize the pack once, then edit names and roles in
+`functions/reviewed.toml` and regenerate the reading view:
+
+```console
+cargo vendor-code-validator functions init-pack \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+
+cargo vendor-code-validator functions validate \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+
+cargo vendor-code-validator functions review \
+  --project verification/vendor/targets/esp32s31/vendor-validator.toml
+```
+
+The ignored `generated/reports/function-review.md` puts reviewed roles and
+context field names beside pseudo-code, exact validated interface call sites,
+recovered call arguments, exact linked-IR CFG guards when available,
+RTOS/NVS/logging/delay links, trampoline counts, and closure blockers. It is
+not source reconstruction and
+does not feed the register SVD. Register names remain in `registers/`, and
+external table ABI/semantics remain in `interfaces/` plus the reusable catalog.
 
 This directory owns target-specific input for compiled vendor-to-Rust
 verification. It is deliberately outside the generic verification engine.

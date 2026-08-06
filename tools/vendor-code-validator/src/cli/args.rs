@@ -7,6 +7,11 @@ use crate::Result;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
     ProjectDoctor,
+    ProjectBuild,
+    ProjectCheck,
+    FunctionInitPack,
+    FunctionValidate,
+    FunctionReview,
     RegisterInitOverlay,
     RegisterInitModel,
     RegisterImportSvd,
@@ -43,6 +48,26 @@ impl Command {
             ("project", Some("doctor")) => {
                 remaining.remove(0);
                 Self::ProjectDoctor
+            }
+            ("project", Some("build")) => {
+                remaining.remove(0);
+                Self::ProjectBuild
+            }
+            ("project", Some("check")) => {
+                remaining.remove(0);
+                Self::ProjectCheck
+            }
+            ("functions", Some("init-pack")) => {
+                remaining.remove(0);
+                Self::FunctionInitPack
+            }
+            ("functions", Some("validate")) => {
+                remaining.remove(0);
+                Self::FunctionValidate
+            }
+            ("functions", Some("review")) => {
+                remaining.remove(0);
+                Self::FunctionReview
             }
             ("registers", Some("init-overlay")) => {
                 remaining.remove(0);
@@ -166,15 +191,15 @@ impl Command {
                 }
             }
             (
-                "project" | "registers" | "symbols" | "interfaces" | "image" | "inspect"
-                | "reference" | "driver" | "mmio" | "ir",
+                "project" | "functions" | "registers" | "symbols" | "interfaces" | "image"
+                | "inspect" | "reference" | "driver" | "mmio" | "ir",
                 Some(command),
             ) => {
                 return Err(format!("unknown {value} command: {command}").into());
             }
             (
-                "project" | "registers" | "symbols" | "interfaces" | "image" | "inspect"
-                | "reference" | "driver" | "mmio" | "ir",
+                "project" | "functions" | "registers" | "symbols" | "interfaces" | "image"
+                | "inspect" | "reference" | "driver" | "mmio" | "ir",
                 None,
             ) => {
                 return Err(format!("{value} requires a command").into());
@@ -214,6 +239,9 @@ impl Command {
         !matches!(
             self,
             Self::ProjectDoctor
+                | Self::FunctionInitPack
+                | Self::FunctionValidate
+                | Self::FunctionReview
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
@@ -230,6 +258,11 @@ impl Command {
         !matches!(
             self,
             Self::ProjectDoctor
+                | Self::ProjectBuild
+                | Self::ProjectCheck
+                | Self::FunctionInitPack
+                | Self::FunctionValidate
+                | Self::FunctionReview
                 | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
@@ -251,7 +284,10 @@ impl Command {
     pub(crate) const fn uses_memory_map(self) -> bool {
         !matches!(
             self,
-            Self::RegisterInitOverlay
+            Self::FunctionInitPack
+                | Self::FunctionValidate
+                | Self::FunctionReview
+                | Self::RegisterInitOverlay
                 | Self::RegisterInitModel
                 | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
@@ -269,7 +305,10 @@ impl Command {
     pub(crate) const fn uses_register_catalog(self) -> bool {
         !matches!(
             self,
-            Self::RegisterInitOverlay
+            Self::FunctionInitPack
+                | Self::FunctionValidate
+                | Self::FunctionReview
+                | Self::RegisterInitOverlay
                 | Self::RegisterInitModel
                 | Self::RegisterImportSvd
                 | Self::InterfaceInitPack
@@ -287,7 +326,10 @@ impl Command {
     pub(crate) const fn uses_run_spec(self) -> bool {
         !matches!(
             self,
-            Self::InterfaceInitPack
+            Self::FunctionInitPack
+                | Self::FunctionValidate
+                | Self::FunctionReview
+                | Self::InterfaceInitPack
                 | Self::InterfaceValidate
                 | Self::RegisterInitOverlay
                 | Self::RegisterInitModel
@@ -302,6 +344,11 @@ impl Command {
     pub(crate) fn accepts_run_input_role(self, role: &str) -> bool {
         match self {
             Self::ProjectDoctor
+            | Self::ProjectBuild
+            | Self::ProjectCheck
+            | Self::FunctionInitPack
+            | Self::FunctionValidate
+            | Self::FunctionReview
             | Self::InterfaceInitPack
             | Self::InterfaceValidate
             | Self::RegisterInitOverlay
@@ -500,6 +547,29 @@ mod tests {
     }
 
     #[test]
+    fn parses_project_build_and_check_as_project_owned_pipelines() {
+        for (name, expected) in [
+            ("build", Command::ProjectBuild),
+            ("check", Command::ProjectCheck),
+        ] {
+            let invocation = Invocation::parse([
+                "project".to_owned(),
+                name.to_owned(),
+                "--project".to_owned(),
+                "vendor-validator.toml".to_owned(),
+                "--deny-unreviewed".to_owned(),
+            ])
+            .unwrap();
+            assert_eq!(invocation.command, expected);
+            assert_eq!(invocation.arguments, ["--deny-unreviewed"]);
+            assert!(invocation.command.uses_memory_map());
+            assert!(invocation.command.uses_register_catalog());
+            assert!(invocation.command.uses_run_spec());
+            assert!(!invocation.command.requires_mmio_map());
+        }
+    }
+
+    #[test]
     fn parses_project_symbol_inventory() {
         let invocation = Invocation::parse([
             "symbols".to_owned(),
@@ -554,6 +624,28 @@ mod tests {
         .unwrap();
         assert_eq!(validate.command, Command::InterfaceValidate);
         assert_eq!(validate.arguments, ["--deny-unreviewed"]);
+    }
+
+    #[test]
+    fn parses_function_pack_lifecycle_without_backend_inputs() {
+        for (name, command) in [
+            ("init-pack", Command::FunctionInitPack),
+            ("validate", Command::FunctionValidate),
+            ("review", Command::FunctionReview),
+        ] {
+            let invocation = Invocation::parse([
+                "functions".to_owned(),
+                name.to_owned(),
+                "--project".to_owned(),
+                "vendor-validator.toml".to_owned(),
+            ])
+            .unwrap();
+            assert_eq!(invocation.command, command);
+            assert!(!invocation.command.requires_backend());
+            assert!(!invocation.command.uses_run_spec());
+            assert!(!invocation.command.uses_memory_map());
+            assert!(!invocation.command.uses_register_catalog());
+        }
     }
 
     #[test]

@@ -406,6 +406,7 @@ pub(super) fn apply_call_instruction(
                 .reference_events
                 .push(DraftReferenceEvent::ExternalCall {
                     token: state.next_external_call_token,
+                    site: pc as u32,
                     table,
                     function,
                     arguments,

@@ -90,6 +90,7 @@ pub(crate) struct InterfacePack {
 pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) fact_tables: usize,
     pub(crate) observed_slots: usize,
+    pub(crate) observed_calls: usize,
     pub(crate) reviewed_anchors: usize,
     pub(crate) ignored_anchors: usize,
     pub(crate) unreviewed_anchors: usize,
@@ -102,6 +103,26 @@ pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) semantic_operations: usize,
     pub(crate) artifact_guards: usize,
     pub(crate) runtime_guards: usize,
+    pub(crate) resolved_calls: usize,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ResolvedInterfaceArgument {
+    pub(crate) index: usize,
+    pub(crate) kind: String,
+    pub(crate) expression: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ResolvedInterfaceCall {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    pub(crate) function_address: u32,
+    pub(crate) site: u32,
+    pub(crate) kind: String,
+    pub(crate) jalr_offset: i32,
+    pub(crate) arguments: Vec<ResolvedInterfaceArgument>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -117,6 +138,7 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) variadic: bool,
     pub(crate) semantic: Option<String>,
     pub(crate) functions: BTreeSet<String>,
+    pub(crate) calls: Vec<ResolvedInterfaceCall>,
 }
 
 #[derive(Debug)]

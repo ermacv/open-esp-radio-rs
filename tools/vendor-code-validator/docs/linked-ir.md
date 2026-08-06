@@ -164,7 +164,11 @@ path are conjunctive. During semantic projection these are retained as
 `cfg_guard_scopes`, with an AND between function scopes and an OR between the
 paths inside one scope. Keeping the formula factorized avoids an artificial
 cross product across nested calls and preserves the function in which each
-decision was made. Complementary alternatives and absorbed supersets are
+decision was made. Registered external-table calls preserve their original
+instruction `site` as well, so reviewed interface evidence can join to these
+guards by exact caller and address. Calls synthesized through composition
+remain distinguishable from site-bearing direct evidence. Complementary
+alternatives and absorbed supersets are
 minimized mechanically; conditions themselves remain low-level symbolic
 expressions and call results receive stable descriptive identifiers rather
 than guessed domain names. Aligned bit provenance from one value is rendered
@@ -364,6 +368,11 @@ accesses preserve their branch/call path, symbolic value and, for recognized
 read-modify-write values, preserved/forced-zero/forced-one masks. These are
 layout and data-flow facts only: the tool does not infer a C type name, field
 name, ownership, validity invariant or concurrency semantics.
+
+A project can attach those human-reviewed presentation claims without changing
+the generated IR through a [function and context pack](function-packs.md). The
+derived function report keeps closure blockers, semantic links and pseudo-code
+beside the reviewed names; the pack does not make the IR complete.
 
 The JSON is the machine-readable linked view: each function contains artifact
 identity, `global-or-weak` or `local` binding, address or relocatable object

@@ -249,6 +249,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     };
     let event = DraftReferenceEvent::ExternalCall {
         token: 0,
+        site: 0x40,
         table: crate::ExternalTableRef::new(&TABLE),
         function: crate::ExternalFunctionRef::new(&FUNCTIONS[0]),
         arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
@@ -263,6 +264,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     let call = calls.into_iter().next().unwrap();
 
     assert_eq!(call.kind, "external");
+    assert_eq!(call.site, Some(0x40));
     assert_eq!(call.target, "wifi_osi::ets_delay_us");
     assert_eq!(call.arguments, [SymbolicValue::input(0).canonical()]);
     assert_eq!(
@@ -296,7 +298,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     assert_eq!(trampoline.return_type, "void");
     assert!(
             pseudo.contains(
-                "semantic.time_delay_micros(micros /* u32 Input */ = arg0); // ABI wifi_osi+0x20 ets_delay_us, returns void; replacement: Rust async timer"
+                "semantic.time_delay_micros(micros /* u32 Input */ = arg0); // site 0x00000040; ABI wifi_osi+0x20 ets_delay_us, returns void; replacement: Rust async timer"
             ),
             "{pseudo}"
         );

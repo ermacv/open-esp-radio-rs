@@ -7,6 +7,7 @@ use crate::run_spec::RunSpec;
 
 #[derive(Default)]
 pub(super) struct Options {
+    pub(super) check: bool,
     pub(super) json_report: Option<PathBuf>,
     pub(super) name_prefix: String,
     pub(super) sources: BTreeSet<String>,
@@ -18,6 +19,12 @@ pub(super) fn parse_options(arguments: Vec<String>) -> Result<Options> {
     let mut arguments = arguments.into_iter();
     while let Some(argument) = arguments.next() {
         match argument.as_str() {
+            "--check" => {
+                if options.check {
+                    return Err("duplicate --check".into());
+                }
+                options.check = true;
+            }
             "--json-report" => {
                 if options.json_report.is_some() {
                     return Err("duplicate --json-report".into());
@@ -39,6 +46,9 @@ pub(super) fn parse_options(arguments: Vec<String>) -> Result<Options> {
             "--tables-only" => options.tables_only = true,
             _ => return Err(format!("unknown interfaces discover option: {argument}").into()),
         }
+    }
+    if options.check && options.json_report.is_none() {
+        return Err("interfaces discover --check requires --json-report PATH".into());
     }
     Ok(options)
 }

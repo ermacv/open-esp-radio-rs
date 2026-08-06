@@ -243,6 +243,28 @@ The façade is the only module that schedules symbols and assembles a complete
 `LinkedIrReport`. Analysis modules may consume the stable model and shared
 helpers, but report rendering does not feed facts back into analysis.
 
+## Function-workspace source layout
+
+`function_workspace/mod.rs` is the façade for the human-reviewed function and
+context layer over linked-IR JSON. Its modules keep generated parsing, editable
+claims, validation, and presentation separate:
+
+| Module | Responsibility |
+| --- | --- |
+| `facts.rs` | Strict minimal projection of schema-v30 linked IR, including site-bearing calls and guard expressions |
+| `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
+| `pack.rs` | Editable pack and resolved workspace models |
+| `pack_parse.rs` | TOML syntax parsing without evidence interpretation |
+| `pack_validate.rs` | Provenance, stale-identity, completeness, and coverage rules |
+| `template.rs` | One-shot unreviewed pack initialization |
+| `review.rs` | Generated human reading view over validated facts and claims |
+| `tests.rs` | Pack lifecycle, stale provenance, coverage, and report tests |
+
+The renderer receives an already validated workspace and cannot create review
+claims. The pack validator consumes only the stable facts projection rather
+than the linked analyzer's internal Rust types, so schema changes cross one
+explicit fail-closed boundary.
+
 ## IR export source layout
 
 `cli/commands/export_ir.rs` parses options, invokes linked analysis, and

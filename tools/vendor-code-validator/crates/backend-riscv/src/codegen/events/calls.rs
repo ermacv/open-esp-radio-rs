@@ -16,6 +16,7 @@ pub(super) fn render_event(
             table,
             function,
             arguments,
+            ..
         } => {
             if usize::try_from(*token).ok() != Some(state.external_results.len()) {
                 return Err(format!(

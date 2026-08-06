@@ -1,0 +1,112 @@
+//! Editable function/context pack and its resolved workspace view.
+
+use std::{fs, path::Path};
+
+use toml_edit::{DocumentMut, Item};
+
+use super::FunctionFacts;
+use crate::Result;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FunctionReviewStatus {
+    Unreviewed,
+    Reviewed,
+    Ignored,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedFunctionInput {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedContextField {
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) status: FunctionReviewStatus,
+    pub(crate) name: Option<String>,
+    pub(crate) display_type: Option<String>,
+    pub(crate) description: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedContext {
+    pub(crate) argument: u8,
+    pub(crate) status: FunctionReviewStatus,
+    pub(crate) name: Option<String>,
+    pub(crate) type_name: Option<String>,
+    pub(crate) fields: Vec<ReviewedContextField>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedFunction {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) identity: String,
+    pub(crate) status: FunctionReviewStatus,
+    pub(crate) name: Option<String>,
+    pub(crate) role: Option<String>,
+    pub(crate) summary: Option<String>,
+    pub(crate) accept_incomplete: bool,
+    pub(crate) contexts: Vec<ReviewedContext>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FunctionPack {
+    pub(crate) id: String,
+    pub(crate) inputs: Vec<ReviewedFunctionInput>,
+    pub(crate) functions: Vec<ReviewedFunction>,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct FunctionWorkspaceSummary {
+    pub(crate) inputs: usize,
+    pub(crate) observed_functions: usize,
+    pub(crate) reviewed_functions: usize,
+    pub(crate) ignored_functions: usize,
+    pub(crate) unreviewed_functions: usize,
+    pub(crate) reviewed_contexts: usize,
+    pub(crate) ignored_contexts: usize,
+    pub(crate) unreviewed_contexts: usize,
+    pub(crate) reviewed_fields: usize,
+    pub(crate) ignored_fields: usize,
+    pub(crate) unreviewed_fields: usize,
+    pub(crate) accepted_incomplete: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct FunctionWorkspace {
+    pub(crate) facts: FunctionFacts,
+    pub(crate) pack: FunctionPack,
+    summary: FunctionWorkspaceSummary,
+}
+
+impl FunctionWorkspace {
+    pub(crate) fn load(reports: &[(String, std::path::PathBuf)], pack: &Path) -> Result<Self> {
+        let facts = FunctionFacts::load(reports)?;
+        let pack = FunctionPack::load(pack)?;
+        let summary = super::pack_validate::validate(&pack, &facts)?;
+        Ok(Self {
+            facts,
+            pack,
+            summary,
+        })
+    }
+
+    pub(crate) const fn summary(&self) -> FunctionWorkspaceSummary {
+        self.summary
+    }
+}
+
+impl FunctionPack {
+    pub(crate) fn load(path: &Path) -> Result<Self> {
+        let input = fs::read_to_string(path)?;
+        let document = input.parse::<DocumentMut>()?;
+        if document.get("schema").and_then(Item::as_integer) != Some(1) {
+            return Err(format!("{} requires schema = 1", path.display()).into());
+        }
+        super::pack_parse::parse(&document)
+    }
+}

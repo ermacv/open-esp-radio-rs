@@ -1,10 +1,6 @@
 //! Stable JSON projection of generic indirect-call evidence.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fs,
-    path::Path,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Value, json};
 
@@ -168,7 +164,7 @@ fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
         .collect()
 }
 
-pub(super) fn write_json_report(path: &Path, discovery: &Discovery) -> Result<()> {
+pub(super) fn render_json_report(discovery: &Discovery) -> Result<String> {
     let artifacts = discovery
         .linkage
         .artifacts
@@ -209,12 +205,5 @@ pub(super) fn write_json_report(path: &Path, discovery: &Discovery) -> Result<()
             "error": failure.error,
         })).collect::<Vec<_>>(),
     });
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, serde_json::to_string_pretty(&document)? + "\n")?;
-    Ok(())
+    Ok(serde_json::to_string_pretty(&document)? + "\n")
 }

@@ -299,6 +299,7 @@ pub(super) fn flatten_reference_trace(
             }
             DraftReferenceEvent::ExternalCall {
                 token,
+                site,
                 table,
                 function,
                 arguments,
@@ -323,6 +324,7 @@ pub(super) fn flatten_reference_trace(
                 external_tokens.push(mapped_token);
                 output.push(DraftReferenceEvent::ExternalCall {
                     token: mapped_token,
+                    site: *site,
                     table: *table,
                     function: *function,
                     arguments,

@@ -39,6 +39,13 @@ pub(crate) struct InterfaceWorkspacePaths {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FunctionWorkspacePaths {
+    pub(crate) pack: PathBuf,
+    pub(crate) profiles: Vec<String>,
+    pub(crate) review_output: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
     pub(crate) id: String,
     pub(crate) target_spec: PathBuf,
@@ -49,6 +56,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) ir_profiles: Vec<ProjectIrProfile>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
+    pub(crate) functions: Option<FunctionWorkspacePaths>,
 }
 
 impl ProjectSpec {
@@ -225,6 +233,83 @@ impl ProjectSpec {
                 })
             })
             .transpose()?;
+        let functions = document
+            .get("functions")
+            .map(|item| -> Result<FunctionWorkspacePaths> {
+                let table = item
+                    .as_table()
+                    .ok_or("project manifest functions must be a table")?;
+                let profiles = table
+                    .get("profiles")
+                    .map(|item| {
+                        let values = item
+                            .as_array()
+                            .ok_or("project functions.profiles must be an array")?;
+                        values
+                            .iter()
+                            .enumerate()
+                            .map(|(index, value)| {
+                                value.as_str().map(str::to_owned).ok_or_else(|| {
+                                    format!("project functions.profiles[{index}] must be a string")
+                                        .into()
+                                })
+                            })
+                            .collect::<Result<Vec<_>>>()
+                    })
+                    .transpose()?
+                    .unwrap_or_else(|| {
+                        ir_profiles
+                            .iter()
+                            .map(|profile| profile.id.clone())
+                            .collect()
+                    });
+                if profiles.is_empty() {
+                    return Err(
+                        "project [functions] requires at least one [[analysis.ir]] profile".into(),
+                    );
+                }
+                let mut seen = std::collections::BTreeSet::new();
+                for profile in &profiles {
+                    if !seen.insert(profile) {
+                        return Err(
+                            format!("duplicate project functions profile {profile:?}").into()
+                        );
+                    }
+                    if !ir_profiles.iter().any(|candidate| candidate.id == *profile) {
+                        return Err(format!(
+                            "project functions refers to unknown IR profile {profile:?}"
+                        )
+                        .into());
+                    }
+                }
+                let review_output = table
+                    .get("review")
+                    .map(|item| -> Result<PathBuf> {
+                        let review = item
+                            .as_table()
+                            .ok_or("project functions.review must be a table")?;
+                        review
+                            .get("output")
+                            .and_then(Item::as_str)
+                            .map(|path| resolve_path(base, path))
+                            .ok_or_else(|| {
+                                "project functions.review requires string \"output\"".into()
+                            })
+                    })
+                    .transpose()?;
+                Ok(FunctionWorkspacePaths {
+                    pack: resolve_path(
+                        base,
+                        table
+                            .get("pack")
+                            .and_then(Item::as_str)
+                            .ok_or("project functions requires string \"pack\"")?,
+                    ),
+                    profiles,
+                    review_output,
+                })
+            })
+            .transpose()?;
         Ok(Self {
             id,
             target_spec,
@@ -235,11 +320,29 @@ impl ProjectSpec {
             ir_profiles,
             registers,
             interfaces,
+            functions,
         })
     }
 
     pub(crate) fn load_memory_map(&self) -> Result<Option<MemoryMap>> {
         self.memory_map.as_deref().map(MemoryMap::load).transpose()
+    }
+
+    pub(crate) fn function_ir_reports(&self) -> Result<Vec<(String, PathBuf)>> {
+        let Some(functions) = &self.functions else {
+            return Ok(Vec::new());
+        };
+        functions
+            .profiles
+            .iter()
+            .map(|id| {
+                self.ir_profiles
+                    .iter()
+                    .find(|profile| profile.id == *id)
+                    .map(|profile| (id.clone(), profile.output.clone()))
+                    .ok_or_else(|| format!("unknown function workspace IR profile {id:?}").into())
+            })
+            .collect()
     }
 }
 
@@ -379,6 +482,13 @@ edition = "2024"
 facts = "generated/interfaces.json"
 pack = "interfaces/reviewed.toml"
 semantic-catalogs = ["interfaces/embedded-semantics.toml"]
+
+[functions]
+pack = "functions/reviewed.toml"
+profiles = ["vendor"]
+
+[functions.review]
+output = "generated/function-review.md"
 "#,
         )
         .unwrap();
@@ -425,6 +535,21 @@ semantic-catalogs = ["interfaces/embedded-semantics.toml"]
                 pack: Some(directory.join("interfaces/reviewed.toml")),
                 semantic_catalogs: vec![directory.join("interfaces/embedded-semantics.toml")],
             })
+        );
+        assert_eq!(
+            project.functions,
+            Some(FunctionWorkspacePaths {
+                pack: directory.join("functions/reviewed.toml"),
+                profiles: vec!["vendor".to_owned()],
+                review_output: Some(directory.join("generated/function-review.md")),
+            })
+        );
+        assert_eq!(
+            project.function_ir_reports().unwrap(),
+            [(
+                "vendor".to_owned(),
+                directory.join("generated/vendor.ir.json")
+            )]
         );
     }
 

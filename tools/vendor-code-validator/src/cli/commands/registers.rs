@@ -1,7 +1,5 @@
 //! Project register-workspace lifecycle commands.
 
-use std::{fs, path::Path};
-
 use super::super::*;
 use crate::{project::ProjectSpec, registers::*};
 
@@ -71,7 +69,7 @@ fn review(arguments: Vec<String>, paths: &crate::project::RegisterWorkspacePaths
     }
     let (contents, summary) =
         render_register_review(&facts, &model, &ir_reports, &paths.facts, &paths.model)?;
-    write_or_check(output, &contents, check, "register review")?;
+    super::super::generated_output::write_or_check(output, &contents, check, "register review")?;
     println!(
         "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tdraft-field-partitions={}\tir-reports={}\tir-registers={}\tir-only-registers={}\tir-field-candidates={}\tpath={}",
         if check { "verified" } else { "written" },
@@ -289,7 +287,7 @@ fn export_svd(
         .into());
     }
     let (contents, summary) = workspace.render_svd(profile)?;
-    write_or_check(output, &contents, check, "SVD")?;
+    super::super::generated_output::write_or_check(output, &contents, check, "SVD")?;
     println!(
         "SVD\tstatus={}\tprofile={}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
         if check { "verified" } else { "written" },
@@ -356,7 +354,7 @@ fn generate_pac_source(
     }
     let (svd, svd_summary) = workspace.render_svd(SvdExportProfile::Release)?;
     let source = generate_pac(&svd, target, edition)?;
-    write_or_check(output, &source, check, "PAC")?;
+    super::super::generated_output::write_or_check(output, &source, check, "PAC")?;
     println!(
         "PAC\tstatus={}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tpath={}",
         if check { "verified" } else { "written" },
@@ -367,30 +365,6 @@ fn generate_pac_source(
         output.display()
     );
     Ok(true)
-}
-
-fn write_or_check(path: &Path, contents: &str, check: bool, kind: &str) -> Result<()> {
-    if check {
-        let existing = fs::read_to_string(path).map_err(|error| {
-            format!("cannot check generated {kind} {}: {error}", path.display())
-        })?;
-        if existing != contents {
-            return Err(format!(
-                "generated {kind} differs from {}; rerun without --check",
-                path.display()
-            )
-            .into());
-        }
-        return Ok(());
-    }
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, contents)?;
-    Ok(())
 }
 
 fn print_summary(

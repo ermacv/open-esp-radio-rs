@@ -40,6 +40,10 @@ semantic-catalogs = ["interfaces/embedded-semantics.toml"]
 
 With this table, `--json-report` is optional. The report is generated facts;
 do not edit it.
+Pass `--check` to reproduce and compare the report without changing it. It
+requires either an explicit `--json-report` or the project `[interfaces].facts`
+default. [`project check`](project-pipeline.md) combines this with MMIO, linked
+IR, register review, and read-only workspace validation.
 See [reviewed interface and semantic packs](interface-packs.md) for the
 separate `init-pack` and `validate` lifecycle.
 
@@ -87,7 +91,11 @@ slot belongs to an RTOS API, or which C prototype it has.
 The JSON also groups calls with the same artifact, root and container path as
 `table_candidates`, collecting observed slots and calling functions. This is
 an observed-use inventory, not a declaration of table size: unobserved slots
-are absent.
+are absent. The reviewed workspace consumes both views: table candidates are
+stable layout-review keys, while the original `calls` records supply exact
+instruction sites, call kinds, and recoverable argument expressions. It
+rejects a call whose artifact/root/load chain/slot disagrees with the
+aggregate candidate.
 
 ## Linkage boundary
 
@@ -123,7 +131,9 @@ visible.
 The implemented reviewed pack uses stable keys based on source, root selector,
 container path, slot offset and a layout/version guard—not instruction
 addresses. Regeneration distinguishes unchanged, new, missing, and ambiguous
-slots without overwriting user decisions.
+slots without overwriting user decisions. Validated output still lists the
+current instruction addresses; they are evidence attached to the stable key,
+not user-maintained identity.
 
 ## Explicit limitations
 

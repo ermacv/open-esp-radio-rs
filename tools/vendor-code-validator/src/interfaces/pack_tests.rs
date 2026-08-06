@@ -30,6 +30,35 @@ fn write_facts(path: &Path, digest: &str) {
   "schema_version": 1,
   "command": "interfaces-discover",
   "artifacts": [{{"index":0,"sources":["libpp"],"sha256":"{digest}"}}],
+  "calls": [{{
+    "artifact":0,
+    "member":"event.o",
+    "function":"post_event",
+    "function_address":"0x100",
+    "site":"0x120",
+    "kind":"call",
+    "target":{{
+      "root":{{
+        "kind":"relocated-symbol",
+        "member":"event.o",
+        "symbol":"g_services",
+        "addend":0,
+        "addressing":"absolute"
+      }},
+      "loads":[
+        {{"site":"0x110","offset":0,"width":32}},
+        {{"site":"0x114","offset":16,"width":32}}
+      ],
+      "container_depth":1,
+      "slot_offset":16,
+      "jalr_offset":0
+    }},
+    "arguments":[
+      {{"index":0,"kind":"unknown"}},
+      {{"index":1,"kind":"constant","value":"0x0000002a"}},
+      {{"index":2,"kind":"pointer-provenance","canonical":"arg0+4"}}
+    ]
+  }}],
   "table_candidates": [{{
     "artifact": 0,
     "root": {{
@@ -125,16 +154,24 @@ fn reviewed_slot_links_observed_layout_to_reusable_semantics() {
         InterfaceWorkspaceSummary {
             fact_tables: 1,
             observed_slots: 1,
+            observed_calls: 1,
             reviewed_anchors: 1,
             reviewed_slots: 1,
             semantic_links: 1,
             semantic_operations: 1,
             artifact_guards: 1,
+            resolved_calls: 1,
             ..InterfaceWorkspaceSummary::default()
         }
     );
     assert_eq!(workspace.bindings().len(), 1);
     assert_eq!(workspace.bindings()[0].anchor, "wifi-osi");
+    assert_eq!(workspace.bindings()[0].calls.len(), 1);
+    assert_eq!(workspace.bindings()[0].calls[0].site, 0x120);
+    assert_eq!(
+        workspace.bindings()[0].calls[0].arguments[1].expression,
+        "0x0000002a"
+    );
     assert_eq!(
         workspace.bindings()[0]
             .functions
@@ -143,6 +180,46 @@ fn reviewed_slot_links_observed_layout_to_reusable_semantics() {
             .collect::<Vec<_>>(),
         ["post_event"]
     );
+}
+
+#[test]
+fn inconsistent_call_site_cannot_hide_behind_a_table_aggregate() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let digest = fake_digest('a');
+    write_facts(&facts, &digest);
+    let inconsistent = std::fs::read_to_string(&facts)
+        .unwrap()
+        .replace("\"slot_offset\":16", "\"slot_offset\":20");
+    std::fs::write(&facts, inconsistent).unwrap();
+
+    let error = InterfaceFacts::load(&facts).unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert!(
+        error
+            .to_string()
+            .contains("inconsistent container/slot metadata")
+    );
+}
+
+#[test]
+fn one_site_may_preserve_multiple_argument_provenance_variants() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let digest = fake_digest('a');
+    write_facts(&facts, &digest);
+    let mut document =
+        serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&facts).unwrap())
+            .unwrap();
+    let calls = document["calls"].as_array_mut().unwrap();
+    let mut alternate = calls[0].clone();
+    alternate["arguments"][1]["value"] = serde_json::json!("0x0000002b");
+    calls.push(alternate);
+    std::fs::write(&facts, serde_json::to_string(&document).unwrap()).unwrap();
+
+    let loaded = InterfaceFacts::load(&facts).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    assert_eq!(loaded.calls.len(), 2);
 }
 
 #[test]

@@ -21,6 +21,11 @@ struct BuiltProfile<'a> {
     documents: export_ir::ProjectIrDocuments,
 }
 
+struct ResolvedInputs {
+    artifacts: Vec<(String, PathBuf)>,
+    companions: Vec<PathBuf>,
+}
+
 pub(super) fn run(
     arguments: Vec<String>,
     project: &ProjectSpec,
@@ -32,9 +37,14 @@ pub(super) fn run(
     let selected = select_profiles(&project.ir_profiles, &options.profiles)?;
     let mut built = Vec::with_capacity(selected.len());
     for profile in selected {
-        let (artifacts, companions) = resolve_inputs(profile, run_spec)?;
-        let documents =
-            export_ir::generate_project_profile(artifacts, companions, profile, svd, target)?;
+        let inputs = resolve_inputs(profile, run_spec)?;
+        let documents = export_ir::generate_project_profile(
+            inputs.artifacts,
+            inputs.companions,
+            profile,
+            svd,
+            target,
+        )?;
         built.push(BuiltProfile { profile, documents });
     }
 
@@ -121,10 +131,7 @@ fn select_profiles<'a>(
         .collect())
 }
 
-fn resolve_inputs(
-    profile: &ProjectIrProfile,
-    run_spec: &RunSpec,
-) -> Result<(Vec<(String, PathBuf)>, Vec<PathBuf>)> {
+fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<ResolvedInputs> {
     let bound = run_spec
         .inputs()
         .iter()
@@ -187,7 +194,10 @@ fn resolve_inputs(
         )
         .into());
     }
-    Ok((artifacts, companions.into_iter().collect()))
+    Ok(ResolvedInputs {
+        artifacts,
+        companions: companions.into_iter().collect(),
+    })
 }
 
 fn check_all(profiles: &[BuiltProfile<'_>]) -> Result<()> {
@@ -306,23 +316,23 @@ mod tests {
         let run_spec = RunSpec::load(&path).unwrap();
         let mut selected = profile("rom-only");
         selected.sources = vec!["rom".to_owned()];
-        let (artifacts, companions) = resolve_inputs(&selected, &run_spec).unwrap();
+        let inputs = resolve_inputs(&selected, &run_spec).unwrap();
         let mut combined = profile("combined");
         combined.sources = vec!["archive".to_owned(), "rom".to_owned()];
-        let (combined_artifacts, combined_companions) =
-            resolve_inputs(&combined, &run_spec).unwrap();
+        let combined_inputs = resolve_inputs(&combined, &run_spec).unwrap();
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(artifacts.len(), 1);
-        assert_eq!(artifacts[0].0, "rom");
-        assert_eq!(companions.len(), 1);
-        assert!(companions[0].ends_with("archive.elf"));
+        assert_eq!(inputs.artifacts.len(), 1);
+        assert_eq!(inputs.artifacts[0].0, "rom");
+        assert_eq!(inputs.companions.len(), 1);
+        assert!(inputs.companions[0].ends_with("archive.elf"));
         assert_eq!(
-            combined_artifacts
+            combined_inputs
+                .artifacts
                 .iter()
                 .map(|(source, _)| source.as_str())
                 .collect::<Vec<_>>(),
             ["archive", "rom"]
         );
-        assert!(combined_companions.is_empty());
+        assert!(combined_inputs.companions.is_empty());
     }
 }

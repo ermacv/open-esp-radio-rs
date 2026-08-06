@@ -4,10 +4,12 @@ mod analyze;
 mod audit_direct_targets;
 mod compare;
 mod discover_mmio;
+mod discover_mmio_json;
 mod execute;
 mod execute_compare;
 mod export_ir;
 mod extract;
+mod function_pack;
 mod generate_driver;
 mod generate_reference;
 mod generate_reference_batch;
@@ -17,7 +19,9 @@ mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;
 mod project_doctor;
+mod project_function_doctor;
 mod project_ir_doctor;
+mod project_pipeline;
 mod qualify_channel;
 mod qualify_rf_init;
 mod registers;
@@ -35,6 +39,20 @@ pub(super) fn run_project_doctor(
     context: ProjectDoctorContext<'_>,
 ) -> Result<bool> {
     project_doctor::run(arguments, context)
+}
+
+pub(super) fn run_project_pipeline(
+    command: Command,
+    arguments: Vec<String>,
+    project: &crate::project::ProjectSpec,
+    run_spec: Option<&crate::run_spec::RunSpec>,
+    memory_map: Option<&crate::MemoryMap>,
+    svd: &MmioRegisterMap,
+    target: &TargetSpec,
+) -> Result<bool> {
+    project_pipeline::run(
+        command, arguments, project, run_spec, memory_map, svd, target,
+    )
 }
 
 pub(super) fn run_symbol_inventory(
@@ -58,6 +76,15 @@ pub(super) fn run_interface_pack_command(
     target: &TargetSpec,
 ) -> Result<bool> {
     interface_pack::run(command, arguments, project, target)
+}
+
+pub(super) fn run_function_pack_command(
+    command: Command,
+    arguments: Vec<String>,
+    project: &crate::project::ProjectSpec,
+    target: &TargetSpec,
+) -> Result<bool> {
+    function_pack::run(command, arguments, project, target)
 }
 
 pub(super) fn run_register_command(
@@ -86,6 +113,11 @@ pub(super) fn run(
 ) -> Result<bool> {
     match command {
         Command::ProjectDoctor
+        | Command::ProjectBuild
+        | Command::ProjectCheck
+        | Command::FunctionInitPack
+        | Command::FunctionValidate
+        | Command::FunctionReview
         | Command::InterfaceInitPack
         | Command::InterfaceValidate
         | Command::RegisterInitOverlay

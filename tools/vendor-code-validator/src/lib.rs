@@ -7,6 +7,7 @@
 mod analysis;
 mod cli;
 mod digest;
+mod function_workspace;
 mod harnesses;
 mod interfaces;
 mod memory_map;

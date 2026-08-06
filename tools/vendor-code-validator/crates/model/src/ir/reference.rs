@@ -94,6 +94,7 @@ pub enum ResolvedReferenceEvent {
     },
     ExternalCall {
         token: u32,
+        site: u32,
         table: ExternalTableRef,
         function: ExternalFunctionRef,
         arguments: Box<[SymbolicValue]>,
@@ -423,11 +424,13 @@ impl ResolvedReferenceEvent {
             }
             DraftReferenceEvent::ExternalCall {
                 token,
+                site,
                 table,
                 function,
                 arguments,
             } => Self::ExternalCall {
                 token: *token,
+                site: *site,
                 table: *table,
                 function: *function,
                 arguments: arguments.clone(),

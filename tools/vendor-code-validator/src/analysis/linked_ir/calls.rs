@@ -505,6 +505,7 @@ pub(super) fn collect_call_event(
 ) {
     let call = match event {
         DraftReferenceEvent::ExternalCall {
+            site,
             table,
             function,
             arguments,
@@ -512,7 +513,7 @@ pub(super) fn collect_call_event(
         } => Some(LinkedCall {
             kind: "external",
             target: format!("{}::{}", table.spec().id, function.spec().c_name),
-            site: None,
+            site: Some(*site),
             tail: false,
             result_modeled: matches!(
                 function.spec().return_model,

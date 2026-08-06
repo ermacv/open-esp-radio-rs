@@ -221,9 +221,19 @@ pub(super) fn run(arguments: Vec<String>, run_spec: &RunSpec) -> Result<bool> {
     }
     let discovery = discover(&inputs, &options)?;
     print_report(&discovery);
-    if let Some(path) = options.json_report {
-        super::interface_discovery_json::write_json_report(&path, &discovery)?;
-        eprintln!("JSON_REPORT\t{}", path.display());
+    if let Some(path) = options.json_report.as_deref() {
+        let output = super::interface_discovery_json::render_json_report(&discovery)?;
+        super::super::generated_output::write_or_check(
+            path,
+            &output,
+            options.check,
+            "interface discovery report",
+        )?;
+        eprintln!(
+            "JSON_REPORT\tstatus={}\t{}",
+            if options.check { "verified" } else { "written" },
+            path.display()
+        );
     }
     Ok(discovery.failures.is_empty())
 }

@@ -311,6 +311,7 @@ pub fn inline_reference_summary(
                 }
             }
             DraftReferenceEvent::ExternalCall {
+                site,
                 table,
                 function,
                 arguments: external_arguments,
@@ -334,6 +335,7 @@ pub fn inline_reference_summary(
                 external_tokens.push(token);
                 DraftReferenceEvent::ExternalCall {
                     token,
+                    site: *site,
                     table: *table,
                     function: *function,
                     arguments: mapped_arguments,

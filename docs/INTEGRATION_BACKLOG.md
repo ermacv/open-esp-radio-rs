@@ -170,9 +170,42 @@ classification, RX PHY/aggregation evidence and UDP/MAC order correlation
 into focused modules of `hil/targets/esp32s31/telemetry`. The runtime keeps
 only explicitly placed static instances and observation call sites. Pure
 IPv4/UDP parsing and sequence-interval evidence now live in
-`radio_hil/connected_traffic.rs`; they own neither sockets nor radio state.
+`radio_hil/connected_traffic/evidence.rs`; they own neither sockets nor radio state.
 This reduced the facade to 5,471 lines without hiding benchmark dependencies
 behind a wildcard parent-module import.
+
+Connected traffic is now a module tree rather than another block in the
+composition facade. TCP RX, UDP RX/TX, bidirectional session coordination and
+interval reporting have separate owners under `radio_hil/connected_traffic`.
+`UdpSocketBuffers` binds only one socket allocation, the TX/RX session-source
+enums describe where a workload starts and publishes its result, and
+`UdpRxTelemetry` contains only named diagnostic inputs. Static cells, their
+single initialization edge and task placement remain visible in `radio_hil.rs`.
+Reporting receives counters explicitly instead of reaching back through
+`super::*`. The facade is now 4,477 lines; the target image remains 40.06%.
+
+The first station-qualification split now lives under `radio_hil/station`:
+`owners.rs` contains only typed board/epoch/lifecycle frontiers,
+`reporting.rs` owns progress publication and join diagnostics, and
+`running_scan.rs` owns the HIL running-scan scenario around the production
+scan port. The progress reporter receives its active flag and channel
+explicitly, and running scan receives that reporter rather than reaching into
+composition globals. The old wildcard import in `phy_diagnostics.rs` is also
+gone. `lifecycle.rs` now owns the HIL backend which dispatches typed station
+owners, applies bounded backoff, and maps production lifecycle failures into
+the wire protocol; it does not implement authentication, association or
+reconnect itself. `connected_epoch.rs` binds the independently scheduled
+network and RX-protocol runners to explicit stop/completion signals, while
+`network_reporting.rs` owns DHCP/readiness evidence and the HIL-only LAN
+probe. `connected_rx_observer.rs` forwards the same production RX events while
+recording only explicitly bound probe, ordering, PHY and aggregation evidence.
+Task, report and observer bindings are constructed in the root rather than
+recovered from globals during reconnect. The complete connected owner
+transaction now lives in `connected_epoch/run.rs`: it activates the interrupt
+epoch, assembles production RX/TX/control owners, starts the bound tasks, and
+returns every owner only after finite teardown. Its remaining one-time storage
+allocations name their root-placed static cells explicitly. Static placement
+and top-level scenario selection remain in the facade, now 2,922 lines.
 
 The WPA2/connected transition no longer exposes 23–28 positional arguments.
 After extracting key/M4 and peer orchestration, its entry points take coherent

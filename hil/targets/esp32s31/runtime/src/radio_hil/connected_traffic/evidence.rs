@@ -10,7 +10,9 @@ use open_esp_radio::{
     esp32s31::wifi::lmac::rx::PUBLIC_HEADER_SIZE, wifi::ieee80211::data::EthernetFrameParts,
 };
 
-pub(super) fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option<u16> {
+pub(in crate::radio_hil) fn ipv4_udp_destination_port(
+    frame: EthernetFrameParts<'_>,
+) -> Option<u16> {
     if frame.ether_type != 0x0800 {
         return None;
     }
@@ -28,7 +30,7 @@ pub(super) fn ipv4_udp_destination_port(frame: EthernetFrameParts<'_>) -> Option
     ]))
 }
 
-pub(super) fn ipv4_udp_sequence(
+pub(in crate::radio_hil) fn ipv4_udp_sequence(
     frame: EthernetFrameParts<'_>,
     destination_port: u16,
 ) -> Option<i32> {
@@ -45,7 +47,7 @@ pub(super) fn ipv4_udp_sequence(
     Some(i32::from_be_bytes(encoded))
 }
 
-pub(super) fn public_qos_sequence(raw: &[u8]) -> Option<(u8, u16)> {
+pub(in crate::radio_hil) fn public_qos_sequence(raw: &[u8]) -> Option<(u8, u16)> {
     const DATA_TYPE: u16 = 0x0008;
     const DATA_TYPE_MASK: u16 = 0x000c;
     const QOS_SUBTYPE: u16 = 0x0080;
@@ -63,13 +65,13 @@ pub(super) fn public_qos_sequence(raw: &[u8]) -> Option<(u8, u16)> {
     Some((tid, sequence_control >> 4))
 }
 
-pub(super) fn iperf2_udp_sequence(packet: &[u8]) -> Option<i32> {
+pub(in crate::radio_hil) fn iperf2_udp_sequence(packet: &[u8]) -> Option<i32> {
     let encoded: [u8; 4] = packet.get(..4)?.try_into().ok()?;
     Some(i32::from_be_bytes(encoded))
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
-pub(super) struct UdpSequenceEvidence {
+pub(in crate::radio_hil) struct UdpSequenceEvidence {
     pub first: Option<u32>,
     pub highest: u32,
     pub expected: u32,
@@ -140,7 +142,7 @@ impl UdpSequenceEvidence {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::UdpSequenceEvidence;
 
     #[test]
     fn sequence_evidence_separates_gaps_duplicates_and_backward_packets() {

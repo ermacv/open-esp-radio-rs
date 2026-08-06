@@ -2,7 +2,12 @@
 
 #![forbid(unsafe_code)]
 
-use super::*;
+use core::sync::atomic::Ordering;
+
+use open_esp_radio::esp32s31::phy::{PhyRfBoundary, PhyTargetObserver};
+
+use super::{DIAGNOSTIC_ACTION_ORDINAL, set_diagnostic_stage};
+use crate::console::emergency_log;
 
 #[derive(Clone, Copy)]
 pub(super) struct HilPhyObserver;

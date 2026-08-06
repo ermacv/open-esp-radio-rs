@@ -1,0 +1,93 @@
+#![forbid(unsafe_code)]
+
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use open_esp_radio_hil_protocol::TransportEvidence;
+
+use crate::console::{ActiveSession, complete_session, receive_session_start};
+
+pub(in crate::radio_hil) type BidirectionalSessionChannel =
+    Channel<CriticalSectionRawMutex, ActiveSession, 1>;
+pub(in crate::radio_hil) type BidirectionalResultChannel =
+    Channel<CriticalSectionRawMutex, OpenRadioBidirectionalResult, 2>;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+pub(in crate::radio_hil) enum OpenRadioBidirectionalDirection {
+    Rx,
+    Tx,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::radio_hil) struct OpenRadioBidirectionalResult {
+    session_id: u64,
+    direction: OpenRadioBidirectionalDirection,
+    evidence: TransportEvidence,
+    passed: bool,
+}
+
+pub(in crate::radio_hil) async fn run_open_radio_bidirectional_session_coordinator(
+    rx_sessions: &'static BidirectionalSessionChannel,
+    tx_sessions: &'static BidirectionalSessionChannel,
+    results: &'static BidirectionalResultChannel,
+) -> ! {
+    loop {
+        let session = receive_session_start().await;
+        rx_sessions.send(session).await;
+        tx_sessions.send(session).await;
+
+        let first = results.receive().await;
+        let second = results.receive().await;
+        let valid_pair = first.session_id == session.session_id
+            && second.session_id == session.session_id
+            && first.direction != second.direction;
+        let evidence = TransportEvidence {
+            rx_bytes: first
+                .evidence
+                .rx_bytes
+                .saturating_add(second.evidence.rx_bytes),
+            tx_bytes: first
+                .evidence
+                .tx_bytes
+                .saturating_add(second.evidence.tx_bytes),
+            rx_units: first
+                .evidence
+                .rx_units
+                .saturating_add(second.evidence.rx_units),
+            tx_units: first
+                .evidence
+                .tx_units
+                .saturating_add(second.evidence.tx_units),
+            elapsed_micros: first
+                .evidence
+                .elapsed_micros
+                .max(second.evidence.elapsed_micros),
+            transport_errors: first
+                .evidence
+                .transport_errors
+                .saturating_add(second.evidence.transport_errors)
+                .saturating_add(u32::from(!valid_pair)),
+        };
+        complete_session(
+            session.session_id,
+            evidence,
+            valid_pair && first.passed && second.passed,
+        )
+        .await;
+    }
+}
+
+pub(in crate::radio_hil) async fn complete_open_radio_bidirectional_direction(
+    results: &'static BidirectionalResultChannel,
+    session_id: u64,
+    direction: OpenRadioBidirectionalDirection,
+    evidence: TransportEvidence,
+    passed: bool,
+) {
+    results
+        .send(OpenRadioBidirectionalResult {
+            session_id,
+            direction,
+            evidence,
+            passed,
+        })
+        .await;
+}

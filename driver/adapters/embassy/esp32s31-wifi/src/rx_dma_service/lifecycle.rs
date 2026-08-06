@@ -289,6 +289,7 @@ impl<
             frames: self.frames,
             delay: self.delay,
             pipeline_observer: self.pipeline_observer,
+            admission: FullRxStageAdmission,
         }
     }
 }
@@ -374,6 +375,7 @@ impl<
                 frames,
                 delay,
                 pipeline_observer,
+                admission: FullRxStageAdmission,
             }),
             Err((ring, error)) => Err((
                 Self {
@@ -436,6 +438,7 @@ impl<
             frames,
             delay,
             pipeline_observer: None,
+            admission: FullRxStageAdmission,
         }
     }
 
@@ -444,6 +447,69 @@ impl<
         self
     }
 
+    /// Install a statically dispatched ingress admission policy.
+    ///
+    /// The default policy is zero-sized and admits the complete physical
+    /// staging slot. Changing it consumes the owner so a policy cannot be
+    /// swapped while a DMA transaction is in progress.
+    pub fn with_stage_admission_policy<P>(
+        self,
+        admission: P,
+    ) -> Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+        P,
+    > {
+        Esp32s31ConnectedRx {
+            ring: self.ring,
+            storage: self.storage,
+            pool: self.pool,
+            frames: self.frames,
+            delay: self.delay,
+            pipeline_observer: self.pipeline_observer,
+            admission,
+        }
+    }
+}
+
+impl<
+    'storage,
+    'pool,
+    'queue,
+    D,
+    M: RawMutex,
+    const QUEUE_DEPTH: usize,
+    const COUNT: usize,
+    const STAGE_CAPACITY: usize,
+    const STAGE_SLOTS: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+    P,
+>
+    Esp32s31ConnectedRx<
+        'storage,
+        'pool,
+        'queue,
+        D,
+        M,
+        QUEUE_DEPTH,
+        COUNT,
+        STAGE_CAPACITY,
+        STAGE_SLOTS,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+        P,
+    >
+{
     pub const fn ring(&self) -> &RxRingLive<'storage, COUNT> {
         &self.ring
     }
@@ -483,6 +549,7 @@ impl<
             frames,
             delay,
             pipeline_observer,
+            admission,
         } = self;
         match ring.try_stop(hardware) {
             Ok(ring) => Ok(Esp32s31StoppedRx {
@@ -501,6 +568,7 @@ impl<
                     frames,
                     delay,
                     pipeline_observer,
+                    admission,
                 },
                 error,
             )),

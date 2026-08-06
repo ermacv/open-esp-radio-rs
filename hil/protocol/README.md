@@ -51,7 +51,7 @@ owner. Merely entering the bounded event queue is insufficient, especially at
 a terminal station exit.
 
 Protocol version 8 adds a one-shot, correlated `InjectStationFault` command.
-The current ESP32-S31 cell arms `ConnectedTxAfterPublication`: a real network
+The terminal ESP32-S31 cell arms `ConnectedTxAfterPublication`: a real network
 lease and MAC descriptor cross into the production LMAC transaction before
 the HIL decorator replaces its next service wake with a contradictory TX
 event image. `StationFault` is emitted with the same `request_id` only after
@@ -59,6 +59,16 @@ the runner returned, executor-task borrows were acknowledged, RX DMA stopped,
 and the TX owner was observed in its reset-required quarantine. This is a
 terminal owner-frontier test; the host performs a cold target reset and proves
 a new network-ready epoch instead of reusing the quarantined descriptor.
+
+Protocol version 9 makes station fault evidence a discriminated contract and
+adds `ConnectedRxBeforeStagingOverCapacity`. The ESP32-S31 RX cell takes a real
+completed DMA unit, then a statically dispatched admission policy narrows only
+that unit's staging limit. The production `TooLong` path recycles its complete
+descriptor chain and waits for reload; evidence is emitted only after the same
+live service stages a following unit and returns successfully. The host then
+requires a complete station-epoch cycle and exact UDP RX delivery. This
+recoverable variant has no task-stop, DMA-stop or reset-required fields, so it
+cannot be confused with the terminal TX quarantine variant.
 
 The protocol contains no expected firmware hashes, ELF paths, vendor ABI
 versions or target-specific register layouts. The firmware publishes actual
@@ -145,7 +155,7 @@ Real peer-loss qualification uses unsolicited events rather than a command:
 -> StationLifecycle(Connected { generation: 1 })
 ```
 
-Fault injection is a separate correlated terminal flow:
+Terminal TX fault injection is a separate correlated flow:
 
 ```text
 Idle
@@ -158,6 +168,22 @@ Idle
   -> StationFault(request_id, exact owner frontier)
   [host cold-resets target]
   -> fresh NetworkReady / ServiceReady
+```
+
+Recoverable RX injection deliberately does not stop the runner:
+
+```text
+Idle
+  <- InjectStationFault(ConnectedRxBeforeStagingOverCapacity, request_id)
+  -> Accepted(request_id)
+  -> take real completed RX DMA unit
+  -> production TooLong discard and descriptor reload
+  -> following unit staged by the same live ring
+  -> StationFault(request_id, recoverable discard evidence)
+  <- CycleStationEpoch(request_id')
+  -> StationEpochCompleted(request_id', complete ownership evidence)
+  <- Configure / Arm / Start(UDP RX)
+  -> exact post-reconnect Transport evidence
 ```
 
 ## UDP RX session

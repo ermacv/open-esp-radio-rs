@@ -262,6 +262,10 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             (hardware, rx, ampdu, control_resources)
         }
     };
+    // The policy is statically dispatched inside the production RX owner. It
+    // can only narrow admission for a real completed unit; descriptor recycle
+    // and staging remain exclusively owned by `Esp32s31ConnectedRx`.
+    let rx = rx.with_stage_admission_policy(epoch_services.faults);
     let network_rx = network_runner.rx_publisher();
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(
@@ -540,8 +544,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             {
                 let tx_owner_reset_required = tx.is_reset_required();
                 let complete = reset_required && tx_owner_reset_required;
-                let evidence = StationFaultEvidence {
-                    injection: fault.injection,
+                let evidence = StationFaultEvidence::ConnectedTxResetRequired {
                     classification: if complete {
                         StationFaultClassification::RadioResetRequired
                     } else {

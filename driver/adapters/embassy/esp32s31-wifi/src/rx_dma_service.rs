@@ -49,6 +49,68 @@ pub type Esp32s31RxDmaStorage<
     const STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
 > = RxDmaStorage<COUNT, BUFFER_SIZE, STORAGE_SIZE>;
 
+/// Value-only description of one real completed DMA unit before staging.
+///
+/// The policy never receives a descriptor pointer, payload view or ring
+/// capability. It can narrow the admitted payload length, but ownership and
+/// descriptor recycle remain exclusively inside [`Esp32s31ConnectedRx`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31RxCompletedUnit {
+    pub head_index: usize,
+    pub descriptor_count: usize,
+    pub payload_length: usize,
+}
+
+/// A completed ingress transaction observed after its ownership edge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31RxIngressObservation {
+    /// The unit was discarded and its descriptor reload has settled.
+    DiscardReloaded {
+        unit: Esp32s31RxCompletedUnit,
+        reason: RxStageDiscard,
+    },
+    /// The copied unit was published into the independent staging queue.
+    Staged(Esp32s31RxCompletedUnit),
+}
+
+/// Admission policy at the completed-DMA-unit/staging boundary.
+///
+/// This hook is intentionally narrower than a general RX observer. It may
+/// only lower the maximum staged payload for the current real unit and then
+/// observe the completed transaction. It cannot mutate descriptor metadata,
+/// recycle buffers, fabricate frames or retain hardware ownership.
+pub trait Esp32s31RxStageAdmissionPolicy {
+    fn maximum_payload_length(
+        &self,
+        _unit: Esp32s31RxCompletedUnit,
+        physical_capacity: usize,
+    ) -> usize {
+        physical_capacity
+    }
+
+    fn observe(&self, _observation: Esp32s31RxIngressObservation) {}
+}
+
+impl<T: Esp32s31RxStageAdmissionPolicy + ?Sized> Esp32s31RxStageAdmissionPolicy for &T {
+    fn maximum_payload_length(
+        &self,
+        unit: Esp32s31RxCompletedUnit,
+        physical_capacity: usize,
+    ) -> usize {
+        T::maximum_payload_length(*self, unit, physical_capacity)
+    }
+
+    fn observe(&self, observation: Esp32s31RxIngressObservation) {
+        T::observe(*self, observation);
+    }
+}
+
+/// Zero-sized production policy admitting the complete physical stage slot.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FullRxStageAdmission;
+
+impl Esp32s31RxStageAdmissionPolicy for FullRxStageAdmission {}
+
 /// Complete production RX owner for one running descriptor-ring epoch.
 pub struct Esp32s31ConnectedRx<
     'storage,
@@ -62,6 +124,7 @@ pub struct Esp32s31ConnectedRx<
     const STAGE_SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
     const DMA_BUFFER_SIZE: usize = ESP32S31_RX_BUFFER_SIZE,
     const DMA_STORAGE_SIZE: usize = ESP32S31_RX_BUFFER_STORAGE_SIZE,
+    P = FullRxStageAdmission,
 > {
     ring: RxRingLive<'storage, COUNT>,
     storage: &'storage Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
@@ -70,6 +133,7 @@ pub struct Esp32s31ConnectedRx<
         Sender<'queue, M, Esp32s31StagedRxFrame<'pool, STAGE_CAPACITY, STAGE_SLOTS>, QUEUE_DEPTH>,
     delay: D,
     pipeline_observer: Option<&'pool dyn RxPipelineObserver>,
+    admission: P,
 }
 
 /// Connected RX resources after the DMA walker is confirmed stopped.

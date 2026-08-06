@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 8;
+pub const PROTOCOL_VERSION: u16 = 9;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -337,6 +337,10 @@ pub enum StationFaultInjection {
     /// service path a contradictory completion/timeout edge. The ordinary or
     /// aggregate owner must quarantine the descriptor for platform reset.
     ConnectedTxAfterPublication,
+    /// After the RX owner has taken a real completed DMA unit but before it
+    /// allocates/copies a staging lease, narrow admission so that unit follows
+    /// the production over-capacity discard/reload path.
+    ConnectedRxBeforeStagingOverCapacity,
 }
 
 /// Target-independent classification of a completed fault injection.
@@ -345,33 +349,91 @@ pub enum StationFaultClassification {
     /// The LMAC transaction rejected continued use of the radio and marked
     /// its descriptor owner reset-required.
     RadioResetRequired,
+    /// The completed frame was deliberately discarded, every descriptor was
+    /// reloaded, and the same live ring staged a following unit.
+    RecoverableFrameDiscard,
     /// The requested injection returned through a different frontier and must
-    /// fail qualification rather than being mislabeled as reset-required.
+    /// fail qualification rather than being mislabeled as either recovery or
+    /// reset-required quarantine.
     ContractViolation,
 }
 
-/// Reliable evidence for one deliberately terminal station fault cell.
+/// Reliable evidence for one station fault cell.
 ///
-/// The four booleans describe the exact recoverable frontier before platform
-/// reset. A target must not claim completion merely because the runner
-/// returned an error: task borrows and RX DMA have to be returned first, while
-/// the uncertain TX descriptor must remain quarantined.
+/// Terminal TX quarantine and recoverable RX discard deliberately use
+/// different variants. This prevents a dropped frame from acquiring reset
+/// semantics, or an ambiguous hardware owner from being mislabeled as a
+/// recoverable data-plane loss.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StationFaultEvidence {
-    pub injection: StationFaultInjection,
-    pub classification: StationFaultClassification,
-    pub runner_returned: bool,
-    pub executor_tasks_stopped: bool,
-    pub rx_dma_stopped: bool,
-    pub tx_owner_reset_required: bool,
+pub enum StationFaultEvidence {
+    ConnectedTxResetRequired {
+        classification: StationFaultClassification,
+        runner_returned: bool,
+        executor_tasks_stopped: bool,
+        rx_dma_stopped: bool,
+        tx_owner_reset_required: bool,
+    },
+    ConnectedRxOverCapacityRecovered {
+        classification: StationFaultClassification,
+        descriptor_reloaded: bool,
+        following_unit_staged: bool,
+        same_ring_live: bool,
+        service_result_ok: bool,
+    },
 }
 
 impl StationFaultEvidence {
+    pub const fn injection(self) -> StationFaultInjection {
+        match self {
+            Self::ConnectedTxResetRequired { .. } => {
+                StationFaultInjection::ConnectedTxAfterPublication
+            }
+            Self::ConnectedRxOverCapacityRecovered { .. } => {
+                StationFaultInjection::ConnectedRxBeforeStagingOverCapacity
+            }
+        }
+    }
+
+    pub const fn classification(self) -> StationFaultClassification {
+        match self {
+            Self::ConnectedTxResetRequired { classification, .. }
+            | Self::ConnectedRxOverCapacityRecovered { classification, .. } => classification,
+        }
+    }
+
     pub const fn is_complete(self) -> bool {
-        self.runner_returned
-            && self.executor_tasks_stopped
-            && self.rx_dma_stopped
-            && self.tx_owner_reset_required
+        match self {
+            Self::ConnectedTxResetRequired {
+                classification,
+                runner_returned,
+                executor_tasks_stopped,
+                rx_dma_stopped,
+                tx_owner_reset_required,
+            } => {
+                matches!(
+                    classification,
+                    StationFaultClassification::RadioResetRequired
+                ) && runner_returned
+                    && executor_tasks_stopped
+                    && rx_dma_stopped
+                    && tx_owner_reset_required
+            }
+            Self::ConnectedRxOverCapacityRecovered {
+                classification,
+                descriptor_reloaded,
+                following_unit_staged,
+                same_ring_live,
+                service_result_ok,
+            } => {
+                matches!(
+                    classification,
+                    StationFaultClassification::RecoverableFrameDiscard
+                ) && descriptor_reloaded
+                    && following_unit_staged
+                    && same_ring_live
+                    && service_result_ok
+            }
+        }
     }
 }
 

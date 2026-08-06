@@ -69,6 +69,7 @@ impl<
     const STAGE_SLOTS: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
+    P,
 > Esp32s31ConnectedStaRxTeardown<H>
     for Esp32s31ConnectedRx<
         'storage,
@@ -82,6 +83,7 @@ impl<
         STAGE_SLOTS,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
+        P,
     >
 where
     H: RxDma,

@@ -18,6 +18,7 @@ mod startup_artifact;
 mod station_ap_absence;
 mod station_ap_loss;
 mod station_lifecycle;
+mod station_rx_fault;
 mod station_tx_fault;
 mod tcp_rx;
 mod traffic_capture;
@@ -121,9 +122,10 @@ fn run() -> Result<()> {
             Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root),
             Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root),
             Some("reconnect") => station_lifecycle::run(arguments.collect(), &root),
+            Some("rx-fault") => station_rx_fault::run(arguments.collect(), &root),
             Some("tx-fault") => station_tx_fault::run(arguments.collect(), &root),
             _ => Err("usage: cargo hil station \
-                 <reconnect|ap-loss|ap-absence|tx-fault> [options]"
+                 <reconnect|ap-loss|ap-absence|rx-fault|tx-fault> [options]"
                 .into()),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
@@ -182,6 +184,7 @@ fn print_help() {
          cargo hil station ap-absence [options]\n\
          cargo hil station ap-loss [options]\n\
          cargo hil station reconnect [options]\n\
+         cargo hil station rx-fault [options]\n\
          cargo hil station tx-fault [options]\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\

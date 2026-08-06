@@ -178,6 +178,12 @@ production reset-required error plus the returned runner/task/RX frontier,
 and confirms that the TX slot remains quarantined. It then cold-resets the
 board and requires a fresh network-ready epoch against the same controlled AP.
 This does not claim that an in-place platform radio reset exists.
+`cargo hil station rx-fault` uses the ordinary `radio` image. It narrows
+staging admission for one real completed RX DMA unit, requires the production
+discard/reload transaction and a following staged unit on the same live ring,
+then performs a complete station epoch cycle and a short exact-delivery UDP RX
+session. This is a recoverable frame-drop cell; corrupt/reload-ambiguous ring
+states remain reset-required and are not represented by this evidence.
 The finite PHY/RX/TX/dwell/candidate transaction is composed by the reusable
 `Esp32s31ScanPort` for both the initial cold scan and later running rescans.
 The cold binding carries `ColdRadioRegisters`; the running binding carries the

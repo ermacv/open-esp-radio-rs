@@ -41,6 +41,46 @@ impl RxPipelineObserver for RecordingRxObserver {
 }
 
 #[derive(Default)]
+struct OneShotNarrowAdmission(AtomicU32);
+
+impl Esp32s31RxStageAdmissionPolicy for OneShotNarrowAdmission {
+    fn maximum_payload_length(
+        &self,
+        _unit: Esp32s31RxCompletedUnit,
+        physical_capacity: usize,
+    ) -> usize {
+        if self
+            .0
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            0
+        } else {
+            physical_capacity
+        }
+    }
+
+    fn observe(&self, observation: Esp32s31RxIngressObservation) {
+        match observation {
+            Esp32s31RxIngressObservation::DiscardReloaded {
+                reason: RxStageDiscard::TooLong,
+                ..
+            } => assert_eq!(
+                self.0
+                    .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire),
+                Ok(1),
+            ),
+            Esp32s31RxIngressObservation::Staged(_) => assert_eq!(
+                self.0
+                    .compare_exchange(2, 3, Ordering::AcqRel, Ordering::Acquire),
+                Ok(2),
+            ),
+            _ => panic!("unexpected admission observation: {observation:?}"),
+        }
+    }
+}
+
+#[derive(Default)]
 struct MockRxDma {
     walker: bool,
     descriptor_base: u32,
@@ -478,6 +518,59 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     assert_eq!(next.length(), 4);
     drop(next);
     assert_eq!(pool.claimed_slots(), 0);
+}
+
+#[test]
+fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
+    const COUNT: usize = 2;
+    const STAGED_DEPTH: usize = 1;
+    let storage = Esp32s31RxDmaStorage::<COUNT>::new();
+    let addresses = [0x2f00_2000, 0x2f00_3200];
+    let mut hardware = MockRxDma::default();
+    let stopped = RxRingStopped::prepare(
+        &mut hardware,
+        storage.descriptors(),
+        BASE,
+        &addresses,
+        ESP32S31_RX_BUFFER_SIZE as u32,
+        |_| Ok(()),
+    )
+    .unwrap();
+    let ring = stopped.start(&mut hardware).unwrap();
+    let pool = RxStagePool::new();
+    let admission = OneShotNarrowAdmission::default();
+    let queue = Esp32s31StagedRxQueue::<NoopRawMutex, STAGED_DEPTH>::new();
+    let (sender, receiver) = queue.split();
+    let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender)
+        .with_stage_admission_policy(&admission);
+
+    storage.descriptors()[0]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
+    );
+    assert_eq!(admission.0.load(Ordering::Acquire), 2);
+    assert!(matches!(
+        receiver.try_receive(),
+        Err(TryReceiveError::Empty)
+    ));
+
+    storage.descriptors()[1]
+        .write_word0(ESP32S31_RX_BUFFER_SIZE as u32 | (4 << LENGTH_SHIFT) | BIT_30 | BIT_31);
+    assert_eq!(
+        embassy_futures::block_on(service.service(&mut hardware)),
+        Ok(WifiRxProgress::Drained),
+    );
+    assert_eq!(admission.0.load(Ordering::Acquire), 3);
+    assert_eq!(
+        receiver
+            .try_receive()
+            .expect("follow-up staged unit")
+            .length(),
+        4
+    );
+    assert_eq!(service.ring().recycle_start(), 0);
 }
 
 #[test]

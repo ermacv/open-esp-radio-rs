@@ -13,6 +13,7 @@ impl<
     const STAGE_SLOTS: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
+    P,
 > Esp32s31ConnectedRxService<H>
     for Esp32s31ConnectedRx<
         'storage,
@@ -26,10 +27,12 @@ impl<
         STAGE_SLOTS,
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
+        P,
     >
 where
     H: RxDma,
     D: RxReloadDelay,
+    P: Esp32s31RxStageAdmissionPolicy,
 {
     type Error = RxStageTransactionError;
 
@@ -66,10 +69,23 @@ where
                     .map_err(RxStageTransactionError::Ring)?
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
                 let unit_descriptor_count = unit.descriptor_count();
+                let unit_observation = Esp32s31RxCompletedUnit {
+                    head_index: unit.head_index(),
+                    descriptor_count: unit_descriptor_count,
+                    payload_length: unit.total_length(),
+                };
                 remaining_descriptors = remaining_descriptors
                     .checked_sub(unit_descriptor_count)
                     .ok_or(RxStageTransactionError::Ring(RxRingError::Corrupt))?;
-                let pending = match self.pool.stage_dma_unit_recycle(unit, hardware)? {
+                let maximum_payload_length = self
+                    .admission
+                    .maximum_payload_length(unit_observation, STAGE_CAPACITY)
+                    .min(STAGE_CAPACITY);
+                let pending = match self.pool.stage_dma_unit_recycle_bounded(
+                    unit,
+                    hardware,
+                    maximum_payload_length,
+                )? {
                     RxDmaStageUnitOutcome::Staged(pending) => pending,
                     RxDmaStageUnitOutcome::Discarded(error) => {
                         // Length is supplied by an untrusted receive unit. A
@@ -97,6 +113,15 @@ where
                                 RxReloadObservation::Settled => break,
                             }
                         }
+                        self.admission
+                            .observe(Esp32s31RxIngressObservation::DiscardReloaded {
+                                unit: unit_observation,
+                                reason: match error {
+                                    RxStageError::Empty => RxStageDiscard::Empty,
+                                    RxStageError::TooLong => RxStageDiscard::TooLong,
+                                    _ => unreachable!("length discard was matched above"),
+                                },
+                            });
                         continue;
                     }
                 };
@@ -107,6 +132,8 @@ where
                 self.frames.try_send(frame).map_err(|error| match error {
                     TrySendError::Full(_) => RxStageTransactionError::Ring(RxRingError::Corrupt),
                 })?;
+                self.admission
+                    .observe(Esp32s31RxIngressObservation::Staged(unit_observation));
             }
 
             if let (Some(observer), Some(started)) = (self.pipeline_observer, service_started) {

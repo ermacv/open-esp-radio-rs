@@ -50,17 +50,27 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let log = capture.finish();
     fs::write(output.join("uart-fault.log"), &log)?;
     let evidence = result?;
+    let StationFaultEvidence::ConnectedTxResetRequired {
+        classification,
+        runner_returned,
+        executor_tasks_stopped,
+        rx_dma_stopped,
+        tx_owner_reset_required,
+    } = evidence
+    else {
+        unreachable!("validated TX fault evidence has the TX variant")
+    };
     fs::write(
         output.join("evidence.txt"),
         format!(
             "injection={:?}\nclassification={:?}\nrunner_returned={}\n\
              executor_tasks_stopped={}\nrx_dma_stopped={}\ntx_owner_reset_required={}\n",
-            evidence.injection,
-            evidence.classification,
-            evidence.runner_returned,
-            evidence.executor_tasks_stopped,
-            evidence.rx_dma_stopped,
-            evidence.tx_owner_reset_required,
+            evidence.injection(),
+            classification,
+            runner_returned,
+            executor_tasks_stopped,
+            rx_dma_stopped,
+            tx_owner_reset_required,
         ),
     )?;
 
@@ -135,10 +145,10 @@ fn qualify_fault(
 }
 
 fn validate_fault_evidence(evidence: StationFaultEvidence) -> Result<()> {
-    if evidence.injection != StationFaultInjection::ConnectedTxAfterPublication {
+    if evidence.injection() != StationFaultInjection::ConnectedTxAfterPublication {
         return Err(format!("wrong station fault injection: {evidence:?}").into());
     }
-    if evidence.classification != StationFaultClassification::RadioResetRequired {
+    if evidence.classification() != StationFaultClassification::RadioResetRequired {
         return Err(
             format!("station fault was not classified reset-required: {evidence:?}").into(),
         );
@@ -201,8 +211,7 @@ mod tests {
 
     #[test]
     fn complete_reset_frontier_is_required() {
-        let complete = StationFaultEvidence {
-            injection: StationFaultInjection::ConnectedTxAfterPublication,
+        let complete = StationFaultEvidence::ConnectedTxResetRequired {
             classification: StationFaultClassification::RadioResetRequired,
             runner_returned: true,
             executor_tasks_stopped: true,
@@ -210,9 +219,12 @@ mod tests {
             tx_owner_reset_required: true,
         };
         validate_fault_evidence(complete).unwrap();
-        let incomplete = StationFaultEvidence {
+        let incomplete = StationFaultEvidence::ConnectedTxResetRequired {
+            classification: StationFaultClassification::RadioResetRequired,
+            runner_returned: true,
+            executor_tasks_stopped: true,
+            rx_dma_stopped: true,
             tx_owner_reset_required: false,
-            ..complete
         };
         assert!(validate_fault_evidence(incomplete).is_err());
     }

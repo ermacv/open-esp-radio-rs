@@ -136,6 +136,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     fn try_stage_unit<'pool, F>(
         &'pool self,
         unit: &RxCompletedUnit,
+        maximum_length: usize,
         mut copy_segment: F,
     ) -> Result<RadioRxFrame<'pool, SLOTS, CAPACITY>, RxStageError>
     where
@@ -148,7 +149,7 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         if length == 0 {
             return Err(RxStageError::Empty);
         }
-        if length > CAPACITY {
+        if length > CAPACITY.min(maximum_length) {
             return Err(RxStageError::TooLong);
         }
         let mut lease = self
@@ -254,7 +255,9 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
     {
         let descriptor_count = unit.descriptor_count();
         let radio_frame = self
-            .try_stage_unit(&unit, |step, destination| copy_segment(step, destination))
+            .try_stage_unit(&unit, CAPACITY, |step, destination| {
+                copy_segment(step, destination)
+            })
             .map_err(RxStageTransactionError::Stage)?;
         let append = ring
             .recycle_completed_unit(mmio, descriptor_count, prepare_buffer)
@@ -286,17 +289,42 @@ impl<const SLOTS: usize, const CAPACITY: usize> RxStagePool<SLOTS, CAPACITY> {
         completed: RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>,
         mmio: &mut M,
     ) -> Result<RxDmaStageUnitOutcome<'pool, SLOTS, CAPACITY>, RxStageTransactionError> {
+        self.stage_dma_unit_recycle_bounded(completed, mmio, CAPACITY)
+    }
+
+    /// Copy and recycle one completed unit subject to a runtime admission
+    /// limit no wider than this pool's physical slot capacity.
+    ///
+    /// A unit above the selected limit follows the same recoverable discard
+    /// transaction as a unit above `CAPACITY`: its descriptors are recycled,
+    /// no staging lease is published, and the caller must still observe the
+    /// asynchronous reload edge. This lets an integration qualify or enforce
+    /// a negotiated ingress bound without modifying untrusted descriptor
+    /// fields or bypassing the real DMA ownership path.
+    pub fn stage_dma_unit_recycle_bounded<
+        'pool,
+        const COUNT: usize,
+        const BUFFER_SIZE: usize,
+        const STORAGE_SIZE: usize,
+        M: RxDma,
+    >(
+        &'pool self,
+        completed: RxDmaCompletedUnit<'_, '_, COUNT, BUFFER_SIZE, STORAGE_SIZE>,
+        mmio: &mut M,
+        maximum_length: usize,
+    ) -> Result<RxDmaStageUnitOutcome<'pool, SLOTS, CAPACITY>, RxStageTransactionError> {
         let descriptor_count = completed.descriptor_count();
-        let staged = self.try_stage_unit(completed.metadata(), |step, destination| {
-            let source = completed
-                .segment(step)
-                .ok_or(RxStageError::SourceTooShort)?;
-            if source.len() != destination.len() {
-                return Err(RxStageError::SourceTooShort);
-            }
-            destination.copy_from_slice(source);
-            Ok(())
-        });
+        let staged =
+            self.try_stage_unit(completed.metadata(), maximum_length, |step, destination| {
+                let source = completed
+                    .segment(step)
+                    .ok_or(RxStageError::SourceTooShort)?;
+                if source.len() != destination.len() {
+                    return Err(RxStageError::SourceTooShort);
+                }
+                destination.copy_from_slice(source);
+                Ok(())
+            });
 
         let radio_frame = match staged {
             Ok(frame) => Some(frame),

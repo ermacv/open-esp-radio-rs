@@ -502,22 +502,21 @@ owner with an empty queue and zero Probe TX failures. Lifecycle publication
 now waits until the exact typed edge has been serialized, rather than merely
 admitted to the UART queue. See the
 [AP-absence qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-absence.md).
-The next slice is:
-
-1. add the complementary deterministic RX failure cell without conflating a
-   dropped/corrupt frame with a reset-required DMA owner. RX A-MPDU
-   containment is now closed without inventing a common hardware bit. The direct HT-SIG
-   Aggregation bit is qualified on an actual HT20/MCS7/SGI downlink:
-   78,127 benchmark observations were A-MPDU with zero unavailable
-   provenance; see the
-   [HT RX aggregation record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md). The prior
-   tentative inversion of `cur_single_mpdu` was rejected: Espressif defines it
-   as IEEE S-MPDU status, and real HE20 data, ARP and Beacon management frames
-   all carried a clear value. Its exact propagation is now board-qualified,
-   while HE PPDU format now supplies `ProtocolValidated(true)` containment
-   rather than pretending to be another hardware field; see the
-   [S-MPDU record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md) and
-   [HE containment record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md).
+The next slice is the in-place platform radio-reset transaction described
+below. The complementary recoverable RX failure cell is complete. RX A-MPDU
+containment is also closed without inventing a common hardware bit. The direct
+HT-SIG Aggregation bit is qualified on an actual HT20/MCS7/SGI downlink:
+78,127 benchmark observations were A-MPDU with zero unavailable provenance;
+see the
+[HT RX aggregation record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-ht-rx-aggregation-metadata.md).
+The prior tentative inversion of `cur_single_mpdu` was rejected: Espressif
+defines it as IEEE S-MPDU status, and real HE20 data, ARP and Beacon management
+frames all carried a clear value. Its exact propagation is now
+board-qualified, while HE PPDU format now supplies `ProtocolValidated(true)`
+containment rather than pretending to be another hardware field; see the
+[S-MPDU record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-rx-s-mpdu-metadata.md)
+and
+[HE containment record](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-he-rx-ampdu-containment.md).
 
 The HIL facade split is complete. Further file movement is justified only by
 a new ownership boundary; it is no longer a prerequisite for RX recovery,
@@ -531,18 +530,40 @@ runner, executor tasks and RX DMA have returned while the TX owner remains
 quarantined. The host then cold-resets the same image and proves a fresh
 network-ready epoch. See the
 [TX fault qualification](../qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-tx-fault.md). This
-does not close the separate in-place platform reset or RX fault gaps.
+does not close the separate in-place platform reset gap.
 
-The RX failure classes are no longer conceptually merged. Host coverage now
-feeds the production service an over-capacity completed unit, observes one
-typed discard, and then proves that the immediately following valid descriptor
-is staged while the same ring remains live. A real RX HIL fault cell must
-inject or receive such a completed descriptor before production staging; a
-decorator that merely returns an error after `service_rx()` would test only
-the runner and is not acceptable evidence. Errors after ownership becomes
-ambiguous (reload failure, corrupt ring, source/descriptor disagreement) stay
-reset-required candidates and need their own typed frontier rather than the
-drop-and-continue result.
+The RX failure classes are now separated in code and on hardware. Protocol v9
+arms `ConnectedRxBeforeStagingOverCapacity`; a statically dispatched policy
+narrows admission only after `Esp32s31ConnectedRx` takes a real completed DMA
+unit. The production `TooLong` transaction recycled and reloaded that unit,
+the same live ring staged a following unit, the RX service returned `Ok`, and
+the connected runner continued.
+Afterwards a complete station epoch cycle and 124/124 UDP datagrams (31,744
+bytes) succeeded. See the
+[RX fault qualification](../qualification/targets/esp32s31/records/2026-08-06-esp32s31-station-rx-fault.md).
+The ordinary/default policy is zero-sized and statically dispatched; the HIL
+state machine is not present in a production composition. Errors after
+ownership becomes ambiguous (reload failure, corrupt ring,
+source/descriptor disagreement) remain reset-required candidates and must not
+reuse this drop-and-continue evidence.
+
+The next platform-reset slice should start from the already typed
+`Esp32s31ConnectedStaTeardownFailure::TxActive` frontier, not from a broad
+"restart station" command:
+
+1. define a consuming reset bundle containing quiesced interrupt ownership,
+   hardware/register ownership, halted RX, the quarantined TX owner, control
+   shutdown state and both key owners;
+2. make the ESP32-S31 platform adapter assert the required MAC/baseband reset
+   and return an unforgeable reset-complete token only after readback and stale
+   interrupt drain;
+3. permit the quarantined TX owner to release referenced network leases,
+   descriptors and sequence state only when that token is consumed;
+4. rebuild cold MAC/RX/key state and enter a fresh station generation without
+   resetting USB or the whole SoC;
+5. extend the existing TX fault cell to require the in-place reset, fresh join
+   and exact traffic. Only after that frontier is sound should an ambiguous RX
+   reload/ring fault receive a second reset-required injection cell.
 
 The first capability-driven HMAC/LMAC contract is now source owned.
 `open-esp-radio-wifi-softmac` represents granular operation ownership and resource

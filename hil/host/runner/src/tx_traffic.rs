@@ -16,6 +16,7 @@ use crate::{
     Result,
     bidirectional::{AmpduEvidence, qualify_tx_log},
     traffic_capture::{SerialCapture, await_device_marker},
+    udp_socket::configure_qualification_receive_buffer,
 };
 
 const DEFAULT_PORT: u16 = 9_002;
@@ -26,6 +27,26 @@ const BURST_IDLE: Duration = Duration::from_millis(500);
 const MIN_BURST_DATAGRAMS: u64 = 1_000;
 const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(45);
 const DEVICE_TX_READY_MARKER: &str = "result=PASS stage=udp-tx-ready ";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BurstFraming {
+    /// Compatibility firmware has no explicit session boundary, so an idle
+    /// interval or a restarted sequence number delimits independent bursts.
+    IdleDelimited,
+    /// The typed protocol supplies the boundary. Temporary radio stalls are
+    /// part of the same measured stream and must not discard its continuation.
+    ProtocolSession,
+}
+
+impl BurstFraming {
+    const fn splits_on_idle(self) -> bool {
+        matches!(self, Self::IdleDelimited)
+    }
+
+    const fn splits_on_sequence_restart(self) -> bool {
+        matches!(self, Self::IdleDelimited)
+    }
+}
 
 #[derive(Debug, Eq, PartialEq)]
 struct Options {
@@ -48,6 +69,10 @@ pub(crate) struct Burst {
     pub(crate) duplicates: u64,
     pub(crate) elapsed_us: u64,
     pub(crate) started_at_zero: bool,
+    pub(crate) lowest_sequence: u32,
+    pub(crate) highest_sequence: u32,
+    pub(crate) maximum_interarrival_us: u64,
+    pub(crate) sequence_after_maximum_interarrival: Option<u32>,
 }
 
 impl Burst {
@@ -89,6 +114,15 @@ impl ActiveBurst {
     }
 
     fn push(&mut self, sequence: u32, length: usize, now: Instant) {
+        let interarrival_us = now
+            .duration_since(self.last)
+            .as_micros()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        if interarrival_us > self.evidence.maximum_interarrival_us {
+            self.evidence.maximum_interarrival_us = interarrival_us;
+            self.evidence.sequence_after_maximum_interarrival = Some(sequence);
+        }
         if !self.seen_sequences.insert(sequence) {
             self.evidence.duplicates = self.evidence.duplicates.saturating_add(1);
         } else if sequence < self.highest_sequence {
@@ -111,6 +145,8 @@ impl ActiveBurst {
             .try_into()
             .unwrap_or(u64::MAX)
             .max(1);
+        self.evidence.lowest_sequence = self.lowest_sequence;
+        self.evidence.highest_sequence = self.highest_sequence;
         self.evidence
     }
 }
@@ -127,6 +163,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
     fs::create_dir_all(&output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
+    let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_device_marker(
@@ -178,7 +215,12 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     } else {
         options.duration
     };
-    let bursts = receive_bursts(&socket, options.device, receive_duration)?;
+    let framing = if session.is_some() {
+        BurstFraming::ProtocolSession
+    } else {
+        BurstFraming::IdleDelimited
+    };
+    let bursts = receive_bursts(&socket, options.device, receive_duration, framing)?;
     let structured = if let Some(session) = session {
         let evidence = match capture.wait_for_session(session, Duration::from_secs(5)) {
             Ok(evidence) => evidence,
@@ -217,9 +259,29 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
     if missing != 0 || reordered != 0 || duplicates != 0 {
+        let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
+        let lowest_sequence = qualified
+            .iter()
+            .map(|burst| burst.lowest_sequence)
+            .min()
+            .unwrap_or(0);
+        let highest_sequence = qualified
+            .iter()
+            .map(|burst| burst.highest_sequence)
+            .max()
+            .unwrap_or(0);
+        let maximum_interarrival = qualified
+            .iter()
+            .max_by_key(|burst| burst.maximum_interarrival_us)
+            .copied()
+            .unwrap_or_default();
         return Err(format!(
             "host observed TX sequence defects: missing={missing} reordered={reordered} \
-             duplicates={duplicates}"
+             duplicates={duplicates} received={received_datagrams} \
+             range={lowest_sequence}..={highest_sequence} max_interarrival_us={} \
+             sequence_after_max_interarrival={:?}",
+            maximum_interarrival.maximum_interarrival_us,
+            maximum_interarrival.sequence_after_maximum_interarrival,
         )
         .into());
     }
@@ -256,8 +318,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             || evidence.transport.tx_units != received_datagrams
         {
             return Err(format!(
-                "typed/host TX delivery mismatch: target={}/{} host={received_bytes}/{received_datagrams}",
-                evidence.transport.tx_bytes, evidence.transport.tx_units
+                "typed/host TX delivery mismatch: target={}/{} host={received_bytes}/{received_datagrams} \
+                 range={}..={} max_interarrival_us={} sequence_after_max_interarrival={:?}",
+                evidence.transport.tx_bytes,
+                evidence.transport.tx_units,
+                qualified[0].lowest_sequence,
+                qualified[0].highest_sequence,
+                qualified[0].maximum_interarrival_us,
+                qualified[0].sequence_after_maximum_interarrival,
             )
             .into());
         }
@@ -280,14 +348,16 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             device_samples: tx.sample_count,
             ampdu: tx.ampdu,
             structured,
+            host_receive_buffer_bytes,
         },
     )?;
     println!(
         "OPENRADIOHOST result=PASS mode=tx host_floor_kbps={host_floor} \
          device_floor_kbps={} bursts={} missing=0 reordered=0 duplicates=0 \
-         ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",
+         host_receive_buffer_bytes={} ampdu_avg_subframes={:.2} ampdu_31={} ampdu_32={} report={}",
         tx.throughput_floor_kbps,
         qualified.len(),
+        host_receive_buffer_bytes,
         tx.ampdu.subframes as f64 / tx.ampdu.aggregates.max(1) as f64,
         tx.ampdu.thirtyone,
         tx.ampdu.full32,
@@ -390,6 +460,7 @@ pub(crate) fn receive_bursts(
     socket: &UdpSocket,
     expected_device: Ipv4Addr,
     duration: Duration,
+    framing: BurstFraming,
 ) -> std::io::Result<Vec<Burst>> {
     let deadline = Instant::now() + duration;
     let mut packet = [0_u8; 2_048];
@@ -406,7 +477,7 @@ pub(crate) fn receive_bursts(
                 };
                 let sequence = u32::from_be_bytes(encoded);
                 let now = Instant::now();
-                if sequence == 0 && active.is_some() {
+                if framing.splits_on_sequence_restart() && sequence == 0 && active.is_some() {
                     bursts.push(active.take().expect("checked active burst").finish());
                 }
                 match &mut active {
@@ -420,9 +491,10 @@ pub(crate) fn receive_bursts(
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
-                if active
-                    .as_ref()
-                    .is_some_and(|active| active.last.elapsed() >= BURST_IDLE)
+                if framing.splits_on_idle()
+                    && active
+                        .as_ref()
+                        .is_some_and(|active| active.last.elapsed() >= BURST_IDLE)
                 {
                     bursts.push(active.take().expect("checked active burst").finish());
                 }
@@ -445,6 +517,7 @@ struct TxReport<'a> {
     device_samples: usize,
     ampdu: AmpduEvidence,
     structured: Option<crate::traffic_capture::SessionEvidence>,
+    host_receive_buffer_bytes: usize,
 }
 
 fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
@@ -472,6 +545,15 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
         .offered_rate_bps
         .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
         .unwrap_or_else(|| String::from("saturated"));
+    let maximum_interarrival = report
+        .bursts
+        .iter()
+        .max_by_key(|burst| burst.maximum_interarrival_us)
+        .copied()
+        .unwrap_or_default();
+    let maximum_interarrival_us = maximum_interarrival.maximum_interarrival_us;
+    let sequence_after_maximum_interarrival =
+        maximum_interarrival.sequence_after_maximum_interarrival;
     fs::write(
         output.join("report.md"),
         format!(
@@ -482,6 +564,8 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Payload / target offered-rate bound: `{}` bytes / `{offered_rate}`\n\
              {structured_report}\
              - Host receive floor: `{:.3} Mbit/s`\n\
+             - Host UDP `SO_RCVBUF` read-back: `{}` bytes\n\
+             - Host maximum packet interarrival: `{maximum_interarrival_us}` us before sequence `{sequence_after_maximum_interarrival:?}`\n\
              - Device socket floor: `{:.3} Mbit/s` across `{}` samples\n\
              - Host missing/reordered/duplicate datagrams: `0` / `0` / `0`\n\n\
              ## A-MPDU evidence\n\n\
@@ -500,6 +584,7 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.bursts.len(),
             report.options.payload,
             report.host_floor_kbps as f64 / 1_000.0,
+            report.host_receive_buffer_bytes,
             report.device_floor_kbps as f64 / 1_000.0,
             report.device_samples,
             report.ampdu.aggregates,
@@ -577,5 +662,26 @@ mod tests {
         assert_eq!(evidence.missing, 1);
         assert_eq!(evidence.reordered, 0);
         assert_eq!(evidence.duplicates, 1);
+    }
+
+    #[test]
+    fn burst_records_sequence_range_and_largest_interarrival() {
+        let now = Instant::now();
+        let mut burst = ActiveBurst::new(10, 100, now);
+        burst.push(11, 100, now + Duration::from_micros(25));
+        burst.push(12, 100, now + Duration::from_micros(125));
+        let evidence = burst.finish();
+        assert_eq!(evidence.lowest_sequence, 10);
+        assert_eq!(evidence.highest_sequence, 12);
+        assert_eq!(evidence.maximum_interarrival_us, 100);
+        assert_eq!(evidence.sequence_after_maximum_interarrival, Some(12));
+    }
+
+    #[test]
+    fn typed_session_does_not_use_packet_timing_as_a_boundary() {
+        assert!(!BurstFraming::ProtocolSession.splits_on_idle());
+        assert!(!BurstFraming::ProtocolSession.splits_on_sequence_restart());
+        assert!(BurstFraming::IdleDelimited.splits_on_idle());
+        assert!(BurstFraming::IdleDelimited.splits_on_sequence_restart());
     }
 }

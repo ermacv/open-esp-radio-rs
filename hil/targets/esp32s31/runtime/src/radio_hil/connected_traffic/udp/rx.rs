@@ -29,7 +29,7 @@ use open_esp_radio_hil_protocol::{
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{complete_session, emergency_log, publish_event, receive_session_start},
+    console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
     radio_hil::connected_traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         UdpSequenceEvidence, complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
@@ -114,7 +114,7 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             Timer::after_secs(60).await;
         }
     }
-    publish_event(
+    publish_event_reliably(
         0,
         0,
         HilEvent::ServiceReady(ServiceInfo {
@@ -123,7 +123,8 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             local_port: config.local_port,
             maximum_payload_bytes: config.payload_capacity as u16,
         }),
-    );
+    )
+    .await;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=udp-rx-ready port={} queue={} \
          payload_capacity={} bandwidth_mhz={} phy={} rate_code={:#04x} rate_kbps={}",

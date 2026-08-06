@@ -10,8 +10,7 @@ use core::{ops::Deref, pin::Pin};
 use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_registers::{MacTxDetachOutcome, MacTxDetachReason};
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::{
-    AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, AmpduExternalDescriptor,
-    PinnedAmpduDmaStorage, RetainedAmpduDma,
+    AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
 };
 
 use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
@@ -244,8 +243,10 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             .get_ref()
             .completed_frame_layout(cookie, index)?;
         let bytes = self
-            .dma_mut()
-            .detached_region_mut(layout.buffer_address, layout.capacity)
+            .dma
+            .as_mut()
+            .expect("retained DMA owner keeps descriptor storage until teardown")
+            .detached_logical_region_mut(usize::from(index), layout.buffer_address, layout.capacity)
             .map_err(|_| HtAmpduTxError::BackingUnavailable { index })?;
         Ok((
             &bytes[layout.frame_start..layout.frame_end],
@@ -269,27 +270,53 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
 
         // Resolve every selected frame before mutating any of them. A stale
         // address therefore fails closed without a partially rewritten batch.
-        for location in locations.iter().flatten() {
-            if self
-                .dma_mut()
-                .detached_region_mut(location.buffer_address, location.capacity)
-                .is_err()
-            {
-                return Err(HtAmpduTxError::BackingUnavailable {
-                    index: location.index as u8,
-                });
+        {
+            let dma = self
+                .dma
+                .as_mut()
+                .expect("retained DMA owner keeps descriptor storage until teardown");
+            for location in locations.iter().flatten() {
+                if dma
+                    .detached_logical_region_mut(
+                        location.index,
+                        location.buffer_address,
+                        location.capacity,
+                    )
+                    .is_err()
+                {
+                    return Err(HtAmpduTxError::BackingUnavailable {
+                        index: location.index as u8,
+                    });
+                }
             }
         }
 
-        for location in locations.iter().flatten() {
-            let bytes = self
-                .dma_mut()
-                .detached_region_mut(location.buffer_address, location.capacity)
-                .map_err(|_| HtAmpduTxError::BackingUnavailable {
-                    index: location.index as u8,
-                })?;
-            bytes[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+        {
+            let dma = self
+                .dma
+                .as_mut()
+                .expect("retained DMA owner keeps descriptor storage until teardown");
+            for location in locations.iter().flatten() {
+                let bytes = dma
+                    .detached_logical_region_mut(
+                        location.index,
+                        location.buffer_address,
+                        location.capacity,
+                    )
+                    .map_err(|_| HtAmpduTxError::BackingUnavailable {
+                        index: location.index as u8,
+                    })?;
+                bytes[TX_AMPDU_METADATA_SIZE + 1] |= 0x08;
+            }
         }
+        let mut source_indices = [0_u8; SLOTS];
+        let mut retained_count = 0;
+        for location in locations.iter().flatten() {
+            source_indices[retained_count] = location.index as u8;
+            retained_count += 1;
+        }
+        self.dma_mut()
+            .compact_active_backings(&source_indices[..retained_count])?;
         self.dma_mut().begin_retry()?;
         match self.metadata_mut().compact_retry_metadata(locations) {
             Ok(length) => Ok(length),
@@ -315,12 +342,10 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                 .as_mut()
                 .expect("retained DMA owner keeps descriptor storage until teardown"),
         );
-        let backing_index = dma.push_backing(backing)?;
+        let metadata_index = usize::from(storage.as_ref().get_ref().count);
+        let (backing_capability, region) = dma.push_backing_region(backing)?;
         let result = (|| {
-            let backing = dma.reserved_backing_mut(backing_index)?;
-            let mut region = backing.stable_dma_region();
             let dma_storage = region
-                .as_mut_slice()
                 .get_mut(request.layout().dma_offset()..)
                 .ok_or(HtAmpduTxError::FrameTooLong)?;
             storage
@@ -328,8 +353,20 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                 .commit_referenced_ht_frame(cookie, dma_storage, request)
         })();
         if let Err(error) = result {
-            drop(dma.pop_last_backing(backing_index)?);
+            drop(dma.pop_last_backing(backing_capability)?);
             return Err(error);
+        }
+        let metadata = storage.as_ref().get_ref();
+        let descriptor_result = dma.commit_backing_descriptor(
+            &backing_capability,
+            metadata.buffer_addresses[metadata_index],
+            u32::from(metadata.descriptor_capacities[metadata_index]),
+            (TX_AMPDU_METADATA_SIZE as u32) + u32::from(metadata.psdu_lengths[metadata_index]),
+        );
+        if let Err(error) = descriptor_result {
+            *storage.as_mut().project().state = TxSlotState::ResetRequired;
+            dma.quarantine();
+            return Err(error.into());
         }
         Ok(())
     }
@@ -349,12 +386,10 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                 .as_mut()
                 .expect("retained DMA owner keeps descriptor storage until teardown"),
         );
-        let backing_index = dma.push_backing(backing)?;
+        let metadata_index = usize::from(storage.as_ref().get_ref().count);
+        let (backing_capability, region) = dma.push_backing_region(backing)?;
         let result = (|| {
-            let backing = dma.reserved_backing_mut(backing_index)?;
-            let mut region = backing.stable_dma_region();
             let dma_storage = region
-                .as_mut_slice()
                 .get_mut(request.layout().dma_offset()..)
                 .ok_or(HtAmpduTxError::FrameTooLong)?;
             storage
@@ -362,31 +397,22 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
                 .commit_referenced_he_frame(cookie, dma_storage, request)
         })();
         if let Err(error) = result {
-            drop(dma.pop_last_backing(backing_index)?);
+            drop(dma.pop_last_backing(backing_capability)?);
             return Err(error);
         }
-        Ok(())
-    }
-
-    fn external_descriptors(
-        storage: &HtAmpduTxStorage<SLOTS, BUFFER_SIZE>,
-        dma: &mut RetainedAmpduDma<B, SLOTS, 0>,
-    ) -> Result<([AmpduExternalDescriptor; SLOTS], usize), HtAmpduTxError> {
-        let count = usize::from(storage.count);
-        let mut entries = [AmpduExternalDescriptor {
-            backing_index: 0,
-            dma_offset: 0,
-            buffer_capacity: 0,
-            transfer_length: 0,
-        }; SLOTS];
-        for (index, entry) in entries[..count].iter_mut().enumerate() {
-            *entry = dma.reserved_external_descriptor(
-                storage.buffer_addresses[index],
-                u32::from(storage.descriptor_capacities[index]),
-                (TX_AMPDU_METADATA_SIZE as u32) + u32::from(storage.psdu_lengths[index]),
-            )?;
+        let metadata = storage.as_ref().get_ref();
+        let descriptor_result = dma.commit_backing_descriptor(
+            &backing_capability,
+            metadata.buffer_addresses[metadata_index],
+            u32::from(metadata.descriptor_capacities[metadata_index]),
+            (TX_AMPDU_METADATA_SIZE as u32) + u32::from(metadata.psdu_lengths[metadata_index]),
+        );
+        if let Err(error) = descriptor_result {
+            *storage.as_mut().project().state = TxSlotState::ResetRequired;
+            dma.quarantine();
+            return Err(error.into());
         }
-        Ok((entries, count))
+        Ok(())
     }
 
     /// Publish and start an HT A-MPDU through the lower descriptor owner.
@@ -410,8 +436,8 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             cookie,
             config,
         )?;
-        let (entries, count) = Self::external_descriptors(storage.as_ref().get_ref(), dma)?;
-        let publication = dma.publish_external_chain(&entries[..count])?;
+        let count = usize::from(storage.as_ref().get_ref().count);
+        let publication = dma.publish_retained_chain(count)?;
         let queue_index = queue.index();
         if !hardware.prepare_bound_ht_tx(&publication, queue_index, prepared.program) {
             return Err(HtAmpduTxError::QueueActive);
@@ -447,8 +473,8 @@ impl<B: StableDmaBacking, const SLOTS: usize, const BUFFER_SIZE: usize>
             queue,
             config,
         )?;
-        let (entries, count) = Self::external_descriptors(storage.as_ref().get_ref(), dma)?;
-        let publication = dma.publish_external_chain(&entries[..count])?;
+        let count = usize::from(storage.as_ref().get_ref().count);
+        let publication = dma.publish_retained_chain(count)?;
         let queue_index = queue.index();
         if !hardware.prepare_bound_he_tx(&publication, queue_index, prepared.program) {
             return Err(HtAmpduTxError::QueueActive);

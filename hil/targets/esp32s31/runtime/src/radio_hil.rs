@@ -261,10 +261,10 @@ const OPEN_RADIO_UDP_TX_BENCH_PORT: u16 = 9_002;
 const OPEN_RADIO_UDP_TX_BENCH_DURATION: Duration = Duration::from_secs(5);
 const OPEN_RADIO_UDP_TX_DRAIN: Duration = Duration::from_millis(250);
 const OPEN_RADIO_UDP_RX_IDLE: Duration = Duration::from_millis(750);
-const OPEN_RADIO_TCP_RX_PORT: u16 = 4_325;
+const OPEN_RADIO_TCP_PORT: u16 = 4_325;
 const OPEN_RADIO_TCP_RX_BUFFER_CAPACITY: usize = 65_536;
-const OPEN_RADIO_TCP_TX_BUFFER_CAPACITY: usize = 1_024;
-const OPEN_RADIO_TCP_READ_CAPACITY: usize = 32_768;
+const OPEN_RADIO_TCP_TX_BUFFER_CAPACITY: usize = 65_536;
+const OPEN_RADIO_TCP_IO_CAPACITY: usize = 65_536;
 const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 const OPEN_RADIO_TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
 const OPEN_RADIO_CONNECTED_TASK_STOP_TIMEOUT: Duration = Duration::from_secs(2);
@@ -272,7 +272,7 @@ const OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET: Duration = Duration::from_micros
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
 const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
     option_env!("OPEN_RADIO_BIDIRECTIONAL_BENCH").is_some();
-const OPEN_RADIO_TCP_RX_BENCH: bool = option_env!("OPEN_RADIO_TCP_RX_BENCH").is_some();
+const OPEN_RADIO_TCP_BENCH: bool = option_env!("OPEN_RADIO_TCP_BENCH").is_some();
 const OPEN_RADIO_TASK_POLL_TELEMETRY: bool = cfg!(feature = "task-poll-telemetry");
 const OPEN_RADIO_RX_ORDER_TELEMETRY: bool = cfg!(feature = "rx-order-telemetry");
 const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH { 5 } else { 4 };
@@ -282,11 +282,14 @@ const OPEN_RADIO_STACK_SOCKET_COUNT: usize = if OPEN_RADIO_BIDIRECTIONAL_BENCH {
 pub const fn hil_capabilities() -> Capabilities {
     Capabilities {
         features: FeatureCapabilities {
-            udp: !OPEN_RADIO_TCP_RX_BENCH,
-            tcp: OPEN_RADIO_TCP_RX_BENCH,
-            rx: !OPEN_RADIO_THROUGHPUT_BENCH || OPEN_RADIO_BIDIRECTIONAL_BENCH,
-            tx: OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_TCP_RX_BENCH,
-            bidirectional: OPEN_RADIO_BIDIRECTIONAL_BENCH && !OPEN_RADIO_TCP_RX_BENCH,
+            udp: !OPEN_RADIO_TCP_BENCH,
+            tcp: OPEN_RADIO_TCP_BENCH,
+            rx: OPEN_RADIO_TCP_BENCH
+                || !OPEN_RADIO_THROUGHPUT_BENCH
+                || OPEN_RADIO_BIDIRECTIONAL_BENCH,
+            tx: OPEN_RADIO_TCP_BENCH || (OPEN_RADIO_THROUGHPUT_BENCH && !OPEN_RADIO_TCP_BENCH),
+            bidirectional: OPEN_RADIO_TCP_BENCH
+                || (OPEN_RADIO_BIDIRECTIONAL_BENCH && !OPEN_RADIO_TCP_BENCH),
             network_provisioning: true,
             runtime_configuration: OPEN_RADIO_RUNTIME_SESSIONS,
             structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
@@ -295,7 +298,7 @@ pub const fn hil_capabilities() -> Capabilities {
             station_lifecycle_events: true,
             station_fault_injection: true,
         },
-        maximum_payload_bytes: if OPEN_RADIO_TCP_RX_BENCH {
+        maximum_payload_bytes: if OPEN_RADIO_TCP_BENCH {
             OPEN_RADIO_TCP_CHUNK_CAPACITY as u16
         } else {
             OPEN_RADIO_UDP_PAYLOAD_CAPACITY as u16

@@ -13,7 +13,7 @@ use open_esp_radio_hil_protocol::{
 
 use super::UdpSocketBuffers;
 use crate::{
-    console::{complete_session, emergency_log, publish_event, receive_session_start},
+    console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
     radio_hil::connected_traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
@@ -78,7 +78,7 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     // `Start` must mean the benchmark task can consume its session without a
     // hidden post-acceptance delay.
     Timer::after_secs(1).await;
-    publish_event(
+    publish_event_reliably(
         0,
         0,
         HilEvent::ServiceReady(ServiceInfo {
@@ -87,7 +87,8 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             local_port: config.source_port,
             maximum_payload_bytes: config.payload_capacity as u16,
         }),
-    );
+    )
+    .await;
     if !matches!(config.session_source, UdpTxSessionSource::Standalone) {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \

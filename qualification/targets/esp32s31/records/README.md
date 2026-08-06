@@ -11,6 +11,7 @@ Current records:
 - [ESP32-S31 direct HT RX aggregation metadata](2026-08-04-esp32s31-ht-rx-aggregation-metadata.md);
 - [ESP32-S31 RX S-MPDU metadata](2026-08-04-esp32s31-rx-s-mpdu-metadata.md);
 - [ESP32-S31 recoverable connected RX fault frontier](2026-08-06-esp32s31-station-rx-fault.md);
+- [ESP32-S31 UDP, TCP and ICMP network regression](2026-08-06-esp32s31-network-regression.md);
 - [ESP32-S31 connected TX reset frontier](2026-08-04-esp32s31-station-tx-fault.md);
 - [ESP32-S31 prolonged AP absence and retry exhaustion](2026-08-04-esp32s31-station-ap-absence.md);
 - [ESP32-S31 controlled AP-loss recovery](2026-08-04-esp32s31-station-ap-loss.md);

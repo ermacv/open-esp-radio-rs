@@ -9,7 +9,7 @@ use embassy_net::{
 use embassy_time::Timer;
 use open_esp_radio_hil_protocol::{Event as HilEvent, NetworkInfo};
 
-use crate::console::emergency_log;
+use crate::console::{emergency_log, publish_event_reliably};
 
 /// Explicit HIL-only inputs for DHCP/readiness reporting and the LAN ARP probe.
 #[derive(Clone, Copy)]
@@ -51,7 +51,7 @@ async fn report_network_configuration(
     for elapsed_ms in 0..15_000_u32 {
         if let Some(config) = stack.config_v4() {
             let local_ipv4 = config.address.address().octets();
-            crate::console::publish_event(
+            publish_event_reliably(
                 0,
                 0,
                 HilEvent::NetworkReady(NetworkInfo {
@@ -59,7 +59,8 @@ async fn report_network_configuration(
                     prefix_length: config.address.prefix_len(),
                     gateway: config.gateway.map(|address| address.octets()),
                 }),
-            );
+            )
+            .await;
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-dhcp \
                  address={} gateway={:?} dns={:?} elapsed_ms={elapsed_ms}",

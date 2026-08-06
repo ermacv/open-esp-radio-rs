@@ -1,0 +1,595 @@
+//! Typed TCP RX, TX and full-duplex qualification over one runtime image.
+
+use std::{
+    fs,
+    net::Ipv4Addr,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
+
+use open_esp_radio_hil_protocol::{Completion, Direction, FlowConfig, SessionConfig, Transport};
+
+use crate::{
+    Result,
+    paced_tcp::{
+        Config as PacedTcpConfig, HostReception, HostTransmission, exchange, receive, send,
+    },
+    traffic_capture::{SerialCapture, SessionEvidence, await_tcp_ready},
+};
+
+const DEFAULT_PORT: u16 = 4_325;
+const DEFAULT_DURATION: Duration = Duration::from_secs(12);
+const DEFAULT_CHUNK_BYTES: usize = 32_768;
+const DEFAULT_RX_RATE_BPS: u64 = 20_000_000;
+const DEFAULT_TX_RATE_BPS: u64 = 60_000_000;
+const DEFAULT_BIDIRECTIONAL_RX_RATE_BPS: u64 = 10_000_000;
+const DEFAULT_BIDIRECTIONAL_TX_RATE_BPS: u64 = 45_000_000;
+const DEFAULT_TX_FLOOR_BPS: u64 = 45_000_000;
+const DEFAULT_BIDIRECTIONAL_TX_FLOOR_BPS: u64 = 35_000_000;
+const MAXIMUM_CHUNK_BYTES: usize = 32_768;
+const DEVICE_READY_TIMEOUT: Duration = Duration::from_secs(90);
+
+#[derive(Debug)]
+struct Options {
+    device: Ipv4Addr,
+    direction: Direction,
+    port: u16,
+    duration: Duration,
+    chunk_bytes: usize,
+    rx_rate_bps: Option<u64>,
+    tx_rate_bps: Option<u64>,
+    tx_floor_bps: Option<u64>,
+    serial: PathBuf,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct TargetSample {
+    rx_bytes: u64,
+    tx_bytes: u64,
+    rx_units: u64,
+    tx_units: u64,
+    elapsed_us: u64,
+    errors: u64,
+    buffer_full: u64,
+    fifo_overflow: u64,
+    enqueued: u64,
+    dropped: u64,
+    eof: bool,
+    pattern_ok: bool,
+}
+
+pub(crate) fn run_rx(arguments: Vec<String>, root: &Path) -> Result<()> {
+    run(arguments, root, Direction::Rx)
+}
+
+pub(crate) fn run_tx(arguments: Vec<String>, root: &Path) -> Result<()> {
+    run(arguments, root, Direction::Tx)
+}
+
+pub(crate) fn run_bidirectional(arguments: Vec<String>, root: &Path) -> Result<()> {
+    run(arguments, root, Direction::Bidirectional)
+}
+
+fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> {
+    if arguments
+        .first()
+        .is_some_and(|value| matches!(value.as_str(), "help" | "--help" | "-h"))
+    {
+        print_help(direction);
+        return Ok(());
+    }
+    let mut options = parse_options(&arguments, direction)?;
+    reject_overlapping_ipv4_links(options.device)?;
+    let mode = direction_name(direction);
+    let output = root.join(format!(
+        "target/hil/esp32s31/qualification/open-radio-tcp-{mode}"
+    ));
+    fs::create_dir_all(&output)?;
+    let capture = SerialCapture::start_with_reset(&options.serial);
+    let ready = match await_tcp_ready(
+        &capture,
+        options.device,
+        options.port,
+        direction,
+        DEVICE_READY_TIMEOUT,
+    ) {
+        Ok(ready) => ready,
+        Err(error) => {
+            let log = capture.finish();
+            fs::write(output.join("uart.log"), &log)?;
+            return Err(error);
+        }
+    };
+    if !ready.runtime_session {
+        return Err("TCP firmware did not advertise a runtime session".into());
+    }
+    options.device = ready.address;
+    let session = capture.start_session(SessionConfig {
+        transport: Transport::Tcp,
+        direction,
+        completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
+        // The target publishes one TCP service and accepts in every payload
+        // direction. `peer` remains a UDP datagram destination, not a hidden
+        // request for the target to reverse the TCP connection role.
+        peer: None,
+        target_rx: options.rx_rate_bps.map(|rate| FlowConfig {
+            payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
+            offered_rate_bps: Some(rate),
+        }),
+        target_tx: options.tx_rate_bps.map(|rate| FlowConfig {
+            payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
+            offered_rate_bps: Some(rate),
+        }),
+    })?;
+
+    let config = PacedTcpConfig {
+        address: options.device,
+        port: options.port,
+        rate_bps: options.rx_rate_bps.unwrap_or(DEFAULT_RX_RATE_BPS),
+        duration: options.duration,
+        chunk_bytes: options.chunk_bytes,
+    };
+    let timeout = options.duration + Duration::from_secs(8);
+    let data_plane = match direction {
+        Direction::Rx => send(config).map(|sample| (Some(sample), None)),
+        Direction::Tx => receive(config).map(|sample| (None, Some(sample))),
+        Direction::Bidirectional => exchange(config).map(|(tx, rx)| (Some(tx), Some(rx))),
+    };
+
+    // Always collect the target's typed result after a data-plane failure.
+    // Otherwise a reset/timeout hides precisely the evidence needed to
+    // distinguish a host socket problem from a target transport failure.
+    let structured = capture.wait_for_session(session, timeout);
+    let acknowledgement = structured
+        .as_ref()
+        .map(|_| capture.acknowledge_session(session))
+        .unwrap_or(Ok(()));
+    let log = capture.finish();
+    fs::write(output.join("uart.log"), &log)?;
+    let data_plane = data_plane.map_err(|error| format!("TCP data plane failed: {error}"));
+    let structured = structured.map_err(|error| format!("TCP target evidence failed: {error}"));
+    let acknowledgement =
+        acknowledgement.map_err(|error| format!("TCP result acknowledgement failed: {error}"));
+    let (host_tx, host_rx) = data_plane?;
+    let structured = structured?;
+    acknowledgement?;
+    let target = parse_target_sample(&log, direction).ok_or_else(|| {
+        format!(
+            "missing compact TCP evidence; UART transcript saved to {}",
+            output.join("uart.log").display()
+        )
+    })?;
+    let failure = validate(&options, host_tx, host_rx, structured, target)
+        .err()
+        .map(|error| error.to_string());
+    write_report(
+        &output,
+        &options,
+        host_tx,
+        host_rx,
+        structured,
+        target,
+        failure.as_deref(),
+    )?;
+    if let Some(failure) = failure {
+        return Err(failure.into());
+    }
+    println!(
+        "OPENRADIOHOST result=PASS mode=tcp-{mode} rx_kbps={} tx_kbps={} rx_bytes={} tx_bytes={} pattern_errors=0 report={}",
+        host_tx.map_or(0, |sample| sample.throughput_bps() / 1_000),
+        host_rx.map_or(0, |sample| sample.throughput_bps() / 1_000),
+        target.rx_bytes,
+        target.tx_bytes,
+        output.join("report.md").display(),
+    );
+    Ok(())
+}
+
+fn validate(
+    options: &Options,
+    host_tx: Option<HostTransmission>,
+    host_rx: Option<HostReception>,
+    structured: SessionEvidence,
+    target: TargetSample,
+) -> Result<()> {
+    if !structured.finished.summary.passed
+        || structured.transport.transport_errors != 0
+        || target.errors != 0
+    {
+        return Err(format!(
+            "target TCP session failed: passed={} typed_errors={} text_errors={}",
+            structured.finished.summary.passed,
+            structured.transport.transport_errors,
+            target.errors,
+        )
+        .into());
+    }
+    if structured.transport.rx_bytes != target.rx_bytes
+        || structured.transport.tx_bytes != target.tx_bytes
+        || structured.transport.rx_units != target.rx_units
+        || structured.transport.tx_units != target.tx_units
+    {
+        return Err("typed/text TCP evidence mismatch".into());
+    }
+    if target.buffer_full != 0 || target.fifo_overflow != 0 || target.dropped != 0 {
+        return Err("TCP session reported RX pipeline loss".into());
+    }
+    if let Some(host) = host_tx {
+        if host.bytes != target.rx_bytes
+            || target.rx_units != 1
+            || !target.eof
+            || !target.pattern_ok
+        {
+            return Err(format!(
+                "host-to-target TCP mismatch: host={} target={} units={} eof={} pattern={}",
+                host.bytes, target.rx_bytes, target.rx_units, target.eof, target.pattern_ok,
+            )
+            .into());
+        }
+        let floor = options.rx_rate_bps.expect("RX direction has a rate") * 9 / 10;
+        if host.throughput_bps() < floor {
+            return Err("host TCP offer is below 90% of the requested RX rate".into());
+        }
+    } else if target.rx_bytes != 0 || target.rx_units != 0 {
+        return Err("TCP TX-only session reported target receive traffic".into());
+    }
+    if let Some(host) = host_rx {
+        if host.bytes != target.tx_bytes
+            || target.tx_units != 1
+            || !host.eof
+            || host.pattern_errors != 0
+        {
+            return Err(format!(
+                "target-to-host TCP mismatch: host={} target={} units={} eof={} pattern_errors={}",
+                host.bytes, target.tx_bytes, target.tx_units, host.eof, host.pattern_errors,
+            )
+            .into());
+        }
+        let floor = options
+            .tx_floor_bps
+            .expect("TX direction has an acceptance floor");
+        if host.throughput_bps() < floor {
+            return Err(format!(
+                "host TCP receive rate is below the configured {} bit/s TX floor",
+                floor
+            )
+            .into());
+        }
+    } else if target.tx_bytes != 0 || target.tx_units != 0 {
+        return Err("TCP RX-only session reported target transmit traffic".into());
+    }
+    Ok(())
+}
+
+fn parse_target_sample(log: &str, direction: Direction) -> Option<TargetSample> {
+    let expected = match direction {
+        Direction::Rx => "Rx",
+        Direction::Tx => "Tx",
+        Direction::Bidirectional => "Bidirectional",
+    };
+    log.lines().rev().find_map(|line| {
+        if !line.contains("OTCP dir=") || text_field(line, "dir")? != expected {
+            return None;
+        }
+        Some(TargetSample {
+            rx_bytes: field(line, "rb")?,
+            tx_bytes: field(line, "tb")?,
+            rx_units: field(line, "ru")?,
+            tx_units: field(line, "tu")?,
+            elapsed_us: field(line, "u")?,
+            errors: field(line, "e")?,
+            buffer_full: field(line, "bf")?,
+            fifo_overflow: field(line, "fo")?,
+            enqueued: field(line, "enq")?,
+            dropped: field(line, "drop")?,
+            eof: field::<u8>(line, "eof")? != 0,
+            pattern_ok: field::<u8>(line, "pat")? != 0,
+        })
+    })
+}
+
+fn field<T: core::str::FromStr>(line: &str, name: &str) -> Option<T> {
+    text_field(line, name)?.parse().ok()
+}
+
+fn text_field<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    line.split_whitespace()
+        .find_map(|token| token.strip_prefix(&format!("{name}=")))
+}
+
+/// Reject a dual-homed host on the target's L2 subnet.
+///
+/// With Linux's default ARP-flux policy (`arp_ignore=0`), either interface may
+/// answer for the source address selected by the benchmark socket. The target
+/// then legitimately updates its neighbor cache to the other interface's MAC,
+/// and TCP stalls even though both the radio and TCP state machine are sound.
+/// A qualification cell must expose one unambiguous L2 identity instead of
+/// silently measuring that host configuration.
+fn reject_overlapping_ipv4_links(device: Ipv4Addr) -> Result<()> {
+    let output = match Command::new("ip")
+        .args(["-o", "-4", "addr", "show", "up", "scope", "global"])
+        .output()
+    {
+        Ok(output) if output.status.success() => output.stdout,
+        // The runner remains usable on non-Linux hosts. Linux qualification
+        // cells have `ip` and therefore get the strict ARP-flux preflight.
+        Ok(_) | Err(_) => return Ok(()),
+    };
+    let links = overlapping_ipv4_links(&String::from_utf8_lossy(&output), device);
+    if links.len() > 1 {
+        return Err(format!(
+            "TCP qualification has multiple active interfaces on the target subnet ({}); disable all but one to prevent ARP flux",
+            links.join(", ")
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn overlapping_ipv4_links(output: &str, device: Ipv4Addr) -> Vec<String> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let _index = fields.next()?;
+            let name = fields.next()?.trim_end_matches(':');
+            fields.find(|field| *field == "inet")?;
+            let (address, prefix) = fields.next()?.split_once('/')?;
+            let address = address.parse::<Ipv4Addr>().ok()?;
+            let prefix = prefix.parse::<u8>().ok()?;
+            same_ipv4_subnet(address, device, prefix).then(|| format!("{name}={address}/{prefix}"))
+        })
+        .collect()
+}
+
+fn same_ipv4_subnet(left: Ipv4Addr, right: Ipv4Addr, prefix: u8) -> bool {
+    if prefix > 32 {
+        return false;
+    }
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    u32::from(left) & mask == u32::from(right) & mask
+}
+
+fn write_report(
+    output: &Path,
+    options: &Options,
+    host_tx: Option<HostTransmission>,
+    host_rx: Option<HostReception>,
+    structured: SessionEvidence,
+    target: TargetSample,
+    failure: Option<&str>,
+) -> Result<()> {
+    let result = if failure.is_some() { "FAIL" } else { "PASS" };
+    let failure = failure
+        .map(|failure| format!("- Acceptance failure: `{failure}`\n"))
+        .unwrap_or_default();
+    fs::write(
+        output.join("report.md"),
+        format!(
+            "# Open-radio TCP {} HIL\n\n\
+             - Result: `{result}`\n\
+             {failure}\
+             - Device: `{}`\n\
+             - Host-to-target bytes/rate: `{}` / `{:.3} Mbit/s`\n\
+             - Host-to-target offer: `{}` bit/s\n\
+             - Host TX writes/max lateness/catch-up/deadline resets: `{}` / `{} us` / `{}` / `{}`\n\
+             - Target-to-host bytes/rate: `{}` / `{:.3} Mbit/s`\n\
+             - Target-to-host offer/floor: `{}` / `{}` bit/s\n\
+             - Host RX reads: `{}`\n\
+             - Typed RX/TX bytes: `{}` / `{}`\n\
+             - Typed RX/TX streams: `{}` / `{}`\n\
+             - Target elapsed: `{}` us\n\
+             - Target EOF/pattern: `{}` / `{}`\n\
+             - Host RX EOF/pattern errors: `{}` / `{}`\n\
+             - RX enqueued/software-dropped: `{}` / `{}`\n\
+             - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\
+             - Typed evidence CRC32C: `0x{:08x}`\n\n\
+             Byte equality and the deterministic absolute-offset pattern are required independently.\n\n\
+             UART evidence is in [`uart.log`](uart.log).\n",
+            direction_name(options.direction),
+            options.device,
+            host_tx.map_or(0, |value| value.bytes),
+            host_tx.map_or(0.0, |value| value.throughput_bps() as f64 / 1_000_000.0),
+            options.rx_rate_bps.unwrap_or(0),
+            host_tx.map_or(0, |value| value.writes),
+            host_tx.map_or(0, |value| value.maximum_lateness_us()),
+            host_tx.map_or(0, |value| value.maximum_catch_up_writes),
+            host_tx.map_or(0, |value| value.deadline_resets),
+            host_rx.map_or(0, |value| value.bytes),
+            host_rx.map_or(0.0, |value| value.throughput_bps() as f64 / 1_000_000.0),
+            options.tx_rate_bps.unwrap_or(0),
+            options.tx_floor_bps.unwrap_or(0),
+            host_rx.map_or(0, |value| value.reads),
+            target.rx_bytes,
+            target.tx_bytes,
+            target.rx_units,
+            target.tx_units,
+            target.elapsed_us,
+            target.eof,
+            target.pattern_ok,
+            host_rx.is_some_and(|value| value.eof),
+            host_rx.map_or(0, |value| value.pattern_errors),
+            target.enqueued,
+            target.dropped,
+            target.buffer_full,
+            target.fifo_overflow,
+            structured.finished.evidence_crc32c,
+        ),
+    )?;
+    Ok(())
+}
+
+fn parse_options(arguments: &[String], direction: Direction) -> Result<Options> {
+    let device = arguments
+        .first()
+        .ok_or("missing ESP32-S31 IPv4 address")?
+        .parse::<Ipv4Addr>()?;
+    let mut options = Options {
+        device,
+        direction,
+        port: DEFAULT_PORT,
+        duration: DEFAULT_DURATION,
+        chunk_bytes: DEFAULT_CHUNK_BYTES,
+        rx_rate_bps: match direction {
+            Direction::Rx => Some(DEFAULT_RX_RATE_BPS),
+            Direction::Tx => None,
+            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_RX_RATE_BPS),
+        },
+        tx_rate_bps: match direction {
+            Direction::Rx => None,
+            Direction::Tx => Some(DEFAULT_TX_RATE_BPS),
+            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_RATE_BPS),
+        },
+        tx_floor_bps: match direction {
+            Direction::Rx => None,
+            Direction::Tx => Some(DEFAULT_TX_FLOOR_BPS),
+            Direction::Bidirectional => Some(DEFAULT_BIDIRECTIONAL_TX_FLOOR_BPS),
+        },
+        serial: PathBuf::from("/dev/ttyACM0"),
+    };
+    let mut index = 1;
+    while index < arguments.len() {
+        let value = arguments
+            .get(index + 1)
+            .ok_or("TCP option requires a value")?;
+        match arguments[index].as_str() {
+            "--rx-rate" => options.rx_rate_bps = Some(parse_rate(value)?),
+            "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
+            "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
+            "--seconds" => {
+                let seconds = value.parse::<u64>()?;
+                if !(5..=300).contains(&seconds) {
+                    return Err("TCP duration must be between 5 and 300 seconds".into());
+                }
+                options.duration = Duration::from_secs(seconds);
+            }
+            "--chunk" => {
+                options.chunk_bytes = value.parse()?;
+                if !(64..=MAXIMUM_CHUNK_BYTES).contains(&options.chunk_bytes) {
+                    return Err("TCP chunk must be between 64 and 32768 bytes".into());
+                }
+            }
+            "--port" => options.port = value.parse()?,
+            "--serial" => options.serial = PathBuf::from(value),
+            option => return Err(format!("unsupported TCP option `{option}`").into()),
+        }
+        index += 2;
+    }
+    let shape_valid = match direction {
+        Direction::Rx => {
+            options.rx_rate_bps.is_some()
+                && options.tx_rate_bps.is_none()
+                && options.tx_floor_bps.is_none()
+        }
+        Direction::Tx => {
+            options.rx_rate_bps.is_none()
+                && options.tx_rate_bps.is_some()
+                && options.tx_floor_bps.is_some()
+        }
+        Direction::Bidirectional => {
+            options.rx_rate_bps.is_some()
+                && options.tx_rate_bps.is_some()
+                && options.tx_floor_bps.is_some()
+        }
+    };
+    if !shape_valid {
+        return Err("TCP rate options do not match the selected direction".into());
+    }
+    Ok(options)
+}
+
+fn parse_rate(value: &str) -> Result<u64> {
+    let rate = value.parse::<u64>()?;
+    if !(100_000..=1_000_000_000).contains(&rate) {
+        return Err("TCP rate must be between 100 kbit/s and 1 Gbit/s".into());
+    }
+    Ok(rate)
+}
+
+const fn direction_name(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Rx => "rx",
+        Direction::Tx => "tx",
+        Direction::Bidirectional => "bidirectional",
+    }
+}
+
+fn print_help(direction: Direction) {
+    println!(
+        "cargo hil traffic tcp-{} <device-ipv4> [options]\n\
+         --rx-rate <bps>   host-to-target offered rate\n\
+         --tx-rate <bps>   target-to-host offered rate\n\
+         --tx-floor <bps>  required target-to-host measured rate\n\
+         --seconds <5..300> session duration (default 12)\n\
+         --chunk <64..32768> application chunk (default 32768)\n\
+         --port <port>      TCP service/host listener port (default 4325)\n\
+         --serial <path>    diagnostics device (default /dev/ttyACM0)\n\n\
+         Flash `cargo hil flash tcp` first.",
+        direction_name(direction),
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overlapping_link_parser_exposes_arp_flux_risk() {
+        let links = overlapping_ipv4_links(
+            "2: enp0: <UP> inet 192.168.178.129/24 scope global enp0\n\
+             3: wlan0: <UP> inet 192.168.178.107/24 scope global wlan0\n\
+             4: tailscale0: <UP> inet 100.64.0.1/32 scope global tailscale0\n",
+            Ipv4Addr::new(192, 168, 178, 131),
+        );
+
+        assert_eq!(
+            links,
+            ["enp0=192.168.178.129/24", "wlan0=192.168.178.107/24"]
+        );
+    }
+
+    #[test]
+    fn subnet_comparison_handles_boundary_prefixes() {
+        assert!(same_ipv4_subnet(
+            Ipv4Addr::new(1, 2, 3, 4),
+            Ipv4Addr::new(203, 0, 113, 9),
+            0
+        ));
+        assert!(!same_ipv4_subnet(
+            Ipv4Addr::new(1, 2, 3, 4),
+            Ipv4Addr::new(1, 2, 3, 5),
+            32
+        ));
+        assert!(!same_ipv4_subnet(
+            Ipv4Addr::LOCALHOST,
+            Ipv4Addr::LOCALHOST,
+            33
+        ));
+    }
+
+    #[test]
+    fn tcp_tx_defaults_separate_offer_from_acceptance_floor() {
+        let options = parse_options(&["192.0.2.10".into()], Direction::Tx).unwrap();
+
+        assert_eq!(options.chunk_bytes, 32_768);
+        assert_eq!(options.tx_rate_bps, Some(60_000_000));
+        assert_eq!(options.tx_floor_bps, Some(45_000_000));
+        assert_eq!(options.rx_rate_bps, None);
+    }
+
+    #[test]
+    fn direction_rejects_an_inapplicable_flow_option() {
+        assert!(
+            parse_options(
+                &["192.0.2.10".into(), "--tx-rate".into(), "1000000".into(),],
+                Direction::Rx,
+            )
+            .is_err()
+        );
+    }
+}

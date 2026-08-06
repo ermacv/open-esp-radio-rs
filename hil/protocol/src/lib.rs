@@ -7,6 +7,7 @@
 
 mod framing;
 mod message;
+mod stream_pattern;
 
 pub use framing::{
     DecodeCounters, DecodeError, EncodeError, FrameDecoder, FrameEncoder, MAX_POSTCARD_BYTES,
@@ -23,3 +24,4 @@ pub use message::{
     StationLifecycleEvent, Transport, TransportEvidence, WPA2_PASSPHRASE_MAX_LEN,
     WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,
 };
+pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

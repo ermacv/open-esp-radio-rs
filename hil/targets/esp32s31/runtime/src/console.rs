@@ -360,7 +360,13 @@ pub async fn complete_session(session_id: u64, evidence: TransportEvidence, pass
         .await;
 }
 
-async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
+/// Queue a control-plane event without allowing a full telemetry queue to
+/// erase a required host/target state transition.
+///
+/// Use this for readiness and lifecycle boundaries outside measured traffic.
+/// High-rate observations should continue to use [`publish_event`] so they
+/// cannot apply backpressure to the radio or network hot path.
+pub(crate) async fn publish_event_reliably(session_id: u64, request_id: u32, body: Event) {
     let _ = queue_event_reliably(session_id, request_id, body).await;
 }
 
@@ -627,16 +633,20 @@ fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bo
                 .offered_rate_bps
                 .is_none_or(|rate| (100_000..=1_000_000_000).contains(&rate))
     };
+    let peer_valid = match (config.transport, config.direction) {
+        (Transport::Tcp, _) | (Transport::Udp, Direction::Rx) => config.peer.is_none(),
+        (Transport::Udp, Direction::Tx | Direction::Bidirectional) => {
+            config.peer.is_some_and(|peer| peer.port != 0)
+        }
+    };
     let direction_valid = match config.direction {
         Direction::Rx => {
             capabilities.features.rx
-                && config.peer.is_none()
                 && config.target_rx.is_some_and(valid_flow)
                 && config.target_tx.is_none()
         }
         Direction::Tx => {
             capabilities.features.tx
-                && config.peer.is_some_and(|peer| peer.port != 0)
                 && config.target_rx.is_none()
                 && config.target_tx.is_some_and(valid_flow)
         }
@@ -644,7 +654,6 @@ fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bo
             capabilities.features.bidirectional
                 && capabilities.features.rx
                 && capabilities.features.tx
-                && config.peer.is_some_and(|peer| peer.port != 0)
                 && config.target_rx.is_some_and(valid_flow)
                 && config.target_tx.is_some_and(valid_flow)
         }
@@ -654,6 +663,7 @@ fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bo
         Transport::Tcp => capabilities.features.tcp,
     };
     transport_valid
+        && peer_valid
         && direction_valid
         && matches!(config.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
 }

@@ -22,7 +22,8 @@ use crate::{
     Result,
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
-    tx_traffic::{Burst, receive_bursts},
+    tx_traffic::{Burst, BurstFraming, receive_bursts},
+    udp_socket::configure_qualification_receive_buffer,
 };
 
 const DEFAULT_PORT: u16 = 4_323;
@@ -90,6 +91,7 @@ struct BidirectionalEvidence {
     host_sink: Burst,
     session: Option<SessionEvidence>,
     ampdu: AmpduEvidence,
+    host_receive_buffer_bytes: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -856,6 +858,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
     fs::create_dir_all(&output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
+    let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
     tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
@@ -902,8 +905,14 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     };
     let receiver_duration = options.duration.saturating_add(Duration::from_secs(2));
     let expected_device = options.address;
-    let receiver =
-        thread::spawn(move || receive_bursts(&tx_sink, expected_device, receiver_duration));
+    let framing = if session.is_some() {
+        BurstFraming::ProtocolSession
+    } else {
+        BurstFraming::IdleDelimited
+    };
+    let receiver = thread::spawn(move || {
+        receive_bursts(&tx_sink, expected_device, receiver_duration, framing)
+    });
     let host_result = send_paced_udp(PacedUdpConfig {
         address: options.address,
         port: options.port,
@@ -1022,18 +1031,21 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             host_sink: host_tx,
             session: structured,
             ampdu,
+            host_receive_buffer_bytes,
         },
     )?;
     println!(
         "OPENRADIOHOST result=PASS mode={}-bidirectional offered_kbps={} \
          host_kbps={} rx_median_kbps={rx_median} concurrent_tx_floor_kbps={tx_floor} \
          host_tx_kbps={} \
+         host_receive_buffer_bytes={} \
          ampdu_avg_subframes={:.2} ampdu_max_subframes={} full32={} \
          combined_floor_sum_kbps={} report={}",
         options.phy.name(),
         options.rate_bps / 1_000,
         host.throughput_bps() / 1_000,
         host_tx.throughput_kbps(),
+        host_receive_buffer_bytes,
         ampdu.subframes as f64 / ampdu.aggregates.max(1) as f64,
         ampdu.maximum,
         ampdu.full32,
@@ -2283,6 +2295,7 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
         host_sink: host_tx,
         session: structured,
         ampdu,
+        host_receive_buffer_bytes,
     } = evidence;
     let rx_median = rx.throughput_median_kbps;
     let pipeline = rx.pipeline;
@@ -2318,6 +2331,8 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
     let host_tx_missing = host_tx.missing;
     let host_tx_reordered = host_tx.reordered;
     let host_tx_duplicates = host_tx.duplicates;
+    let host_tx_maximum_interarrival_us = host_tx.maximum_interarrival_us;
+    let host_tx_sequence_after_maximum_interarrival = host_tx.sequence_after_maximum_interarrival;
     let structured_report = structured
         .map(|evidence| {
             format!(
@@ -2342,6 +2357,8 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              - Target TX payload / offered bound: `{}` bytes / `{target_tx_rate}`\n\
              - Host received target TX: `{host_tx_mbps:.3} Mbit/s`, `{host_tx_bytes}` bytes in `{host_tx_datagrams}` datagrams\n\
              - Host target-TX missing/reordered/duplicate datagrams: `{host_tx_missing}` / `{host_tx_reordered}` / `{host_tx_duplicates}`\n\
+             - Host target-TX maximum packet interarrival: `{host_tx_maximum_interarrival_us}` us before sequence `{host_tx_sequence_after_maximum_interarrival:?}`\n\
+             - Host UDP `SO_RCVBUF` read-back: `{host_receive_buffer_bytes}` bytes\n\
              {structured_report}\
              - Host pacing maximum lateness/catch-up/deadline resets: `{} us` / `{}` datagrams / `{}`\n\
             - Direct RX median: `{:.3} Mbit/s`\n\

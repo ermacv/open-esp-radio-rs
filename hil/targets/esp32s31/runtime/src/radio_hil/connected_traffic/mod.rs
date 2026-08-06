@@ -20,7 +20,7 @@ pub(super) use reporting::{
     log_open_radio_task_poll_interval, observe_open_radio_task_polls,
 };
 pub(in crate::radio_hil) use runtime::{RadioHilConnectedTrafficConfig, connected_traffic_task};
-pub(super) use tcp::{TcpRxBenchmarkConfig, run_open_radio_tcp_rx_benchmark};
+pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
 pub(super) use udp::{
     UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
     UdpTxBenchmarkConfig, UdpTxSessionSource, run_open_radio_udp_rx_benchmark,

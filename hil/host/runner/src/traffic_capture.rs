@@ -62,7 +62,7 @@ pub(crate) struct UdpTxReady {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TcpRxReady {
+pub(crate) struct TcpReady {
     pub(crate) address: Ipv4Addr,
     pub(crate) runtime_session: bool,
 }
@@ -767,15 +767,21 @@ impl SerialCapture {
 /// address. Unlike UDP, readiness does not inject a probe connection: the
 /// target begins listening only after the session `Start` transition, and the
 /// measured host connection is the sole stream owned by that session.
-pub(crate) fn await_tcp_rx_ready(
+pub(crate) fn await_tcp_ready(
     capture: &SerialCapture,
     address_hint: Ipv4Addr,
     port: u16,
+    direction: Direction,
     timeout: Duration,
-) -> Result<TcpRxReady> {
+) -> Result<TcpReady> {
     let capabilities = capture.prepare_protocol()?;
-    if !capabilities.features.tcp || !capabilities.features.rx {
-        return Err("firmware does not advertise TCP RX capability".into());
+    let direction_supported = match direction {
+        Direction::Rx => capabilities.features.rx,
+        Direction::Tx => capabilities.features.tx,
+        Direction::Bidirectional => capabilities.features.bidirectional,
+    };
+    if !capabilities.features.tcp || !direction_supported {
+        return Err(format!("firmware does not advertise TCP {direction:?} capability").into());
     }
     if !capabilities.features.runtime_configuration || !capabilities.features.structured_evidence {
         return Err("TCP RX requires runtime sessions and structured evidence".into());
@@ -788,10 +794,10 @@ pub(crate) fn await_tcp_rx_ready(
         let address = capture
             .observed_protocol_ipv4()
             .or_else(|| observed_dhcp_ipv4(&capture.transcript()));
-        if capture.observed_service(Transport::Tcp, Direction::Rx, port)
+        if capture.observed_service(Transport::Tcp, direction, port)
             && let Some(address) = address
         {
-            return Ok(TcpRxReady {
+            return Ok(TcpReady {
                 address,
                 runtime_session: true,
             });
@@ -799,7 +805,7 @@ pub(crate) fn await_tcp_rx_ready(
         thread::sleep(Duration::from_millis(20));
     }
     Err(format!(
-        "device {address_hint}:{port} did not publish TCP RX readiness within {} seconds",
+        "device {address_hint}:{port} did not publish TCP {direction:?} readiness within {} seconds",
         timeout.as_secs(),
     )
     .into())

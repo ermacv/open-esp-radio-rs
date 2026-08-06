@@ -87,6 +87,90 @@ impl HtAmpduHardware for CompletionHardware {
     }
 }
 
+struct DetachingCompletionHardware {
+    completion: Option<MacHtAmpduCompletionRegisters>,
+}
+
+impl DetachingCompletionHardware {
+    fn successful() -> Self {
+        Self {
+            completion: Some(MacHtAmpduCompletionRegisters {
+                tx: MacTxCompletionRegisters {
+                    aux_a: 0,
+                    aux_b: 0,
+                    aux_c: 0,
+                    primary: 0,
+                    alternate: 0,
+                    trigger_flow: false,
+                },
+                block_ack_control_and_sequence: 0,
+                block_ack_bitmap_low: u32::MAX,
+                block_ack_bitmap_high: u32::MAX,
+            }),
+        }
+    }
+}
+
+impl TxHardware for DetachingCompletionHardware {
+    fn prepare_bound_legacy_tx(
+        &mut self,
+        _: &dyn PreparedTxDma,
+        _: u8,
+        _: MacLegacyTxProgram,
+    ) -> bool {
+        false
+    }
+
+    fn start_bound_legacy_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+
+    fn prepare_bound_ht_tx(&mut self, _: &dyn PreparedTxDma, _: u8, _: MacHtTxProgram) -> bool {
+        true
+    }
+
+    fn start_bound_ht_tx(&mut self, _: &dyn HardwareOwnedTxDma, _: u8, _: u32) {}
+
+    fn he_tx_vector_snapshot(&self, _: u8) -> Option<MacHeTxVectorSnapshot> {
+        None
+    }
+
+    fn take_tx_completion(&mut self, _: u8) -> Option<MacTxCompletionRegisters> {
+        None
+    }
+
+    fn begin_tx_timeout_abort(&mut self, _: u8) -> bool {
+        false
+    }
+
+    fn with_tx_queue_detached<R>(
+        &mut self,
+        _: u8,
+        descriptor_head: u32,
+        _: MacTxDetachReason,
+        detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
+    ) -> MacTxDetachOutcome<R> {
+        MacTxDetachOutcome::Detached(detached(MacTxQueueDetached::new_model(descriptor_head)))
+    }
+}
+
+impl HtAmpduHardware for DetachingCompletionHardware {
+    fn take_ht_ampdu_completion(&mut self, _: u8) -> Option<MacHtAmpduCompletionRegisters> {
+        self.completion.take()
+    }
+
+    fn prepare_he_trigger_based_queue(
+        &mut self,
+        _: MacHeTbTidLimit,
+        _: MacHeTbLinkReservation,
+        _: MacHeTid,
+        _: &[u16],
+        _: u32,
+    ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
+        Err(MacHeTbProgramError::LengthCountMismatch)
+    }
+
+    fn clear_he_trigger_based_queue(&mut self, _: MacHeTbLinkReservation) {}
+}
+
 fn frame_layout(
     dma_offset: usize,
     mpdu_length: usize,
@@ -237,6 +321,105 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
 
     assert_eq!(storage.state(), TxSlotState::ResetRequired);
     assert_eq!(pool.claimed_slots(), 1);
+}
+
+#[test]
+fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
+    let storage = HtAmpduTxStorage::<4, 0>::new();
+    let mut storage = core::pin::pin!(storage);
+    let pool = PinnedDmaTxPool::<256, 0, 0, 4>::new();
+    let rate = HtRate::new(
+        crate::tx::HtMcs::Mcs0,
+        crate::tx::HtGuardInterval::Long800Ns,
+        crate::tx::HtChannelWidth::Mhz20,
+    );
+    let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
+    let cookie = owner.begin().unwrap();
+
+    for slot in 0..4 {
+        let network = pool.claim_network(slot);
+        let (index, ()) = network.publish(TX_AMPDU_METADATA_SIZE + 32, |bytes| {
+            bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(slot);
+            bytes[TX_AMPDU_METADATA_SIZE + 1] = 0x41;
+        });
+        owner
+            .commit_ht(
+                cookie,
+                pool.claim_radio(index),
+                ht_frame_request(0, 32, 8, 0, rate),
+            )
+            .unwrap();
+    }
+
+    let aggregate = owner.prepared_aggregate(cookie).unwrap();
+    let config = HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap();
+    let mut hardware = DetachingCompletionHardware::successful();
+    owner
+        .submit(&mut hardware, cookie, LegacyTxQueue::BestEffort, config)
+        .unwrap();
+    assert!(
+        owner
+            .acknowledge_completion(&mut hardware)
+            .unwrap()
+            .is_some()
+    );
+    owner.detach_completed(&mut hardware, cookie).unwrap();
+
+    let retry = owner.retain_for_ampdu_retry(cookie, 0b1010).unwrap();
+    assert_eq!(retry.subframes, 2);
+    let retry_config = HtAmpduTxConfig::new(rate, retry.bytes, retry.subframes).unwrap();
+    let mut hardware = DetachingCompletionHardware::successful();
+    owner
+        .submit(
+            &mut hardware,
+            cookie,
+            LegacyTxQueue::BestEffort,
+            retry_config,
+        )
+        .unwrap();
+    assert!(
+        owner
+            .acknowledge_completion(&mut hardware)
+            .unwrap()
+            .is_some()
+    );
+    owner.detach_completed(&mut hardware, cookie).unwrap();
+
+    let (first, _) = owner.completed_frame(cookie, 0).unwrap();
+    assert_eq!(first[0], 1);
+    assert_eq!(first[1], 0x49);
+    let (second, _) = owner.completed_frame(cookie, 1).unwrap();
+    assert_eq!(second[0], 3);
+    assert_eq!(second[1], 0x49);
+
+    // A following partial BlockAck is expressed in the compacted logical
+    // index space. Retaining logical slot one must therefore keep original
+    // backing three, not physical backing one.
+    let retry = owner.retain_for_ampdu_retry(cookie, 0b10).unwrap();
+    assert_eq!(retry.subframes, 1);
+    let retry_config = HtAmpduTxConfig::new(rate, retry.bytes, retry.subframes).unwrap();
+    let mut hardware = DetachingCompletionHardware::successful();
+    owner
+        .submit(
+            &mut hardware,
+            cookie,
+            LegacyTxQueue::BestEffort,
+            retry_config,
+        )
+        .unwrap();
+    assert!(
+        owner
+            .acknowledge_completion(&mut hardware)
+            .unwrap()
+            .is_some()
+    );
+    owner.detach_completed(&mut hardware, cookie).unwrap();
+
+    let (last, _) = owner.completed_frame(cookie, 0).unwrap();
+    assert_eq!(last[0], 3);
+    assert_eq!(last[1], 0x49);
+    owner.release_completed(cookie).unwrap();
+    assert_eq!(pool.claimed_slots(), 0);
 }
 
 fn block_ack_parameters(tid: u8, window: u16, amsdu: bool) -> [u8; 2] {

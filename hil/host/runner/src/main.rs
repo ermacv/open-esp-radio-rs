@@ -20,10 +20,11 @@ mod station_ap_loss;
 mod station_lifecycle;
 mod station_rx_fault;
 mod station_tx_fault;
-mod tcp_rx;
+mod tcp_traffic;
 mod traffic_capture;
 mod trigger;
 mod tx_traffic;
+mod udp_socket;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -45,7 +46,7 @@ const SCENARIO_ENVIRONMENT: &[&str] = &[
     "OPEN_RADIO_RAW_MAC_BENCH",
     "OPEN_RADIO_TX_BENCH",
     "OPEN_RADIO_PERF_AP",
-    "OPEN_RADIO_TCP_RX_BENCH",
+    "OPEN_RADIO_TCP_BENCH",
     "OPEN_RADIO_AMSDU_BENCH",
     "OPEN_RADIO_NETWORK_AMSDU_BENCH",
     "OPEN_RADIO_HE_MATRIX_HIL",
@@ -109,12 +110,16 @@ fn run() -> Result<()> {
         Some("traffic") => match arguments.next().as_deref() {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
             Some("rx") => rx_traffic::run(arguments.collect(), &root),
-            Some("tcp-rx") => tcp_rx::run(arguments.collect(), &root),
+            Some("tcp-rx") => tcp_traffic::run_rx(arguments.collect(), &root),
+            Some("tcp-tx") => tcp_traffic::run_tx(arguments.collect(), &root),
+            Some("tcp-bidirectional") => {
+                tcp_traffic::run_bidirectional(arguments.collect(), &root)
+            }
             Some("tx") => tx_traffic::run(arguments.collect(), &root),
             Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
             Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
             _ => Err(
-                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|trigger|trigger-hil> ..."
+                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|trigger|trigger-hil> ..."
                     .into(),
             ),
         },
@@ -179,6 +184,8 @@ fn print_help() {
          cargo hil traffic tx <device-ipv4> [options]\n\
          cargo hil traffic bidirectional <ipv4> [options]\n\
          cargo hil traffic tcp-rx <device-ipv4> [options]\n\
+         cargo hil traffic tcp-tx <device-ipv4> [options]\n\
+         cargo hil traffic tcp-bidirectional <device-ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
          cargo hil station ap-absence [options]\n\
@@ -370,7 +377,7 @@ enum Scenario {
     UdpTx,
     StationTxFault,
     Bidirectional,
-    TcpRx,
+    Tcp,
 }
 
 impl Scenario {
@@ -382,7 +389,7 @@ impl Scenario {
         Self::UdpTx,
         Self::StationTxFault,
         Self::Bidirectional,
-        Self::TcpRx,
+        Self::Tcp,
     ];
 
     fn parse(value: &str) -> Result<Self> {
@@ -396,7 +403,7 @@ impl Scenario {
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
             "station-tx-fault" | "open-radio-station-tx-fault" => Ok(Self::StationTxFault),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
-            "tcp-rx" | "open-radio-tcp-rx" => Ok(Self::TcpRx),
+            "tcp" | "tcp-rx" | "open-radio-tcp" | "open-radio-tcp-rx" => Ok(Self::Tcp),
             _ => Err(format!(
                 "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
             )
@@ -413,7 +420,7 @@ impl Scenario {
             Self::UdpTx => "udp-tx",
             Self::StationTxFault => "station-tx-fault",
             Self::Bidirectional => "bidirectional",
-            Self::TcpRx => "tcp-rx",
+            Self::Tcp => "tcp",
         }
     }
 
@@ -426,7 +433,7 @@ impl Scenario {
             Self::UdpTx => "open-radio-udp-tx",
             Self::StationTxFault => "open-radio-station-tx-fault",
             Self::Bidirectional => "open-radio-bidirectional",
-            Self::TcpRx => "open-radio-tcp-rx",
+            Self::Tcp => "open-radio-tcp",
         }
     }
 
@@ -436,7 +443,7 @@ impl Scenario {
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
             Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
-            Self::UdpTx | Self::StationTxFault | Self::Bidirectional | Self::TcpRx => {
+            Self::UdpTx | Self::StationTxFault | Self::Bidirectional | Self::Tcp => {
                 "open-radio-hil"
             }
         }
@@ -453,7 +460,7 @@ impl Scenario {
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
             ],
-            Self::TcpRx => &[("OPEN_RADIO_TCP_RX_BENCH", "1")],
+            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1")],
         }
     }
 
@@ -472,7 +479,7 @@ impl Scenario {
                 "connected TX reset frontier against the repository-controlled AP"
             }
             Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
-            Self::TcpRx => "production ConnectedRunner embassy-net TCP receive throughput",
+            Self::Tcp => "production ConnectedRunner embassy-net TCP RX/TX/full-duplex throughput",
         }
     }
 }
@@ -1135,7 +1142,8 @@ mod tests {
             Scenario::parse("bidirectional").unwrap(),
             Scenario::Bidirectional
         );
-        assert_eq!(Scenario::parse("tcp-rx").unwrap(), Scenario::TcpRx);
+        assert_eq!(Scenario::parse("tcp-rx").unwrap(), Scenario::Tcp);
+        assert_eq!(Scenario::parse("tcp").unwrap(), Scenario::Tcp);
         assert!(Scenario::parse("he-dcm-matrix").is_err());
     }
 
@@ -1170,8 +1178,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            Scenario::TcpRx.environment(),
-            &[("OPEN_RADIO_TCP_RX_BENCH", "1")]
+            Scenario::Tcp.environment(),
+            &[("OPEN_RADIO_TCP_BENCH", "1")]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {

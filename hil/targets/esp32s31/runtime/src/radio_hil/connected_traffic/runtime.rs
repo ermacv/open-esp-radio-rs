@@ -12,9 +12,9 @@ use open_esp_radio::{
 use static_cell::StaticCell;
 
 use super::{
-    TcpRxBenchmarkConfig, UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry,
-    UdpSocketBuffers, UdpTxBenchmarkConfig, UdpTxSessionSource, observe_open_radio_task_polls,
-    run_open_radio_bidirectional_session_coordinator, run_open_radio_tcp_rx_benchmark,
+    TcpBenchmarkConfig, UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
+    UdpTxBenchmarkConfig, UdpTxSessionSource, observe_open_radio_task_polls,
+    run_open_radio_bidirectional_session_coordinator, run_open_radio_tcp_benchmark,
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
 };
 use crate::radio_hil::{
@@ -30,8 +30,8 @@ use crate::radio_hil::{
     OPEN_RADIO_RX_ORDER_TELEMETRY, OPEN_RADIO_RX_PHY_COUNTERS, OPEN_RADIO_RX_PIPELINE_COUNTERS,
     OPEN_RADIO_RX_RELOAD_DELAYS, OPEN_RADIO_RX_S_MPDU_COUNTERS, OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH,
     OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH, OPEN_RADIO_TASK_POLL_TELEMETRY, OPEN_RADIO_TASK_POLLS,
-    OPEN_RADIO_TCP_CHUNK_CAPACITY, OPEN_RADIO_TCP_IDLE_TIMEOUT, OPEN_RADIO_TCP_READ_CAPACITY,
-    OPEN_RADIO_TCP_RX_BENCH, OPEN_RADIO_TCP_RX_BUFFER_CAPACITY, OPEN_RADIO_TCP_RX_PORT,
+    OPEN_RADIO_TCP_BENCH, OPEN_RADIO_TCP_CHUNK_CAPACITY, OPEN_RADIO_TCP_IDLE_TIMEOUT,
+    OPEN_RADIO_TCP_IO_CAPACITY, OPEN_RADIO_TCP_PORT, OPEN_RADIO_TCP_RX_BUFFER_CAPACITY,
     OPEN_RADIO_TCP_TX_BUFFER_CAPACITY, OPEN_RADIO_TX_AGGREGATE_COUNTERS,
     OPEN_RADIO_TX_BENCH_RATE_KBPS, OPEN_RADIO_TX_BENCH_TARGET_IPV4,
     OPEN_RADIO_UDP_PAYLOAD_CAPACITY, OPEN_RADIO_UDP_RX_IDLE, OPEN_RADIO_UDP_RX_PORT,
@@ -54,8 +54,7 @@ static OPEN_RADIO_TCP_RX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACI
     StaticCell::new();
 static OPEN_RADIO_TCP_TX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]> =
     StaticCell::new();
-static OPEN_RADIO_TCP_READ_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_READ_CAPACITY]> =
-    StaticCell::new();
+static OPEN_RADIO_TCP_IO_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_IO_CAPACITY]> = StaticCell::new();
 static OPEN_RADIO_BIDIRECTIONAL_RX_METADATA: StaticCell<
     [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
 > = StaticCell::new();
@@ -140,20 +139,22 @@ async fn run_connected_traffic_workload(
             Timer::after_secs(60).await;
         },
         RadioHilConnectedTrafficBuffers::Tcp { rx, tx, read } => {
-            run_open_radio_tcp_rx_benchmark(
+            run_open_radio_tcp_benchmark(
                 stack,
                 registers,
                 &mut **rx,
                 &mut **tx,
                 &mut **read,
-                TcpRxBenchmarkConfig {
-                    local_port: OPEN_RADIO_TCP_RX_PORT,
+                TcpBenchmarkConfig {
+                    local_port: OPEN_RADIO_TCP_PORT,
                     maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
                     receive_buffer_capacity: OPEN_RADIO_TCP_RX_BUFFER_CAPACITY,
-                    read_capacity: OPEN_RADIO_TCP_READ_CAPACITY,
+                    transmit_buffer_capacity: OPEN_RADIO_TCP_TX_BUFFER_CAPACITY,
+                    io_buffer_capacity: OPEN_RADIO_TCP_IO_CAPACITY,
                     idle_timeout: OPEN_RADIO_TCP_IDLE_TIMEOUT,
                 },
                 &OPEN_RADIO_RX_PIPELINE_COUNTERS,
+                &OPEN_RADIO_TX_AGGREGATE_COUNTERS,
             )
             .await
         }
@@ -279,7 +280,7 @@ enum RadioHilConnectedTrafficBuffers {
     Tcp {
         rx: &'static mut [u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY],
         tx: &'static mut [u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY],
-        read: &'static mut [u8; OPEN_RADIO_TCP_READ_CAPACITY],
+        read: &'static mut [u8; OPEN_RADIO_TCP_IO_CAPACITY],
     },
     UdpRx {
         rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH],
@@ -313,11 +314,11 @@ enum RadioHilConnectedTrafficBuffers {
 
 impl RadioHilConnectedTrafficBuffers {
     fn init() -> Self {
-        if OPEN_RADIO_TCP_RX_BENCH {
+        if OPEN_RADIO_TCP_BENCH {
             Self::Tcp {
                 rx: OPEN_RADIO_TCP_RX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]),
                 tx: OPEN_RADIO_TCP_TX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]),
-                read: OPEN_RADIO_TCP_READ_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_READ_CAPACITY]),
+                read: OPEN_RADIO_TCP_IO_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_IO_CAPACITY]),
             }
         } else if OPEN_RADIO_RAW_MAC_BENCH {
             Self::Raw

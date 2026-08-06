@@ -2,11 +2,13 @@
 
 use std::{
     hint,
-    io::Write as _,
+    io::{Read as _, Write as _},
     net::{Ipv4Addr, Shutdown, SocketAddrV4, TcpStream},
     thread,
     time::{Duration, Instant},
 };
+
+use open_esp_radio_hil_protocol::{fill_stream_pattern, stream_pattern_matches};
 
 use crate::Result;
 
@@ -34,6 +36,29 @@ pub(crate) struct HostTransmission {
     pub(crate) deadline_resets: u64,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HostReception {
+    pub(crate) bytes: u64,
+    pub(crate) reads: u64,
+    pub(crate) elapsed: Duration,
+    pub(crate) pattern_errors: u64,
+    pub(crate) eof: bool,
+}
+
+impl HostReception {
+    pub(crate) fn throughput_bps(self) -> u64 {
+        self.bytes
+            .saturating_mul(8)
+            .saturating_mul(1_000_000)
+            .checked_div(
+                u64::try_from(self.elapsed.as_micros())
+                    .unwrap_or(u64::MAX)
+                    .max(1),
+            )
+            .unwrap_or(0)
+    }
+}
+
 impl HostTransmission {
     pub(crate) fn throughput_bps(self) -> u64 {
         self.bytes
@@ -53,11 +78,37 @@ impl HostTransmission {
 }
 
 pub(crate) fn send(config: Config) -> Result<HostTransmission> {
+    send_stream(connect(config)?, config)
+}
+
+pub(crate) fn receive(config: Config) -> Result<HostReception> {
+    receive_stream(connect(config)?, config.chunk_bytes).map_err(Into::into)
+}
+
+pub(crate) fn exchange(config: Config) -> Result<(HostTransmission, HostReception)> {
+    let stream = connect(config)?;
+    let transmit = stream.try_clone()?;
+    let receive_chunk = config.chunk_bytes;
+    let sender =
+        thread::spawn(move || send_stream(transmit, config).map_err(|error| error.to_string()));
+    let reception = receive_stream(stream, receive_chunk)?;
+    let transmission = sender.join().map_err(|_| "TCP sender thread panicked")??;
+    Ok((transmission, reception))
+}
+
+fn connect(config: Config) -> Result<TcpStream> {
     let address = SocketAddrV4::new(config.address, config.port);
-    let mut stream = TcpStream::connect_timeout(&address.into(), CONNECT_TIMEOUT)?;
+    let stream = TcpStream::connect_timeout(&address.into(), CONNECT_TIMEOUT)?;
+    stream.set_nodelay(true)?;
+    stream.set_read_timeout(Some(WRITE_TIMEOUT))?;
+    stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
+    Ok(stream)
+}
+
+fn send_stream(mut stream: TcpStream, config: Config) -> Result<HostTransmission> {
     stream.set_nodelay(true)?;
     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
-    let chunk = vec![0x5a; config.chunk_bytes];
+    let mut chunk = vec![0; config.chunk_bytes];
     let interval = chunk_interval(config.chunk_bytes, config.rate_bps)?;
     let maximum_catch_up = interval.saturating_mul(MAX_CATCH_UP_INTERVALS);
     let started = Instant::now();
@@ -84,6 +135,7 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
             maximum_catch_up_writes = maximum_catch_up_writes.max(catch_up);
         }
 
+        fill_stream_pattern(&mut chunk, bytes);
         stream.write_all(&chunk)?;
         bytes = bytes.saturating_add(chunk.len() as u64);
         writes = writes.saturating_add(1);
@@ -99,6 +151,43 @@ pub(crate) fn send(config: Config) -> Result<HostTransmission> {
         maximum_lateness,
         maximum_catch_up_writes,
         deadline_resets,
+    })
+}
+
+fn receive_stream(mut stream: TcpStream, chunk_bytes: usize) -> Result<HostReception> {
+    stream.set_read_timeout(Some(WRITE_TIMEOUT))?;
+    let mut chunk = vec![0; chunk_bytes];
+    let started = Instant::now();
+    let mut bytes = 0_u64;
+    let mut reads = 0_u64;
+    let mut pattern_errors = 0_u64;
+    let eof = loop {
+        match stream.read(&mut chunk) {
+            Ok(0) => break true,
+            Ok(length) => {
+                if !stream_pattern_matches(&chunk[..length], bytes) {
+                    pattern_errors = pattern_errors.saturating_add(1);
+                }
+                bytes = bytes.saturating_add(length as u64);
+                reads = reads.saturating_add(1);
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                break false;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    };
+    Ok(HostReception {
+        bytes,
+        reads,
+        elapsed: started.elapsed(),
+        pattern_errors,
+        eof,
     })
 }
 

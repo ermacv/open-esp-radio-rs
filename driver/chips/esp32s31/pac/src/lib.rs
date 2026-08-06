@@ -32217,6 +32217,10 @@ pub mod zero_based_field_write {
     }
 
     /// Write `NUMBER_ADDRESS_0_UNKNOWN`, `NUMBER_ADDRESS_1_UNKNOWN`, `NUMBER_ADDRESS_2_UNKNOWN`, `NUMBER_ADDRESS_3_UNKNOWN`, `NUMBER_ADDRESS_4_UNKNOWN`, `NUMBER_ADDRESS_5_UNKNOWN`, `HIGH_UNKNOWN` in `PHY_FREQUENCY_CHANNEL_ORACLE`.`I2C_NUMBER_WORD%s` while publishing zero to every other register bit.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "reviewed hardware transaction exposes one typed argument per field"
+    )]
     #[inline]
     pub fn frequency_i2c_number_word(
         registers: &crate::PhyFrequencyChannelOracle,
@@ -32415,7 +32419,7 @@ pub mod masked_register_modify {
     #[inline]
     pub fn publish_tone_path_0_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }
@@ -32426,7 +32430,7 @@ pub mod masked_register_modify {
     #[inline]
     pub fn publish_tone_path_1_image(registers: &crate::PhyBasebandConfigOracle, input: u32) {
         registers.tone_path_1_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }
@@ -32440,7 +32444,7 @@ pub mod masked_register_modify {
         input: u32,
     ) {
         registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff) | 0x00000000;
+            let image = (reader.bits() & 0xf0000000) | (input & 0x0fffffff);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }
@@ -32454,7 +32458,7 @@ pub mod masked_register_modify {
         input: u32,
     ) {
         registers.tone_path_0_control().modify(|reader, writer| {
-            let image = (reader.bits() & 0xf0ffffff) | (input & 0x0f000000) | 0x00000000;
+            let image = (reader.bits() & 0xf0ffffff) | (input & 0x0f000000);
             // SAFETY: generator validation proves the three masks are
             // disjoint and partition every bit of this ordinary register.
             unsafe { writer.bits(image) }

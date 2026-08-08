@@ -380,7 +380,7 @@ production PAC byte-for-byte. Project validation owns provenance, confidence,
 evidence ranges, MMIO coverage, platform SVD parsing and structural register
 invariants. No project metadata is embedded into the clean SVD. The completed
 standalone-generator retirement is documented in
-[`pac-gen-migration.md`](pac-gen-migration.md).
+[`history/pac-gen-migration.md`](history/pac-gen-migration.md).
 
 ## PAC binding index
 

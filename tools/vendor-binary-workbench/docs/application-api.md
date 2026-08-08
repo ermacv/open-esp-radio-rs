@@ -12,6 +12,8 @@ WorkbenchApplication
         |
         +-- WorkspaceSnapshot ------> CLI human/JSON
         |                         \--> read-only TUI
+        +-- FunctionDetailSummary
+        +-- RegisterDetailSummary
         +-- AnalysisReport
         `-- ExecutionComparisonReport
                     `-- TraceDiffReport per case
@@ -57,7 +59,7 @@ project. Invalid project, target, memory-map, SVD, or reviewed-model inputs fail
 at `open`/`reload`, because continuing with a partially resolved project would
 mix incompatible state.
 
-Function browsing is deliberately split into a light
+Function and register browsing are deliberately split into a light
 `WorkspaceSnapshot::functions` index and per-function detail queries. Heavy
 function context, scenario and pseudo-code data is intentionally absent
 from `WorkspaceSnapshot`. Frontends request one stable identity with
@@ -67,6 +69,19 @@ Contexts, recovered memory fields, MMIO register links, scenario suggestions,
 an editable profile draft and reviewed-name-enriched pseudo-Rust live only in
 the detail DTO, so list rendering and filtering do not clone or scan the heavy
 representation.
+
+The register catalog follows the same lazy boundary. `register_detail(address)`
+joins discovery facts, reviewed model identity, linked-IR field candidates,
+direct/transitive predicate provenance, polling evidence, semantic operations,
+write masks and function users. The DTO records whether the register is
+reviewed, manual/model-only or unreviewed and whether its display name came
+from the reviewed model, imported catalog/SVD, discovery facts or the raw
+address. Loading a workspace index does not parse all linked-IR register
+evidence eagerly.
+
+`WorkspaceSnapshot::project_status` is the canonical typed
+`ProjectStatusReport`; there is no second snapshot-specific status schema and
+no conversion through `serde_json::Value`.
 
 ## Reload and cache ownership
 

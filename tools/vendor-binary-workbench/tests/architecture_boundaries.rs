@@ -60,6 +60,25 @@ fn cli_command_adapters_do_not_invoke_each_other() {
 }
 
 #[test]
+fn application_status_has_one_typed_model() {
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    assert!(
+        !source_root.join("application/snapshot/status.rs").exists(),
+        "snapshot status projection must not duplicate ProjectStatusReport"
+    );
+    let snapshot = fs::read_to_string(source_root.join("application/snapshot.rs"))
+        .expect("read application snapshot");
+    assert!(
+        !snapshot.contains("serde_json::to_value"),
+        "workspace snapshots must embed the typed status report directly"
+    );
+    let model = fs::read_to_string(source_root.join("application/model.rs"))
+        .expect("read application model");
+    assert!(!model.contains("ProjectStatusSnapshot"));
+    assert!(!model.contains("WorkspaceReadiness"));
+}
+
+#[test]
 fn generic_cli_has_no_esp_phy_prefix_defaults() {
     let arguments =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/arguments.rs"))

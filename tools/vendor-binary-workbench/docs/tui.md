@@ -19,7 +19,7 @@ for standalone target/backend experiments and machine-readable output.
 | --- | --- |
 | Overview | Lifecycle phases, readiness, component diagnostics |
 | Functions | Recovered functions, review status, blockers, replay-required scenario candidates and pseudo-Rust |
-| Registers | Resolved SVD/reviewed catalog and workspace counts |
+| Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
 | Interfaces | Resolved table slots, ABI, semantics, execution models and sites |
 | Comparisons | Project profiles, concrete MATCH/DIFF/INCOMPLETE, first trace difference, artifact provenance, model evidence and blockers |
 | Diagnostics | Missing, incomplete and invalid component details |
@@ -49,6 +49,11 @@ index and never discards snapshot data. Function index rows and heavy details
 (contexts, memory fields, scenario candidates and pseudo-Rust) are separate
 typed DTOs keyed by stable function identity. The worker loads one detail on
 selection and the current snapshot generation owns the resulting cache.
+Register rows and heavyweight detail use the same arrangement. Selecting a
+register asks the worker for `register_detail(address)` once per snapshot
+generation. The detail pane shows name provenance, width, review state,
+read/write/RMW counts, function users, write masks, field candidates,
+direct/transitive predicates, polls and linked semantic operations.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
 an editable verification-profile draft with explicit TODO arguments; the

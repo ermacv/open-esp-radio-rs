@@ -7,7 +7,7 @@ use tabled::{builder::Builder, settings::Style};
 
 use crate::{
     Result,
-    application::status::model::{DetailValue, Readiness, StatusReport, TargetIdentity},
+    application::status::model::{DetailValue, ProjectStatusReport, Readiness, TargetIdentity},
 };
 
 #[derive(Serialize)]
@@ -44,7 +44,7 @@ pub(super) struct StatusDocument<'a> {
     publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn print_text(report: &StatusReport) {
+pub(super) fn print_text(report: &ProjectStatusReport) {
     outputln!(
         "Project status: {} — {}",
         report.project_id,
@@ -79,7 +79,7 @@ pub(super) fn print_text(report: &StatusReport) {
 }
 
 pub(super) fn document(
-    report: &StatusReport,
+    report: &ProjectStatusReport,
     publication: Option<crate::cli::output::Publication>,
 ) -> StatusDocument<'_> {
     let phases = report
@@ -90,14 +90,14 @@ pub(super) fn document(
                 .components
                 .iter()
                 .map(|component| ComponentDocument {
-                    name: component.name,
+                    name: &component.name,
                     status: component.status,
                     diagnostic: component.diagnostic.as_deref(),
                     details: &component.details,
                 })
                 .collect::<Vec<_>>();
             (
-                phase.name,
+                phase.name.as_str(),
                 PhaseDocument {
                     status: phase.status,
                     components,
@@ -139,12 +139,12 @@ fn sanitize(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::application::status::model::{
-        Component, Phase, Readiness, StatusReport, TargetIdentity,
+        Component, Phase, ProjectStatusReport, Readiness, TargetIdentity,
     };
 
     #[test]
     fn json_schema_keeps_phase_and_component_states_explicit() {
-        let report = StatusReport::new(
+        let report = ProjectStatusReport::new(
             "fixture".to_owned(),
             "vendor-project.toml".to_owned(),
             TargetIdentity {

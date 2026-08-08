@@ -4,7 +4,6 @@ mod comparisons;
 mod functions;
 mod interfaces;
 mod registers;
-mod status;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -17,7 +16,7 @@ use crate::function_workspace::{
 pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSnapshot {
     let context = resolved.context();
     let status = crate::application::status::collect(&context);
-    let project_status = self::status::collect(&status);
+    let project_status = status.clone();
     let mut diagnostics = status
         .phases
         .iter()
@@ -27,9 +26,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
                     .diagnostic
                     .as_ref()
                     .map(|diagnostic| DiagnosticRecord {
-                        severity: if component.status
-                            == crate::application::status::model::Readiness::Invalid
-                        {
+                        severity: if component.status == crate::Readiness::Invalid {
                             DiagnosticSeverity::Error
                         } else {
                             DiagnosticSeverity::Warning

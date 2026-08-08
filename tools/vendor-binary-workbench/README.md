@@ -82,6 +82,8 @@ Alternate frontends consume the same typed, CLI-independent
 terminal output or introduce another analysis path.
 The policy for graph, debug, build, testing, solver, and multi-ISA dependencies
 is documented in [dependency and analysis-engine strategy](docs/dependency-strategy.md).
+Persistent evidence versions and ownership are listed in the
+[artifact schema index](docs/artifact-schemas.md).
 
 ## Typical reverse-engineering pass
 

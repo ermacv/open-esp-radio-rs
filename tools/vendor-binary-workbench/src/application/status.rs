@@ -1,7 +1,7 @@
 //! Read-only project lifecycle inventory for every frontend.
 
 use super::ProjectContext;
-use model::{StatusReport, TargetIdentity};
+use model::{ProjectStatusReport, TargetIdentity};
 
 mod analysis;
 mod configuration_inputs;
@@ -10,8 +10,8 @@ mod publication;
 mod review;
 mod verification;
 
-pub(crate) fn collect(context: &ProjectContext<'_>) -> StatusReport {
-    StatusReport::new(
+pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
+    ProjectStatusReport::new(
         context.project.id.clone(),
         context.project_path.display().to_string(),
         TargetIdentity {

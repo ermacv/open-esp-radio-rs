@@ -20,6 +20,11 @@ use std::{
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
 pub(crate) use resolve::{ProjectContext, ProjectSession, ProjectSessionOptions};
+pub use status::model::{
+    ArtifactDetail, Component as ProjectStatusComponent, DetailValue, LinkedIrProfileDetail,
+    MmioRegionDetail, Phase as ProjectStatusPhase, ProjectStatusReport, Readiness,
+    TargetIdentity as ProjectTargetIdentity,
+};
 
 /// Resolved project state and reload-scoped analysis caches.
 ///
@@ -193,7 +198,7 @@ mod tests {
         let first = application.snapshot().unwrap();
         assert_eq!(first.generation, 1);
         assert_eq!(first.project_status.project_id, "esp32s31-radio-rev0");
-        assert_eq!(first.project_status.architecture, "riscv32");
+        assert_eq!(first.project_status.target.architecture, "riscv32");
         assert!(!first.project_status.phases.is_empty());
         assert!(first.registers.configured);
         assert!(!first.registers.registers.is_empty());

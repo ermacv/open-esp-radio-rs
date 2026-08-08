@@ -1,44 +1,8 @@
 //! Public data-only application requests and snapshots.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::path::PathBuf;
 
 use serde::Serialize;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum WorkspaceReadiness {
-    Ready,
-    Incomplete,
-    NotConfigured,
-    Invalid,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct WorkspaceComponentSnapshot {
-    pub name: String,
-    pub status: WorkspaceReadiness,
-    pub details: BTreeMap<String, serde_json::Value>,
-    pub diagnostic: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct WorkspacePhaseSnapshot {
-    pub name: String,
-    pub status: WorkspaceReadiness,
-    pub components: Vec<WorkspaceComponentSnapshot>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct ProjectStatusSnapshot {
-    pub project_id: String,
-    pub manifest: String,
-    pub target_id: String,
-    pub architecture: String,
-    pub calling_convention: String,
-    pub harness: Option<String>,
-    pub overall: WorkspaceReadiness,
-    pub phases: Vec<WorkspacePhaseSnapshot>,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -377,7 +341,7 @@ pub struct ComparisonProfileSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceSnapshot {
     pub generation: u64,
-    pub project_status: ProjectStatusSnapshot,
+    pub project_status: crate::ProjectStatusReport,
     pub functions: Vec<FunctionSummary>,
     pub logical_types: Vec<LogicalTypeSummary>,
     pub registers: RegisterWorkspaceReport,

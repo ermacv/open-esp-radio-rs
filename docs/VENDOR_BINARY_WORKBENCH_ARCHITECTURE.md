@@ -1,10 +1,10 @@
 # Vendor Binary Workbench architecture
 
-Status: active. Neutral contracts, shared IR/MMIO, semantic adapter
-interfaces, the RISC-V backend, ESP32-S31 ABI fixture data and ESP32-S31 typed
-verification now have compile-time crate boundaries. The remaining migration
-is concentrated in orchestration and proving the interfaces with a second
-architecture backend.
+Status: active. Neutral contracts, shared IR/MMIO, semantic adapter interfaces,
+the RISC-V backend, optional ESP32-S31 compiled addon and typed verification
+have compile-time crate boundaries. Project workflows and persistent artifact
+schemas live outside the CLI, so further backend work does not change frontend
+ownership.
 
 ## Purpose
 
@@ -49,7 +49,8 @@ The first two boundary slices are complete:
   executables and flat command spellings are rejected;
 - every invocation loads an explicit target spec and validates the
   architecture/calling-convention pair before reading an artifact;
-- target specs also select a harness and Rust recompilation target explicitly;
+- target specs select architecture, calling convention and Rust recompilation
+  target; reusable platform packs alone select an optional compiled harness;
 - an optional caller-owned run spec maps input roles to local paths without
   putting those paths in the target pack or command history;
 - shareable project IR profiles own symbol/source selection and generated
@@ -61,8 +62,8 @@ The first two boundary slices are complete:
 - schema-versioned project status reports expose configuration, private-input,
   generated-analysis, human-review and publication readiness without making
   those lifecycle concerns backend dependencies;
-- the ESP32-S31 target spec supplies SVD, profile, disposition and baseline
-  defaults, substantially reducing repeated CLI arguments;
+- the ESP32-S31 project supplies register sources, profiles, dispositions and
+  baseline defaults, substantially reducing repeated CLI arguments;
 - profiles, dispositions and baselines live under `verification/vendor/targets/esp32s31`, not
   inside the tool;
 - artifact paths in private tests come only from explicit environment
@@ -100,11 +101,13 @@ The first two boundary slices are complete:
 - semantic-contract and driver-adapter IDs are opaque manifest strings in the
   verifier; their registry and dispatch live in the platform harness.
 
-The facade now registers these crates and owns the generated-reference
-compile/re-extract workflow, profiles, dispositions, reports and CLI dispatch.
-It no longer compiles ESP32-S31 verification or depends directly on the
-production PHY. Neither model, semantic interfaces nor the RISC-V backend
-depends on the facade, production driver or a platform harness.
+The facade owns application workflows, generated-reference compile/re-extract,
+profiles, dispositions, reports and frontend dispatch. Compiled addons are a
+feature-gated static registry: `--no-default-features` produces a neutral build
+without ESP32-S31 production dependencies, while the default
+`esp32s31-harness` feature contributes that descriptor. Neither model,
+semantic interfaces nor the RISC-V backend depends on the facade, production
+driver or a platform harness.
 
 ## Target layout
 
@@ -120,9 +123,11 @@ tools/vendor-binary-workbench/
     backend-riscv/             RV32 + riscv-ilp32 backend (implemented)
     harness-esp32s31/          ABI/lifecycle fixture data (implemented)
     harness-esp32s31-semantic/ reviewed summaries and typed verification
-  src/cli/                     command hierarchy and run manifests
-  src/orchestration/           cross-layer compile/prove workflows
-  src/harnesses/               thin harness registry
+  src/application/             project workflows and frontend-neutral API
+  src/artifacts/               persistent evidence schemas and strict readers
+  src/cli/                     command grammar, adapters and presentation
+  src/orchestration/           generated-reference compile/prove workflow
+  src/harnesses/               feature-gated static addon registry
 tools/register-model/          editable hardware schema + clean SVD encoder
 ```
 
@@ -130,7 +135,7 @@ These may initially be workspace crates below one directory. Compile-time
 dependencies must point only downwards:
 
 ```text
-facade/cli -> orchestration + registries
+frontends -> application/domain services -> orchestration + registries
                |-> semantic interfaces -> analysis-model -> contracts
                |-> riscv backend -------> analysis-model -> contracts
                |-> esp32s31 ABI fixture --------------------> contracts

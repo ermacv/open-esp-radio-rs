@@ -512,25 +512,28 @@ mod tests {
     use super::*;
     use crate::{
         DiagnosticRecord, DiagnosticSeverity, FunctionReviewState, FunctionSelection,
-        FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport, ProjectStatusSnapshot,
-        RegisterSummary, RegisterWorkspaceReport, WorkspacePhaseSnapshot, WorkspaceReadiness,
+        FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport, ProjectStatusPhase,
+        ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
+        RegisterWorkspaceReport,
     };
 
     fn snapshot(generation: u64, phases: usize, diagnostics: usize) -> WorkspaceSnapshot {
         WorkspaceSnapshot {
             generation,
-            project_status: ProjectStatusSnapshot {
+            project_status: ProjectStatusReport {
                 project_id: "fixture".to_owned(),
                 manifest: "vendor-project.toml".to_owned(),
-                target_id: "target".to_owned(),
-                architecture: "riscv32".to_owned(),
-                calling_convention: "ilp32".to_owned(),
-                harness: None,
-                overall: WorkspaceReadiness::Incomplete,
+                target: ProjectTargetIdentity {
+                    id: "target".to_owned(),
+                    architecture: "riscv32".to_owned(),
+                    calling_convention: "ilp32".to_owned(),
+                    harness: None,
+                },
+                overall: Readiness::Incomplete,
                 phases: (0..phases)
-                    .map(|index| WorkspacePhaseSnapshot {
+                    .map(|index| ProjectStatusPhase {
                         name: format!("phase-{index}"),
-                        status: WorkspaceReadiness::Ready,
+                        status: Readiness::Ready,
                         components: Vec::new(),
                     })
                     .collect(),

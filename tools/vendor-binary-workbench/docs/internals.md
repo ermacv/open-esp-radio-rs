@@ -22,8 +22,12 @@ The implementation is split by responsibility:
 - `crates/harness-esp32s31-semantic` owns reviewed summaries, typed
   verification and the only workbench-side dependency on the production PHY;
 - `analysis` contains the thin architecture-facing artifact service;
-- `orchestration` owns cross-layer workflows such as compiling and
-  independently re-extracting a generated reference;
+- `application` owns project analysis, linked-IR build, publication, status
+  and frontend-neutral workspace/detail services;
+- `orchestration` owns the remaining generated-reference compile/re-extract
+  workflow;
+- `artifacts` owns persistent symbol, MMIO, interface and linked-IR document
+  identities, strict readers and Serde writers;
 - `platform_pack` validates the project-level composition of target ABI,
   optional harness and reusable semantic catalogs without teaching those
   semantics to the backend;
@@ -33,17 +37,19 @@ The implementation is split by responsibility:
   over symbol, linked-IR and interface reports without feeding facts or
   semantics back into those analyzers;
 - `verification` owns profiles, dispositions, evidence and comparisons;
-- `harnesses::esp32s31` is a thin registry facade over the two ESP32-S31
-  harness crates;
+- `harnesses` owns one static descriptor registry; the optional
+  `esp32s31-harness` feature contributes the ESP32-S31 descriptor and is the
+  only path to its production-driver dependencies;
 - `verification/vendor/targets/esp32s31` owns the checked target/profile/disposition data;
 - `cli` parses a typed top-level command and dispatches it to those services.
 
 The backend depends only on neutral contracts, analysis and execution-model
 crates. Chip-specific secondary-return recognition and reviewed summaries are
 supplied through the typed `RiscvHarnessSpec`; the backend contains no platform
-registry and does not own device or callback-table vocabulary. The
-facade does not depend directly on the production PHY: that dependency ends at
-the ESP32-S31 semantic harness boundary.
+registry and does not own device or callback-table vocabulary. The neutral
+facade build has no production PHY/MAC dependency. The default build enables
+the optional ESP32-S31 descriptor, whose dependency ends at the ESP32-S31
+semantic harness boundary.
 
 Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
@@ -90,7 +96,7 @@ dispatch path:
 | `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
 | `cli/ui.rs` | miette diagnostics plus tracing/progress layer composition on stderr |
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
-| `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
+| `cli/commands/*` | Thin application/domain adapters and human renderers; no adapter invokes another command adapter |
 
 Explicit CLI values take precedence over run-spec values. Run-spec selection
 itself is explicit `--run-spec` > project manifest `run-spec` > an existing
@@ -508,17 +514,18 @@ query validated facts but cannot bypass that loading boundary.
 
 ## IR export source layout
 
-`cli/commands/export_ir.rs` consumes typed options, invokes linked analysis,
-and selects outputs. Rendering and domain-input validation are separate:
+`cli/commands/export_ir.rs` is a thin typed frontend adapter. Linked analysis,
+project-profile generation and reusable artifact rendering are outside CLI:
 
 | Module | Responsibility |
 | --- | --- |
-| `input.rs` | Artifact syntax, source names, and namespace validation |
-| `human.rs` | Tabular terminal report |
-| `pseudo.rs` | Pseudo-Rust file output |
-| `render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `json_report.rs` | Serde document envelope and report summary |
-| `tests.rs` | Artifact-domain input validation tests |
+| `linked_ir_export/input.rs` | Artifact source identities and namespace validation |
+| `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
+| `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
+| `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v35 Serde document |
+| `cli/commands/export_ir/human.rs` | Terminal-only presentation |
+| `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
 Schema v35 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
@@ -550,20 +557,21 @@ Reload is atomic: the old state remains usable if the new project cannot be
 resolved.
 
 `application/snapshot.rs` coordinates the complete immutable view and owns
-function detail enrichment. Its focused projections are split by workspace
+function detail enrichment. `ProjectStatusReport` is embedded directly rather
+than copied through another DTO. Its focused projections are split by workspace
 boundary:
 
 | Module | Responsibility |
 | --- | --- |
-| `snapshot/status.rs` | Typed project-readiness projection |
 | `snapshot/functions.rs` | Function index and reviewed logical-type projection |
-| `snapshot/registers.rs` | Reviewed register workspace and catalog projection |
+| `snapshot/registers.rs` | Register index plus lazy discovery/review/IR detail join |
 | `snapshot/interfaces.rs` | Reviewed table contracts, slots and semantic bindings |
 | `snapshot/comparisons.rs` | Verification profile inventory and duplicate-name diagnostics |
 
-On-demand function detail and pseudo-Rust enrichment remain in the snapshot
-façade because they are loaded lazily by both frontends. The other focused
-projections must not acquire that detail-rendering policy.
+On-demand function detail/pseudo-Rust and register evidence remain behind the
+snapshot façade because both frontends load them lazily. See
+[Persistent artifact schemas](artifact-schemas.md) for producer/consumer
+ownership and version policy.
 
 See [Application API and alternate frontends](application-api.md) for the
 public API and frontend contract. Every project-init/configuration operation

@@ -1,4 +1,7 @@
-# Retired `pac-gen` responsibility matrix
+# Archived: retired `pac-gen` responsibility matrix
+
+This document records a completed migration and is not part of the current
+workflow contract.
 
 The project manifest is the canonical entry point for register validation and
 publication. The legacy `tools/pac-gen` crate and `pac-addon.xml` were removed

@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use super::state::{BrowserState, Section};
-use crate::{DiagnosticSeverity, WorkspaceReadiness};
+use crate::{DiagnosticSeverity, Readiness};
 
 mod comparisons;
 mod functions;
@@ -54,7 +54,7 @@ fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Span::raw("  "),
         Span::raw(&project.project_id),
         Span::raw("  target="),
-        Span::raw(&project.target_id),
+        Span::raw(&project.target.id),
         Span::raw("  "),
         Span::styled(readiness.0, Style::new().fg(readiness.1)),
         Span::raw(format!("  generation={}", state.snapshot.generation)),
@@ -579,12 +579,12 @@ pub(super) fn selected_style(index: usize, selected: usize) -> Style {
     }
 }
 
-fn readiness(value: WorkspaceReadiness) -> (&'static str, Color) {
+fn readiness(value: Readiness) -> (&'static str, Color) {
     match value {
-        WorkspaceReadiness::Ready => ("ready", Color::Green),
-        WorkspaceReadiness::Incomplete => ("incomplete", Color::Yellow),
-        WorkspaceReadiness::NotConfigured => ("not configured", Color::DarkGray),
-        WorkspaceReadiness::Invalid => ("invalid", Color::Red),
+        Readiness::Ready => ("ready", Color::Green),
+        Readiness::Incomplete => ("incomplete", Color::Yellow),
+        Readiness::NotConfigured => ("not configured", Color::DarkGray),
+        Readiness::Invalid => ("invalid", Color::Red),
     }
 }
 
@@ -604,26 +604,29 @@ mod tests {
 
     use super::*;
     use crate::{
-        ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport, ProjectStatusSnapshot,
-        RegisterWorkspaceReport, ScenarioArgumentSummary, ScenarioSuggestionSummary,
-        ScenarioSuggestionVariantSummary, WorkspacePhaseSnapshot, WorkspaceSnapshot,
+        ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport, ProjectStatusPhase,
+        ProjectStatusReport, ProjectTargetIdentity, RegisterWorkspaceReport,
+        ScenarioArgumentSummary, ScenarioSuggestionSummary, ScenarioSuggestionVariantSummary,
+        WorkspaceSnapshot,
     };
 
     #[test]
     fn overview_renders_from_the_typed_snapshot() {
         let snapshot = WorkspaceSnapshot {
             generation: 7,
-            project_status: ProjectStatusSnapshot {
+            project_status: ProjectStatusReport {
                 project_id: "fixture-project".to_owned(),
                 manifest: "vendor-project.toml".to_owned(),
-                target_id: "fixture-target".to_owned(),
-                architecture: "riscv32".to_owned(),
-                calling_convention: "riscv-ilp32".to_owned(),
-                harness: None,
-                overall: WorkspaceReadiness::Incomplete,
-                phases: vec![WorkspacePhaseSnapshot {
+                target: ProjectTargetIdentity {
+                    id: "fixture-target".to_owned(),
+                    architecture: "riscv32".to_owned(),
+                    calling_convention: "riscv-ilp32".to_owned(),
+                    harness: None,
+                },
+                overall: Readiness::Incomplete,
+                phases: vec![ProjectStatusPhase {
                     name: "analysis".to_owned(),
-                    status: WorkspaceReadiness::Ready,
+                    status: Readiness::Ready,
                     components: Vec::new(),
                 }],
             },

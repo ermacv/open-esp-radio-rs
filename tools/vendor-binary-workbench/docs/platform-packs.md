@@ -71,6 +71,26 @@ still has to review its interface facts and bind exact slots to those
 operations. Chip-specific packs may add a harness when concrete execution,
 entry contracts or proprietary table-shape enrichment requires one.
 
+## Compiled addon registry
+
+Compiled harnesses are entries in one static `HarnessDescriptor` registry.
+The normal build enables the `esp32s31-harness` feature; that feature alone
+pulls in the ESP32-S31 ABI fixture, semantic harness and production PHY/MAC
+dependencies. A generic-only binary is built and tested with:
+
+```console
+cargo build --manifest-path tools/vendor-binary-workbench/Cargo.toml \
+  --no-default-features
+cargo test --manifest-path tools/vendor-binary-workbench/Cargo.toml \
+  --no-default-features --lib
+```
+
+That neutral build has an empty compiled-harness registry. Generic project,
+artifact, MMIO and IR operations remain available; selecting a platform pack
+whose harness was not compiled in fails explicitly. Adding a compiled addon
+therefore requires a feature and one registry descriptor, not changes to the
+generic backend or a dynamic ABI plugin protocol.
+
 ## Composition rules
 
 Pack architecture and calling convention must exactly match the target. A

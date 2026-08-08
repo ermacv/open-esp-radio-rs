@@ -1,8 +1,9 @@
 //! Artifact inventory analysis command.
 
-use std::{fmt::Write as _, path::Path};
+use std::path::{Path, PathBuf};
 
-use super::super::json::{write_artifact, write_string, write_strings};
+use serde::Serialize;
+
 use super::super::*;
 
 #[derive(Debug)]
@@ -17,7 +18,9 @@ struct FunctionReport {
     direct_blockers: Vec<String>,
     local_reference_blockers: Vec<String>,
     transitive_reference_blockers: Vec<String>,
-    unmapped_mmio: Vec<u32>,
+    direct_unmapped_mmio: Vec<u32>,
+    reference_unmapped_mmio: Vec<u32>,
+    reference_blockers: Vec<String>,
     blocking_callees: Vec<String>,
 }
 
@@ -73,82 +76,141 @@ fn record_impact(
     impact.functions.insert(symbol.to_owned());
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the report boundary receives a complete immutable analysis record"
-)]
-fn write_analysis_json_report(
-    path: &Path,
-    artifact: &Path,
-    companions: &[PathBuf],
-    prefix: &str,
+#[derive(Serialize)]
+struct ArtifactIdentity {
+    path: String,
+    sha256: String,
+}
+
+impl ArtifactIdentity {
+    fn load(path: &Path) -> Result<Self> {
+        Ok(Self {
+            path: path.display().to_string(),
+            sha256: crate::artifact_sha256(path)?,
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct AnalysisSummary {
+    functions: usize,
+    direct_trace_exact: usize,
+    direct_trace_incomplete: usize,
+    reference_codegen_eligible: usize,
+    reference_codegen_blocked: usize,
+}
+
+#[derive(Serialize)]
+struct BlockerImpactDocument<'a> {
+    scope: &'a str,
+    kind: &'a str,
+    occurrences: usize,
+    affected_functions: usize,
+    functions: &'a BTreeSet<String>,
+}
+
+#[derive(Serialize)]
+struct CalleeHotspotDocument<'a> {
+    callee: &'a str,
+    affected_functions: usize,
+    functions: &'a BTreeSet<String>,
+}
+
+#[derive(Serialize)]
+struct UnmappedMmioDocument<'a> {
+    address: String,
+    affected_functions: usize,
+    functions: &'a BTreeSet<String>,
+}
+
+#[derive(Serialize)]
+struct FunctionDocument<'a> {
+    symbol: &'a str,
+    owner: &'a Option<String>,
+    direct_trace_exact: bool,
+    reference_codegen_eligible: bool,
+    events: usize,
+    indexed_mmio: usize,
+    reference_dependencies: &'a [String],
+    direct_blockers: &'a [String],
+    local_reference_blockers: &'a [String],
+    transitive_reference_blockers: &'a [String],
+    direct_unmapped_mmio: Vec<String>,
+    reference_unmapped_mmio: Vec<String>,
+    reference_blockers: &'a [String],
+    blocking_callees: &'a [String],
+}
+
+impl<'a> From<&'a FunctionReport> for FunctionDocument<'a> {
+    fn from(function: &'a FunctionReport) -> Self {
+        Self {
+            symbol: &function.symbol,
+            owner: &function.owner,
+            direct_trace_exact: function.direct_trace_exact,
+            reference_codegen_eligible: function.reference_codegen_eligible,
+            events: function.event_count,
+            indexed_mmio: function.indexed_mmio,
+            reference_dependencies: &function.reference_dependencies,
+            direct_blockers: &function.direct_blockers,
+            local_reference_blockers: &function.local_reference_blockers,
+            transitive_reference_blockers: &function.transitive_reference_blockers,
+            reference_blockers: &function.reference_blockers,
+            direct_unmapped_mmio: function
+                .direct_unmapped_mmio
+                .iter()
+                .map(|address| format!("{address:#010x}"))
+                .collect(),
+            reference_unmapped_mmio: function
+                .reference_unmapped_mmio
+                .iter()
+                .map(|address| format!("{address:#010x}"))
+                .collect(),
+            blocking_callees: &function.blocking_callees,
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub(super) struct AnalysisDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    artifact: ArtifactIdentity,
+    companions: Vec<ArtifactIdentity>,
+    symbol_prefix: &'a str,
+    entry_contract: &'a str,
+    summary: AnalysisSummary,
+    blocker_impact: Vec<BlockerImpactDocument<'a>>,
+    callee_hotspots: Vec<CalleeHotspotDocument<'a>>,
+    unmapped_mmio: Vec<UnmappedMmioDocument<'a>>,
+    functions: Vec<FunctionDocument<'a>>,
+}
+
+struct AnalysisInputs<'a> {
+    artifact: &'a Path,
+    companions: &'a [PathBuf],
+    prefix: &'a str,
     entry_contract: EntryContractRef,
-    functions: &[FunctionReport],
-    impacts: &BTreeMap<(String, String), BlockerImpact>,
-    callee_callers: &BTreeMap<String, BTreeSet<String>>,
-    unmapped_users: &BTreeMap<u32, BTreeSet<String>>,
+    functions: &'a [FunctionReport],
+    impacts: &'a BTreeMap<(String, String), BlockerImpact>,
+    callee_callers: &'a BTreeMap<String, BTreeSet<String>>,
+    unmapped_users: &'a BTreeMap<u32, BTreeSet<String>>,
     direct_exact: usize,
     reference_eligible: usize,
-) -> Result<()> {
-    let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 2,\n  \"command\": \"inspect analyze\",\n");
-    output.push_str("  \"artifact\": ");
-    write_artifact(&mut output, artifact)?;
-    output.push_str(",\n  \"companions\": [");
-    for (index, companion) in companions.iter().enumerate() {
-        if index != 0 {
-            output.push_str(", ");
-        }
-        write_artifact(&mut output, companion)?;
-    }
-    output.push_str("],\n  \"symbol_prefix\": ");
-    write_string(&mut output, prefix);
-    output.push_str(",\n  \"entry_contract\": ");
-    write_string(&mut output, entry_contract.id());
-    writeln!(output, ",\n  \"summary\": {{").expect("writing to String cannot fail");
-    writeln!(output, "    \"functions\": {},", functions.len())
-        .expect("writing to String cannot fail");
-    writeln!(output, "    \"direct_trace_exact\": {direct_exact},")
-        .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    \"direct_trace_incomplete\": {},",
-        functions.len() - direct_exact
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    \"reference_codegen_eligible\": {reference_eligible},"
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "    \"reference_codegen_blocked\": {}",
-        functions.len() - reference_eligible
-    )
-    .expect("writing to String cannot fail");
-    output.push_str("  },\n  \"blocker_impact\": [\n");
-    for (index, ((scope, kind), impact)) in impacts.iter().enumerate() {
-        output.push_str("    {\"scope\": ");
-        write_string(&mut output, scope);
-        output.push_str(", \"kind\": ");
-        write_string(&mut output, kind);
-        write!(
-            output,
-            ", \"occurrences\": {}, \"affected_functions\": {}, \"functions\": ",
-            impact.occurrences,
-            impact.functions.len()
-        )
-        .expect("writing to String cannot fail");
-        write_strings(&mut output, &impact.functions);
-        output.push('}');
-        output.push_str(if index + 1 == impacts.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"callee_hotspots\": [\n");
+}
+
+fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>> {
+    let AnalysisInputs {
+        artifact,
+        companions,
+        prefix,
+        entry_contract,
+        functions,
+        impacts,
+        callee_callers,
+        unmapped_users,
+        direct_exact,
+        reference_eligible,
+    } = inputs;
     let mut hotspots = callee_callers.iter().collect::<Vec<_>>();
     hotspots.sort_by(|(left_name, left_callers), (right_name, right_callers)| {
         right_callers
@@ -156,133 +218,146 @@ fn write_analysis_json_report(
             .cmp(&left_callers.len())
             .then_with(|| left_name.cmp(right_name))
     });
-    for (index, (callee, callers)) in hotspots.iter().enumerate() {
-        output.push_str("    {\"callee\": ");
-        write_string(&mut output, callee);
-        write!(
-            output,
-            ", \"affected_functions\": {}, \"functions\": ",
-            callers.len()
-        )
-        .expect("writing to String cannot fail");
-        write_strings(&mut output, *callers);
-        output.push('}');
-        output.push_str(if index + 1 == hotspots.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
+    Ok(AnalysisDocument {
+        schema_version: 3,
+        command: "inspect analyze",
+        artifact: ArtifactIdentity::load(artifact)?,
+        companions: companions
+            .iter()
+            .map(|path| ArtifactIdentity::load(path))
+            .collect::<Result<Vec<_>>>()?,
+        symbol_prefix: prefix,
+        entry_contract: entry_contract.id(),
+        summary: AnalysisSummary {
+            functions: functions.len(),
+            direct_trace_exact: direct_exact,
+            direct_trace_incomplete: functions.len() - direct_exact,
+            reference_codegen_eligible: reference_eligible,
+            reference_codegen_blocked: functions.len() - reference_eligible,
+        },
+        blocker_impact: impacts
+            .iter()
+            .map(|((scope, kind), impact)| BlockerImpactDocument {
+                scope,
+                kind,
+                occurrences: impact.occurrences,
+                affected_functions: impact.functions.len(),
+                functions: &impact.functions,
+            })
+            .collect(),
+        callee_hotspots: hotspots
+            .into_iter()
+            .map(|(callee, callers)| CalleeHotspotDocument {
+                callee,
+                affected_functions: callers.len(),
+                functions: callers,
+            })
+            .collect(),
+        unmapped_mmio: unmapped_users
+            .iter()
+            .map(|(address, users)| UnmappedMmioDocument {
+                address: format!("{address:#010x}"),
+                affected_functions: users.len(),
+                functions: users,
+            })
+            .collect(),
+        functions: functions.iter().map(Into::into).collect(),
+    })
+}
+
+fn write_analysis_json_report(path: &Path, document: &AnalysisDocument<'_>) -> Result<()> {
+    fs::write(path, serde_json::to_string_pretty(&document)? + "\n")?;
+    if !crate::cli::output::file("artifact-analysis-file", path, "written") {
+        outputln!("JSON-REPORT\t{}", path.display());
     }
-    output.push_str("  ],\n  \"unmapped_mmio\": [\n");
-    for (index, (address, users)) in unmapped_users.iter().enumerate() {
-        write!(output, "    {{\"address\": \"{address:#010x}\", ")
-            .expect("writing to String cannot fail");
-        write!(
-            output,
-            "\"affected_functions\": {}, \"functions\": ",
-            users.len()
-        )
-        .expect("writing to String cannot fail");
-        write_strings(&mut output, users);
-        output.push('}');
-        output.push_str(if index + 1 == unmapped_users.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"functions\": [\n");
-    for (index, function) in functions.iter().enumerate() {
-        output.push_str("    {\"symbol\": ");
-        write_string(&mut output, &function.symbol);
-        output.push_str(", \"owner\": ");
-        if let Some(owner) = function.owner.as_deref() {
-            write_string(&mut output, owner);
-        } else {
-            output.push_str("null");
-        }
-        write!(
-            output,
-            ", \"direct_trace_exact\": {}, \"reference_codegen_eligible\": {}, \"events\": {}, \"indexed_mmio\": {}, \"reference_dependencies\": ",
-            function.direct_trace_exact,
-            function.reference_codegen_eligible,
-            function.event_count,
-            function.indexed_mmio,
-        )
-        .expect("writing to String cannot fail");
-        write_strings(&mut output, &function.reference_dependencies);
-        output.push_str(", \"direct_blockers\": ");
-        write_strings(&mut output, &function.direct_blockers);
-        output.push_str(", \"local_reference_blockers\": ");
-        write_strings(&mut output, &function.local_reference_blockers);
-        output.push_str(", \"transitive_reference_blockers\": ");
-        write_strings(&mut output, &function.transitive_reference_blockers);
-        output.push_str(", \"unmapped_mmio\": [");
-        for (address_index, address) in function.unmapped_mmio.iter().enumerate() {
-            if address_index != 0 {
-                output.push_str(", ");
-            }
-            write!(output, "\"{address:#010x}\"").expect("writing to String cannot fail");
-        }
-        output.push_str("], \"blocking_callees\": ");
-        write_strings(&mut output, &function.blocking_callees);
-        output.push('}');
-        output.push_str(if index + 1 == functions.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ]\n}\n");
-    fs::write(path, output)?;
-    println!("JSON-REPORT\t{}", path.display());
     Ok(())
 }
 
+fn print_analysis_report(
+    functions: &[FunctionReport],
+    reasons: &BTreeMap<String, usize>,
+    reference_reasons: &BTreeMap<String, usize>,
+) {
+    for function in functions {
+        let owner = function.owner.as_deref().unwrap_or("-");
+        let reference_status = if function.reference_codegen_eligible {
+            "eligible"
+        } else {
+            "blocked"
+        };
+        if function.direct_trace_exact {
+            outputln!(
+                "FUNCTION\t{}\t{owner}\tDIRECT-TRACE-EXACT\tevents={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
+                function.symbol,
+                function.event_count,
+                function.reference_dependencies.len(),
+                function.indexed_mmio,
+            );
+        } else {
+            outputln!(
+                "FUNCTION\t{}\t{owner}\tINCOMPLETE\tevents={}\tuncovered={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
+                function.symbol,
+                function.event_count,
+                function.direct_blockers.len() + function.direct_unmapped_mmio.len(),
+                function.reference_dependencies.len(),
+                function.indexed_mmio,
+            );
+            for blocker in &function.direct_blockers {
+                outputln!("UNCOVERED\t{}\t{blocker}", function.symbol);
+            }
+            for address in &function.direct_unmapped_mmio {
+                outputln!(
+                    "UNCOVERED\t{}\tunmapped-register {address:#010x}",
+                    function.symbol
+                );
+            }
+        }
+        for blocker in &function.reference_blockers {
+            outputln!("REFERENCE-BLOCKED\t{}\t{blocker}", function.symbol);
+        }
+    }
+    let exact = functions
+        .iter()
+        .filter(|function| function.direct_trace_exact)
+        .count();
+    let reference_eligible = functions
+        .iter()
+        .filter(|function| function.reference_codegen_eligible)
+        .count();
+    outputln!(
+        "SUMMARY\tfunctions={}\tdirect_trace_exact={exact}\tincomplete={}\treference_codegen_eligible={reference_eligible}\treference_codegen_blocked={}",
+        functions.len(),
+        functions.len() - exact,
+        functions.len() - reference_eligible,
+    );
+    for (reason, count) in reasons {
+        outputln!("SUMMARY-UNCOVERED\t{reason}\t{count}");
+    }
+    for (reason, count) in reference_reasons {
+        outputln!("SUMMARY-REFERENCE-BLOCKED\t{reason}\t{count}");
+    }
+}
+
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: InspectAnalyzeArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifact = None;
-    let mut companions = Vec::new();
-    let mut prefix = "phy_".to_owned();
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
-    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
-    let mut json_report = None;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--artifact" => {
-                artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
-            }
-            "--companion" => {
-                companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
-            }
-            "--symbol-prefix" => {
-                prefix = take_value(&mut arguments, "--symbol-prefix")?;
-            }
-            "--json-report" => {
-                json_report = Some(PathBuf::from(take_value(&mut arguments, "--json-report")?));
-            }
-            "--entry-contract" => {
-                entry_contract = harnesses::entry_contract(
-                    harness,
-                    &take_value(&mut arguments, "--entry-contract")?,
-                )?;
-            }
-            _ => return Err(format!("unknown analyze option: {argument}").into()),
-        }
-    }
-    let artifact = artifact.ok_or("missing --artifact")?;
-    let symbols = list_code_symbols(&artifact, &prefix)?;
+    let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let symbols = list_code_symbols(&artifact, &arguments.symbol_prefix)?;
     if symbols.is_empty() {
-        return Err(format!("no external code symbols start with {prefix:?}").into());
+        return Err(format!(
+            "no external code symbols start with {:?}",
+            arguments.symbol_prefix
+        )
+        .into());
     }
     let reference_catalog = ReferenceResolver::load_with_entry_contract(
         &artifact,
-        &companions,
+        &arguments.companion,
         riscv_harness,
         entry_contract,
     )?;
@@ -305,68 +380,39 @@ pub(super) fn run(
         let trace = extract(&input, svd)?;
         let reference_trace =
             reference_catalog.trace(symbol.member.as_deref(), &symbol.name, svd)?;
-        let owner = symbol.member.as_deref().unwrap_or("-");
         let reference_eligible = reference_trace.is_reference_eligible();
-        let reference_status = if reference_eligible {
+        if reference_eligible {
             reference_codegen_eligible += 1;
-            "eligible"
-        } else {
-            "blocked"
-        };
+        }
+        let direct_unmapped_mmio = trace
+            .events
+            .iter()
+            .filter_map(ObservableEvent::unmapped_address)
+            .collect::<Vec<_>>();
         if trace.is_exact() {
             exact += 1;
-            println!(
-                "FUNCTION\t{}\t{owner}\tDIRECT-TRACE-EXACT\tevents={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
-                symbol.name,
-                trace.events.len(),
-                reference_trace.reference_dependencies.len(),
-                reference_trace.reference_indexed_mmio_count(),
-            );
         } else {
             incomplete += 1;
-            println!(
-                "FUNCTION\t{}\t{owner}\tINCOMPLETE\tevents={}\tuncovered={}\treference-codegen={reference_status}\treference-dependencies={}\tindexed-mmio={}",
-                symbol.name,
-                trace.events.len(),
-                trace.blockers.len()
-                    + trace
-                        .events
-                        .iter()
-                        .filter_map(ObservableEvent::unmapped_address)
-                        .count(),
-                reference_trace.reference_dependencies.len(),
-                reference_trace.reference_indexed_mmio_count(),
-            );
             for blocker in &trace.blockers {
                 *reasons.entry(blocker_kind(blocker).to_owned()).or_default() += 1;
                 record_impact(&mut impacts, "direct", blocker, &symbol.name);
-                println!("UNCOVERED\t{}\t{blocker}", symbol.name);
             }
-            for address in trace
-                .events
-                .iter()
-                .filter_map(ObservableEvent::unmapped_address)
-            {
+            for _address in &direct_unmapped_mmio {
                 *reasons.entry("unmapped-register".to_owned()).or_default() += 1;
                 record_impact(&mut impacts, "direct", "unmapped-register", &symbol.name);
-                println!(
-                    "UNCOVERED\t{}\tunmapped-register {:#010x}",
-                    symbol.name, address
-                );
             }
         }
         for blocker in &reference_trace.reference_blockers {
             *reference_reasons
                 .entry(blocker_kind(blocker).to_owned())
                 .or_default() += 1;
-            println!("REFERENCE-BLOCKED\t{}\t{blocker}", symbol.name);
         }
 
-        let unmapped_mmio = reference_trace
+        let reference_unmapped_mmio = reference_trace
             .reference_unmapped_addresses()
             .into_iter()
             .collect::<Vec<_>>();
-        for address in &unmapped_mmio {
+        for address in &reference_unmapped_mmio {
             unmapped_users
                 .entry(*address)
                 .or_default()
@@ -405,35 +451,29 @@ pub(super) fn run(
             direct_blockers: trace.blockers.clone(),
             local_reference_blockers,
             transitive_reference_blockers,
-            unmapped_mmio,
+            direct_unmapped_mmio,
+            reference_unmapped_mmio,
+            reference_blockers: reference_trace.reference_blockers.clone(),
             blocking_callees: callees.into_iter().collect(),
         });
     }
-    println!(
-        "SUMMARY\tfunctions={}\tdirect_trace_exact={exact}\tincomplete={incomplete}\treference_codegen_eligible={reference_codegen_eligible}\treference_codegen_blocked={}",
-        symbols.len(),
-        symbols.len() - reference_codegen_eligible,
-    );
-    for (reason, count) in reasons {
-        println!("SUMMARY-UNCOVERED\t{reason}\t{count}");
+    let document = analysis_document(AnalysisInputs {
+        artifact: &artifact,
+        companions: &arguments.companion,
+        prefix: &arguments.symbol_prefix,
+        entry_contract,
+        functions: &function_reports,
+        impacts: &impacts,
+        callee_callers: &callee_callers,
+        unmapped_users: &unmapped_users,
+        direct_exact: exact,
+        reference_eligible: reference_codegen_eligible,
+    })?;
+    if !crate::cli::output::structured("artifact-analysis", &document) {
+        print_analysis_report(&function_reports, &reasons, &reference_reasons);
     }
-    for (reason, count) in reference_reasons {
-        println!("SUMMARY-REFERENCE-BLOCKED\t{reason}\t{count}");
-    }
-    if let Some(path) = json_report.as_deref() {
-        write_analysis_json_report(
-            path,
-            &artifact,
-            &companions,
-            &prefix,
-            entry_contract,
-            &function_reports,
-            &impacts,
-            &callee_callers,
-            &unmapped_users,
-            exact,
-            reference_codegen_eligible,
-        )?;
+    if let Some(path) = arguments.json_report.as_deref() {
+        write_analysis_json_report(path, &document)?;
     }
     Ok(incomplete == 0)
 }

@@ -3,9 +3,16 @@
 //! This facade composes neutral contracts and analysis/semantics layers with
 //! the RISC-V backend, ESP32-S31 harness, CLI and verification workflows.
 
+macro_rules! outputln {
+    ($($argument:tt)*) => {{
+        crate::cli::output_line(format_args!($($argument)*));
+    }};
+}
+
 mod analysis;
 mod cli;
 mod digest;
+mod error;
 mod function_workspace;
 mod harnesses;
 mod interfaces;
@@ -27,6 +34,7 @@ mod verification;
 use analysis::*;
 use cli::run;
 pub(crate) use digest::artifact_sha256;
+use error::WorkbenchError;
 #[cfg(test)]
 pub(crate) use harnesses::esp32s31::entry_contract;
 #[cfg(test)]
@@ -57,15 +65,33 @@ use std::{
     path::Path,
 };
 
-type Error = Box<dyn std::error::Error>;
-type Result<T> = std::result::Result<T, Error>;
+type Error = WorkbenchError;
+type Result<T> = error::Result<T>;
 pub fn main_entry() -> ExitCode {
-    match run() {
+    let result = run();
+    let output_result = cli::finish_output();
+    let result = match (result, output_result) {
+        (Ok(value), Ok(())) => Ok(value),
+        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+    };
+    match result {
         Ok(true) => ExitCode::SUCCESS,
         Ok(false) => ExitCode::from(2),
-        Err(error) => {
-            cli::usage();
-            eprintln!("error: {error}");
+        Err(error) => render_error(error),
+    }
+}
+
+fn render_error(error: Error) -> ExitCode {
+    match error {
+        WorkbenchError::Cli(error) => {
+            let exit_code = error.exit_code();
+            let _ = error.print();
+            u8::try_from(exit_code)
+                .map(ExitCode::from)
+                .unwrap_or(ExitCode::FAILURE)
+        }
+        error => {
+            eprintln!("{:?}", miette::Report::new(error));
             ExitCode::FAILURE
         }
     }

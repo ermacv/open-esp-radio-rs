@@ -1,31 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::{MemoryMap, MmioRegisterMap, TargetSpec, project::ProjectSpec};
-
-#[test]
-fn status_options_keep_ci_gate_and_output_check_independent() {
-    assert_eq!(
-        parse_options(vec![
-            "--json-report".to_owned(),
-            "status.json".to_owned(),
-            "--check".to_owned(),
-            "--deny-incomplete".to_owned(),
-        ])
-        .unwrap(),
-        Options {
-            json_report: Some(PathBuf::from("status.json")),
-            check: true,
-            deny_incomplete: true,
-        }
-    );
-    assert!(
-        parse_options(vec!["--check".to_owned()])
-            .unwrap_err()
-            .to_string()
-            .contains("requires --json-report")
-    );
-}
+use crate::{MemoryMap, MmioRegisterMap, TargetSpec, cli::ProjectInitArgs, project::ProjectSpec};
 
 #[test]
 fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
@@ -37,14 +13,15 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         fs::remove_dir_all(&root).unwrap();
     }
     let directory = root.join("project");
-    super::super::project_init::run(vec![
-        "--directory".to_owned(),
-        directory.display().to_string(),
-        "--id".to_owned(),
-        "status-fixture".to_owned(),
-        "--mmio".to_owned(),
-        "radio=0x20000000..0x20010000".to_owned(),
-    ])
+    super::super::project_init::run(ProjectInitArgs {
+        directory: directory.clone(),
+        id: "status-fixture".to_owned(),
+        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        source: Vec::new(),
+        rust_target: None,
+        pac_crate_name: None,
+        import_svd: None,
+    })
     .unwrap();
     let manifest = directory.join("vendor-project.toml");
     let project = ProjectSpec::load(&manifest).unwrap();
@@ -72,23 +49,35 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     };
     assert!(
         run(
-            vec!["--json-report".to_owned(), output.display().to_string(),],
+            ProjectStatusArgs {
+                json_report: Some(output.clone()),
+                ..Default::default()
+            },
             context(),
         )
         .unwrap()
     );
     assert!(
         run(
-            vec![
-                "--json-report".to_owned(),
-                output.display().to_string(),
-                "--check".to_owned(),
-            ],
+            ProjectStatusArgs {
+                json_report: Some(output.clone()),
+                check: true,
+                ..Default::default()
+            },
             context(),
         )
         .unwrap()
     );
-    assert!(!run(vec!["--deny-incomplete".to_owned()], context()).unwrap());
+    assert!(
+        !run(
+            ProjectStatusArgs {
+                deny_incomplete: true,
+                ..Default::default()
+            },
+            context(),
+        )
+        .unwrap()
+    );
     let document: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&output).unwrap()).unwrap();
     assert_eq!(document["overall"], "incomplete");

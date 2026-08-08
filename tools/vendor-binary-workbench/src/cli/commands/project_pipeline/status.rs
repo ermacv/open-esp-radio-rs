@@ -31,11 +31,8 @@ impl Mode {
         }
     }
 
-    pub(super) fn check_argument(self) -> Vec<String> {
-        match self {
-            Self::Build => Vec::new(),
-            Self::Check => vec!["--check".to_owned()],
-        }
+    pub(super) const fn is_check(self) -> bool {
+        matches!(self, Self::Check)
     }
 }
 
@@ -98,11 +95,21 @@ pub(crate) fn execute(
     success: StageSuccess,
     action: impl FnOnce() -> Result<bool>,
 ) -> StageOutcome {
-    match action() {
+    let span = tracing::info_span!("project_stage", stage = name);
+    let _entered = span.enter();
+    tracing::info!("started");
+    let outcome = match action() {
         Ok(true) => StageOutcome::Complete(success),
         Ok(false) => StageOutcome::Failed(format!("{name} reported an unsuccessful result")),
         Err(error) => StageOutcome::Failed(error.to_string()),
+    };
+    match &outcome {
+        StageOutcome::Complete(_) => tracing::info!("completed"),
+        StageOutcome::Failed(reason) => tracing::warn!(%reason, "failed"),
+        StageOutcome::Blocked(reason) => tracing::warn!(%reason, "blocked"),
+        StageOutcome::NotConfigured(reason) => tracing::debug!(%reason, "not configured"),
     }
+    outcome
 }
 
 pub(crate) fn report(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
@@ -113,7 +120,7 @@ pub(crate) fn report(name: &str, outcome: &StageOutcome, summary: &mut PipelineS
         StageOutcome::Blocked(reason) => ("blocked", Some(reason)),
         StageOutcome::NotConfigured(reason) => ("not-configured", Some(reason)),
     };
-    println!(
+    outputln!(
         "PROJECT-STAGE\tname={name}\tstatus={status}\treason={}",
         reason.map_or_else(|| "-".to_owned(), |reason| sanitize(reason))
     );

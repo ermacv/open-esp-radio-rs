@@ -1,8 +1,8 @@
-//! Stable JSON projection of generic indirect-call evidence.
+//! Stable typed JSON projection of generic indirect-call evidence.
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde_json::{Value, json};
+use serde::Serialize;
 
 use super::{
     super::*,
@@ -11,108 +11,245 @@ use super::{
 use crate::{
     analysis::LinkageSymbolLocation,
     interface_discovery::{
-        InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceRoot,
+        InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
+        InterfacePointer, InterfaceRoot,
     },
 };
 
-fn root_json(root: &InterfaceRoot) -> Value {
-    match root {
-        InterfaceRoot::RelocatedSymbol {
-            member,
-            symbol,
-            addend,
-            addressing,
-        } => json!({
-            "kind": root.kind(),
-            "canonical": root.canonical(),
-            "member": member,
-            "symbol": symbol,
-            "addend": addend,
-            "addressing": addressing.label(),
-        }),
-        InterfaceRoot::FunctionArgument { index } => json!({
-            "kind": root.kind(),
-            "canonical": root.canonical(),
-            "argument": index,
-        }),
-        InterfaceRoot::AbsoluteAddress { address } => json!({
-            "kind": root.kind(),
-            "canonical": root.canonical(),
-            "address": format!("{address:#010x}"),
-        }),
+#[derive(Serialize)]
+#[serde(untagged)]
+enum RootDocument {
+    Relocated {
+        kind: &'static str,
+        canonical: String,
+        member: Option<String>,
+        symbol: String,
+        addend: i64,
+        addressing: &'static str,
+    },
+    FunctionArgument {
+        kind: &'static str,
+        canonical: String,
+        argument: u8,
+    },
+    AbsoluteAddress {
+        kind: &'static str,
+        canonical: String,
+        address: String,
+    },
+}
+
+impl From<&InterfaceRoot> for RootDocument {
+    fn from(root: &InterfaceRoot) -> Self {
+        match root {
+            InterfaceRoot::RelocatedSymbol {
+                member,
+                symbol,
+                addend,
+                addressing,
+            } => Self::Relocated {
+                kind: root.kind(),
+                canonical: root.canonical(),
+                member: member.clone(),
+                symbol: symbol.clone(),
+                addend: *addend,
+                addressing: addressing.label(),
+            },
+            InterfaceRoot::FunctionArgument { index } => Self::FunctionArgument {
+                kind: root.kind(),
+                canonical: root.canonical(),
+                argument: *index,
+            },
+            InterfaceRoot::AbsoluteAddress { address } => Self::AbsoluteAddress {
+                kind: root.kind(),
+                canonical: root.canonical(),
+                address: format!("{address:#010x}"),
+            },
+        }
     }
 }
 
-fn location_json(location: &LinkageSymbolLocation) -> Value {
-    json!({
-        "artifact": location.artifact,
-        "member": location.member,
-        "address": format!("{:#x}", location.address),
-        "kind": location.kind.label(),
-    })
+#[derive(Serialize)]
+struct LocationDocument {
+    artifact: usize,
+    member: Option<String>,
+    address: String,
+    kind: &'static str,
 }
 
-fn argument_json(index: usize, value: &InterfaceArgumentValue) -> Value {
+impl From<&LinkageSymbolLocation> for LocationDocument {
+    fn from(location: &LinkageSymbolLocation) -> Self {
+        Self {
+            artifact: location.artifact,
+            member: location.member.clone(),
+            address: format!("{:#x}", location.address),
+            kind: location.kind.label(),
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct LoadDocument {
+    site: String,
+    offset: i32,
+    width: u8,
+}
+
+impl From<&InterfaceLoad> for LoadDocument {
+    fn from(load: &InterfaceLoad) -> Self {
+        Self {
+            site: format!("{:#x}", load.site),
+            offset: load.offset,
+            width: load.width,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum ArgumentDocument {
+    Unknown {
+        index: usize,
+        kind: &'static str,
+    },
+    Constant {
+        index: usize,
+        kind: &'static str,
+        value: String,
+    },
+    Pointer {
+        index: usize,
+        kind: &'static str,
+        canonical: String,
+        root: RootDocument,
+        loads: Vec<LoadDocument>,
+        post_offset: i32,
+    },
+}
+
+fn argument_document(index: usize, value: &InterfaceArgumentValue) -> ArgumentDocument {
     match value {
-        InterfaceArgumentValue::Unknown => json!({"index": index, "kind": "unknown"}),
-        InterfaceArgumentValue::Constant(value) => json!({
-            "index": index,
-            "kind": "constant",
-            "value": format!("{value:#010x}"),
-        }),
-        InterfaceArgumentValue::Pointer(pointer) => json!({
-            "index": index,
-            "kind": "pointer-provenance",
-            "canonical": pointer.canonical(),
-            "root": root_json(&pointer.root),
-            "loads": pointer.loads.iter().map(|load| json!({
-                "site": format!("{:#x}", load.site),
-                "offset": load.offset,
-                "width": load.width,
-            })).collect::<Vec<_>>(),
-            "post_offset": pointer.post_offset,
-        }),
+        InterfaceArgumentValue::Unknown => ArgumentDocument::Unknown {
+            index,
+            kind: "unknown",
+        },
+        InterfaceArgumentValue::Constant(value) => ArgumentDocument::Constant {
+            index,
+            kind: "constant",
+            value: format!("{value:#010x}"),
+        },
+        InterfaceArgumentValue::Pointer(pointer) => ArgumentDocument::Pointer {
+            index,
+            kind: "pointer-provenance",
+            canonical: pointer.canonical(),
+            root: (&pointer.root).into(),
+            loads: pointer.loads.iter().map(Into::into).collect(),
+            post_offset: pointer.post_offset,
+        },
     }
 }
 
-fn call_json(discovery: &Discovery, discovered: &DiscoveredCall) -> Value {
+#[derive(Serialize)]
+struct TargetDocument {
+    canonical: String,
+    root: RootDocument,
+    loads: Vec<LoadDocument>,
+    container_depth: usize,
+    slot_offset: Option<i32>,
+    jalr_offset: i32,
+}
+
+impl TargetDocument {
+    fn new(pointer: &InterfacePointer, jalr_offset: i32) -> Self {
+        Self {
+            canonical: pointer.canonical(),
+            root: (&pointer.root).into(),
+            loads: pointer.loads.iter().map(Into::into).collect(),
+            container_depth: pointer.container_loads().len(),
+            slot_offset: pointer.slot().map(|load| load.offset),
+            jalr_offset,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct RootLinkageDocument {
+    mode: &'static str,
+    symbols: BTreeSet<String>,
+    resolutions: BTreeSet<&'static str>,
+    candidates: Vec<LocationDocument>,
+}
+
+#[derive(Serialize)]
+struct CallDocument {
+    artifact: usize,
+    member: Option<String>,
+    function: String,
+    function_address: String,
+    site: String,
+    kind: &'static str,
+    link_register: u8,
+    target: TargetDocument,
+    root_linkage: RootLinkageDocument,
+    arguments: Vec<ArgumentDocument>,
+}
+
+fn call_document(discovery: &Discovery, discovered: &DiscoveredCall) -> CallDocument {
     let call = &discovered.call;
     let linkage = root_linkage(discovery, discovered.artifact, &call.target.root);
-    json!({
-        "artifact": discovered.artifact,
-        "member": call.member,
-        "function": call.function,
-        "function_address": format!("{:#x}", call.function_address),
-        "site": format!("{:#x}", call.site),
-        "kind": call.kind.label(),
-        "link_register": match call.kind {
-            InterfaceCallKind::Call => Some(1),
-            InterfaceCallKind::TailJump => Some(0),
-            InterfaceCallKind::LinkedJump(register) => Some(register),
+    CallDocument {
+        artifact: discovered.artifact,
+        member: call.member.clone(),
+        function: call.function.clone(),
+        function_address: format!("{:#x}", call.function_address),
+        site: format!("{:#x}", call.site),
+        kind: call.kind.label(),
+        link_register: match call.kind {
+            InterfaceCallKind::Call => 1,
+            InterfaceCallKind::TailJump => 0,
+            InterfaceCallKind::LinkedJump(register) => register,
         },
-        "target": {
-            "canonical": call.target.canonical(),
-            "root": root_json(&call.target.root),
-            "loads": call.target.loads.iter().map(|load| json!({
-                "site": format!("{:#x}", load.site),
-                "offset": load.offset,
-                "width": load.width,
-            })).collect::<Vec<_>>(),
-            "container_depth": call.target.container_loads().len(),
-            "slot_offset": call.target.slot().map(|load| load.offset),
-            "jalr_offset": call.jalr_offset,
+        target: TargetDocument::new(&call.target, call.jalr_offset),
+        root_linkage: RootLinkageDocument {
+            mode: "association-only",
+            symbols: linkage.symbols,
+            resolutions: linkage.resolutions,
+            candidates: linkage.candidates.iter().map(Into::into).collect(),
         },
-        "root_linkage": {
-            "mode": "association-only",
-            "symbols": linkage.symbols,
-            "resolutions": linkage.resolutions,
-            "candidates": linkage.candidates.iter().map(location_json).collect::<Vec<_>>(),
-        },
-        "arguments": call.arguments.iter().enumerate().map(|(index, value)| argument_json(index, value)).collect::<Vec<_>>(),
-    })
+        arguments: call
+            .arguments
+            .iter()
+            .enumerate()
+            .map(|(index, value)| argument_document(index, value))
+            .collect(),
+    }
 }
 
-fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
+#[derive(Serialize)]
+struct ContainerStepDocument {
+    offset: i32,
+    width: u8,
+}
+
+#[derive(Serialize)]
+struct SlotDocument {
+    offset: i32,
+    width: u8,
+    functions: BTreeSet<String>,
+    call_sites: usize,
+}
+
+#[derive(Serialize)]
+struct TableGroupDocument {
+    artifact: usize,
+    root: RootDocument,
+    container_path: Vec<ContainerStepDocument>,
+    slots: Vec<SlotDocument>,
+    functions: BTreeSet<String>,
+    call_sites: usize,
+}
+
+fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
     type GroupKey = (usize, InterfaceRoot, Vec<(i32, u8)>);
     let mut groups = BTreeMap::<GroupKey, Vec<&InterfaceCallCandidate>>::new();
     for discovered in &discovery.calls {
@@ -140,70 +277,130 @@ fn table_groups_json(discovery: &Discovery) -> Vec<Value> {
             let mut slots = BTreeMap::<(i32, u8), Vec<&InterfaceCallCandidate>>::new();
             for call in &calls {
                 if let Some(slot) = call.target.slot() {
-                    slots.entry((slot.offset, slot.width)).or_default().push(call);
+                    slots
+                        .entry((slot.offset, slot.width))
+                        .or_default()
+                        .push(call);
                 }
             }
-            let functions = calls
-                .iter()
-                .map(|call| call.function.clone())
-                .collect::<BTreeSet<_>>();
-            json!({
-                "artifact": artifact,
-                "root": root_json(&root),
-                "container_path": container.iter().map(|(offset, width)| json!({"offset": offset, "width": width})).collect::<Vec<_>>(),
-                "slots": slots.iter().map(|((offset, width), slot_calls)| json!({
-                    "offset": offset,
-                    "width": width,
-                    "functions": slot_calls.iter().map(|call| call.function.clone()).collect::<BTreeSet<_>>(),
-                    "call_sites": slot_calls.len(),
-                })).collect::<Vec<_>>(),
-                "functions": functions,
-                "call_sites": calls.len(),
-            })
+            TableGroupDocument {
+                artifact,
+                root: (&root).into(),
+                container_path: container
+                    .into_iter()
+                    .map(|(offset, width)| ContainerStepDocument { offset, width })
+                    .collect(),
+                slots: slots
+                    .into_iter()
+                    .map(|((offset, width), slot_calls)| SlotDocument {
+                        offset,
+                        width,
+                        functions: slot_calls
+                            .iter()
+                            .map(|call| call.function.clone())
+                            .collect(),
+                        call_sites: slot_calls.len(),
+                    })
+                    .collect(),
+                functions: calls.iter().map(|call| call.function.clone()).collect(),
+                call_sites: calls.len(),
+            }
         })
         .collect()
 }
 
-pub(super) fn render_json_report(discovery: &Discovery) -> Result<String> {
-    let artifacts = discovery
-        .linkage
-        .artifacts
-        .iter()
-        .enumerate()
-        .map(|(index, artifact)| -> Result<Value> {
-            Ok(json!({
-                "index": index,
-                "path": artifact.path,
-                "roles": artifact.roles,
-                "sources": artifact.sources,
-                "sha256": crate::artifact_sha256(&artifact.path)?,
-                "container": artifact.container.label(),
-                "functions": discovery.functions[index],
-            }))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let document = json!({
-        "schema_version": 2,
-        "command": "interfaces discover",
-        "analysis_scope": {
-            "architecture": "riscv32",
-            "calling_convention": "riscv-ilp32",
-            "evidence": "control-flow-merged register provenance",
-            "relocation_evidence": ["absolute", "pc-relative", "got"],
-            "semantic_claim": false,
-            "table_layout_claim": false,
-            "linker_resolution_claim": false,
-            "completeness_claim": false,
+#[derive(Serialize)]
+struct ArtifactDocument<'a> {
+    index: usize,
+    path: String,
+    roles: &'a [String],
+    sources: &'a [String],
+    sha256: String,
+    container: &'static str,
+    functions: usize,
+}
+
+#[derive(Serialize)]
+struct AnalysisScope {
+    architecture: &'static str,
+    calling_convention: &'static str,
+    evidence: &'static str,
+    relocation_evidence: [&'static str; 3],
+    semantic_claim: bool,
+    table_layout_claim: bool,
+    linker_resolution_claim: bool,
+    completeness_claim: bool,
+}
+
+#[derive(Serialize)]
+struct DecodeFailureDocument<'a> {
+    artifact: usize,
+    member: &'a Option<String>,
+    function: &'a str,
+    error: &'a str,
+}
+
+#[derive(Serialize)]
+pub(super) struct InterfaceDiscoveryDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    analysis_scope: AnalysisScope,
+    artifacts: Vec<ArtifactDocument<'a>>,
+    calls: Vec<CallDocument>,
+    table_candidates: Vec<TableGroupDocument>,
+    decode_failures: Vec<DecodeFailureDocument<'a>>,
+}
+
+pub(super) fn document(discovery: &Discovery) -> Result<InterfaceDiscoveryDocument<'_>> {
+    Ok(InterfaceDiscoveryDocument {
+        schema_version: 2,
+        command: "interfaces discover",
+        analysis_scope: AnalysisScope {
+            architecture: "riscv32",
+            calling_convention: "riscv-ilp32",
+            evidence: "control-flow-merged register provenance",
+            relocation_evidence: ["absolute", "pc-relative", "got"],
+            semantic_claim: false,
+            table_layout_claim: false,
+            linker_resolution_claim: false,
+            completeness_claim: false,
         },
-        "artifacts": artifacts,
-        "calls": discovery.calls.iter().map(|call| call_json(discovery, call)).collect::<Vec<_>>(),
-        "table_candidates": table_groups_json(discovery),
-        "decode_failures": discovery.failures.iter().map(|failure| json!({
-            "artifact": failure.artifact,
-            "member": failure.member,
-            "function": failure.function,
-            "error": failure.error,
-        })).collect::<Vec<_>>(),
-    });
+        artifacts: discovery
+            .linkage
+            .artifacts
+            .iter()
+            .enumerate()
+            .map(|(index, artifact)| {
+                Ok(ArtifactDocument {
+                    index,
+                    path: artifact.path.display().to_string(),
+                    roles: &artifact.roles,
+                    sources: &artifact.sources,
+                    sha256: crate::artifact_sha256(&artifact.path)?,
+                    container: artifact.container.label(),
+                    functions: discovery.functions[index],
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        calls: discovery
+            .calls
+            .iter()
+            .map(|call| call_document(discovery, call))
+            .collect(),
+        table_candidates: table_group_documents(discovery),
+        decode_failures: discovery
+            .failures
+            .iter()
+            .map(|failure| DecodeFailureDocument {
+                artifact: failure.artifact,
+                member: &failure.member,
+                function: &failure.function,
+                error: &failure.error,
+            })
+            .collect(),
+    })
+}
+
+pub(super) fn render_document(document: &InterfaceDiscoveryDocument<'_>) -> Result<String> {
     Ok(serde_json::to_string_pretty(&document)? + "\n")
 }

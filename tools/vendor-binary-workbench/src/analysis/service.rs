@@ -5,6 +5,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::Serialize;
+
 use super::{ReferenceResolver, StructuralPointerContext, trace_binary_symbol};
 use crate::{
     ArtifactSymbolIdentity, FunctionAnalysis, MmioRegisterMap, ObservableEvent, Result, artifact,
@@ -30,57 +32,51 @@ pub(crate) struct ArtifactSymbolSelector {
     pub(crate) symbol: String,
 }
 
-pub(crate) fn take_value(
-    arguments: &mut impl Iterator<Item = String>,
-    option: &str,
-) -> Result<String> {
-    arguments
-        .next()
-        .ok_or_else(|| format!("{option} requires a value").into())
+#[derive(Serialize)]
+pub(crate) struct TraceEventDocument {
+    index: usize,
+    canonical: String,
 }
 
-pub(crate) fn parse_input(
-    arguments: &mut impl Iterator<Item = String>,
-    prefix: &str,
-) -> Result<ArtifactSymbolSelector> {
-    let mut artifact = None;
-    let mut member = None;
-    let mut symbol = None;
-    while let Some(argument) = arguments.next() {
-        let plain = prefix.is_empty();
-        let artifact_option = if plain {
-            "--artifact".to_owned()
-        } else {
-            format!("--{prefix}-artifact")
-        };
-        let member_option = if plain {
-            "--member".to_owned()
-        } else {
-            format!("--{prefix}-member")
-        };
-        let symbol_option = if plain {
-            "--symbol".to_owned()
-        } else {
-            format!("--{prefix}-symbol")
-        };
-        if argument == artifact_option {
-            artifact = Some(PathBuf::from(take_value(arguments, &artifact_option)?));
-        } else if argument == member_option {
-            member = Some(take_value(arguments, &member_option)?);
-        } else if argument == symbol_option {
-            symbol = Some(take_value(arguments, &symbol_option)?);
-        } else {
-            return Err(format!("unknown {prefix} input option: {argument}").into());
-        }
-        if artifact.is_some() && symbol.is_some() && (!plain || argument == symbol_option) {
-            break;
-        }
+#[derive(Serialize)]
+pub(crate) struct TraceDocument<'a> {
+    schema_version: u32,
+    symbol: &'a str,
+    exact: bool,
+    reference_codegen_eligible: bool,
+    return_value: String,
+    unresolved_branch: bool,
+    events: Vec<TraceEventDocument>,
+    blockers: &'a [String],
+    reference_blockers: &'a [String],
+    unmapped_mmio: Vec<u32>,
+}
+
+pub(crate) fn trace_document(trace: &FunctionAnalysis) -> TraceDocument<'_> {
+    TraceDocument {
+        schema_version: 1,
+        symbol: &trace.symbol,
+        exact: trace.is_exact(),
+        reference_codegen_eligible: trace.is_reference_eligible(),
+        return_value: trace.return_value.canonical(),
+        unresolved_branch: trace.unresolved_branch.is_some(),
+        events: trace
+            .events
+            .iter()
+            .enumerate()
+            .map(|(index, event)| TraceEventDocument {
+                index,
+                canonical: event.canonical(),
+            })
+            .collect(),
+        blockers: &trace.blockers,
+        reference_blockers: &trace.reference_blockers,
+        unmapped_mmio: trace
+            .events
+            .iter()
+            .filter_map(ObservableEvent::unmapped_address)
+            .collect(),
     }
-    Ok(ArtifactSymbolSelector {
-        artifact: artifact.ok_or_else(|| format!("missing --{prefix}-artifact"))?,
-        member,
-        symbol: symbol.ok_or_else(|| format!("missing --{prefix}-symbol"))?,
-    })
 }
 
 pub(crate) fn extract(
@@ -103,13 +99,13 @@ pub(crate) fn extract(
                 input.symbol, input.member
             )
         })?;
-    trace_binary_symbol(
+    Ok(trace_binary_symbol(
         symbol,
         svd,
         &BTreeMap::new(),
         &StructuralPointerContext::default(),
         None,
-    )
+    )?)
 }
 
 pub(crate) fn extract_reference(
@@ -119,22 +115,22 @@ pub(crate) fn extract_reference(
     entry_contract: crate::EntryContractRef,
     svd: &MmioRegisterMap,
 ) -> Result<FunctionAnalysis> {
-    ReferenceResolver::load_with_entry_contract(
+    Ok(ReferenceResolver::load_with_entry_contract(
         &input.artifact,
         companions,
         harness,
         entry_contract,
     )?
-    .trace(input.member.as_deref(), &input.symbol, svd)
+    .trace(input.member.as_deref(), &input.symbol, svd)?)
 }
 
 pub(crate) fn print_trace(trace: &FunctionAnalysis) {
-    println!("TRACE\t{}\texact={}", trace.symbol, trace.is_exact());
+    outputln!("TRACE\t{}\texact={}", trace.symbol, trace.is_exact());
     for (index, event) in trace.events.iter().enumerate() {
-        println!("{index}\t{}", event.canonical());
+        outputln!("{index}\t{}", event.canonical());
     }
     for blocker in &trace.blockers {
-        println!("BLOCKER\t{blocker}");
+        outputln!("BLOCKER\t{blocker}");
     }
 }
 
@@ -156,7 +152,7 @@ pub(crate) fn traces_equal(left: &FunctionAnalysis, right: &FunctionAnalysis) ->
 pub(crate) fn print_uncovered(symbol: &str, side: &str, trace: &FunctionAnalysis) -> usize {
     let mut count = 0;
     for blocker in &trace.blockers {
-        println!("UNCOVERED\t{symbol}\t{side}\t{blocker}");
+        outputln!("UNCOVERED\t{symbol}\t{side}\t{blocker}");
         count += 1;
     }
     for address in trace
@@ -164,7 +160,7 @@ pub(crate) fn print_uncovered(symbol: &str, side: &str, trace: &FunctionAnalysis
         .iter()
         .filter_map(ObservableEvent::unmapped_address)
     {
-        println!(
+        outputln!(
             "UNCOVERED\t{symbol}\t{side}\tunmapped-register {:#010x}",
             address
         );

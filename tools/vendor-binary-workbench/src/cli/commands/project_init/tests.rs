@@ -5,18 +5,15 @@ use super::*;
 
 #[test]
 fn parses_generic_sources_ranges_and_defaults() {
-    let options = parse_options(vec![
-        "--directory".to_owned(),
-        "project".to_owned(),
-        "--id".to_owned(),
-        "radio-rev0".to_owned(),
-        "--mmio".to_owned(),
-        "radio=0x20000000..0x20010000".to_owned(),
-        "--source".to_owned(),
-        "rom".to_owned(),
-        "--source".to_owned(),
-        "archive".to_owned(),
-    ])
+    let options = resolve_options(ProjectInitArgs {
+        directory: "project".into(),
+        id: "radio-rev0".to_owned(),
+        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        source: vec!["rom".to_owned(), "archive".to_owned()],
+        rust_target: None,
+        pac_crate_name: None,
+        import_svd: None,
+    })
     .unwrap();
     assert_eq!(options.sources, ["rom", "archive"]);
     assert_eq!(options.pac_crate_name, "radio_rev0_pac");
@@ -35,14 +32,15 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     }
     fs::create_dir_all(&parent).unwrap();
     let directory = parent.join("radio");
-    let arguments = vec![
-        "--directory".to_owned(),
-        directory.display().to_string(),
-        "--id".to_owned(),
-        "radio".to_owned(),
-        "--mmio".to_owned(),
-        "radio=0x20000000..0x20010000".to_owned(),
-    ];
+    let arguments = ProjectInitArgs {
+        directory: directory.clone(),
+        id: "radio".to_owned(),
+        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        source: Vec::new(),
+        rust_target: None,
+        pac_crate_name: None,
+        import_svd: None,
+    };
 
     assert!(run(arguments.clone()).unwrap());
     let project = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap();
@@ -83,16 +81,18 @@ fn rejects_overlapping_ranges_before_creating_a_directory() {
         "vendor-workbench-project-init-overlap-{}",
         std::process::id()
     ));
-    let error = parse_options(vec![
-        "--directory".to_owned(),
-        directory.display().to_string(),
-        "--id".to_owned(),
-        "radio".to_owned(),
-        "--mmio".to_owned(),
-        "one=0x20000000..0x20001000".to_owned(),
-        "--mmio".to_owned(),
-        "two=0x20000800..0x20002000".to_owned(),
-    ])
+    let error = resolve_options(ProjectInitArgs {
+        directory: directory.clone(),
+        id: "radio".to_owned(),
+        mmio: vec![
+            "one=0x20000000..0x20001000".to_owned(),
+            "two=0x20000800..0x20002000".to_owned(),
+        ],
+        source: Vec::new(),
+        rust_target: None,
+        pac_crate_name: None,
+        import_svd: None,
+    })
     .unwrap_err();
     assert!(error.to_string().contains("overlap"));
     assert!(!directory.exists());
@@ -136,16 +136,15 @@ fn imported_svd_must_fit_the_declared_mmio_map() {
     )
     .unwrap();
     let directory = parent.join("project");
-    let error = run(vec![
-        "--directory".to_owned(),
-        directory.display().to_string(),
-        "--id".to_owned(),
-        "radio".to_owned(),
-        "--mmio".to_owned(),
-        "radio=0x20000000..0x20010000".to_owned(),
-        "--import-svd".to_owned(),
-        input.display().to_string(),
-    ])
+    let error = run(ProjectInitArgs {
+        directory: directory.clone(),
+        id: "radio".to_owned(),
+        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        source: Vec::new(),
+        rust_target: None,
+        pac_crate_name: None,
+        import_svd: Some(input),
+    })
     .unwrap_err();
     assert!(error.to_string().contains("outside project MMIO"));
     assert!(!directory.exists());

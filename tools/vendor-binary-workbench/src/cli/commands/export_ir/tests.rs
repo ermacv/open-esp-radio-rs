@@ -1,5 +1,7 @@
 //! Tests for linked-IR export argument handling.
 
+use std::path::PathBuf;
+
 use super::*;
 
 #[test]

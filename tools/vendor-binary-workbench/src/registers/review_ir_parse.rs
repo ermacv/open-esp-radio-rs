@@ -1,4 +1,4 @@
-//! Strict projection of schema-v31 linked-IR JSON into register-review evidence.
+//! Strict projection of schema-v32 linked-IR JSON into register-review evidence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,9 +17,9 @@ pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
     let input = fs::read_to_string(path)?;
     let root: Value = serde_json::from_str(&input)?;
     let root = object(&root, "linked-IR root")?;
-    if integer(root, "schema_version", "linked-IR report")? != 31 {
+    if integer(root, "schema_version", "linked-IR report")? != 32 {
         return Err(format!(
-            "register review requires linked-IR schema 31 in {}",
+            "register review requires linked-IR schema 32 in {}",
             path.display()
         )
         .into());
@@ -228,17 +228,30 @@ fn boolean(object: &Map<String, Value>, key: &str, context: &str) -> Result<bool
 }
 
 fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
-    let value = string(object, key, context)?;
-    parse_u32(value).ok_or_else(|| format!("invalid address {value:?} in {context}").into())
+    match object.get(key) {
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| value.try_into().ok())
+            .ok_or_else(|| format!("invalid numeric address {value} in {context}").into()),
+        Some(Value::String(value)) => {
+            parse_u32(value).ok_or_else(|| format!("invalid address {value:?} in {context}").into())
+        }
+        _ => Err(format!("{context} requires u32 address {key:?}").into()),
+    }
 }
 
 fn optional_address(object: &Map<String, Value>, key: &str, context: &str) -> Result<Option<u32>> {
     match object.get(key) {
         Some(Value::Null) => Ok(None),
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| value.try_into().ok())
+            .map(Some)
+            .ok_or_else(|| format!("invalid numeric address {value} in {context}").into()),
         Some(Value::String(value)) => parse_u32(value)
             .map(Some)
             .ok_or_else(|| format!("invalid address {value:?} in {context}").into()),
-        _ => Err(format!("{context} requires address string or null {key:?}").into()),
+        _ => Err(format!("{context} requires u32 address or null {key:?}").into()),
     }
 }
 

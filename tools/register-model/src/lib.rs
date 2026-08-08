@@ -30,7 +30,36 @@ pub use register_evidence::{
 };
 pub use register_lints::RegisterLintPack;
 
-pub type Error = Box<dyn std::error::Error>;
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Toml(#[from] toml_edit::TomlError),
+
+    #[error(transparent)]
+    TomlDeserialize(#[from] toml_edit::de::Error),
+
+    #[error(transparent)]
+    Svd(#[from] svd_rs::SvdError),
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Message(value)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Self::Message(value.to_owned())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

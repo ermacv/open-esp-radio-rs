@@ -41,12 +41,6 @@ pub(super) fn parse_artifact(value: &str) -> Result<IrArtifactInput> {
     named_artifact(source, path)
 }
 
-pub(super) fn source_artifact_option(argument: &str) -> Option<&str> {
-    argument
-        .strip_prefix("--source-artifact:")
-        .filter(|source| !source.is_empty())
-}
-
 pub(super) fn validate_artifact_inputs(
     artifacts: &[IrArtifactInput],
     companions: &[PathBuf],

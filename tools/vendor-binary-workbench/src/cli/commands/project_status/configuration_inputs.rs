@@ -1,10 +1,8 @@
 //! Configuration and caller-owned input readiness.
 
-use serde_json::{Value, json};
-
 use super::{
     super::ProjectContext,
-    model::{Component, Phase, Readiness},
+    model::{ArtifactDetail, Component, MmioRegionDetail, Phase, Readiness},
 };
 use crate::{artifact, memory_map::MemoryRegionKind};
 
@@ -27,12 +25,10 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 .detail("semantic_catalogs", pack.semantic_catalogs.len())
                 .detail(
                     "semantic_catalog_paths",
-                    Value::Array(
-                        pack.semantic_catalogs
-                            .iter()
-                            .map(|path| Value::String(path.display().to_string()))
-                            .collect(),
-                    ),
+                    pack.semantic_catalogs
+                        .iter()
+                        .map(|path| path.display().to_string())
+                        .collect::<Vec<_>>(),
                 )
                 .detail("semantic_operations", pack.semantic_operations)
         },
@@ -52,14 +48,12 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 .regions
                 .iter()
                 .filter(|region| region.kind == MemoryRegionKind::Mmio)
-                .map(|region| {
-                    json!({
-                        "name": region.name,
-                        "address_space": region.address_space,
-                        "start": region.start,
-                        "end_exclusive": region.end,
-                        "permissions": region.permissions,
-                    })
+                .map(|region| MmioRegionDetail {
+                    name: region.name.clone(),
+                    address_space: region.address_space.clone(),
+                    start: region.start,
+                    end_exclusive: region.end,
+                    permissions: region.permissions.clone(),
                 })
                 .collect::<Vec<_>>();
             Component::new(
@@ -73,7 +67,7 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
             .detail("address_spaces", memory.address_spaces.len())
             .detail("regions", memory.regions.len())
             .detail("mmio_regions", mmio.len())
-            .detail("mmio", Value::Array(mmio))
+            .detail("mmio", mmio)
             .detail(
                 "default_address_space",
                 memory.default_address_space.clone(),
@@ -103,9 +97,18 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     let mut ready = 0usize;
     let mut records = Vec::new();
     for (role, path) in run_spec.inputs() {
-        let (state, detail) = if !path.is_file() {
+        let record = if !path.is_file() {
             incomplete = true;
-            ("missing", json!({"path": path.display().to_string()}))
+            ArtifactDetail {
+                role: role.to_owned(),
+                status: "missing",
+                path: path.display().to_string(),
+                container: None,
+                objects: None,
+                skipped_members: None,
+                symbol_facts: None,
+                error: None,
+            }
         } else {
             match artifact::inspect_artifact(path) {
                 Ok(inventory) => {
@@ -115,37 +118,37 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                     } else {
                         ready += 1;
                     }
-                    (
-                        if symbols == 0 {
+                    ArtifactDetail {
+                        role: role.to_owned(),
+                        status: if symbols == 0 {
                             "readable-no-symbols"
                         } else {
                             "ready"
                         },
-                        json!({
-                            "path": path.display().to_string(),
-                            "container": inventory.container.label(),
-                            "objects": inventory.objects.len(),
-                            "skipped_members": inventory.skipped_members,
-                            "symbol_facts": symbols,
-                        }),
-                    )
+                        path: path.display().to_string(),
+                        container: Some(inventory.container.label()),
+                        objects: Some(inventory.objects.len()),
+                        skipped_members: Some(inventory.skipped_members),
+                        symbol_facts: Some(symbols),
+                        error: None,
+                    }
                 }
                 Err(error) => {
                     invalid = true;
-                    (
-                        "invalid",
-                        json!({
-                            "path": path.display().to_string(),
-                            "error": error.to_string(),
-                        }),
-                    )
+                    ArtifactDetail {
+                        role: role.to_owned(),
+                        status: "invalid",
+                        path: path.display().to_string(),
+                        container: None,
+                        objects: None,
+                        skipped_members: None,
+                        symbol_facts: None,
+                        error: Some(error.to_string()),
+                    }
                 }
             }
         };
-        let mut record = detail.as_object().cloned().unwrap_or_default();
-        record.insert("role".to_owned(), Value::String(role.to_owned()));
-        record.insert("status".to_owned(), Value::String(state.to_owned()));
-        records.push(Value::Object(record));
+        records.push(record);
     }
     let status = if invalid {
         Readiness::Invalid
@@ -167,7 +170,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                 )
                 .detail("configured", records.len())
                 .detail("ready", ready)
-                .detail("items", Value::Array(records)),
+                .detail("items", records),
         ],
     )
 }

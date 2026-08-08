@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use super::{ProjectContext, Result};
+use crate::cli::ProjectStatusArgs;
 use model::{Readiness, StatusReport, TargetIdentity};
 
 mod analysis;
@@ -20,8 +21,12 @@ struct Options {
     deny_incomplete: bool,
 }
 
-pub(super) fn run(arguments: Vec<String>, context: ProjectContext<'_>) -> Result<bool> {
-    let options = parse_options(arguments)?;
+pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> Result<bool> {
+    let options = Options {
+        json_report: arguments.json_report,
+        check: arguments.check,
+        deny_incomplete: arguments.deny_incomplete,
+    };
     let report = StatusReport::new(
         context.project.id.clone(),
         context.project_path.display().to_string(),
@@ -40,7 +45,10 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectContext<'_>) -> Result
             publication::collect(&context),
         ],
     );
-    render::print_text(&report);
+    let document = render::document(&report);
+    if !crate::cli::output::structured("project-status", &document) {
+        render::print_text(&report);
+    }
     if let Some(path) = options.json_report.as_deref() {
         let document = render::json_document(&report)?;
         super::super::generated_output::write_or_check(
@@ -49,38 +57,16 @@ pub(super) fn run(arguments: Vec<String>, context: ProjectContext<'_>) -> Result
             options.check,
             "project status",
         )?;
-        println!(
-            "PROJECT-STATUS-JSON\tstatus={}\tpath={}",
-            if options.check { "verified" } else { "written" },
-            path.display()
-        );
+        let status = if options.check { "verified" } else { "written" };
+        if !crate::cli::output::file("project-status-file", path, status) {
+            outputln!(
+                "PROJECT-STATUS-JSON\tstatus={status}\tpath={}",
+                path.display()
+            );
+        }
     }
     Ok(report.overall != Readiness::Invalid
         && (!options.deny_incomplete || report.overall == Readiness::Ready))
-}
-
-fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut options = Options::default();
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--json-report" => {
-                let path = PathBuf::from(arguments.next().ok_or("--json-report requires a path")?);
-                if options.json_report.replace(path).is_some() {
-                    return Err("duplicate --json-report".into());
-                }
-            }
-            "--check" if !options.check => options.check = true,
-            "--check" => return Err("duplicate --check".into()),
-            "--deny-incomplete" if !options.deny_incomplete => options.deny_incomplete = true,
-            "--deny-incomplete" => return Err("duplicate --deny-incomplete".into()),
-            _ => return Err(format!("unknown project status option: {argument}").into()),
-        }
-    }
-    if options.check && options.json_report.is_none() {
-        return Err("project status --check requires --json-report PATH".into());
-    }
-    Ok(options)
 }
 
 #[cfg(test)]

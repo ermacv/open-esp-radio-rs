@@ -10,7 +10,7 @@ impl PacApiPack {
     /// Render helper modules to append to the svd2rust crate root.
     pub fn render_rust(&self, svd: &str) -> Result<String> {
         self.validate_against_svd(svd)?;
-        let device = svd_parser::parse(svd)?;
+        let device = svd_parser::parse(svd).map_err(|error| error.to_string())?;
         let mut output = String::new();
         output.push_str(&self.render_interrupt_snapshots());
         if self.options.peripheral_ownership {

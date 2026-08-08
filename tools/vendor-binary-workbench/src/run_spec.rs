@@ -2,11 +2,34 @@
 
 use std::{
     collections::BTreeSet,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
-use crate::Result;
+use miette::{Diagnostic, NamedSource, SourceSpan};
+use thiserror::Error;
+
+#[derive(Debug, Error, Diagnostic)]
+pub(crate) enum RunSpecError {
+    #[error("cannot read run spec {}", path.display())]
+    #[diagnostic(code(workbench::run_spec::read))]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{message}")]
+    #[diagnostic(code(workbench::run_spec::invalid))]
+    Invalid {
+        message: String,
+        #[source_code]
+        src: NamedSource<String>,
+        #[label("invalid run-spec input")]
+        span: SourceSpan,
+    },
+}
+
+type Result<T> = std::result::Result<T, RunSpecError>;
 
 const PATH_ROLES: &[&str] = &[
     "artifact",
@@ -35,93 +58,80 @@ pub(crate) struct RunSpec {
 
 impl RunSpec {
     pub(crate) fn load(path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(path)?;
+        let input = fs::read_to_string(path).map_err(|source| RunSpecError::Read {
+            path: path.to_owned(),
+            source,
+        })?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let mut schema = None;
         let mut inputs = Vec::new();
         let mut unique_roles = BTreeSet::new();
 
         for (index, raw_line) in input.lines().enumerate() {
-            let line_number = index + 1;
             let line = raw_line.split('#').next().unwrap_or_default().trim();
             if line.is_empty() {
                 continue;
             }
-            let (directive, value) = split_value(line, line_number)?;
+            let (directive, value) = split_value(line, path, &input, index)?;
             match directive {
                 "schema" => {
-                    if schema.replace(value.parse::<u32>()?).is_some() {
-                        return Err(format!("duplicate schema at line {line_number}").into());
+                    let parsed = value.parse::<u32>().map_err(|_| {
+                        invalid(path, &input, index, "schema must be an unsigned integer")
+                    })?;
+                    if schema.replace(parsed).is_some() {
+                        return Err(invalid(path, &input, index, "duplicate schema directive"));
                     }
                 }
                 "input" => {
-                    let (role, path) = split_value(value, line_number)?;
+                    let (role, input_path) = split_value(value, path, &input, index)?;
                     if !PATH_ROLES.contains(&role) && !is_source_path_role(role) {
-                        return Err(format!(
-                            "unsupported input role {role:?} at line {line_number}"
-                        )
-                        .into());
+                        return Err(invalid(
+                            path,
+                            &input,
+                            index,
+                            format!("unsupported input role {role:?}"),
+                        ));
                     }
                     if role != "companion" && !unique_roles.insert(role.to_owned()) {
-                        return Err(
-                            format!("duplicate input role {role:?} at line {line_number}").into(),
-                        );
+                        return Err(invalid(
+                            path,
+                            &input,
+                            index,
+                            format!("duplicate input role {role:?}"),
+                        ));
                     }
-                    let path = Path::new(path);
+                    let input_path = Path::new(input_path);
                     inputs.push((
                         role.to_owned(),
-                        if path.is_absolute() {
-                            path.to_owned()
+                        if input_path.is_absolute() {
+                            input_path.to_owned()
                         } else {
-                            base.join(path)
+                            base.join(input_path)
                         },
                     ));
                 }
                 _ => {
-                    return Err(format!(
-                        "unknown run-spec directive {directive:?} at line {line_number}"
-                    )
-                    .into());
+                    return Err(invalid(
+                        path,
+                        &input,
+                        index,
+                        format!("unknown run-spec directive {directive:?}"),
+                    ));
                 }
             }
         }
         if schema != Some(1) {
-            return Err("run spec requires schema 1".into());
+            return Err(invalid(path, &input, 0, "run spec requires schema 1"));
         }
         if inputs.is_empty() {
-            return Err("run spec has no inputs".into());
+            return Err(invalid(
+                path,
+                &input,
+                0,
+                "run spec requires at least one input",
+            ));
         }
         Ok(Self { inputs })
-    }
-
-    pub(crate) fn append_defaults(
-        &self,
-        arguments: &mut Vec<String>,
-        accepts_role: impl Fn(&str) -> bool,
-        is_overridden: impl Fn(&str, &[String]) -> bool,
-    ) {
-        let overridden = self
-            .inputs
-            .iter()
-            .filter(|(role, _)| accepts_role(role))
-            .map(|(role, _)| role)
-            .filter(|role| {
-                let option = format!("--{role}");
-                arguments.iter().any(|argument| argument == &option)
-                    || is_overridden(role, arguments)
-            })
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        for (role, path) in &self.inputs {
-            if !accepts_role(role) {
-                continue;
-            }
-            if overridden.contains(role) {
-                continue;
-            }
-            arguments.push(format!("--{role}"));
-            arguments.push(path.display().to_string());
-        }
     }
 
     pub(crate) fn inputs(&self) -> &[(String, PathBuf)] {
@@ -129,11 +139,40 @@ impl RunSpec {
     }
 }
 
-fn split_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
+fn split_value<'a>(
+    line: &'a str,
+    path: &Path,
+    input: &str,
+    line_index: usize,
+) -> Result<(&'a str, &'a str)> {
     line.split_once(char::is_whitespace)
         .map(|(key, value)| (key, value.trim()))
         .filter(|(_, value)| !value.is_empty())
-        .ok_or_else(|| format!("directive needs a value at line {line_number}").into())
+        .ok_or_else(|| invalid(path, input, line_index, "directive requires a value"))
+}
+
+fn invalid(
+    path: &Path,
+    input: &str,
+    line_index: usize,
+    message: impl Into<String>,
+) -> RunSpecError {
+    let offset = input
+        .split_inclusive('\n')
+        .take(line_index)
+        .map(str::len)
+        .sum::<usize>();
+    let length = input
+        .split_inclusive('\n')
+        .nth(line_index)
+        .map(|line| line.trim_end_matches(['\r', '\n']).len())
+        .unwrap_or(0)
+        .max(1);
+    RunSpecError::Invalid {
+        message: message.into(),
+        src: NamedSource::new(path.display().to_string(), input.to_owned()),
+        span: (offset, length).into(),
+    }
 }
 
 #[cfg(test)]
@@ -154,12 +193,11 @@ mod tests {
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
-        let mut arguments = Vec::new();
-        run.append_defaults(&mut arguments, |_| true, |_, _| false);
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(arguments[0], "--source-artifact:rom");
-        assert!(arguments[1].ends_with("inputs/rom.elf"));
-        assert_eq!(&arguments[2..], ["--rust-artifact", "/tmp/probes.elf"]);
+        assert_eq!(run.inputs[0].0, "source-artifact:rom");
+        assert!(run.inputs[0].1.ends_with("inputs/rom.elf"));
+        assert_eq!(run.inputs[1].0, "rust-artifact");
+        assert_eq!(run.inputs[1].1, PathBuf::from("/tmp/probes.elf"));
     }
 
     #[test]
@@ -176,17 +214,15 @@ mod tests {
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
-        let mut arguments = Vec::new();
-        run.append_defaults(&mut arguments, |_| true, |_, _| false);
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(arguments[0], "--source-artifact:libpp");
-        assert!(arguments[1].ends_with("inputs/libpp.elf"));
-        assert_eq!(arguments[2], "--source-inventory:libpp");
-        assert!(arguments[3].ends_with("inputs/libpp.a"));
+        assert_eq!(run.inputs[0].0, "source-artifact:libpp");
+        assert!(run.inputs[0].1.ends_with("inputs/libpp.elf"));
+        assert_eq!(run.inputs[1].0, "source-inventory:libpp");
+        assert!(run.inputs[1].1.ends_with("inputs/libpp.a"));
     }
 
     #[test]
-    fn command_role_filter_omits_unrelated_project_bindings() {
+    fn input_roles_remain_typed_data_for_the_command_resolver() {
         let directory = std::env::temp_dir().join(format!(
             "open-radio-workbench-filtered-run-spec-{}",
             std::process::id()
@@ -199,15 +235,10 @@ mod tests {
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
-        let mut arguments = Vec::new();
-        run.append_defaults(
-            &mut arguments,
-            |role| role.starts_with("source-artifact:"),
-            |_, _| false,
-        );
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(arguments[0], "--source-artifact:rom");
-        assert!(arguments[1].ends_with("rom.elf"));
-        assert_eq!(arguments.len(), 2);
+        assert_eq!(run.inputs.len(), 3);
+        assert_eq!(run.inputs[0].0, "source-artifact:rom");
+        assert_eq!(run.inputs[1].0, "source-inventory:rom");
+        assert_eq!(run.inputs[2].0, "rust-artifact");
     }
 }

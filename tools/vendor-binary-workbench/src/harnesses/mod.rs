@@ -53,7 +53,7 @@ pub(crate) fn verify_driver_adapter(
     request: &DriverAdapterRequest<'_>,
 ) -> crate::Result<Option<DriverAdapterVerification>> {
     match harness {
-        "esp32s31-radio-v1" => esp32s31::verify_driver_adapter(request),
+        "esp32s31-radio-v1" => Ok(esp32s31::verify_driver_adapter(request)?),
         _ => Err(format!("unavailable platform harness {harness:?}").into()),
     }
 }
@@ -63,7 +63,7 @@ pub(crate) fn verify_semantic_contract(
     request: &SemanticContractRequest<'_>,
 ) -> crate::Result<Option<bool>> {
     match harness {
-        "esp32s31-radio-v1" => esp32s31::verify_semantic_contract(request),
+        "esp32s31-radio-v1" => Ok(esp32s31::verify_semantic_contract(request)?),
         _ => Err(format!("unavailable platform harness {harness:?}").into()),
     }
 }
@@ -99,18 +99,18 @@ pub(crate) fn verify_named_contract(
         return Err(format!("unavailable platform harness {harness:?}").into());
     }
     match name {
-        "channel" => esp32s31::verification::verify_esp32s31_channel(
+        "channel" => Ok(esp32s31::verification::verify_esp32s31_channel(
             svd,
             vendor_artifact,
             vendor_companion,
             true,
-        ),
-        "rf-init" => esp32s31::verification::verify_esp32s31_rf_init(
+        )?),
+        "rf-init" => Ok(esp32s31::verification::verify_esp32s31_rf_init(
             svd,
             vendor_artifact,
             vendor_companion,
             true,
-        ),
+        )?),
         _ => Err(format!("selected harness has no contract {name:?}").into()),
     }
 }

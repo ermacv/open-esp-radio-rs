@@ -48,6 +48,46 @@ remaining orchestration and additional-backend work is
 tracked in
 [`docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md`](../../../docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md).
 
+## CLI boundary
+
+The CLI has one declarative grammar and no raw-argument or compatibility
+dispatch path:
+
+| Module | Responsibility |
+| --- | --- |
+| `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options and command capability policy |
+| `cli/arguments.rs` | Typed leaf-command arguments, declarative conflicts and value grammar |
+| `cli/resolver.rs` | Precedence-aware merge of caller-owned run-spec inputs into typed arguments |
+| `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
+| `cli/ui.rs` | miette diagnostics and tracing configuration on stderr |
+| `cli/mod.rs` | Project/target composition and dispatch of resolved typed commands |
+| `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
+
+Explicit CLI values take precedence over run-spec values. A run spec fills
+only missing inputs and never synthesizes command-line tokens. Help, usage,
+unknown-option rejection and option conflicts are all derived from the same
+`clap` declarations. Runtime and project errors therefore do not print CLI
+usage, while parser errors retain `clap`'s command-specific diagnostics.
+`--format` changes only stdout. Diagnostics, warnings and verbosity-controlled
+tracing stay on stderr, so JSON and JSONL output remains pipe-safe. Errors are
+typed at every workbench crate boundary; there is no boxed external-error
+escape hatch in the facade. The facade error itself implements `miette::Diagnostic`;
+project, run-spec and target parse failures retain their named source and
+labelled span through the common renderer.
+
+Machine output is a schema-1 stream of `{ kind, data }` records. Commands with
+stable domain reports emit those reports directly: project status, symbol
+inventory, MMIO and interface discovery, linked IR, artifact analysis, and
+batch reference generation, direct trace extraction/comparison and concrete
+single-symbol execution/comparison and profile verification do not serialize
+their human presentation. The verification evidence document is also a Serde
+model shared by stdout and file output; the former handwritten JSON encoder
+has been removed. The
+remaining command renderers still enter the same boundary as explicit
+`line`/`text` records; no analysis or verification module writes directly to
+stdout. This makes the residual DTO migration visible without allowing raw
+text to corrupt JSON or JSONL output.
+
 ## Shared trace and effect-contract layout
 
 `crates/analysis-model/src/ir/trace.rs` is the single public `ir::*` façade.
@@ -257,7 +297,7 @@ claims, validation, and presentation separate:
 
 | Module | Responsibility |
 | --- | --- |
-| `facts.rs` | Strict minimal projection of schema-v31 linked IR, including site-bearing calls and guard expressions |
+| `facts.rs` | Strict minimal projection of schema-v32 linked IR, including site-bearing calls and guard expressions |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
 | `pack.rs` | Editable pack and resolved workspace models |
 | `pack_parse.rs` | TOML syntax parsing without evidence interpretation |
@@ -273,8 +313,8 @@ explicit fail-closed boundary.
 
 ## IR export source layout
 
-`cli/commands/export_ir.rs` parses options, invokes linked analysis, and
-selects outputs. Rendering and input validation are separate:
+`cli/commands/export_ir.rs` consumes typed options, invokes linked analysis,
+and selects outputs. Rendering and domain-input validation are separate:
 
 | Module | Responsibility |
 | --- | --- |
@@ -282,11 +322,12 @@ selects outputs. Rendering and input validation are separate:
 | `human.rs` | Tabular terminal report |
 | `pseudo.rs` | Pseudo-Rust file output |
 | `render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `json_report.rs` | JSON document orchestration |
-| `json_report/values.rs` | JSON encoders for individual IR values |
-| `tests.rs` | CLI input parsing and validation tests |
+| `json_report.rs` | Serde document envelope and report summary |
+| `tests.rs` | Artifact-domain input validation tests |
 
-Renderers are consumers of `LinkedIrReport`; they must not independently
+Schema v32 serializes the typed `LinkedIrReport` model directly; the removed
+schema-v31 handwritten renderer has no compatibility path. Renderers are
+consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,
 pseudo-Rust, and terminal views consistent.
 

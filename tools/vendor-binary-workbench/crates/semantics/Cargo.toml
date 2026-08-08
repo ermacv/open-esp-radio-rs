@@ -10,6 +10,7 @@ description = "Architecture-neutral semantic adapter and effect-contract interfa
 
 [dependencies]
 open-radio-vendor-analysis-model = { path = "../analysis-model" }
+thiserror = "=2.0.19"
 
 [lints]
 workspace = true

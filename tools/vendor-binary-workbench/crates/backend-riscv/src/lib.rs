@@ -6,7 +6,36 @@
 
 use open_radio_vendor_analysis_model::*;
 
-pub type Error = Box<dyn std::error::Error>;
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Format(#[from] std::fmt::Error),
+
+    #[error(transparent)]
+    Object(#[from] object::Error),
+
+    #[error(transparent)]
+    Analysis(#[from] open_radio_vendor_analysis_model::Error),
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Message(value)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Self::Message(value.to_owned())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub const RV32_REGISTER_ARGUMENT_COUNT: usize = 8;

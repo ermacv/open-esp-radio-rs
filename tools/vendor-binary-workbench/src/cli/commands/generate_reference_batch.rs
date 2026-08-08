@@ -1,11 +1,12 @@
 //! Batch generation of all fail-closed references currently supported by an artifact.
 
-use std::{fmt::Write as _, path::Path};
+use std::path::{Path, PathBuf};
 
-use super::super::json::{write_artifact, write_string, write_strings};
+use serde::Serialize;
+
 use super::super::*;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct GeneratedCandidate {
     symbol: String,
     owner: Option<String>,
@@ -16,11 +17,39 @@ struct GeneratedCandidate {
     source: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 struct BlockedCandidate {
     symbol: String,
     owner: Option<String>,
     reasons: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ArtifactIdentity {
+    path: String,
+    sha256: String,
+}
+
+#[derive(Serialize)]
+struct GenerationSummary {
+    functions: usize,
+    generated: usize,
+    blocked: usize,
+}
+
+#[derive(Serialize)]
+struct GenerationManifest<'a> {
+    schema_version: u32,
+    command: &'static str,
+    artifact: ArtifactIdentity,
+    companions: Vec<ArtifactIdentity>,
+    symbol_prefix: &'a str,
+    probe_prefix: &'a str,
+    source_name: Option<&'a str>,
+    entry_contract: &'a str,
+    summary: GenerationSummary,
+    generated: &'a [GeneratedCandidate],
+    blocked: &'a [BlockedCandidate],
 }
 
 fn sanitize_file_component(value: &str) -> String {
@@ -76,173 +105,116 @@ fn candidate_file_name(
     name
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the manifest boundary receives a complete immutable generation record"
-)]
-fn write_manifest(
-    path: &Path,
-    artifact: &Path,
-    companions: &[PathBuf],
-    symbol_prefix: &str,
-    probe_prefix: &str,
-    source_name: Option<&str>,
+struct ManifestInputs<'a> {
+    artifact: &'a Path,
+    companions: &'a [PathBuf],
+    symbol_prefix: &'a str,
+    probe_prefix: &'a str,
+    source_name: Option<&'a str>,
     entry_contract: EntryContractRef,
     inventory_count: usize,
-    generated: &[GeneratedCandidate],
-    blocked: &[BlockedCandidate],
-) -> Result<()> {
-    let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 2,\n  \"command\": \"reference generate-batch\",\n");
-    output.push_str("  \"artifact\": ");
-    write_artifact(&mut output, artifact)?;
-    output.push_str(",\n  \"companions\": [");
-    for (index, companion) in companions.iter().enumerate() {
-        if index != 0 {
-            output.push_str(", ");
-        }
-        write_artifact(&mut output, companion)?;
-    }
-    output.push_str("],\n  \"symbol_prefix\": ");
-    write_string(&mut output, symbol_prefix);
-    output.push_str(",\n  \"probe_prefix\": ");
-    write_string(&mut output, probe_prefix);
-    output.push_str(",\n  \"source_name\": ");
-    if let Some(source_name) = source_name {
-        write_string(&mut output, source_name);
-    } else {
-        output.push_str("null");
-    }
-    output.push_str(",\n  \"entry_contract\": ");
-    write_string(&mut output, entry_contract.id());
-    writeln!(
-        output,
-        ",\n  \"summary\": {{\"functions\": {inventory_count}, \"generated\": {}, \"blocked\": {}}},",
-        generated.len(),
-        blocked.len()
-    )
-    .expect("writing to String cannot fail");
-    output.push_str("  \"generated\": [\n");
-    for (index, candidate) in generated.iter().enumerate() {
-        output.push_str("    {\"symbol\": ");
-        write_string(&mut output, &candidate.symbol);
-        output.push_str(", \"owner\": ");
-        if let Some(owner) = candidate.owner.as_deref() {
-            write_string(&mut output, owner);
-        } else {
-            output.push_str("null");
-        }
-        output.push_str(", \"reference_file\": ");
-        write_string(&mut output, &candidate.reference_file);
-        output.push_str(", \"probe_symbol\": ");
-        write_string(&mut output, &candidate.probe_symbol);
-        write!(
-            output,
-            ", \"exit_a0_modeled\": {}, \"dependencies\": ",
-            candidate.exit_a0_modeled
-        )
-        .expect("writing to String cannot fail");
-        write_strings(&mut output, &candidate.dependencies);
-        output.push('}');
-        output.push_str(if index + 1 == generated.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"blocked\": [\n");
-    for (index, candidate) in blocked.iter().enumerate() {
-        output.push_str("    {\"symbol\": ");
-        write_string(&mut output, &candidate.symbol);
-        output.push_str(", \"owner\": ");
-        if let Some(owner) = candidate.owner.as_deref() {
-            write_string(&mut output, owner);
-        } else {
-            output.push_str("null");
-        }
-        output.push_str(", \"reasons\": ");
-        write_strings(&mut output, &candidate.reasons);
-        output.push('}');
-        output.push_str(if index + 1 == blocked.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ]\n}\n");
+    generated: &'a [GeneratedCandidate],
+    blocked: &'a [BlockedCandidate],
+}
+
+fn manifest_document(inputs: ManifestInputs<'_>) -> Result<GenerationManifest<'_>> {
+    Ok(GenerationManifest {
+        schema_version: 2,
+        command: "reference generate-batch",
+        artifact: ArtifactIdentity {
+            path: inputs.artifact.display().to_string(),
+            sha256: artifact_sha256(inputs.artifact)?,
+        },
+        companions: inputs
+            .companions
+            .iter()
+            .map(|companion| {
+                Ok(ArtifactIdentity {
+                    path: companion.display().to_string(),
+                    sha256: artifact_sha256(companion)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        symbol_prefix: inputs.symbol_prefix,
+        probe_prefix: inputs.probe_prefix,
+        source_name: inputs.source_name,
+        entry_contract: inputs.entry_contract.id(),
+        summary: GenerationSummary {
+            functions: inputs.inventory_count,
+            generated: inputs.generated.len(),
+            blocked: inputs.blocked.len(),
+        },
+        generated: inputs.generated,
+        blocked: inputs.blocked,
+    })
+}
+
+fn write_manifest(path: &Path, document: &GenerationManifest<'_>) -> Result<()> {
+    let mut output = serde_json::to_string_pretty(&document)?;
+    output.push('\n');
     fs::write(path, output)?;
     Ok(())
 }
 
+fn print_generation_report(
+    output_dir: &Path,
+    manifest: &Path,
+    functions: usize,
+    generated: &[GeneratedCandidate],
+    blocked: &[BlockedCandidate],
+) {
+    for candidate in generated {
+        outputln!(
+            "GENERATED\t{}\t{}\texit-a0={}",
+            candidate.symbol,
+            output_dir.join(&candidate.reference_file).display(),
+            if candidate.exit_a0_modeled {
+                "modeled"
+            } else {
+                "unresolved"
+            }
+        );
+    }
+    outputln!("MANIFEST\t{}", manifest.display());
+    outputln!(
+        "SUMMARY\tfunctions={functions}\tgenerated={}\tblocked={}",
+        generated.len(),
+        blocked.len()
+    );
+}
+
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: ReferenceBatchArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifact = None;
-    let mut companions = Vec::new();
-    let mut symbol_prefix = "phy_".to_owned();
-    let mut probe_prefix = "open_phy_trace_".to_owned();
-    let mut source_name = None;
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
-    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
-    let mut output_dir = None;
-    let mut manifest = None;
-    let mut force = false;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--artifact" => {
-                artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
-            }
-            "--companion" => {
-                companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
-            }
-            "--symbol-prefix" => {
-                symbol_prefix = take_value(&mut arguments, "--symbol-prefix")?;
-            }
-            "--probe-prefix" => {
-                probe_prefix = take_value(&mut arguments, "--probe-prefix")?;
-            }
-            "--source-name" => {
-                source_name = Some(take_value(&mut arguments, "--source-name")?);
-            }
-            "--entry-contract" => {
-                entry_contract = harnesses::entry_contract(
-                    harness,
-                    &take_value(&mut arguments, "--entry-contract")?,
-                )?;
-            }
-            "--output-dir" => {
-                output_dir = Some(PathBuf::from(take_value(&mut arguments, "--output-dir")?));
-            }
-            "--manifest" => {
-                manifest = Some(PathBuf::from(take_value(&mut arguments, "--manifest")?));
-            }
-            "--force" => force = true,
-            _ => {
-                return Err(format!("unknown reference generate-batch option: {argument}").into());
-            }
-        }
-    }
-    let artifact = artifact.ok_or("missing --artifact")?;
-    let output_dir = output_dir.ok_or("missing --output-dir")?;
-    let manifest = manifest.unwrap_or_else(|| output_dir.join("manifest.json"));
-    let symbols = list_code_symbols(&artifact, &symbol_prefix)?;
+    let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let output_dir = arguments.output_dir.ok_or("missing --output-dir")?;
+    let manifest = arguments
+        .manifest
+        .unwrap_or_else(|| output_dir.join("manifest.json"));
+    let symbols = list_code_symbols(&artifact, &arguments.symbol_prefix)?;
     if symbols.is_empty() {
-        return Err(format!("no external code symbols start with {symbol_prefix:?}").into());
+        return Err(format!(
+            "no external code symbols start with {:?}",
+            arguments.symbol_prefix
+        )
+        .into());
     }
 
     let resolver = ReferenceResolver::load_with_entry_contract(
         &artifact,
-        &companions,
+        &arguments.companion,
         riscv_harness,
         entry_contract,
     )?;
     let digest = artifact_sha256(&artifact)?;
     let artifact_display = artifact.display().to_string();
-    let companion_provenance = companions
+    let companion_provenance = arguments
+        .companion
         .iter()
         .map(|companion| Ok((companion.display().to_string(), artifact_sha256(companion)?)))
         .collect::<Result<Vec<_>>>()?;
@@ -278,9 +250,9 @@ pub(super) fn run(
             reference_file,
             probe_symbol: probe_symbol(
                 &symbol.name,
-                &symbol_prefix,
-                &probe_prefix,
-                source_name.as_deref(),
+                &arguments.symbol_prefix,
+                &arguments.probe_prefix,
+                arguments.source_name.as_deref(),
             ),
             exit_a0_modeled: generated_reference.exit_a0_modeled,
             dependencies: resolved.dependencies,
@@ -293,7 +265,9 @@ pub(super) fn run(
         .map(|candidate| output_dir.join(&candidate.reference_file))
         .collect::<Vec<_>>();
     destinations.push(manifest.clone());
-    if !force && let Some(existing) = destinations.iter().find(|path| path.exists()) {
+    if !arguments.force
+        && let Some(existing) = destinations.iter().find(|path| path.exists())
+    {
         return Err(format!(
             "refusing to overwrite {}; pass --force to replace generated output",
             existing.display()
@@ -312,36 +286,22 @@ pub(super) fn run(
             output_dir.join(&candidate.reference_file),
             &candidate.source,
         )?;
-        println!(
-            "GENERATED\t{}\t{}\texit-a0={}",
-            candidate.symbol,
-            output_dir.join(&candidate.reference_file).display(),
-            if candidate.exit_a0_modeled {
-                "modeled"
-            } else {
-                "unresolved"
-            }
-        );
     }
-    write_manifest(
-        &manifest,
-        &artifact,
-        &companions,
-        &symbol_prefix,
-        &probe_prefix,
-        source_name.as_deref(),
+    let document = manifest_document(ManifestInputs {
+        artifact: &artifact,
+        companions: &arguments.companion,
+        symbol_prefix: &arguments.symbol_prefix,
+        probe_prefix: &arguments.probe_prefix,
+        source_name: arguments.source_name.as_deref(),
         entry_contract,
-        symbols.len(),
-        &generated,
-        &blocked,
-    )?;
-    println!("MANIFEST\t{}", manifest.display());
-    println!(
-        "SUMMARY\tfunctions={}\tgenerated={}\tblocked={}",
-        symbols.len(),
-        generated.len(),
-        blocked.len()
-    );
+        inventory_count: symbols.len(),
+        generated: &generated,
+        blocked: &blocked,
+    })?;
+    write_manifest(&manifest, &document)?;
+    if !crate::cli::output::structured("reference-generation", &document) {
+        print_generation_report(&output_dir, &manifest, symbols.len(), &generated, &blocked);
+    }
     Ok(true)
 }
 

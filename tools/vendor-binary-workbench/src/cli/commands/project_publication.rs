@@ -1,7 +1,8 @@
 //! Project-owned publication of reviewed register artifacts.
 
-use super::{Command, Result, registers};
+use super::{Command, CommandArguments, Result, registers};
 use crate::MemoryMap;
+use crate::cli::{CheckArgs, ValidationArgs};
 use crate::project::{ProjectSpec, RegisterWorkspacePaths};
 
 use super::project_pipeline::status::{
@@ -25,11 +26,13 @@ struct PublicationStage {
 }
 
 pub(super) fn run(
-    arguments: Vec<String>,
+    arguments: CheckArgs,
     project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
 ) -> Result<bool> {
-    let options = parse_options(arguments)?;
+    let options = Options {
+        check: arguments.check,
+    };
     let paths = project
         .registers
         .as_ref()
@@ -40,7 +43,9 @@ pub(super) fn run(
     let validation = execute("register-validation", StageSuccess::Verified, || {
         registers::run(
             Command::RegisterValidate,
-            vec!["--deny-unreviewed".to_owned()],
+            CommandArguments::Validation(ValidationArgs {
+                deny_unreviewed: true,
+            }),
             project,
             memory_map,
         )
@@ -214,7 +219,7 @@ fn report_blocked_publications(paths: &RegisterWorkspacePaths, summary: &mut Pip
 }
 
 fn finish(check: bool, summary: PipelineSummary) -> Result<bool> {
-    println!(
+    outputln!(
         "PROJECT-PUBLICATION\tmode={}\tstatus={}\twritten={}\tverified={}\tfailed={}\tblocked={}\tnot-configured={}",
         if check { "check" } else { "write" },
         if summary.succeeded() { "ok" } else { "failed" },
@@ -225,18 +230,6 @@ fn finish(check: bool, summary: PipelineSummary) -> Result<bool> {
         summary.not_configured,
     );
     Ok(summary.succeeded())
-}
-
-fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut options = Options::default();
-    for argument in arguments {
-        match argument.as_str() {
-            "--check" if !options.check => options.check = true,
-            "--check" => return Err("duplicate --check".into()),
-            _ => return Err(format!("unknown project publish option: {argument}").into()),
-        }
-    }
-    Ok(options)
 }
 
 #[cfg(test)]

@@ -10,25 +10,21 @@ use crate::{
     },
 };
 
-pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) -> Result<bool> {
-    if !arguments.is_empty() {
-        return Err(format!("project doctor takes no command options: {arguments:?}").into());
-    }
-
+pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
     let mut errors = 0usize;
     let mut warnings = 0usize;
-    println!(
+    outputln!(
         "PROJECT\tid={}\tmanifest={}",
         context.project.id,
         context.project_path.display()
     );
-    println!(
+    outputln!(
         "TARGET\tid={}\tspec={}",
         context.target.id,
         context.target_path.display()
     );
     match &context.project.platform_pack {
-        Some(pack) => println!(
+        Some(pack) => outputln!(
             "CAPABILITY\tplatform-pack\tavailable\tid={}\tharness={}\tsemantic-catalogs={}\tsemantic-operations={}\tpath={}",
             pack.id,
             pack.harness.as_deref().unwrap_or("-"),
@@ -36,30 +32,30 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             pack.semantic_operations,
             pack.path.display(),
         ),
-        None => println!("CAPABILITY\tplatform-pack\tnot-configured\tgeneric-target-only"),
+        None => outputln!("CAPABILITY\tplatform-pack\tnot-configured\tgeneric-target-only"),
     }
 
     match context.target.require_available_backend() {
-        Ok(()) => println!(
+        Ok(()) => outputln!(
             "CAPABILITY\tbackend\tavailable\tarchitecture={}\tcalling-convention={}",
             context.target.architecture.label(),
             context.target.calling_convention.label()
         ),
         Err(error) => {
             errors += 1;
-            println!("CAPABILITY\tbackend\tunavailable\t{error}");
+            outputln!("CAPABILITY\tbackend\tunavailable\t{error}");
         }
     }
 
     match &context.target.harness {
         None => {
-            println!("CAPABILITY\tharness\tnot-configured\tgeneric-analysis-only");
+            outputln!("CAPABILITY\tharness\tnot-configured\tgeneric-analysis-only");
         }
         Some(_) => match context.target.require_available_harness() {
-            Ok(harness) => println!("CAPABILITY\tharness\tavailable\tid={harness}"),
+            Ok(harness) => outputln!("CAPABILITY\tharness\tavailable\tid={harness}"),
             Err(error) => {
                 warnings += 1;
-                println!("CAPABILITY\tharness\tunavailable\t{error}");
+                outputln!("CAPABILITY\tharness\tunavailable\t{error}");
             }
         },
     }
@@ -70,7 +66,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             .iter()
             .filter(|region| region.kind == MemoryRegionKind::Mmio)
             .count();
-        println!(
+        outputln!(
             "CAPABILITY\tmemory-map\tavailable\tspaces={}\tregions={}\tmmio-regions={}\tdefault-space={}",
             memory_map.address_spaces.len(),
             memory_map.regions.len(),
@@ -79,23 +75,23 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         );
         if mmio_regions == 0 {
             warnings += 1;
-            println!("DIAGNOSTIC\twarning\tmemory map has no MMIO regions");
+            outputln!("DIAGNOSTIC\twarning\tmemory map has no MMIO regions");
         }
     } else {
         warnings += 1;
-        println!("CAPABILITY\tmemory-map\tnot-configured");
+        outputln!("CAPABILITY\tmemory-map\tnot-configured");
     }
 
     let project_model = context.project.registers.as_ref().is_some_and(|paths| {
         paths.model.is_file() && RegisterModel::is_model_file(&paths.model).unwrap_or(false)
     });
     if context.svd_paths.is_empty() && !project_model {
-        println!(
+        outputln!(
             "CAPABILITY\tregister-catalog\tnot-configured\tregisters=0\tmmio-windows={}",
             context.svd.windows.len()
         );
     } else {
-        println!(
+        outputln!(
             "CAPABILITY\tregister-catalog\tavailable\tfiles={}\tproject-model={}\tregisters={}\tmmio-windows={}",
             context.svd_paths.len(),
             if project_model { "yes" } else { "no" },
@@ -103,7 +99,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             context.svd.windows.len()
         );
         for path in context.svd_paths {
-            println!("SVD\t{}", path.display());
+            outputln!("SVD\t{}", path.display());
         }
     }
 
@@ -118,13 +114,13 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
     warnings += function_warnings;
 
     match &context.project.registers {
-        None => println!("CAPABILITY\tregister-workspace\tnot-configured"),
+        None => outputln!("CAPABILITY\tregister-workspace\tnot-configured"),
         Some(paths) if paths.model.is_file() => {
             match ProjectRegisterWorkspace::load(&paths.facts, &paths.model)
                 .and_then(|workspace| Ok((workspace.summary()?, workspace.format_label())))
             {
                 Ok((summary, format)) => {
-                    println!(
+                    outputln!(
                         "CAPABILITY\tregister-workspace\tavailable\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}\treview-output={}\treview-ir-reports={}\tsvd-output={}\tpac-output={}\tbindings-output={}\tbindings-crate={}",
                         format,
                         summary.ranges,
@@ -177,19 +173,21 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                             .filter(|path| !path.is_file())
                             .count();
                         if missing_reports != 0 && missing_reports == missing_project_outputs {
-                            println!(
+                            outputln!(
                                 "CAPABILITY\tregister-review-ir\tnot-generated\treports={}\tmissing={missing_reports}",
                                 paths.review_ir_reports.len()
                             );
                         } else {
                             match inspect_register_review_ir(&paths.review_ir_reports) {
-                                Ok(ir) => println!(
+                                Ok(ir) => outputln!(
                                     "CAPABILITY\tregister-review-ir\tavailable\treports={}\tregisters={}\tfield-candidates={}",
-                                    ir.reports, ir.registers, ir.fields
+                                    ir.reports,
+                                    ir.registers,
+                                    ir.fields
                                 ),
                                 Err(error) => {
                                     errors += 1;
-                                    println!(
+                                    outputln!(
                                         "CAPABILITY\tregister-review-ir\tinvalid\treports={}\terror={error}",
                                         paths.review_ir_reports.len()
                                     );
@@ -197,13 +195,13 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                             }
                         }
                         for path in &paths.review_ir_reports {
-                            println!("REGISTER-REVIEW-IR\tpath={}", path.display());
+                            outputln!("REGISTER-REVIEW-IR\tpath={}", path.display());
                         }
                     }
                 }
                 Err(error) => {
                     errors += 1;
-                    println!(
+                    outputln!(
                         "CAPABILITY\tregister-workspace\tinvalid\tfacts={}\tmodel={}\terror={error}",
                         paths.facts.display(),
                         paths.model.display()
@@ -213,7 +211,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         }
         Some(paths) if !paths.facts.is_file() => {
             warnings += 1;
-            println!(
+            outputln!(
                 "CAPABILITY\tregister-workspace\tnot-generated\tfacts={}\tmodel={}",
                 paths.facts.display(),
                 paths.model.display()
@@ -222,7 +220,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         Some(paths) => match RegisterFacts::load(&paths.facts) {
             Ok(facts) => {
                 warnings += 1;
-                println!(
+                outputln!(
                     "CAPABILITY\tregister-workspace\tmodel-not-initialized\tranges={}\tobserved={}\tfacts={}\tmodel={}",
                     facts.ranges.len(),
                     facts.registers.len(),
@@ -232,7 +230,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             }
             Err(error) => {
                 errors += 1;
-                println!(
+                outputln!(
                     "CAPABILITY\tregister-workspace\tinvalid-facts\tfacts={}\terror={error}",
                     paths.facts.display()
                 );
@@ -246,16 +244,16 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         .as_ref()
         .and_then(|paths| paths.api_pack.as_deref().map(|pack| (paths, pack)))
     {
-        None => println!("CAPABILITY\tpac-api\tnot-configured"),
+        None => outputln!("CAPABILITY\tpac-api\tnot-configured"),
         Some((_, path)) if !path.is_file() => {
             warnings += 1;
-            println!(
+            outputln!(
                 "CAPABILITY\tpac-api\tnot-initialized\tpack={}",
                 path.display()
             );
         }
         Some((paths, path)) => match validate_pac_api(paths) {
-            Ok(Some(pack)) => println!(
+            Ok(Some(pack)) => outputln!(
                 "CAPABILITY\tpac-api\tavailable\tschema={}\toperations={}\tsources={}\tperipheral-ownership={}\tdevice-access={}\tpack={}",
                 pack.schema,
                 pack.operation_count(),
@@ -267,7 +265,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             Ok(None) => unreachable!("PAC API path was configured before validation"),
             Err(error) => {
                 errors += 1;
-                println!(
+                outputln!(
                     "CAPABILITY\tpac-api\tinvalid\tpack={}\terror={error}",
                     path.display()
                 );
@@ -281,16 +279,16 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         .as_ref()
         .and_then(|paths| paths.lint_pack.as_deref().map(|pack| (paths, pack)))
     {
-        None => println!("CAPABILITY\tregister-lints\tnot-configured"),
+        None => outputln!("CAPABILITY\tregister-lints\tnot-configured"),
         Some((_, path)) if !path.is_file() => {
             warnings += 1;
-            println!(
+            outputln!(
                 "CAPABILITY\tregister-lints\tnot-initialized\tpack={}",
                 path.display()
             );
         }
         Some((paths, path)) => match validate_register_lints(paths) {
-            Ok(Some(pack)) => println!(
+            Ok(Some(pack)) => outputln!(
                 "CAPABILITY\tregister-lints\tavailable\tschema={}\tforbidden-field-name-substrings={}\tpack={}",
                 pack.schema,
                 pack.forbidden_field_name_substrings.len(),
@@ -299,7 +297,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
             Ok(None) => unreachable!("register lint path was configured before validation"),
             Err(error) => {
                 errors += 1;
-                println!(
+                outputln!(
                     "CAPABILITY\tregister-lints\tinvalid\tpack={}\terror={error}",
                     path.display()
                 );
@@ -308,14 +306,14 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
     }
 
     match context.project.registers.as_ref() {
-        None => println!("CAPABILITY\tregister-evidence\tnot-configured"),
+        None => outputln!("CAPABILITY\tregister-evidence\tnot-configured"),
         Some(paths) if paths.evidence_catalogs.is_empty() => {
-            println!("CAPABILITY\tregister-evidence\tnot-configured")
+            outputln!("CAPABILITY\tregister-evidence\tnot-configured")
         }
         Some(paths) => {
             let result = validate_register_evidence(paths, context.memory_map);
             match result {
-                Ok(Some(evidence)) => println!(
+                Ok(Some(evidence)) => outputln!(
                     "CAPABILITY\tregister-evidence\tavailable\tcatalogs={}\tconfidence-levels={}\tsources={}\tranges={}",
                     paths.evidence_catalogs.len(),
                     evidence.confidence_levels.len(),
@@ -325,7 +323,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                 Ok(None) => unreachable!("evidence catalogs were configured before validation"),
                 Err(error) => {
                     errors += 1;
-                    println!(
+                    outputln!(
                         "CAPABILITY\tregister-evidence\tinvalid\tcatalogs={}\terror={error}",
                         paths.evidence_catalogs.len()
                     );
@@ -335,10 +333,10 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
     }
 
     match &context.project.interfaces {
-        None => println!("CAPABILITY\tinterface-facts\tnot-configured"),
+        None => outputln!("CAPABILITY\tinterface-facts\tnot-configured"),
         Some(paths) if !paths.facts.is_file() => {
             warnings += 1;
-            println!(
+            outputln!(
                 "CAPABILITY\tinterface-facts\tnot-generated\tfacts={}",
                 paths.facts.display()
             );
@@ -346,14 +344,14 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         Some(paths) => match InterfaceFacts::load(&paths.facts) {
             Err(error) => {
                 errors += 1;
-                println!(
+                outputln!(
                     "CAPABILITY\tinterface-workspace\tinvalid-facts\tfacts={}\terror={error}",
                     paths.facts.display()
                 );
             }
             Ok(facts) => match paths.pack.as_deref() {
                 None => {
-                    println!(
+                    outputln!(
                         "CAPABILITY\tinterface-facts\tavailable\ttables={}\tobserved-slots={}\tobserved-calls={}\tfacts={}",
                         facts.tables.len(),
                         facts.observed_slots(),
@@ -363,7 +361,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                 }
                 Some(pack) if !pack.is_file() => {
                     warnings += 1;
-                    println!(
+                    outputln!(
                         "CAPABILITY\tinterface-workspace\tpack-not-initialized\ttables={}\tobserved-slots={}\tobserved-calls={}\tfacts={}\tpack={}",
                         facts.tables.len(),
                         facts.observed_slots(),
@@ -380,7 +378,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                 ) {
                     Ok(workspace) => {
                         let summary = workspace.summary();
-                        println!(
+                        outputln!(
                             "CAPABILITY\tinterface-workspace\tavailable\tfact-tables={}\tobserved-slots={}\tobserved-calls={}\tresolved-calls={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tsemantic-links={}\tsemantic-operations={}\tfacts={}\tpack={}",
                             summary.fact_tables,
                             summary.observed_slots,
@@ -400,7 +398,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                     }
                     Err(error) => {
                         errors += 1;
-                        println!(
+                        outputln!(
                             "CAPABILITY\tinterface-workspace\tinvalid\tfacts={}\tpack={}\terror={error}",
                             paths.facts.display(),
                             pack.display()
@@ -415,12 +413,12 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
     let mut input_count = 0usize;
     match (context.run_spec_path, context.run_spec) {
         (Some(path), Some(run_spec)) => {
-            println!("RUN-SPEC\t{}", path.display());
+            outputln!("RUN-SPEC\t{}", path.display());
             input_count = run_spec.inputs().len();
             for (role, path) in run_spec.inputs() {
                 if !path.is_file() {
                     errors += 1;
-                    println!(
+                    outputln!(
                         "INPUT\trole={}\tstatus=missing\tpath={}",
                         role,
                         path.display()
@@ -452,7 +450,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                         if symbol_facts == 0 {
                             warnings += 1;
                         }
-                        println!(
+                        outputln!(
                             "INPUT\trole={}\tstatus={}\tcontainer={}\tobjects={}\tskipped-members={}\tsymbol-facts={}\tcode-definitions={}\texported-definitions={}\tundefined={}\tpath={}",
                             role,
                             if symbol_facts == 0 {
@@ -472,7 +470,7 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
                     }
                     Err(error) => {
                         errors += 1;
-                        println!(
+                        outputln!(
                             "INPUT\trole={}\tstatus=invalid\tpath={}\terror={}",
                             role,
                             path.display(),
@@ -484,12 +482,12 @@ pub(super) fn run(arguments: Vec<String>, context: super::ProjectContext<'_>) ->
         }
         (None, None) => {
             warnings += 1;
-            println!("RUN-SPEC\tnot-configured\tartifact-bindings-unavailable");
+            outputln!("RUN-SPEC\tnot-configured\tartifact-bindings-unavailable");
         }
         _ => unreachable!("run-spec path and parsed contents are created together"),
     }
 
-    println!(
+    outputln!(
         "SUMMARY\tstatus={}\terrors={}\twarnings={}\tinputs={}\tvalid-inputs={}",
         if errors == 0 { "ok" } else { "failed" },
         errors,

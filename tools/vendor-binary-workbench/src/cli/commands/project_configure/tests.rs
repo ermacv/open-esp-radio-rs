@@ -33,25 +33,32 @@ fn configuration_is_validated_written_checked_and_cleared() {
     let manifest = project.join("vendor-project.toml");
 
     run(
-        vec![
-            "--platform-pack".to_owned(),
-            packs.join("platform.toml").display().to_string(),
-        ],
+        ProjectConfigureArgs {
+            platform_pack: Some(packs.join("platform.toml")),
+            ..Default::default()
+        },
         &manifest,
     )
     .unwrap();
     let contents = fs::read_to_string(&manifest).unwrap();
     assert!(contents.contains("platform-pack = \"../packs/platform.toml\""));
     run(
-        vec![
-            "--platform-pack".to_owned(),
-            packs.join("platform.toml").display().to_string(),
-            "--check".to_owned(),
-        ],
+        ProjectConfigureArgs {
+            platform_pack: Some(packs.join("platform.toml")),
+            check: true,
+            ..Default::default()
+        },
         &manifest,
     )
     .unwrap();
-    run(vec!["--no-platform-pack".to_owned()], &manifest).unwrap();
+    run(
+        ProjectConfigureArgs {
+            no_platform_pack: true,
+            ..Default::default()
+        },
+        &manifest,
+    )
+    .unwrap();
     assert!(
         !fs::read_to_string(&manifest)
             .unwrap()
@@ -86,10 +93,10 @@ fn incompatible_pack_never_changes_the_manifest() {
     .unwrap();
 
     let error = run(
-        vec![
-            "--platform-pack".to_owned(),
-            root.join("wrong.toml").display().to_string(),
-        ],
+        ProjectConfigureArgs {
+            platform_pack: Some(root.join("wrong.toml")),
+            ..Default::default()
+        },
         &manifest,
     )
     .unwrap_err();

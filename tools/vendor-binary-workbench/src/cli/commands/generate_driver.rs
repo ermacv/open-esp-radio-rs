@@ -2,6 +2,20 @@
 
 use super::super::*;
 
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct GeneratedDriverReport {
+    schema_version: u32,
+    command: &'static str,
+    vendor_source: String,
+    vendor_symbol: String,
+    kind: &'static str,
+    output: Option<String>,
+    plan_output: Option<String>,
+    source: String,
+}
+
 #[derive(Clone, Copy)]
 enum OutputKind {
     PacLeaf,
@@ -32,69 +46,26 @@ impl OutputKind {
 }
 
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: DriverGenerateArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifact = None;
-    let mut companions = Vec::new();
-    let mut member = None;
-    let mut symbol = None;
-    let mut source = None;
-    let mut dispositions = None;
-    let mut pac_bindings = None;
-    let mut output_kind = None;
-    let mut output = None;
-    let mut plan_output = None;
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
-    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--artifact" => {
-                artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
-            }
-            "--companion" => {
-                companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
-            }
-            "--member" => member = Some(take_value(&mut arguments, "--member")?),
-            "--symbol" => symbol = Some(take_value(&mut arguments, "--symbol")?),
-            "--source" => source = Some(take_value(&mut arguments, "--source")?),
-            "--dispositions" => {
-                dispositions = Some(PathBuf::from(take_value(&mut arguments, "--dispositions")?));
-            }
-            "--pac-bindings" => {
-                pac_bindings = Some(PathBuf::from(take_value(&mut arguments, "--pac-bindings")?));
-            }
-            "--kind" => {
-                output_kind = Some(OutputKind::parse(&take_value(&mut arguments, "--kind")?)?);
-            }
-            "--output" => output = Some(PathBuf::from(take_value(&mut arguments, "--output")?)),
-            "--plan-output" => {
-                plan_output = Some(PathBuf::from(take_value(&mut arguments, "--plan-output")?));
-            }
-            "--entry-contract" => {
-                entry_contract = harnesses::entry_contract(
-                    harness,
-                    &take_value(&mut arguments, "--entry-contract")?,
-                )?;
-            }
-            _ => return Err(format!("unknown driver generate option: {argument}").into()),
-        }
-    }
-
-    let artifact = artifact.ok_or("missing --artifact")?;
-    let symbol = symbol.ok_or("missing --symbol")?;
-    let source = source.ok_or("missing --source")?;
+    let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let symbol = arguments.symbol.ok_or("missing --symbol")?;
+    let source = arguments.source.ok_or("missing --source")?;
     dispositions::validate_source_id(&source, 0)?;
-    let dispositions = dispositions
+    let dispositions = arguments
+        .dispositions
         .or_else(|| target.dispositions.clone())
         .ok_or("driver generation requires --dispositions or target dispositions")?;
-    let pac_bindings = pac_bindings
+    let pac_bindings = arguments
+        .pac_bindings
         .or_else(|| target.pac_bindings.clone())
         .ok_or("driver generation requires --pac-bindings or target pac-bindings")?;
-    let output_kind = output_kind.ok_or("missing --kind")?;
+    let output_kind = OutputKind::parse(arguments.kind.as_deref().ok_or("missing --kind")?)?;
 
     let manifest = dispositions::Manifest::load(&dispositions)?;
     let resolved_disposition = manifest.resolve(&source, &symbol);
@@ -107,16 +78,22 @@ pub(super) fn run(
 
     let selector = ArtifactSymbolSelector {
         artifact,
-        member,
+        member: arguments.member,
         symbol: symbol.clone(),
     };
-    let trace = extract_reference(&selector, &companions, riscv_harness, entry_contract, svd)?;
+    let trace = extract_reference(
+        &selector,
+        &arguments.companion,
+        riscv_harness,
+        entry_contract,
+        svd,
+    )?;
     let resolved =
         ResolvedReferenceProgram::try_from(&trace).map_err(|error| -> Error { error.into() })?;
     let bindings = effect_contract::PacBindingIndex::load(&pac_bindings)?;
     let plan = effect_contract::DriverPlan::from_resolved(&resolved, policy, &bindings)?;
     let plan_source = plan.canonical();
-    if let Some(path) = plan_output {
+    if let Some(path) = arguments.plan_output.as_deref() {
         fs::write(path, &plan_source)?;
     }
     let generated = match output_kind {
@@ -124,16 +101,31 @@ pub(super) fn run(
         OutputKind::Transition => effect_contract::lower_transition_skeleton(&plan)?.source,
         OutputKind::Plan => plan_source,
     };
-    if let Some(path) = output {
-        fs::write(&path, generated)?;
-        println!(
-            "GENERATED-DRIVER\t{}\t{}\tkind={}\tsource={source}",
-            symbol,
-            path.display(),
-            output_kind.label()
-        );
-    } else {
-        print!("{generated}");
+    if let Some(path) = arguments.output.as_deref() {
+        fs::write(path, &generated)?;
+    }
+    let report = GeneratedDriverReport {
+        schema_version: 1,
+        command: "driver generate",
+        vendor_source: source,
+        vendor_symbol: symbol,
+        kind: output_kind.label(),
+        output: arguments.output.map(|path| path.display().to_string()),
+        plan_output: arguments.plan_output.map(|path| path.display().to_string()),
+        source: generated,
+    };
+    if !crate::cli::output::structured("generated-driver", &report) {
+        if let Some(output) = &report.output {
+            outputln!(
+                "GENERATED-DRIVER\t{}\t{}\tkind={}\tsource={}",
+                report.vendor_symbol,
+                output,
+                report.kind,
+                report.vendor_source
+            );
+        } else {
+            crate::cli::output::text(&report.source);
+        }
     }
     Ok(true)
 }

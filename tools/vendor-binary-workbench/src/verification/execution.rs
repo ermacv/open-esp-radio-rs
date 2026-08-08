@@ -146,54 +146,6 @@ impl NamedScenario {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ComparisonVerdict {
-    Match,
-    Mismatch,
-    Incomplete,
-}
-
-impl ComparisonVerdict {
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Match => "MATCH",
-            Self::Mismatch => "MISMATCH",
-            Self::Incomplete => "INCOMPLETE",
-        }
-    }
-}
-
-pub(crate) fn print_execution_event(side: &str, index: usize, event: &execution::ExecutionEvent) {
-    match event {
-        execution::ExecutionEvent::Read {
-            width,
-            address,
-            register,
-            value,
-        } => println!(
-            "TRACE-EVENT\t{side}\t{index}\tR\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}"
-        ),
-        execution::ExecutionEvent::Write {
-            width,
-            address,
-            register,
-            value,
-        } => println!(
-            "TRACE-EVENT\t{side}\t{index}\tW\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}",
-        ),
-        execution::ExecutionEvent::DelayMicros(micros) => {
-            println!("TRACE-EVENT\t{side}\t{index}\tDELAY\tmicros={micros}");
-        }
-        execution::ExecutionEvent::Fence {
-            fm,
-            predecessor,
-            successor,
-        } => println!(
-            "TRACE-EVENT\t{side}\t{index}\tFENCE\tfm={fm:#x}\tpred={predecessor:#x}\tsucc={successor:#x}"
-        ),
-    }
-}
-
 pub(crate) fn unmapped_execution_address(event: &execution::ExecutionEvent) -> Option<u32> {
     match event {
         execution::ExecutionEvent::Read {
@@ -216,14 +168,14 @@ pub(crate) fn print_branch_coverage(
     for (site, taken) in required {
         let location = image.location(*site);
         if covered.contains(&(*site, *taken)) {
-            println!("COVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
+            outputln!("COVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
         } else {
-            println!("UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
+            outputln!("UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
             uncovered += 1;
         }
     }
     let sites: BTreeSet<_> = required.iter().map(|(site, _)| *site).collect();
-    println!(
+    outputln!(
         "SUMMARY-BRANCHES\t{side}\tsites={}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
         sites.len(),
         required.len(),
@@ -265,35 +217,6 @@ fn static_inventory_for_argument_domain(
             .extend(inventory.unresolved_edges);
     }
     Ok(aggregate)
-}
-
-pub(crate) fn print_control_flow_coverage(
-    side: &str,
-    image: &execution::ExecutableImage,
-    inventory: &execution::CoverageInventory,
-    indirect_calls: &BTreeSet<execution::IndirectCall>,
-) -> usize {
-    let mut uncovered = 0;
-    for (address, edge) in &inventory.unresolved_edges {
-        let targets: Vec<_> = indirect_calls
-            .iter()
-            .filter_map(|call| (call.site == *address).then_some(call.symbol.as_str()))
-            .collect();
-        if targets.is_empty() {
-            println!(
-                "UNCOVERED-CONTROL-FLOW\t{side}\t{}\t{edge}",
-                image.location(*address)
-            );
-            uncovered += 1;
-        } else {
-            println!(
-                "COVERED-CONTROL-FLOW\t{side}\t{}\ttargets={}",
-                image.location(*address),
-                targets.join(",")
-            );
-        }
-    }
-    uncovered
 }
 
 #[derive(Clone, Copy)]
@@ -370,6 +293,65 @@ pub(crate) fn resolved_scenario(
     Ok(scenario)
 }
 
+fn artifact_report(input: ExecutionInput<'_>) -> Result<ArtifactReport> {
+    Ok(ArtifactReport {
+        path: input.artifact.display().to_string(),
+        sha256: artifact_sha256(input.artifact)?,
+        companion: input
+            .companion
+            .map(|path| -> Result<ArtifactIdentity> {
+                Ok(ArtifactIdentity {
+                    path: path.display().to_string(),
+                    sha256: artifact_sha256(path)?,
+                })
+            })
+            .transpose()?,
+        symbol: input.symbol.to_owned(),
+    })
+}
+
+fn coverage_report(
+    image: &execution::ExecutableImage,
+    inventory: &execution::CoverageInventory,
+    covered: &BTreeSet<(u32, bool)>,
+    calls: BTreeSet<String>,
+    indirect_calls: &BTreeSet<execution::IndirectCall>,
+    unmapped_mmio: BTreeSet<u32>,
+) -> CoverageReport {
+    CoverageReport {
+        covered_calls: calls.into_iter().collect(),
+        branch_outcomes: inventory
+            .branch_outcomes
+            .iter()
+            .map(|(site, taken)| BranchOutcomeReport {
+                site: *site,
+                location: image.location(*site),
+                taken: *taken,
+                covered: covered.contains(&(*site, *taken)),
+            })
+            .collect(),
+        unresolved_control_flow: inventory
+            .unresolved_edges
+            .iter()
+            .map(|(site, edge)| {
+                let targets = indirect_calls
+                    .iter()
+                    .filter(|call| call.site == *site)
+                    .map(|call| call.symbol.clone())
+                    .collect::<Vec<_>>();
+                ControlFlowReport {
+                    site: *site,
+                    location: image.location(*site),
+                    edge: edge.clone(),
+                    covered: !targets.is_empty(),
+                    targets,
+                }
+            })
+            .collect(),
+        unmapped_mmio: unmapped_mmio.into_iter().collect(),
+    }
+}
+
 pub(crate) fn compare_execution_scenarios(
     svd: &MmioRegisterMap,
     vendor: ExecutionInput<'_>,
@@ -377,16 +359,9 @@ pub(crate) fn compare_execution_scenarios(
     compare_return: bool,
     argument_domain: &[[Option<u32>; 8]],
     scenarios: &[NamedScenario],
-) -> Result<ComparisonVerdict> {
-    let vendor_digest = artifact_sha256(vendor.artifact)?;
-    println!(
-        "ORACLE\t{}\tsha256={vendor_digest}",
-        vendor.artifact.display()
-    );
-    if let Some(companion) = vendor.companion {
-        let companion_digest = artifact_sha256(companion)?;
-        println!("ORACLE\t{}\tsha256={companion_digest}", companion.display());
-    }
+) -> Result<ExecutionComparisonReport> {
+    let vendor_report = artifact_report(vendor)?;
+    let rust_report = artifact_report(rust)?;
     let mut vendor_image = execution::ExecutableImage::load(vendor.artifact)?;
     if let Some(companion) = vendor.companion {
         vendor_image.add_companion(companion)?;
@@ -410,6 +385,7 @@ pub(crate) fn compare_execution_scenarios(
     let mut matched_cases = 0_usize;
     let mut mismatched_cases = 0_usize;
     let mut incomplete_cases = 0_usize;
+    let mut case_reports = Vec::with_capacity(scenarios.len());
 
     for named in scenarios {
         let vendor_lengths: Vec<_> = named
@@ -445,16 +421,11 @@ pub(crate) fn compare_execution_scenarios(
             (Ok(vendor_result), Ok(rust_result)) => (vendor_result, rust_result),
             (vendor_result, rust_result) => {
                 incomplete_cases += 1;
-                println!(
-                    "CASE\t{}\tINCOMPLETE\tvendor={}\trust={}",
-                    named.name,
-                    vendor_result
-                        .err()
-                        .map_or_else(|| "complete".to_owned(), |error| error.to_string()),
-                    rust_result
-                        .err()
-                        .map_or_else(|| "complete".to_owned(), |error| error.to_string()),
-                );
+                case_reports.push(CaseReport::Incomplete {
+                    name: named.name.clone(),
+                    vendor_error: vendor_result.err().map(|error| error.to_string()),
+                    rust_error: rust_result.err().map(|error| error.to_string()),
+                });
                 continue;
             }
         };
@@ -483,87 +454,51 @@ pub(crate) fn compare_execution_scenarios(
             !compare_return || vendor_result.return_value == rust_result.return_value;
         if events_equal && memory_equal && returns_equal {
             matched_cases += 1;
-            println!(
-                "CASE\t{}\tMATCH\tevents={}\tmemory-changes={}\treturn={}",
-                named.name,
-                vendor_result.events.len(),
-                vendor_result.memory_changes.len(),
-                if compare_return { "checked" } else { "ignored" }
-            );
+            case_reports.push(CaseReport::Match {
+                name: named.name.clone(),
+                events: vendor_result.events.len(),
+                memory_changes: vendor_result.memory_changes.len(),
+                return_compared: compare_return,
+            });
         } else {
             mismatched_cases += 1;
-            println!(
-                "CASE\t{}\tMISMATCH\tvendor-events={}\trust-events={}\tvendor-memory-changes={}\trust-memory-changes={}\tvendor-return={:#010x}\trust-return={:#010x}",
-                named.name,
-                vendor_result.events.len(),
-                rust_result.events.len(),
-                vendor_result.memory_changes.len(),
-                rust_result.memory_changes.len(),
-                vendor_result.return_value,
-                rust_result.return_value,
-            );
-            for (index, event) in vendor_result.events.iter().enumerate() {
-                print_execution_event("vendor", index, event);
-            }
-            for (index, event) in rust_result.events.iter().enumerate() {
-                print_execution_event("rust", index, event);
-            }
-            for change in &vendor_result.memory_changes {
-                println!(
-                    "MEMORY-CHANGE\tvendor\t{:#010x}\tbefore={:#04x}\tafter={:#04x}",
-                    change.address, change.before, change.after
-                );
-            }
-            for change in &rust_result.memory_changes {
-                println!(
-                    "MEMORY-CHANGE\trust\t{:#010x}\tbefore={:#04x}\tafter={:#04x}",
-                    change.address, change.before, change.after
-                );
-            }
+            case_reports.push(CaseReport::Mismatch {
+                name: named.name.clone(),
+                vendor: (&vendor_result).into(),
+                rust: (&rust_result).into(),
+            });
         }
     }
 
-    for call in vendor_calls {
-        println!("COVERED-CALL\tvendor\t{call}");
-    }
-    for call in rust_calls {
-        println!("COVERED-CALL\trust\t{call}");
-    }
     extend_dynamic_inventory(&vendor_image, &mut vendor_inventory, &vendor_indirect_calls)?;
     extend_dynamic_inventory(&rust_image, &mut rust_inventory, &rust_indirect_calls)?;
-    let vendor_uncovered = print_branch_coverage(
-        "vendor",
-        &vendor_image,
-        &vendor_inventory.branch_outcomes,
-        &vendor_covered,
-    );
-    let rust_uncovered = print_branch_coverage(
-        "rust",
-        &rust_image,
-        &rust_inventory.branch_outcomes,
-        &rust_covered,
-    );
-    let vendor_unresolved = print_control_flow_coverage(
-        "vendor",
+    let vendor_coverage = coverage_report(
         &vendor_image,
         &vendor_inventory,
+        &vendor_covered,
+        vendor_calls,
         &vendor_indirect_calls,
+        vendor_unmapped,
     );
-    let rust_unresolved =
-        print_control_flow_coverage("rust", &rust_image, &rust_inventory, &rust_indirect_calls);
-    for address in &vendor_unmapped {
-        println!("UNCOVERED-MMIO\tvendor\t{address:#010x}");
-    }
-    for address in &rust_unmapped {
-        println!("UNCOVERED-MMIO\trust\t{address:#010x}");
-    }
+    let rust_coverage = coverage_report(
+        &rust_image,
+        &rust_inventory,
+        &rust_covered,
+        rust_calls,
+        &rust_indirect_calls,
+        rust_unmapped,
+    );
+    let vendor_uncovered = vendor_coverage.uncovered_branch_outcomes();
+    let rust_uncovered = rust_coverage.uncovered_branch_outcomes();
+    let vendor_unresolved = vendor_coverage.uncovered_control_flow();
+    let rust_unresolved = rust_coverage.uncovered_control_flow();
     let cases_match = matched_cases == scenarios.len();
     let coverage_complete = vendor_uncovered == 0
         && rust_uncovered == 0
         && vendor_unresolved == 0
         && rust_unresolved == 0
-        && vendor_unmapped.is_empty()
-        && rust_unmapped.is_empty();
+        && vendor_coverage.unmapped_mmio.is_empty()
+        && rust_coverage.unmapped_mmio.is_empty();
     let verdict = if mismatched_cases != 0 {
         ComparisonVerdict::Mismatch
     } else if incomplete_cases != 0 || !coverage_complete || !cases_match {
@@ -571,14 +506,27 @@ pub(crate) fn compare_execution_scenarios(
     } else {
         ComparisonVerdict::Match
     };
-    println!(
-        "SUMMARY\tcases={}\tmatched={matched_cases}\tmismatched={mismatched_cases}\tincomplete={incomplete_cases}\tvendor-uncovered-branch-outcomes={vendor_uncovered}\trust-uncovered-branch-outcomes={rust_uncovered}\tvendor-unresolved-control-flow={}\trust-unresolved-control-flow={}\tvendor-unmapped-mmio={}\trust-unmapped-mmio={}",
-        scenarios.len(),
-        vendor_unresolved,
-        rust_unresolved,
-        vendor_unmapped.len(),
-        rust_unmapped.len(),
-    );
-    println!("VERDICT\t{}", verdict.label());
-    Ok(verdict)
+    Ok(ExecutionComparisonReport {
+        schema_version: 1,
+        command: "execute compare",
+        vendor: vendor_report,
+        rust: rust_report,
+        compare_return,
+        cases: case_reports,
+        summary: ComparisonSummary {
+            cases: scenarios.len(),
+            matched: matched_cases,
+            mismatched: mismatched_cases,
+            incomplete: incomplete_cases,
+            vendor_uncovered_branch_outcomes: vendor_uncovered,
+            rust_uncovered_branch_outcomes: rust_uncovered,
+            vendor_unresolved_control_flow: vendor_unresolved,
+            rust_unresolved_control_flow: rust_unresolved,
+            vendor_unmapped_mmio: vendor_coverage.unmapped_mmio.len(),
+            rust_unmapped_mmio: rust_coverage.unmapped_mmio.len(),
+        },
+        vendor_coverage,
+        rust_coverage,
+        verdict,
+    })
 }

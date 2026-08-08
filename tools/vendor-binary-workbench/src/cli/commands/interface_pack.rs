@@ -8,7 +8,7 @@ use crate::{
 
 pub(super) fn run(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -16,34 +16,26 @@ pub(super) fn run(
         .interfaces
         .as_ref()
         .ok_or("project has no [interfaces] table; configure facts and pack paths first")?;
-    match command {
-        Command::InterfaceInitPack => init_pack(arguments, project, target, paths),
-        Command::InterfaceValidate => validate(arguments, target, paths),
+    match (command, arguments) {
+        (Command::InterfaceInitPack, CommandArguments::Output(arguments)) => {
+            init_pack(arguments, project, target, paths)
+        }
+        (Command::InterfaceValidate, CommandArguments::Validation(arguments)) => {
+            validate(arguments, target, paths)
+        }
         _ => unreachable!("interface pack dispatcher received another command"),
     }
 }
 
 fn init_pack(
-    arguments: Vec<String>,
+    arguments: OutputArgs,
     project: &ProjectSpec,
     target: &TargetSpec,
     paths: &crate::project::InterfaceWorkspacePaths,
 ) -> Result<bool> {
-    let mut output = None;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            _ => return Err(format!("unknown interfaces init-pack option: {argument}").into()),
-        }
-    }
     let facts = InterfaceFacts::load(&paths.facts)?;
-    let output = output
+    let output = arguments
+        .output
         .as_deref()
         .or(paths.pack.as_deref())
         .ok_or("interfaces init-pack requires [interfaces].pack or an explicit --output PATH")?;
@@ -53,7 +45,7 @@ fn init_pack(
         &project.id,
         target.calling_convention.label(),
     )?;
-    println!(
+    outputln!(
         "INTERFACE-PACK\tstatus=created\ttables={}\tobserved-slots={}\tobserved-calls={}\tpath={}",
         facts.tables.len(),
         facts.observed_slots(),
@@ -64,17 +56,10 @@ fn init_pack(
 }
 
 fn validate(
-    arguments: Vec<String>,
+    arguments: ValidationArgs,
     target: &TargetSpec,
     paths: &crate::project::InterfaceWorkspacePaths,
 ) -> Result<bool> {
-    let mut deny_unreviewed = false;
-    for argument in arguments {
-        match argument.as_str() {
-            "--deny-unreviewed" => deny_unreviewed = true,
-            _ => return Err(format!("unknown interfaces validate option: {argument}").into()),
-        }
-    }
     let pack = paths
         .pack
         .as_deref()
@@ -87,7 +72,7 @@ fn validate(
     )?;
     let summary = workspace.summary();
     for binding in workspace.bindings() {
-        println!(
+        outputln!(
             "INTERFACE-BINDING\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\tfunctions={}\tcall-sites={}",
             binding.anchor,
             binding.source,
@@ -109,7 +94,7 @@ fn validate(
             binding.calls.len(),
         );
         for call in &binding.calls {
-            println!(
+            outputln!(
                 "INTERFACE-CALL\tanchor={}\tsource={}\toffset={:+#x}\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#010x}\tsite={:#010x}\tkind={}\tjalr-offset={:+#x}\targuments={}",
                 binding.anchor,
                 binding.source,
@@ -132,7 +117,7 @@ fn validate(
             );
         }
     }
-    println!(
+    outputln!(
         "INTERFACE-WORKSPACE\tstatus=valid\tfact-tables={}\tobserved-slots={}\tobserved-calls={}\tresolved-calls={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\tmanual-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tmanual-slots={}\tsemantic-links={}\tsemantic-operations={}\tartifact-guards={}\truntime-guards={}\tfacts={}\tpack={}",
         summary.fact_tables,
         summary.observed_slots,
@@ -153,5 +138,6 @@ fn validate(
         paths.facts.display(),
         pack.display(),
     );
-    Ok(!deny_unreviewed || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0))
+    Ok(!arguments.deny_unreviewed
+        || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0))
 }

@@ -7,7 +7,7 @@ use std::{
 };
 
 use super::{MmioRegisterMap, Result, TargetSpec, export_ir};
-use crate::cli::take_value;
+use crate::cli::IrBuildArgs;
 use crate::{project::ProjectSpec, project_ir::ProjectIrProfile, run_spec::RunSpec};
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -27,13 +27,16 @@ struct ResolvedInputs {
 }
 
 pub(super) fn run(
-    arguments: Vec<String>,
+    arguments: IrBuildArgs,
     project: &ProjectSpec,
     run_spec: &RunSpec,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let options = parse_options(arguments)?;
+    let options = BuildOptions {
+        profiles: arguments.profile.into_iter().collect(),
+        check: arguments.check,
+    };
     let selected = select_profiles(&project.ir_profiles, &options.profiles)?;
     let mut built = Vec::with_capacity(selected.len());
     for profile in selected {
@@ -58,7 +61,7 @@ pub(super) fn run(
         .map(|built| 1 + usize::from(built.documents.pseudo.is_some()))
         .sum::<usize>();
     for built in &built {
-        println!(
+        outputln!(
             "IR-PROFILE\tstatus={}\tid={}\tsources={}\tfunctions={}\tregisters={}\tfield-candidates={}\tjson={}\tpseudo={}",
             if options.check { "verified" } else { "written" },
             built.profile.id,
@@ -74,35 +77,12 @@ pub(super) fn run(
                 .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
         );
     }
-    println!(
+    outputln!(
         "IR-BUILD\tstatus={}\tprofiles={}\tdocuments={document_count}",
         if options.check { "verified" } else { "written" },
         built.len()
     );
     Ok(true)
-}
-
-fn parse_options(arguments: Vec<String>) -> Result<BuildOptions> {
-    let mut options = BuildOptions::default();
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--profile" => {
-                let profile = take_value(&mut arguments, "--profile")?;
-                if !options.profiles.insert(profile.clone()) {
-                    return Err(format!("duplicate --profile {profile:?}").into());
-                }
-            }
-            "--check" => {
-                if options.check {
-                    return Err("duplicate --check".into());
-                }
-                options.check = true;
-            }
-            _ => return Err(format!("unknown ir build option: {argument}").into()),
-        }
-    }
-    Ok(options)
 }
 
 fn select_profiles<'a>(
@@ -274,12 +254,14 @@ mod tests {
 
     #[test]
     fn options_select_profiles_and_check_mode() {
-        let options = parse_options(vec![
-            "--profile".to_owned(),
-            "phy".to_owned(),
-            "--check".to_owned(),
-        ])
-        .unwrap();
+        let arguments = IrBuildArgs {
+            profile: vec!["phy".to_owned()],
+            check: true,
+        };
+        let options = BuildOptions {
+            profiles: arguments.profile.into_iter().collect(),
+            check: arguments.check,
+        };
         assert_eq!(options.profiles, ["phy".to_owned()].into());
         assert!(options.check);
         let profiles = [profile("all"), profile("phy")];

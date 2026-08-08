@@ -67,7 +67,7 @@ impl ProjectRegisterWorkspace {
     }
 
     pub(crate) fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
-        self.model.render_svd()
+        Ok(self.model.render_svd()?)
     }
 
     pub(crate) const fn format_label(&self) -> &'static str {

@@ -18,7 +18,7 @@ impl PacApiPack {
     /// Prove that every reviewed transaction is compatible with the release SVD.
     pub fn validate_against_svd(&self, svd: &str) -> Result<()> {
         self.validate()?;
-        let device = svd_parser::parse(svd)?;
+        let device = svd_parser::parse(svd).map_err(|error| error.to_string())?;
 
         for operation in &self.interrupt_snapshots {
             let status = register(

@@ -5,7 +5,7 @@ fn write_ir(path: &std::path::Path) {
     std::fs::write(
         path,
         r#"{
-  "schema_version": 31,
+  "schema_version": 32,
   "command": "ir export",
   "completeness_claim": false,
   "artifacts": [
@@ -30,9 +30,9 @@ fn write_ir(path: &std::path::Path) {
           "kind": "internal",
           "target": "rom::vendor_helper",
           "semantic_operation": null,
-          "site": "0x00000080",
+          "site": 128,
           "arguments": [],
-          "cfg_guard_paths": [{"expression": "true"}]
+          "cfg_guard_paths": [{"guards": []}]
         }
       ],
       "pseudo": "fn vendor_irq(ctx0: *mut u8) { ctx0.write32(+0x4, value); }",
@@ -48,7 +48,7 @@ fn write_ir(path: &std::path::Path) {
             "width": 32,
             "reads": 1,
             "writes": 1,
-            "write_mask": "0xffffffff"
+            "write_mask": 4294967295
           }
         ],
         "semantic_operations": [
@@ -70,11 +70,18 @@ fn write_ir(path: &std::path::Path) {
           "kind": "external",
           "target": "wifi_osi::queue_send_from_isr",
           "semantic_operation": "rtos.queue.send-from-isr",
-          "site": "0x00000120",
+          "site": 288,
           "arguments": ["?", "0x0000002a"],
-          "cfg_guard_paths": [
-            {"expression": "(arg0 & 0x00000001) != 0"}
-          ]
+          "cfg_guard_paths": [{
+            "guards": [{
+              "site": 288,
+              "condition": "(arg0 & 0x00000001) != 0",
+              "operation": "not-equal",
+              "taken": true,
+              "result_sources": [],
+              "direct_mmio_sources": []
+            }]
+          }]
         }
       ],
       "pseudo": "fn vendor_helper() { semantic.rtos_queue_send_from_isr(); }",

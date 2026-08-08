@@ -14,43 +14,14 @@ pub(super) struct Options {
     pub(super) tables_only: bool,
 }
 
-pub(super) fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut options = Options::default();
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--check" => {
-                if options.check {
-                    return Err("duplicate --check".into());
-                }
-                options.check = true;
-            }
-            "--json-report" => {
-                if options.json_report.is_some() {
-                    return Err("duplicate --json-report".into());
-                }
-                options.json_report =
-                    Some(PathBuf::from(take_value(&mut arguments, "--json-report")?));
-            }
-            "--name-prefix" => {
-                if !options.name_prefix.is_empty() {
-                    return Err("duplicate --name-prefix".into());
-                }
-                options.name_prefix = take_value(&mut arguments, "--name-prefix")?;
-            }
-            "--source" => {
-                options
-                    .sources
-                    .insert(take_value(&mut arguments, "--source")?);
-            }
-            "--tables-only" => options.tables_only = true,
-            _ => return Err(format!("unknown interfaces discover option: {argument}").into()),
-        }
+pub(super) fn resolve_options(arguments: InterfaceDiscoverArgs) -> Options {
+    Options {
+        check: arguments.check,
+        json_report: arguments.json_report,
+        name_prefix: arguments.name_prefix,
+        sources: arguments.source.into_iter().collect(),
+        tables_only: arguments.tables_only,
     }
-    if options.check && options.json_report.is_none() {
-        return Err("interfaces discover --check requires --json-report PATH".into());
-    }
-    Ok(options)
 }
 
 fn is_scannable_role(role: &str) -> bool {

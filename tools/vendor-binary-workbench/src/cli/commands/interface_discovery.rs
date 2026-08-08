@@ -3,7 +3,7 @@
 use std::{collections::BTreeSet, path::PathBuf};
 
 use super::super::*;
-use super::interface_discovery_options::{Options, parse_options, selected_inputs};
+use super::interface_discovery_options::{Options, resolve_options, selected_inputs};
 use crate::{
     analysis::{LinkageSymbolLocation, ProjectLinkageInventory, build_project_linkage_inventory},
     interface_discovery::{
@@ -145,7 +145,7 @@ fn compact_arguments(call: &InterfaceCallCandidate) -> String {
 
 fn print_report(discovery: &Discovery) {
     for (index, artifact) in discovery.linkage.artifacts.iter().enumerate() {
-        println!(
+        outputln!(
             "ARTIFACT\tindex={index}\tfunctions={}\troles={}\tsources={}\tpath={}",
             discovery.functions[index],
             artifact.roles.join(","),
@@ -161,7 +161,7 @@ fn print_report(discovery: &Discovery) {
             .slot()
             .map(|load| signed_hex(load.offset))
             .unwrap_or_else(|| "-".to_owned());
-        println!(
+        outputln!(
             "INTERFACE_CALL\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#x}\tsite={:#x}\tkind={}\troot-kind={}\troot-addressing={}\troot={}\tchain={}\tcontainer-depth={}\tslot={}\tjalr-offset={}\troot-symbols={}\tlinkage={}\tcandidates={}\targuments={}",
             discovered.artifact,
             call.member.as_deref().unwrap_or("-"),
@@ -190,7 +190,7 @@ fn print_report(discovery: &Discovery) {
         );
     }
     for failure in &discovery.failures {
-        println!(
+        outputln!(
             "DECODE_FAILURE\tartifact={}\tmember={}\tfunction={}\terror={}",
             failure.artifact,
             failure.member.as_deref().unwrap_or("-"),
@@ -203,7 +203,7 @@ fn print_report(discovery: &Discovery) {
         .iter()
         .filter(|call| !call.call.target.loads.is_empty())
         .count();
-    println!(
+    outputln!(
         "SUMMARY\tartifacts={}\tfunctions={}\tindirect-candidates={}\ttable-slot-candidates={}\tdecode-failures={}\tsemantic-claims=false\tcompleteness-claim=false",
         discovery.linkage.artifacts.len(),
         discovery.functions.iter().sum::<usize>(),
@@ -213,26 +213,32 @@ fn print_report(discovery: &Discovery) {
     );
 }
 
-pub(super) fn run(arguments: Vec<String>, run_spec: &RunSpec) -> Result<bool> {
-    let options = parse_options(arguments)?;
+pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Result<bool> {
+    let options = resolve_options(arguments);
+    if options.check && options.json_report.is_none() {
+        return Err("interfaces discover --check requires --json-report PATH".into());
+    }
     let inputs = selected_inputs(run_spec, &options)?;
     if inputs.is_empty() {
         return Err("run spec has no artifact or inventory inputs for interface discovery".into());
     }
     let discovery = discover(&inputs, &options)?;
-    print_report(&discovery);
+    let document = super::interface_discovery_json::document(&discovery)?;
+    if !crate::cli::output::structured("interface-discovery", &document) {
+        print_report(&discovery);
+    }
     if let Some(path) = options.json_report.as_deref() {
-        let output = super::interface_discovery_json::render_json_report(&discovery)?;
+        let output = super::interface_discovery_json::render_document(&document)?;
         super::super::generated_output::write_or_check(
             path,
             &output,
             options.check,
             "interface discovery report",
         )?;
-        eprintln!(
-            "JSON_REPORT\tstatus={}\t{}",
-            if options.check { "verified" } else { "written" },
-            path.display()
+        tracing::info!(
+            status = if options.check { "verified" } else { "written" },
+            path = %path.display(),
+            "interface discovery JSON report"
         );
     }
     Ok(discovery.failures.is_empty())

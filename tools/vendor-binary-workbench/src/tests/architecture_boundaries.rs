@@ -29,6 +29,37 @@ fn longest_hex_run(text: &str) -> usize {
         .1
 }
 
+fn contains_bare_macro_call(source: &str, name: &str) -> bool {
+    source.match_indices(name).any(|(index, _)| {
+        index == 0
+            || !source.as_bytes()[index - 1].is_ascii_alphanumeric()
+                && source.as_bytes()[index - 1] != b'_'
+    })
+}
+
+#[test]
+fn production_modules_cannot_bypass_the_command_output_boundary() {
+    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for path in rust_sources(&source_root) {
+        if path.components().any(|component| {
+            matches!(
+                component.as_os_str().to_str(),
+                Some("tests" | "oracle_tests")
+            )
+        }) {
+            continue;
+        }
+        let source = fs::read_to_string(&path).unwrap();
+        for forbidden in ["println!(", "print!("] {
+            assert!(
+                !contains_bare_macro_call(&source, forbidden),
+                "direct stdout macro {forbidden} bypasses cli/output.rs in {}",
+                path.display()
+            );
+        }
+    }
+}
+
 #[test]
 fn workbench_source_contains_no_private_paths_or_embedded_digests() {
     let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));

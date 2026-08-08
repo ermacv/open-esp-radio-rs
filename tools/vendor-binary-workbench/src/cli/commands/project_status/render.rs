@@ -1,26 +1,60 @@
 //! Stable human summary and schema-1 JSON document.
 
-use serde_json::{Map, Value, json};
+use std::collections::BTreeMap;
 
-use super::model::StatusReport;
+use serde::Serialize;
+
+use super::model::{DetailValue, Readiness, StatusReport, TargetIdentity};
 use crate::Result;
 
+#[derive(Serialize)]
+struct ProjectIdentity<'a> {
+    id: &'a str,
+    manifest: &'a str,
+}
+
+#[derive(Serialize)]
+struct ComponentDocument<'a> {
+    name: &'a str,
+    status: Readiness,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diagnostic: Option<&'a str>,
+    #[serde(flatten)]
+    details: &'a BTreeMap<String, DetailValue>,
+}
+
+#[derive(Serialize)]
+struct PhaseDocument<'a> {
+    status: Readiness,
+    components: Vec<ComponentDocument<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct StatusDocument<'a> {
+    schema: u32,
+    command: &'static str,
+    project: ProjectIdentity<'a>,
+    target: &'a TargetIdentity,
+    overall: Readiness,
+    phases: BTreeMap<&'a str, PhaseDocument<'a>>,
+}
+
 pub(super) fn print_text(report: &StatusReport) {
-    println!(
+    outputln!(
         "PROJECT-STATUS\tid={}\toverall={}\tmanifest={}",
         report.project_id,
         report.overall.label(),
         report.manifest
     );
     for phase in &report.phases {
-        println!(
+        outputln!(
             "PROJECT-PHASE\tname={}\tstatus={}\tcomponents={}",
             phase.name,
             phase.status.label(),
             phase.components.len()
         );
         for component in &phase.components {
-            println!(
+            outputln!(
                 "PROJECT-COMPONENT\tphase={}\tname={}\tstatus={}\tdiagnostic={}",
                 phase.name,
                 component.name,
@@ -35,7 +69,7 @@ pub(super) fn print_text(report: &StatusReport) {
     }
 }
 
-pub(super) fn json_document(report: &StatusReport) -> Result<String> {
+pub(super) fn document(report: &StatusReport) -> StatusDocument<'_> {
     let phases = report
         .phases
         .iter()
@@ -43,45 +77,37 @@ pub(super) fn json_document(report: &StatusReport) -> Result<String> {
             let components = phase
                 .components
                 .iter()
-                .map(|component| {
-                    let mut output = component.details.clone();
-                    output.insert("name".to_owned(), Value::String(component.name.to_owned()));
-                    output.insert(
-                        "status".to_owned(),
-                        Value::String(component.status.label().to_owned()),
-                    );
-                    if let Some(diagnostic) = &component.diagnostic {
-                        output.insert("diagnostic".to_owned(), Value::String(diagnostic.clone()));
-                    }
-                    Value::Object(output)
+                .map(|component| ComponentDocument {
+                    name: component.name,
+                    status: component.status,
+                    diagnostic: component.diagnostic.as_deref(),
+                    details: &component.details,
                 })
                 .collect::<Vec<_>>();
             (
-                phase.name.to_owned(),
-                json!({
-                    "status": phase.status.label(),
-                    "components": components,
-                }),
+                phase.name,
+                PhaseDocument {
+                    status: phase.status,
+                    components,
+                },
             )
         })
-        .collect::<Map<_, _>>();
-    let document = json!({
-        "schema": 1,
-        "command": "project status",
-        "project": {
-            "id": report.project_id,
-            "manifest": report.manifest,
+        .collect();
+    StatusDocument {
+        schema: 1,
+        command: "project status",
+        project: ProjectIdentity {
+            id: &report.project_id,
+            manifest: &report.manifest,
         },
-        "target": {
-            "id": report.target.id,
-            "architecture": report.target.architecture,
-            "calling_convention": report.target.calling_convention,
-            "harness": report.target.harness,
-        },
-        "overall": report.overall.label(),
-        "phases": phases,
-    });
-    let mut output = serde_json::to_string_pretty(&document)?;
+        target: &report.target,
+        overall: report.overall,
+        phases,
+    }
+}
+
+pub(super) fn json_document(report: &StatusReport) -> Result<String> {
+    let mut output = serde_json::to_string_pretty(&document(report))?;
     output.push('\n');
     Ok(output)
 }
@@ -119,7 +145,8 @@ mod tests {
                 vec![Component::new("linked_ir", Readiness::Incomplete).detail("profiles", 2usize)],
             )],
         );
-        let document: Value = serde_json::from_str(&json_document(&report).unwrap()).unwrap();
+        let document: serde_json::Value =
+            serde_json::from_str(&json_document(&report).unwrap()).unwrap();
         assert_eq!(document["schema"], 1);
         assert_eq!(document["overall"], "incomplete");
         assert_eq!(

@@ -2,81 +2,94 @@
 
 use super::super::*;
 
-pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap) -> Result<bool> {
-    let mut profile_path = None;
-    let mut vendor_artifact = None;
-    let mut vendor_companion = None;
-    let mut rust_artifact = None;
-    let mut rust_companion = None;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--profiles" => {
-                profile_path = Some(PathBuf::from(take_value(&mut arguments, "--profiles")?));
-            }
-            "--vendor-artifact" => {
-                vendor_artifact = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--vendor-artifact",
-                )?));
-            }
-            "--vendor-companion" => {
-                vendor_companion = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--vendor-companion",
-                )?));
-            }
-            "--rust-artifact" => {
-                rust_artifact = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--rust-artifact",
-                )?));
-            }
-            "--rust-companion" => {
-                rust_companion = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--rust-companion",
-                )?));
-            }
-            _ => return Err(format!("unknown verify profiles option: {argument}").into()),
-        }
-    }
-    let profile_path = profile_path.ok_or("missing --profiles")?;
-    let vendor_artifact = vendor_artifact.ok_or("missing --vendor-artifact")?;
-    let rust_artifact = rust_artifact.ok_or("missing --rust-artifact")?;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct ProfileComparisonReport {
+    name: String,
+    comparison: ExecutionComparisonReport,
+}
+
+#[derive(Serialize)]
+struct ProfileVerificationSummary {
+    profiles: usize,
+    matched: usize,
+    mismatched: usize,
+    incomplete: usize,
+}
+
+#[derive(Serialize)]
+struct ProfileVerificationReport {
+    schema_version: u32,
+    command: &'static str,
+    profiles: Vec<ProfileComparisonReport>,
+    summary: ProfileVerificationSummary,
+}
+
+pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Result<bool> {
+    let profile_path = arguments.profiles.ok_or("missing --profiles")?;
+    let vendor_artifact = arguments
+        .vendor_artifact
+        .ok_or("missing --vendor-artifact")?;
+    let rust_artifact = arguments.rust_artifact.ok_or("missing --rust-artifact")?;
     let loaded_profiles = profiles::load(&profile_path)?;
     let mut matched = 0_usize;
     let mut mismatched = 0_usize;
+    let mut reports = Vec::with_capacity(loaded_profiles.len());
     for profile in &loaded_profiles {
-        println!("PROFILE\t{}\tBEGIN", profile.name);
         let argument_domain = profile.coverage_argument_constraints();
-        let result = compare_execution_scenarios(
+        let comparison = compare_execution_scenarios(
             svd,
             ExecutionInput {
                 artifact: &vendor_artifact,
-                companion: vendor_companion.as_deref(),
+                companion: arguments.vendor_companion.as_deref(),
                 symbol: &profile.vendor_symbol,
             },
             ExecutionInput {
                 artifact: &rust_artifact,
-                companion: rust_companion.as_deref(),
+                companion: arguments.rust_companion.as_deref(),
                 symbol: &profile.rust_symbol,
             },
             profile.compare_return,
             &argument_domain,
             &profile.scenarios,
         )?;
-        match result {
+        match comparison.verdict {
             ComparisonVerdict::Match => matched += 1,
             ComparisonVerdict::Mismatch => mismatched += 1,
             ComparisonVerdict::Incomplete => {}
         }
-        println!("PROFILE\t{}\t{}", profile.name, result.label());
+        reports.push(ProfileComparisonReport {
+            name: profile.name.clone(),
+            comparison,
+        });
     }
-    println!(
-        "PROFILE-SUMMARY\tprofiles={}\tmatch={matched}\tmismatch={mismatched}\tincomplete={}",
-        loaded_profiles.len(),
-        loaded_profiles.len() - matched - mismatched,
-    );
+    let report = ProfileVerificationReport {
+        schema_version: 1,
+        command: "verify profiles",
+        summary: ProfileVerificationSummary {
+            profiles: loaded_profiles.len(),
+            matched,
+            mismatched,
+            incomplete: loaded_profiles.len() - matched - mismatched,
+        },
+        profiles: reports,
+    };
+    if !crate::cli::output::structured("profile-verification", &report) {
+        for profile in &report.profiles {
+            outputln!("PROFILE\t{}\tBEGIN", profile.name);
+            print_execution_comparison(&profile.comparison);
+            outputln!(
+                "PROFILE\t{}\t{}",
+                profile.name,
+                profile.comparison.verdict.label()
+            );
+        }
+        outputln!(
+            "PROFILE-SUMMARY\tprofiles={}\tmatch={matched}\tmismatch={mismatched}\tincomplete={}",
+            loaded_profiles.len(),
+            loaded_profiles.len() - matched - mismatched,
+        );
+    }
     Ok(matched == loaded_profiles.len())
 }

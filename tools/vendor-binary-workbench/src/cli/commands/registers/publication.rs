@@ -1,5 +1,7 @@
 //! Derived SVD, PAC and PAC-binding publication commands.
 
+use std::path::PathBuf;
+
 use super::*;
 
 pub(crate) struct PreparedPublication {
@@ -67,7 +69,7 @@ impl PreparedPublication {
         )?;
         let status = if check { "verified" } else { "written" };
         match &self.report {
-            PublicationReport::Svd { summary } => println!(
+            PublicationReport::Svd { summary } => outputln!(
                 "SVD\tstatus={status}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
                 summary.peripherals,
                 summary.registers,
@@ -79,7 +81,7 @@ impl PreparedPublication {
                 edition,
                 summary,
                 api_pack,
-            } => println!(
+            } => outputln!(
                 "PAC\tstatus={status}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tapi-pack={}\tpath={}",
                 target.label(),
                 edition.label(),
@@ -93,7 +95,7 @@ impl PreparedPublication {
             PublicationReport::Bindings {
                 crate_name,
                 summary,
-            } => println!(
+            } => outputln!(
                 "PAC-BINDINGS\tstatus={status}\tcrate={crate_name}\tperipherals={}\tregisters={}\tpath={}",
                 summary.peripherals,
                 summary.registers,
@@ -190,33 +192,17 @@ fn load_release_workspace(
 }
 
 pub(super) fn export_svd(
-    arguments: Vec<String>,
+    arguments: RegisterExportArgs,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
-    let mut output = None;
-    let mut check = false;
-    let mut deny_unreviewed = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--deny-unreviewed" => deny_unreviewed = true,
-            "--check" => check = true,
-            _ => return Err(format!("unknown registers export-svd option: {argument}").into()),
-        }
-    }
-    let output = output
+    let output = arguments
+        .output
         .as_deref()
         .or(paths.svd_output.as_deref())
         .ok_or("registers export-svd requires --output PATH or [registers.svd] output")?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = print_summary(&workspace, paths)?;
-    if deny_unreviewed && workspace_summary.unreviewed != 0 {
+    if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "release SVD denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
@@ -224,10 +210,19 @@ pub(super) fn export_svd(
         .into());
     }
     let (contents, summary) = workspace.render_svd()?;
-    super::super::super::generated_output::write_or_check(output, &contents, check, "SVD")?;
-    println!(
+    super::super::super::generated_output::write_or_check(
+        output,
+        &contents,
+        arguments.check,
+        "SVD",
+    )?;
+    outputln!(
         "SVD\tstatus={}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
-        if check { "verified" } else { "written" },
+        if arguments.check {
+            "verified"
+        } else {
+            "written"
+        },
         summary.peripherals,
         summary.registers,
         summary.fields,
@@ -237,71 +232,34 @@ pub(super) fn export_svd(
 }
 
 pub(super) fn generate_pac_source(
-    arguments: Vec<String>,
+    arguments: RegisterPacArgs,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
-    let mut output = None;
-    let mut target = None;
-    let mut edition = None;
-    let mut api_pack = None;
-    let mut no_api_pack = false;
-    let mut check = false;
-    let mut deny_unreviewed = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--target" => {
-                target = Some(PacTarget::parse(&take_value(&mut arguments, "--target")?)?);
-            }
-            "--edition" => {
-                edition = Some(PacEdition::parse(&take_value(
-                    &mut arguments,
-                    "--edition",
-                )?)?);
-            }
-            "--api-pack" => {
-                if api_pack.is_some() || no_api_pack {
-                    return Err("duplicate or conflicting --api-pack/--no-api-pack".into());
-                }
-                api_pack = Some(PathBuf::from(take_value(&mut arguments, "--api-pack")?));
-            }
-            "--no-api-pack" => {
-                if no_api_pack || api_pack.is_some() {
-                    return Err("duplicate or conflicting --api-pack/--no-api-pack".into());
-                }
-                no_api_pack = true;
-            }
-            "--check" => check = true,
-            "--deny-unreviewed" => deny_unreviewed = true,
-            _ => return Err(format!("unknown registers generate-pac option: {argument}").into()),
-        }
-    }
     let configured = paths.pac.as_ref();
-    let output = output
+    let output = arguments
+        .output
         .as_deref()
         .or_else(|| configured.map(|pac| pac.output.as_path()))
         .ok_or("registers generate-pac requires --output PATH or [registers.pac] output")?;
-    let target = target
-        .map(Ok)
+    let target = arguments
+        .target
+        .as_deref()
+        .map(PacTarget::parse)
         .unwrap_or_else(|| PacTarget::parse(configured.map_or("none", |pac| &pac.target)))?;
-    let edition = edition
-        .map(Ok)
+    let edition = arguments
+        .edition
+        .as_deref()
+        .map(PacEdition::parse)
         .unwrap_or_else(|| PacEdition::parse(configured.map_or("2024", |pac| &pac.edition)))?;
-    let api_pack_path = if no_api_pack {
+    let api_pack_path = if arguments.no_api_pack {
         None
     } else {
-        api_pack.as_deref().or(paths.api_pack.as_deref())
+        arguments.api_pack.as_deref().or(paths.api_pack.as_deref())
     };
     let api_pack = api_pack_path.map(PacApiPack::load).transpose()?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = print_summary(&workspace, paths)?;
-    if deny_unreviewed && workspace_summary.unreviewed != 0 {
+    if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "PAC generation denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
@@ -310,10 +268,14 @@ pub(super) fn generate_pac_source(
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let source = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
-    super::super::super::generated_output::write_or_check(output, &source, check, "PAC")?;
-    println!(
+    super::super::super::generated_output::write_or_check(output, &source, arguments.check, "PAC")?;
+    outputln!(
         "PAC\tstatus={}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tapi-pack={}\tpath={}",
-        if check { "verified" } else { "written" },
+        if arguments.check {
+            "verified"
+        } else {
+            "written"
+        },
         target.label(),
         edition.label(),
         svd_summary.peripherals,
@@ -325,45 +287,18 @@ pub(super) fn generate_pac_source(
 }
 
 pub(super) fn generate_bindings(
-    arguments: Vec<String>,
+    arguments: RegisterBindingsArgs,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
-    let mut output = None;
-    let mut crate_name = None;
-    let mut check = false;
-    let mut deny_unreviewed = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--crate-name" => {
-                if crate_name.is_some() {
-                    return Err("duplicate --crate-name".into());
-                }
-                crate_name = Some(take_value(&mut arguments, "--crate-name")?);
-            }
-            "--check" => check = true,
-            "--deny-unreviewed" => deny_unreviewed = true,
-            _ => {
-                return Err(
-                    format!("unknown registers generate-bindings option: {argument}").into(),
-                );
-            }
-        }
-    }
     let configured = paths.bindings.as_ref();
-    let output = output
+    let output = arguments
+        .output
         .as_deref()
         .or_else(|| configured.map(|bindings| bindings.output.as_path()))
         .ok_or(
             "registers generate-bindings requires --output PATH or [registers.bindings] output",
         )?;
-    let crate_name = crate_name
+    let crate_name = arguments.crate_name
         .as_deref()
         .or_else(|| configured.map(|bindings| bindings.crate_name.as_str()))
         .ok_or(
@@ -371,7 +306,7 @@ pub(super) fn generate_bindings(
         )?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = print_summary(&workspace, paths)?;
-    if deny_unreviewed && workspace_summary.unreviewed != 0 {
+    if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "PAC binding generation denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
@@ -383,12 +318,16 @@ pub(super) fn generate_bindings(
     super::super::super::generated_output::write_or_check(
         output,
         &contents,
-        check,
+        arguments.check,
         "PAC binding index",
     )?;
-    println!(
+    outputln!(
         "PAC-BINDINGS\tstatus={}\tcrate={}\tperipherals={}\tregisters={}\tpath={}",
-        if check { "verified" } else { "written" },
+        if arguments.check {
+            "verified"
+        } else {
+            "written"
+        },
         crate_name,
         svd_summary.peripherals,
         svd_summary.registers,

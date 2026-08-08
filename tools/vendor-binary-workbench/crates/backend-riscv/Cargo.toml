@@ -12,6 +12,7 @@ description = "RISC-V 32-bit analysis, execution and reference-code backend"
 object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
 open-radio-vendor-analysis-model = { path = "../analysis-model" }
 rv-asm = "=0.2.1"
+thiserror = "=2.0.19"
 
 [dev-dependencies]
 object = { version = "=0.39.1", default-features = false, features = ["elf", "std", "write"] }

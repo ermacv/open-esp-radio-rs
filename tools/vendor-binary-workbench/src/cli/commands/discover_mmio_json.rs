@@ -1,137 +1,167 @@
 //! Stable JSON projection of artifact-wide MMIO evidence.
 
-use std::{collections::BTreeSet, fmt::Write as _};
+use serde::Serialize;
 
 use super::{
-    super::{
-        Result,
-        json::{write_artifact, write_string, write_strings},
-    },
+    super::Result,
     discover_mmio::{function_names, mask_ranges},
 };
-use crate::analysis::{DiscoveryFunction, MmioDiscoveryReport};
+use crate::{analysis::MmioDiscoveryReport, artifact_sha256};
 
-fn write_functions(output: &mut String, functions: &BTreeSet<DiscoveryFunction>) {
-    write_strings(output, function_names(functions));
+#[derive(Serialize)]
+struct ArtifactIdentity {
+    path: String,
+    sha256: String,
 }
 
-pub(super) fn render_json_report(report: &MmioDiscoveryReport) -> Result<String> {
-    let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 2,\n  \"command\": \"mmio discover\",\n");
-    output.push_str("  \"analysis_mode\": \"best-effort\",\n");
-    output.push_str("  \"access_count_mode\": \"maximum-per-path\",\n");
-    output.push_str("  \"completeness_claim\": false,\n  \"ranges\": [\n");
-    for (index, range) in report.ranges.iter().enumerate() {
-        output.push_str("    {\"name\": ");
-        write_string(&mut output, &range.name);
-        writeln!(
-            output,
-            ", \"start\": \"{:#010x}\", \"end_exclusive\": \"{:#010x}\"}}{}",
-            range.start,
-            range.end,
-            if index + 1 == report.ranges.len() {
-                ""
-            } else {
-                ","
-            }
-        )
-        .expect("writing to String cannot fail");
-    }
-    output.push_str("  ],\n  \"artifacts\": [\n");
-    for (index, artifact) in report.artifacts.iter().enumerate() {
-        output.push_str("    {\"source\": ");
-        write_string(&mut output, &artifact.source);
-        output.push_str(", \"artifact\": ");
-        write_artifact(&mut output, &artifact.path)?;
-        writeln!(
-            output,
-            ", \"functions\": {}, \"functions_with_mmio\": {}, \"functions_with_diagnostics\": {}, \"explored_states\": {}, \"terminal_paths\": {}, \"branch_sites\": {}}}{}",
-            artifact.functions,
-            artifact.functions_with_mmio,
-            artifact.functions_with_diagnostics,
-            artifact.explored_states,
-            artifact.terminal_paths,
-            artifact.branch_sites,
-            if index + 1 == report.artifacts.len() {
-                ""
-            } else {
-                ","
-            }
-        )
-        .expect("writing to String cannot fail");
-    }
-    output.push_str("  ],\n  \"registers\": [\n");
-    for (index, register) in report.registers.iter().enumerate() {
-        write!(
-            output,
-            "    {{\"address\": \"{:#010x}\", \"width\": {}, \"name\": ",
-            register.address, register.width
-        )
-        .expect("writing to String cannot fail");
-        write_string(&mut output, &register.name);
-        write!(
-            output,
-            ", \"reads\": {}, \"writes\": {}, \"read_functions\": ",
-            register.read_count, register.write_count
-        )
-        .expect("writing to String cannot fail");
-        write_functions(&mut output, &register.read_functions);
-        output.push_str(", \"write_functions\": ");
-        write_functions(&mut output, &register.write_functions);
-        output.push_str(", \"write_patterns\": [");
-        for (pattern_index, finding) in register.write_patterns.iter().enumerate() {
-            if pattern_index != 0 {
-                output.push_str(", ");
-            }
-            let pattern = &finding.pattern;
-            write!(
-                output,
-                "{{\"occurrences\": {}, \"modified_mask\": \"{:#010x}\", \"candidate_bit_ranges\": ",
-                finding.occurrences,
-                pattern.modified_mask(register.width),
-            )
-            .expect("writing to String cannot fail");
-            write_string(
-                &mut output,
-                &mask_ranges(pattern.modified_mask(register.width)),
-            );
-            write!(
-                output,
-                ", \"preserved_mask\": \"{:#010x}\", \"inverted_mask\": \"{:#010x}\", \"forced_zero_mask\": \"{:#010x}\", \"forced_one_mask\": \"{:#010x}\", \"read_derived_mask\": \"{:#010x}\", \"dynamic_mask\": \"{:#010x}\", \"functions\": ",
-                pattern.preserved_mask,
-                pattern.inverted_mask,
-                pattern.forced_zero_mask,
-                pattern.forced_one_mask,
-                pattern.read_derived_mask,
-                pattern.dynamic_mask,
-            )
-            .expect("writing to String cannot fail");
-            write_functions(&mut output, &finding.functions);
-            output.push('}');
-        }
-        output.push_str("]}");
-        output.push_str(if index + 1 == report.registers.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"diagnostics\": [\n");
-    for (index, diagnostic) in report.diagnostics.iter().enumerate() {
-        output.push_str("    {\"function\": ");
-        write_string(&mut output, &diagnostic.function.canonical());
-        output.push_str(", \"scope\": ");
-        write_string(&mut output, diagnostic.scope);
-        output.push_str(", \"message\": ");
-        write_string(&mut output, &diagnostic.message);
-        output.push('}');
-        output.push_str(if index + 1 == report.diagnostics.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ]\n}\n");
+#[derive(Serialize)]
+struct RangeDocument<'a> {
+    name: &'a str,
+    start: String,
+    end_exclusive: String,
+}
+
+#[derive(Serialize)]
+struct ArtifactDocument<'a> {
+    source: &'a str,
+    artifact: ArtifactIdentity,
+    functions: usize,
+    functions_with_mmio: usize,
+    functions_with_diagnostics: usize,
+    explored_states: usize,
+    terminal_paths: usize,
+    branch_sites: usize,
+}
+
+#[derive(Serialize)]
+struct WritePatternDocument {
+    occurrences: usize,
+    modified_mask: String,
+    candidate_bit_ranges: String,
+    preserved_mask: String,
+    inverted_mask: String,
+    forced_zero_mask: String,
+    forced_one_mask: String,
+    read_derived_mask: String,
+    dynamic_mask: String,
+    functions: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct RegisterDocument<'a> {
+    address: String,
+    width: u8,
+    name: &'a str,
+    reads: usize,
+    writes: usize,
+    read_functions: Vec<String>,
+    write_functions: Vec<String>,
+    write_patterns: Vec<WritePatternDocument>,
+}
+
+#[derive(Serialize)]
+struct DiagnosticDocument<'a> {
+    function: String,
+    scope: &'a str,
+    message: &'a str,
+}
+
+#[derive(Serialize)]
+pub(super) struct DiscoveryDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    analysis_mode: &'static str,
+    access_count_mode: &'static str,
+    completeness_claim: bool,
+    ranges: Vec<RangeDocument<'a>>,
+    artifacts: Vec<ArtifactDocument<'a>>,
+    registers: Vec<RegisterDocument<'a>>,
+    diagnostics: Vec<DiagnosticDocument<'a>>,
+}
+
+pub(super) fn document(report: &MmioDiscoveryReport) -> Result<DiscoveryDocument<'_>> {
+    Ok(DiscoveryDocument {
+        schema_version: 2,
+        command: "mmio discover",
+        analysis_mode: "best-effort",
+        access_count_mode: "maximum-per-path",
+        completeness_claim: false,
+        ranges: report
+            .ranges
+            .iter()
+            .map(|range| RangeDocument {
+                name: &range.name,
+                start: format!("{:#010x}", range.start),
+                end_exclusive: format!("{:#010x}", range.end),
+            })
+            .collect(),
+        artifacts: report
+            .artifacts
+            .iter()
+            .map(|artifact| {
+                Ok(ArtifactDocument {
+                    source: &artifact.source,
+                    artifact: ArtifactIdentity {
+                        path: artifact.path.display().to_string(),
+                        sha256: artifact_sha256(&artifact.path)?,
+                    },
+                    functions: artifact.functions,
+                    functions_with_mmio: artifact.functions_with_mmio,
+                    functions_with_diagnostics: artifact.functions_with_diagnostics,
+                    explored_states: artifact.explored_states,
+                    terminal_paths: artifact.terminal_paths,
+                    branch_sites: artifact.branch_sites,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        registers: report
+            .registers
+            .iter()
+            .map(|register| RegisterDocument {
+                address: format!("{:#010x}", register.address),
+                width: register.width,
+                name: &register.name,
+                reads: register.read_count,
+                writes: register.write_count,
+                read_functions: function_names(&register.read_functions),
+                write_functions: function_names(&register.write_functions),
+                write_patterns: register
+                    .write_patterns
+                    .iter()
+                    .map(|finding| {
+                        let pattern = &finding.pattern;
+                        let modified_mask = pattern.modified_mask(register.width);
+                        WritePatternDocument {
+                            occurrences: finding.occurrences,
+                            modified_mask: format!("{modified_mask:#010x}"),
+                            candidate_bit_ranges: mask_ranges(modified_mask),
+                            preserved_mask: format!("{:#010x}", pattern.preserved_mask),
+                            inverted_mask: format!("{:#010x}", pattern.inverted_mask),
+                            forced_zero_mask: format!("{:#010x}", pattern.forced_zero_mask),
+                            forced_one_mask: format!("{:#010x}", pattern.forced_one_mask),
+                            read_derived_mask: format!("{:#010x}", pattern.read_derived_mask),
+                            dynamic_mask: format!("{:#010x}", pattern.dynamic_mask),
+                            functions: function_names(&finding.functions),
+                        }
+                    })
+                    .collect(),
+            })
+            .collect(),
+        diagnostics: report
+            .diagnostics
+            .iter()
+            .map(|diagnostic| DiagnosticDocument {
+                function: diagnostic.function.canonical(),
+                scope: diagnostic.scope,
+                message: &diagnostic.message,
+            })
+            .collect(),
+    })
+}
+
+pub(super) fn render_document(document: &DiscoveryDocument<'_>) -> Result<String> {
+    let mut output = serde_json::to_string_pretty(&document)?;
+    output.push('\n');
     Ok(output)
 }
 
@@ -147,7 +177,7 @@ mod tests {
             registers: Vec::new(),
             diagnostics: Vec::new(),
         };
-        let rendered = render_json_report(&report).unwrap();
+        let rendered = render_document(&document(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
         assert_eq!(parsed["schema_version"], 2);
         assert_eq!(parsed["command"], "mmio discover");

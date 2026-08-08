@@ -2,31 +2,17 @@
 
 use super::super::*;
 
-pub(super) fn run(filtered: Vec<String>, svd: &MmioRegisterMap, harness: &str) -> Result<bool> {
-    let mut vendor_artifact = None;
-    let mut vendor_companion = None;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--vendor-artifact" => {
-                vendor_artifact = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--vendor-artifact",
-                )?));
-            }
-            "--vendor-companion" => {
-                vendor_companion = Some(PathBuf::from(take_value(
-                    &mut arguments,
-                    "--vendor-companion",
-                )?));
-            }
-            _ => {
-                return Err(format!("unknown channel contract option: {argument}").into());
-            }
-        }
-    }
-    let vendor_artifact = vendor_artifact.ok_or("missing --vendor-artifact")?;
-    let vendor_companion = vendor_companion.ok_or("missing --vendor-companion")?;
+pub(super) fn run(
+    arguments: VerifyContractArgs,
+    svd: &MmioRegisterMap,
+    harness: &str,
+) -> Result<bool> {
+    let vendor_artifact = arguments
+        .vendor_artifact
+        .ok_or("missing --vendor-artifact")?;
+    let vendor_companion = arguments
+        .vendor_companion
+        .ok_or("missing --vendor-companion")?;
     crate::harnesses::verify_named_contract(
         harness,
         "channel",

@@ -13,7 +13,33 @@ pub use driver_plan::*;
 pub use effect_contract::*;
 pub use open_radio_vendor_analysis_model::*;
 
-pub type Error = Box<dyn std::error::Error>;
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+
+    #[error(transparent)]
+    Analysis(#[from] open_radio_vendor_analysis_model::Error),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Format(#[from] std::fmt::Error),
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Message(value)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Self::Message(value.to_owned())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct DriverAdapterRequest<'a> {

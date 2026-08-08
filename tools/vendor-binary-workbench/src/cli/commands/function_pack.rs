@@ -14,7 +14,7 @@ use crate::{
 
 pub(super) fn run(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -22,33 +22,26 @@ pub(super) fn run(
         .functions
         .as_ref()
         .ok_or("project has no [functions] table; configure a reviewed pack first")?;
-    match command {
-        Command::FunctionInitPack => init_pack(arguments, project, &paths.pack),
-        Command::FunctionValidate => validate(arguments, project, &paths.pack),
-        Command::FunctionReview => review(arguments, project, paths, target),
+    match (command, arguments) {
+        (Command::FunctionInitPack, CommandArguments::Output(arguments)) => {
+            init_pack(arguments, project, &paths.pack)
+        }
+        (Command::FunctionValidate, CommandArguments::Validation(arguments)) => {
+            validate(arguments, project, &paths.pack)
+        }
+        (Command::FunctionReview, CommandArguments::Review(arguments)) => {
+            review(arguments, project, paths, target)
+        }
         _ => unreachable!("function pack dispatcher received another command"),
     }
 }
 
-fn init_pack(arguments: Vec<String>, project: &ProjectSpec, configured: &Path) -> Result<bool> {
-    let mut output = None;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            _ => return Err(format!("unknown functions init-pack option: {argument}").into()),
-        }
-    }
+fn init_pack(arguments: OutputArgs, project: &ProjectSpec, configured: &Path) -> Result<bool> {
     let reports = project.function_ir_reports()?;
     let facts = FunctionFacts::load(&reports)?;
-    let output = output.as_deref().unwrap_or(configured);
+    let output = arguments.output.as_deref().unwrap_or(configured);
     write_function_pack_template(output, &facts, &project.id)?;
-    println!(
+    outputln!(
         "FUNCTION-PACK\tstatus=created\tinputs={}\tfunctions={}\troot-functions={}\tcontext-fields={}\tpath={}",
         facts.inputs.len(),
         facts.functions.len(),
@@ -62,16 +55,11 @@ fn init_pack(arguments: Vec<String>, project: &ProjectSpec, configured: &Path) -
     Ok(true)
 }
 
-fn validate(arguments: Vec<String>, project: &ProjectSpec, pack: &Path) -> Result<bool> {
-    let deny_unreviewed = match arguments.as_slice() {
-        [] => false,
-        [argument] if argument == "--deny-unreviewed" => true,
-        _ => return Err(format!("unknown functions validate options: {arguments:?}").into()),
-    };
+fn validate(arguments: ValidationArgs, project: &ProjectSpec, pack: &Path) -> Result<bool> {
     let reports = project.function_ir_reports()?;
     let workspace = FunctionWorkspace::load(&reports, pack)?;
     let summary = workspace.summary();
-    println!(
+    outputln!(
         "FUNCTION-WORKSPACE\tstatus=valid\tinputs={}\tobserved-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\taccepted-incomplete={}\tpack={}",
         summary.inputs,
         summary.observed_functions,
@@ -87,39 +75,20 @@ fn validate(arguments: Vec<String>, project: &ProjectSpec, pack: &Path) -> Resul
         summary.accepted_incomplete,
         pack.display(),
     );
-    Ok(!deny_unreviewed
+    Ok(!arguments.deny_unreviewed
         || (summary.unreviewed_functions == 0
             && summary.unreviewed_contexts == 0
             && summary.unreviewed_fields == 0))
 }
 
 fn review(
-    arguments: Vec<String>,
+    arguments: ReviewArgs,
     project: &ProjectSpec,
     paths: &FunctionWorkspacePaths,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut output = None;
-    let mut check = false;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--output" => {
-                if output.is_some() {
-                    return Err("duplicate --output".into());
-                }
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--check" => {
-                if check {
-                    return Err("duplicate --check".into());
-                }
-                check = true;
-            }
-            _ => return Err(format!("unknown functions review option: {argument}").into()),
-        }
-    }
-    let output = output
+    let output = arguments
+        .output
         .as_deref()
         .or(paths.review_output.as_deref())
         .ok_or("functions review requires --output or [functions.review].output")?;
@@ -127,11 +96,20 @@ fn review(
     let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
     let interface_links = reviewed_interface_links(project, target, &workspace)?;
     let contents = render_function_review(&workspace, interface_links.as_deref())?;
-    super::super::generated_output::write_or_check(output, &contents, check, "function review")?;
+    super::super::generated_output::write_or_check(
+        output,
+        &contents,
+        arguments.check,
+        "function review",
+    )?;
     let summary = workspace.summary();
-    println!(
+    outputln!(
         "FUNCTION-REVIEW\tstatus={}\troot-functions={}\treviewed={}\tunreviewed={}\tcontexts={}\tfields={}\tinterface-links={}\toutput={}",
-        if check { "verified" } else { "written" },
+        if arguments.check {
+            "verified"
+        } else {
+            "written"
+        },
         summary.observed_functions,
         summary.reviewed_functions,
         summary.unreviewed_functions,

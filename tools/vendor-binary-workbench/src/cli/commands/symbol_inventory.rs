@@ -1,17 +1,13 @@
 //! Project artifact and symbol facts for manual linkage analysis.
 
-use std::{fmt::Write as _, fs, path::PathBuf};
+use std::fs;
 
-use super::super::json::{write_artifact, write_string, write_strings};
+use serde::Serialize;
+
 use super::super::*;
 use crate::run_spec::RunSpec;
 
-#[derive(Default)]
-struct Options {
-    json_report: Option<PathBuf>,
-    name_prefix: Option<String>,
-    undefined_only: bool,
-}
+type Options = SymbolInventoryArgs;
 
 impl Options {
     fn includes(&self, symbol: &LinkageSymbol) -> bool {
@@ -23,38 +19,13 @@ impl Options {
     }
 }
 
-fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut options = Options::default();
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--json-report" => {
-                if options.json_report.is_some() {
-                    return Err("duplicate --json-report".into());
-                }
-                options.json_report =
-                    Some(PathBuf::from(take_value(&mut arguments, "--json-report")?));
-            }
-            "--name-prefix" => {
-                if options.name_prefix.is_some() {
-                    return Err("duplicate --name-prefix".into());
-                }
-                options.name_prefix = Some(take_value(&mut arguments, "--name-prefix")?);
-            }
-            "--undefined-only" => options.undefined_only = true,
-            _ => return Err(format!("unknown symbols inventory option: {argument}").into()),
-        }
-    }
-    Ok(options)
-}
-
 fn optional_human(value: Option<&str>) -> &str {
     value.unwrap_or("-")
 }
 
 fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
     for (index, artifact) in inventory.artifacts.iter().enumerate() {
-        println!(
+        outputln!(
             "ARTIFACT\tindex={}\tcontainer={}\tobjects={}\tskipped-members={}\troles={}\tsources={}\tpath={}",
             index,
             artifact.container.label(),
@@ -70,7 +41,7 @@ fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
         .iter()
         .filter(|symbol| options.includes(symbol))
     {
-        println!(
+        outputln!(
             "SYMBOL\tartifact={}\tmember={}\tobject={}\ttable={}\tname={}\tbinding={}\tvisibility={}\tkind={}\tdefinition={}\tsection={}\taddress={:#x}\tsize={}\tscope={}\tresolution={}\tcandidates={}",
             symbol.artifact,
             optional_human(symbol.member.as_deref()),
@@ -89,7 +60,7 @@ fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
             symbol.candidates.len(),
         );
         for candidate in &symbol.candidates {
-            println!(
+            outputln!(
                 "CANDIDATE\tname={}\tartifact={}\tmember={}\taddress={:#x}\tkind={}",
                 symbol.fact.name,
                 candidate.artifact,
@@ -121,7 +92,7 @@ fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
         .iter()
         .filter(|symbol| symbol.resolution.is_unresolved())
         .count();
-    println!(
+    outputln!(
         "SUMMARY\tartifacts={}\tsymbol-facts={}\temitted={}\texported-definitions={}\tundefined={}\tunresolved-or-associated={}",
         inventory.artifacts.len(),
         inventory.symbols.len(),
@@ -132,112 +103,80 @@ fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
     );
 }
 
-fn write_optional_string(output: &mut String, value: Option<&str>) {
-    if let Some(value) = value {
-        write_string(output, value);
-    } else {
-        output.push_str("null");
-    }
+#[derive(Serialize)]
+struct ArtifactIdentity {
+    path: String,
+    sha256: String,
 }
 
-fn write_json_report(
-    path: &std::path::Path,
-    inventory: &ProjectLinkageInventory,
+#[derive(Serialize)]
+struct ArtifactDocument<'a> {
+    index: usize,
+    artifact: ArtifactIdentity,
+    roles: &'a [String],
+    sources: &'a [String],
+    container: &'static str,
+    objects: usize,
+    skipped_members: usize,
+}
+
+#[derive(Serialize)]
+struct CandidateDocument<'a> {
+    artifact: usize,
+    member: Option<&'a str>,
+    address: String,
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+struct SymbolDocument<'a> {
+    artifact: usize,
+    member: Option<&'a str>,
+    object_kind: &'static str,
+    table: &'static str,
+    name: &'a str,
+    binding: String,
+    visibility: String,
+    kind: &'static str,
+    definition: &'static str,
+    section: Option<&'a str>,
+    address: String,
+    size: u64,
+    scope: &'static str,
+    resolution: &'static str,
+    candidates: Vec<CandidateDocument<'a>>,
+}
+
+#[derive(Serialize)]
+struct SummaryDocument {
+    artifacts: usize,
+    symbol_facts: usize,
+    emitted: usize,
+    exported_definitions: usize,
+    undefined: usize,
+    unresolved_or_associated: usize,
+}
+
+#[derive(Serialize)]
+struct InventoryDocument<'a> {
+    schema_version: u32,
+    command: &'static str,
+    linkage_mode: &'static str,
+    linker_resolution_claim: bool,
+    artifacts: Vec<ArtifactDocument<'a>>,
+    symbols: Vec<SymbolDocument<'a>>,
+    summary: SummaryDocument,
+}
+
+fn document<'a>(
+    inventory: &'a ProjectLinkageInventory,
     options: &Options,
-) -> Result<()> {
-    let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 2,\n  \"command\": \"symbols inventory\",\n");
-    output.push_str("  \"linkage_mode\": \"association-only\",\n");
-    output.push_str("  \"linker_resolution_claim\": false,\n");
-    output.push_str("  \"artifacts\": [\n");
-    for (index, artifact) in inventory.artifacts.iter().enumerate() {
-        write!(output, "    {{\"index\": {index}, \"artifact\": ")
-            .expect("writing to String cannot fail");
-        write_artifact(&mut output, &artifact.path)?;
-        output.push_str(", \"roles\": ");
-        write_strings(&mut output, &artifact.roles);
-        output.push_str(", \"sources\": ");
-        write_strings(&mut output, &artifact.sources);
-        writeln!(
-            output,
-            ", \"container\": \"{}\", \"objects\": {}, \"skipped_members\": {}}}{}",
-            artifact.container.label(),
-            artifact.objects,
-            artifact.skipped_members,
-            if index + 1 == inventory.artifacts.len() {
-                ""
-            } else {
-                ","
-            }
-        )
-        .expect("writing to String cannot fail");
-    }
-    output.push_str("  ],\n  \"symbols\": [\n");
+) -> Result<InventoryDocument<'a>> {
     let symbols = inventory
         .symbols
         .iter()
         .filter(|symbol| options.includes(symbol))
         .collect::<Vec<_>>();
-    for (index, symbol) in symbols.iter().enumerate() {
-        write!(
-            output,
-            "    {{\"artifact\": {}, \"member\": ",
-            symbol.artifact
-        )
-        .expect("writing to String cannot fail");
-        write_optional_string(&mut output, symbol.member.as_deref());
-        output.push_str(", \"object_kind\": ");
-        write_string(&mut output, symbol.object_kind.label());
-        output.push_str(", \"table\": ");
-        write_string(&mut output, symbol.fact.table.label());
-        output.push_str(", \"name\": ");
-        write_string(&mut output, &symbol.fact.name);
-        output.push_str(", \"binding\": ");
-        write_string(&mut output, &symbol.fact.binding.label());
-        output.push_str(", \"visibility\": ");
-        write_string(&mut output, &symbol.fact.visibility.label());
-        output.push_str(", \"kind\": ");
-        write_string(&mut output, symbol.fact.kind.label());
-        output.push_str(", \"definition\": ");
-        write_string(&mut output, symbol.fact.definition.label());
-        output.push_str(", \"section\": ");
-        write_optional_string(&mut output, symbol.fact.section.as_deref());
-        write!(
-            output,
-            ", \"address\": \"{:#x}\", \"size\": {}, \"scope\": ",
-            symbol.fact.address, symbol.fact.size
-        )
-        .expect("writing to String cannot fail");
-        write_string(&mut output, symbol.fact.scope.label());
-        output.push_str(", \"resolution\": ");
-        write_string(&mut output, symbol.resolution.label());
-        output.push_str(", \"candidates\": [");
-        for (candidate_index, candidate) in symbol.candidates.iter().enumerate() {
-            if candidate_index != 0 {
-                output.push_str(", ");
-            }
-            write!(
-                output,
-                "{{\"artifact\": {}, \"member\": ",
-                candidate.artifact
-            )
-            .expect("writing to String cannot fail");
-            write_optional_string(&mut output, candidate.member.as_deref());
-            write!(
-                output,
-                ", \"address\": \"{:#x}\", \"kind\": \"{}\"}}",
-                candidate.address,
-                candidate.kind.label()
-            )
-            .expect("writing to String cannot fail");
-        }
-        writeln!(
-            output,
-            "]}}{}",
-            if index + 1 == symbols.len() { "" } else { "," }
-        )
-        .expect("writing to String cannot fail");
-    }
     let undefined = inventory
         .symbols
         .iter()
@@ -255,47 +194,85 @@ fn write_json_report(
         .iter()
         .filter(|symbol| symbol.resolution.is_unresolved())
         .count();
-    write!(
-        output,
-        "  ],\n  \"summary\": {{\"artifacts\": {}, \"symbol_facts\": {}, \"emitted\": {}, \"exported_definitions\": {}, \"undefined\": {}, \"unresolved_or_associated\": {}}}\n}}\n",
-        inventory.artifacts.len(),
-        inventory.symbols.len(),
-        symbols.len(),
-        exported,
-        undefined,
-        unresolved,
-    )
-    .expect("writing to String cannot fail");
+    Ok(InventoryDocument {
+        schema_version: 2,
+        command: "symbols inventory",
+        linkage_mode: "association-only",
+        linker_resolution_claim: false,
+        artifacts: inventory
+            .artifacts
+            .iter()
+            .enumerate()
+            .map(|(index, artifact)| {
+                Ok(ArtifactDocument {
+                    index,
+                    artifact: ArtifactIdentity {
+                        path: artifact.path.display().to_string(),
+                        sha256: artifact_sha256(&artifact.path)?,
+                    },
+                    roles: &artifact.roles,
+                    sources: &artifact.sources,
+                    container: artifact.container.label(),
+                    objects: artifact.objects,
+                    skipped_members: artifact.skipped_members,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        symbols: symbols
+            .iter()
+            .map(|symbol| SymbolDocument {
+                artifact: symbol.artifact,
+                member: symbol.member.as_deref(),
+                object_kind: symbol.object_kind.label(),
+                table: symbol.fact.table.label(),
+                name: &symbol.fact.name,
+                binding: symbol.fact.binding.label(),
+                visibility: symbol.fact.visibility.label(),
+                kind: symbol.fact.kind.label(),
+                definition: symbol.fact.definition.label(),
+                section: symbol.fact.section.as_deref(),
+                address: format!("{:#x}", symbol.fact.address),
+                size: symbol.fact.size,
+                scope: symbol.fact.scope.label(),
+                resolution: symbol.resolution.label(),
+                candidates: symbol
+                    .candidates
+                    .iter()
+                    .map(|candidate| CandidateDocument {
+                        artifact: candidate.artifact,
+                        member: candidate.member.as_deref(),
+                        address: format!("{:#x}", candidate.address),
+                        kind: candidate.kind.label(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        summary: SummaryDocument {
+            artifacts: inventory.artifacts.len(),
+            symbol_facts: inventory.symbols.len(),
+            emitted: symbols.len(),
+            exported_definitions: exported,
+            undefined,
+            unresolved_or_associated: unresolved,
+        },
+    })
+}
+
+fn write_json_report(path: &std::path::Path, document: &InventoryDocument<'_>) -> Result<()> {
+    let mut output = serde_json::to_string_pretty(&document)?;
+    output.push('\n');
     fs::write(path, output)?;
     Ok(())
 }
 
-pub(super) fn run(arguments: Vec<String>, run_spec: &RunSpec) -> Result<bool> {
-    let options = parse_options(arguments)?;
+pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bool> {
     let inventory = build_project_linkage_inventory(run_spec.inputs())?;
-    print_report(&inventory, &options);
+    let document = document(&inventory, &options)?;
+    if !crate::cli::output::structured("symbol-inventory", &document) {
+        print_report(&inventory, &options);
+    }
     if let Some(path) = options.json_report.as_deref() {
-        write_json_report(path, &inventory, &options)?;
+        write_json_report(path, &document)?;
     }
     Ok(true)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parses_inventory_filters() {
-        let options = parse_options(vec![
-            "--undefined-only".to_owned(),
-            "--name-prefix".to_owned(),
-            "osi_".to_owned(),
-            "--json-report".to_owned(),
-            "symbols.json".to_owned(),
-        ])
-        .unwrap();
-        assert!(options.undefined_only);
-        assert_eq!(options.name_prefix.as_deref(), Some("osi_"));
-        assert_eq!(options.json_report, Some(PathBuf::from("symbols.json")));
-    }
 }

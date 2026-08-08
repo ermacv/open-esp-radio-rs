@@ -16,6 +16,7 @@ open-radio-vendor-backend-riscv = { path = "../backend-riscv" }
 open-radio-vendor-harness-esp32s31 = { path = "../harness-esp32s31" }
 open-radio-vendor-semantics = { path = "../semantics" }
 sha2 = "=0.10.9"
+thiserror = "=2.0.19"
 
 [lints]
 workspace = true

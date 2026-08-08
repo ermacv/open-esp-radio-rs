@@ -1,6 +1,6 @@
 //! Multi-source vendor inventory verification.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::super::*;
 
@@ -20,11 +20,11 @@ struct ResolvedSourceInput {
     prefix: String,
 }
 
-fn source_option<'a>(argument: &'a str, name: &str) -> Option<&'a str> {
-    argument
-        .strip_prefix(name)
-        .and_then(|suffix| suffix.strip_prefix(':'))
-        .filter(|source| !source.is_empty())
+fn split_named<'a>(value: &'a str, option: &str) -> Result<(&'a str, &'a str)> {
+    value
+        .split_once('=')
+        .filter(|(name, value)| !name.is_empty() && !value.is_empty())
+        .ok_or_else(|| format!("{option} requires SOURCE=VALUE").into())
 }
 
 fn source_mut<'a>(
@@ -50,104 +50,56 @@ fn set_string(slot: &mut Option<String>, value: String, option: &str) -> Result<
 }
 
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: VerifyInventoryArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
-    let mut rust_artifact = None;
-    let mut rust_companion = None;
-    let mut profile_path = None;
-    let mut disposition_path = None;
-    let mut rust_prefix = "open_phy_trace_".to_owned();
-    let mut gate_name = "completion".to_owned();
-    let mut match_floor = None;
-    let mut evidence_baseline = None;
-    let mut json_report = None;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        if let Some(source) = source_option(&argument, "--source-artifact") {
-            let value = take_value(&mut arguments, &argument)?;
-            set_path(
-                &mut source_mut(&mut source_inputs, source)?.artifact,
-                value,
-                &argument,
-            )?;
-            continue;
-        }
-        if let Some(source) = source_option(&argument, "--source-inventory") {
-            let value = take_value(&mut arguments, &argument)?;
-            set_path(
-                &mut source_mut(&mut source_inputs, source)?.inventory,
-                value,
-                &argument,
-            )?;
-            continue;
-        }
-        if let Some(source) = source_option(&argument, "--source-companion") {
-            let value = take_value(&mut arguments, &argument)?;
-            set_path(
-                &mut source_mut(&mut source_inputs, source)?.companion,
-                value,
-                &argument,
-            )?;
-            continue;
-        }
-        if let Some(source) = source_option(&argument, "--source-prefix") {
-            let value = take_value(&mut arguments, &argument)?;
-            set_string(
-                &mut source_mut(&mut source_inputs, source)?.prefix,
-                value,
-                &argument,
-            )?;
-            continue;
-        }
-
-        match argument.as_str() {
-            "--rust-artifact" => set_path(
-                &mut rust_artifact,
-                take_value(&mut arguments, "--rust-artifact")?,
-                "--rust-artifact",
-            )?,
-            "--rust-companion" => set_path(
-                &mut rust_companion,
-                take_value(&mut arguments, "--rust-companion")?,
-                "--rust-companion",
-            )?,
-            "--profiles" => set_path(
-                &mut profile_path,
-                take_value(&mut arguments, "--profiles")?,
-                "--profiles",
-            )?,
-            "--dispositions" => set_path(
-                &mut disposition_path,
-                take_value(&mut arguments, "--dispositions")?,
-                "--dispositions",
-            )?,
-            "--rust-prefix" => {
-                rust_prefix = take_value(&mut arguments, "--rust-prefix")?;
-            }
-            "--gate" => gate_name = take_value(&mut arguments, "--gate")?,
-            "--match-floor" => {
-                match_floor = Some(take_value(&mut arguments, "--match-floor")?.parse::<usize>()?);
-            }
-            "--evidence-baseline" => set_path(
-                &mut evidence_baseline,
-                take_value(&mut arguments, "--evidence-baseline")?,
-                "--evidence-baseline",
-            )?,
-            "--json-report" => set_path(
-                &mut json_report,
-                take_value(&mut arguments, "--json-report")?,
-                "--json-report",
-            )?,
-            "--no-profiles" | "--no-dispositions" | "--no-evidence-baseline" => {}
-            _ => return Err(format!("unknown verify inventory option: {argument}").into()),
-        }
+    for value in arguments.source_artifact {
+        let (source, path) = split_named(&value, "--source-artifact")?;
+        set_path(
+            &mut source_mut(&mut source_inputs, source)?.artifact,
+            path.to_owned(),
+            "--source-artifact",
+        )?;
+    }
+    for value in arguments.source_inventory {
+        let (source, path) = split_named(&value, "--source-inventory")?;
+        set_path(
+            &mut source_mut(&mut source_inputs, source)?.inventory,
+            path.to_owned(),
+            "--source-inventory",
+        )?;
+    }
+    for value in arguments.source_companion {
+        let (source, path) = split_named(&value, "--source-companion")?;
+        set_path(
+            &mut source_mut(&mut source_inputs, source)?.companion,
+            path.to_owned(),
+            "--source-companion",
+        )?;
+    }
+    for value in arguments.source_prefix {
+        let (source, prefix) = split_named(&value, "--source-prefix")?;
+        set_string(
+            &mut source_mut(&mut source_inputs, source)?.prefix,
+            prefix.to_owned(),
+            "--source-prefix",
+        )?;
     }
 
+    let rust_artifact = arguments.rust_artifact;
+    let rust_companion = arguments.rust_companion;
+    let profile_path = arguments.profiles;
+    let disposition_path = arguments.dispositions;
+    let rust_prefix = arguments.rust_prefix;
+    let gate_name = arguments.gate;
+    let match_floor = arguments.match_floor;
+    let evidence_baseline = arguments.evidence_baseline;
+    let json_report = arguments.json_report;
+
     if source_inputs.is_empty() {
-        return Err("verify inventory requires at least one --source-artifact:SOURCE".into());
+        return Err("verify inventory requires at least one --source-artifact SOURCE=PATH".into());
     }
     let sources = source_inputs
         .into_iter()
@@ -239,11 +191,17 @@ pub(super) fn run(
     }
 
     let total_symbols = symbol_sets.iter().map(Vec::len).sum::<usize>();
-    print!("INVENTORY");
-    for (source, symbols) in verify_sources.iter().zip(&symbol_sets) {
-        print!("\t{}={}", source.name, symbols.len());
-    }
-    println!("\ttotal={total_symbols}");
+    let inventory = std::iter::once("INVENTORY".to_owned())
+        .chain(
+            verify_sources
+                .iter()
+                .zip(&symbol_sets)
+                .map(|(source, symbols)| format!("{}={}", source.name, symbols.len())),
+        )
+        .chain(std::iter::once(format!("total={total_symbols}")))
+        .collect::<Vec<_>>()
+        .join("\t");
+    outputln!("{inventory}");
 
     let mut total = VerifySummary::default();
     let mut evidence = EvidenceSet::new();
@@ -283,7 +241,7 @@ pub(super) fn run(
         &orphan_sources,
         &explicitly_bound_probes,
     )?;
-    println!(
+    outputln!(
         "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
         total.vendor_functions,
         total.matched,
@@ -299,60 +257,73 @@ pub(super) fn run(
         total.not_yet_ported,
     );
     print_evidence(&evidence);
-    let evidence_passed = evidence_baseline
+    let evidence_comparison = evidence_baseline
         .as_deref()
         .map(load_evidence_baseline)
         .transpose()?
-        .is_none_or(|baseline| check_evidence_baseline(&baseline, &evidence));
+        .map(|baseline| compare_evidence_baseline(&baseline, &evidence));
+    if let Some(comparison) = &evidence_comparison
+        && !crate::cli::output::structured("evidence-comparison", comparison)
+    {
+        print_evidence_comparison(comparison);
+    }
+    let evidence_passed = evidence_comparison
+        .as_ref()
+        .is_none_or(|comparison| comparison.passed);
     let passed = gate.passes(total, orphan_probes) && evidence_passed;
-    if let Some(path) = json_report.as_deref() {
-        let mut artifacts = Vec::<(String, &Path)>::new();
-        for source in &sources {
-            artifacts.push((format!("source:{}:artifact", source.id), &source.artifact));
-            if let Some(inventory) = source.inventory.as_deref() {
-                artifacts.push((format!("source:{}:inventory", source.id), inventory));
-            }
-            if let Some(companion) = source.companion.as_deref() {
-                artifacts.push((format!("source:{}:companion", source.id), companion));
-            }
-        }
-        artifacts.push(("rust-probes".to_owned(), &rust_artifact));
-        if let Some(companion) = rust_companion.as_deref() {
-            artifacts.push(("rust-companion".to_owned(), companion));
-        }
-        if let Some(profiles) = profile_path.as_deref() {
-            artifacts.push(("profiles".to_owned(), profiles));
-        }
-        if let Some(dispositions) = disposition_path.as_deref() {
-            artifacts.push(("dispositions".to_owned(), dispositions));
-        }
-        if let Some(baseline) = evidence_baseline.as_deref() {
-            artifacts.push(("evidence-baseline".to_owned(), baseline));
-        }
-        write_verification_json_report(
-            path,
-            target,
-            gate,
-            total,
-            orphan_probes,
-            evidence_passed,
-            passed,
-            &evidence,
-            &artifacts,
-            &disposition_manifest
-                .as_ref()
-                .map(|manifest| {
-                    manifest
-                        .entries()
-                        .filter(|entry| {
-                            entry.disposition.is_implemented()
-                                && entry.semantic_contract.is_none()
-                                && entry.effect_contract.is_none()
-                        })
-                        .collect::<Vec<_>>()
+    let qualification_gaps = disposition_manifest
+        .as_ref()
+        .map(|manifest| {
+            manifest
+                .entries()
+                .filter(|entry| {
+                    entry.disposition.is_implemented()
+                        && entry.semantic_contract.is_none()
+                        && entry.effect_contract.is_none()
                 })
-                .unwrap_or_default(),
-        )?;
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut artifacts = Vec::<(String, &Path)>::new();
+    for source in &sources {
+        artifacts.push((format!("source:{}:artifact", source.id), &source.artifact));
+        if let Some(inventory) = source.inventory.as_deref() {
+            artifacts.push((format!("source:{}:inventory", source.id), inventory));
+        }
+        if let Some(companion) = source.companion.as_deref() {
+            artifacts.push((format!("source:{}:companion", source.id), companion));
+        }
+    }
+    artifacts.push(("rust-probes".to_owned(), &rust_artifact));
+    if let Some(companion) = rust_companion.as_deref() {
+        artifacts.push(("rust-companion".to_owned(), companion));
+    }
+    if let Some(profiles) = profile_path.as_deref() {
+        artifacts.push(("profiles".to_owned(), profiles));
+    }
+    if let Some(dispositions) = disposition_path.as_deref() {
+        artifacts.push(("dispositions".to_owned(), dispositions));
+    }
+    if let Some(baseline) = evidence_baseline.as_deref() {
+        artifacts.push(("evidence-baseline".to_owned(), baseline));
+    }
+    let document = verification_document(VerificationDocumentInputs {
+        target,
+        gate,
+        summary: total,
+        orphan_probes,
+        evidence_baseline_passed: evidence_passed,
+        passed,
+        evidence: &evidence,
+        artifacts: &artifacts,
+        qualification_gaps: &qualification_gaps,
+    })?;
+    crate::cli::output::structured("inventory-verification", &document);
+    if let Some(path) = json_report.as_deref() {
+        write_verification_json_report(path, &document)?;
+        if !crate::cli::output::file("inventory-verification-file", path, "written") {
+            outputln!("JSON-REPORT\t{}", path.display());
+        }
     }
     gate.report(passed);
     Ok(passed)

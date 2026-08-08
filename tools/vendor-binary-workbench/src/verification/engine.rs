@@ -64,9 +64,9 @@ impl VerificationGate {
     pub(crate) fn report(self, passed: bool) {
         let result = if passed { "PASS" } else { "FAIL" };
         match self {
-            Self::Completion => println!("GATE\tcompletion\t{result}"),
+            Self::Completion => outputln!("GATE\tcompletion\t{result}"),
             Self::Regression { match_floor } => {
-                println!("GATE\tregression\t{result}\tmatch-floor={match_floor}");
+                outputln!("GATE\tregression\t{result}\tmatch-floor={match_floor}");
             }
         }
     }
@@ -121,7 +121,7 @@ pub(crate) fn print_protocol_inventory(
             }
         }
     }
-    println!(
+    outputln!(
         "PROTOCOL-INVENTORY\tshared={shared}\twifi={wifi}\tbluetooth={bluetooth}\tble={ble}\tcoex={coex}\tieee802154={ieee802154}\tunknown={unknown}\texact-dispositions={}\texecutable-bindings={}",
         manifest.entries().count(),
         manifest
@@ -148,14 +148,14 @@ pub(crate) fn verify_source(
     evidence: &mut EvidenceSet,
 ) -> Result<VerifySummary> {
     let vendor_digest = artifact_sha256(source.artifact)?;
-    println!(
+    outputln!(
         "ORACLE\t{}\t{}\tsha256={vendor_digest}",
         source.name,
         source.artifact.display()
     );
     if let Some(inventory) = source.inventory.filter(|path| *path != source.artifact) {
         let inventory_digest = artifact_sha256(inventory)?;
-        println!(
+        outputln!(
             "ORACLE\t{}-inventory\t{}\tsha256={inventory_digest}",
             source.name,
             inventory.display()
@@ -163,7 +163,7 @@ pub(crate) fn verify_source(
     }
     if let Some(companion) = source.companion {
         let companion_digest = artifact_sha256(companion)?;
-        println!(
+        outputln!(
             "ORACLE\t{}-companion\t{}\tsha256={companion_digest}",
             source.name,
             companion.display()
@@ -289,7 +289,7 @@ pub(crate) fn verify_source(
                     &vendor.name,
                     driver_adapter_effect_evidence(harness, policy, binding, &proof.canonical),
                 )?;
-                println!(
+                outputln!(
                     "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\tdriver-adapter={}",
                     source.name,
                     vendor.name,
@@ -299,7 +299,7 @@ pub(crate) fn verify_source(
                 );
             } else {
                 summary.mismatched += 1;
-                println!(
+                outputln!(
                     "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\tdriver-adapter={}",
                     source.name,
                     vendor.name,
@@ -356,7 +356,7 @@ pub(crate) fn verify_source(
                                 &vendor.name,
                                 semantic_contract_evidence(harness, contract.label()),
                             )?;
-                            println!(
+                            outputln!(
                                 "FUNCTION\t{}\t{}\tMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}\thil-evidence={}",
                                 source.name,
                                 vendor.name,
@@ -369,7 +369,7 @@ pub(crate) fn verify_source(
                             );
                         } else {
                             summary.mismatched += 1;
-                            println!(
+                            outputln!(
                                 "FUNCTION\t{}\t{}\tMISMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}",
                                 source.name,
                                 vendor.name,
@@ -389,7 +389,7 @@ pub(crate) fn verify_source(
                             .map(|(source, symbol)| format!("{source}:{symbol}"))
                             .collect::<Vec<_>>()
                             .join(",");
-                        println!(
+                        outputln!(
                             "FUNCTION\t{}\t{}\tIMPLEMENTED-UNQUALIFIED\tdisposition={}\tprotocol={}\trust-component={}\thil-evidence={}\tqualification-blockers={}\tmissing-semantic-contract",
                             source.name,
                             vendor.name,
@@ -410,7 +410,7 @@ pub(crate) fn verify_source(
                 } else {
                     summary.missing += 1;
                     summary.not_yet_ported += 1;
-                    println!(
+                    outputln!(
                         "FUNCTION\t{}\t{}\tUNCOVERED\tdisposition={}\tprotocol={}\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
                         source.name,
                         vendor.name,
@@ -422,9 +422,12 @@ pub(crate) fn verify_source(
                 }
             } else {
                 summary.missing += 1;
-                println!(
+                outputln!(
                     "FUNCTION\t{}\t{}\tUNCOVERED\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
-                    source.name, vendor.name, rust_prefix, rust_prefix
+                    source.name,
+                    vendor.name,
+                    rust_prefix,
+                    rust_prefix
                 );
             }
             continue;
@@ -451,9 +454,9 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
-            println!("PROFILE\t{}\t{}\tBEGIN", source.name, profile.name);
+            outputln!("PROFILE\t{}\t{}\tBEGIN", source.name, profile.name);
             let argument_domain = profile.coverage_argument_constraints();
-            let verdict = compare_execution_scenarios(
+            let comparison = compare_execution_scenarios(
                 svd,
                 ExecutionInput {
                     artifact: source.artifact,
@@ -469,6 +472,8 @@ pub(crate) fn verify_source(
                 &argument_domain,
                 &profile.scenarios,
             )?;
+            print_execution_comparison(&comparison);
+            let verdict = comparison.verdict;
             match verdict {
                 ComparisonVerdict::Match => {
                     summary.matched += 1;
@@ -486,7 +491,7 @@ pub(crate) fn verify_source(
                 ComparisonVerdict::Mismatch => summary.mismatched += 1,
                 ComparisonVerdict::Incomplete => summary.incomplete += 1,
             }
-            println!(
+            outputln!(
                 "FUNCTION\t{}\t{}\t{}\trust={}\tevidence={}\tbranch-outcomes=complete\tprofile={}",
                 source.name,
                 vendor.name,
@@ -507,22 +512,26 @@ pub(crate) fn verify_source(
             let mut uncovered = print_uncovered(&vendor.name, source.name, &vendor_trace)
                 + print_uncovered(&vendor.name, "rust", &rust_trace);
             if compare_return && !vendor_trace.return_value.is_resolved() {
-                println!(
+                outputln!(
                     "UNCOVERED\t{}\t{}\tvendor\tunresolved-return",
-                    source.name, vendor.name
+                    source.name,
+                    vendor.name
                 );
                 uncovered += 1;
             }
             if compare_return && !rust_trace.return_value.is_resolved() {
-                println!(
+                outputln!(
                     "UNCOVERED\t{}\t{}\trust\tunresolved-return",
-                    source.name, vendor.name
+                    source.name,
+                    vendor.name
                 );
                 uncovered += 1;
             }
-            println!(
+            outputln!(
                 "FUNCTION\t{}\t{}\tINCOMPLETE\trust={}\tuncovered={uncovered}",
-                source.name, vendor.name, rust.name
+                source.name,
+                vendor.name,
+                rust.name
             );
         } else if let Some(policy) = effect_policy {
             let generated_companions = source
@@ -547,7 +556,7 @@ pub(crate) fn verify_source(
                 effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)?;
             let generated_to_rust =
                 effect_contract::compare_effects(&generated_effects, &rust_effects, policy)?;
-            println!(
+            outputln!(
                 "GENERATED-REFERENCE\t{}\t{}\tMATCH\tharness=exact-mmio-leaf-v1\tvendor-effects={}\tgenerated-effects={}",
                 source.name,
                 vendor.name,
@@ -573,7 +582,7 @@ pub(crate) fn verify_source(
                             &generated_proof.canonical(),
                         ),
                     )?;
-                    println!(
+                    outputln!(
                         "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\teffects={}\treturn={}",
                         source.name,
                         vendor.name,
@@ -588,7 +597,7 @@ pub(crate) fn verify_source(
                     effect_contract::EffectComparisonVerdict::Match,
                 ) => {
                     summary.mismatched += 1;
-                    println!(
+                    outputln!(
                         "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=return",
                         source.name,
                         vendor.name,
@@ -598,7 +607,7 @@ pub(crate) fn verify_source(
                 }
                 (effect_contract::EffectComparisonVerdict::Mismatch(reason), _) => {
                     summary.mismatched += 1;
-                    println!(
+                    outputln!(
                         "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason={reason}",
                         source.name,
                         vendor.name,
@@ -608,7 +617,7 @@ pub(crate) fn verify_source(
                 }
                 (_, effect_contract::EffectComparisonVerdict::Mismatch(reason)) => {
                     summary.mismatched += 1;
-                    println!(
+                    outputln!(
                         "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=generated-reference: {reason}",
                         source.name,
                         vendor.name,
@@ -623,7 +632,7 @@ pub(crate) fn verify_source(
             summary.matched += 1;
             summary.symbolic_matches += 1;
             record_evidence(evidence, source.name, &vendor.name, "symbolic")?;
-            println!(
+            outputln!(
                 "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=symbolic\tevents={}\treturn={}",
                 source.name,
                 vendor.name,
@@ -633,7 +642,7 @@ pub(crate) fn verify_source(
             );
         } else {
             summary.mismatched += 1;
-            println!(
+            outputln!(
                 "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tvendor-events={}\trust-events={}",
                 source.name,
                 vendor.name,
@@ -643,7 +652,7 @@ pub(crate) fn verify_source(
             );
         }
     }
-    println!(
+    outputln!(
         "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
         source.name,
         summary.vendor_functions,

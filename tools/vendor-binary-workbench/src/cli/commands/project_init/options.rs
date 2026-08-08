@@ -5,6 +5,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use crate::cli::ProjectInitArgs;
 use crate::{Result, parse_u32, source_id::validate_source_id};
 
 pub(super) const DEFAULT_RUST_TARGET: &str = "riscv32imac-unknown-none-elf";
@@ -27,51 +28,22 @@ pub(super) struct Options {
     pub(super) import_svd: Option<PathBuf>,
 }
 
-pub(super) fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut directory = None;
-    let mut id = None;
+pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
+    let directory = arguments.directory;
+    let id = arguments.id;
     let mut ranges = Vec::new();
-    let mut sources = Vec::new();
-    let mut rust_target = None;
-    let mut pac_crate_name = None;
-    let mut import_svd = None;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--directory" => set_once(
-                &mut directory,
-                PathBuf::from(take_value(&mut arguments, "--directory")?),
-                "--directory",
-            )?,
-            "--id" => set_once(&mut id, take_value(&mut arguments, "--id")?, "--id")?,
-            "--mmio" => ranges.push(parse_range(&take_value(&mut arguments, "--mmio")?)?),
-            "--source" => {
-                let source = take_value(&mut arguments, "--source")?;
-                validate_source_id(&source)?;
-                sources.push(source);
-            }
-            "--rust-target" => set_once(
-                &mut rust_target,
-                take_value(&mut arguments, "--rust-target")?,
-                "--rust-target",
-            )?,
-            "--pac-crate-name" => set_once(
-                &mut pac_crate_name,
-                take_value(&mut arguments, "--pac-crate-name")?,
-                "--pac-crate-name",
-            )?,
-            "--import-svd" => set_once(
-                &mut import_svd,
-                PathBuf::from(take_value(&mut arguments, "--import-svd")?),
-                "--import-svd",
-            )?,
-            _ => return Err(format!("unknown project init option: {argument}").into()),
-        }
+    for range in arguments.mmio {
+        ranges.push(parse_range(&range)?);
     }
+    let mut sources = arguments.source;
+    for source in &sources {
+        validate_source_id(source)?;
+    }
+    let rust_target = arguments.rust_target;
+    let pac_crate_name = arguments.pac_crate_name;
+    let import_svd = arguments.import_svd;
 
-    let directory = directory.ok_or("project init requires --directory PATH")?;
     validate_directory(&directory)?;
-    let id = id.ok_or("project init requires --id ID")?;
     validate_stable_id(&id, "project")?;
     if ranges.is_empty() {
         return Err("project init requires at least one --mmio NAME=START..END".into());
@@ -195,17 +167,4 @@ fn default_pac_crate_name(id: &str) -> String {
     }
     name.push_str("_pac");
     name
-}
-
-fn take_value(arguments: &mut impl Iterator<Item = String>, option: &str) -> Result<String> {
-    arguments
-        .next()
-        .ok_or_else(|| format!("{option} requires a value").into())
-}
-
-fn set_once<T>(slot: &mut Option<T>, value: T, option: &str) -> Result<()> {
-    if slot.replace(value).is_some() {
-        return Err(format!("duplicate {option}").into());
-    }
-    Ok(())
 }

@@ -1,8 +1,10 @@
 //! Linked best-effort function/call IR export.
 
-use std::{collections::BTreeSet, path::Path};
+use std::{
+    collections::BTreeSet,
+    path::{Path, PathBuf},
+};
 
-use super::super::json::{write_artifact, write_string, write_strings};
 use super::super::*;
 
 mod input;
@@ -21,7 +23,7 @@ use render_common::*;
 
 mod json_report;
 
-use json_report::{render_json_report, write_json_report};
+use json_report::{document, render_document, write_json_report};
 
 #[derive(Debug)]
 pub(super) struct ProjectIrDocuments {
@@ -34,73 +36,41 @@ pub(super) struct ProjectIrDocuments {
 }
 
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: IrExportArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifacts = Vec::new();
-    let mut companions = Vec::new();
-    let mut symbol_prefix = String::new();
-    let mut include_reachable = false;
-    let mut pseudo_path = None;
-    let mut json_report = None;
-    let mut entry_contract_id = "none".to_owned();
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        if let Some(source) = source_artifact_option(&argument) {
-            artifacts.push(named_artifact(
-                source,
-                &take_value(&mut arguments, &argument)?,
-            )?);
-            continue;
-        }
-        match argument.as_str() {
-            "--artifact" => {
-                artifacts.push(parse_artifact(&take_value(&mut arguments, "--artifact")?)?);
-            }
-            "--companion" => {
-                companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
-            }
-            "--symbol-prefix" => {
-                symbol_prefix = take_value(&mut arguments, "--symbol-prefix")?;
-            }
-            "--include-reachable" => include_reachable = true,
-            "--entry-contract" => {
-                entry_contract_id = take_value(&mut arguments, "--entry-contract")?;
-            }
-            "--pseudo-rust" => {
-                pseudo_path = Some(PathBuf::from(take_value(&mut arguments, "--pseudo-rust")?));
-            }
-            "--json-report" => {
-                json_report = Some(PathBuf::from(take_value(&mut arguments, "--json-report")?));
-            }
-            _ => return Err(format!("unknown ir export option: {argument}").into()),
-        }
-    }
+    let artifacts = arguments
+        .artifact
+        .iter()
+        .map(|artifact| parse_artifact(artifact))
+        .collect::<Result<Vec<_>>>()?;
     let (entry_contract, report) = analyze(
         &artifacts,
-        &companions,
-        &symbol_prefix,
-        include_reachable,
-        &entry_contract_id,
+        &arguments.companion,
+        &arguments.symbol_prefix,
+        arguments.include_reachable,
+        &arguments.entry_contract,
         svd,
         target,
     )?;
 
-    print_report(&artifacts, &report, include_reachable);
-    if let Some(path) = pseudo_path.as_deref() {
-        write_pseudo(path, &artifacts, &report, include_reachable)?;
+    let document = document(
+        &artifacts,
+        &arguments.companion,
+        &arguments.symbol_prefix,
+        entry_contract,
+        &report,
+        arguments.include_reachable,
+    )?;
+    if !crate::cli::output::structured("linked-ir", &document) {
+        print_report(&artifacts, &report, arguments.include_reachable);
     }
-    if let Some(path) = json_report.as_deref() {
-        write_json_report(
-            path,
-            &artifacts,
-            &companions,
-            &symbol_prefix,
-            entry_contract,
-            &report,
-            include_reachable,
-        )?;
+    if let Some(path) = arguments.pseudo_rust.as_deref() {
+        write_pseudo(path, &artifacts, &report, arguments.include_reachable)?;
+    }
+    if let Some(path) = arguments.json_report.as_deref() {
+        write_json_report(path, &document)?;
     }
     Ok(true)
 }
@@ -126,7 +96,7 @@ pub(super) fn generate_project_profile(
         target,
     )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
-    let json = render_json_report(
+    let document = document(
         &artifacts,
         &companions,
         &profile.symbol_prefix,
@@ -134,6 +104,7 @@ pub(super) fn generate_project_profile(
         &report,
         profile.include_reachable,
     )?;
+    let json = render_document(&document)?;
     let pseudo = profile
         .pseudo_rust
         .as_ref()

@@ -33,18 +33,18 @@ fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
     let path = root.join("verification/vendor/targets/esp32s31/baselines/phy.evidence");
     let expected = load_evidence_baseline(&path).unwrap();
     assert_eq!(expected.len(), 104);
-    assert!(check_evidence_baseline(&expected, &expected));
+    assert!(compare_evidence_baseline(&expected, &expected).passed);
 
     let mut downgraded = expected.clone();
     downgraded.insert(
         ("archive".to_owned(), "phy_rf_init".to_owned()),
         "scenario/profile:weaker".to_owned(),
     );
-    assert!(!check_evidence_baseline(&expected, &downgraded));
+    assert!(!compare_evidence_baseline(&expected, &downgraded).passed);
 
     let mut missing = expected.clone();
     missing.remove(&("rom".to_owned(), "phy_enable_agc".to_owned()));
-    assert!(!check_evidence_baseline(&expected, &missing));
+    assert!(!compare_evidence_baseline(&expected, &missing).passed);
 }
 
 #[test]
@@ -163,24 +163,24 @@ fn verification_json_report_contains_reproducible_inputs() {
     ));
     let mut evidence = EvidenceSet::new();
     record_evidence(&mut evidence, "archive", "symbol", "symbolic").unwrap();
-    write_verification_json_report(
-        &path,
-        &target,
-        VerificationGate::Regression { match_floor: 1 },
-        VerifySummary {
+    let document = verification_document(VerificationDocumentInputs {
+        target: &target,
+        gate: VerificationGate::Regression { match_floor: 1 },
+        summary: VerifySummary {
             vendor_functions: 1,
             matched: 1,
             symbolic_matches: 1,
             ..VerifySummary::default()
         },
-        0,
-        true,
-        true,
-        &evidence,
-        &[("manifest", &manifest)],
-        &[],
-    )
+        orphan_probes: 0,
+        evidence_baseline_passed: true,
+        passed: true,
+        evidence: &evidence,
+        artifacts: &[("manifest", manifest.as_path())],
+        qualification_gaps: &[],
+    })
     .unwrap();
+    write_verification_json_report(&path, &document).unwrap();
     let report = fs::read_to_string(&path).unwrap();
     let loaded_evidence = load_evidence_report(&path).unwrap();
     fs::remove_file(path).unwrap();

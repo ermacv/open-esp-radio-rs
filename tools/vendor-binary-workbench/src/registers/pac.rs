@@ -74,7 +74,9 @@ pub(crate) fn generate_pac_with_api(
         PacEdition::E2024 => RustEdition::E2024,
     };
     config.strict = true;
-    let mut source = svd2rust::generate(svd, &config)?.lib_rs;
+    let mut source = svd2rust::generate(svd, &config)
+        .map_err(|error| format!("svd2rust generation failed: {error}"))?
+        .lib_rs;
     if api.is_some_and(|api| api.options.allow_clippy_empty_docs) {
         source.insert_str(0, "#![allow(clippy::empty_docs)]\n");
     }

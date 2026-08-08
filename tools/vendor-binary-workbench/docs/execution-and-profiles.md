@@ -102,10 +102,8 @@ cargo vendor-binary-workbench execute compare \
     target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-verification-esp32s31-probes-elf \
   --rust-symbol open_phy_trace_freq_band_reg_set \
-  --case disabled --arg 0 \
-    --mmio 0x20107030=0xffffffff --mmio 0x20107ce4=0xffffffff \
-  --case enabled --arg 1 \
-    --mmio 0x20107030=0xffffffff --mmio 0x20107ce4=0
+  --case 'disabled;arg=0;mmio=0x20107030=0xffffffff;mmio=0x20107ce4=0xffffffff' \
+  --case 'enabled;arg=1;mmio=0x20107030=0xffffffff;mmio=0x20107ce4=0'
 ```
 
 `execute compare` compares ordered MMIO reads/writes, write values (including
@@ -115,7 +113,10 @@ conditional branches in each ELF, aggregates the outcomes exercised by every
 `--case`, and prints each
 missing true/false outcome as `UNCOVERED-BRANCH`. An unresolved indirect edge
 is printed as `UNCOVERED-CONTROL-FLOW`, and a physical MMIO access without an
-SVD register is printed as `UNCOVERED-MMIO`. Any of these conditions makes the
+SVD register is printed as `UNCOVERED-MMIO`. Each `--case` is a complete,
+self-contained scenario in the form `NAME[;KEY=VALUE...]`; this keeps repeated
+scenario groups typed and unambiguous at the CLI boundary. Any of these
+conditions makes the
 result `INCOMPLETE`, even when all observed events match.
 
 The static coverage pass propagates instruction-level constants through direct

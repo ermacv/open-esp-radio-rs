@@ -6,8 +6,10 @@ pub(crate) use open_radio_vendor_semantics as effect_contract;
 mod engine;
 mod evidence;
 mod execution;
+mod execution_report;
 pub(crate) mod profiles;
 
 pub(crate) use engine::*;
 pub(crate) use evidence::*;
 pub(crate) use execution::*;
+pub(crate) use execution_report::*;

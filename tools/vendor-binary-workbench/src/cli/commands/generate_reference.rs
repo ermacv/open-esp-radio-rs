@@ -2,60 +2,49 @@
 
 use super::super::*;
 
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct GeneratedReferenceReport {
+    schema_version: u32,
+    command: &'static str,
+    artifact: String,
+    artifact_sha256: String,
+    member: Option<String>,
+    symbol: String,
+    output: Option<String>,
+    exit_a0_modeled: bool,
+    dependencies: Vec<String>,
+    source: String,
+}
+
 pub(super) fn run(
-    filtered: Vec<String>,
+    arguments: ReferenceArgs,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mut artifact = None;
-    let mut companions = Vec::new();
-    let mut member = None;
-    let mut symbol = None;
-    let mut output = None;
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
-    let mut entry_contract = harnesses::entry_contract(harness, "none")?;
-    let mut arguments = filtered.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--artifact" => {
-                artifact = Some(PathBuf::from(take_value(&mut arguments, "--artifact")?));
-            }
-            "--companion" => {
-                companions.push(PathBuf::from(take_value(&mut arguments, "--companion")?));
-            }
-            "--member" => {
-                member = Some(take_value(&mut arguments, "--member")?);
-            }
-            "--symbol" => {
-                symbol = Some(take_value(&mut arguments, "--symbol")?);
-            }
-            "--output" => {
-                output = Some(PathBuf::from(take_value(&mut arguments, "--output")?));
-            }
-            "--entry-contract" => {
-                entry_contract = harnesses::entry_contract(
-                    harness,
-                    &take_value(&mut arguments, "--entry-contract")?,
-                )?;
-            }
-            _ => {
-                return Err(format!("unknown reference generate option: {argument}").into());
-            }
-        }
-    }
-    let artifact = artifact.ok_or("missing --artifact")?;
-    let symbol = symbol.ok_or("missing --symbol")?;
+    let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let symbol = arguments.symbol.ok_or("missing --symbol")?;
     let input = ArtifactSymbolSelector {
         artifact: artifact.clone(),
-        member: member.clone(),
+        member: arguments.member.clone(),
         symbol,
     };
-    let trace = extract_reference(&input, &companions, riscv_harness, entry_contract, svd)?;
+    let trace = extract_reference(
+        &input,
+        &arguments.companion,
+        riscv_harness,
+        entry_contract,
+        svd,
+    )?;
     let resolved =
         ResolvedReferenceProgram::try_from(&trace).map_err(|error| -> Error { error.into() })?;
     let digest = artifact_sha256(&artifact)?;
-    let companion_provenance = companions
+    let companion_provenance = arguments
+        .companion
         .iter()
         .map(|companion| Ok((companion.display().to_string(), artifact_sha256(companion)?)))
         .collect::<Result<Vec<_>>>()?;
@@ -63,24 +52,40 @@ pub(super) fn run(
         &resolved,
         &artifact.display().to_string(),
         &digest,
-        member.as_deref(),
+        arguments.member.as_deref(),
         &companion_provenance,
     )
     .map_err(|error| -> Error { error.into() })?;
-    if let Some(output) = output {
-        fs::write(&output, generated.source)?;
-        println!(
-            "GENERATED\t{}\t{}\texit-a0={}",
-            trace.symbol,
-            output.display(),
-            if generated.exit_a0_modeled {
-                "modeled"
-            } else {
-                "unresolved"
-            }
-        );
-    } else {
-        print!("{}", generated.source);
+    if let Some(output) = arguments.output.as_deref() {
+        fs::write(output, &generated.source)?;
+    }
+    let report = GeneratedReferenceReport {
+        schema_version: 1,
+        command: "reference generate",
+        artifact: artifact.display().to_string(),
+        artifact_sha256: digest,
+        member: arguments.member,
+        symbol: trace.symbol,
+        output: arguments.output.map(|path| path.display().to_string()),
+        exit_a0_modeled: generated.exit_a0_modeled,
+        dependencies: resolved.dependencies,
+        source: generated.source,
+    };
+    if !crate::cli::output::structured("generated-reference", &report) {
+        if let Some(output) = &report.output {
+            outputln!(
+                "GENERATED\t{}\t{}\texit-a0={}",
+                report.symbol,
+                output,
+                if report.exit_a0_modeled {
+                    "modeled"
+                } else {
+                    "unresolved"
+                }
+            );
+        } else {
+            crate::cli::output::text(&report.source);
+        }
     }
     Ok(true)
 }

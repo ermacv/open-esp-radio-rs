@@ -4,25 +4,15 @@ use super::*;
 use crate::project::{PacBindingsOutputSpec, PacOutputSpec};
 
 #[test]
-fn publication_options_are_explicit_and_read_only_when_requested() {
-    assert_eq!(
-        parse_options(vec!["--check".to_owned()]).unwrap(),
-        Options { check: true }
-    );
-    assert!(parse_options(vec!["--check".to_owned(), "--check".to_owned()]).is_err());
-    assert!(parse_options(vec!["--output".to_owned()]).is_err());
-}
-
-#[test]
 fn publishes_and_checks_a_complete_register_project() {
     let (directory, project) = fixture_project("complete", true, true, true);
 
-    assert!(run(Vec::new(), &project, None).unwrap());
+    assert!(run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(paths.svd_output.as_ref().unwrap().is_file());
     assert!(paths.pac.as_ref().unwrap().output.is_file());
     assert!(paths.bindings.as_ref().unwrap().output.is_file());
-    assert!(run(vec!["--check".to_owned()], &project, None).unwrap());
+    assert!(run(CheckArgs { check: true }, &project, None).unwrap());
 
     fs::remove_dir_all(directory).unwrap();
 }
@@ -31,12 +21,12 @@ fn publishes_and_checks_a_complete_register_project() {
 fn skips_outputs_absent_from_a_partial_project() {
     let (directory, project) = fixture_project("svd-only", true, false, false);
 
-    assert!(run(Vec::new(), &project, None).unwrap());
+    assert!(run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(paths.svd_output.as_ref().unwrap().is_file());
     assert!(paths.pac.is_none());
     assert!(paths.bindings.is_none());
-    assert!(run(vec!["--check".to_owned()], &project, None).unwrap());
+    assert!(run(CheckArgs { check: true }, &project, None).unwrap());
 
     fs::remove_dir_all(directory).unwrap();
 }
@@ -53,7 +43,7 @@ fn generation_failure_does_not_write_an_earlier_prepared_output() {
         .unwrap()
         .target = "invalid".to_owned();
 
-    assert!(!run(Vec::new(), &project, None).unwrap());
+    assert!(!run(CheckArgs::default(), &project, None).unwrap());
     let paths = project.registers.as_ref().unwrap();
     assert!(!paths.svd_output.as_ref().unwrap().exists());
     assert!(!paths.pac.as_ref().unwrap().output.exists());
@@ -67,7 +57,7 @@ fn rejects_shared_output_paths_before_publication() {
     let paths = project.registers.as_mut().unwrap();
     paths.pac.as_mut().unwrap().output = paths.svd_output.clone().unwrap();
 
-    let error = run(Vec::new(), &project, None).unwrap_err();
+    let error = run(CheckArgs::default(), &project, None).unwrap_err();
     assert!(error.to_string().contains("share"));
     assert!(
         !project

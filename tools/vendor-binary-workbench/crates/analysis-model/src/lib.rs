@@ -11,7 +11,30 @@ pub use ir::*;
 pub use mmio::{MmioRegisterMap, Register, Window, reject_register_collisions};
 pub use open_radio_vendor_contracts::*;
 
-pub type Error = Box<dyn std::error::Error>;
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+
+    #[error(transparent)]
+    Xml(#[from] roxmltree::Error),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Message(value)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Self::Message(value.to_owned())
+    }
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 pub(crate) fn u32_literal(value: &str) -> Option<u32> {

@@ -35,7 +35,7 @@ mod verify_inventory;
 mod verify_profiles;
 mod verify_source;
 
-use super::{Command, MmioRegisterMap, Result, TargetSpec};
+use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
 
 pub(crate) struct ProjectContext<'a> {
     pub(crate) project_path: &'a std::path::Path,
@@ -49,70 +49,94 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) svd: &'a MmioRegisterMap,
 }
 
-pub(super) fn run_project_init(arguments: Vec<String>) -> Result<bool> {
+pub(super) fn run_project_init(arguments: CommandArguments) -> Result<bool> {
+    let CommandArguments::ProjectInit(arguments) = arguments else {
+        unreachable!("project init received another argument type")
+    };
     project_init::run(arguments)
 }
 
 pub(super) fn run_project_configure(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     manifest: &std::path::Path,
 ) -> Result<bool> {
+    let CommandArguments::ProjectConfigure(arguments) = arguments else {
+        unreachable!("project configure received another argument type")
+    };
     project_configure::run(arguments, manifest)
 }
 
 pub(super) fn run_project_doctor(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     context: ProjectContext<'_>,
 ) -> Result<bool> {
-    project_doctor::run(arguments, context)
+    let CommandArguments::Empty(_) = arguments else {
+        unreachable!("project doctor received another argument type")
+    };
+    project_doctor::run(context)
 }
 
 pub(super) fn run_project_status(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     context: ProjectContext<'_>,
 ) -> Result<bool> {
+    let CommandArguments::ProjectStatus(arguments) = arguments else {
+        unreachable!("project status received another argument type")
+    };
     project_status::run(arguments, context)
 }
 
 pub(super) fn run_project_pipeline(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     run_spec: Option<&crate::run_spec::RunSpec>,
     memory_map: Option<&crate::MemoryMap>,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
+    let CommandArguments::ProjectPipeline(arguments) = arguments else {
+        unreachable!("project pipeline received another argument type")
+    };
     project_pipeline::run(
         command, arguments, project, run_spec, memory_map, svd, target,
     )
 }
 
 pub(super) fn run_project_publication(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     memory_map: Option<&crate::MemoryMap>,
 ) -> Result<bool> {
+    let CommandArguments::Check(arguments) = arguments else {
+        unreachable!("project publication received another argument type")
+    };
     project_publication::run(arguments, project, memory_map)
 }
 
 pub(super) fn run_symbol_inventory(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     run_spec: &crate::run_spec::RunSpec,
 ) -> Result<bool> {
+    let CommandArguments::SymbolInventory(arguments) = arguments else {
+        unreachable!("symbol inventory received another argument type")
+    };
     symbol_inventory::run(arguments, run_spec)
 }
 
 pub(super) fn run_interface_discovery(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     run_spec: &crate::run_spec::RunSpec,
 ) -> Result<bool> {
+    let CommandArguments::InterfaceDiscover(arguments) = arguments else {
+        unreachable!("interface discovery received another argument type")
+    };
     interface_discovery::run(arguments, run_spec)
 }
 
 pub(super) fn run_interface_pack_command(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -121,7 +145,7 @@ pub(super) fn run_interface_pack_command(
 
 pub(super) fn run_function_pack_command(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -130,7 +154,7 @@ pub(super) fn run_function_pack_command(
 
 pub(super) fn run_register_command(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     memory_map: Option<&crate::MemoryMap>,
 ) -> Result<bool> {
@@ -138,18 +162,21 @@ pub(super) fn run_register_command(
 }
 
 pub(super) fn run_ir_build(
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     run_spec: &crate::run_spec::RunSpec,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
+    let CommandArguments::IrBuild(arguments) = arguments else {
+        unreachable!("IR build received another argument type")
+    };
     ir_build::run(arguments, project, run_spec, svd, target)
 }
 
 pub(super) fn run(
     command: Command,
-    arguments: Vec<String>,
+    arguments: CommandArguments,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -178,26 +205,79 @@ pub(super) fn run(
         | Command::InterfaceDiscover => {
             unreachable!("project, workspace and discovery commands use specialized dispatch")
         }
-        Command::AuditImageTargets => audit_image_targets::run(arguments),
-        Command::DiscoverMmio => discover_mmio::run(arguments, svd),
-        Command::ExportIr => export_ir::run(arguments, svd, target),
-        Command::VerifyContractChannel => {
-            verify_contract_channel::run(arguments, svd, target.require_available_harness()?)
-        }
-        Command::VerifyContractRfInit => {
-            verify_contract_rf_init::run(arguments, svd, target.require_available_harness()?)
-        }
-        Command::ExecuteRun => execute_run::run(arguments, svd),
-        Command::ExecuteCompare => execute_compare::run(arguments, svd),
-        Command::VerifyProfiles => verify_profiles::run(arguments, svd),
-        Command::VerifyEvidence => verify_evidence::run(arguments),
-        Command::GenerateReference => generate_reference::run(arguments, svd, target),
-        Command::GenerateReferenceBatch => generate_reference_batch::run(arguments, svd, target),
-        Command::GenerateDriver => generate_driver::run(arguments, svd, target),
-        Command::InspectAnalyze => inspect_analyze::run(arguments, svd, target),
-        Command::VerifyInventory => verify_inventory::run(arguments, svd, target),
-        Command::VerifySource => verify_source::run(arguments, svd, target),
-        Command::InspectTrace => inspect_trace::run(arguments, svd),
-        Command::InspectCompare => inspect_compare::run(arguments, svd),
+        Command::AuditImageTargets => match arguments {
+            CommandArguments::ImageAudit(args) => audit_image_targets::run(args),
+            _ => unreachable!(),
+        },
+        Command::DiscoverMmio => match arguments {
+            CommandArguments::MmioDiscover(args) => discover_mmio::run(args, svd),
+            _ => unreachable!(),
+        },
+        Command::ExportIr => match arguments {
+            CommandArguments::IrExport(args) => export_ir::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::VerifyContractChannel => match arguments {
+            CommandArguments::VerifyContract(args) => {
+                verify_contract_channel::run(args, svd, target.require_available_harness()?)
+            }
+            _ => unreachable!(),
+        },
+        Command::VerifyContractRfInit => match arguments {
+            CommandArguments::VerifyContract(args) => {
+                verify_contract_rf_init::run(args, svd, target.require_available_harness()?)
+            }
+            _ => unreachable!(),
+        },
+        Command::ExecuteRun => match arguments {
+            CommandArguments::ExecuteRun(args) => execute_run::run(args, svd),
+            _ => unreachable!(),
+        },
+        Command::ExecuteCompare => match arguments {
+            CommandArguments::ExecuteCompare(args) => execute_compare::run(args, svd),
+            _ => unreachable!(),
+        },
+        Command::VerifyProfiles => match arguments {
+            CommandArguments::VerifyProfiles(args) => verify_profiles::run(args, svd),
+            _ => unreachable!(),
+        },
+        Command::VerifyEvidence => match arguments {
+            CommandArguments::VerifyEvidence(args) => verify_evidence::run(args),
+            _ => unreachable!(),
+        },
+        Command::GenerateReference => match arguments {
+            CommandArguments::Reference(args) => generate_reference::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::GenerateReferenceBatch => match arguments {
+            CommandArguments::ReferenceBatch(args) => {
+                generate_reference_batch::run(args, svd, target)
+            }
+            _ => unreachable!(),
+        },
+        Command::GenerateDriver => match arguments {
+            CommandArguments::DriverGenerate(args) => generate_driver::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::InspectAnalyze => match arguments {
+            CommandArguments::InspectAnalyze(args) => inspect_analyze::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::VerifyInventory => match arguments {
+            CommandArguments::VerifyInventory(args) => verify_inventory::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::VerifySource => match arguments {
+            CommandArguments::VerifySource(args) => verify_source::run(args, svd, target),
+            _ => unreachable!(),
+        },
+        Command::InspectTrace => match arguments {
+            CommandArguments::TraceInput(args) => inspect_trace::run(args, svd),
+            _ => unreachable!(),
+        },
+        Command::InspectCompare => match arguments {
+            CommandArguments::InspectCompare(args) => inspect_compare::run(args, svd),
+            _ => unreachable!(),
+        },
     }
 }

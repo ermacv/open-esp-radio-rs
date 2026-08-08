@@ -8,6 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::Serialize;
 use serde_json::{Map, Value};
 
 use sha2::{Digest, Sha256};
@@ -139,37 +140,98 @@ pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
     Ok(evidence)
 }
 
-pub(crate) fn check_evidence_baseline(expected: &EvidenceSet, actual: &EvidenceSet) -> bool {
-    let mut passed = true;
+#[derive(Debug, Serialize)]
+pub(crate) struct EvidenceRegression {
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+    pub(crate) expected: String,
+    pub(crate) actual: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct EvidenceAddition {
+    pub(crate) source: String,
+    pub(crate) symbol: String,
+    pub(crate) kind: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct EvidenceComparison {
+    pub(crate) passed: bool,
+    pub(crate) expected: usize,
+    pub(crate) actual: usize,
+    pub(crate) regressions: Vec<EvidenceRegression>,
+    pub(crate) additions: Vec<EvidenceAddition>,
+}
+
+pub(crate) fn compare_evidence_baseline(
+    expected: &EvidenceSet,
+    actual: &EvidenceSet,
+) -> EvidenceComparison {
+    let mut regressions = Vec::new();
     for ((source, symbol), expected_kind) in expected {
         match actual.get(&(source.clone(), symbol.clone())) {
             Some(actual_kind) if actual_kind == expected_kind => {}
             Some(actual_kind) => {
-                passed = false;
-                println!(
-                    "EVIDENCE-REGRESSION\t{source}\t{symbol}\texpected={expected_kind}\tactual={actual_kind}"
-                );
+                regressions.push(EvidenceRegression {
+                    source: source.clone(),
+                    symbol: symbol.clone(),
+                    expected: expected_kind.clone(),
+                    actual: Some(actual_kind.clone()),
+                });
             }
             None => {
-                passed = false;
-                println!(
-                    "EVIDENCE-REGRESSION\t{source}\t{symbol}\texpected={expected_kind}\tactual=missing"
-                );
+                regressions.push(EvidenceRegression {
+                    source: source.clone(),
+                    symbol: symbol.clone(),
+                    expected: expected_kind.clone(),
+                    actual: None,
+                });
             }
         }
     }
-    for ((source, symbol), kind) in actual {
-        if !expected.contains_key(&(source.clone(), symbol.clone())) {
-            println!("EVIDENCE-ADDITION\t{source}\t{symbol}\t{kind}");
-        }
+    let additions = actual
+        .iter()
+        .filter(|((source, symbol), _)| !expected.contains_key(&(source.clone(), symbol.clone())))
+        .map(|((source, symbol), kind)| EvidenceAddition {
+            source: source.clone(),
+            symbol: symbol.clone(),
+            kind: kind.clone(),
+        })
+        .collect::<Vec<_>>();
+    EvidenceComparison {
+        passed: regressions.is_empty(),
+        expected: expected.len(),
+        actual: actual.len(),
+        regressions,
+        additions,
     }
-    println!(
+}
+
+pub(crate) fn print_evidence_comparison(comparison: &EvidenceComparison) {
+    for regression in &comparison.regressions {
+        outputln!(
+            "EVIDENCE-REGRESSION\t{}\t{}\texpected={}\tactual={}",
+            regression.source,
+            regression.symbol,
+            regression.expected,
+            regression.actual.as_deref().unwrap_or("missing")
+        );
+    }
+    for addition in &comparison.additions {
+        outputln!(
+            "EVIDENCE-ADDITION\t{}\t{}\t{}",
+            addition.source,
+            addition.symbol,
+            addition.kind
+        );
+    }
+    outputln!(
         "EVIDENCE-BASELINE\t{}\texpected={}\tactual={}",
-        if passed { "PASS" } else { "FAIL" },
-        expected.len(),
-        actual.len()
+        if comparison.passed { "PASS" } else { "FAIL" },
+        comparison.expected,
+        comparison.actual
     );
-    passed
 }
 
 fn evidence_path_identity(path: &Path) -> Result<PathBuf> {
@@ -220,11 +282,6 @@ pub(crate) fn write_evidence_candidate(
             .expect("writing to String cannot fail");
     }
     fs::write(path, output)?;
-    println!(
-        "EVIDENCE-CANDIDATE\t{}\tentries={}",
-        path.display(),
-        evidence.len()
-    );
     Ok(())
 }
 
@@ -274,174 +331,193 @@ pub(crate) fn load_evidence_report(path: &Path) -> Result<EvidenceSet> {
 
 pub(crate) fn print_evidence(evidence: &EvidenceSet) {
     for ((source, symbol), kind) in evidence {
-        println!("EVIDENCE\t{source}\t{symbol}\t{kind}");
+        outputln!("EVIDENCE\t{source}\t{symbol}\t{kind}");
     }
 }
 
-pub(crate) fn write_json_string(output: &mut String, value: &str) {
-    output.push('"');
-    for character in value.chars() {
-        match character {
-            '"' => output.push_str("\\\""),
-            '\\' => output.push_str("\\\\"),
-            '\n' => output.push_str("\\n"),
-            '\r' => output.push_str("\\r"),
-            '\t' => output.push_str("\\t"),
-            character if character.is_control() => {
-                write!(output, "\\u{:04x}", character as u32)
-                    .expect("writing to String cannot fail");
-            }
-            character => output.push(character),
-        }
-    }
-    output.push('"');
+#[derive(Serialize)]
+pub(crate) struct VerificationTargetDocument {
+    id: String,
+    harness: String,
+    architecture: &'static str,
+    calling_convention: &'static str,
+    endianness: &'static str,
+    pointer_width: u8,
+    rust_target: String,
 }
 
-#[allow(
-    clippy::too_many_arguments,
-    reason = "the report boundary deliberately receives a complete immutable proof record"
-)]
-pub(crate) fn write_verification_json_report<S: AsRef<str>>(
-    path: &Path,
-    target: &TargetSpec,
-    gate: VerificationGate,
-    summary: VerifySummary,
-    orphan_probes: usize,
-    evidence_baseline_passed: bool,
+#[derive(Serialize)]
+#[serde(tag = "mode", rename_all = "kebab-case")]
+pub(crate) enum VerificationGateDocument {
+    Completion,
+    Regression { match_floor: usize },
+}
+
+#[derive(Serialize)]
+pub(crate) struct VerificationSummaryDocument {
+    vendor_functions: usize,
+    matched: usize,
+    symbolic_matches: usize,
+    effect_contract_matches: usize,
+    scenario_matches: usize,
+    state_matches: usize,
+    composition_matches: usize,
+    mismatched: usize,
+    incomplete: usize,
+    missing: usize,
+    implemented_unqualified: usize,
+    not_yet_ported: usize,
+    orphan_rust_probes: usize,
+}
+
+#[derive(Serialize)]
+pub(crate) struct QualificationBlockerDocument {
+    source: String,
+    symbol: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct QualificationGapDocument {
+    source: String,
+    symbol: String,
+    rust_component: String,
+    blocked_by: Vec<QualificationBlockerDocument>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct VerificationArtifactDocument {
+    role: String,
+    path: String,
+    sha256: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct VerificationEvidenceDocument {
+    source: String,
+    symbol: String,
+    kind: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct VerificationDocument {
+    schema_version: u32,
+    command: &'static str,
+    target: VerificationTargetDocument,
+    gate: VerificationGateDocument,
     passed: bool,
-    evidence: &EvidenceSet,
-    artifacts: &[(S, &Path)],
-    qualification_gaps: &[&dispositions::Entry],
-) -> Result<()> {
-    let mut output = String::new();
-    output.push_str("{\n  \"schema_version\": 3,\n  \"command\": \"verify inventory\",\n");
-    output.push_str("  \"target\": {\"id\": ");
-    write_json_string(&mut output, &target.id);
-    output.push_str(", \"harness\": ");
-    write_json_string(&mut output, target.require_available_harness()?);
-    output.push_str(", \"architecture\": ");
-    write_json_string(&mut output, target.architecture.label());
-    output.push_str(", \"calling_convention\": ");
-    write_json_string(&mut output, target.calling_convention.label());
-    output.push_str(", \"endianness\": ");
-    write_json_string(&mut output, target.endianness.label());
-    write!(
-        output,
-        ", \"pointer_width\": {}, \"rust_target\": ",
-        target.pointer_width
-    )
-    .expect("writing to String cannot fail");
-    write_json_string(&mut output, &target.rust_target);
-    output.push_str("},\n");
-    output.push_str("  \"gate\": ");
-    write_json_string(
-        &mut output,
-        match gate {
-            VerificationGate::Completion => "completion",
-            VerificationGate::Regression { .. } => "regression",
+    evidence_baseline_passed: bool,
+    summary: VerificationSummaryDocument,
+    qualification_gaps: Vec<QualificationGapDocument>,
+    artifacts: Vec<VerificationArtifactDocument>,
+    evidence: Vec<VerificationEvidenceDocument>,
+}
+
+pub(crate) struct VerificationDocumentInputs<'a, S> {
+    pub(crate) target: &'a TargetSpec,
+    pub(crate) gate: VerificationGate,
+    pub(crate) summary: VerifySummary,
+    pub(crate) orphan_probes: usize,
+    pub(crate) evidence_baseline_passed: bool,
+    pub(crate) passed: bool,
+    pub(crate) evidence: &'a EvidenceSet,
+    pub(crate) artifacts: &'a [(S, &'a Path)],
+    pub(crate) qualification_gaps: &'a [&'a dispositions::Entry],
+}
+
+pub(crate) fn verification_document<S: AsRef<str>>(
+    inputs: VerificationDocumentInputs<'_, S>,
+) -> Result<VerificationDocument> {
+    let VerificationDocumentInputs {
+        target,
+        gate,
+        summary,
+        orphan_probes,
+        evidence_baseline_passed,
+        passed,
+        evidence,
+        artifacts,
+        qualification_gaps,
+    } = inputs;
+    Ok(VerificationDocument {
+        schema_version: 3,
+        command: "verify inventory",
+        target: VerificationTargetDocument {
+            id: target.id.clone(),
+            harness: target.require_available_harness()?.to_owned(),
+            architecture: target.architecture.label(),
+            calling_convention: target.calling_convention.label(),
+            endianness: target.endianness.label(),
+            pointer_width: target.pointer_width,
+            rust_target: target.rust_target.clone(),
         },
-    );
-    writeln!(output, ",\n  \"passed\": {passed},").expect("writing to String cannot fail");
-    writeln!(
-        output,
-        "  \"evidence_baseline_passed\": {evidence_baseline_passed},"
-    )
-    .expect("writing to String cannot fail");
-    output.push_str("  \"summary\": {\n");
-    for (name, value, trailing) in [
-        ("vendor_functions", summary.vendor_functions, true),
-        ("matched", summary.matched, true),
-        ("symbolic_matches", summary.symbolic_matches, true),
-        (
-            "effect_contract_matches",
-            summary.effect_contract_matches,
-            true,
-        ),
-        ("scenario_matches", summary.scenario_matches, true),
-        ("state_matches", summary.state_matches, true),
-        ("composition_matches", summary.composition_matches, true),
-        ("mismatched", summary.mismatched, true),
-        ("incomplete", summary.incomplete, true),
-        ("missing", summary.missing, true),
-        (
-            "implemented_unqualified",
-            summary.implemented_unqualified,
-            true,
-        ),
-        ("not_yet_ported", summary.not_yet_ported, true),
-        ("orphan_rust_probes", orphan_probes, false),
-    ] {
-        writeln!(
-            output,
-            "    \"{name}\": {value}{}",
-            if trailing { "," } else { "" }
-        )
-        .expect("writing to String cannot fail");
-    }
-    output.push_str("  },\n  \"qualification_gaps\": [\n");
-    for (index, gap) in qualification_gaps.iter().enumerate() {
-        output.push_str("    {\"source\": ");
-        write_json_string(&mut output, &gap.source);
-        output.push_str(", \"symbol\": ");
-        write_json_string(&mut output, &gap.symbol);
-        output.push_str(", \"rust_component\": ");
-        write_json_string(
-            &mut output,
-            gap.rust_component.as_deref().unwrap_or("missing"),
-        );
-        output.push_str(", \"blocked_by\": [");
-        for (blocker_index, (source, symbol)) in gap.qualification_blockers.iter().enumerate() {
-            if blocker_index != 0 {
-                output.push_str(", ");
+        gate: match gate {
+            VerificationGate::Completion => VerificationGateDocument::Completion,
+            VerificationGate::Regression { match_floor } => {
+                VerificationGateDocument::Regression { match_floor }
             }
-            output.push_str("{\"source\": ");
-            write_json_string(&mut output, source);
-            output.push_str(", \"symbol\": ");
-            write_json_string(&mut output, symbol);
-            output.push('}');
-        }
-        output.push_str("]}");
-        output.push_str(if index + 1 == qualification_gaps.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"artifacts\": [\n");
-    for (index, (role, artifact)) in artifacts.iter().enumerate() {
-        let bytes = fs::read(artifact)?;
-        let digest = format!("{:x}", Sha256::digest(&bytes));
-        output.push_str("    {\"role\": ");
-        write_json_string(&mut output, role.as_ref());
-        output.push_str(", \"path\": ");
-        write_json_string(&mut output, &artifact.display().to_string());
-        output.push_str(", \"sha256\": ");
-        write_json_string(&mut output, &digest);
-        output.push('}');
-        output.push_str(if index + 1 == artifacts.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ],\n  \"evidence\": [\n");
-    for (index, ((source, symbol), kind)) in evidence.iter().enumerate() {
-        output.push_str("    {\"source\": ");
-        write_json_string(&mut output, source);
-        output.push_str(", \"symbol\": ");
-        write_json_string(&mut output, symbol);
-        output.push_str(", \"kind\": ");
-        write_json_string(&mut output, kind);
-        output.push('}');
-        output.push_str(if index + 1 == evidence.len() {
-            "\n"
-        } else {
-            ",\n"
-        });
-    }
-    output.push_str("  ]\n}\n");
-    fs::write(path, output)?;
-    println!("JSON-REPORT\t{}", path.display());
+        },
+        passed,
+        evidence_baseline_passed,
+        summary: VerificationSummaryDocument {
+            vendor_functions: summary.vendor_functions,
+            matched: summary.matched,
+            symbolic_matches: summary.symbolic_matches,
+            effect_contract_matches: summary.effect_contract_matches,
+            scenario_matches: summary.scenario_matches,
+            state_matches: summary.state_matches,
+            composition_matches: summary.composition_matches,
+            mismatched: summary.mismatched,
+            incomplete: summary.incomplete,
+            missing: summary.missing,
+            implemented_unqualified: summary.implemented_unqualified,
+            not_yet_ported: summary.not_yet_ported,
+            orphan_rust_probes: orphan_probes,
+        },
+        qualification_gaps: qualification_gaps
+            .iter()
+            .map(|gap| QualificationGapDocument {
+                source: gap.source.clone(),
+                symbol: gap.symbol.clone(),
+                rust_component: gap
+                    .rust_component
+                    .clone()
+                    .unwrap_or_else(|| "missing".to_owned()),
+                blocked_by: gap
+                    .qualification_blockers
+                    .iter()
+                    .map(|(source, symbol)| QualificationBlockerDocument {
+                        source: source.clone(),
+                        symbol: symbol.clone(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+        artifacts: artifacts
+            .iter()
+            .map(|(role, artifact)| {
+                Ok(VerificationArtifactDocument {
+                    role: role.as_ref().to_owned(),
+                    path: artifact.display().to_string(),
+                    sha256: format!("{:x}", Sha256::digest(fs::read(artifact)?)),
+                })
+            })
+            .collect::<Result<Vec<_>>>()?,
+        evidence: evidence
+            .iter()
+            .map(|((source, symbol), kind)| VerificationEvidenceDocument {
+                source: source.clone(),
+                symbol: symbol.clone(),
+                kind: kind.clone(),
+            })
+            .collect(),
+    })
+}
+
+pub(crate) fn write_verification_json_report(
+    path: &Path,
+    document: &VerificationDocument,
+) -> Result<()> {
+    fs::write(path, serde_json::to_string_pretty(document)? + "\n")?;
     Ok(())
 }
 

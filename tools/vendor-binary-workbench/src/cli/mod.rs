@@ -1,34 +1,39 @@
 //! Command parsing and dispatch for the Vendor Binary Workbench.
 
 mod args;
+mod arguments;
 mod commands;
 mod generated_output;
-mod json;
+mod output;
+mod resolver;
+mod ui;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
-    path::PathBuf,
 };
 
 use crate::*;
-use args::{Command, Invocation};
+use args::{Command, CommandArguments, Invocation};
+pub(crate) use arguments::*;
+use resolver::apply_run_spec_defaults;
 
-pub(crate) fn usage() {
-    eprintln!(
-        "usage: vendor-binary-workbench GROUP COMMAND [--project PATH | --target-spec PATH] [--run-spec PATH] [OPTIONS]\n\nworkflows:\n  project    init | configure | doctor | status | build | check | publish\n  functions  init-pack | validate | review\n  symbols    inventory\n  interfaces discover | init-pack | validate\n  registers  init-model | import-svd | validate | review | export-svd | generate-pac | generate-bindings\n  inspect    analyze | trace | compare\n  mmio       discover\n  ir         export | build\n  reference  generate | generate-batch\n  driver     generate\n  execute    run | compare\n  verify     profiles | source | inventory | evidence | contract channel | contract rf-init\n  image      audit-targets\n\nA project composes a target spec, optional platform pack, local run bindings, a memory map and SVD catalogs.\nWithout an explicit configuration root, the nearest vendor-project.toml is used.\nExplicit --target-spec/--run-spec invocation is supported for generic backend and target-pack development; platform-harness workflows require a project."
-    );
+pub(crate) fn output_line(arguments: std::fmt::Arguments<'_>) {
+    output::line(arguments);
 }
 
 pub(crate) fn run() -> Result<bool> {
     let Invocation {
+        ui,
         command,
         project,
         target_spec,
         run_spec,
         mut svd_paths,
-        arguments: mut filtered,
+        arguments: mut command_arguments,
     } = Invocation::parse(env::args().skip(1))?;
+    ui::init(&ui)?;
+    output::init(ui.format);
     if command == Command::ProjectInit {
         if project.is_some() || target_spec.is_some() || run_spec.is_some() || !svd_paths.is_empty()
         {
@@ -36,7 +41,7 @@ pub(crate) fn run() -> Result<bool> {
                 "project init does not accept --project, --target-spec, --run-spec or --svd".into(),
             );
         }
-        return commands::run_project_init(filtered);
+        return commands::run_project_init(command_arguments);
     }
     let project_path = if project.is_some() || target_spec.is_some() {
         project
@@ -50,7 +55,7 @@ pub(crate) fn run() -> Result<bool> {
             );
         }
         return commands::run_project_configure(
-            filtered,
+            command_arguments,
             project_path
                 .as_deref()
                 .ok_or("project configure requires --project or a discovered manifest")?,
@@ -105,24 +110,24 @@ pub(crate) fn run() -> Result<bool> {
     }
     if !matches!(command, Command::ProjectDoctor | Command::ProjectStatus) {
         if let Some(project) = &project {
-            eprintln!(
-                "PROJECT\tid={}\tmanifest={}",
-                project.id,
-                project_path
+            tracing::info!(
+                project.id = %project.id,
+                project.manifest = %project_path
                     .as_deref()
                     .expect("a loaded project has a manifest path")
-                    .display()
+                    .display(),
+                "loaded project"
             );
         }
-        eprintln!(
-            "TARGET\tid={}\tharness={}\tarchitecture={}\tcalling-convention={}\tendianness={}\tpointer-width={}\trust-target={}",
-            target.id,
-            target.harness.as_deref().unwrap_or("-"),
-            target.architecture.label(),
-            target.calling_convention.label(),
-            target.endianness.label(),
+        tracing::info!(
+            target.id = %target.id,
+            target.harness = target.harness.as_deref().unwrap_or("-"),
+            target.architecture = target.architecture.label(),
+            target.calling_convention = target.calling_convention.label(),
+            target.endianness = target.endianness.label(),
             target.pointer_width,
-            target.rust_target,
+            target.rust_target = %target.rust_target,
+            "resolved target"
         );
     }
     let run_spec_path = if command.uses_run_spec() {
@@ -136,11 +141,7 @@ pub(crate) fn run() -> Result<bool> {
     };
     let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
     if let Some(run_spec) = &run_spec {
-        run_spec.append_defaults(
-            &mut filtered,
-            |role| command.accepts_run_input_role(role),
-            |role, arguments| command.input_role_is_overridden(role, arguments),
-        );
+        apply_run_spec_defaults(command, &mut command_arguments, run_spec);
     }
     if svd_paths.is_empty() {
         svd_paths = project
@@ -149,20 +150,34 @@ pub(crate) fn run() -> Result<bool> {
             .map(|project| project.svd_paths.clone())
             .unwrap_or_else(|| target.svd_paths.clone());
     }
-    if command == Command::VerifyInventory {
-        append_default_path(&mut filtered, "--profiles", target.profiles.as_deref());
-        append_default_path(
-            &mut filtered,
-            "--dispositions",
-            target.dispositions.as_deref(),
-        );
+    if command == Command::VerifyInventory
+        && let CommandArguments::VerifyInventory(arguments) = &mut command_arguments
+    {
+        if !arguments.no_profiles && arguments.profiles.is_none() {
+            arguments.profiles.clone_from(&target.profiles);
+        }
+        if !arguments.no_dispositions && arguments.dispositions.is_none() {
+            arguments.dispositions.clone_from(&target.dispositions);
+        }
     }
     if matches!(command, Command::VerifyInventory | Command::VerifyEvidence) {
-        append_default_path(
-            &mut filtered,
-            "--evidence-baseline",
-            target.evidence_baseline.as_deref(),
-        );
+        match &mut command_arguments {
+            CommandArguments::VerifyInventory(arguments)
+                if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
+            {
+                arguments
+                    .evidence_baseline
+                    .clone_from(&target.evidence_baseline);
+            }
+            CommandArguments::VerifyEvidence(arguments)
+                if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
+            {
+                arguments
+                    .evidence_baseline
+                    .clone_from(&target.evidence_baseline);
+            }
+            _ => {}
+        }
     }
     let memory_map = if command.uses_memory_map() {
         let project_memory_map = project
@@ -176,33 +191,35 @@ pub(crate) fn run() -> Result<bool> {
         None
     };
     if command == Command::DiscoverMmio
-        && !filtered.iter().any(|argument| argument == "--range")
         && let Some(memory_map) = &memory_map
+        && let CommandArguments::MmioDiscover(arguments) = &mut command_arguments
+        && arguments.range.is_empty()
     {
         for (name, start, end) in memory_map.mmio_ranges()? {
-            filtered.push("--range".to_owned());
-            filtered.push(format!("{name}={start:#010x}..{end:#010x}"));
+            arguments
+                .range
+                .push(format!("{name}={start:#010x}..{end:#010x}"));
         }
     }
     if command == Command::DiscoverMmio
-        && !filtered.iter().any(|argument| argument == "--json-report")
+        && let CommandArguments::MmioDiscover(arguments) = &mut command_arguments
+        && arguments.json_report.is_none()
         && let Some(path) = project
             .as_ref()
             .and_then(|project| project.registers.as_ref())
             .map(|registers| &registers.facts)
     {
-        filtered.push("--json-report".to_owned());
-        filtered.push(path.display().to_string());
+        arguments.json_report = Some(path.clone());
     }
     if command == Command::InterfaceDiscover
-        && !filtered.iter().any(|argument| argument == "--json-report")
+        && let CommandArguments::InterfaceDiscover(arguments) = &mut command_arguments
+        && arguments.json_report.is_none()
         && let Some(path) = project
             .as_ref()
             .and_then(|project| project.interfaces.as_ref())
             .map(|interfaces| &interfaces.facts)
     {
-        filtered.push("--json-report".to_owned());
-        filtered.push(path.display().to_string());
+        arguments.json_report = Some(path.clone());
     }
     let mut svd = if command.uses_register_catalog() {
         MmioRegisterMap::load_all(&svd_paths)?
@@ -245,15 +262,15 @@ pub(crate) fn run() -> Result<bool> {
             svd: &svd,
         };
         return if command == Command::ProjectDoctor {
-            commands::run_project_doctor(filtered, context)
+            commands::run_project_doctor(command_arguments, context)
         } else {
-            commands::run_project_status(filtered, context)
+            commands::run_project_status(command_arguments, context)
         };
     }
     if matches!(command, Command::ProjectBuild | Command::ProjectCheck) {
         return commands::run_project_pipeline(
             command,
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("project pipeline requires a loaded project"),
@@ -265,7 +282,7 @@ pub(crate) fn run() -> Result<bool> {
     }
     if command == Command::ProjectPublish {
         return commands::run_project_publication(
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("project publication requires a loaded project"),
@@ -278,7 +295,7 @@ pub(crate) fn run() -> Result<bool> {
     ) {
         return commands::run_function_pack_command(
             command,
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("function pack commands require a loaded project"),
@@ -289,13 +306,13 @@ pub(crate) fn run() -> Result<bool> {
         let run_spec = run_spec
             .as_ref()
             .ok_or("symbols inventory requires a run spec with artifact bindings")?;
-        return commands::run_symbol_inventory(filtered, run_spec);
+        return commands::run_symbol_inventory(command_arguments, run_spec);
     }
     if command == Command::InterfaceDiscover {
         let run_spec = run_spec
             .as_ref()
             .ok_or("interfaces discover requires a run spec with artifact bindings")?;
-        return commands::run_interface_discovery(filtered, run_spec);
+        return commands::run_interface_discovery(command_arguments, run_spec);
     }
     if matches!(
         command,
@@ -303,7 +320,7 @@ pub(crate) fn run() -> Result<bool> {
     ) {
         return commands::run_interface_pack_command(
             command,
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("interface pack commands require a loaded project"),
@@ -322,7 +339,7 @@ pub(crate) fn run() -> Result<bool> {
     ) {
         return commands::run_register_command(
             command,
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("register commands require a loaded project"),
@@ -331,7 +348,7 @@ pub(crate) fn run() -> Result<bool> {
     }
     if command == Command::BuildIr {
         return commands::run_ir_build(
-            filtered,
+            command_arguments,
             project
                 .as_ref()
                 .expect("project IR build requires a loaded project"),
@@ -342,19 +359,9 @@ pub(crate) fn run() -> Result<bool> {
             &target,
         );
     }
-    commands::run(command, filtered, &svd, &target)
+    commands::run(command, command_arguments, &svd, &target)
 }
 
-fn append_default_path(arguments: &mut Vec<String>, option: &str, path: Option<&std::path::Path>) {
-    let disable = format!("--no-{}", option.trim_start_matches("--"));
-    if arguments
-        .iter()
-        .any(|argument| argument == option || argument == &disable)
-    {
-        return;
-    }
-    if let Some(path) = path {
-        arguments.push(option.to_owned());
-        arguments.push(path.display().to_string());
-    }
+pub(crate) fn finish_output() -> Result<()> {
+    output::finish()
 }

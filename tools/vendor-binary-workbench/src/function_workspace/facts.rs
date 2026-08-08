@@ -1,4 +1,4 @@
-//! Minimal stable projection of schema-v31 linked IR used by function review.
+//! Minimal stable projection of schema-v32 linked IR used by function review.
 
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
@@ -79,11 +79,11 @@ impl FunctionFacts {
             let root: Value = serde_json::from_str(&input)?;
             let root = object(&root, "linked-IR root")?;
             let context = format!("linked-IR profile {profile:?}");
-            if integer(root, "schema_version", &context)? != 31
+            if integer(root, "schema_version", &context)? != 32
                 || string(root, "command", &context)? != "ir export"
             {
                 return Err(format!(
-                    "function workspace requires a schema-v31 ir export report for profile {profile:?}"
+                    "function workspace requires a schema-v32 ir export report for profile {profile:?}"
                 )
                 .into());
             }
@@ -243,7 +243,27 @@ fn optional_guard_paths(call: &Map<String, Value>, context: &str) -> Result<Opti
         .enumerate()
         .map(|(index, value)| {
             let context = format!("{context}.cfg_guard_paths[{index}]");
-            string(object(value, &context)?, "expression", &context).map(str::to_owned)
+            let path = object(value, &context)?;
+            let guards = array(path, "guards", &context)?;
+            let literals = guards
+                .iter()
+                .enumerate()
+                .map(|(guard_index, guard)| {
+                    let guard_context = format!("{context}.guards[{guard_index}]");
+                    let guard = object(guard, &guard_context)?;
+                    let condition = string(guard, "condition", &guard_context)?;
+                    Ok(if boolean(guard, "taken", &guard_context)? {
+                        format!("({condition})")
+                    } else {
+                        format!("!({condition})")
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(if literals.is_empty() {
+                "true".to_owned()
+            } else {
+                literals.join(" && ")
+            })
         })
         .collect::<Result<Vec<_>>>()
         .map(Some)
@@ -434,11 +454,17 @@ fn sha256<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Resul
 }
 
 fn hex_u32(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
-    let value = string(object, key, context)?;
-    value
-        .strip_prefix("0x")
-        .and_then(|value| u32::from_str_radix(value, 16).ok())
-        .ok_or_else(|| format!("{context}.{key} must be a hexadecimal u32 string").into())
+    match object.get(key) {
+        Some(Value::Number(value)) => value
+            .as_u64()
+            .and_then(|value| value.try_into().ok())
+            .ok_or_else(|| format!("{context}.{key} must be a u32").into()),
+        Some(Value::String(value)) => value
+            .strip_prefix("0x")
+            .and_then(|value| u32::from_str_radix(value, 16).ok())
+            .ok_or_else(|| format!("{context}.{key} must be a hexadecimal u32 string").into()),
+        _ => Err(format!("{context}.{key} must be a u32").into()),
+    }
 }
 
 fn optional_hex_u32(object: &Map<String, Value>, key: &str, context: &str) -> Result<Option<u32>> {

@@ -7,7 +7,10 @@ use std::{
 
 use toml_edit::{DocumentMut, Item, value};
 
+use serde::Serialize;
+
 use super::Result;
+use crate::cli::ProjectConfigureArgs;
 use crate::{TargetSpec, platform_pack::PlatformPack, project::ProjectSpec};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -22,8 +25,20 @@ struct Options {
     check: bool,
 }
 
-pub(super) fn run(arguments: Vec<String>, manifest: &Path) -> Result<bool> {
-    let options = parse_options(arguments)?;
+#[derive(Serialize)]
+struct ProjectConfigureReport {
+    schema_version: u32,
+    command: &'static str,
+    status: &'static str,
+    platform_pack: Option<String>,
+    harness: Option<String>,
+    semantic_catalogs: usize,
+    semantic_operations: usize,
+    manifest: String,
+}
+
+pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bool> {
+    let options = resolve_options(arguments);
     if options.selection.is_none() && !options.check {
         return Err(
             "project configure requires --platform-pack PATH, --no-platform-pack, or --check"
@@ -89,18 +104,32 @@ pub(super) fn run(arguments: Vec<String>, manifest: &Path) -> Result<bool> {
     }
 
     let (project, target) = validate_project(manifest)?;
-    report(
-        if options.check {
-            "verified"
-        } else if changed {
-            "written"
-        } else {
-            "unchanged"
-        },
-        &project,
-        &target,
-        manifest,
-    );
+    let status = if options.check {
+        "verified"
+    } else if changed {
+        "written"
+    } else {
+        "unchanged"
+    };
+    let report = ProjectConfigureReport {
+        schema_version: 1,
+        command: "project configure",
+        status,
+        platform_pack: project.platform_pack.as_ref().map(|pack| pack.id.clone()),
+        harness: target.harness.clone(),
+        semantic_catalogs: project
+            .platform_pack
+            .as_ref()
+            .map_or(0, |pack| pack.semantic_catalogs.len()),
+        semantic_operations: project
+            .platform_pack
+            .as_ref()
+            .map_or(0, |pack| pack.semantic_operations),
+        manifest: manifest.display().to_string(),
+    };
+    if !crate::cli::output::structured("project-configure", &report) {
+        print_report(&report);
+    }
     Ok(true)
 }
 
@@ -116,51 +145,36 @@ fn validate_project(manifest: &Path) -> Result<(ProjectSpec, TargetSpec)> {
     Ok((project, target))
 }
 
-fn report(status: &str, project: &ProjectSpec, target: &TargetSpec, manifest: &Path) {
-    if let Some(pack) = &project.platform_pack {
-        println!(
+fn print_report(report: &ProjectConfigureReport) {
+    if let Some(pack) = &report.platform_pack {
+        outputln!(
             "PROJECT-CONFIGURE\tstatus={status}\tplatform-pack={}\tharness={}\tsemantic-catalogs={}\tsemantic-operations={}\tmanifest={}",
-            pack.id,
-            target.harness.as_deref().unwrap_or("-"),
-            pack.semantic_catalogs.len(),
-            pack.semantic_operations,
-            manifest.display(),
+            pack,
+            report.harness.as_deref().unwrap_or("-"),
+            report.semantic_catalogs,
+            report.semantic_operations,
+            report.manifest,
+            status = report.status,
         );
     } else {
-        println!(
+        outputln!(
             "PROJECT-CONFIGURE\tstatus={status}\tplatform-pack=-\tharness={}\tsemantic-catalogs=0\tsemantic-operations=0\tmanifest={}",
-            target.harness.as_deref().unwrap_or("-"),
-            manifest.display(),
+            report.harness.as_deref().unwrap_or("-"),
+            report.manifest,
+            status = report.status,
         );
     }
 }
 
-fn parse_options(arguments: Vec<String>) -> Result<Options> {
-    let mut options = Options::default();
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--platform-pack" => {
-                let path =
-                    PathBuf::from(arguments.next().ok_or("--platform-pack requires a path")?);
-                set_selection(&mut options.selection, Selection::Set(path))?;
-            }
-            "--no-platform-pack" => {
-                set_selection(&mut options.selection, Selection::Clear)?;
-            }
-            "--check" if !options.check => options.check = true,
-            "--check" => return Err("duplicate --check".into()),
-            _ => return Err(format!("unknown project configure option: {argument}").into()),
-        }
+fn resolve_options(arguments: ProjectConfigureArgs) -> Options {
+    let selection = arguments
+        .platform_pack
+        .map(Selection::Set)
+        .or_else(|| arguments.no_platform_pack.then_some(Selection::Clear));
+    Options {
+        selection,
+        check: arguments.check,
     }
-    Ok(options)
-}
-
-fn set_selection(slot: &mut Option<Selection>, selection: Selection) -> Result<()> {
-    if slot.replace(selection).is_some() {
-        return Err("project configure accepts exactly one platform-pack selection".into());
-    }
-    Ok(())
 }
 
 fn project_relative_pack_path(manifest: &Path, input: &Path) -> Result<String> {

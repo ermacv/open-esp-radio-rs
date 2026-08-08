@@ -13,7 +13,7 @@ pub(super) fn inspect(
     target: &TargetSpec,
 ) -> (usize, usize) {
     if project.ir_profiles.is_empty() {
-        println!("CAPABILITY\tir-build\tnot-configured");
+        outputln!("CAPABILITY\tir-build\tnot-configured");
         return (0, 0);
     }
     let available_sources = run_spec
@@ -61,7 +61,7 @@ pub(super) fn inspect(
             Ok(_) => "ready",
             Err(error) => {
                 errors += 1;
-                println!(
+                outputln!(
                     "IR-PROFILE-DIAGNOSTIC\tid={}\tkind=entry-contract\terror={error}",
                     profile.id
                 );
@@ -81,7 +81,7 @@ pub(super) fn inspect(
                 ),
                 Err(error) => {
                     errors += 1;
-                    println!(
+                    outputln!(
                         "IR-PROFILE-DIAGNOSTIC\tid={}\tkind=output\terror={error}",
                         profile.id
                     );
@@ -97,7 +97,7 @@ pub(super) fn inspect(
                 "not-generated"
             }
         };
-        println!(
+        outputln!(
             "IR-PROFILE\tid={}\tinputs={}\tsources={}\tmissing={}\tprefix={}\treachable={}\tcontract={}\tcontract-status={}\toutput-status={}\tfunctions={}\tregisters={}\tfield-candidates={}\treview-linked={}\toutput={}\tpseudo-status={}\tpseudo={}",
             profile.id,
             input_status,
@@ -128,7 +128,7 @@ pub(super) fn inspect(
                 .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
         );
     }
-    println!(
+    outputln!(
         "CAPABILITY\tir-build\tconfigured\tprofiles={}\terrors={}\twarnings={}",
         project.ir_profiles.len(),
         errors,

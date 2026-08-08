@@ -15,6 +15,35 @@ pub use open_radio_vendor_backend_riscv::{
 pub use open_radio_vendor_harness_esp32s31::{CONTRACTS, entry_contract, external_abi};
 pub use open_radio_vendor_semantics::*;
 
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("{0}")]
+    Message(String),
+
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    Semantics(#[from] open_radio_vendor_semantics::Error),
+
+    #[error(transparent)]
+    RiscvBackend(#[from] open_radio_vendor_backend_riscv::Error),
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Message(value)
+    }
+}
+
+impl From<&str> for Error {
+    fn from(value: &str) -> Self {
+        Self::Message(value.to_owned())
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
 // Keep the physical directory stable because its paths are part of existing
 // evidence identities. The public module boundary describes what it does.
 mod reviewed_summaries;

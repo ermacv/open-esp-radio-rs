@@ -1,6 +1,8 @@
 //! Data model shared by linked-IR analysis and report renderers.
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+use serde::Serialize;
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallArgument {
     pub(crate) position: usize,
     pub(crate) name: String,
@@ -9,7 +11,7 @@ pub(crate) struct LinkedCallArgument {
     pub(crate) value: String,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedArgumentBinding {
     pub(crate) position: usize,
     pub(crate) caller_argument: u8,
@@ -17,7 +19,7 @@ pub(crate) struct LinkedArgumentBinding {
     pub(crate) expression: String,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedTrampoline {
     pub(crate) table: String,
     pub(crate) pointer_symbol: String,
@@ -36,13 +38,13 @@ pub(crate) struct LinkedTrampoline {
     pub(crate) replacement_hint: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedEventDispatchArgumentRole {
     pub(crate) role: &'static str,
     pub(crate) argument: &'static str,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedEventDispatchContract {
     pub(crate) mechanism: &'static str,
     pub(crate) execution_context: &'static str,
@@ -50,7 +52,7 @@ pub(crate) struct LinkedEventDispatchContract {
     pub(crate) argument_roles: Vec<LinkedEventDispatchArgumentRole>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedSemanticContract {
     pub(crate) source: &'static str,
     pub(crate) id: String,
@@ -58,7 +60,7 @@ pub(crate) struct LinkedSemanticContract {
     pub(crate) event_dispatch: Option<LinkedEventDispatchContract>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedReturnBitSource {
     pub(crate) kind: &'static str,
     pub(crate) output_lsb: u8,
@@ -74,7 +76,7 @@ pub(crate) struct LinkedReturnBitSource {
     pub(crate) register: Option<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedReturnProvenance {
     pub(crate) exact: bool,
     pub(crate) known_zero_bits: u32,
@@ -83,7 +85,7 @@ pub(crate) struct LinkedReturnProvenance {
     pub(crate) sources: Vec<LinkedReturnBitSource>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuardMmioSource {
     pub(crate) address: u32,
     pub(crate) register: String,
@@ -95,7 +97,7 @@ pub(crate) struct LinkedCallGuardMmioSource {
     pub(crate) register_comparison_value: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuardResultSource {
     pub(crate) kind: &'static str,
     pub(crate) token: u32,
@@ -110,7 +112,7 @@ pub(crate) struct LinkedCallGuardResultSource {
     pub(crate) mmio_sources: Vec<LinkedCallGuardMmioSource>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedDirectMmioPredicateSource {
     pub(crate) operand: &'static str,
     pub(crate) read_token: u32,
@@ -123,7 +125,7 @@ pub(crate) struct LinkedDirectMmioPredicateSource {
     pub(crate) register_comparison_value: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedDirectMmioPredicate {
     pub(crate) site: u32,
     pub(crate) condition: String,
@@ -131,7 +133,7 @@ pub(crate) struct LinkedDirectMmioPredicate {
     pub(crate) sources: Vec<LinkedDirectMmioPredicateSource>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuard {
     pub(crate) site: u32,
     pub(crate) condition: String,
@@ -141,18 +143,18 @@ pub(crate) struct LinkedCallGuard {
     pub(crate) direct_mmio_sources: Vec<LinkedDirectMmioPredicateSource>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuardPath {
     pub(crate) guards: Vec<LinkedCallGuard>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallGuardScope {
     pub(crate) function: String,
     pub(crate) paths: Vec<LinkedCallGuardPath>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCall {
     pub(crate) kind: &'static str,
     pub(crate) target: String,
@@ -173,7 +175,7 @@ pub(crate) struct LinkedCall {
     pub(crate) guard_paths: Option<Vec<LinkedCallGuardPath>>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct ContextAccess {
     pub(crate) argument: u8,
     pub(crate) offset: i32,
@@ -188,7 +190,7 @@ pub(crate) struct ContextAccess {
     pub(crate) forced_one_mask: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ContextField {
     pub(crate) argument: u8,
     pub(crate) offset: i32,
@@ -200,7 +202,7 @@ pub(crate) struct ContextField {
     pub(crate) write_values: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedMmioAccess {
     pub(crate) ordinal: usize,
     pub(crate) address: u32,
@@ -223,7 +225,7 @@ pub(crate) struct LinkedMmioAccess {
     pub(crate) dynamic_mask: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedMmioBitRange {
     pub(crate) least_significant_bit: u8,
     pub(crate) most_significant_bit: u8,
@@ -232,7 +234,7 @@ pub(crate) struct LinkedMmioBitRange {
     pub(crate) functions: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedMmioFieldCandidate {
     pub(crate) least_significant_bit: u8,
     pub(crate) most_significant_bit: u8,
@@ -249,7 +251,7 @@ pub(crate) struct LinkedMmioFieldCandidate {
     pub(crate) semantic_evidence: Vec<LinkedMmioFieldSemanticEvidence>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedMmioFieldPredicateEvidence {
     pub(crate) kind: &'static str,
     pub(crate) function: String,
@@ -267,7 +269,7 @@ pub(crate) struct LinkedMmioFieldPredicateEvidence {
     pub(crate) inverted: bool,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedMmioFieldSemanticEvidence {
     pub(crate) kind: &'static str,
     pub(crate) root: String,
@@ -293,7 +295,7 @@ pub(crate) struct LinkedMmioFieldSemanticEvidence {
     pub(crate) effective_operation: &'static str,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedMmioRegister {
     pub(crate) address: u32,
     pub(crate) width: u8,
@@ -316,7 +318,7 @@ pub(crate) struct LinkedMmioRegister {
     pub(crate) functions: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedDelay {
     pub(crate) ordinal: usize,
     pub(crate) path: String,
@@ -324,7 +326,7 @@ pub(crate) struct LinkedDelay {
     pub(crate) constant_micros: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSummaryMmio {
     pub(crate) address: u32,
     pub(crate) width: u8,
@@ -334,7 +336,7 @@ pub(crate) struct LinkedSummaryMmio {
     pub(crate) origins: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSummaryDelay {
     pub(crate) micros: String,
     pub(crate) constant_micros: Option<u32>,
@@ -342,7 +344,7 @@ pub(crate) struct LinkedSummaryDelay {
     pub(crate) origins: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSummarySemantic {
     pub(crate) operation: String,
     pub(crate) call_shapes: usize,
@@ -351,7 +353,7 @@ pub(crate) struct LinkedSummarySemantic {
     pub(crate) origins: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedSummaryContextField {
     pub(crate) argument: u8,
     pub(crate) offset: i32,
@@ -364,7 +366,7 @@ pub(crate) struct LinkedSummaryContextField {
     pub(crate) write_values: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedProjectedCallArgument {
     pub(crate) position: usize,
     pub(crate) name: String,
@@ -376,7 +378,7 @@ pub(crate) struct LinkedProjectedCallArgument {
     pub(crate) root_offset: Option<i32>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedProjectedTrampolineCall {
     pub(crate) trampoline: LinkedTrampoline,
     pub(crate) origin: String,
@@ -385,7 +387,7 @@ pub(crate) struct LinkedProjectedTrampolineCall {
     pub(crate) arguments: Vec<LinkedProjectedCallArgument>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedProjectedSemanticAction {
     pub(crate) site_path: Vec<Option<u32>>,
     pub(crate) operation: String,
@@ -400,13 +402,13 @@ pub(crate) struct LinkedProjectedSemanticAction {
     pub(crate) guard_scopes: Option<Vec<LinkedCallGuardScope>>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedEventDispatchBinding {
     pub(crate) role: &'static str,
     pub(crate) argument: LinkedProjectedCallArgument,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedEventDispatch {
     pub(crate) semantic_action_index: usize,
     pub(crate) mechanism: &'static str,
@@ -417,7 +419,7 @@ pub(crate) struct LinkedEventDispatch {
     pub(crate) bindings: Vec<LinkedEventDispatchBinding>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedTrampolineSlot {
     pub(crate) trampoline: LinkedTrampoline,
     pub(crate) arguments: Vec<LinkedCallArgument>,
@@ -425,7 +427,7 @@ pub(crate) struct LinkedTrampolineSlot {
     pub(crate) functions: Vec<String>,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedEffectSummary {
     pub(crate) call_graph_closed: bool,
     pub(crate) max_depth: usize,
@@ -443,7 +445,7 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) event_dispatches: Vec<LinkedEventDispatch>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct SemanticBoundary {
     pub(crate) operation: String,
     pub(crate) call_shapes: usize,
@@ -452,21 +454,21 @@ pub(crate) struct SemanticBoundary {
     pub(crate) replacement_hints: Vec<String>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedDiagnosticFragment {
     pub(crate) first_ordinal: usize,
     pub(crate) occurrences: usize,
     pub(crate) message: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedDiagnostic {
     pub(crate) rendered: String,
     pub(crate) original_fragments: usize,
     pub(crate) fragments: Vec<LinkedDiagnosticFragment>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -499,7 +501,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) pseudo: String,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrReport {
     pub(crate) functions: Vec<LinkedIrFunction>,
     pub(crate) mmio_registers: Vec<LinkedMmioRegister>,

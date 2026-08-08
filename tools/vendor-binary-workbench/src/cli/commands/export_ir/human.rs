@@ -79,7 +79,7 @@ pub(super) fn print_report(
     report: &LinkedIrReport,
     include_reachable: bool,
 ) {
-    println!(
+    outputln!(
         "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-contract-declared-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tevent-dispatch-receiver-source=reviewed-contract-or-unknown\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
@@ -104,7 +104,7 @@ pub(super) fn print_report(
             .iter()
             .filter(|function| function.source == artifact.source)
             .count();
-        println!(
+        outputln!(
             "ARTIFACT\t{}\t{}\tfunctions={}",
             artifact.source,
             artifact.path.display(),
@@ -116,7 +116,7 @@ pub(super) fn print_report(
             || "relocatable".to_owned(),
             |address| format!("{address:#010x}"),
         );
-        println!(
+        outputln!(
             "FUNCTION\t{}\tselection={}\tbinding={}\taddress={}\tobject-offset={:#010x}\tsize={}\tflow={}\tcomplete={}\texact={}\tcalls={}\tcall-argument-shapes={}",
             function.identity,
             function.selection,
@@ -134,7 +134,7 @@ pub(super) fn print_report(
                 .map(|call| call.argument_shapes)
                 .sum::<usize>(),
         );
-        println!(
+        outputln!(
             "RETURN-PROVENANCE\t{}\texact={}\tknown-zero-bits={:#010x}\tknown-one-bits={:#010x}\tunknown-bits={:#010x}\tsources={}",
             function.identity,
             function.return_provenance.exact,
@@ -144,7 +144,7 @@ pub(super) fn print_report(
             function.return_provenance.sources.len(),
         );
         for source in &function.return_provenance.sources {
-            println!(
+            outputln!(
                 "RETURN-SOURCE\t{}\t{}\toutput-bits={:#010x}\tsource-bits={:#010x}\toutput-lsb={}\tsource-lsb={}\twidth={}\tinverted={}\targument={}\ttoken={}\ttarget={}\taddress={}\tregister={}",
                 function.identity,
                 source.kind,
@@ -172,7 +172,7 @@ pub(super) fn print_report(
                 let optional_hex = |value: Option<u32>| {
                     value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
                 };
-                println!(
+                outputln!(
                     "MMIO-PREDICATE\t{}\tsite={:#010x}\toperation={}\tcondition={}\toperand={}\tread-token={}\t{:#010x}\tregister={}\tvalue-bits={:#010x}\tregister-bits={:#010x}\tinverted={}\tcomparison-value={}\tregister-comparison-value={}",
                     function.identity,
                     predicate.site,
@@ -219,7 +219,7 @@ pub(super) fn print_report(
                 .guard_paths
                 .as_ref()
                 .map_or_else(|| "unknown".to_owned(), |paths| paths.len().to_string());
-            println!(
+            outputln!(
                 "CALL\t{}\t{}\t{}\tsite={}\ttail={}\tresult-modeled={}\toperation={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}\ttrampoline={}\tproject-symbol={}\tproject-candidates={}\targument-shapes={}\taffine-bindings={}\tcfg-guard-paths={}\t{}",
                 function.identity,
                 call.kind,
@@ -243,7 +243,7 @@ pub(super) fn print_report(
             if call.semantic_operation.is_some()
                 && let Some(paths) = call.guard_paths.as_deref()
             {
-                println!(
+                outputln!(
                     "CALL-GUARD\t{}\t{}\t{}",
                     function.identity,
                     call.target,
@@ -251,7 +251,7 @@ pub(super) fn print_report(
                 );
             }
             for argument in &call.typed_arguments {
-                println!(
+                outputln!(
                     "CALL-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}",
                     function.identity,
                     call.target,
@@ -265,7 +265,7 @@ pub(super) fn print_report(
             for binding in call.argument_bindings.iter().filter(|binding| {
                 binding.offset != 0 || binding.position != usize::from(binding.caller_argument)
             }) {
-                println!(
+                outputln!(
                     "CALL-BINDING\t{}\t{}\tcallee-arg={}\tcaller-arg={}\toffset={:+#x}\texpression={}",
                     function.identity,
                     call.target,
@@ -280,7 +280,7 @@ pub(super) fn print_report(
             let mask = |value: Option<u32>| {
                 value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
             };
-            println!(
+            outputln!(
                 "MMIO\t{}\tordinal={}\t{:#010x}\twidth={}\tregister={}\taccess={}\tmode={}\tpath={}\taddress-expression={}\tguard={}\tpredicate-mask={}\tpredicate-expected={}\tvalue={}\tmodified={}\tpreserved={}\tinverted={}\tforced-zero={}\tforced-one={}\tread-derived={}\tdynamic={}",
                 function.identity,
                 access.ordinal,
@@ -305,7 +305,7 @@ pub(super) fn print_report(
             );
         }
         for delay in &function.delays {
-            println!(
+            outputln!(
                 "DELAY\t{}\tordinal={}\tmicros={}\tconstant-micros={}\tpath={}",
                 function.identity,
                 delay.ordinal,
@@ -317,7 +317,7 @@ pub(super) fn print_report(
             );
         }
         for field in &function.context_fields {
-            println!(
+            outputln!(
                 "CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\tpaths={}\tvalues={}",
                 function.identity,
                 field.argument,
@@ -334,7 +334,7 @@ pub(super) fn print_report(
             let mask = |value: Option<u32>| {
                 value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
             };
-            println!(
+            outputln!(
                 "CONTEXT\t{}\targ={}\toffset={:+#x}\twidth={}\taccess={}\twrite-mask={}\tpreserved-mask={}\tforced-zero={}\tforced-one={}\tpath={}\tvalue={}",
                 function.identity,
                 access.argument,
@@ -350,19 +350,19 @@ pub(super) fn print_report(
             );
         }
         for blocker in &function.direct_blockers {
-            println!("IR-DIAGNOSTIC\t{}\tdirect\t{blocker}", function.identity);
+            outputln!("IR-DIAGNOSTIC\t{}\tdirect\t{blocker}", function.identity);
         }
         for blocker in &function.reference_blockers {
-            println!("IR-DIAGNOSTIC\t{}\treference\t{blocker}", function.identity);
+            outputln!("IR-DIAGNOSTIC\t{}\treference\t{blocker}", function.identity);
         }
         for blocker in &function.call_graph_blockers {
-            println!(
+            outputln!(
                 "IR-DIAGNOSTIC\t{}\tcall-graph\t{blocker}",
                 function.identity
             );
         }
         let summary = &function.effect_summary;
-        println!(
+        outputln!(
             "EFFECT-SUMMARY\t{}\tcall-graph-closed={}\tmax-depth={}\treachable-functions={}\trecursive-functions={}\tmmio-registers={}\tdelays={}\tsemantic-operations={}\tsemantic-actions={}\tevent-dispatches={}\ttrampoline-calls={}\tcontext-projection-complete={}\tcontext-fields={}\tblockers={}\tcontext-blockers={}",
             function.identity,
             summary.call_graph_closed,
@@ -381,7 +381,7 @@ pub(super) fn print_report(
             summary.context_projection_blockers.len(),
         );
         for mmio in &summary.mmio_registers {
-            println!(
+            outputln!(
                 "EFFECT-MMIO\t{}\t{:#010x}\twidth={}\taccess-shapes={}\taccesses={}\tmodes={}\torigins={}",
                 function.identity,
                 mmio.address,
@@ -393,7 +393,7 @@ pub(super) fn print_report(
             );
         }
         for delay in &summary.delays {
-            println!(
+            outputln!(
                 "EFFECT-DELAY\t{}\tmicros={}\tconstant-micros={}\tdelay-shapes={}\torigins={}",
                 function.identity,
                 delay.micros,
@@ -405,7 +405,7 @@ pub(super) fn print_report(
             );
         }
         for semantic in &summary.semantic_operations {
-            println!(
+            outputln!(
                 "EFFECT-SEMANTIC\t{}\t{}\tcall-shapes={}\ttargets={}\treplacements={}\torigins={}",
                 function.identity,
                 semantic.operation,
@@ -435,7 +435,7 @@ pub(super) fn print_report(
                 .guard_scopes
                 .as_ref()
                 .map_or_else(|| "unknown".to_owned(), |scopes| scopes.len().to_string());
-            println!(
+            outputln!(
                 "EFFECT-ACTION\t{}\t{}\ttarget={}\tsite={}\tsite-path={}\tcfg-guard-scopes={}\targument-shapes={}\torigin={}\tpath={}\tsemantic-source={}\tsemantic-contract={}\tsemantic-evidence={}\treplacement={}",
                 function.identity,
                 action.operation,
@@ -453,7 +453,7 @@ pub(super) fn print_report(
             );
             if let Some(scopes) = action.guard_scopes.as_deref() {
                 for scope in scopes {
-                    println!(
+                    outputln!(
                         "EFFECT-ACTION-GUARD\t{}\t{}\tscope={}\talternatives={}\texpression={}",
                         function.identity,
                         action.operation,
@@ -473,7 +473,7 @@ pub(super) fn print_report(
                         mmio,
                     ) in guard_mmio_links(&scope.paths)
                     {
-                        println!(
+                        outputln!(
                             "EFFECT-ACTION-GUARD-MMIO\t{}\t{}\tscope={}\tproducer={}\tproducer-path={}\treturn-depth={}\taddress={:#010x}\tregister={}\tresult-bits={:#010x}\tregister-bits={:#010x}\tsite={:#010x}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tsource-comparison-value={}\tresult-comparison-value={}\tregister-comparison-value={}\tinverted={}",
                             function.identity,
                             action.operation,
@@ -501,7 +501,7 @@ pub(super) fn print_report(
                     for (site, condition, operation, taken, mmio) in
                         guard_direct_mmio_links(&scope.paths)
                     {
-                        println!(
+                        outputln!(
                             "EFFECT-ACTION-GUARD-DIRECT-MMIO\t{}\t{}\tscope={}\taddress={:#010x}\tregister={}\tregister-bits={:#010x}\tsite={:#010x}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
                             function.identity,
                             action.operation,
@@ -523,7 +523,7 @@ pub(super) fn print_report(
                 }
             }
             for argument in &action.arguments {
-                println!(
+                outputln!(
                     "EFFECT-ACTION-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
                     function.identity,
                     action.operation,
@@ -544,7 +544,7 @@ pub(super) fn print_report(
         }
         for dispatch in &summary.event_dispatches {
             let action = &summary.semantic_actions[dispatch.semantic_action_index];
-            println!(
+            outputln!(
                 "EFFECT-EVENT-DISPATCH\t{}\tmechanism={}\texecution-context={}\treceiver={}\tinterface-complete={}\tsemantic-action-index={}\toperation={}\ttarget={}\torigin={}\tsite-path={}\tcfg-guard-scopes={}\tpath={}\tblockers={}",
                 function.identity,
                 dispatch.mechanism,
@@ -565,7 +565,7 @@ pub(super) fn print_report(
             );
             for binding in &dispatch.bindings {
                 let argument = &binding.argument;
-                println!(
+                outputln!(
                     "EFFECT-EVENT-DISPATCH-ARG\t{}\t{}\trole={}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
                     function.identity,
                     dispatch.semantic_action_index,
@@ -586,7 +586,7 @@ pub(super) fn print_report(
             }
         }
         for field in &summary.context_fields {
-            println!(
+            outputln!(
                 "EFFECT-CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\torigins={}\tpaths={}\tvalues={}",
                 function.identity,
                 field.argument,
@@ -601,7 +601,7 @@ pub(super) fn print_report(
             );
         }
         for call in &summary.trampoline_calls {
-            println!(
+            outputln!(
                 "EFFECT-TRAMPOLINE\t{}\t{}+{:#x}\tfunction={}\toperation={}\treturn-model={}\treturn-type={}\targument-shapes={}\torigin={}\tpath={}\treplacement={}",
                 function.identity,
                 call.trampoline.table,
@@ -616,7 +616,7 @@ pub(super) fn print_report(
                 call.trampoline.replacement_hint.as_deref().unwrap_or("-"),
             );
             for argument in &call.arguments {
-                println!(
+                outputln!(
                     "EFFECT-TRAMPOLINE-ARG\t{}\t{}\tposition={}\tname={}\ttype={}\tdirection={}\tvalue={}\tbinding={}\troot-arg={}\troot-offset={}",
                     function.identity,
                     call.trampoline.c_name,
@@ -636,10 +636,10 @@ pub(super) fn print_report(
             }
         }
         for blocker in &summary.blockers {
-            println!("EFFECT-BLOCKER\t{}\t{}", function.identity, blocker);
+            outputln!("EFFECT-BLOCKER\t{}\t{}", function.identity, blocker);
         }
         for blocker in &summary.context_projection_blockers {
-            println!("EFFECT-CONTEXT-BLOCKER\t{}\t{}", function.identity, blocker);
+            outputln!("EFFECT-CONTEXT-BLOCKER\t{}\t{}", function.identity, blocker);
         }
     }
     for register in &report.mmio_registers {
@@ -675,7 +675,7 @@ pub(super) fn print_report(
             .map(|mask| format!("{mask:#010x}"))
             .collect::<Vec<_>>()
             .join("|");
-        println!(
+        outputln!(
             "MMIO-REGISTER\t{:#010x}\twidth={}\tnames={}\tread-shapes={}\twrite-shapes={}\tpoll-shapes={}\tpredicate-shapes={}\tstatic-shapes={}\tindexed-candidates={}\twhole-register-writes={}\twhole-register-predicates={}\twhole-register-polls={}\trmw-writes={}\twrite-masks={}\tpredicate-masks={}\tpoll-masks={}\tcandidate-bit-ranges={}\tfield-candidates={}\tfunctions={}",
             register.address,
             register.width,
@@ -698,7 +698,7 @@ pub(super) fn print_report(
             register.functions.join(","),
         );
         for candidate in &register.field_candidates {
-            println!(
+            outputln!(
                 "MMIO-FIELD-CANDIDATE\t{:#010x}\twidth={}\tregisters={}\tbits={}-{}\tmask={:#010x}\twrite-shapes={}\tpredicate-shapes={}\tpoll-shapes={}\tfunctions={}\taccess-functions={}\tpredicate-functions={}\tsemantic-operations={}\tsemantic-roots={}",
                 register.address,
                 register.width,
@@ -719,7 +719,7 @@ pub(super) fn print_report(
                 let optional_hex = |value: Option<u32>| {
                     value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
                 };
-                println!(
+                outputln!(
                     "MMIO-FIELD-PREDICATE\t{:#010x}\tbits={}-{}\tkind={}\tfunction={}\tproducer={}\tproducer-path={}\tsite={}\tpath={}\tcondition={}\toperation={}\ttaken={}\teffective-operation={}\toperand={}\tcomparison-value={}\tregister-comparison-value={}\tinverted={}",
                     register.address,
                     candidate.least_significant_bit,
@@ -749,7 +749,7 @@ pub(super) fn print_report(
                 );
             }
             for evidence in &candidate.semantic_evidence {
-                println!(
+                outputln!(
                     "MMIO-FIELD-SEMANTIC\t{:#010x}\tbits={}-{}\tkind={}\troot={}\toperation={}\taction-target={}\taction-origin={}\taction-site={}\taction-site-path={}\tpredicate-function={}\tproducer={}\tproducer-path={}\tscope-index={}\tscope-alternatives={}\tpath-index={}\tpath-guards={}\tguard-index={}\tsite={:#010x}\tcondition={}\ttaken={}\teffective-operation={}\tresidual-path={}\tpath-expression={}\taction-path={}",
                     register.address,
                     candidate.least_significant_bit,
@@ -783,7 +783,7 @@ pub(super) fn print_report(
         }
     }
     for boundary in &report.semantic_boundaries {
-        println!(
+        outputln!(
             "SEMANTIC\t{}\tcall-shapes={}\tfunctions={}\ttargets={}\treplacements={}",
             boundary.operation,
             boundary.call_shapes,
@@ -794,7 +794,7 @@ pub(super) fn print_report(
     }
     for slot in &report.trampoline_slots {
         let trampoline = &slot.trampoline;
-        println!(
+        outputln!(
             "TRAMPOLINE-SLOT\t{}+{:#x}\tfunction={}\tid={}\tversion={}\tpointer={}\tbacking={}\tmagic={:#010x}@{:#x}\ttable-size={:#x}\targs={}\treturn-model={}\treturn-type={}\toperation={}\treplacement={}\tcall-shapes={}\tfunctions={}",
             trampoline.table,
             trampoline.slot,
@@ -815,7 +815,7 @@ pub(super) fn print_report(
             slot.functions.join(","),
         );
         for argument in &slot.arguments {
-            println!(
+            outputln!(
                 "TRAMPOLINE-ARG\t{}+{:#x}\tposition={}\tname={}\ttype={}\tdirection={}",
                 trampoline.table,
                 trampoline.slot,
@@ -845,7 +845,7 @@ pub(super) fn print_report(
         direct_mmio_predicates,
         direct_mmio_predicate_sources,
     ) = field_candidate_summary(report);
-    println!(
+    outputln!(
         "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdirect-mmio-predicates={}\tdirect-mmio-predicate-sources={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}\ttransitive-guard-mmio-links={}",
         artifacts.len(),
         report.functions.len(),

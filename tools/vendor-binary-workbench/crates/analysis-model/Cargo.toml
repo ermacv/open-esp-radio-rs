@@ -11,6 +11,7 @@ description = "Architecture-neutral symbolic IR and MMIO analysis model for comp
 [dependencies]
 open-radio-vendor-contracts = { path = "../contracts" }
 roxmltree = "=0.20.0"
+thiserror = "=2.0.19"
 
 [lints]
 workspace = true

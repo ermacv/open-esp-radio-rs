@@ -153,7 +153,7 @@ pub fn validate_pac_crate_name(value: &str) -> Result<()> {
 }
 
 fn expanded_register_map(svd: &str) -> Result<BTreeMap<u64, Vec<ExpandedRegister>>> {
-    let device = svd_parser::parse(svd)?;
+    let device = svd_parser::parse(svd).map_err(|error| error.to_string())?;
     let mut addresses = BTreeMap::new();
     for peripheral in &device.peripherals {
         let instances = match peripheral {

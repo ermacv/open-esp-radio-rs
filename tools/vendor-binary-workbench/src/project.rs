@@ -1,10 +1,12 @@
 //! Stable project entry point composing public target knowledge and local inputs.
 
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
+use miette::{Diagnostic, NamedSource, SourceSpan};
+use thiserror::Error;
 use toml_edit::{DocumentMut, Item};
 
 use crate::{
@@ -14,6 +16,35 @@ use crate::{
 };
 
 pub(crate) const DEFAULT_PROJECT_MANIFEST: &str = "vendor-project.toml";
+
+#[derive(Debug, Error, Diagnostic)]
+pub(crate) enum ProjectError {
+    #[error("cannot read project manifest {}", path.display())]
+    #[diagnostic(code(workbench::project::read))]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("{message}")]
+    #[diagnostic(code(workbench::project::parse))]
+    Parse {
+        message: String,
+        #[source_code]
+        src: NamedSource<String>,
+        #[label("invalid TOML")]
+        span: SourceSpan,
+    },
+    #[error("{message}")]
+    #[diagnostic(code(workbench::project::invalid))]
+    Invalid {
+        message: String,
+        #[source_code]
+        src: NamedSource<String>,
+        #[label("invalid project configuration")]
+        span: SourceSpan,
+    },
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RegisterWorkspacePaths {
@@ -83,15 +114,53 @@ impl ProjectSpec {
     }
 
     pub(crate) fn load(path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(path)?;
-        let document = input.parse::<DocumentMut>()?;
+        let input = fs::read_to_string(path).map_err(|source| ProjectError::Read {
+            path: path.to_owned(),
+            source,
+        })?;
+        let document = input.parse::<DocumentMut>().map_err(|error| {
+            let span = error.span().unwrap_or(0..input.len().min(1));
+            ProjectError::Parse {
+                message: error.message().to_owned(),
+                src: NamedSource::new(path.display().to_string(), input.clone()),
+                span: (span.start, span.len().max(1)).into(),
+            }
+        })?;
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
-            return Err("project manifest requires schema = 1".into());
+            return Err(project_invalid(
+                path,
+                &input,
+                document.get("schema"),
+                "project manifest requires schema = 1",
+            )
+            .into());
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
-        let id = required_string(&document, "id")?;
-        validate_id(&id)?;
-        let target_spec = resolve_path(base, &required_string(&document, "target-spec")?);
+        let id = required_string(&document, "id").ok_or_else(|| {
+            project_invalid(
+                path,
+                &input,
+                document.get("id"),
+                "project manifest requires string \"id\"",
+            )
+        })?;
+        validate_id(&id).map_err(|_| {
+            project_invalid(
+                path,
+                &input,
+                document.get("id"),
+                format!("invalid project id {id:?}"),
+            )
+        })?;
+        let target_spec_value = required_string(&document, "target-spec").ok_or_else(|| {
+            project_invalid(
+                path,
+                &input,
+                document.get("target-spec"),
+                "project manifest requires string \"target-spec\"",
+            )
+        })?;
+        let target_spec = resolve_path(base, &target_spec_value);
         let platform_pack = optional_string(&document, "platform-pack")
             .map(|path| PlatformPack::load(&resolve_path(base, &path)))
             .transpose()?;
@@ -447,13 +516,26 @@ fn nested_path_array(
         .collect()
 }
 
-fn required_string(document: &DocumentMut, key: &str) -> Result<String> {
+fn required_string(document: &DocumentMut, key: &str) -> Option<String> {
     optional_string(document, key)
-        .ok_or_else(|| format!("project manifest requires string {key:?}").into())
 }
 
 fn optional_string(document: &DocumentMut, key: &str) -> Option<String> {
     document.get(key).and_then(Item::as_str).map(str::to_owned)
+}
+
+fn project_invalid(
+    path: &Path,
+    input: &str,
+    item: Option<&Item>,
+    message: impl Into<String>,
+) -> ProjectError {
+    let span = item.and_then(Item::span).unwrap_or(0..input.len().min(1));
+    ProjectError::Invalid {
+        message: message.into(),
+        src: NamedSource::new(path.display().to_string(), input.to_owned()),
+        span: (span.start, span.len()).into(),
+    }
 }
 
 fn resolve_path(base: &Path, value: &str) -> PathBuf {

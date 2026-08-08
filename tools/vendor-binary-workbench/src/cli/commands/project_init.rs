@@ -2,7 +2,10 @@
 
 use std::{fs, path::Path};
 
+use serde::Serialize;
+
 use super::Result;
+use crate::cli::ProjectInitArgs;
 use crate::{
     MemoryMap, TargetSpec,
     project::{DEFAULT_PROJECT_MANIFEST, ProjectSpec},
@@ -17,27 +20,55 @@ mod render;
 #[cfg(test)]
 mod tests;
 
-use options::{Options, parse_options};
+use options::{Options, resolve_options};
 use render::{
     render_manifest, render_memory, render_platform, render_readme, render_run_spec, render_target,
 };
 
-pub(super) fn run(arguments: Vec<String>) -> Result<bool> {
-    let options = parse_options(arguments)?;
+#[derive(Serialize)]
+struct ProjectInitReport {
+    schema_version: u32,
+    command: &'static str,
+    status: &'static str,
+    id: String,
+    architecture: &'static str,
+    sources: usize,
+    mmio_regions: usize,
+    imported_svd: bool,
+    path: String,
+    next_command: String,
+}
+
+pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
+    let options = resolve_options(arguments)?;
     create_project(&options)?;
-    println!(
-        "PROJECT-INIT\tstatus=created\tid={}\tarchitecture=riscv32\tsources={}\tmmio-regions={}\timported-svd={}\tpath={}",
-        options.id,
-        options.sources.len(),
-        options.ranges.len(),
-        options.import_svd.is_some(),
-        options.directory.display()
-    );
-    println!(
-        "PROJECT-NEXT\tcommand=cargo vendor-binary-workbench project doctor --project {}/{}",
-        options.directory.display(),
-        DEFAULT_PROJECT_MANIFEST
-    );
+    let report = ProjectInitReport {
+        schema_version: 1,
+        command: "project init",
+        status: "created",
+        id: options.id.clone(),
+        architecture: "riscv32",
+        sources: options.sources.len(),
+        mmio_regions: options.ranges.len(),
+        imported_svd: options.import_svd.is_some(),
+        path: options.directory.display().to_string(),
+        next_command: format!(
+            "cargo vendor-binary-workbench project doctor --project {}/{}",
+            options.directory.display(),
+            DEFAULT_PROJECT_MANIFEST
+        ),
+    };
+    if !crate::cli::output::structured("project-init", &report) {
+        outputln!(
+            "PROJECT-INIT\tstatus=created\tid={}\tarchitecture=riscv32\tsources={}\tmmio-regions={}\timported-svd={}\tpath={}",
+            report.id,
+            report.sources,
+            report.mmio_regions,
+            report.imported_svd,
+            report.path
+        );
+        outputln!("PROJECT-NEXT\tcommand={}", report.next_command);
+    }
     Ok(true)
 }
 

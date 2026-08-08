@@ -2,11 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use serde_json::{Value, json};
-
 use super::{
     super::ProjectContext,
-    model::{Component, Phase, Readiness},
+    model::{Component, LinkedIrProfileDetail, Phase, Readiness},
 };
 use crate::{
     harnesses, interfaces::InterfaceFacts, project_ir_report::inspect_project_ir_report,
@@ -74,22 +72,31 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
                 "not-generated"
             }
         };
-        profiles.push(json!({
-            "id": profile.id,
-            "sources": requested,
-            "missing_sources": missing,
-            "entry_contract": profile.entry_contract,
-            "contract_status": if contract.is_ok() { "ready" } else { "invalid" },
-            "contract_error": contract.err().map(|error| error.to_string()),
-            "output": profile.output.display().to_string(),
-            "output_status": output_status,
-            "output_error": output_error,
-            "functions": summary.as_ref().map_or(0, |summary| summary.functions),
-            "registers": summary.as_ref().map_or(0, |summary| summary.registers),
-            "field_candidates": summary.as_ref().map_or(0, |summary| summary.field_candidates),
-            "pseudo_rust": profile.pseudo_rust.as_deref().map(|path| path.display().to_string()),
-            "pseudo_status": pseudo_status,
-        }));
+        let contract_status = if contract.is_ok() { "ready" } else { "invalid" };
+        profiles.push(LinkedIrProfileDetail {
+            id: profile.id.clone(),
+            sources: requested
+                .iter()
+                .map(|source| (*source).to_owned())
+                .collect(),
+            missing_sources: missing.iter().map(|source| (*source).to_owned()).collect(),
+            entry_contract: profile.entry_contract.clone(),
+            contract_status,
+            contract_error: contract.err().map(|error| error.to_string()),
+            output: profile.output.display().to_string(),
+            output_status,
+            output_error,
+            functions: summary.as_ref().map_or(0, |summary| summary.functions),
+            registers: summary.as_ref().map_or(0, |summary| summary.registers),
+            field_candidates: summary
+                .as_ref()
+                .map_or(0, |summary| summary.field_candidates),
+            pseudo_rust: profile
+                .pseudo_rust
+                .as_deref()
+                .map(|path| path.display().to_string()),
+            pseudo_status,
+        });
     }
     Component::new(
         "linked_ir",
@@ -101,7 +108,7 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
             Readiness::Ready
         },
     )
-    .detail("profiles", Value::Array(profiles))
+    .detail("profiles", profiles)
 }
 
 fn mmio_facts(context: &ProjectContext<'_>) -> Component {

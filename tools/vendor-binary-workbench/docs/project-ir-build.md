@@ -41,7 +41,7 @@ is retained.
 `symbol-prefix` defaults to the empty prefix, which selects every named code
 symbol. `include-reachable` defaults to `true`. `entry-contract` defaults to
 `none` and is validated against the selected generic or platform harness.
-`pseudo-rust` is optional; schema-v31 JSON is always generated.
+`pseudo-rust` is optional; schema-v32 JSON is always generated.
 
 ## Local artifact bindings
 
@@ -93,7 +93,7 @@ cargo vendor-binary-workbench ir build \
 ```
 
 Missing or different documents make `--check` fail and name every stale path.
-Artifact identities and digests remain embedded in the schema-v31 report, so a
+Artifact identities and digests remain embedded in the schema-v32 report, so a
 successful check also binds the generated view to the supplied local inputs.
 
 ## Register-review integration
@@ -108,7 +108,7 @@ linked-ir = ["generated/findings/phy.ir.json"]
 ```
 
 `project doctor` reports whether each profile has usable source bindings, a
-valid entry contract, generated schema-v31 output and an optional pseudo-Rust
+valid entry contract, generated schema-v32 output and an optional pseudo-Rust
 document. It also reports whether the JSON output is linked into register
 review. The register report still treats functions, predicates and semantic
 operations as navigation evidence; clean SVD and PAC generation reads only the

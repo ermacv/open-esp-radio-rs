@@ -247,9 +247,9 @@ all three vendor inputs; no artifact path or hash is embedded in the tool:
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-interrupt.disposition \
@@ -273,9 +273,9 @@ but does not enable modem sleep.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_irq_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-power-interrupt.disposition \
@@ -300,9 +300,9 @@ same operations in vendor order without importing vendor PM context.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.disposition \
@@ -323,9 +323,9 @@ disable branch: both branches set bit 21 at `0x2010_d830`, while only bit 29 at
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_tsf_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-sta-tsf-wakeup.disposition \
@@ -347,8 +347,8 @@ register transaction to both output words.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:rom "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
-  --source-prefix:rom hal_get_sta_tsf \
+  --source-artifact "rom=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-prefix rom=hal_get_sta_tsf \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_rom_power_tsf_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/rom-sta-tsf-snapshot.disposition \
@@ -380,9 +380,9 @@ statistics suffix to be omitted as unused instrumentation.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_tx_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-tx-dma.disposition \
@@ -409,9 +409,9 @@ descriptor memory ownership.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libpp "$ESP32S31_LIBPP_LINKED_ELF" \
-  --source-inventory:libpp "$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
-  --source-companion:libpp "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
+  --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
+  --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_rx_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-rx-dma.disposition \
@@ -444,9 +444,9 @@ its caller, and exposes the deadline to an Embassy executor.
 ```console
 cargo vendor-binary-workbench verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
-  --source-artifact:libnet80211 "$ESP32S31_LIBNET80211_LINKED_ELF" \
-  --source-inventory:libnet80211 "$OPEN_ESP_RADIO_ESP32S31_LIBNET80211_ARCHIVE" \
-  --source-companion:libnet80211 "$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
+  --source-artifact "libnet80211=$ESP32S31_LIBNET80211_LINKED_ELF" \
+  --source-inventory "libnet80211=$OPEN_ESP_RADIO_ESP32S31_LIBNET80211_ARCHIVE" \
+  --source-companion "libnet80211=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libnet80211_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libnet80211-sta-join.disposition \

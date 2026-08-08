@@ -1,49 +1,33 @@
 //! Offline review of evidence emitted by a protected verification run.
 
-use std::path::PathBuf;
-
 use super::super::*;
 
-fn set_path(slot: &mut Option<PathBuf>, value: String, option: &str) -> Result<()> {
-    if slot.replace(PathBuf::from(value)).is_some() {
-        return Err(format!("duplicate {option}").into());
-    }
-    Ok(())
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct EvidenceReviewReport {
+    schema_version: u32,
+    command: &'static str,
+    baseline: String,
+    report: String,
+    report_sha256: String,
+    candidate: Option<String>,
+    comparison: EvidenceComparison,
 }
 
-pub(super) fn run(arguments: Vec<String>) -> Result<bool> {
-    let mut report = None;
-    let mut baseline = None;
-    let mut candidate = None;
-    let mut arguments = arguments.into_iter();
-    while let Some(argument) = arguments.next() {
-        match argument.as_str() {
-            "--report" => set_path(
-                &mut report,
-                take_value(&mut arguments, "--report")?,
-                "--report",
-            )?,
-            "--evidence-baseline" => set_path(
-                &mut baseline,
-                take_value(&mut arguments, "--evidence-baseline")?,
-                "--evidence-baseline",
-            )?,
-            "--candidate" => set_path(
-                &mut candidate,
-                take_value(&mut arguments, "--candidate")?,
-                "--candidate",
-            )?,
-            "--no-evidence-baseline" => {}
-            _ => return Err(format!("unknown verify evidence option: {argument}").into()),
-        }
-    }
-    let report = report.ok_or("verify evidence requires --report")?;
-    let baseline = baseline.ok_or("verify evidence requires --evidence-baseline")?;
+pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
+    let report = arguments
+        .report
+        .ok_or("verify evidence requires --report")?;
+    let baseline = arguments
+        .evidence_baseline
+        .ok_or("verify evidence requires --evidence-baseline")?;
     let evidence = load_evidence_report(&report)?;
     let report_sha256 = artifact_sha256(&report)?;
     let expected = load_evidence_baseline(&baseline)?;
-    let passed = check_evidence_baseline(&expected, &evidence);
-    if let Some(candidate) = candidate.as_deref() {
+    let comparison = compare_evidence_baseline(&expected, &evidence);
+    let passed = comparison.passed;
+    if let Some(candidate) = arguments.candidate.as_deref() {
         write_evidence_candidate(
             candidate,
             &[
@@ -53,15 +37,34 @@ pub(super) fn run(arguments: Vec<String>) -> Result<bool> {
             &evidence,
         )?;
     }
-    println!(
-        "EVIDENCE-REVIEW\t{}\tbaseline={}\treport={}\treport-sha256={}\texpected={}\tactual={}",
-        if passed { "PASS" } else { "FAIL" },
-        baseline.display(),
-        report.display(),
+    let review = EvidenceReviewReport {
+        schema_version: 1,
+        command: "verify evidence",
+        baseline: baseline.display().to_string(),
+        report: report.display().to_string(),
         report_sha256,
-        expected.len(),
-        evidence.len()
-    );
+        candidate: arguments.candidate.map(|path| path.display().to_string()),
+        comparison,
+    };
+    if !crate::cli::output::structured("evidence-review", &review) {
+        print_evidence_comparison(&review.comparison);
+        if let Some(candidate) = &review.candidate {
+            outputln!(
+                "EVIDENCE-CANDIDATE\t{}\tentries={}",
+                candidate,
+                evidence.len()
+            );
+        }
+        outputln!(
+            "EVIDENCE-REVIEW\t{}\tbaseline={}\treport={}\treport-sha256={}\texpected={}\tactual={}",
+            if passed { "PASS" } else { "FAIL" },
+            review.baseline,
+            review.report,
+            review.report_sha256,
+            review.comparison.expected,
+            review.comparison.actual
+        );
+    }
     Ok(passed)
 }
 
@@ -88,14 +91,12 @@ mod tests {
         fs::write(&baseline, "evidence rom leaf symbolic\n").unwrap();
 
         assert!(
-            run(vec![
-                "--report".to_owned(),
-                report.display().to_string(),
-                "--evidence-baseline".to_owned(),
-                baseline.display().to_string(),
-                "--candidate".to_owned(),
-                candidate.display().to_string(),
-            ])
+            run(VerifyEvidenceArgs {
+                report: Some(report.clone()),
+                evidence_baseline: Some(baseline.clone()),
+                candidate: Some(candidate.clone()),
+                ..Default::default()
+            })
             .unwrap()
         );
         assert_eq!(
@@ -103,14 +104,12 @@ mod tests {
             "evidence rom leaf symbolic\n"
         );
 
-        let error = run(vec![
-            "--report".to_owned(),
-            report.display().to_string(),
-            "--evidence-baseline".to_owned(),
-            baseline.display().to_string(),
-            "--candidate".to_owned(),
-            report.display().to_string(),
-        ])
+        let error = run(VerifyEvidenceArgs {
+            report: Some(report.clone()),
+            evidence_baseline: Some(baseline.clone()),
+            candidate: Some(report.clone()),
+            ..Default::default()
+        })
         .unwrap_err();
         assert!(error.to_string().contains("verification report"));
         assert!(fs::read_to_string(&report).unwrap().starts_with('{'));

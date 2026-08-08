@@ -7,13 +7,13 @@ use crate::{
 
 pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
     let Some(paths) = &project.functions else {
-        println!("CAPABILITY\tfunction-workspace\tnot-configured");
+        outputln!("CAPABILITY\tfunction-workspace\tnot-configured");
         return (0, 0);
     };
     let reports = match project.function_ir_reports() {
         Ok(reports) => reports,
         Err(error) => {
-            println!("CAPABILITY\tfunction-workspace\tinvalid-config\terror={error}");
+            outputln!("CAPABILITY\tfunction-workspace\tinvalid-config\terror={error}");
             return (1, 0);
         }
     };
@@ -22,7 +22,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
         .filter(|(_, report)| !report.is_file())
         .count();
     if missing != 0 {
-        println!(
+        outputln!(
             "CAPABILITY\tfunction-workspace\tnot-generated\tprofiles={}\tmissing={}\tpack={}\treview-output={}",
             reports.len(),
             missing,
@@ -34,7 +34,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
     let facts = match FunctionFacts::load(&reports) {
         Ok(facts) => facts,
         Err(error) => {
-            println!(
+            outputln!(
                 "CAPABILITY\tfunction-workspace\tinvalid-facts\tprofiles={}\terror={error}",
                 reports.len()
             );
@@ -47,7 +47,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
             .root_functions()
             .map(|function| function.context_fields.len())
             .sum::<usize>();
-        println!(
+        outputln!(
             "CAPABILITY\tfunction-workspace\tpack-not-initialized\tprofiles={}\tfunctions={}\troot-functions={}\tcontext-fields={}\tpack={}\treview-output={}",
             reports.len(),
             facts.functions.len(),
@@ -61,7 +61,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
     match FunctionWorkspace::load(&reports, &paths.pack) {
         Ok(workspace) => {
             let summary = workspace.summary();
-            println!(
+            outputln!(
                 "CAPABILITY\tfunction-workspace\tavailable\tprofiles={}\troot-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\taccepted-incomplete={}\tpack={}\treview-output={}",
                 reports.len(),
                 summary.observed_functions,
@@ -81,7 +81,7 @@ pub(super) fn inspect(project: &ProjectSpec) -> (usize, usize) {
             (0, 0)
         }
         Err(error) => {
-            println!(
+            outputln!(
                 "CAPABILITY\tfunction-workspace\tinvalid\tprofiles={}\tpack={}\terror={error}",
                 reports.len(),
                 paths.pack.display()

@@ -25,7 +25,7 @@ cargo vendor-binary-workbench ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v31 records the selection mode plus root and
+`reachable-internal`, and schema v32 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -47,7 +47,7 @@ cargo vendor-binary-workbench ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v31 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v32 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -72,12 +72,12 @@ report summary retains their total as
 when the exact same binding is present in every shape; otherwise it is omitted
 and downstream context projection fails closed if the callee needs it. Shape
 counts are distinct recovered IR forms, not runtime call counts or loop
-iteration counts. The JSON records this policy as
-`call_compaction_mode: "stable-identity-universal-affine-bindings"`.
+iteration counts. This compaction is part of the typed linked-IR model rather
+than a renderer-specific JSON transformation.
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v31 records
+symbolic states. Schema v32 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -133,7 +133,7 @@ contract source, stable ID and evidence rule that justified the semantic name.
 The `site_path` array records the lexical call-site chain from the report root
 to the action, and actions are stably ordered by that chain.
 
-Schema v31 additionally projects reviewed event-like contracts into
+Schema v32 additionally projects reviewed event-like contracts into
 `event_dispatches`. This is a higher-level navigation view over
 `semantic_actions`, not a second source of effects. Each record has a
 zero-based `semantic_action_index`, a reviewed mechanism and execution context,
@@ -244,7 +244,7 @@ contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-pattern inventory remains available alongside the richer field
 candidate evidence.
 
-Schema v31 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v32 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate
@@ -292,7 +292,7 @@ with `direct_mmio_predicate_mode`,
 `direct_mmio_predicate_completeness_claim: false`,
 `mmio_field_candidate_mode` and `mmio_field_semantics_claim: false`.
 
-Schema-v30 JSON reports can be supplied to `registers review` as optional
+Schema-v32 JSON reports can be supplied to `registers review` as optional
 enrichment. The register workspace merges their field candidates, predicate
 details and semantic navigation links with artifact-wide MMIO facts while
 keeping all generated evidence outside the reviewed model and release SVD/PAC.

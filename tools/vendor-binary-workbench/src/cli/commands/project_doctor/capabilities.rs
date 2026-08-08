@@ -115,7 +115,7 @@ fn collect_symbol_inventory(context: &ProjectContext<'_>, report: &mut DoctorRep
             CapabilityReport::new("symbol-inventory", "not-generated")
                 .field("path", spec.output.display().to_string())
         }
-        Some(spec) => match crate::symbol_inventory_report::inspect(&spec.output) {
+        Some(spec) => match crate::artifacts::inspect_symbol_inventory(&spec.output) {
             Ok(summary) => CapabilityReport::new("symbol-inventory", "available")
                 .field("artifacts", summary.artifacts)
                 .field("symbol-facts", summary.symbol_facts)

@@ -86,8 +86,8 @@ pub(super) fn document(
     publication: Option<crate::cli::output::Publication>,
 ) -> Result<DiscoveryDocument<'_>> {
     Ok(DiscoveryDocument {
-        schema_version: 2,
-        command: "mmio discover",
+        schema_version: crate::artifacts::MMIO_FACTS.version,
+        command: crate::artifacts::MMIO_FACTS.command,
         analysis_mode: "best-effort",
         access_count_mode: "maximum-per-path",
         completeness_claim: false,

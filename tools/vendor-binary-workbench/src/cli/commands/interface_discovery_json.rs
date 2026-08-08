@@ -391,8 +391,8 @@ pub(super) struct InterfaceDiscoveryDocument<'a> {
 
 pub(super) fn document(discovery: &Discovery) -> Result<InterfaceDiscoveryDocument<'_>> {
     Ok(InterfaceDiscoveryDocument {
-        schema_version: 3,
-        command: "interfaces discover",
+        schema_version: crate::artifacts::INTERFACE_FACTS.version,
+        command: crate::artifacts::INTERFACE_FACTS.command,
         analysis_scope: AnalysisScope {
             architecture: "riscv32",
             calling_convention: "riscv-ilp32",

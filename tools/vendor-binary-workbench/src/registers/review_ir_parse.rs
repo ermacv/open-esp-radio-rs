@@ -24,13 +24,15 @@ pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
 fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> {
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
-    if integer(root, "schema_version", "linked-IR report")? != 35 {
+    if integer(root, "schema_version", "linked-IR report")?
+        != u64::from(crate::artifacts::LINKED_IR.version)
+    {
         return Err(crate::Error::invalid(format!(
             "register review requires linked-IR schema 35 in {}",
             path.display()
         )));
     }
-    if string(root, "command", "linked-IR report")? != "ir export" {
+    if string(root, "command", "linked-IR report")? != crate::artifacts::LINKED_IR.command {
         return Err(crate::Error::invalid(format!(
             "{} is not an ir export report",
             path.display()

@@ -19,10 +19,13 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         .ok_or("project navigation requires [analysis.symbols]")
         .map_err(crate::Error::invalid)?;
     let inventory: InventoryReport = read(&symbols_spec.output, "symbol inventory")?;
-    if inventory.schema_version != 2 || inventory.command != "symbols inventory" {
-        return Err(crate::Error::invalid(
-            "project navigation requires symbols inventory schema_version 2",
-        ));
+    if inventory.schema_version != crate::artifacts::SYMBOL_INVENTORY.version
+        || inventory.command != crate::artifacts::SYMBOL_INVENTORY.command
+    {
+        return Err(crate::Error::invalid(format!(
+            "project navigation requires symbols inventory schema_version {}",
+            crate::artifacts::SYMBOL_INVENTORY.version
+        )));
     }
 
     let mut inputs = vec![input(
@@ -115,9 +118,12 @@ fn add_linked_ir(
 ) -> Result<()> {
     for profile in &project.ir_profiles {
         let report: IrReport = read(&profile.output, "linked-IR report")?;
-        if report.schema_version != 35 || report.command != "ir export" {
+        if report.schema_version != crate::artifacts::LINKED_IR.version
+            || report.command != crate::artifacts::LINKED_IR.command
+        {
             return Err(crate::Error::invalid(format!(
-                "project navigation requires linked-IR schema_version 35 for profile {:?}",
+                "project navigation requires linked-IR schema_version {} for profile {:?}",
+                crate::artifacts::LINKED_IR.version,
                 profile.id
             )));
         }
@@ -167,10 +173,13 @@ fn add_interfaces(
         return Ok(0);
     };
     let report: InterfaceReport = read(&paths.facts, "interface facts")?;
-    if report.schema_version != 3 || report.command != "interfaces discover" {
-        return Err(crate::Error::invalid(
-            "project navigation requires interface facts schema_version 3",
-        ));
+    if report.schema_version != crate::artifacts::INTERFACE_FACTS.version
+        || report.command != crate::artifacts::INTERFACE_FACTS.command
+    {
+        return Err(crate::Error::invalid(format!(
+            "project navigation requires interface facts schema_version {}",
+            crate::artifacts::INTERFACE_FACTS.version
+        )));
     }
     inputs.push(input(
         "interface-facts",

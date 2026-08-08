@@ -11,12 +11,15 @@ use super::*;
 pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "interface facts root")?;
-    if integer(root, "schema_version", "interface facts")? != 3 {
-        return Err(crate::Error::invalid(
-            "interface facts require schema_version 3",
-        ));
+    if integer(root, "schema_version", "interface facts")?
+        != u64::from(crate::artifacts::INTERFACE_FACTS.version)
+    {
+        return Err(crate::Error::invalid(format!(
+            "interface facts require schema_version {}",
+            crate::artifacts::INTERFACE_FACTS.version
+        )));
     }
-    if string(root, "command", "interface facts")? != "interfaces discover" {
+    if string(root, "command", "interface facts")? != crate::artifacts::INTERFACE_FACTS.command {
         return Err(crate::Error::invalid(
             "interface workspace requires an interfaces discover JSON report",
         ));

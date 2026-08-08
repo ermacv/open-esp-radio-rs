@@ -63,10 +63,15 @@ impl RegisterFacts {
     fn parse(input: &str) -> Result<Self> {
         let root: Value = serde_json::from_str(input)?;
         let root = object(&root, "MMIO facts root")?;
-        if integer(root, "schema_version", "MMIO facts")? != 2 {
-            return Err(crate::Error::invalid("MMIO facts require schema_version 2"));
+        if integer(root, "schema_version", "MMIO facts")?
+            != u64::from(crate::artifacts::MMIO_FACTS.version)
+        {
+            return Err(crate::Error::invalid(format!(
+                "MMIO facts require schema_version {}",
+                crate::artifacts::MMIO_FACTS.version
+            )));
         }
-        if string(root, "command", "MMIO facts")? != "mmio discover" {
+        if string(root, "command", "MMIO facts")? != crate::artifacts::MMIO_FACTS.command {
             return Err(crate::Error::invalid(
                 "register workspace requires an mmio discover JSON report",
             ));

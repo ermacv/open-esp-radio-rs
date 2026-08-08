@@ -229,8 +229,8 @@ fn document<'a>(
         .filter(|symbol| symbol.resolution.is_unresolved())
         .count();
     Ok(InventoryDocument {
-        schema_version: 2,
-        command: "symbols inventory",
+        schema_version: crate::artifacts::SYMBOL_INVENTORY.version,
+        command: crate::artifacts::SYMBOL_INVENTORY.command,
         linkage_mode: "association-only",
         linker_resolution_claim: false,
         artifacts: inventory

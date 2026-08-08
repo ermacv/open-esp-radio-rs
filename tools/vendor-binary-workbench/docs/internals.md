@@ -443,6 +443,25 @@ The façade is the only module that schedules symbols and assembles a complete
 `LinkedIrReport`. Analysis modules may consume the stable model and shared
 helpers, but report rendering does not feed facts back into analysis.
 
+## Persistent artifact boundary
+
+`artifacts/` owns the identity and read boundary of reusable generated project
+artifacts. Producer commands and downstream consumers use the same
+`ArtifactSchema` constants. Command-result envelopes remain separate because
+they describe one invocation rather than durable project evidence.
+
+| Module | Responsibility |
+| --- | --- |
+| `artifacts/mod.rs` | Canonical schema version/command identities and source-aware JSON loading |
+| `artifacts/linked_ir.rs` | Typed linked-IR summary projection and claim validation |
+| `artifacts/symbol_inventory.rs` | Typed symbol-inventory summary projection |
+
+Full MMIO and interface-facts models still live with their domain validation
+in `registers/facts.rs` and `interfaces/facts/`; their producers nevertheless
+share the canonical identities from `artifacts/`. Linked-IR workspace readers
+may use narrower typed projections, but they may not invent an independent
+schema version.
+
 ## Function-workspace source layout
 
 `function_workspace/mod.rs` is the façade for the human-reviewed function and
@@ -498,7 +517,7 @@ and selects outputs. Rendering and domain-input validation are separate:
 | `json_report.rs` | Serde document envelope and report summary |
 | `tests.rs` | Artifact-domain input validation tests |
 
-Schema v33 serializes the typed `LinkedIrReport` model directly; the removed
+Schema v35 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,

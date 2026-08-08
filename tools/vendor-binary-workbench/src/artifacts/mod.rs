@@ -1,0 +1,85 @@
+//! Version and command identities for persistent workbench artifacts.
+//!
+//! Producers and consumers share these identities. Command-result schemas are
+//! intentionally separate because they describe one invocation rather than a
+//! reusable project artifact.
+
+mod linked_ir;
+mod symbol_inventory;
+
+pub(crate) use linked_ir::inspect_linked_ir;
+pub(crate) use symbol_inventory::inspect_symbol_inventory;
+
+use std::path::Path;
+
+use serde::de::DeserializeOwned;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct ArtifactSchema {
+    pub(crate) version: u32,
+    pub(crate) command: &'static str,
+}
+
+pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
+    version: 2,
+    command: "symbols inventory",
+};
+
+pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
+    version: 2,
+    command: "mmio discover",
+};
+
+pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
+    version: 3,
+    command: "interfaces discover",
+};
+
+pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
+    version: 35,
+    command: "ir export",
+};
+
+fn read_json<T: DeserializeOwned>(kind: &'static str, path: &Path) -> crate::Result<T> {
+    let input = std::fs::read_to_string(path)?;
+    serde_json::from_str(&input)
+        .map_err(crate::Error::from)
+        .map_err(|error| crate::Error::manifest_document(kind, path, &input, error))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn persistent_schema_identities_are_explicit_and_distinct() {
+        assert_eq!(
+            SYMBOL_INVENTORY,
+            ArtifactSchema {
+                version: 2,
+                command: "symbols inventory",
+            }
+        );
+        assert_eq!(
+            MMIO_FACTS,
+            ArtifactSchema {
+                version: 2,
+                command: "mmio discover",
+            }
+        );
+        assert_eq!(
+            INTERFACE_FACTS,
+            ArtifactSchema {
+                version: 3,
+                command: "interfaces discover",
+            }
+        );
+        assert_eq!(
+            LINKED_IR,
+            ArtifactSchema {
+                version: 35,
+                command: "ir export",
+            }
+        );
+    }
+}

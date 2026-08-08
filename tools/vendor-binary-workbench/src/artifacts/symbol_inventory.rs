@@ -1,11 +1,13 @@
-//! Strict summary projection for stored symbol-inventory reports.
+//! Typed summary projection for stored symbol-inventory artifacts.
 
-use std::{fs, path::Path};
+use std::path::Path;
 
 use serde::Deserialize;
 
+use super::{SYMBOL_INVENTORY, read_json};
+
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct StoredInventorySummary {
+pub(crate) struct SymbolInventorySummary {
     pub(crate) artifacts: usize,
     pub(crate) symbol_facts: usize,
     pub(crate) exported_definitions: usize,
@@ -14,14 +16,14 @@ pub(crate) struct StoredInventorySummary {
 }
 
 #[derive(Deserialize)]
-struct StoredInventoryDocument {
+struct SymbolInventoryDocument {
     schema_version: u32,
     command: String,
-    summary: StoredSummaryDocument,
+    summary: SummaryDocument,
 }
 
 #[derive(Deserialize)]
-struct StoredSummaryDocument {
+struct SummaryDocument {
     artifacts: usize,
     symbol_facts: usize,
     exported_definitions: usize,
@@ -29,16 +31,19 @@ struct StoredSummaryDocument {
     unresolved_or_associated: usize,
 }
 
-pub(crate) fn inspect(path: &Path) -> crate::Result<StoredInventorySummary> {
-    let input = fs::read_to_string(path)?;
-    let document = serde_json::from_str::<StoredInventoryDocument>(&input)?;
-    if document.schema_version != 2 || document.command != "symbols inventory" {
+pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInventorySummary> {
+    let document = read_json::<SymbolInventoryDocument>("symbol inventory", path)?;
+    if document.schema_version != SYMBOL_INVENTORY.version
+        || document.command != SYMBOL_INVENTORY.command
+    {
         return Err(crate::Error::invalid(format!(
-            "unsupported symbol inventory in {}: expected schema_version 2 and command \"symbols inventory\"",
-            path.display()
+            "unsupported symbol inventory in {}: expected schema_version {} and command {:?}",
+            path.display(),
+            SYMBOL_INVENTORY.version,
+            SYMBOL_INVENTORY.command,
         )));
     }
-    Ok(StoredInventorySummary {
+    Ok(SymbolInventorySummary {
         artifacts: document.summary.artifacts,
         symbol_facts: document.summary.symbol_facts,
         exported_definitions: document.summary.exported_definitions,
@@ -57,7 +62,7 @@ mod tests {
             "vendor-workbench-symbol-inventory-{}.json",
             std::process::id()
         ));
-        fs::write(
+        std::fs::write(
             &path,
             r#"{
   "schema_version": 2,
@@ -74,22 +79,22 @@ mod tests {
 "#,
         )
         .unwrap();
-        let summary = inspect(&path).unwrap();
+        let summary = inspect_symbol_inventory(&path).unwrap();
         assert_eq!(summary.artifacts, 3);
         assert_eq!(summary.symbol_facts, 40);
         assert_eq!(summary.exported_definitions, 12);
 
-        fs::write(
+        std::fs::write(
             &path,
             r#"{"schema_version":1,"command":"symbols inventory","summary":{"artifacts":0,"symbol_facts":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0}}"#,
         )
         .unwrap();
         assert!(
-            inspect(&path)
+            inspect_symbol_inventory(&path)
                 .unwrap_err()
                 .to_string()
                 .contains("expected schema_version 2")
         );
-        fs::remove_file(path).unwrap();
+        std::fs::remove_file(path).unwrap();
     }
 }

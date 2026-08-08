@@ -5,6 +5,7 @@
 
 mod analysis;
 mod application;
+mod artifacts;
 mod cli;
 mod digest;
 mod error;
@@ -19,12 +20,10 @@ mod platform_pack;
 mod project;
 mod project_analysis;
 mod project_ir;
-mod project_ir_report;
 mod register_catalog;
 mod registers;
 mod run_spec;
 mod source_id;
-mod symbol_inventory_report;
 mod target;
 #[cfg(test)]
 mod test_support;

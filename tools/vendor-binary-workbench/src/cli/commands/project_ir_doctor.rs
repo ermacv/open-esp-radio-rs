@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use crate::{
+    artifacts::inspect_linked_ir,
     harnesses,
     project::ProjectSpec,
-    project_ir_report::inspect_project_ir_report,
     run_spec::{InputRole, RunSpec},
     target::TargetSpec,
 };
@@ -153,7 +153,7 @@ pub(super) fn inspect(
             warnings += 1;
             ("not-generated", 0, 0, 0)
         } else {
-            match inspect_project_ir_report(&profile.output) {
+            match inspect_linked_ir(&profile.output) {
                 Ok(summary) => (
                     "ready",
                     summary.functions,

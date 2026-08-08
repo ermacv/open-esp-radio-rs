@@ -190,8 +190,8 @@ pub(super) fn document<'a>(
     publications: Vec<crate::cli::output::Publication>,
 ) -> Result<LinkedIrDocument<'a>> {
     Ok(LinkedIrDocument {
-        schema_version: 35,
-        command: "ir export",
+        schema_version: crate::artifacts::LINKED_IR.version,
+        command: crate::artifacts::LINKED_IR.command,
         analysis_mode: "best-effort",
         linkage_mode: if artifacts.len() > 1 {
             "independent-artifacts"

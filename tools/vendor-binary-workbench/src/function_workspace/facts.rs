@@ -181,8 +181,8 @@ fn parse_report(profile: &str, input: &str) -> Result<(Vec<FunctionInputFact>, V
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
     let context = format!("linked-IR profile {profile:?}");
-    if integer(root, "schema_version", &context)? != 35
-        || string(root, "command", &context)? != "ir export"
+    if integer(root, "schema_version", &context)? != u64::from(crate::artifacts::LINKED_IR.version)
+        || string(root, "command", &context)? != crate::artifacts::LINKED_IR.command
     {
         return Err(crate::Error::invalid(format!(
             "function workspace requires a schema-v35 ir export report for profile {profile:?}"

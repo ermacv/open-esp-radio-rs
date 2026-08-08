@@ -5,8 +5,11 @@ use std::collections::BTreeSet;
 use super::model::{Component, LinkedIrProfileDetail, Phase, Readiness};
 use crate::application::ProjectContext;
 use crate::{
-    harnesses, interfaces::InterfaceFacts, project_ir_report::inspect_project_ir_report,
-    registers::RegisterFacts, run_spec::InputRole,
+    artifacts::{inspect_linked_ir, inspect_symbol_inventory},
+    harnesses,
+    interfaces::InterfaceFacts,
+    registers::RegisterFacts,
+    run_spec::InputRole,
 };
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
@@ -58,7 +61,7 @@ fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
             .detail("path", spec.output.display().to_string())
             .diagnostic("symbol inventory has not been generated");
     }
-    match crate::symbol_inventory_report::inspect(&spec.output) {
+    match inspect_symbol_inventory(&spec.output) {
         Ok(summary) => Component::new("symbol_inventory", Readiness::Ready)
             .detail("path", spec.output.display().to_string())
             .detail("artifacts", summary.artifacts)
@@ -109,7 +112,7 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
             incomplete = true;
             ("not-generated", None, None)
         } else {
-            match inspect_project_ir_report(&profile.output) {
+            match inspect_linked_ir(&profile.output) {
                 Ok(summary) => ("ready", Some(summary), None),
                 Err(error) => {
                     invalid = true;

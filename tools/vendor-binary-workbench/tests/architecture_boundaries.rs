@@ -119,3 +119,45 @@ fn cli_resolution_has_one_typed_command_axis() {
         );
     }
 }
+
+#[test]
+fn persistent_artifact_identities_have_one_owner() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let required_uses = [
+        (
+            "cli/commands/symbol_inventory.rs",
+            "artifacts::SYMBOL_INVENTORY",
+        ),
+        (
+            "cli/commands/discover_mmio_json.rs",
+            "artifacts::MMIO_FACTS",
+        ),
+        (
+            "cli/commands/interface_discovery_json.rs",
+            "artifacts::INTERFACE_FACTS",
+        ),
+        (
+            "cli/commands/export_ir/json_report.rs",
+            "artifacts::LINKED_IR",
+        ),
+        ("registers/facts.rs", "artifacts::MMIO_FACTS"),
+        ("interfaces/facts/parse.rs", "artifacts::INTERFACE_FACTS"),
+        ("function_workspace/facts.rs", "artifacts::LINKED_IR"),
+        ("registers/review_ir_parse.rs", "artifacts::LINKED_IR"),
+    ];
+    for (relative, identity) in required_uses {
+        let source =
+            fs::read_to_string(root.join(relative)).expect("read artifact boundary source");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            production.contains(identity),
+            "persistent artifact boundary {relative} does not use canonical {identity}"
+        );
+    }
+    for removed in ["project_ir_report.rs", "symbol_inventory_report.rs"] {
+        assert!(
+            !root.join(removed).exists(),
+            "legacy persistent-artifact reader still exists: {removed}"
+        );
+    }
+}

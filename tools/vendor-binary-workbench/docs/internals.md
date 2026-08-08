@@ -556,13 +556,14 @@ boundary:
 | Module | Responsibility |
 | --- | --- |
 | `snapshot/status.rs` | Typed project-readiness projection |
+| `snapshot/functions.rs` | Function index and reviewed logical-type projection |
 | `snapshot/registers.rs` | Reviewed register workspace and catalog projection |
 | `snapshot/interfaces.rs` | Reviewed table contracts, slots and semantic bindings |
 | `snapshot/comparisons.rs` | Verification profile inventory and duplicate-name diagnostics |
 
-Function and logical-type summaries plus on-demand detail enrichment remain in
-the snapshot façade; the focused projections must not acquire function-review
-policy.
+On-demand function detail and pseudo-Rust enrichment remain in the snapshot
+façade because they are loaded lazily by both frontends. The other focused
+projections must not acquire that detail-rendering policy.
 
 See [Application API and alternate frontends](application-api.md) for the
 public API and frontend contract. Every project-init/configuration operation

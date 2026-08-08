@@ -4,7 +4,7 @@ use std::{path::PathBuf, str::FromStr};
 
 use clap::Args;
 
-use super::{NamedAddressRange, SourcePath, SourceValue};
+use super::{NamedAddressRange, ProjectInputBinding, SourcePath, SourceValue};
 use crate::source_id::SourceId;
 
 #[derive(Clone, Debug, Default, Args)]
@@ -46,6 +46,22 @@ pub(crate) struct ProjectConfigureArgs {
     /// Verify that the manifest already contains the requested configuration.
     #[arg(long)]
     pub(crate) check: bool,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct ProjectInputsInitArgs {
+    /// Bind one run-spec role to a caller-owned artifact path.
+    #[arg(long, value_name = "ROLE=PATH", required = true)]
+    pub(crate) bind: Vec<ProjectInputBinding>,
+    /// Local run-spec to create; defaults to local.run next to the project manifest.
+    #[arg(long)]
+    pub(crate) output: Option<PathBuf>,
+    /// Verify that the existing local run-spec matches the requested bindings.
+    #[arg(long, conflicts_with = "force")]
+    pub(crate) check: bool,
+    /// Replace an existing local run-spec.
+    #[arg(long, conflicts_with = "check")]
+    pub(crate) force: bool,
 }
 
 #[derive(Clone, Debug, Default, Args)]

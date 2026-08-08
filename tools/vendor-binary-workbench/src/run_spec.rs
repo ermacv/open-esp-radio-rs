@@ -48,7 +48,7 @@ pub(crate) enum InputRole {
 }
 
 impl InputRole {
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value {
             "artifact" => Some(Self::Artifact),
             "companion" => Some(Self::Companion),
@@ -92,6 +92,19 @@ impl InputRole {
             Self::Artifact => "artifact",
             Self::Companion => "companion",
         }
+    }
+
+    pub(crate) fn qualified_source_id(&self) -> Option<&str> {
+        match self {
+            Self::SourceArtifact(source)
+            | Self::SourceInventory(source)
+            | Self::SourceCompanion(source) => Some(source.as_str()),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn expects_archive(&self) -> bool {
+        matches!(self, Self::VendorInventory | Self::SourceInventory(_))
     }
 }
 

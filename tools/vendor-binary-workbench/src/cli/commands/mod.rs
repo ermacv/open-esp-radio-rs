@@ -22,6 +22,7 @@ mod project_configure;
 mod project_doctor;
 mod project_function_doctor;
 mod project_init;
+mod project_inputs;
 mod project_ir_doctor;
 mod project_navigation;
 mod project_pipeline;
@@ -69,6 +70,16 @@ pub(super) fn run_project_configure(
         unreachable!("project configure received another argument type")
     };
     project_configure::run(arguments, manifest)
+}
+
+pub(super) fn run_project_inputs_init(
+    arguments: CommandArguments,
+    manifest: &std::path::Path,
+) -> Result<bool> {
+    let CommandArguments::ProjectInputsInit(arguments) = arguments else {
+        unreachable!("project inputs init received another argument type")
+    };
+    project_inputs::run(arguments, manifest)
 }
 
 pub(super) fn run_project_doctor(
@@ -187,6 +198,7 @@ pub(super) fn run(
         | Command::GenerateManpage
         | Command::ProjectInit
         | Command::ProjectConfigure
+        | Command::ProjectInputsInit
         | Command::ProjectDoctor
         | Command::ProjectStatus
         | Command::ProjectAnalyze

@@ -11,6 +11,7 @@ pub(super) fn command_span(command: Command) -> Option<Span> {
         | Command::GenerateManpage
         | Command::ProjectInit
         | Command::ProjectConfigure
+        | Command::ProjectInputsInit
         | Command::ProjectDoctor
         | Command::ProjectStatus
         | Command::FunctionInitPack

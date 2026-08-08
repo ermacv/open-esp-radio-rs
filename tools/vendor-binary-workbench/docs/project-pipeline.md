@@ -7,12 +7,10 @@ an output.
 
 ```console
 cargo vendor-binary-workbench project analyze \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 cargo vendor-binary-workbench project analyze --check \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 Use `project doctor` first when diagnosing configuration, backend, catalog, or
@@ -122,7 +120,6 @@ is a gate:
 ```console
 cargo vendor-binary-workbench project analyze --check \
   --project path/to/vendor-project.toml \
-  --run-spec /path/to/local.run \
   --deny-unreviewed
 ```
 
@@ -131,11 +128,13 @@ change discovery, IR generation, or review rendering.
 
 ## Private inputs
 
-A public project normally omits `run-spec`; callers supply an untracked file
-with authenticated artifact paths. In that case, running `project analyze
---check` without `--run-spec` reports analysis roots and their dependants as
-`blocked`. That is intentionally stricter than `project doctor`, where an
-omitted local run spec is only a readiness warning.
+A public project normally omits `run-spec`; callers create an untracked
+`local.run` beside the project manifest with `project inputs init`. The
+resolver discovers that file automatically. Explicit `--run-spec` remains an
+override for CI or for credentials stored elsewhere. With neither source,
+`project analyze --check` reports analysis roots and their dependants as
+`blocked`. That is intentionally stricter than `project doctor`, where absent
+bindings are only a readiness warning.
 
 The artifact inventory and both discovery commands expose the same
 non-mutating primitive for narrow workflows:

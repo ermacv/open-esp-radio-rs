@@ -41,7 +41,7 @@ The ESP32-S31 target specification selects the architecture, ABI, SVD catalog,
 profiles, dispositions, and evidence baseline. Its project-selected platform
 pack supplies the harness and reusable semantic catalogs. Vendor artifact paths
 and trusted digests stay outside both packs; callers authenticate inputs and
-pass them directly or through a local `--run-spec`.
+pass them directly or through an untracked project-local `local.run`.
 
 ## Workflows
 
@@ -49,6 +49,7 @@ pass them directly or through a local `--run-spec`.
 | --- | --- | --- |
 | `project init` | Create a validated generic project, MMIO map and editable register model | [Creating a project](docs/project-init.md) |
 | `project configure` | Attach or verify a reusable platform/harness/semantic composition | [Platform packs](docs/platform-packs.md) |
+| `project inputs init` | Validate caller-owned ELF/archive roles and create or check untracked `local.run` | [Creating a project](docs/project-init.md#local-inputs-and-first-analysis) |
 | Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
 | `project status` | Emit phase-based lifecycle and publication readiness as text or stable JSON | [Project status](docs/project-status.md) |

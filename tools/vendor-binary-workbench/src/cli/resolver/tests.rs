@@ -159,6 +159,67 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
 }
 
 #[test]
+fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
+    let directory = fixture_directory("local-run-discovery");
+    write_target(&directory.join("target.spec"), None);
+    write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
+    std::fs::write(
+        directory.join("local.run"),
+        "schema 1\ninput artifact discovered.elf\n",
+    )
+    .unwrap();
+
+    let resolved = resolve_from(
+        parse(&[
+            "project",
+            "status",
+            "--project",
+            directory.join(DEFAULT_PROJECT_MANIFEST).to_str().unwrap(),
+        ]),
+        &directory,
+    )
+    .unwrap();
+    let ResolvedInvocation::Command(resolved) = resolved else {
+        panic!("expected an ordinary resolved command")
+    };
+    assert_eq!(resolved.run_spec_path, Some(directory.join("local.run")));
+    assert!(
+        resolved.run_spec.unwrap().inputs()[0]
+            .path
+            .ends_with("discovered.elf")
+    );
+
+    write_project(
+        &directory.join(DEFAULT_PROJECT_MANIFEST),
+        "run-spec = \"configured.run\"\n",
+    );
+    std::fs::write(
+        directory.join("configured.run"),
+        "schema 1\ninput artifact configured.elf\n",
+    )
+    .unwrap();
+    let resolved = resolve_from(
+        parse(&[
+            "project",
+            "status",
+            "--project",
+            directory.join(DEFAULT_PROJECT_MANIFEST).to_str().unwrap(),
+        ]),
+        &directory,
+    )
+    .unwrap();
+    let ResolvedInvocation::Command(resolved) = resolved else {
+        panic!("expected an ordinary resolved command")
+    };
+    assert_eq!(
+        resolved.run_spec_path,
+        Some(directory.join("configured.run"))
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn explicit_run_spec_and_svd_override_project_defaults() {
     let directory = fixture_directory("precedence");
     write_target(&directory.join("target.spec"), Some("target.svd"));

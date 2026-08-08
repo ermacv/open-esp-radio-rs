@@ -65,30 +65,44 @@ enrichment needs it. Attach a reusable pack with `project configure`; see
 
 ## Local inputs and first analysis
 
-Copy the generated template and replace each path:
+Create the untracked input manifest through the typed project command:
 
 ```console
-cp verification/vendor/targets/example-radio/run.spec.example \
-  verification/vendor/targets/example-radio/local.run
+cargo vendor-binary-workbench project inputs init \
+  --project verification/vendor/targets/example-radio/vendor-project.toml \
+  --bind source-artifact:rom=/path/to/rom.elf \
+  --bind source-artifact:archive=/path/to/linked-archive.elf \
+  --bind source-inventory:archive=/path/to/vendor.a \
+  --bind source-companion:rom=/path/to/linked-archive.elf \
+  --bind source-companion:archive=/path/to/rom.elf
 
 cargo vendor-binary-workbench project doctor \
-  --project verification/vendor/targets/example-radio/vendor-project.toml \
-  --run-spec verification/vendor/targets/example-radio/local.run
+  --project verification/vendor/targets/example-radio/vendor-project.toml
 ```
 
+The command derives required source IDs from `[[analysis.ir]]`, rejects missing
+or unknown source bindings, checks each path, verifies that artifact roles are
+ELF32 and inventory roles are archives, and atomically writes sibling
+`local.run`. It refuses an existing file unless `--force` is explicit;
+`--check` verifies the exact generated content without writing. The generated
+`run.spec.example` remains a role reference for manual setups.
+
 Each generated IR profile consumes `source-artifact:ID`. For an archive plus a
-fully linked ELF, extend the local run spec with the corresponding
+fully linked ELF, add the corresponding
 `source-inventory:ID` and `source-companion:ID` roles. The archive supplies
 candidate members; the linked image remains the authority for final placement
 and symbol resolution.
 
-Then perform the first discovery and initialize reviewed packs:
+For project commands the resolver selects an explicit `--run-spec` first, then
+a manifest `run-spec`, then an existing sibling `local.run`. Therefore the
+normal project-local workflow does not repeat `--run-spec`. Perform the first
+discovery and initialize reviewed packs:
 
 ```console
-cargo vendor-binary-workbench symbols inventory --project PATH/vendor-project.toml --run-spec PATH/local.run
-cargo vendor-binary-workbench mmio discover --project PATH/vendor-project.toml --run-spec PATH/local.run
-cargo vendor-binary-workbench interfaces discover --project PATH/vendor-project.toml --run-spec PATH/local.run
-cargo vendor-binary-workbench ir build --project PATH/vendor-project.toml --run-spec PATH/local.run
+cargo vendor-binary-workbench symbols inventory --project PATH/vendor-project.toml
+cargo vendor-binary-workbench mmio discover --project PATH/vendor-project.toml
+cargo vendor-binary-workbench interfaces discover --project PATH/vendor-project.toml
+cargo vendor-binary-workbench ir build --project PATH/vendor-project.toml
 cargo vendor-binary-workbench registers review --project PATH/vendor-project.toml
 cargo vendor-binary-workbench interfaces init-pack --project PATH/vendor-project.toml
 cargo vendor-binary-workbench functions init-pack --project PATH/vendor-project.toml

@@ -2,18 +2,28 @@
 
 `vendor-project.toml` is the preferred project entry point. It composes the
 existing target pack with `memory.toml`, whose MMIO regions are independent of
-SVD register names:
+SVD register names. The checked project deliberately omits private artifact
+paths. Initialize an ignored sibling `local.run` from authenticated local
+artifacts:
 
 ```console
+cargo vendor-binary-workbench project inputs init \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --bind source-artifact:rom=/path/to/esp32s31_rev0_rom.elf \
+  --bind source-artifact:archive=/path/to/linked-libphy.elf \
+  --bind source-inventory:archive=/path/to/libphy.a \
+  --bind source-companion:rom=/path/to/linked-libphy.elf \
+  --bind source-companion:archive=/path/to/esp32s31_rev0_rom.elf
+
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
   --json-report /tmp/esp32s31-mmio.json
 ```
 
-The checked project deliberately omits a run spec because vendor artifact
-paths are caller-owned. `--target-spec` examples below remain valid as direct,
-single-command invocations.
+`project inputs init` checks the role names, required profile sources and
+ELF/archive container types before writing. Use `--check` to verify the local
+file or `--force` to replace it deliberately. `--target-spec` examples below
+remain valid as direct, single-command invocations.
 
 The public project configuration can be checked without proprietary inputs:
 
@@ -30,16 +40,14 @@ The status report therefore shows ready configuration, verification and
 publication phases and incomplete private-input/analysis phases until a local
 run spec is supplied.
 
-With a private run spec, the complete generated-evidence workflow is:
+Once sibling `local.run` exists, the complete generated-evidence workflow is:
 
 ```console
 cargo vendor-binary-workbench project analyze \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 cargo vendor-binary-workbench project analyze --check \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 This generates or checks the complete symbol inventory, the cross-report
@@ -87,12 +95,11 @@ generated report never feeds SVD or PAC generation.
 
 The checked project defines separate `rom-phy` and `archive-phy` linked-IR
 profiles. Each primary input receives the other linked ELF as its reviewed
-companion through `run.spec`, then register review merges both reports:
+companion through `local.run`, then register review merges both reports:
 
 ```console
 cargo vendor-binary-workbench ir build \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 cargo vendor-binary-workbench registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
@@ -149,8 +156,7 @@ it after edits or vendor updates:
 
 ```console
 cargo vendor-binary-workbench interfaces discover \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 cargo vendor-binary-workbench interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
@@ -200,7 +206,8 @@ verification. It is deliberately outside the generic verification engine.
   ESP32-S31 radio harness with reusable RTOS/NVS/logging/delay vocabulary.
 - `interfaces/reviewed.toml` alone binds concrete observed table slots to that
   vocabulary; the platform pack does not identify vendor layouts.
-- `run.spec.example` documents the separate caller-owned artifact bindings.
+- `run.spec.example` documents caller-owned artifact roles; `project inputs
+  init` creates and validates the untracked `local.run`.
 - `profiles/` contains concrete compiled-equivalence scenarios.
 - `dispositions/` maps vendor inventory symbols to Rust components and
   executable contracts.
@@ -208,8 +215,8 @@ verification. It is deliberately outside the generic verification engine.
 
 No file here selects a proprietary artifact path or authenticates one. The
 caller validates the desired vendor revision and passes absolute paths at run
-time, either as command options or through an untracked copy of
-`run.spec.example` passed with `--run-spec`. Private integration tests
+time, either as command options, an explicit run spec, or the automatically
+discovered untracked sibling `local.run`. Private integration tests
 recognize these explicit variables:
 
 - `OPEN_ESP_RADIO_ESP32S31_ROM_ELF`

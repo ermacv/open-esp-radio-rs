@@ -76,7 +76,9 @@ dispatch path:
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
 | `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
 
-Explicit CLI values take precedence over run-spec values. A run spec fills
+Explicit CLI values take precedence over run-spec values. Run-spec selection
+itself is explicit `--run-spec` > project manifest `run-spec` > an existing
+sibling `local.run`. A run spec fills
 only missing inputs and never synthesizes command-line tokens. Help, usage,
 unknown-option rejection and option conflicts are all derived from the same
 `clap` declarations. Runtime and project errors therefore do not print CLI
@@ -94,7 +96,7 @@ Configuration resolution is a distinct phase:
 clap argv -> ParsedInvocation
                + discovered/explicit project
                + target and platform pack
-               + explicit/project run spec
+               + explicit/project/sibling-local run spec
                + CLI/project/target SVD and memory defaults
              -> ResolvedInvocation -> dispatch -> domain workflow
 ```

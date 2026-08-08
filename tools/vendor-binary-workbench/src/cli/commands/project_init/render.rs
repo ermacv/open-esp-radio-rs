@@ -107,7 +107,7 @@ pub(super) fn render_memory(options: &Options) -> String {
 
 pub(super) fn render_run_spec(options: &Options) -> String {
     let mut output =
-        "# Copy to local.run, replace every path, and keep that file untracked.\nschema 1\n"
+        "# Reference template. Prefer `project inputs init --bind ROLE=PATH`; keep local.run untracked.\nschema 1\n"
             .to_owned();
     for source in &options.sources {
         output.push_str(&format!(
@@ -121,6 +121,12 @@ pub(super) fn render_run_spec(options: &Options) -> String {
 }
 
 pub(super) fn render_readme(options: &Options) -> String {
+    let bindings = options
+        .sources
+        .iter()
+        .map(|source| format!("  --bind source-artifact:{source}=/path/to/{source}.elf"))
+        .collect::<Vec<_>>()
+        .join(" \\\n");
     format!(
         "# {} vendor analysis project\n\n\
 This directory is a generic Vendor Binary Workbench project. Hardware addresses live in\n\
@@ -128,15 +134,11 @@ This directory is a generic Vendor Binary Workbench project. Hardware addresses 
 Generated findings and reports are ignored.\n\n\
 ## Bootstrap\n\n\
 ```console\n\
-cp run.spec.example local.run\n\
-# Edit local.run, then:\n\
-cargo vendor-binary-workbench project doctor --project vendor-project.toml --run-spec local.run\n\
+cargo vendor-binary-workbench project inputs init --project vendor-project.toml \\\n{bindings}\n\
+cargo vendor-binary-workbench project doctor --project vendor-project.toml\n\
 cargo vendor-binary-workbench project configure --project vendor-project.toml --check\n\
-cargo vendor-binary-workbench project status --project vendor-project.toml --run-spec local.run\n\
-cargo vendor-binary-workbench symbols inventory --project vendor-project.toml --run-spec local.run\n\
-cargo vendor-binary-workbench mmio discover --project vendor-project.toml --run-spec local.run\n\
-cargo vendor-binary-workbench interfaces discover --project vendor-project.toml --run-spec local.run\n\
-cargo vendor-binary-workbench ir build --project vendor-project.toml --run-spec local.run\n\
+cargo vendor-binary-workbench project status --project vendor-project.toml\n\
+cargo vendor-binary-workbench project analyze --project vendor-project.toml\n\
 cargo vendor-binary-workbench registers review --project vendor-project.toml\n\
 cargo vendor-binary-workbench interfaces init-pack --project vendor-project.toml\n\
 cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\n\
@@ -144,7 +146,8 @@ cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\
 Review `registers/peripherals/*.toml`, `interfaces/reviewed.toml` and\n\
 `functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
 `project analyze --check` in analysis CI, and `project publish --check` for SVD/PAC.\n",
-        options.id
+        options.id,
+        bindings = bindings
     )
 }
 

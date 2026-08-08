@@ -28,6 +28,10 @@ pub(super) enum ResolvedInvocation {
         arguments: CommandArguments,
         project_path: PathBuf,
     },
+    ProjectInputsInit {
+        arguments: CommandArguments,
+        project_path: PathBuf,
+    },
     Command(Box<ResolvedCommandInvocation>),
 }
 
@@ -115,6 +119,19 @@ fn resolve_from(
                 .map_err(crate::Error::invalid)?,
         });
     }
+    if command == Command::ProjectInputsInit {
+        if requested_target.is_some() || requested_run_spec.is_some() || !svd_paths.is_empty() {
+            return Err(crate::Error::invalid(
+                "project inputs init does not accept --target-spec, --run-spec or --svd",
+            ));
+        }
+        return Ok(ResolvedInvocation::ProjectInputsInit {
+            arguments: command_arguments,
+            project_path: project_path
+                .ok_or("project inputs init requires --project or a discovered manifest")
+                .map_err(crate::Error::invalid)?,
+        });
+    }
 
     let project = project_path.as_deref().map(ProjectSpec::load).transpose()?;
     require_project(command, project.as_ref())?;
@@ -139,11 +156,13 @@ fn resolve_from(
     trace_resolved_target(command, project_path.as_deref(), project.as_ref(), &target);
 
     let run_spec_path = if command.uses_run_spec() {
-        requested_run_spec.or_else(|| {
-            project
-                .as_ref()
-                .and_then(|project| project.run_spec.clone())
-        })
+        requested_run_spec
+            .or_else(|| {
+                project
+                    .as_ref()
+                    .and_then(|project| project.run_spec.clone())
+            })
+            .or_else(|| project_path.as_deref().and_then(discover_local_run_spec))
     } else {
         None
     };
@@ -206,6 +225,11 @@ fn resolve_from(
             svd,
         },
     )))
+}
+
+fn discover_local_run_spec(project_path: &std::path::Path) -> Option<PathBuf> {
+    let path = project_path.parent()?.join("local.run");
+    path.is_file().then_some(path)
 }
 
 fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()> {

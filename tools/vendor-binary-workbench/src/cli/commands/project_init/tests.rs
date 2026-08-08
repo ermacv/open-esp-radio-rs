@@ -75,6 +75,10 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     target.require_available_backend().unwrap();
     assert_eq!(memory.mmio_ranges().unwrap().len(), 1);
     assert_eq!(model.render_svd().unwrap().1.peripherals, 1);
+    let readme = fs::read_to_string(directory.join("README.md")).unwrap();
+    assert!(readme.contains("project inputs init"));
+    assert!(readme.contains("--bind source-artifact:vendor=/path/to/vendor.elf"));
+    assert!(!readme.contains("--run-spec local.run"));
     let containment = crate::registers::validate_register_memory_map(
         project.registers.as_ref().unwrap(),
         Some(&memory),

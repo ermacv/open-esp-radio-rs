@@ -214,13 +214,51 @@ leaf_commands!(ToolingCommand {
     Manpage(ManpageArgs) => Command::GenerateManpage, Manpage,
 });
 
-leaf_commands!(ProjectCommand {
-    Init(ProjectInitArgs) => Command::ProjectInit, ProjectInit,
-    Configure(ProjectConfigureArgs) => Command::ProjectConfigure, ProjectConfigure,
-    Doctor(EmptyArgs) => Command::ProjectDoctor, Empty,
-    Status(ProjectStatusArgs) => Command::ProjectStatus, ProjectStatus,
-    Analyze(ProjectAnalyzeArgs) => Command::ProjectAnalyze, ProjectAnalyze,
-    Publish(CheckArgs) => Command::ProjectPublish, Check,
+#[derive(Debug, Subcommand)]
+enum ProjectCommand {
+    Init(ProjectInitArgs),
+    Configure(ProjectConfigureArgs),
+    /// Manage caller-owned artifact bindings.
+    Inputs {
+        #[command(subcommand)]
+        command: ProjectInputsCommand,
+    },
+    Doctor(EmptyArgs),
+    Status(ProjectStatusArgs),
+    Analyze(ProjectAnalyzeArgs),
+    Publish(CheckArgs),
+}
+
+impl ProjectCommand {
+    fn into_parts(self) -> (Command, CommandArguments) {
+        match self {
+            Self::Init(arguments) => (
+                Command::ProjectInit,
+                CommandArguments::ProjectInit(arguments),
+            ),
+            Self::Configure(arguments) => (
+                Command::ProjectConfigure,
+                CommandArguments::ProjectConfigure(arguments),
+            ),
+            Self::Inputs { command } => command.into_parts(),
+            Self::Doctor(arguments) => (Command::ProjectDoctor, CommandArguments::Empty(arguments)),
+            Self::Status(arguments) => (
+                Command::ProjectStatus,
+                CommandArguments::ProjectStatus(arguments),
+            ),
+            Self::Analyze(arguments) => (
+                Command::ProjectAnalyze,
+                CommandArguments::ProjectAnalyze(arguments),
+            ),
+            Self::Publish(arguments) => {
+                (Command::ProjectPublish, CommandArguments::Check(arguments))
+            }
+        }
+    }
+}
+
+leaf_commands!(ProjectInputsCommand {
+    Init(ProjectInputsInitArgs) => Command::ProjectInputsInit, ProjectInputsInit,
 });
 
 leaf_commands!(FunctionCommand {
@@ -351,6 +389,7 @@ pub(crate) enum CommandArguments {
     Empty(EmptyArgs),
     ProjectInit(ProjectInitArgs),
     ProjectConfigure(ProjectConfigureArgs),
+    ProjectInputsInit(ProjectInputsInitArgs),
     ProjectStatus(ProjectStatusArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
     Check(CheckArgs),
@@ -390,6 +429,7 @@ pub(crate) enum Command {
     GenerateManpage,
     ProjectInit,
     ProjectConfigure,
+    ProjectInputsInit,
     ProjectDoctor,
     ProjectStatus,
     ProjectAnalyze,
@@ -453,6 +493,7 @@ impl Command {
                 self,
                 Self::ProjectInit
                     | Self::ProjectConfigure
+                    | Self::ProjectInputsInit
                     | Self::ProjectDoctor
                     | Self::ProjectStatus
                     | Self::ProjectPublish
@@ -478,6 +519,7 @@ impl Command {
                 self,
                 Self::ProjectInit
                     | Self::ProjectConfigure
+                    | Self::ProjectInputsInit
                     | Self::ProjectDoctor
                     | Self::ProjectStatus
                     | Self::ProjectAnalyze
@@ -510,6 +552,7 @@ impl Command {
                 self,
                 Self::ProjectInit
                     | Self::ProjectConfigure
+                    | Self::ProjectInputsInit
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
                     | Self::FunctionReview
@@ -532,6 +575,7 @@ impl Command {
                 self,
                 Self::ProjectInit
                     | Self::ProjectConfigure
+                    | Self::ProjectInputsInit
                     | Self::ProjectStatus
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
@@ -558,6 +602,7 @@ impl Command {
                 self,
                 Self::ProjectInit
                     | Self::ProjectConfigure
+                    | Self::ProjectInputsInit
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
                     | Self::FunctionReview
@@ -583,6 +628,7 @@ impl Command {
             | Self::GenerateManpage
             | Self::ProjectInit
             | Self::ProjectConfigure
+            | Self::ProjectInputsInit
             | Self::ProjectDoctor
             | Self::ProjectStatus
             | Self::ProjectAnalyze
@@ -743,5 +789,38 @@ mod tests {
                 ParsedInvocation::parse(["project".to_owned(), removed.to_owned()]).unwrap_err();
             assert!(error.to_string().contains("unrecognized subcommand"));
         }
+    }
+
+    #[test]
+    fn project_inputs_exposes_typed_non_overwriting_setup() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "inputs".to_owned(),
+            "init".to_owned(),
+            "--bind".to_owned(),
+            "source-artifact:rom=/tmp/rom.elf".to_owned(),
+            "--check".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::ProjectInputsInit);
+        let CommandArguments::ProjectInputsInit(arguments) = invocation.arguments else {
+            panic!("unexpected argument type")
+        };
+        assert!(arguments.check);
+        assert!(!arguments.force);
+        assert_eq!(arguments.bind[0].role.to_string(), "source-artifact:rom");
+
+        assert!(
+            ParsedInvocation::parse([
+                "project".to_owned(),
+                "inputs".to_owned(),
+                "init".to_owned(),
+                "--bind".to_owned(),
+                "artifact=/tmp/vendor.elf".to_owned(),
+                "--check".to_owned(),
+                "--force".to_owned(),
+            ])
+            .is_err()
+        );
     }
 }

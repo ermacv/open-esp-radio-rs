@@ -105,15 +105,21 @@ classification independent from clean SVD register names in both invocation
 forms.
 
 `run-spec` may be included when the project itself is private. Public projects
-normally omit it and use an untracked override:
+normally omit it. Create a validated, untracked sibling `local.run` once:
 
 ```console
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench project inputs init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --bind source-artifact:rom=/path/to/rom.elf \
+  --bind source-artifact:archive=/path/to/linked-libphy.elf
+
+cargo vendor-binary-workbench mmio discover \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-Explicit `--run-spec` and `--svd` arguments override project defaults. The old
+Run-spec precedence is explicit `--run-spec`, manifest `run-spec`, sibling
+`local.run`, then no bindings. Explicit `--svd` also overrides project
+defaults. The old
 `--target-spec` invocation remains supported, but it cannot be combined with
 `--project` because that would create two configuration roots.
 
@@ -184,8 +190,7 @@ evidence can be refreshed with one command:
 
 ```console
 cargo vendor-binary-workbench project analyze \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 `project analyze --check` repeats the analyses without writing and verifies
@@ -211,8 +216,7 @@ Run the doctor before a long analysis:
 
 ```console
 cargo vendor-binary-workbench project doctor \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 It reports backend and harness availability, memory/address-space statistics,

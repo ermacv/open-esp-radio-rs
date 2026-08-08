@@ -1,4 +1,4 @@
-# Copy this file outside the repository or keep the copy untracked.
+# Role reference for manual setups. Prefer `project inputs init`; keep local.run untracked.
 # Paths are resolved relative to the copied run spec.
 schema 1
 input source-artifact:rom /path/to/esp32s31_rev0_rom.elf

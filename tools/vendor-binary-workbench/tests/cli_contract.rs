@@ -33,6 +33,30 @@ fn write_rv32_symbol_fixture(path: &Path) {
     std::fs::write(path, bytes).unwrap();
 }
 
+fn write_rv32_archive_fixture(path: &Path) {
+    let object = include_str!("fixtures/symbols-rv32.hex")
+        .split_ascii_whitespace()
+        .map(|octet| u8::from_str_radix(octet, 16).unwrap())
+        .collect::<Vec<_>>();
+    let mut archive = b"!<arch>\n".to_vec();
+    writeln!(
+        archive,
+        "{:<16}{:<12}{:<6}{:<6}{:<8}{:<10}`",
+        "vendor.o/",
+        0,
+        0,
+        0,
+        "100644",
+        object.len()
+    )
+    .unwrap();
+    archive.extend_from_slice(&object);
+    if object.len() % 2 != 0 {
+        archive.push(b'\n');
+    }
+    std::fs::write(path, archive).unwrap();
+}
+
 #[test]
 fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     let output = run(&[
@@ -446,6 +470,67 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
 }
 
 #[test]
+fn project_inputs_validate_elf_and_archive_roles_before_writing() {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-project-inputs-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("verification/vendor/targets/esp32s31/target.spec");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\noutput = \"generated/fixture.ir.json\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    let archive = directory.join("vendor.a");
+    write_rv32_symbol_fixture(&artifact);
+    write_rv32_archive_fixture(&archive);
+
+    let output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .arg("--bind")
+        .arg(format!("source-inventory:fixture={}", archive.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("initialize typed ELF/archive bindings");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["bindings"][0]["container"], "elf32");
+    assert_eq!(report["bindings"][1]["container"], "archive");
+
+    let invalid = workbench()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--force", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", archive.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("reject archive bound as a linked artifact");
+    assert!(!invalid.status.success());
+    assert!(invalid.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("requires elf32"));
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let directory = std::env::temp_dir().join(format!(
         "vendor-workbench-symbol-project-contract-{}",
@@ -468,14 +553,38 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let artifact = directory.join("vendor.o");
     write_rv32_symbol_fixture(&artifact);
     let run_spec = directory.join("local.run");
-    std::fs::write(
-        &run_spec,
-        format!(
-            "schema 1\ninput source-artifact:fixture {}\n",
-            artifact.display()
-        ),
-    )
-    .unwrap();
+    let inputs = workbench()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("initialize project inputs");
+    assert!(
+        inputs.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&inputs.stderr)
+    );
+    let inputs: serde_json::Value = serde_json::from_slice(&inputs.stdout).unwrap();
+    assert_eq!(inputs["command"], "project inputs init");
+    assert_eq!(inputs["status"], "written");
+    assert_eq!(inputs["output"], run_spec.display().to_string());
+    assert_eq!(inputs["bindings"][0]["role"], "source-artifact:fixture");
+
+    let checked_inputs = workbench()
+        .current_dir(repository_root())
+        .args(["project", "inputs", "init", "--check", "--project"])
+        .arg(&manifest)
+        .arg("--bind")
+        .arg(format!("source-artifact:fixture={}", artifact.display()))
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("check project inputs");
+    assert!(checked_inputs.status.success());
+    let checked_inputs: serde_json::Value = serde_json::from_slice(&checked_inputs.stdout).unwrap();
+    assert_eq!(checked_inputs["status"], "verified");
 
     for (check, expected_stage_status) in [(false, "written"), (true, "verified")] {
         let mut command = workbench();
@@ -483,8 +592,6 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
             .current_dir(repository_root())
             .args(["project", "analyze", "--project"])
             .arg(&manifest)
-            .arg("--run-spec")
-            .arg(&run_spec)
             .args(["--format", "json", "--color", "never"]);
         if check {
             command.arg("--check");
@@ -519,8 +626,6 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .current_dir(repository_root())
         .args(["ir", "build", "--check", "--project"])
         .arg(&manifest)
-        .arg("--run-spec")
-        .arg(&run_spec)
         .args(["--format", "json", "--color", "never"])
         .output()
         .expect("run typed IR build report");

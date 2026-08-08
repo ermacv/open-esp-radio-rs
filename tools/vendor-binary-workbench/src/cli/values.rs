@@ -2,7 +2,27 @@
 
 use std::{path::PathBuf, str::FromStr};
 
-use crate::{parse_u32, source_id::SourceId};
+use crate::{parse_u32, run_spec::InputRole, source_id::SourceId};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ProjectInputBinding {
+    pub(crate) role: InputRole,
+    pub(crate) path: PathBuf,
+}
+
+impl FromStr for ProjectInputBinding {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let (role, path) = split_assignment(value, "ROLE=PATH")?;
+        let role =
+            InputRole::parse(role).ok_or_else(|| format!("unsupported input role {role:?}"))?;
+        Ok(Self {
+            role,
+            path: PathBuf::from(path),
+        })
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SourcePath {
@@ -103,6 +123,16 @@ mod tests {
             .unwrap();
         assert_eq!(value.source.as_str(), "libpp");
         assert_eq!(value.path, PathBuf::from("/tmp/vendor=linked.elf"));
+    }
+
+    #[test]
+    fn project_input_bindings_use_typed_run_roles() {
+        let binding = "source-inventory:archive=/tmp/libphy.a"
+            .parse::<ProjectInputBinding>()
+            .unwrap();
+        assert_eq!(binding.role.to_string(), "source-inventory:archive");
+        assert_eq!(binding.path, PathBuf::from("/tmp/libphy.a"));
+        assert!("unknown=/tmp/input".parse::<ProjectInputBinding>().is_err());
     }
 
     #[test]

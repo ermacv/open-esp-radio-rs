@@ -447,7 +447,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                         if accepted {
-                            transition_state(&mut state, SessionState::Idle, 0).await;
+                            transition_state(&mut state, SessionState::Idle, 0, request_id).await;
                         }
                     }
                     Command::Configure(config) => {
@@ -469,8 +469,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             configured = Some(ActiveSession { session_id, config });
                             last_result = None;
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(&mut state, SessionState::Configured, session_id)
-                                .await;
+                            transition_state(
+                                &mut state,
+                                SessionState::Configured,
+                                session_id,
+                                request_id,
+                            )
+                            .await;
                         }
                     }
                     Command::Arm => {
@@ -485,7 +490,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             .await;
                         } else {
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(&mut state, SessionState::Armed, session_id).await;
+                            transition_state(
+                                &mut state,
+                                SessionState::Armed,
+                                session_id,
+                                request_id,
+                            )
+                            .await;
                         }
                     }
                     Command::Start => {
@@ -503,8 +514,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             } else {
                                 publish_event_reliably(session_id, request_id, Event::Accepted)
                                     .await;
-                                transition_state(&mut state, SessionState::Running, session_id)
-                                    .await;
+                                transition_state(
+                                    &mut state,
+                                    SessionState::Running,
+                                    session_id,
+                                    request_id,
+                                )
+                                .await;
                             }
                         } else {
                             publish_event_reliably(
@@ -521,7 +537,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         {
                             configured = None;
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(&mut state, SessionState::Idle, session_id).await;
+                            transition_state(
+                                &mut state,
+                                SessionState::Idle,
+                                session_id,
+                                request_id,
+                            )
+                            .await;
                         } else {
                             publish_event_reliably(
                                 session_id,
@@ -552,7 +574,13 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             configured = None;
                             last_result = None;
                             publish_event_reliably(session_id, request_id, Event::Accepted).await;
-                            transition_state(&mut state, SessionState::Idle, session_id).await;
+                            transition_state(
+                                &mut state,
+                                SessionState::Idle,
+                                session_id,
+                                request_id,
+                            )
+                            .await;
                         } else {
                             publish_event_reliably(
                                 session_id,
@@ -608,10 +636,12 @@ pub async fn protocol_task(capabilities: Capabilities) {
                 if state == SessionState::Running
                     && configured.is_some_and(|session| session.session_id == result.session_id)
                 {
-                    transition_state(&mut state, SessionState::Draining, result.session_id).await;
+                    transition_state(&mut state, SessionState::Draining, result.session_id, 0)
+                        .await;
                     publish_result(result, 0).await;
                     last_result = Some(result);
-                    transition_state(&mut state, SessionState::Finished, result.session_id).await;
+                    transition_state(&mut state, SessionState::Finished, result.session_id, 0)
+                        .await;
                 } else {
                     publish_event_reliably(
                         result.session_id,
@@ -662,18 +692,32 @@ fn valid_session_config(config: SessionConfig, capabilities: Capabilities) -> bo
         Transport::Udp => capabilities.features.udp,
         Transport::Tcp => capabilities.features.tcp,
     };
+    let link_requirements_valid = match config.link_requirements.tx_block_ack_tid {
+        None => true,
+        Some(tid) => {
+            tid < 8
+                && matches!(config.direction, Direction::Tx | Direction::Bidirectional)
+                && config.target_tx.is_some()
+        }
+    };
     transport_valid
         && peer_valid
         && direction_valid
+        && link_requirements_valid
         && matches!(config.completion, Completion::DurationMillis(duration) if (1..=300_000).contains(&duration))
 }
 
-async fn transition_state(state: &mut SessionState, current: SessionState, session_id: u64) {
+async fn transition_state(
+    state: &mut SessionState,
+    current: SessionState,
+    session_id: u64,
+    request_id: u32,
+) {
     let previous = *state;
     *state = current;
     publish_event_reliably(
         session_id,
-        0,
+        request_id,
         Event::State(StateChange { previous, current }),
     )
     .await;

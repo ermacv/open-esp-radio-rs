@@ -9,8 +9,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, SessionConfig, StationFaultClassification,
-    StationFaultEvidence, StationFaultInjection, Transport,
+    Completion, Direction, FlowConfig, SessionConfig, SessionLinkRequirements,
+    StationFaultClassification, StationFaultEvidence, StationFaultInjection, Transport,
 };
 
 use crate::{
@@ -142,6 +142,7 @@ fn qualify_post_reconnect_rx(
             offered_rate_bps: Some(RECOVERY_TRAFFIC_RATE_BPS),
         }),
         target_tx: None,
+        link_requirements: SessionLinkRequirements::NONE,
     })?;
     let host = send_paced_udp(PacedUdpConfig {
         address,

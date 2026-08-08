@@ -124,7 +124,6 @@ fn open_radio_udp_rx_telemetry() -> UdpRxTelemetry {
         irq_runtime: &OPEN_RADIO_IRQ_RUNTIME,
         irq_entries: &OPEN_RADIO_MAC_IRQ_ENTRIES,
         irq_classification: &OPEN_RADIO_MAC_IRQ_CLASSIFICATION,
-        aggregate_tx: &OPEN_RADIO_TX_AGGREGATE_COUNTERS,
     }
 }
 

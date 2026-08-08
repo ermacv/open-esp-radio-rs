@@ -8,10 +8,12 @@ use std::{
     time::Duration,
 };
 
-use open_esp_radio_hil_protocol::{Completion, Direction, FlowConfig, SessionConfig, Transport};
+use open_esp_radio_hil_protocol::{
+    Completion, Direction, FlowConfig, SessionConfig, SessionLinkRequirements, Transport,
+};
 
 use crate::{
-    Result,
+    Result, invalidate_previous_report,
     paced_tcp::{
         Config as PacedTcpConfig, HostReception, HostTransmission, exchange, receive, send,
     },
@@ -86,6 +88,7 @@ fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> 
         "target/hil/esp32s31/qualification/open-radio-tcp-{mode}"
     ));
     fs::create_dir_all(&output)?;
+    invalidate_previous_report(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let ready = match await_tcp_ready(
         &capture,
@@ -121,6 +124,11 @@ fn run(arguments: Vec<String>, root: &Path, direction: Direction) -> Result<()> 
             payload_bytes: u16::try_from(options.chunk_bytes).expect("validated TCP chunk"),
             offered_rate_bps: Some(rate),
         }),
+        link_requirements: if matches!(direction, Direction::Tx | Direction::Bidirectional) {
+            SessionLinkRequirements::tx_block_ack(0)
+        } else {
+            SessionLinkRequirements::NONE
+        },
     })?;
 
     let config = PacedTcpConfig {

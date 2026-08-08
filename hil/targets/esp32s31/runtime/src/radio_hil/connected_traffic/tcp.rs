@@ -13,14 +13,15 @@ use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
-    Transport as HilTransport, TransportEvidence, fill_stream_pattern, stream_pattern_matches,
+    SessionReady, Transport as HilTransport, TransportEvidence, fill_stream_pattern,
+    stream_pattern_matches,
 };
 
 use crate::console::{
     complete_session, emergency_log, publish_event_reliably, receive_session_start,
 };
 
-use super::log_open_radio_ampdu_interval;
+use super::{log_open_radio_ampdu_interval, wait_session_link_requirements};
 
 #[derive(Clone, Copy)]
 pub(in crate::radio_hil) struct TcpBenchmarkConfig {
@@ -85,10 +86,14 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
 
     loop {
         let session = receive_session_start().await;
+        wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
         publish_event_reliably(
             session.session_id,
             0,
-            HilEvent::SessionReady(session.config.direction),
+            HilEvent::SessionReady(SessionReady {
+                direction: session.config.direction,
+                tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
+            }),
         )
         .await;
         let duration_millis = match session.config.completion {

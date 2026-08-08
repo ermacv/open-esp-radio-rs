@@ -8,7 +8,9 @@ use std::{
     time::Duration,
 };
 
-use open_esp_radio_hil_protocol::{Completion, Direction, FlowConfig, SessionConfig, Transport};
+use open_esp_radio_hil_protocol::{
+    Completion, Direction, FlowConfig, SessionConfig, SessionLinkRequirements, Transport,
+};
 
 use crate::{
     Result,
@@ -16,6 +18,7 @@ use crate::{
         assess_rx_log, rx_order_markdown, rx_reorder_markdown, task_poll_markdown,
         udp_sequence_markdown, validate_exact_rx_delivery,
     },
+    invalidate_previous_report,
     paced_udp::{Config as PacedUdpConfig, send as send_paced_udp},
     traffic_capture::{SerialCapture, await_udp_rx_ready},
 };
@@ -49,6 +52,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-rx");
     fs::create_dir_all(&output)?;
+    invalidate_previous_report(&output)?;
     let capture = SerialCapture::start_with_reset(&options.serial);
     let discovered_address = match await_udp_rx_ready(
         &capture,
@@ -76,6 +80,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
                 offered_rate_bps: Some(options.rate_bps),
             }),
             target_tx: None,
+            link_requirements: SessionLinkRequirements::NONE,
         })?)
     } else {
         None

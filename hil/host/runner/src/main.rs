@@ -29,6 +29,18 @@ mod udp_socket;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+/// Invalidates a previous successful qualification before a new run starts.
+///
+/// UART evidence is still overwritten on every terminal path, but a failed
+/// run must never leave an older `report.md` looking like its result.
+fn invalidate_previous_report(output: &Path) -> Result<()> {
+    match fs::remove_file(output.join("report.md")) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
 const QUALIFIED_PROFILE: &str = "psram-code-psram-data";
 const TARGET: &str = "riscv32imafc-unknown-none-elf";
 const RUNTIME_BIN: &str = "open-esp-radio-hil-esp32s31-runtime";

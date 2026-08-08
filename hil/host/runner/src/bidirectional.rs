@@ -15,11 +15,12 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, Transport,
+    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
+    Transport,
 };
 
 use crate::{
-    Result,
+    Result, invalidate_previous_report,
     paced_udp::{Config as PacedUdpConfig, HostTransmission, send as send_paced_udp},
     traffic_capture::{SerialCapture, SessionEvidence, await_udp_rx_ready},
     tx_traffic::{Burst, BurstFraming, receive_bursts},
@@ -167,6 +168,19 @@ struct TxIrqTimingSample {
     tx_flight_max_us: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct AmpduBlockAckSample {
+    samples: u64,
+    received: u64,
+    success_without: u64,
+    nonzero_control: u64,
+    start_outside: u64,
+    start_lag_max: u64,
+    full: u64,
+    partial: u64,
+    empty: u64,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AmpduEvidence {
     pub(crate) aggregates: u64,
@@ -212,6 +226,15 @@ pub(crate) struct AmpduEvidence {
     pub(crate) tx_flight_samples: u64,
     pub(crate) tx_flight_us: u64,
     pub(crate) tx_flight_max_us: u64,
+    pub(crate) block_ack_samples: u64,
+    pub(crate) block_ack_received: u64,
+    pub(crate) block_ack_success_without: u64,
+    pub(crate) block_ack_nonzero_control: u64,
+    pub(crate) block_ack_start_outside: u64,
+    pub(crate) block_ack_start_lag_max: u64,
+    pub(crate) full_block_ack: u64,
+    pub(crate) partial_block_ack: u64,
+    pub(crate) empty_block_ack: u64,
 }
 
 impl AmpduEvidence {
@@ -307,6 +330,25 @@ impl AmpduEvidence {
                 .saturating_add(sample.tx_flight_samples);
             evidence.tx_flight_us = evidence.tx_flight_us.saturating_add(sample.tx_flight_us);
             evidence.tx_flight_max_us = evidence.tx_flight_max_us.max(sample.tx_flight_max_us);
+        }
+        for sample in &report.ampdu_block_acks {
+            evidence.block_ack_samples = evidence.block_ack_samples.saturating_add(sample.samples);
+            evidence.block_ack_received =
+                evidence.block_ack_received.saturating_add(sample.received);
+            evidence.block_ack_success_without = evidence
+                .block_ack_success_without
+                .saturating_add(sample.success_without);
+            evidence.block_ack_nonzero_control = evidence
+                .block_ack_nonzero_control
+                .saturating_add(sample.nonzero_control);
+            evidence.block_ack_start_outside = evidence
+                .block_ack_start_outside
+                .saturating_add(sample.start_outside);
+            evidence.block_ack_start_lag_max =
+                evidence.block_ack_start_lag_max.max(sample.start_lag_max);
+            evidence.full_block_ack = evidence.full_block_ack.saturating_add(sample.full);
+            evidence.partial_block_ack = evidence.partial_block_ack.saturating_add(sample.partial);
+            evidence.empty_block_ack = evidence.empty_block_ack.saturating_add(sample.empty);
         }
         evidence
     }
@@ -902,6 +944,7 @@ struct DeviceReport {
     ampdu_histograms: Vec<AmpduHistogramSample>,
     ampdu_timings: Vec<AmpduTimingSample>,
     tx_irq_timings: Vec<TxIrqTimingSample>,
+    ampdu_block_acks: Vec<AmpduBlockAckSample>,
     rx_mcs_histograms: Vec<([u64; 12], u64)>,
     rx_s_mpdu: Vec<RxSmpduEvidence>,
     rx_ampdu: Vec<RxAmpduEvidence>,
@@ -931,6 +974,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-bidirectional");
     fs::create_dir_all(&output)?;
+    invalidate_previous_report(&output)?;
     let tx_sink = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.tx_port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&tx_sink)?;
     tx_sink.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -973,6 +1017,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
                 payload_bytes: u16::try_from(options.tx_payload)?,
                 offered_rate_bps: options.tx_rate_bps,
             }),
+            link_requirements: SessionLinkRequirements::tx_block_ack(0),
         })?)
     } else {
         None
@@ -1041,13 +1086,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .into());
     }
     let host_tx = qualified_tx_bursts[0];
-    if host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0 {
-        return Err(format!(
-            "host observed concurrent TX sequence defects: missing={} reordered={} duplicates={}",
-            host_tx.missing, host_tx.reordered, host_tx.duplicates
-        )
-        .into());
-    }
     if let Some(evidence) = structured {
         let expected_rx_bytes = evidence
             .transport
@@ -1081,20 +1119,42 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             )
             .into());
         }
-        if evidence.transport.tx_units != host_tx.datagrams
-            || evidence.transport.tx_bytes != host_tx.bytes
-        {
-            return Err(format!(
-                "typed/host bidirectional TX mismatch: target={}/{} host={}/{}",
-                evidence.transport.tx_bytes,
-                evidence.transport.tx_units,
-                host_tx.bytes,
-                host_tx.datagrams
-            )
-            .into());
-        }
     }
     let ampdu = AmpduEvidence::from_report(&report);
+    if host_tx.missing != 0 || host_tx.reordered != 0 || host_tx.duplicates != 0 {
+        let target_tx_units = structured.map(|evidence| evidence.transport.tx_units);
+        let post_block_ack_loss = target_tx_units
+            .and_then(|units| post_block_ack_delivery_loss_lower_bound(ampdu, host_tx, units));
+        return Err(format!(
+            "host observed concurrent TX sequence defects: missing={} reordered={} duplicates={} \
+             missing_runs={} maximum_missing_run={} maximum_missing_range={:?}..={:?} \
+             target_tx_units={target_tx_units:?} ampdu_subframes={} block_acknowledged={} \
+             post_block_ack_delivery_loss_lower_bound={post_block_ack_loss:?}",
+            host_tx.missing,
+            host_tx.reordered,
+            host_tx.duplicates,
+            host_tx.missing_runs,
+            host_tx.maximum_missing_run,
+            host_tx.maximum_missing_run_start,
+            host_tx.maximum_missing_run_end,
+            ampdu.subframes,
+            ampdu.acknowledged,
+        )
+        .into());
+    }
+    if let Some(evidence) = structured
+        && (evidence.transport.tx_units != host_tx.datagrams
+            || evidence.transport.tx_bytes != host_tx.bytes)
+    {
+        return Err(format!(
+            "typed/host bidirectional TX mismatch: target={}/{} host={}/{}",
+            evidence.transport.tx_bytes,
+            evidence.transport.tx_units,
+            host_tx.bytes,
+            host_tx.datagrams
+        )
+        .into());
+    }
     write_report(
         &output,
         &options,
@@ -1127,6 +1187,25 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         output.join("report.md").display(),
     );
     Ok(())
+}
+
+/// Minimum number of MPDUs positively acknowledged by the peer but absent
+/// from the host's unique UDP delivery set.
+///
+/// The comparison is meaningful only when every typed target transmission was
+/// represented by one A-MPDU subframe. A larger BlockAck set than host set
+/// proves that at least the cardinality difference disappeared after the peer
+/// accepted the MPDUs; it does not assume which individual sequences overlap.
+pub(crate) fn post_block_ack_delivery_loss_lower_bound(
+    ampdu: AmpduEvidence,
+    host: Burst,
+    target_tx_units: u64,
+) -> Option<u64> {
+    if ampdu.subframes != target_tx_units {
+        return None;
+    }
+    let unique_host_datagrams = host.datagrams.saturating_sub(host.duplicates);
+    Some(ampdu.acknowledged.saturating_sub(unique_host_datagrams))
 }
 
 fn print_help() {
@@ -1395,6 +1474,41 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     tx_flight_samples,
                     tx_flight_us,
                     tx_flight_max_us,
+                });
+            }
+        }
+        if line.starts_with("OAMPB ") || line.contains(" OAMPB ") {
+            if let (
+                Some(samples),
+                Some(received),
+                Some(success_without),
+                Some(nonzero_control),
+                Some(start_outside),
+                Some(start_lag_max),
+                Some(full),
+                Some(partial),
+                Some(empty),
+            ) = (
+                field(line, "samples"),
+                field(line, "received"),
+                field(line, "success_without"),
+                field(line, "nonzero_control"),
+                field(line, "start_outside"),
+                field(line, "start_lag_max"),
+                field(line, "full"),
+                field(line, "partial"),
+                field(line, "empty"),
+            ) {
+                report.ampdu_block_acks.push(AmpduBlockAckSample {
+                    samples,
+                    received,
+                    success_without,
+                    nonzero_control,
+                    start_outside,
+                    start_lag_max,
+                    full,
+                    partial,
+                    empty,
                 });
             }
         }
@@ -1876,6 +1990,40 @@ fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
     }
     if report.tx_irq_timings.is_empty() {
         return Err("missing TX IRQ-to-service timing".into());
+    }
+    if report.ampdu_block_acks.is_empty() {
+        return Err("missing A-MPDU BlockAck validity evidence".into());
+    }
+    let classified_block_acks = ampdu
+        .full_block_ack
+        .saturating_add(ampdu.partial_block_ack)
+        .saturating_add(ampdu.empty_block_ack);
+    if ampdu.block_ack_samples != ampdu.publications
+        || classified_block_acks != ampdu.block_ack_samples
+        || ampdu.block_ack_received != ampdu.full_block_ack.saturating_add(ampdu.partial_block_ack)
+        || ampdu.empty_block_ack
+            != ampdu
+                .block_ack_samples
+                .saturating_sub(ampdu.block_ack_received)
+    {
+        return Err(format!(
+            "inconsistent BlockAck evidence: samples={} publications={} received={} \
+             full={} partial={} empty={}",
+            ampdu.block_ack_samples,
+            ampdu.publications,
+            ampdu.block_ack_received,
+            ampdu.full_block_ack,
+            ampdu.partial_block_ack,
+            ampdu.empty_block_ack,
+        )
+        .into());
+    }
+    if ampdu.block_ack_success_without != 0 || ampdu.block_ack_nonzero_control != 0 {
+        return Err(format!(
+            "invalid BlockAck validity/control evidence: success_without={} nonzero_control={}",
+            ampdu.block_ack_success_without, ampdu.block_ack_nonzero_control,
+        )
+        .into());
     }
     if ampdu.tx_irq_epochs != 0 && ampdu.tx_irq_samples.saturating_add(ampdu.tx_irq_skew) == 0 {
         return Err("TX IRQ timing sampled no service edge".into());
@@ -2541,6 +2689,8 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
                `{}` / `{}` / `{}`\n\
              - Acknowledged subframes: `{}`; individual fallback retries: `{}`\n\
              - Hardware timeouts/collisions: `{}` / `{}`\n\
+             - BlockAck samples/received/full/partial/empty: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - BlockAck success-without-valid/control-TID/start-outside/max-start-lag: `{}` / `{}` / `{}` / `{}`\n\
              - Preparation: `{:.2} us` average, `{}` us boot maximum\n\
              - Hardware publication programming: `{:.2} us` average, \
                `{}` us boot maximum\n\
@@ -2676,6 +2826,15 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
             ampdu.individual_retry,
             ampdu.timeout,
             ampdu.collision,
+            ampdu.block_ack_samples,
+            ampdu.block_ack_received,
+            ampdu.full_block_ack,
+            ampdu.partial_block_ack,
+            ampdu.empty_block_ack,
+            ampdu.block_ack_success_without,
+            ampdu.block_ack_nonzero_control,
+            ampdu.block_ack_start_outside,
+            ampdu.block_ack_start_lag_max,
             average_preparation_us,
             ampdu.preparation_max_us,
             average_publication_us,
@@ -2729,6 +2888,43 @@ mod tests {
         assert_eq!(options.tx_payload, 1_300);
         assert_eq!(options.tx_rate_bps, Some(50_000_000));
         assert_eq!(options.tx_port, 9_100);
+    }
+
+    #[test]
+    fn quantifies_delivery_loss_after_positive_block_ack() {
+        let ampdu = AmpduEvidence {
+            subframes: 31_101,
+            acknowledged: 31_073,
+            ..AmpduEvidence::default()
+        };
+        let host = Burst {
+            datagrams: 31_005,
+            missing: 96,
+            ..Burst::default()
+        };
+
+        assert_eq!(
+            post_block_ack_delivery_loss_lower_bound(ampdu, host, 31_101),
+            Some(68),
+        );
+    }
+
+    #[test]
+    fn post_block_ack_comparison_requires_one_subframe_per_typed_tx_unit() {
+        let ampdu = AmpduEvidence {
+            subframes: 31_100,
+            acknowledged: 31_073,
+            ..AmpduEvidence::default()
+        };
+        let host = Burst {
+            datagrams: 31_005,
+            ..Burst::default()
+        };
+
+        assert_eq!(
+            post_block_ack_delivery_loss_lower_bound(ampdu, host, 31_101),
+            None,
+        );
     }
 
     #[test]
@@ -2805,6 +3001,7 @@ mod tests {
              OAMPH one=0 two_three=1 four_seven=1 eight_fifteen=1 sixteen_twentythree=1 twentyfour_thirty=0 thirtyone=0 full32=116\n\
              OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240 first_exchanges=119 first_exchange_us=23760 first_exchange_max_us=210 retried_exchanges=1 retry_publications=2 retry_exchange_us=240 retry_exchange_max_us=240\n\
              OAMPI tx_irq_epochs=121 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=18 tx_irq_service_max_us=11 tx_flight_samples=2 tx_flight_us=390 tx_flight_max_us=210\n\
+             OAMPB samples=121 received=120 success_without=0 nonzero_control=0 start_outside=0 start_lag_max=31 full=120 partial=0 empty=1\n\
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
@@ -2872,7 +3069,8 @@ mod tests {
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
              OAMPT preparation_us=1200 preparation_max_us=12 publication_us=600 publication_max_us=6 exchange_us=24000 exchange_max_us=210 first_exchanges=120 first_exchange_us=24000 first_exchange_max_us=210 retried_exchanges=0 retry_publications=0 retry_exchange_us=0 retry_exchange_max_us=0\n\
-             OAMPI tx_irq_epochs=120 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=17 tx_irq_service_max_us=10 tx_flight_samples=2 tx_flight_us=388 tx_flight_max_us=204\n",
+             OAMPI tx_irq_epochs=120 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=17 tx_irq_service_max_us=10 tx_flight_samples=2 tx_flight_us=388 tx_flight_max_us=204\n\
+             OAMPB samples=120 received=120 success_without=0 nonzero_control=0 start_outside=0 start_lag_max=31 full=120 partial=0 empty=0\n",
         );
 
         assert_eq!(report.rx.len(), 1);

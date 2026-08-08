@@ -9,7 +9,7 @@ use open_esp_radio::{
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
-    Transport as HilTransport, TransportEvidence,
+    SessionReady, Transport as HilTransport, TransportEvidence,
 };
 
 use super::UdpSocketBuffers;
@@ -18,6 +18,7 @@ use crate::{
     radio_hil::connected_traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
+        wait_session_link_requirements,
     },
 };
 
@@ -127,10 +128,15 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             UdpTxSessionSource::Bidirectional { sessions, .. } => Some(sessions.receive().await),
         };
         if let Some(session) = session {
+            wait_session_link_requirements(session.config.link_requirements, aggregate_counters)
+                .await;
             publish_event_reliably(
                 session.session_id,
                 0,
-                HilEvent::SessionReady(HilDirection::Tx),
+                HilEvent::SessionReady(SessionReady {
+                    direction: HilDirection::Tx,
+                    tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
+                }),
             )
             .await;
         }
@@ -176,19 +182,18 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             ));
         }
         let started = Instant::now();
-        // Full-duplex keeps one combined interval owned by the RX worker.
-        // A TX-only session routed through the universal bidirectional image
-        // has no RX worker, so TX must retain its own A-MPDU evidence owner.
+        // TX owns A-MPDU evidence because its post-measurement drain proves
+        // that the last publication reached a terminal BlockAck outcome.
+        // The RX sibling can finish on the host terminal datagram while a
+        // target aggregate is still in flight, so sampling there can tear one
+        // logical publication across independent diagnostic atomics.
         let aggregate_start = match (config.session_source, session) {
             (UdpTxSessionSource::Bidirectional { .. }, Some(session))
-                if session.config.direction == HilDirection::Tx =>
+                if session.config.direction == HilDirection::Rx =>
             {
-                Some(aggregate_counters.snapshot())
+                None
             }
-            (UdpTxSessionSource::Bidirectional { .. }, _) => None,
-            (UdpTxSessionSource::Standalone | UdpTxSessionSource::Console, _) => {
-                Some(aggregate_counters.snapshot())
-            }
+            _ => Some(aggregate_counters.snapshot()),
         };
         let mut next_send = started;
         let mut bytes = 0_u64;

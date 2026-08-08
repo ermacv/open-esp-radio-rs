@@ -60,7 +60,8 @@ pub(in crate::radio_hil) fn log_open_radio_ampdu_interval(
         "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
          publication_max_us={} exchange_us={} exchange_max_us={} \
          first_exchanges={} first_exchange_us={} first_exchange_max_us={} \
-         retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={}",
+         retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={} \
+         r2={}/{} r3={}/{} r4={}/{}",
         aggregate.preparation_micros,
         aggregate.preparation_lifetime_max_micros,
         aggregate.publication_program_micros,
@@ -74,6 +75,28 @@ pub(in crate::radio_hil) fn log_open_radio_ampdu_interval(
         aggregate.retried_exchange_publications,
         aggregate.retried_exchange_micros,
         aggregate.retried_exchange_lifetime_max_micros,
+        aggregate.exchanges_by_publications[2],
+        aggregate.exchange_lifetime_max_micros_by_publications[2],
+        aggregate.exchanges_by_publications[3],
+        aggregate.exchange_lifetime_max_micros_by_publications[3],
+        aggregate.exchanges_by_publications[4],
+        aggregate.exchange_lifetime_max_micros_by_publications[4],
+    ));
+    emergency_log(format_args!(
+        "OAMPB operational_tids={:#04x} operational_transitions={} samples={} received={} \
+         success_without={} nonzero_control={} start_outside={} start_lag_max={} \
+         full={} partial={} empty={}",
+        aggregate.block_ack_operational_tids,
+        aggregate.block_ack_operational_transitions,
+        aggregate.block_ack_samples,
+        aggregate.block_ack_received,
+        aggregate.success_without_block_ack,
+        aggregate.nonzero_block_ack_control,
+        aggregate.block_ack_start_outside_window,
+        aggregate.block_ack_start_lag_max,
+        aggregate.full_block_ack,
+        aggregate.partial_block_ack,
+        aggregate.empty_block_ack,
     ));
     emergency_log(format_args!(
         "OAMPI tx_irq_epochs={} tx_irq_samples={} tx_irq_skew={} \

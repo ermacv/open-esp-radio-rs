@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use core::cell::RefCell;
+use core::{cell::RefCell, sync::atomic::Ordering};
 
 use embassy_net::{Config as NetworkConfig, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
 use embassy_net_driver::LinkState;
@@ -50,7 +50,8 @@ use crate::{
     radio_fault::{FaultInjectingConnectedServices, FaultInjectingServicesError},
     radio_hil::{
         ControlResources, HilConnectedRxObserver, NETWORK_FRAME_CAPACITY, NETWORK_RX_QUEUE_DEPTH,
-        NETWORK_TX_QUEUE_DEPTH, OpenRadioRxReloadDelay, RX_BLOCK_ACK_SOFTWARE_WINDOW,
+        NETWORK_TX_QUEUE_DEPTH, OPEN_RADIO_MAC_IRQ_CLASSIFICATION, OPEN_RADIO_MAC_IRQ_ENTRIES,
+        OPEN_RADIO_RX_PIPELINE_COUNTERS, OpenRadioRxReloadDelay, RX_BLOCK_ACK_SOFTWARE_WINDOW,
         RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT, RadioHilConnectedEpochBindings,
         RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn, RadioHilConnectedExit,
         RadioHilConnectedTaskFixture, RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig,
@@ -109,6 +110,10 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     let connected_plan =
         Esp32s31ConnectedStaPort::prepare::<TX_AMPDU_FRAME_COUNT>(peer, policy.station)
             .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
+    let connected_rx_irq_start = epoch_services.irq.rx_post_count();
+    let connected_mac_irq_start = OPEN_RADIO_MAC_IRQ_ENTRIES.load(Ordering::Relaxed);
+    let connected_irq_classification_start = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.snapshot();
+    let connected_rx_pipeline_start = OPEN_RADIO_RX_PIPELINE_COUNTERS.snapshot();
     let link = connected_plan.link();
     let Esp32s31StaConnectedLink {
         station_address,
@@ -341,6 +346,11 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         FaultInjectingConnectedServices::new(drivers.services, epoch_services.faults);
     let mut radio_runner =
         ConnectedRunner::new(epoch_services.irq, network_runner, connected_services);
+    // WPA2 receives through the same already-live DMA ring in polling mode.
+    // Probe its durable frontier once after interrupt activation so a frame
+    // completed before the route was unmasked cannot strand connected RX
+    // until beacon-loss teardown merely because no new hardware edge arrives.
+    epoch_services.irq.notify_rx_handoff();
 
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {
@@ -400,15 +410,43 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             let control = radio_runner.services().inner().control();
             let beacon_monitor = control.beacon_monitor();
             let beacon_lost = control.beacon_lost();
+            let rx_irqs = epoch_services
+                .irq
+                .rx_post_count()
+                .wrapping_sub(connected_rx_irq_start);
+            let mac_irq_entries = OPEN_RADIO_MAC_IRQ_ENTRIES
+                .load(Ordering::Relaxed)
+                .wrapping_sub(connected_mac_irq_start);
+            let irq = OPEN_RADIO_MAC_IRQ_CLASSIFICATION
+                .snapshot()
+                .wrapping_delta_since(connected_irq_classification_start);
+            let pipeline = OPEN_RADIO_RX_PIPELINE_COUNTERS
+                .snapshot()
+                .wrapping_delta_since(connected_rx_pipeline_start);
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner \
                  exit=disconnected beacon_lost={} beacons_observed={} \
-                 beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?}",
+                 beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?} \
+                 rx_irqs={} mac_irq_entries={} irq_rx_only={} irq_rx_mixed={} \
+                 irq_tx_only={} irq_tx_mixed={} irq_other_only={} irq_spurious={} \
+                 rx_service_calls={} rx_frontier={} rx_admitted={} protocol_frames={}",
                 u8::from(beacon_lost),
                 beacon_monitor.map_or(0, |monitor| monitor.observed()),
                 beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
                 control.last_event(),
                 control.last_tx_failure(),
+                rx_irqs,
+                mac_irq_entries,
+                irq.rx_only_entries,
+                irq.rx_mixed_entries,
+                irq.tx_only_entries,
+                irq.tx_mixed_entries,
+                irq.other_only_entries,
+                irq.spurious_entries,
+                pipeline.service_calls,
+                pipeline.completion_frontier_frames,
+                pipeline.admitted_frames,
+                pipeline.protocol_frames,
             ));
             RadioHilConnectedExit::Disconnected { beacon_lost }
         }

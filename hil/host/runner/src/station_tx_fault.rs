@@ -8,8 +8,8 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, StationFaultClassification,
-    StationFaultEvidence, StationFaultInjection, Transport,
+    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
+    StationFaultClassification, StationFaultEvidence, StationFaultInjection, Transport,
 };
 
 use crate::{
@@ -134,6 +134,7 @@ fn qualify_fault(
             payload_bytes: 512,
             offered_rate_bps: Some(1_000_000),
         }),
+        link_requirements: SessionLinkRequirements::NONE,
     })?;
     let evidence = capture.wait_station_fault(handle, timeout)?;
     validate_fault_evidence(evidence)?;

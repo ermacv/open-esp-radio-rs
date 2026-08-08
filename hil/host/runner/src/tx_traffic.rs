@@ -9,12 +9,14 @@ use std::{
 };
 
 use open_esp_radio_hil_protocol::{
-    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, Transport,
+    Completion, Direction, FlowConfig, Ipv4Endpoint, SessionConfig, SessionLinkRequirements,
+    Transport,
 };
 
 use crate::{
     Result,
-    bidirectional::{AmpduEvidence, qualify_tx_log},
+    bidirectional::{AmpduEvidence, post_block_ack_delivery_loss_lower_bound, qualify_tx_log},
+    invalidate_previous_report,
     traffic_capture::{SerialCapture, await_device_marker},
     udp_socket::configure_qualification_receive_buffer,
 };
@@ -73,6 +75,10 @@ pub(crate) struct Burst {
     pub(crate) highest_sequence: u32,
     pub(crate) maximum_interarrival_us: u64,
     pub(crate) sequence_after_maximum_interarrival: Option<u32>,
+    pub(crate) missing_runs: u64,
+    pub(crate) maximum_missing_run: u64,
+    pub(crate) maximum_missing_run_start: Option<u32>,
+    pub(crate) maximum_missing_run_end: Option<u32>,
 }
 
 impl Burst {
@@ -138,6 +144,19 @@ impl ActiveBurst {
     fn finish(mut self) -> Burst {
         let sequence_span = u64::from(self.highest_sequence - self.lowest_sequence) + 1;
         self.evidence.missing = sequence_span.saturating_sub(self.seen_sequences.len() as u64);
+        let mut active_missing_run_start = None;
+        for sequence in self.lowest_sequence..=self.highest_sequence {
+            if self.seen_sequences.contains(&sequence) {
+                if let Some(start) = active_missing_run_start.take() {
+                    self.record_missing_run(start, sequence - 1);
+                }
+            } else if active_missing_run_start.is_none() {
+                active_missing_run_start = Some(sequence);
+            }
+        }
+        if let Some(start) = active_missing_run_start {
+            self.record_missing_run(start, self.highest_sequence);
+        }
         self.evidence.elapsed_us = self
             .last
             .duration_since(self.started)
@@ -148,6 +167,16 @@ impl ActiveBurst {
         self.evidence.lowest_sequence = self.lowest_sequence;
         self.evidence.highest_sequence = self.highest_sequence;
         self.evidence
+    }
+
+    fn record_missing_run(&mut self, start: u32, end: u32) {
+        let length = u64::from(end - start) + 1;
+        self.evidence.missing_runs = self.evidence.missing_runs.saturating_add(1);
+        if length > self.evidence.maximum_missing_run {
+            self.evidence.maximum_missing_run = length;
+            self.evidence.maximum_missing_run_start = Some(start);
+            self.evidence.maximum_missing_run_end = Some(end);
+        }
     }
 }
 
@@ -162,6 +191,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let mut options = parse_options(&arguments)?;
     let output = root.join("target/hil/esp32s31/qualification/open-radio-tx");
     fs::create_dir_all(&output)?;
+    invalidate_previous_report(&output)?;
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, options.port))?;
     let host_receive_buffer_bytes = configure_qualification_receive_buffer(&socket)?;
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
@@ -206,6 +236,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
                 payload_bytes: u16::try_from(options.payload)?,
                 offered_rate_bps: options.offered_rate_bps,
             }),
+            link_requirements: SessionLinkRequirements::tx_block_ack(0),
         });
         match session {
             Ok(session) => Some(session),
@@ -266,6 +297,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
+    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.rate_kbps)?;
     if missing != 0 || reordered != 0 || duplicates != 0 {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
         let lowest_sequence = qualified
@@ -283,13 +315,44 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
             .max_by_key(|burst| burst.maximum_interarrival_us)
             .copied()
             .unwrap_or_default();
+        let target_tx_units = structured.map(|evidence| evidence.transport.tx_units);
+        let host_delivery = Burst {
+            datagrams: received_datagrams,
+            duplicates,
+            ..Burst::default()
+        };
+        let post_block_ack_loss = target_tx_units.and_then(|units| {
+            post_block_ack_delivery_loss_lower_bound(tx.ampdu, host_delivery, units)
+        });
         return Err(format!(
             "host observed TX sequence defects: missing={missing} reordered={reordered} \
              duplicates={duplicates} received={received_datagrams} \
              range={lowest_sequence}..={highest_sequence} max_interarrival_us={} \
-             sequence_after_max_interarrival={:?}",
+             sequence_after_max_interarrival={:?} missing_runs={} \
+             maximum_missing_run={} maximum_missing_range={:?}..={:?} \
+             target_tx_units={target_tx_units:?} ampdu_subframes={} block_acknowledged={} \
+             post_block_ack_delivery_loss_lower_bound={post_block_ack_loss:?}",
             maximum_interarrival.maximum_interarrival_us,
             maximum_interarrival.sequence_after_maximum_interarrival,
+            qualified
+                .iter()
+                .map(|burst| burst.missing_runs)
+                .sum::<u64>(),
+            qualified
+                .iter()
+                .map(|burst| burst.maximum_missing_run)
+                .max()
+                .unwrap_or(0),
+            qualified
+                .iter()
+                .max_by_key(|burst| burst.maximum_missing_run)
+                .and_then(|burst| burst.maximum_missing_run_start),
+            qualified
+                .iter()
+                .max_by_key(|burst| burst.maximum_missing_run)
+                .and_then(|burst| burst.maximum_missing_run_end),
+            tx.ampdu.subframes,
+            tx.ampdu.acknowledged,
         )
         .into());
     }
@@ -298,7 +361,6 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .map(|burst| burst.throughput_kbps())
         .min()
         .expect("at least one qualified burst");
-    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.rate_kbps)?;
     if let Some(evidence) = structured {
         let received_bytes = qualified.iter().map(|burst| burst.bytes).sum::<u64>();
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
@@ -583,6 +645,8 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Build stop at frame / capacity / empty queue: `{}` / `{}` / `{}`\n\
              - Acknowledged/individual fallback: `{}` / `{}`\n\
              - Hardware timeouts/collisions: `{}` / `{}`\n\
+             - BlockAck samples/received/full/partial/empty: `{}` / `{}` / `{}` / `{}` / `{}`\n\
+             - BlockAck success-without-valid/control-TID/start-outside/max-start-lag: `{}` / `{}` / `{}` / `{}`\n\
              - Preparation average/max: `{:.2}` / `{}` us\n\
              - Publication average/max: `{:.2}` / `{}` us\n\
              - Exchange average/max: `{:.2}` / `{}` us\n\
@@ -615,6 +679,15 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.ampdu.individual_retry,
             report.ampdu.timeout,
             report.ampdu.collision,
+            report.ampdu.block_ack_samples,
+            report.ampdu.block_ack_received,
+            report.ampdu.full_block_ack,
+            report.ampdu.partial_block_ack,
+            report.ampdu.empty_block_ack,
+            report.ampdu.block_ack_success_without,
+            report.ampdu.block_ack_nonzero_control,
+            report.ampdu.block_ack_start_outside,
+            report.ampdu.block_ack_start_lag_max,
             report.ampdu.preparation_us as f64 / report.ampdu.aggregates.max(1) as f64,
             report.ampdu.preparation_max_us,
             report.ampdu.publication_us as f64 / report.ampdu.publications.max(1) as f64,
@@ -689,6 +762,25 @@ mod tests {
         assert_eq!(evidence.missing, 1);
         assert_eq!(evidence.reordered, 0);
         assert_eq!(evidence.duplicates, 1);
+        assert_eq!(evidence.missing_runs, 1);
+        assert_eq!(evidence.maximum_missing_run, 1);
+        assert_eq!(evidence.maximum_missing_run_start, Some(1));
+        assert_eq!(evidence.maximum_missing_run_end, Some(1));
+    }
+
+    #[test]
+    fn burst_reports_contiguous_missing_sequence_runs() {
+        let now = Instant::now();
+        let mut burst = ActiveBurst::new(0, 100, now);
+        burst.push(3, 100, now);
+        burst.push(4, 100, now);
+        burst.push(8, 100, now);
+        let evidence = burst.finish();
+        assert_eq!(evidence.missing, 5);
+        assert_eq!(evidence.missing_runs, 2);
+        assert_eq!(evidence.maximum_missing_run, 3);
+        assert_eq!(evidence.maximum_missing_run_start, Some(5));
+        assert_eq!(evidence.maximum_missing_run_end, Some(7));
     }
 
     #[test]

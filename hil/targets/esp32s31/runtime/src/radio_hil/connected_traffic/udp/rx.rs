@@ -15,7 +15,6 @@ use open_esp_radio::{
     wifi::ieee80211::station::StaAssociationPhy,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
-    aggregate_tx::AggregateTxCounters,
     mac_irq::MacIrqClassificationCounters,
     rx_evidence::{RX_HE_MCS_BUCKETS, RxAmpduCounters, RxPhyCounters, RxSmpduCounters},
     rx_order::RxOrderCounters,
@@ -23,8 +22,8 @@ use open_esp_radio_hil_esp32s31_telemetry::{
     task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
-    Direction as HilDirection, Event as HilEvent, ServiceInfo, Transport as HilTransport,
-    TransportEvidence,
+    Direction as HilDirection, Event as HilEvent, ServiceInfo, SessionReady,
+    Transport as HilTransport, TransportEvidence,
 };
 
 use super::UdpSocketBuffers;
@@ -33,8 +32,7 @@ use crate::{
     radio_hil::connected_traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         UdpSequenceEvidence, complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
-        log_open_radio_ampdu_interval, log_open_radio_rx_pipeline_interval,
-        log_open_radio_task_poll_interval,
+        log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
     },
 };
 
@@ -76,7 +74,6 @@ pub(in crate::radio_hil) struct UdpRxTelemetry {
     pub irq_runtime: &'static EmbassyMacIrqRuntime<CriticalSectionRawMutex>,
     pub irq_entries: &'static AtomicU32,
     pub irq_classification: &'static MacIrqClassificationCounters,
-    pub aggregate_tx: &'static AggregateTxCounters,
 }
 
 /// Host-to-device UDP throughput baseline for the fully open data path.
@@ -148,7 +145,10 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             publish_event_reliably(
                 session.session_id,
                 0,
-                HilEvent::SessionReady(HilDirection::Rx),
+                HilEvent::SessionReady(SessionReady {
+                    direction: HilDirection::Rx,
+                    tx_block_ack_tid: None,
+                }),
             )
             .await;
         }
@@ -185,11 +185,6 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             }
             break (length, sequence);
         };
-        let aggregate_start = matches!(
-            config.session_source,
-            UdpRxSessionSource::Bidirectional { .. }
-        )
-        .then(|| telemetry.aggregate_tx.snapshot());
         let started = Instant::now();
         let mut last_packet = started;
         let mut bytes = first_length as u64;
@@ -424,9 +419,6 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             config.task_poll_telemetry,
             telemetry.task_polls,
         );
-        if let Some(aggregate_start) = aggregate_start {
-            log_open_radio_ampdu_interval(aggregate_start, telemetry.aggregate_tx);
-        }
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=PASS stage=udp-rx-interval-complete \
              datagrams={datagrams} terminal={}",

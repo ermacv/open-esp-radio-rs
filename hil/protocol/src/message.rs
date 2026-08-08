@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 11;
+pub const PROTOCOL_VERSION: u16 = 12;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -70,6 +70,31 @@ pub struct FlowConfig {
     pub offered_rate_bps: Option<u64>,
 }
 
+/// Link properties that must be true before a measured transport session may
+/// advertise readiness.
+///
+/// Correctness cells deliberately use [`Self::NONE`]: a standards-compliant
+/// peer may reject aggregation and the data plane must still work. Throughput
+/// cells can require one negotiated TX BlockAck TID so an absent AddBA
+/// response is reported as unavailable test precondition instead of being
+/// misclassified as slow S-MPDU performance.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionLinkRequirements {
+    pub tx_block_ack_tid: Option<u8>,
+}
+
+impl SessionLinkRequirements {
+    pub const NONE: Self = Self {
+        tx_block_ack_tid: None,
+    };
+
+    pub const fn tx_block_ack(tid: u8) -> Self {
+        Self {
+            tx_block_ack_tid: Some(tid),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SessionConfig {
     pub transport: Transport,
@@ -78,6 +103,15 @@ pub struct SessionConfig {
     pub peer: Option<Ipv4Endpoint>,
     pub target_rx: Option<FlowConfig>,
     pub target_tx: Option<FlowConfig>,
+    pub link_requirements: SessionLinkRequirements,
+}
+
+/// Data-plane readiness together with the exact link requirement proved by
+/// the target before accepting measured traffic.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SessionReady {
+    pub direction: Direction,
+    pub tx_block_ack_tid: Option<u8>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -716,7 +750,7 @@ pub enum Event {
     ServiceReady(ServiceInfo),
     /// The selected data-plane worker has consumed the session configuration
     /// and is ready for host traffic in this direction.
-    SessionReady(Direction),
+    SessionReady(SessionReady),
     Evidence(EvidenceRecord),
     Finished(Finished),
     Failed(FailureCode),

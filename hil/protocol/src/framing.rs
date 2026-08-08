@@ -262,9 +262,9 @@ mod tests {
     use super::*;
     use crate::{
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
-        StartupArtifactChunk, StationAttemptFailureReason, StationDisconnectReason,
-        StationFailureStage, StationFaultClassification, StationFaultEvidence,
-        StationLifecycleEvent, Transport,
+        SessionLinkRequirements, StartupArtifactChunk, StationAttemptFailureReason,
+        StationDisconnectReason, StationFailureStage, StationFaultClassification,
+        StationFaultEvidence, StationLifecycleEvent, Transport,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -413,6 +413,7 @@ mod tests {
                     payload_bytes: 1_472,
                     offered_rate_bps: None,
                 }),
+                link_requirements: SessionLinkRequirements::tx_block_ack(0),
             }),
         );
         let mut encoder = FrameEncoder::new();

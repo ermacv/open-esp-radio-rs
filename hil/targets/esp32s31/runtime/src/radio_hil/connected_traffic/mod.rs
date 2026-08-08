@@ -7,6 +7,27 @@ mod runtime;
 mod tcp;
 mod udp;
 
+use embassy_time::Timer;
+use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
+use open_esp_radio_hil_protocol::SessionLinkRequirements;
+
+/// Wait until the production control/TX owners have proved every link
+/// property requested by a measured session. There is deliberately no
+/// fallback timeout into a slower mode: the host owns the qualification
+/// timeout and must classify an unavailable AddBA precondition separately
+/// from transport performance.
+async fn wait_session_link_requirements(
+    requirements: SessionLinkRequirements,
+    aggregate_counters: &AggregateTxCounters,
+) {
+    let Some(tid) = requirements.tx_block_ack_tid else {
+        return;
+    };
+    while !aggregate_counters.snapshot().block_ack_operational(tid) {
+        Timer::after_millis(10).await;
+    }
+}
+
 pub(super) use bidirectional::{
     BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
     complete_open_radio_bidirectional_direction, run_open_radio_bidirectional_session_coordinator,

@@ -89,8 +89,13 @@ start_ap() {
     /bin/mkdir -m 0750 "$CTRL_DIR"
     /bin/chown root:network "$CTRL_DIR"
     "$HOSTAPD" -B -P "$HOSTAPD_PID" "$config"
+    # Regulatory initialization and the 20/40 MHz coexistence scan can take
+    # longer than five seconds after an iwlwifi firmware reload. Poll the
+    # observable channel contract instead of treating the old timing as part
+    # of the qualification contract.
     attempts=0
-    while test "$attempts" -lt 50; do
+    maximum_attempts=200
+    while test "$attempts" -lt "$maximum_attempts"; do
         if /usr/bin/iw dev wlan0 info 2>/dev/null \
             | /usr/bin/grep -Fq "width: $expected_width MHz"
         then
@@ -99,7 +104,7 @@ start_ap() {
         attempts=$((attempts + 1))
         /bin/sleep 0.1
     done
-    if test "$attempts" -eq 50; then
+    if test "$attempts" -eq "$maximum_attempts"; then
         echo "open-radio-net: AP did not enter the required $expected_width MHz channel width" >&2
         if test "$expected_width" -eq 40; then
             echo "open-radio-net: HT40 may have been rejected by 20/40 BSS coexistence; do not qualify this run as HT40" >&2

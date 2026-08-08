@@ -16,9 +16,9 @@ use std::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
-    SessionConfig, StartupArtifactChunk, StartupArtifactStatus, StationEpochEvidence,
-    StationFaultEvidence, StationFaultInjection, StationLifecycleEvent, Transport,
-    TransportEvidence, evidence_crc32c,
+    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
+    StartupArtifactStatus, StateChange, StationEpochEvidence, StationFaultEvidence,
+    StationFaultInjection, StationLifecycleEvent, Transport, TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -363,7 +363,11 @@ impl SerialCapture {
         };
         let response = self.send_command(0, Command::ProvisionNetwork(configuration), timeout)?;
         match response.body {
-            Event::Accepted => Ok(()),
+            Event::Accepted
+            | Event::State(StateChange {
+                current: SessionState::Idle,
+                ..
+            }) => Ok(()),
             Event::Rejected(reason) => {
                 Err(format!("device rejected HIL network provisioning: {reason:?}").into())
             }
@@ -397,12 +401,19 @@ impl SerialCapture {
         .ok_or_else(|| "device did not answer HIL command".into())
     }
 
-    fn expect_accepted(&self, session_id: u64, command: Command, operation: &str) -> Result<()> {
+    fn expect_accepted(
+        &self,
+        session_id: u64,
+        command: Command,
+        operation: &str,
+        expected_state: SessionState,
+    ) -> Result<()> {
         let response = self
             .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)
             .map_err(|error| format!("session {operation} command failed: {error}"))?;
         match response.body {
             Event::Accepted => Ok(()),
+            Event::State(StateChange { current, .. }) if current == expected_state => Ok(()),
             Event::Rejected(reason) => {
                 Err(format!("device rejected session {operation}: {reason:?}").into())
             }
@@ -414,9 +425,15 @@ impl SerialCapture {
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
         let first_event = self.protocol_event_count();
         let direction = config.direction;
-        self.expect_accepted(session_id, Command::Configure(config), "configuration")?;
-        self.expect_accepted(session_id, Command::Arm, "arm")?;
-        self.expect_accepted(session_id, Command::Start, "start")?;
+        let link_requirements = config.link_requirements;
+        self.expect_accepted(
+            session_id,
+            Command::Configure(config),
+            "configuration",
+            SessionState::Configured,
+        )?;
+        self.expect_accepted(session_id, Command::Arm, "arm", SessionState::Armed)?;
+        self.expect_accepted(session_id, Command::Start, "start", SessionState::Running)?;
         let expected_directions: &[Direction] = match direction {
             Direction::Rx => &[Direction::Rx],
             Direction::Tx => &[Direction::Tx],
@@ -425,11 +442,22 @@ impl SerialCapture {
         for expected in expected_directions {
             self.wait_for_protocol_after(first_event, PROTOCOL_READY_TIMEOUT, |message| {
                 message.session_id == session_id
-                    && matches!(message.body, Event::SessionReady(direction) if direction == *expected)
+                    && matches!(
+                        message.body,
+                        Event::SessionReady(reported)
+                            if session_ready_covers(
+                                direction,
+                                reported,
+                                *expected,
+                                link_requirements,
+                            )
+                    )
             })
             .ok_or_else(|| {
                 format!(
-                    "device did not publish {expected:?} data-plane readiness for session {session_id}"
+                    "device did not publish {expected:?} data-plane readiness for session \
+                     {session_id}; required TX BlockAck TID: {:?}",
+                    link_requirements.tx_block_ack_tid,
                 )
             })?;
         }
@@ -494,6 +522,7 @@ impl SerialCapture {
             session.session_id,
             Command::AcknowledgeResult,
             "acknowledgement",
+            SessionState::Idle,
         )
     }
 
@@ -783,6 +812,20 @@ impl SerialCapture {
             let _ = worker.join();
         }
     }
+}
+
+fn session_ready_covers(
+    configured: Direction,
+    reported: SessionReady,
+    expected: Direction,
+    requirements: SessionLinkRequirements,
+) -> bool {
+    let direction_covers = reported.direction == expected
+        || (configured == Direction::Bidirectional
+            && reported.direction == Direction::Bidirectional);
+    let requirements_met =
+        expected != Direction::Tx || reported.tx_block_ack_tid == requirements.tx_block_ack_tid;
+    direction_covers && requirements_met
 }
 
 /// Wait for a runtime-configured TCP receive service and its current IPv4
@@ -1081,9 +1124,61 @@ fn observed_network_ipv4(transcript: &str) -> Option<Ipv4Addr> {
 
 #[cfg(test)]
 mod tests {
+    use open_esp_radio_hil_protocol::{Direction, SessionLinkRequirements, SessionReady};
+
     use super::{
         NetworkIpv4Configuration, observed_network_ipv4, parse_network_ipv4_configuration,
+        session_ready_covers,
     };
+
+    #[test]
+    fn bidirectional_readiness_covers_both_owned_data_planes() {
+        assert!(session_ready_covers(
+            Direction::Bidirectional,
+            SessionReady {
+                direction: Direction::Bidirectional,
+                tx_block_ack_tid: Some(0),
+            },
+            Direction::Rx,
+            SessionLinkRequirements::tx_block_ack(0),
+        ));
+        assert!(session_ready_covers(
+            Direction::Bidirectional,
+            SessionReady {
+                direction: Direction::Bidirectional,
+                tx_block_ack_tid: Some(0),
+            },
+            Direction::Tx,
+            SessionLinkRequirements::tx_block_ack(0),
+        ));
+        assert!(session_ready_covers(
+            Direction::Bidirectional,
+            SessionReady {
+                direction: Direction::Rx,
+                tx_block_ack_tid: None,
+            },
+            Direction::Rx,
+            SessionLinkRequirements::tx_block_ack(0),
+        ));
+        assert!(!session_ready_covers(
+            Direction::Rx,
+            SessionReady {
+                direction: Direction::Bidirectional,
+                tx_block_ack_tid: None,
+            },
+            Direction::Rx,
+            SessionLinkRequirements::NONE,
+        ));
+        assert!(!session_ready_covers(
+            Direction::Tx,
+            SessionReady {
+                direction: Direction::Tx,
+                tx_block_ack_tid: None,
+            },
+            Direction::Tx,
+            SessionLinkRequirements::tx_block_ack(0),
+        ));
+    }
 
     #[test]
     fn extracts_latest_network_address_from_uart_transcript() {

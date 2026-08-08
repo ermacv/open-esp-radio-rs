@@ -18,11 +18,11 @@ pub use message::{
     FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkConfiguration,
     NetworkConfigurationError, NetworkCredentials, NetworkCredentialsError, NetworkInfo,
     NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary,
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionState, StartupArtifactChunk,
-    StartupArtifactChunkError, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationAttemptFailureReason, StationDisconnectReason, StationEpochEvidence,
-    StationFailureStage, StationFaultClassification, StationFaultEvidence, StationFaultInjection,
-    StationLifecycleEvent, Transport, TransportEvidence, WPA2_PASSPHRASE_MAX_LEN,
-    WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,
+    STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionLinkRequirements,
+    SessionReady, SessionState, StartupArtifactChunk, StartupArtifactChunkError,
+    StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationAttemptFailureReason,
+    StationDisconnectReason, StationEpochEvidence, StationFailureStage, StationFaultClassification,
+    StationFaultEvidence, StationFaultInjection, StationLifecycleEvent, Transport,
+    TransportEvidence, WPA2_PASSPHRASE_MAX_LEN, WPA2_PASSPHRASE_MIN_LEN, WPA2_SSID_MAX_LEN,
 };
 pub use stream_pattern::{fill_stream_pattern, stream_pattern_byte, stream_pattern_matches};

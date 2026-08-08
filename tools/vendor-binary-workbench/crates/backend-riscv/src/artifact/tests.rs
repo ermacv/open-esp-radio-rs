@@ -1,4 +1,8 @@
 use super::*;
+use object::{SectionKind, SymbolKind};
+use rv_asm::{Inst, IsCompressed, Xlen};
+
+use super::model::riscv_relocation_kind;
 
 fn write_visibility_fixture() -> std::path::PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};

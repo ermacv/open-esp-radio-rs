@@ -4,7 +4,7 @@ use object::{
     Object, ObjectSection, ObjectSymbol, RelocationFlags, RelocationTarget, SectionIndex,
 };
 
-use super::{RelocationKind, riscv_relocation_kind};
+use super::model::{RelocationKind, riscv_relocation_kind};
 use crate::Result;
 
 #[derive(Clone, Debug)]

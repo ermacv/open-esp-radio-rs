@@ -5,15 +5,24 @@
 //! reusable project artifact.
 
 mod interface_facts;
+mod interface_facts_read;
 mod linked_ir;
 mod linked_ir_document;
+mod linked_ir_read;
 mod mmio_facts;
+mod mmio_facts_read;
 mod symbol_inventory;
 
 pub(crate) use interface_facts::{build_interface_facts, render_interface_facts};
+pub(crate) use interface_facts_read::{
+    StoredInterfaceArgument, StoredInterfaceRoot, StoredInterfaceSelector, StoredInterfaceStep,
+    parse_interface_facts,
+};
 pub(crate) use linked_ir::inspect_linked_ir;
 pub(crate) use linked_ir_document::{build_linked_ir_document, render_linked_ir, write_linked_ir};
+pub(crate) use linked_ir_read::{StoredCall, StoredMemoryObject, parse_linked_ir};
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
+pub(crate) use mmio_facts_read::parse_mmio_facts;
 pub(crate) use symbol_inventory::{
     SymbolInventoryDocument, build_symbol_inventory_document, inspect_symbol_inventory,
     render_symbol_inventory,

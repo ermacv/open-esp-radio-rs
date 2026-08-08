@@ -1,10 +1,8 @@
-//! Loading immutable JSON emitted by `mmio discover`.
+//! Loading immutable typed JSON emitted by `mmio discover`.
 
 use std::{collections::BTreeSet, fs, path::Path};
 
-use serde_json::{Map, Value};
-
-use crate::{Result, error::WorkbenchError, parse_u32};
+use crate::{Result, error::WorkbenchError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FactRange {
@@ -61,46 +59,54 @@ impl RegisterFacts {
     }
 
     fn parse(input: &str) -> Result<Self> {
-        let root: Value = serde_json::from_str(input)?;
-        let root = object(&root, "MMIO facts root")?;
-        if integer(root, "schema_version", "MMIO facts")?
-            != u64::from(crate::artifacts::MMIO_FACTS.version)
-        {
-            return Err(crate::Error::invalid(format!(
-                "MMIO facts require schema_version {}",
-                crate::artifacts::MMIO_FACTS.version
-            )));
-        }
-        if string(root, "command", "MMIO facts")? != crate::artifacts::MMIO_FACTS.command {
-            return Err(crate::Error::invalid(
-                "register workspace requires an mmio discover JSON report",
-            ));
-        }
-        let ranges = array(root, "ranges", "MMIO facts")?
-            .iter()
-            .enumerate()
-            .map(|(index, value)| {
-                let context = format!("ranges[{index}]");
-                let value = object(value, &context)?;
-                let start = address(value, "start", &context)?;
-                let end = address(value, "end_exclusive", &context)?;
-                if start >= end {
-                    return Err(crate::Error::invalid(format!(
-                        "{context} is empty or reversed"
-                    )));
-                }
-                Ok(FactRange {
-                    name: string(value, "name", &context)?.to_owned(),
-                    start,
-                    end,
-                })
+        let document = crate::artifacts::parse_mmio_facts(input)?;
+        let ranges = document
+            .ranges
+            .into_iter()
+            .map(|range| FactRange {
+                name: range.name,
+                start: range.start,
+                end: range.end_exclusive,
             })
-            .collect::<Result<Vec<_>>>()?;
-        let registers = array(root, "registers", "MMIO facts")?
-            .iter()
-            .enumerate()
-            .map(|(index, value)| parse_register(value, index))
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
+        let registers = document
+            .registers
+            .into_iter()
+            .map(|register| {
+                let write_patterns = register
+                    .write_patterns
+                    .into_iter()
+                    .map(|pattern| RegisterWritePatternFact {
+                        occurrences: pattern.occurrences,
+                        modified_mask: pattern.modified_mask,
+                        preserved_mask: pattern.preserved_mask,
+                        inverted_mask: pattern.inverted_mask,
+                        forced_zero_mask: pattern.forced_zero_mask,
+                        forced_one_mask: pattern.forced_one_mask,
+                        read_derived_mask: pattern.read_derived_mask,
+                        dynamic_mask: pattern.dynamic_mask,
+                        functions: pattern.functions.into_iter().collect(),
+                    })
+                    .collect::<Vec<_>>();
+                let mut candidate_masks = write_patterns
+                    .iter()
+                    .map(|pattern| pattern.modified_mask)
+                    .collect::<Vec<_>>();
+                candidate_masks.sort_unstable();
+                candidate_masks.dedup();
+                RegisterFact {
+                    address: register.address,
+                    width: register.width,
+                    catalog_name: register.name,
+                    reads: register.reads,
+                    writes: register.writes,
+                    read_functions: register.read_functions.into_iter().collect(),
+                    write_functions: register.write_functions.into_iter().collect(),
+                    write_patterns,
+                    candidate_masks,
+                }
+            })
+            .collect();
         let facts = Self { ranges, registers };
         facts.validate()?;
         Ok(facts)
@@ -114,7 +120,8 @@ impl RegisterFacts {
         }
         let mut range_names = BTreeSet::new();
         for range in &self.ranges {
-            if range.name.is_empty() || !range_names.insert(range.name.as_str()) {
+            if range.name.is_empty() || range.start >= range.end || !range_names.insert(&range.name)
+            {
                 return Err(crate::Error::invalid(format!(
                     "invalid or duplicate MMIO fact range {:?}",
                     range.name
@@ -176,108 +183,6 @@ impl RegisterFacts {
     }
 }
 
-fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
-    let context = format!("registers[{index}]");
-    let value = object(value, &context)?;
-    let width = integer(value, "width", &context)?
-        .try_into()
-        .map_err(|_| format!("invalid width in {context}"))
-        .map_err(crate::Error::invalid)?;
-    let mut write_patterns = Vec::new();
-    for (pattern_index, pattern) in array(value, "write_patterns", &context)?.iter().enumerate() {
-        let pattern_context = format!("{context}.write_patterns[{pattern_index}]");
-        let pattern = object(pattern, &pattern_context)?;
-        write_patterns.push(RegisterWritePatternFact {
-            occurrences: integer(pattern, "occurrences", &pattern_context)?
-                .try_into()
-                .map_err(|_| format!("invalid occurrence count in {pattern_context}"))
-                .map_err(crate::Error::invalid)?,
-            modified_mask: address(pattern, "modified_mask", &pattern_context)?,
-            preserved_mask: address(pattern, "preserved_mask", &pattern_context)?,
-            inverted_mask: address(pattern, "inverted_mask", &pattern_context)?,
-            forced_zero_mask: address(pattern, "forced_zero_mask", &pattern_context)?,
-            forced_one_mask: address(pattern, "forced_one_mask", &pattern_context)?,
-            read_derived_mask: address(pattern, "read_derived_mask", &pattern_context)?,
-            dynamic_mask: address(pattern, "dynamic_mask", &pattern_context)?,
-            functions: string_set(pattern, "functions", &pattern_context)?,
-        });
-    }
-    let mut candidate_masks = write_patterns
-        .iter()
-        .map(|pattern| pattern.modified_mask)
-        .collect::<Vec<_>>();
-    candidate_masks.sort_unstable();
-    candidate_masks.dedup();
-    Ok(RegisterFact {
-        address: address(value, "address", &context)?,
-        width,
-        catalog_name: string(value, "name", &context)?.to_owned(),
-        reads: integer(value, "reads", &context)?
-            .try_into()
-            .map_err(|_| format!("invalid read count in {context}"))
-            .map_err(crate::Error::invalid)?,
-        writes: integer(value, "writes", &context)?
-            .try_into()
-            .map_err(|_| format!("invalid write count in {context}"))
-            .map_err(crate::Error::invalid)?,
-        read_functions: string_set(value, "read_functions", &context)?,
-        write_functions: string_set(value, "write_functions", &context)?,
-        write_patterns,
-        candidate_masks,
-    })
-}
-
-fn string_set(object: &Map<String, Value>, key: &str, context: &str) -> Result<BTreeSet<String>> {
-    array(object, key, context)?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    crate::Error::invalid(format!(
-                        "{context}.{key}[{index}] must be a non-empty string"
-                    ))
-                })
-        })
-        .collect()
-}
-
-fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
-    value
-        .as_object()
-        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
-}
-
-fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a [Value]> {
-    object
-        .get(key)
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))
-}
-
-fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
-}
-
-fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
-        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
-    })
-}
-
-fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
-    let value = string(object, key, context)?;
-    parse_u32(value)
-        .ok_or_else(|| crate::Error::invalid(format!("invalid address {value:?} in {context}")))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -308,6 +213,6 @@ mod tests {
         assert_eq!(facts.registers[0].write_patterns[0].occurrences, 2);
         assert_eq!(facts.registers[0].write_patterns[0].dynamic_mask, 2);
         assert_eq!(facts.ranges[0].name, "radio");
-        assert!(facts.ranges[0].start <= 0x1010 && 0x1010 < facts.ranges[0].end);
+        assert!(facts.ranges[0].contains(0x1010));
     }
 }

@@ -1,6 +1,5 @@
 //! Stable function-review facts projected from linked-IR artifacts.
 
-mod json;
 mod parse;
 mod validate;
 

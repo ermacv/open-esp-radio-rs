@@ -1,390 +1,120 @@
-//! Strict JSON projection for generated interface discovery facts.
+//! Typed projection for generated interface discovery facts.
 
-use std::collections::BTreeSet;
-
-use serde_json::{Map, Value};
-
-use crate::{Result, parse_u32};
+use crate::{Result, artifacts};
 
 use super::*;
 
 pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
-    let root: Value = serde_json::from_str(input)?;
-    let root = object(&root, "interface facts root")?;
-    if integer(root, "schema_version", "interface facts")?
-        != u64::from(crate::artifacts::INTERFACE_FACTS.version)
-    {
-        return Err(crate::Error::invalid(format!(
-            "interface facts require schema_version {}",
-            crate::artifacts::INTERFACE_FACTS.version
-        )));
-    }
-    if string(root, "command", "interface facts")? != crate::artifacts::INTERFACE_FACTS.command {
-        return Err(crate::Error::invalid(
-            "interface workspace requires an interfaces discover JSON report",
-        ));
-    }
-    let artifacts = array(root, "artifacts", "interface facts")?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| parse_artifact(value, index))
-        .collect::<Result<Vec<_>>>()?;
-    let tables = array(root, "table_candidates", "interface facts")?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| parse_table(value, index))
-        .collect::<Result<Vec<_>>>()?;
-    let calls = array(root, "calls", "interface facts")?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| parse_call(value, index))
-        .collect::<Result<Vec<_>>>()?;
+    let document = artifacts::parse_interface_facts(input)?;
     let facts = InterfaceFacts {
-        artifacts,
-        tables,
-        calls,
+        artifacts: document
+            .artifacts
+            .into_iter()
+            .map(|artifact| InterfaceFactArtifact {
+                index: artifact.index,
+                sources: artifact.sources.into_iter().collect(),
+                sha256: Some(artifact.sha256),
+            })
+            .collect(),
+        tables: document
+            .table_candidates
+            .into_iter()
+            .map(|table| InterfaceTableFact {
+                artifact: table.artifact,
+                root: root(table.root),
+                container_path: table.container_path.into_iter().map(step).collect(),
+                slots: table
+                    .slots
+                    .into_iter()
+                    .map(|slot| InterfaceFactSlot {
+                        offset: slot.offset,
+                        width: slot.width,
+                        selector: slot.selector.map(selector),
+                        functions: slot.functions.into_iter().collect(),
+                    })
+                    .collect(),
+                functions: table.functions.into_iter().collect(),
+            })
+            .collect(),
+        calls: document
+            .calls
+            .into_iter()
+            .map(|call| InterfaceCallFact {
+                artifact: call.artifact,
+                member: call.member,
+                function: call.function,
+                function_address: call.function_address,
+                site: call.site,
+                kind: call.kind,
+                root: root(call.target.root),
+                loads: call.target.loads.into_iter().map(step).collect(),
+                container_depth: call.target.container_depth,
+                slot_offset: call.target.slot_offset,
+                jalr_offset: call.target.jalr_offset,
+                arguments: call.arguments.into_iter().map(argument).collect(),
+            })
+            .collect(),
     };
     super::validate::validate(&facts)?;
     Ok(facts)
 }
 
-fn parse_artifact(value: &Value, index: usize) -> Result<InterfaceFactArtifact> {
-    let context = format!("artifacts[{index}]");
-    let value = object(value, &context)?;
-    Ok(InterfaceFactArtifact {
-        index: usize::try_from(integer(value, "index", &context)?)
-            .map_err(|_| format!("invalid artifact index in {context}"))
-            .map_err(crate::Error::invalid)?,
-        sources: array(value, "sources", &context)?
-            .iter()
-            .enumerate()
-            .map(|(source_index, value)| {
-                value
-                    .as_str()
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned)
-                    .ok_or_else(|| {
-                        crate::Error::invalid(format!(
-                            "{context}.sources[{source_index}] must be a non-empty string"
-                        ))
-                    })
-            })
-            .collect::<Result<_>>()?,
-        sha256: value
-            .get("sha256")
-            .map(|value| -> Result<String> {
-                value.as_str().map(str::to_owned).ok_or_else(|| {
-                    crate::Error::invalid(format!("{context}.sha256 must be a string"))
-                })
-            })
-            .transpose()?,
-    })
-}
-
-fn parse_table(value: &Value, index: usize) -> Result<InterfaceTableFact> {
-    let context = format!("table_candidates[{index}]");
-    let value = object(value, &context)?;
-    let functions = array(value, "functions", &context)?
-        .iter()
-        .enumerate()
-        .map(|(function_index, value)| {
-            value
-                .as_str()
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-                .ok_or_else(|| {
-                    crate::Error::invalid(format!(
-                        "{context}.functions[{function_index}] must be a non-empty string"
-                    ))
-                })
-        })
-        .collect::<Result<BTreeSet<_>>>()?;
-    Ok(InterfaceTableFact {
-        artifact: usize::try_from(integer(value, "artifact", &context)?)
-            .map_err(|_| format!("invalid artifact index in {context}"))
-            .map_err(crate::Error::invalid)?,
-        root: parse_root(
-            value
-                .get("root")
-                .ok_or_else(|| format!("{context} requires object \"root\""))
-                .map_err(crate::Error::invalid)?,
-            &format!("{context}.root"),
-        )?,
-        container_path: parse_steps(value, "container_path", &context)?,
-        slots: parse_slots(value, &context, &functions)?,
-        functions,
-    })
-}
-
-fn parse_call(value: &Value, index: usize) -> Result<InterfaceCallFact> {
-    let context = format!("calls[{index}]");
-    let value = object(value, &context)?;
-    let target_context = format!("{context}.target");
-    let target = object(
-        value
-            .get("target")
-            .ok_or_else(|| format!("{context} requires object \"target\""))
-            .map_err(crate::Error::invalid)?,
-        &target_context,
-    )?;
-    Ok(InterfaceCallFact {
-        artifact: usize::try_from(integer(value, "artifact", &context)?)
-            .map_err(|_| format!("invalid artifact index in {context}"))
-            .map_err(crate::Error::invalid)?,
-        member: optional_string(value, "member", &context)?,
-        function: string(value, "function", &context)?.to_owned(),
-        function_address: address(value, "function_address", &context)?,
-        site: address(value, "site", &context)?,
-        kind: string(value, "kind", &context)?.to_owned(),
-        root: parse_root(
-            target
-                .get("root")
-                .ok_or_else(|| format!("{target_context} requires object \"root\""))
-                .map_err(crate::Error::invalid)?,
-            &format!("{target_context}.root"),
-        )?,
-        loads: parse_steps(target, "loads", &target_context)?,
-        container_depth: usize::try_from(integer(target, "container_depth", &target_context)?)
-            .map_err(|_| format!("invalid container depth in {target_context}"))
-            .map_err(crate::Error::invalid)?,
-        slot_offset: optional_signed_integer(target, "slot_offset", &target_context)?
-            .map(|value| {
-                value
-                    .try_into()
-                    .map_err(|_| format!("slot offset does not fit i32 in {target_context}"))
-            })
-            .transpose()
-            .map_err(crate::Error::invalid)?,
-        jalr_offset: signed_integer(target, "jalr_offset", &target_context)?
-            .try_into()
-            .map_err(|_| format!("jalr offset does not fit i32 in {target_context}"))
-            .map_err(crate::Error::invalid)?,
-        arguments: parse_arguments(value, &context)?,
-    })
-}
-
-fn parse_arguments(
-    object: &Map<String, Value>,
-    context: &str,
-) -> Result<Vec<InterfaceArgumentFact>> {
-    array(object, "arguments", context)?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let context = format!("{context}.arguments[{index}]");
-            let value = self::object(value, &context)?;
-            let kind = string(value, "kind", &context)?.to_owned();
-            let expression = match kind.as_str() {
-                "unknown" => "?".to_owned(),
-                "constant" => format!("{:#010x}", address(value, "value", &context)?),
-                "pointer-provenance" => string(value, "canonical", &context)?.to_owned(),
-                _ => String::new(),
-            };
-            Ok(InterfaceArgumentFact {
-                index: usize::try_from(integer(value, "index", &context)?)
-                    .map_err(|_| format!("invalid argument index in {context}"))
-                    .map_err(crate::Error::invalid)?,
-                kind,
-                expression,
-            })
-        })
-        .collect()
-}
-
-fn parse_slots(
-    object: &Map<String, Value>,
-    context: &str,
-    fallback_functions: &BTreeSet<String>,
-) -> Result<Vec<InterfaceFactSlot>> {
-    array(object, "slots", context)?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let context = format!("{context}.slots[{index}]");
-            let value = self::object(value, &context)?;
-            let functions = value
-                .get("functions")
-                .map(|_| {
-                    array(value, "functions", &context)?
-                        .iter()
-                        .enumerate()
-                        .map(|(function_index, value)| {
-                            value
-                                .as_str()
-                                .filter(|value| !value.is_empty())
-                                .map(str::to_owned)
-                                .ok_or_else(|| {
-                                    crate::Error::invalid(format!(
-                                        "{context}.functions[{function_index}] must be a non-empty string"
-                                    )
-                                    )
-                                })
-                        })
-                        .collect::<Result<BTreeSet<_>>>()
-                })
-                .transpose()?
-                .unwrap_or_else(|| fallback_functions.clone());
-            Ok(InterfaceFactSlot {
-                offset: signed_integer(value, "offset", &context)?
-                    .try_into()
-                    .map_err(|_| format!("offset does not fit i32 in {context}")).map_err(crate::Error::invalid)?,
-                width: integer(value, "width", &context)?
-                    .try_into()
-                    .map_err(|_| format!("width does not fit u8 in {context}")).map_err(crate::Error::invalid)?,
-                selector: parse_selector(value, &context)?,
-                functions,
-            })
-        })
-        .collect()
-}
-
-fn parse_root(value: &Value, context: &str) -> Result<InterfaceFactRoot> {
-    let value = object(value, context)?;
-    Ok(match string(value, "kind", context)? {
-        "relocated-symbol" => InterfaceFactRoot::RelocatedSymbol {
-            member: optional_string(value, "member", context)?,
-            symbol: string(value, "symbol", context)?.to_owned(),
-            addend: signed_integer(value, "addend", context)?,
-            addressing: string(value, "addressing", context)?.to_owned(),
+fn root(root: artifacts::StoredInterfaceRoot) -> InterfaceFactRoot {
+    match root {
+        artifacts::StoredInterfaceRoot::RelocatedSymbol {
+            member,
+            symbol,
+            addend,
+            addressing,
+        } => InterfaceFactRoot::RelocatedSymbol {
+            member,
+            symbol,
+            addend,
+            addressing,
         },
-        "function-argument" => InterfaceFactRoot::FunctionArgument {
-            argument: integer(value, "argument", context)?
-                .try_into()
-                .map_err(|_| format!("invalid argument index in {context}"))
-                .map_err(crate::Error::invalid)?,
-        },
-        "absolute-address" => InterfaceFactRoot::AbsoluteAddress {
-            address: address(value, "address", context)?,
-        },
-        kind => {
-            return Err(crate::Error::invalid(format!(
-                "unsupported interface root kind {kind:?} in {context}"
-            )));
+        artifacts::StoredInterfaceRoot::FunctionArgument { argument } => {
+            InterfaceFactRoot::FunctionArgument { argument }
         }
-    })
+        artifacts::StoredInterfaceRoot::AbsoluteAddress { address } => {
+            InterfaceFactRoot::AbsoluteAddress { address }
+        }
+    }
 }
 
-fn parse_steps(
-    object: &Map<String, Value>,
-    key: &str,
-    context: &str,
-) -> Result<Vec<InterfaceFactStep>> {
-    array(object, key, context)?
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            let context = format!("{context}.{key}[{index}]");
-            let value = self::object(value, &context)?;
-            Ok(InterfaceFactStep {
-                offset: signed_integer(value, "offset", &context)?
-                    .try_into()
-                    .map_err(|_| format!("offset does not fit i32 in {context}"))
-                    .map_err(crate::Error::invalid)?,
-                width: integer(value, "width", &context)?
-                    .try_into()
-                    .map_err(|_| format!("width does not fit u8 in {context}"))
-                    .map_err(crate::Error::invalid)?,
-                selector: parse_selector(value, &context)?,
-            })
-        })
-        .collect()
+fn step(step: artifacts::StoredInterfaceStep) -> InterfaceFactStep {
+    InterfaceFactStep {
+        offset: step.offset,
+        width: step.width,
+        selector: step.selector.map(selector),
+    }
 }
 
-fn parse_selector(
-    object: &Map<String, Value>,
-    context: &str,
-) -> Result<Option<InterfaceFactSelector>> {
-    object
-        .get("selector")
-        .map(|value| {
-            let selector_context = format!("{context}.selector");
-            let selector = self::object(value, &selector_context)?;
-            Ok(InterfaceFactSelector {
-                argument: integer(selector, "argument", &selector_context)?
-                    .try_into()
-                    .map_err(|_| format!("argument does not fit u8 in {selector_context}"))
-                    .map_err(crate::Error::invalid)?,
-                scale: integer(selector, "scale", &selector_context)?
-                    .try_into()
-                    .map_err(|_| format!("scale does not fit u32 in {selector_context}"))
-                    .map_err(crate::Error::invalid)?,
-                addend: signed_integer(selector, "addend", &selector_context)?
-                    .try_into()
-                    .map_err(|_| format!("addend does not fit i32 in {selector_context}"))
-                    .map_err(crate::Error::invalid)?,
-            })
-        })
-        .transpose()
+fn selector(selector: artifacts::StoredInterfaceSelector) -> InterfaceFactSelector {
+    InterfaceFactSelector {
+        argument: selector.argument,
+        scale: selector.scale,
+        addend: selector.addend,
+    }
 }
 
-fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
-    value
-        .as_object()
-        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
-}
-
-fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a [Value]> {
-    object
-        .get(key)
-        .and_then(Value::as_array)
-        .map(Vec::as_slice)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))
-}
-
-fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
-    object
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
-}
-
-fn optional_string(
-    object: &Map<String, Value>,
-    key: &str,
-    context: &str,
-) -> Result<Option<String>> {
-    object
-        .get(key)
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value.as_str().map(str::to_owned).ok_or_else(|| {
-                crate::Error::invalid(format!("{context}.{key} must be a string or null"))
-            })
-        })
-        .transpose()
-}
-
-fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
-        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
-    })
-}
-
-fn signed_integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<i64> {
-    object
-        .get(key)
-        .and_then(Value::as_i64)
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
-}
-
-fn optional_signed_integer(
-    object: &Map<String, Value>,
-    key: &str,
-    context: &str,
-) -> Result<Option<i64>> {
-    object
-        .get(key)
-        .filter(|value| !value.is_null())
-        .map(|value| {
-            value.as_i64().ok_or_else(|| {
-                crate::Error::invalid(format!("{context}.{key} must be an integer or null"))
-            })
-        })
-        .transpose()
-}
-
-fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
-    let value = string(object, key, context)?;
-    parse_u32(value)
-        .ok_or_else(|| crate::Error::invalid(format!("invalid address {value:?} in {context}")))
+fn argument(argument: artifacts::StoredInterfaceArgument) -> InterfaceArgumentFact {
+    match argument {
+        artifacts::StoredInterfaceArgument::Unknown { index } => InterfaceArgumentFact {
+            index,
+            kind: "unknown".to_owned(),
+            expression: "?".to_owned(),
+        },
+        artifacts::StoredInterfaceArgument::Constant { index, value } => InterfaceArgumentFact {
+            index,
+            kind: "constant".to_owned(),
+            expression: format!("{value:#010x}"),
+        },
+        artifacts::StoredInterfaceArgument::PointerProvenance { index, canonical } => {
+            InterfaceArgumentFact {
+                index,
+                kind: "pointer-provenance".to_owned(),
+                expression: canonical,
+            }
+        }
+    }
 }

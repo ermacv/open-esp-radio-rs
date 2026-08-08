@@ -8,6 +8,7 @@ fn write_ir(path: &std::path::Path) {
   "schema_version": 35,
   "command": "ir export",
   "completeness_claim": false,
+  "mmio_field_semantics_claim": false,
   "artifacts": [
     {
       "source": "rom",
@@ -17,6 +18,7 @@ fn write_ir(path: &std::path::Path) {
       }
     }
   ],
+  "mmio_registers": [],
   "functions": [
     {
       "source": "rom",
@@ -33,7 +35,7 @@ fn write_ir(path: &std::path::Path) {
           "semantic_operation": null,
           "site": 128,
           "arguments": [],
-          "cfg_guard_paths": [{"guards": []}]
+          "guard_paths": [{"guards": []}]
         }
       ],
       "scenario_suggestions": [],
@@ -88,7 +90,7 @@ fn write_ir(path: &std::path::Path) {
           "semantic_operation": "rtos.queue.send-from-isr",
           "site": 288,
           "arguments": ["?", "0x0000002a"],
-          "cfg_guard_paths": [{
+          "guard_paths": [{
             "guards": [{
               "site": 288,
               "condition": "(arg0 & 0x00000001) != 0",

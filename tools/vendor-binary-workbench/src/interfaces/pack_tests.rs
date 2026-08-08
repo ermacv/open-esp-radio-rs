@@ -122,7 +122,7 @@ fn write_facts(path: &Path, digest: &str) {
       "addressing":"absolute"
     }},
     "container_path":[{{"offset":0,"width":32}}],
-    "slots":[{{"offset":16,"width":32}}],
+    "slots":[{{"offset":16,"width":32,"functions":["post_event"]}}],
     "functions":["post_event"]
   }}]
 }}"#
@@ -288,8 +288,8 @@ fn indexed_slot_evidence_requires_and_keeps_a_reviewed_index_domain() {
         )
         .replace(r#""slot_offset":16"#, r#""slot_offset":null,"slot_selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"}"#)
         .replace(
-            r#"{"offset":16,"width":32}"#,
-            r#"{"offset":0,"width":32,"selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"}}"#,
+            r#"{"offset":16,"width":32,"functions":["post_event"]}"#,
+            r#"{"offset":0,"width":32,"selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"},"functions":["post_event"]}"#,
         );
     std::fs::write(&facts, indexed).unwrap();
     write_catalog(&catalog);

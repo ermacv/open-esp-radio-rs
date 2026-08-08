@@ -159,15 +159,16 @@ mod tests {
   "command": "ir export",
   "completeness_claim": false,
   "mmio_field_semantics_claim": false,
+  "artifacts": [],
   "mmio_registers": [{{
-    "address": "0x00001010",
+    "address": 4112,
     "width": 32,
     "names": ["RADIO.CONTROL"],
     "functions": ["rom:init"],
     "field_candidates": [{{
       "least_significant_bit": 4,
       "most_significant_bit": 7,
-      "mask": "0x000000f0",
+      "mask": 240,
       "write_shapes": {write_shapes},
       "predicate_shapes": 1,
       "poll_shapes": 0,
@@ -180,13 +181,14 @@ mod tests {
         "producer_path": ["rom:read_control"],
         "condition": "field != 0",
         "effective_operation": "not-equal",
-        "register_comparison_value": "0x00000000"
+        "register_comparison_value": 0
       }}],
       "semantic_operations": ["{operation}"],
       "semantic_roots": ["rom:init"],
       "semantic_evidence": []
     }}]
-  }}]
+  }}],
+  "functions": []
 }}"#
         )
     }
@@ -232,7 +234,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            report(1, "rtos.event.send").replacen("0x000000f0", "0x000000e0", 1),
+            report(1, "rtos.event.send").replacen("\"mask\": 240", "\"mask\": 224", 1),
         )
         .unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();

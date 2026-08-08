@@ -9,14 +9,16 @@ old-schema compatibility readers.
 | Artifact | Version | Command identity | Owner |
 | --- | ---: | --- | --- |
 | Symbol inventory | 2 | `symbols inventory` | `artifacts/symbol_inventory.rs` |
-| MMIO discovery facts | 2 | `mmio discover` | `artifacts/mmio_facts.rs` |
-| Interface discovery facts | 3 | `interfaces discover` | `artifacts/interface_facts.rs` |
-| Linked IR | 35 | `ir export` | `artifacts/linked_ir_document.rs` |
+| MMIO discovery facts | 2 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
+| Interface discovery facts | 3 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
+| Linked IR | 35 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 
 `artifacts/mod.rs` is the only owner of these version/command constants.
-Domain workspaces and navigation use the corresponding strict projections;
-they do not repeat numeric schema literals or walk arbitrary
-`serde_json::Value` trees at the frontend boundary.
+Domain workspaces and navigation use the corresponding typed Serde consumer
+projections. They neither repeat numeric schema literals nor walk arbitrary
+`serde_json::Value` trees. Producer and consumer DTOs are separate only where
+the complete report directly serializes live analysis-domain structures;
+identity and supported claims are still validated once in the artifact layer.
 
 Invocation reports such as `project analyze`, `project publish`, `ir build`
 and `project status` are deliberately separate typed models. Their `schema`

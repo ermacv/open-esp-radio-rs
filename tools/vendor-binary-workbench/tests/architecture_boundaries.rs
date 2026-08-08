@@ -189,12 +189,11 @@ fn persistent_artifact_identities_have_one_owner() {
     let required_uses = [
         ("artifacts/symbol_inventory.rs", "SYMBOL_INVENTORY"),
         ("artifacts/mmio_facts.rs", "MMIO_FACTS"),
+        ("artifacts/mmio_facts_read.rs", "MMIO_FACTS"),
         ("artifacts/interface_facts.rs", "INTERFACE_FACTS"),
+        ("artifacts/interface_facts_read.rs", "INTERFACE_FACTS"),
         ("artifacts/linked_ir_document.rs", "artifacts::LINKED_IR"),
-        ("registers/facts.rs", "artifacts::MMIO_FACTS"),
-        ("interfaces/facts/parse.rs", "artifacts::INTERFACE_FACTS"),
-        ("function_workspace/facts/parse.rs", "artifacts::LINKED_IR"),
-        ("registers/review_ir_parse.rs", "artifacts::LINKED_IR"),
+        ("artifacts/linked_ir_read.rs", "LINKED_IR"),
     ];
     for (relative, identity) in required_uses {
         let source =
@@ -203,6 +202,18 @@ fn persistent_artifact_identities_have_one_owner() {
         assert!(
             production.contains(identity),
             "persistent artifact boundary {relative} does not use canonical {identity}"
+        );
+    }
+    for relative in [
+        "registers/facts.rs",
+        "registers/review_ir_parse.rs",
+        "interfaces/facts/parse.rs",
+        "function_workspace/facts/parse.rs",
+    ] {
+        let source = fs::read_to_string(root.join(relative)).expect("read artifact consumer");
+        assert!(
+            !source.contains("serde_json::Value") && !source.contains("Map<String, Value>"),
+            "artifact consumer {relative} restored a handwritten JSON tree reader"
         );
     }
     for removed in ["project_ir_report.rs", "symbol_inventory_report.rs"] {

@@ -21,6 +21,7 @@ mod orchestration;
 mod parse;
 mod platform_pack;
 mod project;
+mod project_analysis;
 mod project_ir;
 mod project_ir_report;
 mod registers;

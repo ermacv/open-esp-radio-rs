@@ -29,7 +29,7 @@ the ignored `generated/` tree rather than in a public target pack.
 | --- | --- |
 | `configuration` | Backend/ABI, platform pack, compiled harness and MMIO map |
 | `inputs` | Caller-owned run spec, artifact existence, container readability and symbols |
-| `analysis` | Linked-IR/pseudo-Rust profiles, MMIO facts and interface facts |
+| `analysis` | Complete symbol inventory, linked-IR/pseudo-Rust profiles, MMIO facts and interface facts |
 | `review` | Register coverage and policy packs, interface anchors/slots, functions and context fields |
 | `verification` | Parsed scenario profiles, dispositions and the accepted evidence baseline |
 | `publication` | Exact current SVD, Rust PAC and binding index derived from reviewed registers |

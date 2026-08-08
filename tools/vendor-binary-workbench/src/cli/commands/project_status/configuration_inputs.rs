@@ -79,10 +79,14 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
 
 pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     let Some(run_spec) = context.run_spec else {
-        let status = if context.project.ir_profiles.is_empty() {
-            Readiness::NotConfigured
-        } else {
+        let has_artifact_analysis = context.project.symbol_inventory.is_some()
+            || !context.project.ir_profiles.is_empty()
+            || context.project.registers.is_some()
+            || context.project.interfaces.is_some();
+        let status = if has_artifact_analysis {
             Readiness::Incomplete
+        } else {
+            Readiness::NotConfigured
         };
         let mut component = Component::new("run_spec", status)
             .diagnostic("caller-owned artifact bindings are unavailable");

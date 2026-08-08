@@ -241,3 +241,43 @@ fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
 
     std::fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn project_symbol_inventory_supplies_the_default_report_path() {
+    let directory = fixture_directory("symbol-inventory");
+    write_target(&directory.join("target.spec"), None);
+    write_project(
+        &directory.join(DEFAULT_PROJECT_MANIFEST),
+        "run-spec = \"project.run\"\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+    );
+    std::fs::write(
+        directory.join("project.run"),
+        "schema 1\ninput artifact vendor.elf\n",
+    )
+    .unwrap();
+
+    let resolved = resolve_from(
+        parse(&[
+            "symbols",
+            "inventory",
+            "--check",
+            "--project",
+            directory.join(DEFAULT_PROJECT_MANIFEST).to_str().unwrap(),
+        ]),
+        &directory,
+    )
+    .unwrap();
+    let ResolvedInvocation::Command(resolved) = resolved else {
+        panic!("expected an ordinary resolved command")
+    };
+    let CommandArguments::SymbolInventory(arguments) = resolved.arguments else {
+        panic!("expected symbol-inventory arguments")
+    };
+    assert!(arguments.check);
+    assert_eq!(
+        arguments.json_report,
+        Some(directory.join("generated/symbols.json"))
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}

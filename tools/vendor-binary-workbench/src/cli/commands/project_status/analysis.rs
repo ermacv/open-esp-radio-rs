@@ -15,11 +15,35 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     Phase::collect(
         "analysis",
         vec![
+            symbol_inventory(context),
             linked_ir(context),
             mmio_facts(context),
             interface_facts(context),
         ],
     )
+}
+
+fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
+    let Some(spec) = &context.project.symbol_inventory else {
+        return Component::new("symbol_inventory", Readiness::NotConfigured);
+    };
+    if !spec.output.is_file() {
+        return Component::new("symbol_inventory", Readiness::Incomplete)
+            .detail("path", spec.output.display().to_string())
+            .diagnostic("symbol inventory has not been generated");
+    }
+    match super::super::symbol_inventory::inspect_report(&spec.output) {
+        Ok(summary) => Component::new("symbol_inventory", Readiness::Ready)
+            .detail("path", spec.output.display().to_string())
+            .detail("artifacts", summary.artifacts)
+            .detail("symbol_facts", summary.symbol_facts)
+            .detail("exported_definitions", summary.exported_definitions)
+            .detail("undefined", summary.undefined)
+            .detail("unresolved_or_associated", summary.unresolved_or_associated),
+        Err(error) => Component::new("symbol_inventory", Readiness::Invalid)
+            .detail("path", spec.output.display().to_string())
+            .diagnostic(error),
+    }
 }
 
 fn linked_ir(context: &ProjectContext<'_>) -> Component {

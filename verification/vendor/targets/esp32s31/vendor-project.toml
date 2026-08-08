@@ -7,6 +7,9 @@ platform-pack = "platform.toml"
 memory-map = "memory.toml"
 svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
 
+[analysis.symbols]
+output = "generated/findings/symbols.json"
+
 [[analysis.ir]]
 id = "rom-phy"
 sources = ["rom"]

@@ -42,9 +42,9 @@ cargo vendor-binary-workbench project analyze --check \
   --run-spec /path/to/local.run
 ```
 
-This generates or checks MMIO/interface facts, both linked-IR profiles, and the
-register/function reviews, then validates the reviewed register, interface,
-and function files.
+This generates or checks the complete symbol inventory, MMIO/interface facts,
+both linked-IR profiles, and the register/function reviews, then validates the
+reviewed register, interface, and function files.
 It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
 code. The public register release gate needs no private run spec:
 

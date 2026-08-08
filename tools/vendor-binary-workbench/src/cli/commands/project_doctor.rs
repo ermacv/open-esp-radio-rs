@@ -108,6 +108,36 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
     errors += ir_errors;
     warnings += ir_warnings;
 
+    match &context.project.symbol_inventory {
+        None => outputln!("CAPABILITY\tsymbol-inventory\tnot-configured"),
+        Some(spec) if !spec.output.is_file() => {
+            warnings += 1;
+            outputln!(
+                "CAPABILITY\tsymbol-inventory\tnot-generated\tpath={}",
+                spec.output.display()
+            );
+        }
+        Some(spec) => match super::symbol_inventory::inspect_report(&spec.output) {
+            Ok(summary) => outputln!(
+                "CAPABILITY\tsymbol-inventory\tavailable\tartifacts={}\tsymbol-facts={}\texported-definitions={}\tundefined={}\tunresolved-or-associated={}\tpath={}",
+                summary.artifacts,
+                summary.symbol_facts,
+                summary.exported_definitions,
+                summary.undefined,
+                summary.unresolved_or_associated,
+                spec.output.display(),
+            ),
+            Err(error) => {
+                errors += 1;
+                outputln!(
+                    "CAPABILITY\tsymbol-inventory\tinvalid\tpath={}\terror={}",
+                    spec.output.display(),
+                    error
+                );
+            }
+        },
+    }
+
     let (function_errors, function_warnings) =
         super::project_function_doctor::inspect(context.project);
     errors += function_errors;

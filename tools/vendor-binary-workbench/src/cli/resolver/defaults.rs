@@ -55,6 +55,15 @@ pub(super) fn apply_project_defaults(
     project: Option<&ProjectSpec>,
     memory_map: Option<&MemoryMap>,
 ) -> Result<()> {
+    if command == Command::SymbolInventory
+        && let CommandArguments::SymbolInventory(arguments) = command_arguments
+        && arguments.json_report.is_none()
+        && let Some(path) = project
+            .and_then(|project| project.symbol_inventory.as_ref())
+            .map(|symbols| &symbols.output)
+    {
+        arguments.json_report = Some(path.clone());
+    }
     if command == Command::DiscoverMmio
         && let Some(memory_map) = memory_map
         && let CommandArguments::MmioDiscover(arguments) = command_arguments

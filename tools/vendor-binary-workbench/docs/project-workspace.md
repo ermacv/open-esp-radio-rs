@@ -36,6 +36,9 @@ platform-pack = "platform.toml"
 memory-map = "memory.toml"
 svd = ["registers/vendor.svd", "registers/reviewed.svd"]
 
+[analysis.symbols]
+output = "generated/findings/symbols.json"
+
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
@@ -117,6 +120,12 @@ profiles from `source-artifact:ID` bindings in the local run spec; `--check`
 verifies that existing JSON and pseudo-Rust documents match. See
 [project linked-IR builds](project-ir-build.md) for the schema and companion
 rules.
+
+Optional `[analysis.symbols]` gives the complete cross-input symbol inventory
+a stable project-relative `output`. `symbols inventory` uses that destination
+by default, and `project analyze` writes or checks it before the other
+analysis roots. Project inventories are intentionally unfiltered; focused
+prefix or undefined-only views remain ad-hoc CLI investigations.
 
 If the project omits the top-level `svd` key, target-spec SVD catalogs remain
 the fallback. An explicit `svd = []` disables that fallback. This is useful

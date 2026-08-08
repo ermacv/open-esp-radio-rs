@@ -22,6 +22,8 @@ The implementation is split by responsibility:
 - `platform_pack` validates the project-level composition of target ABI,
   optional harness and reusable semantic catalogs without teaching those
   semantics to the backend;
+- `project_analysis` owns project-level generic analysis artifacts such as the
+  complete symbol inventory and their output-collision invariants;
 - `verification` owns profiles, dispositions, evidence and comparisons;
 - `harnesses::esp32s31` is a thin registry facade over the two ESP32-S31
   harness crates;

@@ -104,6 +104,9 @@ pub(crate) struct ReviewArgs {
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct SymbolInventoryArgs {
+    /// Verify that the configured report is current without changing it.
+    #[arg(long)]
+    pub(crate) check: bool,
     /// Write the machine-readable symbol inventory.
     #[arg(long)]
     pub(crate) json_report: Option<PathBuf>,

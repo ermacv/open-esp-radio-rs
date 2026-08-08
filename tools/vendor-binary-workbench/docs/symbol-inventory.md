@@ -15,6 +15,19 @@ Use `--name-prefix PREFIX` for a focused investigation and
 `--undefined-only` to list imports. Both filters affect emitted `SYMBOL` rows
 and the JSON `symbols` array; summary counts still describe the complete input.
 
+A project can own the complete, unfiltered inventory destination:
+
+```toml
+[analysis.symbols]
+output = "generated/findings/symbols.json"
+```
+
+With that table, `--json-report` is optional. `symbols inventory --check`
+recreates and compares the report without modifying it. `project analyze`
+includes the same operation as its first independent evidence stage. Filters
+remain CLI-only so a project artifact cannot silently omit symbols needed by
+later manual analysis.
+
 ## What is an artifact fact
 
 The backend retains, for every named static or dynamic symbol:
@@ -107,7 +120,8 @@ effect vocabulary.
 ## Recommended project flow
 
 1. Run `project doctor` to validate configuration and parse every input.
-2. Save `symbols inventory` as immutable artifact facts.
+2. Run `project analyze` to save the configured complete symbol inventory and
+   other generated evidence, or use `symbols inventory` directly.
 3. Add the fully linked ELF when exact symbol selection is needed.
 4. Run `interfaces discover` to recover pointer roots, load chains, indirect
    call sites and ABI argument provenance without assigning slot semantics.

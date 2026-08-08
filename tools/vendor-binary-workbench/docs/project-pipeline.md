@@ -26,6 +26,7 @@ The pipeline owns only reproducible evidence and read-only validation:
 
 | Stage | Project configuration | Writes in default mode | Behavior with `--check` |
 | --- | --- | --- | --- |
+| `symbol-inventory` | `[analysis.symbols]`, run spec | complete symbol/linkage facts JSON | render and compare facts |
 | `mmio-discovery` | `[registers].facts`, memory map, run spec | MMIO facts JSON | render and compare facts |
 | `interface-discovery` | `[interfaces].facts`, run spec | interface facts JSON | render and compare facts |
 | `linked-ir` | `[[analysis.ir]]`, run spec | linked-IR JSON and optional pseudo-Rust | render and compare every profile output |
@@ -51,9 +52,11 @@ turning inferred names, field partitions, or semantics into a public API.
 
 ## Dependencies and failure behavior
 
-The three analysis roots run independently:
+The four analysis roots run independently:
 
 ```text
+symbol inventory ─────────> immutable navigation/linkage facts
+
 MMIO discovery ─────┬─> register validation
                     └─> register review <── linked IR (when linked by the project)
 
@@ -118,8 +121,8 @@ with authenticated artifact paths. In that case, running `project analyze
 `blocked`. That is intentionally stricter than `project doctor`, where an
 omitted local run spec is only a readiness warning.
 
-Both discovery commands also expose the same non-mutating primitive for narrow
-workflows:
+The artifact inventory and both discovery commands expose the same
+non-mutating primitive for narrow workflows:
 
 ```console
 cargo vendor-binary-workbench mmio discover \
@@ -128,6 +131,11 @@ cargo vendor-binary-workbench mmio discover \
   --check
 
 cargo vendor-binary-workbench interfaces discover \
+  --project path/to/vendor-project.toml \
+  --run-spec /path/to/local.run \
+  --check
+
+cargo vendor-binary-workbench symbols inventory \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.run \
   --check

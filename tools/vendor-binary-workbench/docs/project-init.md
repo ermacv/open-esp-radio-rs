@@ -83,6 +83,7 @@ and symbol resolution.
 Then perform the first discovery and initialize reviewed packs:
 
 ```console
+cargo vendor-binary-workbench symbols inventory --project PATH/vendor-project.toml --run-spec PATH/local.run
 cargo vendor-binary-workbench mmio discover --project PATH/vendor-project.toml --run-spec PATH/local.run
 cargo vendor-binary-workbench interfaces discover --project PATH/vendor-project.toml --run-spec PATH/local.run
 cargo vendor-binary-workbench ir build --project PATH/vendor-project.toml --run-spec PATH/local.run

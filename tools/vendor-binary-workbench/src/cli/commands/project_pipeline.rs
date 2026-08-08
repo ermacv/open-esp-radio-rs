@@ -5,7 +5,7 @@ use std::path::Path;
 use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
 use crate::cli::{
     InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
-    RegisterReviewArgs, ReviewArgs, SourcePath, ValidationArgs,
+    RegisterReviewArgs, ReviewArgs, SourcePath, SymbolInventoryArgs, ValidationArgs,
 };
 use crate::{
     MemoryMap,
@@ -37,6 +37,25 @@ pub(super) fn run(
         deny_unreviewed: arguments.deny_unreviewed,
     };
     let mut summary = PipelineSummary::default();
+
+    let symbols = if let Some(symbols) = project.symbol_inventory.as_ref() {
+        match run_spec {
+            Some(run_spec) => execute("symbol-inventory", mode.generated_success(), || {
+                super::symbol_inventory::run(
+                    SymbolInventoryArgs {
+                        check: mode.is_check(),
+                        json_report: Some(symbols.output.clone()),
+                        ..Default::default()
+                    },
+                    run_spec,
+                )
+            }),
+            None => StageOutcome::Blocked("run-spec is not configured".to_owned()),
+        }
+    } else {
+        StageOutcome::NotConfigured("[analysis.symbols] is absent".to_owned())
+    };
+    report("symbol-inventory", &symbols, &mut summary);
 
     let mmio = if let Some(registers) = project.registers.as_ref() {
         match (run_spec, memory_map) {

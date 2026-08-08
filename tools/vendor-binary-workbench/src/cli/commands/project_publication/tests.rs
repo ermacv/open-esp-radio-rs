@@ -147,6 +147,7 @@ bitWidth = 1
         memory_map: None,
         svd_configured: false,
         svd_paths: Vec::new(),
+        symbol_inventory: None,
         ir_profiles: Vec::new(),
         registers: Some(paths),
         interfaces: None,

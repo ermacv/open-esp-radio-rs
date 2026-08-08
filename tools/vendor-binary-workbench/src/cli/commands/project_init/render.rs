@@ -13,6 +13,10 @@ memory-map = \"memory.toml\"\n\
 svd = []\n",
         options.id
     );
+    output.push_str(
+        "\n[analysis.symbols]\n\
+output = \"generated/findings/symbols.json\"\n",
+    );
     for source in &options.sources {
         output.push_str(&format!(
             "\n[[analysis.ir]]\n\
@@ -126,6 +130,7 @@ cp run.spec.example local.run\n\
 cargo vendor-binary-workbench project doctor --project vendor-project.toml --run-spec local.run\n\
 cargo vendor-binary-workbench project configure --project vendor-project.toml --check\n\
 cargo vendor-binary-workbench project status --project vendor-project.toml --run-spec local.run\n\
+cargo vendor-binary-workbench symbols inventory --project vendor-project.toml --run-spec local.run\n\
 cargo vendor-binary-workbench mmio discover --project vendor-project.toml --run-spec local.run\n\
 cargo vendor-binary-workbench interfaces discover --project vendor-project.toml --run-spec local.run\n\
 cargo vendor-binary-workbench ir build --project vendor-project.toml --run-spec local.run\n\

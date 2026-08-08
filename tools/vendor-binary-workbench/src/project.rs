@@ -12,6 +12,7 @@ use toml_edit::{DocumentMut, Item};
 use crate::{
     Result,
     platform_pack::PlatformPack,
+    project_analysis::{SymbolInventorySpec, load_symbol_inventory},
     project_ir::{ProjectIrProfile, load_ir_profiles},
 };
 
@@ -96,6 +97,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_configured: bool,
     pub(crate) svd_paths: Vec<PathBuf>,
+    pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) ir_profiles: Vec<ProjectIrProfile>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
@@ -190,6 +192,7 @@ impl ProjectSpec {
             .transpose()?
             .unwrap_or_default();
         let ir_profiles = load_ir_profiles(&document, base)?;
+        let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles)?;
         let registers = document
             .get("registers")
             .map(|item| -> Result<RegisterWorkspacePaths> {
@@ -426,6 +429,21 @@ impl ProjectSpec {
                 })
             })
             .transpose()?;
+        if let Some(symbols) = &symbol_inventory {
+            let conflicting_fact = registers
+                .as_ref()
+                .map(|paths| &paths.facts)
+                .into_iter()
+                .chain(interfaces.as_ref().map(|paths| &paths.facts))
+                .find(|path| **path == symbols.output);
+            if let Some(path) = conflicting_fact {
+                return Err(format!(
+                    "project symbol inventory reuses another analysis facts path {}",
+                    path.display()
+                )
+                .into());
+            }
+        }
         Ok(Self {
             id,
             target_spec,
@@ -434,6 +452,7 @@ impl ProjectSpec {
             memory_map,
             svd_configured,
             svd_paths,
+            symbol_inventory,
             ir_profiles,
             registers,
             interfaces,
@@ -580,6 +599,9 @@ run-spec = "local.run"
 memory-map = "memory.toml"
 svd = ["registers/base.svd"]
 
+[analysis.symbols]
+output = "generated/symbols.json"
+
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
@@ -639,6 +661,12 @@ output = "generated/function-review.md"
         assert_eq!(project.memory_map, Some(directory.join("memory.toml")));
         assert!(project.svd_configured);
         assert_eq!(project.svd_paths, [directory.join("registers/base.svd")]);
+        assert_eq!(
+            project.symbol_inventory,
+            Some(SymbolInventorySpec {
+                output: directory.join("generated/symbols.json"),
+            })
+        );
         assert_eq!(
             project.ir_profiles,
             [ProjectIrProfile {
@@ -747,6 +775,39 @@ output = "generated/function-review.md"
                 .contains("semantic catalogs belong to the platform pack")
         );
 
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn rejects_symbol_inventory_collisions_with_other_analysis_facts() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-workbench-project-analysis-collision-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
+        std::fs::write(
+            &manifest,
+            r#"
+schema = 1
+id = "fixture"
+target-spec = "target.spec"
+
+[analysis.symbols]
+output = "generated/facts.json"
+
+[registers]
+facts = "generated/facts.json"
+model = "registers/device.toml"
+"#,
+        )
+        .unwrap();
+        assert!(
+            ProjectSpec::load(&manifest)
+                .unwrap_err()
+                .to_string()
+                .contains("reuses another analysis facts path")
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 

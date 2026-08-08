@@ -24,6 +24,14 @@ fn run(arguments: &[&str]) -> Output {
         .expect("run vendor-binary-workbench")
 }
 
+fn write_rv32_symbol_fixture(path: &Path) {
+    let bytes = include_str!("fixtures/symbols-rv32.hex")
+        .split_ascii_whitespace()
+        .map(|octet| u8::from_str_radix(octet, 16).unwrap())
+        .collect::<Vec<_>>();
+    std::fs::write(path, bytes).unwrap();
+}
+
 #[test]
 fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     let output = run(&[
@@ -176,4 +184,110 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(report["data"]["status"], "failed");
     assert!(report["data"]["blocked"].as_u64().unwrap() > 0);
     assert!(report["data"]["stages"].is_array());
+    assert!(
+        report["data"]["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|stage| { stage["name"] == "symbol-inventory" && stage["status"] == "blocked" })
+    );
+}
+
+#[test]
+fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-symbol-project-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let target = repository_root().join("verification/vendor/targets/esp32s31/target.spec");
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        format!(
+            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+            target.display().to_string()
+        ),
+    )
+    .unwrap();
+    let artifact = directory.join("vendor.o");
+    write_rv32_symbol_fixture(&artifact);
+    let run_spec = directory.join("local.run");
+    std::fs::write(
+        &run_spec,
+        format!("schema 1\ninput artifact {}\n", artifact.display()),
+    )
+    .unwrap();
+
+    for (check, expected_stage_status) in [(false, "written"), (true, "verified")] {
+        let mut command = workbench();
+        command
+            .current_dir(repository_root())
+            .args(["project", "analyze", "--project"])
+            .arg(&manifest)
+            .arg("--run-spec")
+            .arg(&run_spec)
+            .args(["--format", "json", "--color", "never"]);
+        if check {
+            command.arg("--check");
+        }
+        let output = command.output().expect("run project symbol inventory");
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout)
+            .expect("project analysis stdout must be valid JSON");
+        let analysis = document["records"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|record| record["kind"] == "project-analysis")
+            .expect("project-analysis record");
+        assert_eq!(analysis["data"]["status"], "ok");
+        let symbol_stage = analysis["data"]["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|stage| stage["name"] == "symbol-inventory")
+            .expect("symbol-inventory stage");
+        assert_eq!(symbol_stage["status"], expected_stage_status);
+    }
+
+    let report = directory.join("generated/symbols.json");
+    let document: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
+    assert_eq!(document["schema_version"], 2);
+    assert_eq!(document["command"], "symbols inventory");
+    assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
+
+    let status = workbench()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run project status");
+    assert!(status.status.success());
+    let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
+    let status = status["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["kind"] == "project-status")
+        .expect("project-status record");
+    let symbol_component = status["data"]["phases"]["analysis"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|component| component["name"] == "symbol_inventory")
+        .expect("symbol_inventory component");
+    assert_eq!(symbol_component["status"], "ready");
+    assert_eq!(symbol_component["exported_definitions"], 1);
+    assert_eq!(symbol_component["undefined"], 1);
+    std::fs::remove_dir_all(directory).unwrap();
 }

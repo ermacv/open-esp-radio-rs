@@ -1,9 +1,14 @@
-//! Project artifact and symbol facts for manual linkage analysis.
+//! CLI filtering and presentation for the stored symbol inventory.
 
 use serde::Serialize;
 
 use super::super::*;
-use crate::run_spec::RunSpec;
+use crate::{
+    artifacts::{
+        SymbolInventoryDocument, build_symbol_inventory_document, render_symbol_inventory,
+    },
+    run_spec::RunSpec,
+};
 
 type Options = SymbolInventoryArgs;
 
@@ -15,6 +20,14 @@ impl Options {
             && (!self.undefined_only
                 || symbol.fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined)
     }
+}
+
+#[derive(Serialize)]
+struct CommandDocument<'a> {
+    #[serde(flatten)]
+    artifact: &'a SymbolInventoryDocument,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
 }
 
 fn optional_human(value: Option<&str>) -> &str {
@@ -134,171 +147,6 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
     );
 }
 
-#[derive(Serialize)]
-struct ArtifactIdentity {
-    path: String,
-    sha256: String,
-}
-
-#[derive(Serialize)]
-struct ArtifactDocument<'a> {
-    index: usize,
-    artifact: ArtifactIdentity,
-    roles: &'a [String],
-    sources: &'a [String],
-    container: &'static str,
-    objects: usize,
-    skipped_members: usize,
-}
-
-#[derive(Serialize)]
-struct CandidateDocument<'a> {
-    artifact: usize,
-    member: Option<&'a str>,
-    address: String,
-    kind: &'static str,
-}
-
-#[derive(Serialize)]
-struct SymbolDocument<'a> {
-    artifact: usize,
-    member: Option<&'a str>,
-    object_kind: &'static str,
-    table: &'static str,
-    name: &'a str,
-    binding: String,
-    visibility: String,
-    kind: &'static str,
-    definition: &'static str,
-    section: Option<&'a str>,
-    address: String,
-    size: u64,
-    scope: &'static str,
-    resolution: &'static str,
-    candidates: Vec<CandidateDocument<'a>>,
-}
-
-#[derive(Serialize)]
-struct SummaryDocument {
-    artifacts: usize,
-    symbol_facts: usize,
-    emitted: usize,
-    exported_definitions: usize,
-    undefined: usize,
-    unresolved_or_associated: usize,
-}
-
-#[derive(Serialize)]
-struct InventoryDocument<'a> {
-    schema_version: u32,
-    command: &'static str,
-    linkage_mode: &'static str,
-    linker_resolution_claim: bool,
-    artifacts: Vec<ArtifactDocument<'a>>,
-    symbols: Vec<SymbolDocument<'a>>,
-    summary: SummaryDocument,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    publication: Option<crate::cli::output::Publication>,
-}
-
-fn document<'a>(
-    inventory: &'a ProjectLinkageInventory,
-    options: &Options,
-    publication: Option<crate::cli::output::Publication>,
-) -> Result<InventoryDocument<'a>> {
-    let symbols = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| options.includes(symbol))
-        .collect::<Vec<_>>();
-    let undefined = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| {
-            symbol.fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined
-        })
-        .count();
-    let exported = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| symbol.fact.is_exported_definition())
-        .count();
-    let unresolved = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| symbol.resolution.is_unresolved())
-        .count();
-    Ok(InventoryDocument {
-        schema_version: crate::artifacts::SYMBOL_INVENTORY.version,
-        command: crate::artifacts::SYMBOL_INVENTORY.command,
-        linkage_mode: "association-only",
-        linker_resolution_claim: false,
-        artifacts: inventory
-            .artifacts
-            .iter()
-            .enumerate()
-            .map(|(index, artifact)| {
-                Ok(ArtifactDocument {
-                    index,
-                    artifact: ArtifactIdentity {
-                        path: artifact.path.display().to_string(),
-                        sha256: artifact_sha256(&artifact.path)?,
-                    },
-                    roles: &artifact.roles,
-                    sources: &artifact.sources,
-                    container: artifact.container.label(),
-                    objects: artifact.objects,
-                    skipped_members: artifact.skipped_members,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?,
-        symbols: symbols
-            .iter()
-            .map(|symbol| SymbolDocument {
-                artifact: symbol.artifact,
-                member: symbol.member.as_deref(),
-                object_kind: symbol.object_kind.label(),
-                table: symbol.fact.table.label(),
-                name: &symbol.fact.name,
-                binding: symbol.fact.binding.label(),
-                visibility: symbol.fact.visibility.label(),
-                kind: symbol.fact.kind.label(),
-                definition: symbol.fact.definition.label(),
-                section: symbol.fact.section.as_deref(),
-                address: format!("{:#x}", symbol.fact.address),
-                size: symbol.fact.size,
-                scope: symbol.fact.scope.label(),
-                resolution: symbol.resolution.label(),
-                candidates: symbol
-                    .candidates
-                    .iter()
-                    .map(|candidate| CandidateDocument {
-                        artifact: candidate.artifact,
-                        member: candidate.member.as_deref(),
-                        address: format!("{:#x}", candidate.address),
-                        kind: candidate.kind.label(),
-                    })
-                    .collect(),
-            })
-            .collect(),
-        summary: SummaryDocument {
-            artifacts: inventory.artifacts.len(),
-            symbol_facts: inventory.symbols.len(),
-            emitted: symbols.len(),
-            exported_definitions: exported,
-            undefined,
-            unresolved_or_associated: unresolved,
-        },
-        publication,
-    })
-}
-
-fn render_json_report(document: &InventoryDocument<'_>) -> Result<String> {
-    let mut output = serde_json::to_string_pretty(&document)?;
-    output.push('\n');
-    Ok(output)
-}
-
 pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bool> {
     if options.check && options.json_report.is_none() {
         return Err(crate::Error::invalid(
@@ -311,6 +159,7 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         .map(|input| (input.role.to_string(), input.path.clone()))
         .collect::<Vec<_>>();
     let inventory = build_project_linkage_inventory(&inputs)?;
+    let artifact = build_symbol_inventory_document(&inventory, |symbol| options.includes(symbol))?;
     let publication = options.json_report.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
@@ -318,16 +167,17 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         )
     });
     if let Some(path) = options.json_report.as_deref() {
-        let stored_document = document(&inventory, &options, None)?;
-        let output = render_json_report(&stored_document)?;
         crate::application::generated_file::write_or_check(
             path,
-            &output,
+            &render_symbol_inventory(&artifact)?,
             options.check,
             "symbol inventory",
         )?;
     }
-    let document = document(&inventory, &options, publication.clone())?;
+    let document = CommandDocument {
+        artifact: &artifact,
+        publication: publication.clone(),
+    };
     if !crate::cli::output::structured(&document) {
         print_report_human(&inventory, &options);
         if let Some(publication) = publication {

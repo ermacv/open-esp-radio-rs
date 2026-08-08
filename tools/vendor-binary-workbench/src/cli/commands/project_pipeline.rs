@@ -5,7 +5,7 @@ use std::path::Path;
 use super::{MmioMap, Result, TargetSpec};
 use crate::cli::{
     InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
-    SourcePath, SymbolInventoryArgs,
+    SourcePath,
 };
 use crate::{
     MemoryMap,
@@ -70,20 +70,10 @@ impl CliProjectAnalysisOperations<'_> {
 
 impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
     fn symbol_inventory(&mut self, check: bool) -> Result<bool> {
-        let output = self
-            .project
-            .symbol_inventory
-            .as_ref()
-            .ok_or_else(|| crate::Error::invalid("[analysis.symbols] is absent"))?
-            .output
-            .clone();
-        super::symbol_inventory::run(
-            SymbolInventoryArgs {
-                check,
-                json_report: Some(output),
-                ..Default::default()
-            },
+        crate::application::project_analysis::build_symbol_inventory(
+            self.project,
             self.run_spec()?,
+            check,
         )
     }
 

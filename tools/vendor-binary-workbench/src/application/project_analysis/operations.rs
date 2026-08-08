@@ -2,6 +2,8 @@
 
 use crate::{
     MemoryMap, Result, TargetSpec,
+    analysis::build_project_linkage_inventory,
+    artifacts::{build_symbol_inventory_document, render_symbol_inventory},
     function_workspace::{FunctionWorkspace, link_reviewed_interfaces, render_function_review},
     interfaces::InterfaceWorkspace,
     project::ProjectSpec,
@@ -10,7 +12,34 @@ use crate::{
         validate_pac_api, validate_register_evidence, validate_register_lints,
         validate_register_memory_map,
     },
+    run_spec::RunSpec,
 };
+
+pub(crate) fn build_symbol_inventory(
+    project: &ProjectSpec,
+    run_spec: &RunSpec,
+    check: bool,
+) -> Result<bool> {
+    let output = &project
+        .symbol_inventory
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[analysis.symbols] is absent"))?
+        .output;
+    let inputs = run_spec
+        .inputs()
+        .iter()
+        .map(|input| (input.role.to_string(), input.path.clone()))
+        .collect::<Vec<_>>();
+    let inventory = build_project_linkage_inventory(&inputs)?;
+    let document = build_symbol_inventory_document(&inventory, |_| true)?;
+    super::super::generated_file::write_or_check(
+        output,
+        &render_symbol_inventory(&document)?,
+        check,
+        "symbol inventory",
+    )?;
+    Ok(true)
+}
 
 pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<bool> {
     let output = &project

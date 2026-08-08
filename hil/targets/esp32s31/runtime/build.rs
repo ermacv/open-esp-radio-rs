@@ -37,7 +37,6 @@ fn main() {
         "OPEN_RADIO_RAW_MAC_BENCH",
         "OPEN_RADIO_STA_CHANNEL",
         "OPEN_RADIO_STA_GATEWAY_IPV4",
-        "OPEN_RADIO_STA_IPV4",
         "OPEN_RADIO_TX_BENCH",
     ] {
         println!("cargo:rerun-if-env-changed={variable}");

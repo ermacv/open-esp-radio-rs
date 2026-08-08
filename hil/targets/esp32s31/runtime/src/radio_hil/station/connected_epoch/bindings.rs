@@ -13,6 +13,7 @@ use open_esp_radio::{
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, rx_pipeline::RxPipelineCounters,
 };
+use open_esp_radio_hil_protocol::NetworkIpv4Configuration;
 use static_cell::StaticCell;
 
 use crate::{
@@ -59,7 +60,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedEpochServices {
 #[derive(Clone, Copy)]
 pub(in crate::radio_hil) struct RadioHilConnectedEpochPolicy {
     pub(in crate::radio_hil) station: Esp32s31ConnectedStaConfig,
-    pub(in crate::radio_hil) static_ipv4: Option<([u8; 4], [u8; 4])>,
+    pub(in crate::radio_hil) ipv4: NetworkIpv4Configuration,
 }
 
 /// Complete HIL adapter supplied to the production connected transaction.

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 9;
+pub const PROTOCOL_VERSION: u16 = 10;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -301,6 +301,74 @@ impl Drop for NetworkCredentials {
     }
 }
 
+/// IPv4 policy selected by the host for this boot.
+///
+/// Keeping this in startup provisioning lets one qualified firmware image run
+/// against both an ordinary DHCP network and an isolated HIL access point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum NetworkIpv4Configuration {
+    Dhcp,
+    Static {
+        address: [u8; 4],
+        prefix_length: u8,
+        gateway: Option<[u8; 4]>,
+    },
+}
+
+impl NetworkIpv4Configuration {
+    pub fn validate(self) -> bool {
+        match self {
+            Self::Dhcp => true,
+            Self::Static {
+                address,
+                prefix_length,
+                gateway,
+            } => {
+                prefix_length <= 32
+                    && address != [0, 0, 0, 0]
+                    && address != [255, 255, 255, 255]
+                    && match gateway {
+                        Some(gateway) => gateway != [0, 0, 0, 0] && gateway != [255, 255, 255, 255],
+                        None => true,
+                    }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct NetworkConfiguration {
+    pub credentials: NetworkCredentials,
+    pub ipv4: NetworkIpv4Configuration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NetworkConfigurationError {
+    Credentials(NetworkCredentialsError),
+    Ipv4Configuration,
+}
+
+impl fmt::Display for NetworkConfigurationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Credentials(error) => error.fmt(formatter),
+            Self::Ipv4Configuration => formatter.write_str("invalid IPv4 configuration"),
+        }
+    }
+}
+
+impl NetworkConfiguration {
+    pub fn validate(&self) -> Result<(), NetworkConfigurationError> {
+        self.credentials
+            .validate()
+            .map_err(NetworkConfigurationError::Credentials)?;
+        if !self.ipv4.validate() {
+            return Err(NetworkConfigurationError::Ipv4Configuration);
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub features: FeatureCapabilities,
@@ -312,7 +380,7 @@ pub struct Capabilities {
 pub enum Command {
     GetCapabilities,
     UploadStartupArtifact(StartupArtifactChunk),
-    ProvisionNetwork(NetworkCredentials),
+    ProvisionNetwork(NetworkConfiguration),
     Configure(SessionConfig),
     Arm,
     Start,

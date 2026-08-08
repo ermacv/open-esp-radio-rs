@@ -24,7 +24,9 @@ use open_esp_radio::{
 use open_esp_radio_esp32s31_wifi_esp_hal::{
     EspHalRadioPeripheral, mac_interrupt_epoch::EspHalMacInterruptRoute,
 };
-use open_esp_radio_hil_protocol::{NetworkCredentials, StationLifecycleEvent};
+use open_esp_radio_hil_protocol::{
+    NetworkCredentials, NetworkIpv4Configuration, StationLifecycleEvent,
+};
 
 use crate::{
     console::emergency_log,
@@ -69,6 +71,7 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
     cold_mmio: ColdRadioRegisters,
     trng: &Trng,
     network_credentials: &mut NetworkCredentials,
+    network_ipv4: NetworkIpv4Configuration,
 ) -> bool {
     let platform = &mut platform;
     let Some(handoff) =
@@ -164,9 +167,9 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                 frame: scan_frame,
                 ethernet: ethernet_frame,
                 connected_tasks: connected_task_bindings(),
-                connected_rx: connected_rx_bindings(),
-                network_report: network_report_bindings(),
-                connected_epoch: connected_epoch_bindings(),
+                connected_rx: connected_rx_bindings(network_ipv4),
+                network_report: network_report_bindings(network_ipv4),
+                connected_epoch: connected_epoch_bindings(network_ipv4),
             };
             let owner = RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
                 fixture,

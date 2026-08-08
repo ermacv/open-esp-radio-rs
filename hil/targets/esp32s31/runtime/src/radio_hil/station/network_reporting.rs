@@ -62,7 +62,7 @@ async fn report_network_configuration(
             )
             .await;
             emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-dhcp \
+                "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-ready \
                  address={} gateway={:?} dns={:?} elapsed_ms={elapsed_ms}",
                 config.address, config.gateway, config.dns_servers,
             ));
@@ -128,7 +128,7 @@ async fn report_network_configuration(
     }
 
     emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=FAIL stage=embassy-net-dhcp error=timeout"
+        "OPEN_RADIO_PHY_HIL result=FAIL stage=embassy-net-ready error=timeout"
     ));
     loop {
         Timer::after_secs(60).await;

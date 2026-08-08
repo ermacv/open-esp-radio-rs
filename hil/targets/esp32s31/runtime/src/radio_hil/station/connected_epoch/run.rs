@@ -41,8 +41,8 @@ use open_esp_radio::{
     wifi::ieee80211::station::StaTxSequenceCounters,
 };
 use open_esp_radio_hil_protocol::{
-    StationDisconnectReason, StationFaultClassification, StationFaultEvidence,
-    StationLifecycleEvent,
+    NetworkIpv4Configuration, StationDisconnectReason, StationFaultClassification,
+    StationFaultEvidence, StationLifecycleEvent,
 };
 
 use crate::{
@@ -132,14 +132,17 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
             // Keep the controlled local throughput setup independent of DHCP
             // while preserving DHCP as an end-to-end router test.
-            let network_config = if let Some((address, gateway)) = policy.static_ipv4 {
-                NetworkConfig::ipv4_static(StaticConfigV4 {
-                    address: Ipv4Cidr::new(Ipv4Address::from_octets(address), 24),
-                    gateway: Some(Ipv4Address::from_octets(gateway)),
+            let network_config = match policy.ipv4 {
+                NetworkIpv4Configuration::Dhcp => NetworkConfig::dhcpv4(Default::default()),
+                NetworkIpv4Configuration::Static {
+                    address,
+                    prefix_length,
+                    gateway,
+                } => NetworkConfig::ipv4_static(StaticConfigV4 {
+                    address: Ipv4Cidr::new(Ipv4Address::from_octets(address), prefix_length),
+                    gateway: gateway.map(Ipv4Address::from_octets),
                     dns_servers: Default::default(),
-                })
-            } else {
-                NetworkConfig::dhcpv4(Default::default())
+                }),
             };
             let (stack, stack_runner) = embassy_net::new(
                 device,

@@ -87,7 +87,7 @@ reset
   -> Hello(capabilities)
   <- UploadStartupArtifact(chunk 0..N)  [optional]
   -> Accepted                           [per chunk]
-  <- ProvisionNetwork(credentials)
+  <- ProvisionNetwork(credentials, IPv4 policy)
   -> Accepted
   -> Idle
   -> PHY/MAC/STA workflow
@@ -100,12 +100,17 @@ read them at runtime from:
 ```text
 OPEN_RADIO_HIL_STA_SSID
 OPEN_RADIO_HIL_STA_PASSWORD
+OPEN_RADIO_HIL_STA_IPV4_CIDR             [optional, for example 10.42.0.138/24]
+OPEN_RADIO_HIL_STA_GATEWAY_IPV4          [optional, requires a static CIDR]
 OPEN_RADIO_HIL_STARTUP_ARTIFACT          [optional input/output path]
 ```
 
 The older `OPEN_RADIO_STA_SSID` and `OPEN_RADIO_STA_PASSWORD` names are accepted
 by the host as temporary compatibility aliases, but no longer affect firmware
-compilation. Credentials are bounded to the WPA2 limits, never echoed, never
+compilation. Without a static CIDR the target uses DHCP. Both modes use the
+same firmware image; IPv4 topology is therefore a host-owned qualification
+input rather than part of the embedded build identity. Credentials are
+bounded to the WPA2 limits, never echoed, never
 written to UART capture, redacted from `Debug`, and cleared from transient
 protocol buffers. They remain in target RAM only until PMK derivation; the
 passphrase is then cleared. The SSID may still appear in ordinary scan and

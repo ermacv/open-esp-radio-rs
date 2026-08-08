@@ -359,7 +359,7 @@ mod tests {
     fn credentials_round_trip_without_debugging_the_secret() {
         extern crate std;
 
-        use crate::NetworkCredentials;
+        use crate::{NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration};
 
         let credentials =
             NetworkCredentials::try_new(b"test-network", b"private-password").unwrap();
@@ -368,7 +368,20 @@ mod tests {
         let debug = std::format!("{credentials:?}");
         assert!(!debug.contains("private-password"));
 
-        let expected = Envelope::new(7, 1, 0, 1, Command::ProvisionNetwork(credentials));
+        let expected = Envelope::new(
+            7,
+            1,
+            0,
+            1,
+            Command::ProvisionNetwork(NetworkConfiguration {
+                credentials,
+                ipv4: NetworkIpv4Configuration::Static {
+                    address: [10, 42, 0, 138],
+                    prefix_length: 24,
+                    gateway: Some([10, 42, 0, 1]),
+                },
+            }),
+        );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();
         let mut decoder = FrameDecoder::new();

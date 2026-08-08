@@ -15,8 +15,9 @@ pub use framing::{
 };
 pub use message::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, FailureCode,
-    FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkCredentials,
-    NetworkCredentialsError, NetworkInfo, PROTOCOL_VERSION, RejectReason, ResultSummary,
+    FeatureCapabilities, Finished, FlowConfig, Ipv4Endpoint, LinkHealth, NetworkConfiguration,
+    NetworkConfigurationError, NetworkCredentials, NetworkCredentialsError, NetworkInfo,
+    NetworkIpv4Configuration, PROTOCOL_VERSION, RejectReason, ResultSummary,
     STARTUP_ARTIFACT_CHUNK_MAX_LEN, ServiceInfo, SessionConfig, SessionState, StartupArtifactChunk,
     StartupArtifactChunkError, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
     StationAttemptFailureReason, StationDisconnectReason, StationEpochEvidence,

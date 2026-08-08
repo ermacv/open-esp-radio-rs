@@ -22,11 +22,11 @@ use esp_hal::{
 use open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN;
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
-    FrameDecoder, FrameEncoder, NetworkCredentials, PROTOCOL_VERSION, RejectReason, ResultSummary,
-    STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState, StartupArtifactChunk,
-    StartupArtifactDisposition, StartupArtifactStatus, StateChange, StationEpochEvidence,
-    StationFaultEvidence, StationLifecycleEvent, Transport, TransportEvidence, evidence_crc32c,
-    startup_artifact_crc32c,
+    FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
+    ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
+    StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
+    StationEpochEvidence, StationFaultEvidence, StationLifecycleEvent, Transport,
+    TransportEvidence, evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -86,7 +86,7 @@ pub struct ActiveSession {
 }
 
 pub struct StartupConfiguration {
-    pub network_credentials: NetworkCredentials,
+    pub network: NetworkConfiguration,
     pub phy_calibration_record: Option<[u8; PHY_COLD_CALIBRATION_RECORD_LEN]>,
 }
 
@@ -426,16 +426,16 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
-                    Command::ProvisionNetwork(credentials) => {
+                    Command::ProvisionNetwork(network) => {
                         let (response, accepted) = if network_provisioned {
                             (Event::Rejected(RejectReason::InvalidState), false)
-                        } else if credentials.validate().is_err() {
+                        } else if network.validate().is_err() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if startup_artifact.started_but_incomplete() {
                             (Event::Rejected(RejectReason::InvalidConfiguration), false)
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
-                                network_credentials: credentials,
+                                network,
                                 phy_calibration_record: startup_artifact.completed_record(),
                             })
                             .is_err()

@@ -199,7 +199,10 @@ fn print_help() {
          The build command compiles and packs both HIL stages, audits the \
          PSRAM/SRAM placement contract, and emits an ESP application image.\n\
          Traffic commands provision Wi-Fi at runtime from \
-         OPEN_RADIO_HIL_STA_SSID and OPEN_RADIO_HIL_STA_PASSWORD.\n\
+         OPEN_RADIO_HIL_STA_SSID and OPEN_RADIO_HIL_STA_PASSWORD. Set \
+         OPEN_RADIO_HIL_STA_IPV4_CIDR and, optionally, \
+         OPEN_RADIO_HIL_STA_GATEWAY_IPV4 for an isolated static-IP cell; \
+         otherwise the target uses DHCP.\n\
          Run `cargo hil scenarios` for the firmware scenario list."
     );
 }

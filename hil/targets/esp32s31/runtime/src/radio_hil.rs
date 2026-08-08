@@ -103,7 +103,8 @@ use open_esp_radio_hil_esp32s31_telemetry::rx_order::RxOrderCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSet;
 use open_esp_radio_hil_protocol::{
-    Capabilities, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, StartupArtifactDisposition,
+    Capabilities, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkConfiguration,
+    NetworkIpv4Configuration, StartupArtifactDisposition,
 };
 
 mod phy_diagnostics;
@@ -712,11 +713,6 @@ const DEFAULT_STA_ARP_TARGET_IPV4: [u8; 4] = if PERF_AP_PROFILE {
 } else {
     [192, 168, 178, 1]
 };
-const DEFAULT_STA_HIL_IPV4: [u8; 4] = if PERF_AP_PROFILE {
-    [10, 42, 0, 138]
-} else {
-    [192, 168, 178, 138]
-};
 const STA_ARP_TARGET_IPV4: [u8; 4] = selected_ipv4(
     option_env!("OPEN_RADIO_STA_GATEWAY_IPV4"),
     DEFAULT_STA_ARP_TARGET_IPV4,
@@ -725,8 +721,6 @@ const OPEN_RADIO_TX_BENCH_TARGET_IPV4: [u8; 4] = selected_ipv4(
     option_env!("OPEN_RADIO_TX_BENCH_TARGET_IPV4"),
     STA_ARP_TARGET_IPV4,
 );
-const STA_HIL_IPV4: [u8; 4] =
-    selected_ipv4(option_env!("OPEN_RADIO_STA_IPV4"), DEFAULT_STA_HIL_IPV4);
 // The controlled Linux AP normally serves both as the gateway and as the
 // externally observed ARP/ping peer. Android tethering chooses a different
 // RFC 1918 prefix on every platform and therefore needs an explicit peer.
@@ -1104,21 +1098,31 @@ fn station_epoch_coordinator() -> RadioHilStationEpochCoordinator {
     )
 }
 
-fn network_report_bindings() -> RadioHilNetworkReportBindings {
+fn network_probe_ipv4(ipv4: NetworkIpv4Configuration) -> [u8; 4] {
+    match ipv4 {
+        NetworkIpv4Configuration::Static {
+            gateway: Some(gateway),
+            ..
+        } => gateway,
+        NetworkIpv4Configuration::Dhcp | NetworkIpv4Configuration::Static { .. } => LAN_PROBE_IPV4,
+    }
+}
+
+fn network_report_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilNetworkReportBindings {
     RadioHilNetworkReportBindings::new(
         &OPEN_RADIO_LOCAL_IPV4,
         &OPEN_RADIO_LAN_PROBE_RESPONSE,
         &OPEN_RADIO_LAN_PROBE_RX_S_MPDU,
-        LAN_PROBE_IPV4,
+        network_probe_ipv4(ipv4),
     )
 }
 
-fn connected_rx_bindings() -> RadioHilConnectedRxBindings {
+fn connected_rx_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilConnectedRxBindings {
     RadioHilConnectedRxBindings {
         local_ipv4: &OPEN_RADIO_LOCAL_IPV4,
         lan_probe_response: &OPEN_RADIO_LAN_PROBE_RESPONSE,
         lan_probe_rx_s_mpdu: &OPEN_RADIO_LAN_PROBE_RX_S_MPDU,
-        lan_probe_ipv4: LAN_PROBE_IPV4,
+        lan_probe_ipv4: network_probe_ipv4(ipv4),
         udp_port: OPEN_RADIO_UDP_RX_PORT,
         order_telemetry: OPEN_RADIO_RX_ORDER_TELEMETRY,
         beacon_s_mpdu: &OPEN_RADIO_RX_BEACON_S_MPDU_COUNTERS,
@@ -1142,7 +1146,7 @@ fn connected_task_bindings() -> RadioHilConnectedTaskBindings {
     )
 }
 
-fn connected_epoch_bindings() -> RadioHilConnectedEpochBindings {
+fn connected_epoch_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilConnectedEpochBindings {
     RadioHilConnectedEpochBindings {
         storage: RadioHilConnectedEpochStorage {
             stack: &OPEN_RADIO_STACK_RESOURCES,
@@ -1168,7 +1172,7 @@ fn connected_epoch_bindings() -> RadioHilConnectedEpochBindings {
         },
         policy: RadioHilConnectedEpochPolicy {
             station: radio_hil_connected_sta_config(),
-            static_ipv4: PERF_AP_PROFILE.then_some((STA_HIL_IPV4, STA_ARP_TARGET_IPV4)),
+            ipv4,
         },
     }
 }
@@ -1319,7 +1323,10 @@ pub async fn run(
         "OPEN_RADIO_PHY_HIL stage=network-config-waiting source=hil-protocol"
     ));
     let startup_configuration = crate::console::receive_startup_configuration().await;
-    let mut network_credentials = startup_configuration.network_credentials;
+    let NetworkConfiguration {
+        credentials: mut network_credentials,
+        ipv4: network_ipv4,
+    } = startup_configuration.network;
     let calibration_record = startup_configuration
         .phy_calibration_record
         .map(PhyCalibrationRecord::from_bytes);
@@ -1464,6 +1471,7 @@ pub async fn run(
         registers,
         &trng,
         &mut network_credentials,
+        network_ipv4,
     )
     .await;
     set_diagnostic_stage(250);

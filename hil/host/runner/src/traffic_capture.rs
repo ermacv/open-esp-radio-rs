@@ -15,9 +15,10 @@ use std::{
 
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
-    FrameEncoder, NetworkCredentials, SessionConfig, StartupArtifactChunk, StartupArtifactStatus,
-    StationEpochEvidence, StationFaultEvidence, StationFaultInjection, StationLifecycleEvent,
-    Transport, TransportEvidence, evidence_crc32c,
+    FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
+    SessionConfig, StartupArtifactChunk, StartupArtifactStatus, StationEpochEvidence,
+    StationFaultEvidence, StationFaultInjection, StationLifecycleEvent, Transport,
+    TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -356,7 +357,11 @@ impl SerialCapture {
         )?);
         let credentials = NetworkCredentials::try_new(ssid.as_bytes(), passphrase.as_bytes())
             .map_err(|error| format!("invalid HIL network credentials: {error}"))?;
-        let response = self.send_command(0, Command::ProvisionNetwork(credentials), timeout)?;
+        let configuration = NetworkConfiguration {
+            credentials,
+            ipv4: network_ipv4_configuration()?,
+        };
+        let response = self.send_command(0, Command::ProvisionNetwork(configuration), timeout)?;
         match response.body {
             Event::Accepted => Ok(()),
             Event::Rejected(reason) => {
@@ -793,7 +798,7 @@ pub(crate) fn await_tcp_ready(
         }
         let address = capture
             .observed_protocol_ipv4()
-            .or_else(|| observed_dhcp_ipv4(&capture.transcript()));
+            .or_else(|| observed_network_ipv4(&capture.transcript()));
         if capture.observed_service(Transport::Tcp, direction, port)
             && let Some(address) = address
         {
@@ -850,6 +855,55 @@ fn network_environment(primary: &str, compatibility: &str) -> Result<String> {
         })
 }
 
+fn network_ipv4_configuration() -> Result<NetworkIpv4Configuration> {
+    let address = std::env::var("OPEN_RADIO_HIL_STA_IPV4_CIDR").ok();
+    let gateway = std::env::var("OPEN_RADIO_HIL_STA_GATEWAY_IPV4").ok();
+    parse_network_ipv4_configuration(address.as_deref(), gateway.as_deref())
+}
+
+fn parse_network_ipv4_configuration(
+    address: Option<&str>,
+    gateway: Option<&str>,
+) -> Result<NetworkIpv4Configuration> {
+    let Some(address) = address else {
+        if gateway.is_some() {
+            return Err(
+                "OPEN_RADIO_HIL_STA_GATEWAY_IPV4 requires OPEN_RADIO_HIL_STA_IPV4_CIDR".into(),
+            );
+        }
+        return Ok(NetworkIpv4Configuration::Dhcp);
+    };
+    let (address, prefix_length) = address
+        .split_once('/')
+        .ok_or("OPEN_RADIO_HIL_STA_IPV4_CIDR must be an IPv4 CIDR")?;
+    let address = address
+        .parse::<Ipv4Addr>()
+        .map_err(|error| format!("invalid OPEN_RADIO_HIL_STA_IPV4_CIDR address: {error}"))?
+        .octets();
+    let prefix_length = prefix_length
+        .parse::<u8>()
+        .map_err(|error| format!("invalid OPEN_RADIO_HIL_STA_IPV4_CIDR prefix: {error}"))?;
+    let gateway = gateway
+        .map(|gateway| {
+            gateway
+                .parse::<Ipv4Addr>()
+                .map(|address| address.octets())
+                .map_err(|error| {
+                    format!("invalid OPEN_RADIO_HIL_STA_GATEWAY_IPV4 address: {error}")
+                })
+        })
+        .transpose()?;
+    let configuration = NetworkIpv4Configuration::Static {
+        address,
+        prefix_length,
+        gateway,
+    };
+    if !configuration.validate() {
+        return Err("invalid static HIL IPv4 configuration".into());
+    }
+    Ok(configuration)
+}
+
 /// Wait until the target owns its IPv4 address and UDP RX service.
 ///
 /// Runtime-session images use a negative warm-up datagram that cannot open a
@@ -884,7 +938,7 @@ pub(crate) fn await_udp_rx_ready(
         }
         if let Some(discovered) = capture
             .observed_protocol_ipv4()
-            .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
+            .or_else(|| observed_network_ipv4(&capture.transcript()))
             && discovered != address
         {
             address = discovered;
@@ -899,7 +953,7 @@ pub(crate) fn await_udp_rx_ready(
             || !tx_service_ready
             || capture
                 .observed_protocol_ipv4()
-                .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
+                .or_else(|| observed_network_ipv4(&capture.transcript()))
                 .is_none()
         {
             thread::sleep(Duration::from_millis(20));
@@ -971,7 +1025,7 @@ pub(crate) fn await_device_marker(
             while Instant::now() < discovery_deadline {
                 if let Some(address) = capture
                     .observed_protocol_ipv4()
-                    .or_else(|| observed_dhcp_ipv4(&capture.transcript()))
+                    .or_else(|| observed_network_ipv4(&capture.transcript()))
                 {
                     return Ok(UdpTxReady {
                         address,
@@ -994,9 +1048,9 @@ pub(crate) fn await_device_marker(
     .into())
 }
 
-fn observed_dhcp_ipv4(transcript: &str) -> Option<Ipv4Addr> {
+fn observed_network_ipv4(transcript: &str) -> Option<Ipv4Addr> {
     transcript.lines().rev().find_map(|line| {
-        if !line.contains("stage=embassy-net-dhcp") {
+        if !line.contains("stage=embassy-net-ready") {
             return None;
         }
         let address = line
@@ -1010,16 +1064,43 @@ fn observed_dhcp_ipv4(transcript: &str) -> Option<Ipv4Addr> {
 
 #[cfg(test)]
 mod tests {
-    use super::observed_dhcp_ipv4;
+    use super::{
+        NetworkIpv4Configuration, observed_network_ipv4, parse_network_ipv4_configuration,
+    };
 
     #[test]
-    fn extracts_latest_dhcp_address_from_uart_transcript() {
-        let transcript = "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-dhcp address=192.168.178.120/24 gateway=None\n\
-                          OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-dhcp address=192.168.178.121/24 gateway=None\n";
+    fn extracts_latest_network_address_from_uart_transcript() {
+        let transcript = "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-ready address=192.168.178.120/24 gateway=None\n\
+                          OPEN_RADIO_PHY_HIL result=PASS stage=embassy-net-ready address=192.168.178.121/24 gateway=None\n";
 
         assert_eq!(
-            observed_dhcp_ipv4(transcript),
+            observed_network_ipv4(transcript),
             Some("192.168.178.121".parse().unwrap())
         );
+    }
+
+    #[test]
+    fn parses_runtime_static_ipv4_configuration() {
+        assert_eq!(
+            parse_network_ipv4_configuration(Some("10.42.0.138/24"), Some("10.42.0.1")).unwrap(),
+            NetworkIpv4Configuration::Static {
+                address: [10, 42, 0, 138],
+                prefix_length: 24,
+                gateway: Some([10, 42, 0, 1]),
+            }
+        );
+    }
+
+    #[test]
+    fn defaults_runtime_ipv4_configuration_to_dhcp() {
+        assert_eq!(
+            parse_network_ipv4_configuration(None, None).unwrap(),
+            NetworkIpv4Configuration::Dhcp
+        );
+    }
+
+    #[test]
+    fn rejects_gateway_without_static_address() {
+        assert!(parse_network_ipv4_configuration(None, Some("10.42.0.1")).is_err());
     }
 }

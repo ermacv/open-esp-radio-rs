@@ -99,6 +99,26 @@ fn execution_environment_contracts_do_not_live_in_the_riscv_backend() {
 }
 
 #[test]
+fn platform_harness_dependencies_are_optional_addons() {
+    let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
+        .expect("read workbench manifest");
+    assert!(manifest.contains("default = [\"esp32s31-harness\"]"));
+    for dependency in [
+        "open-radio-vendor-harness-esp32s31",
+        "open-radio-vendor-harness-esp32s31-semantic",
+    ] {
+        let line = manifest
+            .lines()
+            .find(|line| line.starts_with(dependency))
+            .unwrap_or_else(|| panic!("missing optional dependency {dependency}"));
+        assert!(
+            line.contains("optional = true"),
+            "compiled addon dependency is unconditional: {line}"
+        );
+    }
+}
+
+#[test]
 fn register_catalog_uses_the_typed_model_without_an_xml_round_trip() {
     let source =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/register_catalog.rs"))

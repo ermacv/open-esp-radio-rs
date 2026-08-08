@@ -3,6 +3,7 @@ use std::fs;
 use super::*;
 
 #[test]
+#[cfg(feature = "esp32s31-harness")]
 fn configuration_is_validated_written_checked_and_cleared() {
     let root = std::env::temp_dir().join(format!(
         "vendor-workbench-project-configure-{}",

@@ -75,6 +75,7 @@ fn profile_evidence_is_bound_to_scenario_contents() {
 }
 
 #[test]
+#[cfg(feature = "esp32s31-harness")]
 fn semantic_evidence_is_bound_to_workbench_sources() {
     let original = semantic_contract_digest_from_sources(
         "esp32s31-channel",
@@ -143,6 +144,7 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
 }
 
 #[test]
+#[cfg(feature = "esp32s31-harness")]
 fn verification_json_report_contains_reproducible_inputs() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))

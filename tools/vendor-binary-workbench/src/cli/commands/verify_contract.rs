@@ -1,8 +1,10 @@
 //! Typed semantic-contract qualification and CLI-only presentation.
 
 use super::super::*;
+#[cfg(feature = "esp32s31-harness")]
 use crate::harnesses::{QualificationCase, QualificationDifference, QualificationReport};
 
+#[cfg(feature = "esp32s31-harness")]
 pub(super) fn run(
     arguments: VerifyContractArgs,
     svd: &MmioMap,
@@ -29,6 +31,19 @@ pub(super) fn run(
     Ok(matched)
 }
 
+#[cfg(not(feature = "esp32s31-harness"))]
+pub(super) fn run(
+    _arguments: VerifyContractArgs,
+    _svd: &MmioMap,
+    harness: &str,
+    _contract: &str,
+) -> Result<bool> {
+    Err(crate::Error::invalid(format!(
+        "platform harness {harness:?} is not compiled into this neutral workbench build"
+    )))
+}
+
+#[cfg(feature = "esp32s31-harness")]
 fn render_human(report: &QualificationReport) {
     outputln!(
         "Semantic qualification: {} — {}",
@@ -59,6 +74,7 @@ fn render_human(report: &QualificationReport) {
     );
 }
 
+#[cfg(feature = "esp32s31-harness")]
 fn render_case_human(case: &QualificationCase) {
     outputln!("  {}: {}", case.name, case.verdict.label());
     if let Some(events) = case.events {
@@ -74,6 +90,7 @@ fn render_case_human(case: &QualificationCase) {
     }
 }
 
+#[cfg(feature = "esp32s31-harness")]
 fn render_difference_human(difference: &QualificationDifference) {
     if let Some(reason) = difference.reason.as_deref() {
         outputln!("    difference: {reason}");
@@ -93,7 +110,7 @@ fn render_difference_human(difference: &QualificationDifference) {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "esp32s31-harness"))]
 mod tests {
     use super::*;
     use open_radio_vendor_harness_esp32s31_semantic::verification::QualificationSummary;

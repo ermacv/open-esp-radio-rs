@@ -115,6 +115,7 @@ pub(crate) enum WorkbenchError {
     Semantics(#[from] open_radio_vendor_semantics::Error),
     #[error(transparent)]
     RiscvBackend(#[from] open_radio_vendor_backend_riscv::Error),
+    #[cfg(feature = "esp32s31-harness")]
     #[error(transparent)]
     Esp32s31Harness(#[from] open_radio_vendor_harness_esp32s31_semantic::Error),
     #[error(transparent)]

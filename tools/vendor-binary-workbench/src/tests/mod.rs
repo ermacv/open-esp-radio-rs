@@ -162,6 +162,7 @@ fn assert_generated_reference_compiles(name: &str, source: &str) {
     );
 }
 
+#[cfg(feature = "esp32s31-harness")]
 fn assert_generated_reference_tests_run(name: &str, source: &str, tests: &str) {
     let stem = format!("open-esp-radio-{name}-tests-{}", std::process::id());
     let source_path = env::temp_dir().join(format!("{stem}.rs"));
@@ -266,6 +267,7 @@ fn synthetic_delay_pointer_context() -> StructuralPointerContext {
     StructuralPointerContext::from_harness(&TEST_RISCV_HARNESS)
 }
 
+#[cfg(feature = "esp32s31-harness")]
 fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition {
     let slot_load = ((slot_offset & 0x0fff) << 20) | (15 << 15) | (2 << 12) | (15 << 7) | 0x03;
     let mut bytes = vec![
@@ -290,6 +292,7 @@ fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition 
     }
 }
 
+#[cfg(feature = "esp32s31-harness")]
 #[path = "../harnesses/esp32s31/oracle_tests/mod.rs"]
 mod oracle;
 mod structural;

@@ -9,6 +9,13 @@ publish = false
 default-run = "vendor-binary-workbench"
 description = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries"
 
+[features]
+default = ["esp32s31-harness"]
+esp32s31-harness = [
+    "dep:open-radio-vendor-harness-esp32s31",
+    "dep:open-radio-vendor-harness-esp32s31-semantic",
+]
+
 [[bin]]
 name = "vendor-binary-workbench"
 path = "src/main.rs"
@@ -22,8 +29,8 @@ indicatif = { version = "=0.18.6", default-features = false, features = ["unicod
 miette = { version = "=7.6.0", features = ["fancy"] }
 open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
 open-radio-vendor-execution-model = { path = "crates/execution-model" }
-open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31" }
-open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-semantic" }
+open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31", optional = true }
+open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-semantic", optional = true }
 open-esp-radio-register-model = { path = "../register-model" }
 open-radio-vendor-analysis-model = { path = "crates/analysis-model" }
 open-radio-vendor-semantics = { path = "crates/semantics" }

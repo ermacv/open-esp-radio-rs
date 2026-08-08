@@ -36,14 +36,16 @@ pub use application::*;
 use cli::run;
 pub(crate) use digest::artifact_sha256;
 use error::WorkbenchError;
-#[cfg(test)]
+#[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;
-#[cfg(test)]
+#[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::external_abi;
 use memory_map::MemoryMap;
+#[cfg(all(test, feature = "esp32s31-harness"))]
+use open_radio_vendor_analysis_model::reject_register_collisions;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
-use open_radio_vendor_analysis_model::{MmioRegion, Register, reject_register_collisions};
+use open_radio_vendor_analysis_model::{MmioRegion, Register};
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
 pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
@@ -67,8 +69,10 @@ pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
 use project::ProjectSpec;
 use target::TargetSpec;
+#[cfg(all(test, feature = "esp32s31-harness"))]
+use test_support::private_input;
 #[cfg(test)]
-use test_support::{private_input, trace_disassembly};
+use test_support::trace_disassembly;
 use verification::*;
 pub use verification::{
     AlignedTraceItemReport, ArtifactIdentity, ArtifactReport, BranchDecisionReport,

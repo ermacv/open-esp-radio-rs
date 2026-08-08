@@ -147,10 +147,12 @@ pub(super) fn run(
         .zip(&symbol_sets)
         .map(|(source, symbols)| (source.name, symbols.as_slice()))
         .collect::<Vec<_>>();
-    if let Some(manifest) = disposition_manifest.as_ref() {
+    let protocols = if let Some(manifest) = disposition_manifest.as_ref() {
         manifest.validate(&inventory)?;
-        print_protocol_inventory(manifest, &inventory);
-    }
+        Some(protocol_inventory(manifest, &inventory))
+    } else {
+        None
+    };
 
     let mut profiles_by_source = BTreeMap::<String, Vec<profiles::Profile>>::new();
     for profile in execution_profiles {
@@ -179,20 +181,8 @@ pub(super) fn run(
             .push(profile);
     }
 
-    let total_symbols = symbol_sets.iter().map(Vec::len).sum::<usize>();
-    let inventory = std::iter::once("INVENTORY".to_owned())
-        .chain(
-            verify_sources
-                .iter()
-                .zip(&symbol_sets)
-                .map(|(source, symbols)| format!("{}={}", source.name, symbols.len())),
-        )
-        .chain(std::iter::once(format!("total={total_symbols}")))
-        .collect::<Vec<_>>()
-        .join("\t");
-    outputln!("{inventory}");
-
     let mut total = VerifySummary::default();
+    let mut source_reports = Vec::with_capacity(verify_sources.len());
     let mut evidence = EvidenceSet::new();
     let harness = target.require_available_harness()?;
     for source in &verify_sources {
@@ -200,7 +190,7 @@ pub(super) fn run(
             .get(source.name)
             .map(Vec::as_slice)
             .unwrap_or_default();
-        total.add(verify_source(
+        let report = verify_source(
             svd,
             harness,
             &target.rust_target,
@@ -211,7 +201,9 @@ pub(super) fn run(
             source_profiles,
             disposition_manifest.as_ref(),
             &mut evidence,
-        )?);
+        )?;
+        total.add(report.summary);
+        source_reports.push(report);
     }
     let orphan_sources = verify_sources
         .iter()
@@ -230,32 +222,11 @@ pub(super) fn run(
         &orphan_sources,
         &explicitly_bound_probes,
     )?;
-    outputln!(
-        "TOTAL-SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}\torphan-rust-probe={orphan_probes}",
-        total.vendor_functions,
-        total.matched,
-        total.symbolic_matches,
-        total.effect_contract_matches,
-        total.scenario_matches,
-        total.state_matches,
-        total.composition_matches,
-        total.mismatched,
-        total.incomplete,
-        total.missing,
-        total.implemented_unqualified,
-        total.not_yet_ported,
-    );
-    print_evidence(&evidence);
     let evidence_comparison = evidence_baseline
         .as_deref()
         .map(load_evidence_baseline)
         .transpose()?
         .map(|baseline| compare_evidence_baseline(&baseline, &evidence));
-    if let Some(comparison) = &evidence_comparison
-        && !crate::cli::output::structured("evidence-comparison", comparison)
-    {
-        print_evidence_comparison(comparison);
-    }
     let evidence_passed = evidence_comparison
         .as_ref()
         .is_none_or(|comparison| comparison.passed);
@@ -296,7 +267,7 @@ pub(super) fn run(
     if let Some(baseline) = evidence_baseline.as_deref() {
         artifacts.push(("evidence-baseline".to_owned(), baseline));
     }
-    let document = verification_document(VerificationDocumentInputs {
+    let verification = verification_core_report(VerificationCoreInputs {
         target,
         gate,
         summary: total,
@@ -307,13 +278,35 @@ pub(super) fn run(
         artifacts: &artifacts,
         qualification_gaps: &qualification_gaps,
     })?;
-    crate::cli::output::structured("inventory-verification", &document);
+    let publication = json_report
+        .as_deref()
+        .map(PublishedVerificationReport::written);
+    let inventory = verify_sources
+        .iter()
+        .zip(&symbol_sets)
+        .map(|(source, symbols)| SourceInventoryReport {
+            source: source.name.to_owned(),
+            symbols: symbols.len(),
+        })
+        .collect();
+    let report = VerificationCommandReport {
+        schema_version: VERIFICATION_REPORT_SCHEMA,
+        command: "verify inventory",
+        verification: &verification,
+        sources: &source_reports,
+        inventory,
+        protocols,
+        evidence_comparison: evidence_comparison.as_ref(),
+        report: publication,
+    };
     if let Some(path) = json_report.as_deref() {
-        write_verification_json_report(path, &document)?;
-        if !crate::cli::output::file("inventory-verification-file", path, "written") {
-            outputln!("JSON-REPORT\t{}", path.display());
-        }
+        write_verification_json_report(path, &report)?;
     }
-    gate.report(passed);
+    crate::cli::output::render_report(
+        "inventory-verification",
+        &report,
+        || render_verification_human(&report),
+        || render_verification_tsv(&report),
+    );
     Ok(passed)
 }

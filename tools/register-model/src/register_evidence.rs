@@ -8,7 +8,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -48,8 +48,11 @@ pub struct RegisterEvidenceSet {
 impl RegisterEvidenceCatalog {
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let catalog: Self = toml_edit::de::from_str(&input)?;
-        catalog.validate(path)?;
+        let catalog: Self = toml_edit::de::from_str(&input)
+            .map_err(|error| Error::manifest("register evidence catalog", path, error))?;
+        catalog
+            .validate(path)
+            .map_err(|error| Error::manifest("register evidence catalog", path, error))?;
         Ok(catalog)
     }
 

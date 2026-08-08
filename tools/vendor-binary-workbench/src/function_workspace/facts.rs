@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, fs, path::PathBuf};
 
 use serde_json::{Map, Value};
 
-use crate::Result;
+use crate::{Result, error::WorkbenchError};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionInputFact {
@@ -71,30 +71,18 @@ pub(crate) struct FunctionFacts {
 }
 
 impl FunctionFacts {
+    #[tracing::instrument(name = "load_function_facts", skip_all, fields(reports = reports.len()))]
     pub(crate) fn load(reports: &[(String, PathBuf)]) -> Result<Self> {
         let mut inputs = Vec::new();
         let mut functions = Vec::new();
         for (profile, path) in reports {
             let input = fs::read_to_string(path)?;
-            let root: Value = serde_json::from_str(&input)?;
-            let root = object(&root, "linked-IR root")?;
-            let context = format!("linked-IR profile {profile:?}");
-            if integer(root, "schema_version", &context)? != 32
-                || string(root, "command", &context)? != "ir export"
-            {
-                return Err(format!(
-                    "function workspace requires a schema-v32 ir export report for profile {profile:?}"
-                )
-                .into());
-            }
-            if boolean(root, "completeness_claim", &context)? {
-                return Err(format!(
-                    "linked-IR profile {profile:?} makes an unsupported completeness claim"
-                )
-                .into());
-            }
-            inputs.extend(parse_inputs(profile, root, &context)?);
-            functions.extend(parse_functions(profile, root, &context)?);
+            let (report_inputs, report_functions) =
+                parse_report(profile, &input).map_err(|error| {
+                    WorkbenchError::manifest("linked-IR function facts", path, error)
+                })?;
+            inputs.extend(report_inputs);
+            functions.extend(report_functions);
         }
         inputs.sort();
         functions.sort_by(|left, right| {
@@ -120,6 +108,30 @@ impl FunctionFacts {
     pub(crate) fn root_functions(&self) -> impl Iterator<Item = &FunctionFact> {
         self.functions.iter().filter(|function| function.is_root())
     }
+}
+
+fn parse_report(profile: &str, input: &str) -> Result<(Vec<FunctionInputFact>, Vec<FunctionFact>)> {
+    let root: Value = serde_json::from_str(input)?;
+    let root = object(&root, "linked-IR root")?;
+    let context = format!("linked-IR profile {profile:?}");
+    if integer(root, "schema_version", &context)? != 32
+        || string(root, "command", &context)? != "ir export"
+    {
+        return Err(format!(
+            "function workspace requires a schema-v32 ir export report for profile {profile:?}"
+        )
+        .into());
+    }
+    if boolean(root, "completeness_claim", &context)? {
+        return Err(format!(
+            "linked-IR profile {profile:?} makes an unsupported completeness claim"
+        )
+        .into());
+    }
+    Ok((
+        parse_inputs(profile, root, &context)?,
+        parse_functions(profile, root, &context)?,
+    ))
 }
 
 fn parse_inputs(

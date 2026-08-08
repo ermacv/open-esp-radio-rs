@@ -50,7 +50,7 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Resul
         right: trace_document(&right_trace),
         verdict,
     };
-    if !crate::cli::output::structured("trace-comparison", &document) {
+    let render = || {
         print_trace(&left_trace);
         print_trace(&right_trace);
         outputln!(
@@ -63,6 +63,7 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Resul
                 "MISMATCH"
             }
         );
-    }
+    };
+    crate::cli::output::render_report("trace-comparison", &document, render, render);
     Ok(equal)
 }

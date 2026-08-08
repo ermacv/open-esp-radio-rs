@@ -314,9 +314,17 @@ pub(super) fn resolve_scenario(arguments: ScenarioArgs) -> Result<execution::Sce
 
 fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
     let document = execution_document(&input)?;
-    if crate::cli::output::structured("execution", &document) {
-        return Ok(document.summary.complete);
-    }
+    let complete = document.summary.complete;
+    crate::cli::output::render_report(
+        "execution",
+        &document,
+        || render_execution(&input),
+        || render_execution(&input),
+    );
+    Ok(complete)
+}
+
+fn render_execution(input: &ExecutionRenderInput<'_>) {
     let ExecutionRenderInput {
         symbol,
         concrete_only,
@@ -331,7 +339,7 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
         .iter()
         .filter_map(unmapped_execution_address)
         .collect();
-    for event in result.events {
+    for event in &result.events {
         match event {
             execution::ExecutionEvent::Read {
                 width,
@@ -358,7 +366,7 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
     for call in &result.calls {
         outputln!("COVERED-CALL\t{call}");
     }
-    if print_timeline {
+    if *print_timeline {
         for (index, event) in result.timeline.iter().enumerate() {
             match event {
                 execution::ExecutionTimelineEvent::Observable(event) => {
@@ -398,12 +406,8 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
             }
         }
     }
-    let uncovered_branches = print_branch_coverage(
-        "image",
-        &image,
-        &inventory.branch_outcomes,
-        &result.branches,
-    );
+    let uncovered_branches =
+        print_branch_coverage("image", image, &inventory.branch_outcomes, &result.branches);
     for (address, edge) in &inventory.unresolved_edges {
         outputln!(
             "UNCOVERED-CONTROL-FLOW\timage\t{}\t{edge}",
@@ -423,7 +427,7 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
     }
     outputln!(
         "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tbranch-events={}\tcalls={}\tcall-events={}\ttimeline-events={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunmapped-mmio={}",
-        if concrete_only {
+        if *concrete_only {
             "concrete-only"
         } else {
             "branch-complete"
@@ -439,5 +443,4 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
         inventory.unresolved_edges.len(),
         unmapped.len(),
     );
-    Ok(uncovered_branches == 0 && inventory.unresolved_edges.is_empty() && unmapped.is_empty())
 }

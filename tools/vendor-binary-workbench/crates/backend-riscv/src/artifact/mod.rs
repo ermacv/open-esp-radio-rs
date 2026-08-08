@@ -474,6 +474,7 @@ fn inventory_object(data: &[u8], member: Option<String>) -> Result<ArtifactObjec
 /// This inventory is deliberately separate from [`ArtifactSymbolDefinition`]:
 /// undefined imports, data, local and absolute symbols are linkage facts but
 /// are not decodable function bodies.
+#[tracing::instrument(name = "inspect_riscv_artifact", skip_all, fields(path = %path.display()))]
 pub fn inspect_artifact(path: &Path) -> Result<ArtifactInventory> {
     let data = fs::read(path)?;
     match FileKind::parse(data.as_slice())? {
@@ -646,6 +647,11 @@ fn collect_object_symbols(
     Ok(())
 }
 
+#[tracing::instrument(
+    name = "load_riscv_symbols",
+    skip_all,
+    fields(path = %path.display(), prefix, include_local)
+)]
 fn load_symbols_with_visibility(
     path: &Path,
     prefix: &str,
@@ -704,6 +710,11 @@ pub fn load_all_code_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSy
 /// This deliberately does not use the symbol table: LTO may make functions
 /// local or omit their names, while a final-image policy must cover the bytes
 /// that can actually execute.
+#[tracing::instrument(
+    name = "load_riscv_executable_sections",
+    skip_all,
+    fields(path = %path.display())
+)]
 pub fn load_executable_sections(path: &Path) -> Result<Vec<ExecutableSection>> {
     let data = fs::read(path)?;
     if FileKind::parse(data.as_slice())? != FileKind::Elf32 {

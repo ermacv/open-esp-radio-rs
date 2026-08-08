@@ -18,6 +18,15 @@ struct GeneratedReferenceReport {
     source: String,
 }
 
+#[tracing::instrument(
+    name = "generate_reference",
+    skip_all,
+    fields(
+        artifact = tracing::field::Empty,
+        symbol = tracing::field::Empty,
+        member = tracing::field::Empty
+    )
+)]
 pub(super) fn run(
     arguments: ReferenceArgs,
     svd: &MmioRegisterMap,
@@ -28,6 +37,12 @@ pub(super) fn run(
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
     let artifact = arguments.artifact.ok_or("missing --artifact")?;
     let symbol = arguments.symbol.ok_or("missing --symbol")?;
+    let span = tracing::Span::current();
+    span.record("artifact", tracing::field::display(artifact.display()));
+    span.record("symbol", symbol.as_str());
+    if let Some(member) = arguments.member.as_deref() {
+        span.record("member", member);
+    }
     let input = ArtifactSymbolSelector {
         artifact: artifact.clone(),
         member: arguments.member.clone(),

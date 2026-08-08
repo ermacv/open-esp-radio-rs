@@ -294,7 +294,7 @@ Additional read-only SVD catalogs may remain in the project-level `svd = [...]`
 list.
 
 Register lifecycle commands share the normal output contract: a compact human
-view, stable legacy rows under `--format tsv`, or one typed JSON/JSONL record.
+view, stable typed rows under `--format tsv`, or one typed JSON/JSONL record.
 Workspace validation nests optional PAC API, lint, memory-map and evidence
 summaries inside `register-workspace`. A strict coverage failure is reported as
 `status = "unreviewed"` with a non-success exit code.

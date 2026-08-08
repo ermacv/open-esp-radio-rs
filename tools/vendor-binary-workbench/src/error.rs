@@ -1,8 +1,8 @@
 //! Typed facade errors.
 
-use std::{io, num::ParseIntError, string::FromUtf8Error};
+use std::{io, num::ParseIntError, path::PathBuf, string::FromUtf8Error};
 
-use miette::Diagnostic;
+use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
 
 use crate::{project::ProjectError, run_spec::RunSpecError, target::TargetError};
@@ -15,6 +15,30 @@ pub(crate) enum WorkbenchError {
         help("use the leaf command's --help output or correct the referenced project input")
     )]
     InvalidInput { message: String },
+    #[error("invalid {kind} {path}: {reason}")]
+    #[diagnostic(
+        code(workbench::manifest::invalid),
+        help("correct the named manifest; line numbers refer to its physical text lines")
+    )]
+    Manifest {
+        kind: &'static str,
+        path: PathBuf,
+        reason: String,
+    },
+    #[error("invalid {kind} {path}: {reason}")]
+    #[diagnostic(
+        code(workbench::manifest::parse),
+        help("correct the highlighted syntax in the named manifest")
+    )]
+    ManifestSource {
+        kind: &'static str,
+        path: PathBuf,
+        reason: String,
+        #[source_code]
+        src: std::sync::Arc<NamedSource<String>>,
+        #[label("invalid document syntax")]
+        span: SourceSpan,
+    },
     #[error(transparent)]
     Cli(#[from] clap::Error),
     #[error(transparent)]
@@ -54,6 +78,40 @@ pub(crate) enum WorkbenchError {
     Esp32s31Harness(#[from] open_radio_vendor_harness_esp32s31_semantic::Error),
     #[error(transparent)]
     RegisterModel(#[from] open_esp_radio_register_model::Error),
+}
+
+impl WorkbenchError {
+    pub(crate) fn manifest(
+        kind: &'static str,
+        path: impl Into<PathBuf>,
+        error: impl std::fmt::Display,
+    ) -> Self {
+        Self::Manifest {
+            kind,
+            path: path.into(),
+            reason: error.to_string(),
+        }
+    }
+
+    pub(crate) fn manifest_source(
+        kind: &'static str,
+        path: &std::path::Path,
+        input: &str,
+        error: impl std::fmt::Display,
+        span: Option<std::ops::Range<usize>>,
+    ) -> Self {
+        let span = span.unwrap_or(0..input.len().min(1));
+        Self::ManifestSource {
+            kind,
+            path: path.to_owned(),
+            reason: error.to_string(),
+            src: std::sync::Arc::new(NamedSource::new(
+                path.display().to_string(),
+                input.to_owned(),
+            )),
+            span: span.into(),
+        }
+    }
 }
 
 impl From<String> for WorkbenchError {

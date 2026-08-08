@@ -202,6 +202,175 @@ fn quiet_overrides_an_explicit_rust_log_filter() {
 }
 
 #[test]
+fn verify_source_json_is_one_typed_function_report() {
+    let artifact = std::env::temp_dir().join(format!(
+        "vendor-workbench-verify-source-contract-{}.o",
+        std::process::id()
+    ));
+    write_rv32_symbol_fixture(&artifact);
+    let output = workbench()
+        .current_dir(repository_root())
+        .args([
+            "verify",
+            "source",
+            "--project",
+            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            "--vendor-artifact",
+        ])
+        .arg(&artifact)
+        .arg("--rust-artifact")
+        .arg(&artifact)
+        .args([
+            "--vendor-prefix",
+            "fixture_",
+            "--rust-prefix",
+            "fixture_",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ])
+        .output()
+        .expect("run source verification");
+    std::fs::remove_file(artifact).unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("verification stdout must be valid JSON");
+    let records = document["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "source-verification");
+    let report = &records[0]["data"];
+    assert_eq!(report["command"], "verify source");
+    assert_eq!(report["passed"], true);
+    assert_eq!(report["summary"]["vendor_functions"], 1);
+    assert_eq!(report["sources"].as_array().unwrap().len(), 1);
+    assert_eq!(report["sources"][0]["source"], "vendor");
+    assert_eq!(
+        report["sources"][0]["functions"].as_array().unwrap().len(),
+        1
+    );
+    assert_eq!(
+        report["sources"][0]["functions"][0]["vendor_symbol"],
+        "fixture_entry"
+    );
+    assert_eq!(report["sources"][0]["functions"][0]["status"], "match");
+}
+
+#[test]
+fn verify_inventory_json_combines_results_and_publication_in_one_record() {
+    let suffix = std::process::id();
+    let artifact = std::env::temp_dir().join(format!(
+        "vendor-workbench-verify-inventory-contract-{suffix}.o"
+    ));
+    let report_path = std::env::temp_dir().join(format!(
+        "vendor-workbench-verify-inventory-contract-{suffix}.json"
+    ));
+    write_rv32_symbol_fixture(&artifact);
+    let output = workbench()
+        .current_dir(repository_root())
+        .args([
+            "verify",
+            "inventory",
+            "--project",
+            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            "--source-artifact",
+        ])
+        .arg(format!("fixture={}", artifact.display()))
+        .args(["--source-prefix", "fixture=fixture_", "--rust-artifact"])
+        .arg(&artifact)
+        .args([
+            "--rust-prefix",
+            "fixture_",
+            "--no-profiles",
+            "--no-dispositions",
+            "--no-evidence-baseline",
+            "--json-report",
+        ])
+        .arg(&report_path)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run inventory verification");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("verification stdout must be valid JSON");
+    let records = document["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "inventory-verification");
+    let report = &records[0]["data"];
+    assert_eq!(report["command"], "verify inventory");
+    assert_eq!(report["passed"], true);
+    assert_eq!(report["inventory"][0]["source"], "fixture");
+    assert_eq!(report["inventory"][0]["symbols"], 1);
+    assert_eq!(report["sources"][0]["functions"][0]["status"], "match");
+    assert_eq!(report["report"]["status"], "written");
+    assert_eq!(report["report"]["path"], report_path.display().to_string());
+
+    let persistent: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
+    assert_eq!(persistent["schema_version"], 4);
+    assert_eq!(persistent["command"], "verify inventory");
+    assert_eq!(persistent["sources"][0]["functions"][0]["status"], "match");
+    std::fs::remove_file(artifact).unwrap();
+    std::fs::remove_file(report_path).unwrap();
+}
+
+#[test]
+fn direct_target_audit_json_is_one_typed_report() {
+    let artifact = std::env::temp_dir().join(format!(
+        "vendor-workbench-direct-target-audit-contract-{}.o",
+        std::process::id()
+    ));
+    write_rv32_symbol_fixture(&artifact);
+    let mut image = std::fs::read(&artifact).unwrap();
+    image[16..18].copy_from_slice(&2_u16.to_le_bytes());
+    std::fs::write(&artifact, image).unwrap();
+    let output = workbench()
+        .current_dir(repository_root())
+        .args([
+            "image",
+            "audit-targets",
+            "--project",
+            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            "--artifact",
+        ])
+        .arg(&artifact)
+        .args([
+            "--forbid",
+            "vendor-rom=0x40000000..0x40001000",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ])
+        .output()
+        .expect("run direct-target audit");
+    std::fs::remove_file(artifact).unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let records = document["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "direct-target-audit");
+    assert_eq!(records[0]["data"]["command"], "image audit-targets");
+    assert_eq!(records[0]["data"]["passed"], true);
+    assert_eq!(
+        records[0]["data"]["forbidden_targets"],
+        serde_json::json!([])
+    );
+}
+
+#[test]
 fn project_analyze_is_the_only_project_analysis_entry_point() {
     let help = run(&["project", "analyze", "--help"]);
     assert!(help.status.success());
@@ -595,4 +764,52 @@ fn register_lifecycle_commands_emit_one_typed_report() {
         assert_eq!(document["records"][0]["data"]["schema"], 1);
         assert_eq!(document["records"][0]["data"]["status"], status);
     }
+}
+
+#[test]
+fn tooling_assets_come_from_the_canonical_cli_without_a_project() {
+    let root = std::env::temp_dir().join(format!(
+        "vendor-workbench-tooling-assets-{}",
+        std::process::id()
+    ));
+    if root.exists() {
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+    std::fs::create_dir_all(&root).unwrap();
+    let completion = root.join("vendor-binary-workbench.bash");
+    let manpage = root.join("vendor-binary-workbench.1");
+
+    for (arguments, expected_kind, output_path) in [
+        (
+            vec!["tooling", "completions", "bash", "--output"],
+            "shell-completion",
+            &completion,
+        ),
+        (vec!["tooling", "manpage", "--output"], "manpage", &manpage),
+    ] {
+        let mut command = workbench();
+        command
+            .current_dir(&root)
+            .args(arguments)
+            .arg(output_path)
+            .args(["--format", "json", "--color", "never"]);
+        let output = command.output().expect("generate tooling asset");
+        assert!(
+            output.status.success(),
+            "stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(document["records"].as_array().unwrap().len(), 1);
+        assert_eq!(document["records"][0]["kind"], "tooling-asset");
+        assert_eq!(document["records"][0]["data"]["kind"], expected_kind);
+        assert_eq!(document["records"][0]["data"]["status"], "written");
+        assert!(output_path.metadata().unwrap().len() > 100);
+    }
+
+    let completion_text = std::fs::read_to_string(&completion).unwrap();
+    assert!(completion_text.contains("vendor-binary-workbench"));
+    let manpage_text = std::fs::read_to_string(&manpage).unwrap();
+    assert!(manpage_text.contains(".TH vendor-binary-workbench"));
+    std::fs::remove_dir_all(root).unwrap();
 }

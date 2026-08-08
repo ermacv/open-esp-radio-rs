@@ -140,6 +140,7 @@ fn init_model(
     Ok(true)
 }
 
+#[tracing::instrument(name = "import_svd", skip_all, fields(input = %arguments.input.display()))]
 fn import_svd(
     arguments: RegisterImportArgs,
     memory_map: Option<&MemoryMap>,

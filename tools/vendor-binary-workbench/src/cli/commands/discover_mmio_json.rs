@@ -77,9 +77,14 @@ pub(super) struct DiscoveryDocument<'a> {
     artifacts: Vec<ArtifactDocument<'a>>,
     registers: Vec<RegisterDocument<'a>>,
     diagnostics: Vec<DiagnosticDocument<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn document(report: &MmioDiscoveryReport) -> Result<DiscoveryDocument<'_>> {
+pub(super) fn document(
+    report: &MmioDiscoveryReport,
+    publication: Option<crate::cli::output::Publication>,
+) -> Result<DiscoveryDocument<'_>> {
     Ok(DiscoveryDocument {
         schema_version: 2,
         command: "mmio discover",
@@ -156,6 +161,7 @@ pub(super) fn document(report: &MmioDiscoveryReport) -> Result<DiscoveryDocument
                 message: &diagnostic.message,
             })
             .collect(),
+        publication,
     })
 }
 
@@ -177,7 +183,7 @@ mod tests {
             registers: Vec::new(),
             diagnostics: Vec::new(),
         };
-        let rendered = render_document(&document(&report).unwrap()).unwrap();
+        let rendered = render_document(&document(&report, None).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
         assert_eq!(parsed["schema_version"], 2);
         assert_eq!(parsed["command"], "mmio discover");

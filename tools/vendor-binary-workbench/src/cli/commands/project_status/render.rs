@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
+use tabled::{builder::Builder, settings::Style};
 
 use super::model::{DetailValue, Readiness, StatusReport, TargetIdentity};
 use crate::Result;
@@ -37,39 +38,48 @@ pub(super) struct StatusDocument<'a> {
     target: &'a TargetIdentity,
     overall: Readiness,
     phases: BTreeMap<&'a str, PhaseDocument<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
 }
 
 pub(super) fn print_text(report: &StatusReport) {
     outputln!(
-        "PROJECT-STATUS\tid={}\toverall={}\tmanifest={}",
+        "Project status: {} — {}",
         report.project_id,
-        report.overall.label(),
-        report.manifest
+        report.overall.label()
     );
+    outputln!("  manifest: {}", report.manifest);
+    outputln!(
+        "  target:   {} ({}, {})",
+        report.target.id,
+        report.target.architecture,
+        report.target.calling_convention
+    );
+    let mut rows = Builder::default();
+    rows.push_record(["Phase", "Component", "Status", "Diagnostic"]);
     for phase in &report.phases {
-        outputln!(
-            "PROJECT-PHASE\tname={}\tstatus={}\tcomponents={}",
-            phase.name,
-            phase.status.label(),
-            phase.components.len()
-        );
         for component in &phase.components {
-            outputln!(
-                "PROJECT-COMPONENT\tphase={}\tname={}\tstatus={}\tdiagnostic={}",
-                phase.name,
-                component.name,
-                component.status.label(),
+            rows.push_record([
+                phase.name.to_owned(),
+                component.name.to_owned(),
+                component.status.label().to_owned(),
                 component
                     .diagnostic
                     .as_deref()
                     .map(sanitize)
-                    .unwrap_or_else(|| "-".to_owned())
-            );
+                    .unwrap_or_default(),
+            ]);
         }
     }
+    let mut table = rows.build();
+    table.with(Style::rounded());
+    outputln!("{table}");
 }
 
-pub(super) fn document(report: &StatusReport) -> StatusDocument<'_> {
+pub(super) fn document(
+    report: &StatusReport,
+    publication: Option<crate::cli::output::Publication>,
+) -> StatusDocument<'_> {
     let phases = report
         .phases
         .iter()
@@ -103,11 +113,12 @@ pub(super) fn document(report: &StatusReport) -> StatusDocument<'_> {
         target: &report.target,
         overall: report.overall,
         phases,
+        publication,
     }
 }
 
-pub(super) fn json_document(report: &StatusReport) -> Result<String> {
-    let mut output = serde_json::to_string_pretty(&document(report))?;
+pub(super) fn json_document(document: &StatusDocument<'_>) -> Result<String> {
+    let mut output = serde_json::to_string_pretty(document)?;
     output.push('\n');
     Ok(output)
 }
@@ -146,7 +157,7 @@ mod tests {
             )],
         );
         let document: serde_json::Value =
-            serde_json::from_str(&json_document(&report).unwrap()).unwrap();
+            serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
         assert_eq!(document["schema"], 1);
         assert_eq!(document["overall"], "incomplete");
         assert_eq!(

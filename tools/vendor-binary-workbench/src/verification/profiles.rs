@@ -225,8 +225,15 @@ fn split_directive(line: &str, line_number: usize) -> Result<(&str, &str)> {
         .ok_or_else(|| format!("profile directive needs a value at line {line_number}").into())
 }
 
+#[tracing::instrument(name = "load_verification_profiles", fields(path = %path.display()))]
 pub fn load(path: &Path) -> Result<Vec<Profile>> {
     let input = fs::read_to_string(path)?;
+    parse(&input).map_err(|error| {
+        crate::error::WorkbenchError::manifest("verification profile manifest", path, error)
+    })
+}
+
+fn parse(input: &str) -> Result<Vec<Profile>> {
     let mut profiles = Vec::new();
     let mut current: Option<ProfileBuilder> = None;
 

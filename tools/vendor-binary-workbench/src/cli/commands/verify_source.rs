@@ -32,7 +32,7 @@ pub(super) fn run(
     let symbols = vendor_symbols(source)?;
     let mut evidence = EvidenceSet::new();
     let harness = target.require_available_harness()?;
-    let summary = verify_source(
+    let source_report = verify_source(
         svd,
         harness,
         &target.rust_target,
@@ -50,35 +50,65 @@ pub(super) fn run(
         &[(source, &symbols)],
         &BTreeSet::new(),
     )?;
-    outputln!(
-        "SUMMARY\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\torphan-rust-probe={orphan_probes}",
-        summary.vendor_functions,
-        summary.matched,
-        summary.symbolic_matches,
-        summary.effect_contract_matches,
-        summary.scenario_matches,
-        summary.state_matches,
-        summary.composition_matches,
-        summary.mismatched,
-        summary.incomplete,
-        summary.missing
-    );
-    print_evidence(&evidence);
     let evidence_comparison = arguments
         .evidence_baseline
         .as_deref()
         .map(load_evidence_baseline)
         .transpose()?
         .map(|baseline| compare_evidence_baseline(&baseline, &evidence));
-    if let Some(comparison) = &evidence_comparison
-        && !crate::cli::output::structured("evidence-comparison", comparison)
-    {
-        print_evidence_comparison(comparison);
-    }
     let evidence_passed = evidence_comparison
         .as_ref()
         .is_none_or(|comparison| comparison.passed);
-    let passed = gate.passes(summary, orphan_probes) && evidence_passed;
-    gate.report(passed);
+    let passed = gate.passes(source_report.summary, orphan_probes) && evidence_passed;
+    let mut artifacts = vec![
+        ("vendor-artifact", vendor_artifact.as_path()),
+        ("rust-probes", rust_artifact.as_path()),
+    ];
+    if let Some(path) = arguments.vendor_inventory.as_deref() {
+        artifacts.push(("vendor-inventory", path));
+    }
+    if let Some(path) = arguments.vendor_companion.as_deref() {
+        artifacts.push(("vendor-companion", path));
+    }
+    if let Some(path) = arguments.rust_companion.as_deref() {
+        artifacts.push(("rust-companion", path));
+    }
+    if let Some(path) = arguments.profiles.as_deref() {
+        artifacts.push(("profiles", path));
+    }
+    if let Some(path) = arguments.evidence_baseline.as_deref() {
+        artifacts.push(("evidence-baseline", path));
+    }
+    let verification = verification_core_report(VerificationCoreInputs {
+        target,
+        gate,
+        summary: source_report.summary,
+        orphan_probes,
+        evidence_baseline_passed: evidence_passed,
+        passed,
+        evidence: &evidence,
+        artifacts: &artifacts,
+        qualification_gaps: &[],
+    })?;
+    let sources = [source_report];
+    let report = VerificationCommandReport {
+        schema_version: VERIFICATION_REPORT_SCHEMA,
+        command: "verify source",
+        verification: &verification,
+        sources: &sources,
+        inventory: vec![SourceInventoryReport {
+            source: "vendor".to_owned(),
+            symbols: symbols.len(),
+        }],
+        protocols: None,
+        evidence_comparison: evidence_comparison.as_ref(),
+        report: None,
+    };
+    crate::cli::output::render_report(
+        "source-verification",
+        &report,
+        || render_verification_human(&report),
+        || render_verification_tsv(&report),
+    );
     Ok(passed)
 }

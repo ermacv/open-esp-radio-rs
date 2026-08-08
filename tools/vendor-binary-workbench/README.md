@@ -67,6 +67,7 @@ pass them directly or through a local `--run-spec`.
 | `verify source` / `verify inventory` / `verify evidence` | Apply behavioral gates, then review protected-run evidence without rewriting an accepted baseline | [Verification](docs/verification.md) |
 | `image audit-targets` | Reject calls into forbidden executable address ranges | This page |
 | `inspect` | Inspect artifacts and decoded functions | Run without subcommand options for syntax |
+| `tooling completions` / `manpage` | Generate shell integration and roff documentation from the canonical clap grammar | Run `tooling --help` |
 
 Internal ownership and dependency boundaries are described in
 [workbench internals](docs/internals.md). The longer-term crate architecture

@@ -24,12 +24,21 @@ pub(crate) struct SemanticCatalogs {
 }
 
 impl SemanticCatalogs {
+    #[tracing::instrument(name = "load_semantic_catalogs", skip_all, fields(catalogs = paths.len()))]
     pub(crate) fn load(paths: &[impl AsRef<Path>]) -> Result<Self> {
         let mut operations = BTreeMap::new();
         for path in paths {
             let path = path.as_ref();
             let input = fs::read_to_string(path)?;
-            let document = input.parse::<DocumentMut>()?;
+            let document = input.parse::<DocumentMut>().map_err(|error| {
+                crate::error::WorkbenchError::manifest_source(
+                    "semantic catalog",
+                    path,
+                    &input,
+                    &error,
+                    error.span(),
+                )
+            })?;
             if document.get("schema").and_then(Item::as_integer) != Some(1) {
                 return Err(format!("{} requires schema = 1", path.display()).into());
             }

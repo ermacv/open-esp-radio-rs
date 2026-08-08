@@ -1,6 +1,7 @@
 //! Human and stable machine-facing rendering for project-doctor reports.
 
 use std::fmt::Write as _;
+use tabled::{builder::Builder, settings::Style};
 
 use crate::cli::args::OutputFormat;
 
@@ -27,16 +28,18 @@ fn human(report: &DoctorReport) {
         report.target.id,
         report.target.path.display()
     );
-    outputln!("Capabilities:");
+    let mut rows = Builder::default();
+    rows.push_record(["Capability", "Status", "Details"]);
     for capability in &report.capabilities {
-        let details = human_details(capability);
-        outputln!(
-            "  {:<24} {:<18} {}",
-            capability.name,
-            capability.status,
-            details
-        );
+        rows.push_record([
+            capability.name.to_owned(),
+            capability.status.to_owned(),
+            human_details(capability),
+        ]);
     }
+    let mut capabilities = rows.build();
+    capabilities.with(Style::rounded());
+    outputln!("Capabilities:\n{capabilities}");
     report.ir_build.render_human();
     report.function_workspace.render_human();
     outputln!("Inputs: {}", report.run_spec.status);

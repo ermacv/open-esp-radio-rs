@@ -183,6 +183,8 @@ pub(super) struct AnalysisDocument<'a> {
     callee_hotspots: Vec<CalleeHotspotDocument<'a>>,
     unmapped_mmio: Vec<UnmappedMmioDocument<'a>>,
     functions: Vec<FunctionDocument<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
 }
 
 struct AnalysisInputs<'a> {
@@ -196,6 +198,7 @@ struct AnalysisInputs<'a> {
     unmapped_users: &'a BTreeMap<u32, BTreeSet<String>>,
     direct_exact: usize,
     reference_eligible: usize,
+    publication: Option<crate::cli::output::Publication>,
 }
 
 fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>> {
@@ -210,6 +213,7 @@ fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>>
         unmapped_users,
         direct_exact,
         reference_eligible,
+        publication,
     } = inputs;
     let mut hotspots = callee_callers.iter().collect::<Vec<_>>();
     hotspots.sort_by(|(left_name, left_callers), (right_name, right_callers)| {
@@ -262,14 +266,12 @@ fn analysis_document(inputs: AnalysisInputs<'_>) -> Result<AnalysisDocument<'_>>
             })
             .collect(),
         functions: functions.iter().map(Into::into).collect(),
+        publication,
     })
 }
 
 fn write_analysis_json_report(path: &Path, document: &AnalysisDocument<'_>) -> Result<()> {
     fs::write(path, serde_json::to_string_pretty(&document)? + "\n")?;
-    if !crate::cli::output::file("artifact-analysis-file", path, "written") {
-        outputln!("JSON-REPORT\t{}", path.display());
-    }
     Ok(())
 }
 
@@ -457,6 +459,10 @@ pub(super) fn run(
             blocking_callees: callees.into_iter().collect(),
         });
     }
+    let publication = arguments
+        .json_report
+        .as_deref()
+        .map(|path| crate::cli::output::Publication::new(path, "written"));
     let document = analysis_document(AnalysisInputs {
         artifact: &artifact,
         companions: &arguments.companion,
@@ -468,13 +474,22 @@ pub(super) fn run(
         unmapped_users: &unmapped_users,
         direct_exact: exact,
         reference_eligible: reference_codegen_eligible,
+        publication: publication.clone(),
     })?;
-    if !crate::cli::output::structured("artifact-analysis", &document) {
-        print_analysis_report(&function_reports, &reasons, &reference_reasons);
-    }
     if let Some(path) = arguments.json_report.as_deref() {
         write_analysis_json_report(path, &document)?;
     }
+    let render = || {
+        print_analysis_report(&function_reports, &reasons, &reference_reasons);
+        if let Some(publication) = &publication {
+            outputln!(
+                "PUBLICATION\tstatus={}\tpath={}",
+                publication.status,
+                publication.path
+            );
+        }
+    };
+    crate::cli::output::render_report("artifact-analysis", &document, render, render);
     Ok(incomplete == 0)
 }
 

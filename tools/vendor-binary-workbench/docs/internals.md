@@ -68,6 +68,7 @@ dispatch path:
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
 | `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
 | `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
+| `cli/commands/tooling.rs` | Shell completions and roff manual pages generated from the canonical `clap` grammar without loading a project |
 | `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Typed reviewed-workspace DTOs plus human/TSV presentation |
 | `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
 | `cli/ui.rs` | miette diagnostics and tracing configuration on stderr |
@@ -79,6 +80,8 @@ only missing inputs and never synthesizes command-line tokens. Help, usage,
 unknown-option rejection and option conflicts are all derived from the same
 `clap` declarations. Runtime and project errors therefore do not print CLI
 usage, while parser errors retain `clap`'s command-specific diagnostics.
+The same command definition generates shell completions and the roff manual,
+so these assets cannot acquire a second, hand-maintained command hierarchy.
 Compound `SOURCE=PATH`, `SOURCE=VALUE` and `NAME=START..END` values also cross
 the clap boundary as typed values. Run-spec input names are parsed once into a
 closed `InputRole` enum; the resolver never recovers roles from prefixes or
@@ -118,21 +121,31 @@ stable domain reports emit those reports directly: project status, symbol
 inventory, MMIO and interface discovery, linked IR, artifact analysis, and
 project diagnostics/analysis/publication, project IR builds, batch reference
 generation, reviewed register/function/interface workspace lifecycles, direct
-trace extraction/comparison and concrete
-single-symbol execution/comparison and profile verification do not serialize
-their human presentation. The verification evidence document is also a Serde
-model shared by stdout and file output; the former handwritten JSON encoder
+trace extraction/comparison, concrete single-symbol execution/comparison,
+source/inventory verification and profile verification do not serialize their
+human presentation. The verification evidence document is a Serde model shared
+by the aggregate command report and file output. Source and inventory
+verification return typed per-function verdicts from the engine; their removed
+line protocol has no compatibility path. The former handwritten JSON encoder
 has been removed. The
 remaining command renderers still enter the same boundary as explicit
 `line`/`text` records; no analysis or verification module writes directly to
 stdout. This makes the residual DTO migration visible without allowing raw
 text to corrupt JSON or JSONL output.
 
+Commands that publish JSON, pseudo-Rust or navigation files include the path
+and `written`/`verified` state in their primary typed result. Publication is
+not a second machine record; the removed `output::file` path has no
+compatibility mode. Nested project navigation reports publication through its
+own project-analysis stage and tracing span.
+
 `project doctor` is split into generic capability, register, interface and
 caller-input collectors. They populate one top-level report together with the
 IR-profile and function-workspace reports. Human and TSV rendering are separate
 from collection, while JSON and JSONL serialize the same model as one
-`project-doctor` record.
+`project-doctor` record. Human status and capability summaries use tables only
+as a presentation layer; TSV and structured output continue to serialize the
+underlying typed reports.
 
 ## Shared trace and effect-contract layout
 
@@ -146,6 +159,17 @@ Its child modules separate stable data from queries:
 | `validation.rs` | Call-result availability and fail-closed flow validation |
 | `function.rs` | `FunctionAnalysis`, eligibility, and inventory queries |
 | `tests.rs` | Function-level trace classification tests |
+
+Verification aggregation is split by responsibility: `engine.rs` computes
+per-function source verdicts, while `engine/model.rs` owns source inputs,
+aggregate gates, protocol inventory and probe accounting. `evidence.rs` owns proof digests;
+`evidence/baseline.rs` owns baseline comparison and candidate publication;
+`evidence/report.rs` owns the persistent core; `execution.rs` owns comparison
+and `execution/scenario.rs` owns scenario normalization and coverage inputs.
+`execution_report.rs` owns concrete comparison DTOs, while `report.rs` owns
+the single schema-v4 command/file report plus human/TSV renderers.
+`dispositions.rs` owns its strict parser and inventory validation;
+`dispositions/model.rs` owns entry, binding and effect-policy invariants.
 
 `crates/semantics/src/effect_contract.rs` similarly keeps the existing public
 exports while delegating to:

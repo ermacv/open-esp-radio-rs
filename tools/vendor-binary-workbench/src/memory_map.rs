@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fs, path::Path};
 
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
-use crate::{Result, Window};
+use crate::{Result, Window, error::WorkbenchError};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MemoryRegionKind {
@@ -57,9 +57,17 @@ pub(crate) struct MemoryMap {
 }
 
 impl MemoryMap {
+    #[tracing::instrument(name = "load_memory_map", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let document = input.parse::<DocumentMut>()?;
+        let document = input.parse::<DocumentMut>().map_err(|error| {
+            WorkbenchError::manifest_source("memory map", path, &input, &error, error.span())
+        })?;
+        Self::parse(document, path)
+            .map_err(|error| WorkbenchError::manifest("memory map", path, error))
+    }
+
+    fn parse(document: DocumentMut, path: &Path) -> Result<Self> {
         expect_schema(&document, path)?;
 
         let default_address_space =
@@ -432,5 +440,21 @@ end-exclusive = 0x2800
         let error = MemoryMap::load(&path).unwrap_err();
         std::fs::remove_file(path).unwrap();
         assert!(error.to_string().contains("overlap"));
+    }
+
+    #[test]
+    fn malformed_file_reports_its_manifest_path() {
+        let path = write_map("malformed", "schema = [\n");
+        let error = MemoryMap::load(&path).unwrap_err();
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(matches!(
+            error,
+            WorkbenchError::ManifestSource {
+                kind: "memory map",
+                path: reported,
+                ..
+            } if reported == path
+        ));
     }
 }

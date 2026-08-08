@@ -7,133 +7,20 @@ use std::{
 
 use crate::*;
 
-#[derive(Clone, Copy)]
-pub(crate) struct VerifySource<'a> {
-    pub(crate) name: &'a str,
-    pub(crate) artifact: &'a Path,
-    pub(crate) inventory: Option<&'a Path>,
-    pub(crate) companion: Option<&'a Path>,
-    pub(crate) prefix: &'a str,
-}
+use super::{FunctionVerificationReport, FunctionVerificationStatus, SourceVerificationReport};
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct VerifySummary {
-    pub(crate) vendor_functions: usize,
-    pub(crate) matched: usize,
-    pub(crate) symbolic_matches: usize,
-    pub(crate) effect_contract_matches: usize,
-    pub(crate) scenario_matches: usize,
-    pub(crate) state_matches: usize,
-    pub(crate) composition_matches: usize,
-    pub(crate) mismatched: usize,
-    pub(crate) incomplete: usize,
-    pub(crate) missing: usize,
-    pub(crate) implemented_unqualified: usize,
-    pub(crate) not_yet_ported: usize,
-}
+mod model;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum VerificationGate {
-    Completion,
-    Regression { match_floor: usize },
-}
-
-impl VerificationGate {
-    pub(crate) fn parse(name: &str, match_floor: Option<usize>) -> Result<Self> {
-        match (name, match_floor) {
-            ("completion", None) => Ok(Self::Completion),
-            ("completion", Some(_)) => Err("--match-floor requires --gate regression".into()),
-            ("regression", Some(match_floor)) => Ok(Self::Regression { match_floor }),
-            ("regression", None) => Err("--gate regression requires --match-floor".into()),
-            _ => Err(format!("unsupported verification gate {name:?}").into()),
-        }
-    }
-
-    pub(crate) const fn passes(self, summary: VerifySummary, orphan_probes: usize) -> bool {
-        match self {
-            Self::Completion => summary.is_complete() && orphan_probes == 0,
-            Self::Regression { match_floor } => {
-                summary.mismatched == 0
-                    && summary.incomplete == 0
-                    && summary.matched >= match_floor
-                    && orphan_probes == 0
-            }
-        }
-    }
-
-    pub(crate) fn report(self, passed: bool) {
-        let result = if passed { "PASS" } else { "FAIL" };
-        match self {
-            Self::Completion => outputln!("GATE\tcompletion\t{result}"),
-            Self::Regression { match_floor } => {
-                outputln!("GATE\tregression\t{result}\tmatch-floor={match_floor}");
-            }
-        }
-    }
-}
-
-impl VerifySummary {
-    const fn is_complete(self) -> bool {
-        self.mismatched == 0 && self.incomplete == 0 && self.missing == 0
-    }
-
-    pub(crate) fn add(&mut self, other: Self) {
-        self.vendor_functions += other.vendor_functions;
-        self.matched += other.matched;
-        self.symbolic_matches += other.symbolic_matches;
-        self.effect_contract_matches += other.effect_contract_matches;
-        self.scenario_matches += other.scenario_matches;
-        self.state_matches += other.state_matches;
-        self.composition_matches += other.composition_matches;
-        self.mismatched += other.mismatched;
-        self.incomplete += other.incomplete;
-        self.missing += other.missing;
-        self.implemented_unqualified += other.implemented_unqualified;
-        self.not_yet_ported += other.not_yet_ported;
-    }
-}
-
-pub(crate) fn vendor_symbols(source: VerifySource<'_>) -> Result<Vec<ArtifactSymbolIdentity>> {
-    list_code_symbols(source.inventory.unwrap_or(source.artifact), source.prefix)
-}
-
-pub(crate) fn print_protocol_inventory(
-    manifest: &dispositions::Manifest,
-    sources: &[(&str, &[ArtifactSymbolIdentity])],
-) {
-    let mut shared = 0;
-    let mut wifi = 0;
-    let mut bluetooth = 0;
-    let mut ble = 0;
-    let mut coex = 0;
-    let mut ieee802154 = 0;
-    let mut unknown = 0;
-    for (source, symbols) in sources {
-        for symbol in *symbols {
-            match manifest.resolve(source, &symbol.name).protocol {
-                dispositions::Protocol::Shared => shared += 1,
-                dispositions::Protocol::Wifi => wifi += 1,
-                dispositions::Protocol::Bluetooth => bluetooth += 1,
-                dispositions::Protocol::Ble => ble += 1,
-                dispositions::Protocol::Coex => coex += 1,
-                dispositions::Protocol::Ieee802154 => ieee802154 += 1,
-                dispositions::Protocol::Unknown => unknown += 1,
-            }
-        }
-    }
-    outputln!(
-        "PROTOCOL-INVENTORY\tshared={shared}\twifi={wifi}\tbluetooth={bluetooth}\tble={ble}\tcoex={coex}\tieee802154={ieee802154}\tunknown={unknown}\texact-dispositions={}\texecutable-bindings={}",
-        manifest.entries().count(),
-        manifest
-            .entries()
-            .filter(|entry| entry.binding.is_some())
-            .count(),
-    );
-}
+pub(crate) use model::*;
 
 #[allow(
     clippy::too_many_arguments,
     reason = "source verification keeps all artifact and policy inputs explicit"
+)]
+#[tracing::instrument(
+    name = "verify_vendor_source",
+    skip_all,
+    fields(source = source.name, artifact = %source.artifact.display())
 )]
 pub(crate) fn verify_source(
     svd: &MmioRegisterMap,
@@ -146,29 +33,7 @@ pub(crate) fn verify_source(
     execution_profiles: &[profiles::Profile],
     disposition_manifest: Option<&dispositions::Manifest>,
     evidence: &mut EvidenceSet,
-) -> Result<VerifySummary> {
-    let vendor_digest = artifact_sha256(source.artifact)?;
-    outputln!(
-        "ORACLE\t{}\t{}\tsha256={vendor_digest}",
-        source.name,
-        source.artifact.display()
-    );
-    if let Some(inventory) = source.inventory.filter(|path| *path != source.artifact) {
-        let inventory_digest = artifact_sha256(inventory)?;
-        outputln!(
-            "ORACLE\t{}-inventory\t{}\tsha256={inventory_digest}",
-            source.name,
-            inventory.display()
-        );
-    }
-    if let Some(companion) = source.companion {
-        let companion_digest = artifact_sha256(companion)?;
-        outputln!(
-            "ORACLE\t{}-companion\t{}\tsha256={companion_digest}",
-            source.name,
-            companion.display()
-        );
-    }
+) -> Result<SourceVerificationReport> {
     let vendor_symbols = vendor_symbols(source)?;
     // Binding v1 names one exact compiled symbol and is independent of the
     // convention-based probe prefix. Keep the filtered inventory only for
@@ -243,6 +108,7 @@ pub(crate) fn verify_source(
         vendor_functions: vendor_symbols.len(),
         ..VerifySummary::default()
     };
+    let mut functions = Vec::with_capacity(vendor_symbols.len());
     for vendor in &vendor_symbols {
         let suffix = vendor
             .name
@@ -289,25 +155,23 @@ pub(crate) fn verify_source(
                     &vendor.name,
                     driver_adapter_effect_evidence(harness, policy, binding, &proof.canonical),
                 )?;
-                outputln!(
-                    "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\tdriver-adapter={}",
-                    source.name,
-                    vendor.name,
-                    binding.rust_probe,
-                    policy.comparison.label(),
-                    adapter.label(),
-                );
             } else {
                 summary.mismatched += 1;
-                outputln!(
-                    "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\tdriver-adapter={}",
-                    source.name,
-                    vendor.name,
-                    binding.rust_probe,
-                    policy.comparison.label(),
-                    adapter.label(),
-                );
             }
+            let mut function = FunctionVerificationReport::new(
+                source.name,
+                &vendor.name,
+                if proof.matched {
+                    FunctionVerificationStatus::Match
+                } else {
+                    FunctionVerificationStatus::Mismatch
+                },
+            );
+            function.rust_symbol = Some(binding.rust_probe.clone());
+            function.evidence = proof.matched.then(|| "effect-contract".to_owned());
+            function.contract = Some(policy.comparison.label().to_owned());
+            function.driver_adapter = Some(adapter.label().to_owned());
+            functions.push(function);
             continue;
         }
         let selected_rust: Option<(&ArtifactSymbolIdentity, bool)> =
@@ -356,30 +220,24 @@ pub(crate) fn verify_source(
                                 &vendor.name,
                                 semantic_contract_evidence(harness, contract.label()),
                             )?;
-                            outputln!(
-                                "FUNCTION\t{}\t{}\tMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}\thil-evidence={}",
-                                source.name,
-                                vendor.name,
-                                entry
-                                    .rust_component
-                                    .as_deref()
-                                    .expect("implemented entry has a Rust component"),
-                                contract.label(),
-                                entry.hil_evidence.as_deref().unwrap_or("none"),
-                            );
                         } else {
                             summary.mismatched += 1;
-                            outputln!(
-                                "FUNCTION\t{}\t{}\tMISMATCH\trust-component={}\tevidence=composition-state-scenario\tcontract={}",
-                                source.name,
-                                vendor.name,
-                                entry
-                                    .rust_component
-                                    .as_deref()
-                                    .expect("implemented entry has a Rust component"),
-                                contract.label(),
-                            );
                         }
+                        let mut function = FunctionVerificationReport::new(
+                            source.name,
+                            &vendor.name,
+                            if matched {
+                                FunctionVerificationStatus::Match
+                            } else {
+                                FunctionVerificationStatus::Mismatch
+                            },
+                        );
+                        function.rust_component = entry.rust_component.clone();
+                        function.evidence =
+                            matched.then(|| "composition-state-scenario".to_owned());
+                        function.contract = Some(contract.label().to_owned());
+                        function.hil_evidence = entry.hil_evidence.clone();
+                        functions.push(function);
                     } else {
                         summary.missing += 1;
                         summary.implemented_unqualified += 1;
@@ -387,48 +245,46 @@ pub(crate) fn verify_source(
                             .qualification_blockers
                             .iter()
                             .map(|(source, symbol)| format!("{source}:{symbol}"))
-                            .collect::<Vec<_>>()
-                            .join(",");
-                        outputln!(
-                            "FUNCTION\t{}\t{}\tIMPLEMENTED-UNQUALIFIED\tdisposition={}\tprotocol={}\trust-component={}\thil-evidence={}\tqualification-blockers={}\tmissing-semantic-contract",
+                            .collect::<Vec<_>>();
+                        let mut function = FunctionVerificationReport::new(
                             source.name,
-                            vendor.name,
-                            resolved.disposition.label(),
-                            resolved.protocol.label(),
-                            entry
-                                .rust_component
-                                .as_deref()
-                                .expect("implemented entry has a Rust component"),
-                            entry.hil_evidence.as_deref().unwrap_or("none"),
-                            if qualification_blockers.is_empty() {
-                                "none"
-                            } else {
-                                &qualification_blockers
-                            },
+                            &vendor.name,
+                            FunctionVerificationStatus::ImplementedUnqualified,
                         );
+                        function.rust_component = entry.rust_component.clone();
+                        function.disposition = Some(resolved.disposition.label().to_owned());
+                        function.protocol = Some(resolved.protocol.label().to_owned());
+                        function.hil_evidence = entry.hil_evidence.clone();
+                        function.qualification_blockers = qualification_blockers;
+                        function.reason = Some("missing-semantic-contract".to_owned());
+                        functions.push(function);
                     }
                 } else {
                     summary.missing += 1;
                     summary.not_yet_ported += 1;
-                    outputln!(
-                        "FUNCTION\t{}\t{}\tUNCOVERED\tdisposition={}\tprotocol={}\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
+                    let mut function = FunctionVerificationReport::new(
                         source.name,
-                        vendor.name,
-                        resolved.disposition.label(),
-                        resolved.protocol.label(),
-                        rust_prefix,
-                        rust_prefix,
+                        &vendor.name,
+                        FunctionVerificationStatus::Uncovered,
                     );
+                    function.disposition = Some(resolved.disposition.label().to_owned());
+                    function.protocol = Some(resolved.protocol.label().to_owned());
+                    function.reason = Some(format!(
+                        "missing Rust probe {rust_prefix}{suffix} or {rust_prefix}{source_qualified_suffix}"
+                    ));
+                    functions.push(function);
                 }
             } else {
                 summary.missing += 1;
-                outputln!(
-                    "FUNCTION\t{}\t{}\tUNCOVERED\tmissing-rust-probe {}{suffix} or {}{source_qualified_suffix}",
+                let mut function = FunctionVerificationReport::new(
                     source.name,
-                    vendor.name,
-                    rust_prefix,
-                    rust_prefix
+                    &vendor.name,
+                    FunctionVerificationStatus::Uncovered,
                 );
+                function.reason = Some(format!(
+                    "missing Rust probe {rust_prefix}{suffix} or {rust_prefix}{source_qualified_suffix}"
+                ));
+                functions.push(function);
             }
             continue;
         };
@@ -454,7 +310,6 @@ pub(crate) fn verify_source(
             .iter()
             .find(|profile| profile.vendor_symbol == vendor.name)
         {
-            outputln!("PROFILE\t{}\t{}\tBEGIN", source.name, profile.name);
             let argument_domain = profile.coverage_argument_constraints();
             let comparison = compare_execution_scenarios(
                 svd,
@@ -472,7 +327,6 @@ pub(crate) fn verify_source(
                 &argument_domain,
                 &profile.scenarios,
             )?;
-            print_execution_comparison(&comparison);
             let verdict = comparison.verdict;
             match verdict {
                 ComparisonVerdict::Match => {
@@ -491,15 +345,18 @@ pub(crate) fn verify_source(
                 ComparisonVerdict::Mismatch => summary.mismatched += 1,
                 ComparisonVerdict::Incomplete => summary.incomplete += 1,
             }
-            outputln!(
-                "FUNCTION\t{}\t{}\t{}\trust={}\tevidence={}\tbranch-outcomes=complete\tprofile={}",
-                source.name,
-                vendor.name,
-                verdict.label(),
-                rust.name,
-                profile.contract.evidence(),
-                profile.name
-            );
+            let status = match verdict {
+                ComparisonVerdict::Match => FunctionVerificationStatus::Match,
+                ComparisonVerdict::Mismatch => FunctionVerificationStatus::Mismatch,
+                ComparisonVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
+            };
+            let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
+            function.rust_symbol = Some(rust.name.clone());
+            function.evidence = (verdict == ComparisonVerdict::Match)
+                .then(|| profile.contract.evidence().to_owned());
+            function.profile = Some(profile.name.clone());
+            function.execution = Some(comparison);
+            functions.push(function);
             continue;
         }
         if !vendor_trace.is_exact()
@@ -509,30 +366,33 @@ pub(crate) fn verify_source(
                     || !rust_trace.return_value.is_resolved()))
         {
             summary.incomplete += 1;
-            let mut uncovered = print_uncovered(&vendor.name, source.name, &vendor_trace)
-                + print_uncovered(&vendor.name, "rust", &rust_trace);
+            let mut uncovered = vendor_trace.blockers.len()
+                + vendor_trace
+                    .events
+                    .iter()
+                    .filter_map(ObservableEvent::unmapped_address)
+                    .count()
+                + rust_trace.blockers.len()
+                + rust_trace
+                    .events
+                    .iter()
+                    .filter_map(ObservableEvent::unmapped_address)
+                    .count();
             if compare_return && !vendor_trace.return_value.is_resolved() {
-                outputln!(
-                    "UNCOVERED\t{}\t{}\tvendor\tunresolved-return",
-                    source.name,
-                    vendor.name
-                );
                 uncovered += 1;
             }
             if compare_return && !rust_trace.return_value.is_resolved() {
-                outputln!(
-                    "UNCOVERED\t{}\t{}\trust\tunresolved-return",
-                    source.name,
-                    vendor.name
-                );
                 uncovered += 1;
             }
-            outputln!(
-                "FUNCTION\t{}\t{}\tINCOMPLETE\trust={}\tuncovered={uncovered}",
+            let mut function = FunctionVerificationReport::new(
                 source.name,
-                vendor.name,
-                rust.name
+                &vendor.name,
+                FunctionVerificationStatus::Incomplete,
             );
+            function.rust_symbol = Some(rust.name.clone());
+            function.uncovered = Some(uncovered);
+            function.return_compared = Some(compare_return);
+            functions.push(function);
         } else if let Some(policy) = effect_policy {
             let generated_companions = source
                 .companion
@@ -556,14 +416,7 @@ pub(crate) fn verify_source(
                 effect_contract::compare_effects(&vendor_effects, &rust_effects, policy)?;
             let generated_to_rust =
                 effect_contract::compare_effects(&generated_effects, &rust_effects, policy)?;
-            outputln!(
-                "GENERATED-REFERENCE\t{}\t{}\tMATCH\tharness=exact-mmio-leaf-v1\tvendor-effects={}\tgenerated-effects={}",
-                source.name,
-                vendor.name,
-                vendor_effects.len(),
-                generated_effects.len(),
-            );
-            match (vendor_to_rust, generated_to_rust) {
+            let (status, reason) = match (vendor_to_rust, generated_to_rust) {
                 (
                     effect_contract::EffectComparisonVerdict::Match,
                     effect_contract::EffectComparisonVerdict::Match,
@@ -582,135 +435,73 @@ pub(crate) fn verify_source(
                             &generated_proof.canonical(),
                         ),
                     )?;
-                    outputln!(
-                        "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=effect-contract\tcontract={}\teffects={}\treturn={}",
-                        source.name,
-                        vendor.name,
-                        rust.name,
-                        policy.comparison.label(),
-                        vendor_effects.len(),
-                        if compare_return { "checked" } else { "void" },
-                    );
+                    (FunctionVerificationStatus::Match, None)
                 }
                 (
                     effect_contract::EffectComparisonVerdict::Match,
                     effect_contract::EffectComparisonVerdict::Match,
                 ) => {
                     summary.mismatched += 1;
-                    outputln!(
-                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=return",
-                        source.name,
-                        vendor.name,
-                        rust.name,
-                        policy.comparison.label(),
-                    );
+                    (
+                        FunctionVerificationStatus::Mismatch,
+                        Some("return".to_owned()),
+                    )
                 }
                 (effect_contract::EffectComparisonVerdict::Mismatch(reason), _) => {
                     summary.mismatched += 1;
-                    outputln!(
-                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason={reason}",
-                        source.name,
-                        vendor.name,
-                        rust.name,
-                        policy.comparison.label(),
-                    );
+                    (FunctionVerificationStatus::Mismatch, Some(reason))
                 }
                 (_, effect_contract::EffectComparisonVerdict::Mismatch(reason)) => {
                     summary.mismatched += 1;
-                    outputln!(
-                        "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tcontract={}\treason=generated-reference: {reason}",
-                        source.name,
-                        vendor.name,
-                        rust.name,
-                        policy.comparison.label(),
-                    );
+                    (
+                        FunctionVerificationStatus::Mismatch,
+                        Some(format!("generated-reference: {reason}")),
+                    )
                 }
-            }
+            };
+            let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
+            function.rust_symbol = Some(rust.name.clone());
+            function.evidence =
+                (status == FunctionVerificationStatus::Match).then(|| "effect-contract".to_owned());
+            function.contract = Some(policy.comparison.label().to_owned());
+            function.reason = reason;
+            function.effects = Some(vendor_effects.len());
+            function.return_compared = Some(compare_return);
+            functions.push(function);
         } else if traces_equal(&vendor_trace, &rust_trace)
             && (!compare_return || returns_equal(&vendor_trace, &rust_trace))
         {
             summary.matched += 1;
             summary.symbolic_matches += 1;
             record_evidence(evidence, source.name, &vendor.name, "symbolic")?;
-            outputln!(
-                "FUNCTION\t{}\t{}\tMATCH\trust={}\tevidence=symbolic\tevents={}\treturn={}",
+            let mut function = FunctionVerificationReport::new(
                 source.name,
-                vendor.name,
-                rust.name,
-                vendor_trace.events.len(),
-                if compare_return { "checked" } else { "void" }
+                &vendor.name,
+                FunctionVerificationStatus::Match,
             );
+            function.rust_symbol = Some(rust.name.clone());
+            function.evidence = Some("symbolic".to_owned());
+            function.vendor_events = Some(vendor_trace.events.len());
+            function.rust_events = Some(rust_trace.events.len());
+            function.return_compared = Some(compare_return);
+            functions.push(function);
         } else {
             summary.mismatched += 1;
-            outputln!(
-                "FUNCTION\t{}\t{}\tMISMATCH\trust={}\tvendor-events={}\trust-events={}",
+            let mut function = FunctionVerificationReport::new(
                 source.name,
-                vendor.name,
-                rust.name,
-                vendor_trace.events.len(),
-                rust_trace.events.len()
+                &vendor.name,
+                FunctionVerificationStatus::Mismatch,
             );
+            function.rust_symbol = Some(rust.name.clone());
+            function.vendor_events = Some(vendor_trace.events.len());
+            function.rust_events = Some(rust_trace.events.len());
+            function.return_compared = Some(compare_return);
+            functions.push(function);
         }
     }
-    outputln!(
-        "SOURCE-SUMMARY\t{}\tvendor-functions={}\tmatch={}\tsymbolic-match={}\teffect-contract-match={}\tscenario-match={}\tstate-match={}\tcomposition-match={}\tmismatch={}\tincomplete={}\tmissing-rust-probe={}\timplemented-unqualified={}\tnot-yet-ported={}",
-        source.name,
-        summary.vendor_functions,
-        summary.matched,
-        summary.symbolic_matches,
-        summary.effect_contract_matches,
-        summary.scenario_matches,
-        summary.state_matches,
-        summary.composition_matches,
-        summary.mismatched,
-        summary.incomplete,
-        summary.missing,
-        summary.implemented_unqualified,
-        summary.not_yet_ported,
-    );
-    Ok(summary)
-}
-
-pub(crate) fn orphan_probe_count(
-    rust_artifact: &Path,
-    rust_prefix: &str,
-    sources: &[(VerifySource<'_>, &[ArtifactSymbolIdentity])],
-    explicitly_bound_probes: &BTreeSet<String>,
-) -> Result<usize> {
-    let rust_symbols = list_code_symbols(rust_artifact, rust_prefix)?;
-    Ok(rust_symbols
-        .iter()
-        .filter(|rust| {
-            if explicitly_bound_probes.contains(&rust.name) {
-                return false;
-            }
-            let suffix = rust
-                .name
-                .strip_prefix(rust_prefix)
-                .expect("symbol was filtered by Rust prefix");
-            let suffix = suffix.strip_prefix("ret_").unwrap_or(suffix);
-            !sources.iter().any(|(source, symbols)| {
-                symbols.iter().any(|vendor| {
-                    vendor
-                        .name
-                        .strip_prefix(source.prefix)
-                        .is_some_and(|vendor_suffix| {
-                            rust_probe_suffix_matches(source.name, vendor_suffix, suffix)
-                        })
-                })
-            })
-        })
-        .count())
-}
-
-pub(crate) fn rust_probe_suffix_matches(
-    source: &str,
-    vendor_suffix: &str,
-    rust_suffix: &str,
-) -> bool {
-    rust_suffix == vendor_suffix
-        || rust_suffix
-            .strip_prefix(source)
-            .and_then(|suffix| suffix.strip_prefix('_'))
-            == Some(vendor_suffix)
+    Ok(SourceVerificationReport {
+        source: source.name.to_owned(),
+        summary,
+        functions,
+    })
 }

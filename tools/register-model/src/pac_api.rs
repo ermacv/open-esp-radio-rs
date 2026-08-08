@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -88,8 +88,10 @@ common_operation!(MaskedRegisterModify {
 impl PacApiPack {
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let pack: Self = toml_edit::de::from_str(&input)?;
-        pack.validate()?;
+        let pack: Self = toml_edit::de::from_str(&input)
+            .map_err(|error| Error::manifest("PAC API pack", path, error))?;
+        pack.validate()
+            .map_err(|error| Error::manifest("PAC API pack", path, error))?;
         Ok(pack)
     }
 

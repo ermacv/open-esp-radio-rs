@@ -18,12 +18,10 @@ pub(super) fn run(project: &ProjectSpec, output: &Path, check: bool) -> Result<b
     let document = build::build(project)?;
     let rendered = serde_json::to_string_pretty(&document)? + "\n";
     super::super::generated_output::write_or_check(output, &rendered, check, "navigation index")?;
-    let status = if check { "verified" } else { "written" };
-    if !crate::cli::output::file("navigation-index-file", output, status) {
-        outputln!(
-            "NAVIGATION-INDEX\tstatus={status}\tpath={}",
-            output.display()
-        );
-    }
+    tracing::info!(
+        status = if check { "verified" } else { "written" },
+        path = %output.display(),
+        "project navigation index"
+    );
     Ok(true)
 }

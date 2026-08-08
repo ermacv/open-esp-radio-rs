@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 
 use serde_json::{Map, Value};
 
-use crate::{Result, parse_u32};
+use crate::{Result, error::WorkbenchError, parse_u32};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum InterfaceFactRoot {
@@ -92,9 +92,15 @@ pub(crate) struct InterfaceFacts {
 }
 
 impl InterfaceFacts {
+    #[tracing::instrument(name = "load_interface_facts", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let root: Value = serde_json::from_str(&input)?;
+        Self::parse(&input)
+            .map_err(|error| WorkbenchError::manifest("interface discovery report", path, error))
+    }
+
+    fn parse(input: &str) -> Result<Self> {
+        let root: Value = serde_json::from_str(input)?;
         let root = object(&root, "interface facts root")?;
         if integer(root, "schema_version", "interface facts")? != 2 {
             return Err("interface facts require schema_version 2".into());

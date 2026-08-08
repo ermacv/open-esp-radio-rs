@@ -148,23 +148,3 @@ pub(crate) fn traces_equal(left: &FunctionAnalysis, right: &FunctionAnalysis) ->
             .zip(&right.events)
             .all(|(left, right)| left.equivalent(right))
 }
-
-pub(crate) fn print_uncovered(symbol: &str, side: &str, trace: &FunctionAnalysis) -> usize {
-    let mut count = 0;
-    for blocker in &trace.blockers {
-        outputln!("UNCOVERED\t{symbol}\t{side}\t{blocker}");
-        count += 1;
-    }
-    for address in trace
-        .events
-        .iter()
-        .filter_map(ObservableEvent::unmapped_address)
-    {
-        outputln!(
-            "UNCOVERED\t{symbol}\t{side}\tunmapped-register {:#010x}",
-            address
-        );
-        count += 1;
-    }
-    count
-}

@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
+use clap::{ArgAction, Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use super::arguments::*;
 use crate::Result;
@@ -81,6 +81,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Workflow {
+    /// Generate host-shell and manual-page integration assets.
+    Tooling {
+        #[command(subcommand)]
+        command: ToolingCommand,
+    },
     /// Create, inspect and execute project-owned workflows.
     Project {
         #[command(subcommand)]
@@ -148,6 +153,33 @@ enum Workflow {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum CompletionShell {
+    Bash,
+    Elvish,
+    Fish,
+    #[value(name = "powershell")]
+    PowerShell,
+    Zsh,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct CompletionArgs {
+    /// Shell whose completion script is generated.
+    #[arg(value_enum)]
+    pub(crate) shell: CompletionShell,
+    /// Destination completion script.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: PathBuf,
+}
+
+#[derive(Clone, Debug, Args)]
+pub(crate) struct ManpageArgs {
+    /// Destination roff manual page.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) output: PathBuf,
+}
+
 macro_rules! leaf_commands {
     ($name:ident { $($variant:ident($arguments:ty) => $command:path, $data:ident),+ $(,)? }) => {
         #[derive(Debug, Subcommand)]
@@ -164,6 +196,11 @@ macro_rules! leaf_commands {
         }
     };
 }
+
+leaf_commands!(ToolingCommand {
+    Completions(CompletionArgs) => Command::GenerateCompletions, Completion,
+    Manpage(ManpageArgs) => Command::GenerateManpage, Manpage,
+});
 
 leaf_commands!(ProjectCommand {
     Init(ProjectInitArgs) => Command::ProjectInit, ProjectInit,
@@ -277,6 +314,7 @@ leaf_commands!(VerifyContractCommand {
 impl Workflow {
     fn into_parts(self) -> (Command, CommandArguments) {
         match self {
+            Self::Tooling { command } => command.into_parts(),
             Self::Project { command } => command.into_parts(),
             Self::Functions { command } => command.into_parts(),
             Self::Symbols { command } => command.into_parts(),
@@ -296,6 +334,8 @@ impl Workflow {
 
 #[derive(Clone, Debug)]
 pub(crate) enum CommandArguments {
+    Completion(CompletionArgs),
+    Manpage(ManpageArgs),
     Empty(EmptyArgs),
     ProjectInit(ProjectInitArgs),
     ProjectConfigure(ProjectConfigureArgs),
@@ -334,6 +374,8 @@ pub(crate) enum CommandArguments {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Command {
+    GenerateCompletions,
+    GenerateManpage,
     ProjectInit,
     ProjectConfigure,
     ProjectDoctor,
@@ -375,6 +417,10 @@ pub(crate) enum Command {
 }
 
 impl Command {
+    pub(crate) const fn is_tooling(self) -> bool {
+        matches!(self, Self::GenerateCompletions | Self::GenerateManpage)
+    }
+
     pub(crate) const fn requires_harness(self) -> bool {
         matches!(
             self,
@@ -390,133 +436,140 @@ impl Command {
     }
 
     pub(crate) const fn requires_backend(self) -> bool {
-        !matches!(
-            self,
-            Self::ProjectInit
-                | Self::ProjectConfigure
-                | Self::ProjectDoctor
-                | Self::ProjectStatus
-                | Self::ProjectPublish
-                | Self::FunctionInitPack
-                | Self::FunctionValidate
-                | Self::FunctionReview
-                | Self::InterfaceInitPack
-                | Self::InterfaceValidate
-                | Self::RegisterInitModel
-                | Self::RegisterImportSvd
-                | Self::RegisterValidate
-                | Self::RegisterReview
-                | Self::RegisterExportSvd
-                | Self::RegisterGeneratePac
-                | Self::RegisterGenerateBindings
-                | Self::VerifyEvidence
-        )
+        !self.is_tooling()
+            && !matches!(
+                self,
+                Self::ProjectInit
+                    | Self::ProjectConfigure
+                    | Self::ProjectDoctor
+                    | Self::ProjectStatus
+                    | Self::ProjectPublish
+                    | Self::FunctionInitPack
+                    | Self::FunctionValidate
+                    | Self::FunctionReview
+                    | Self::InterfaceInitPack
+                    | Self::InterfaceValidate
+                    | Self::RegisterInitModel
+                    | Self::RegisterImportSvd
+                    | Self::RegisterValidate
+                    | Self::RegisterReview
+                    | Self::RegisterExportSvd
+                    | Self::RegisterGeneratePac
+                    | Self::RegisterGenerateBindings
+                    | Self::VerifyEvidence
+            )
     }
 
     pub(crate) const fn requires_mmio_map(self) -> bool {
-        !matches!(
-            self,
-            Self::ProjectInit
-                | Self::ProjectConfigure
-                | Self::ProjectDoctor
-                | Self::ProjectStatus
-                | Self::ProjectAnalyze
-                | Self::ProjectPublish
-                | Self::FunctionInitPack
-                | Self::FunctionValidate
-                | Self::FunctionReview
-                | Self::InterfaceInitPack
-                | Self::InterfaceValidate
-                | Self::RegisterInitModel
-                | Self::RegisterImportSvd
-                | Self::RegisterValidate
-                | Self::RegisterReview
-                | Self::RegisterExportSvd
-                | Self::RegisterGeneratePac
-                | Self::RegisterGenerateBindings
-                | Self::SymbolInventory
-                | Self::InterfaceDiscover
-                | Self::AuditImageTargets
-                | Self::DiscoverMmio
-                | Self::ExportIr
-                | Self::BuildIr
-                | Self::VerifyEvidence
-        )
+        !self.is_tooling()
+            && !matches!(
+                self,
+                Self::ProjectInit
+                    | Self::ProjectConfigure
+                    | Self::ProjectDoctor
+                    | Self::ProjectStatus
+                    | Self::ProjectAnalyze
+                    | Self::ProjectPublish
+                    | Self::FunctionInitPack
+                    | Self::FunctionValidate
+                    | Self::FunctionReview
+                    | Self::InterfaceInitPack
+                    | Self::InterfaceValidate
+                    | Self::RegisterInitModel
+                    | Self::RegisterImportSvd
+                    | Self::RegisterValidate
+                    | Self::RegisterReview
+                    | Self::RegisterExportSvd
+                    | Self::RegisterGeneratePac
+                    | Self::RegisterGenerateBindings
+                    | Self::SymbolInventory
+                    | Self::InterfaceDiscover
+                    | Self::AuditImageTargets
+                    | Self::DiscoverMmio
+                    | Self::ExportIr
+                    | Self::BuildIr
+                    | Self::VerifyEvidence
+            )
     }
 
     pub(crate) const fn uses_memory_map(self) -> bool {
-        !matches!(
-            self,
-            Self::ProjectInit
-                | Self::ProjectConfigure
-                | Self::FunctionInitPack
-                | Self::FunctionValidate
-                | Self::FunctionReview
-                | Self::InterfaceInitPack
-                | Self::InterfaceValidate
-                | Self::RegisterReview
-                | Self::RegisterExportSvd
-                | Self::RegisterGeneratePac
-                | Self::RegisterGenerateBindings
-                | Self::SymbolInventory
-                | Self::InterfaceDiscover
-                | Self::AuditImageTargets
-                | Self::VerifyEvidence
-        )
+        !self.is_tooling()
+            && !matches!(
+                self,
+                Self::ProjectInit
+                    | Self::ProjectConfigure
+                    | Self::FunctionInitPack
+                    | Self::FunctionValidate
+                    | Self::FunctionReview
+                    | Self::InterfaceInitPack
+                    | Self::InterfaceValidate
+                    | Self::RegisterReview
+                    | Self::RegisterExportSvd
+                    | Self::RegisterGeneratePac
+                    | Self::RegisterGenerateBindings
+                    | Self::SymbolInventory
+                    | Self::InterfaceDiscover
+                    | Self::AuditImageTargets
+                    | Self::VerifyEvidence
+            )
     }
 
     pub(crate) const fn uses_register_catalog(self) -> bool {
-        !matches!(
-            self,
-            Self::ProjectInit
-                | Self::ProjectConfigure
-                | Self::ProjectStatus
-                | Self::FunctionInitPack
-                | Self::FunctionValidate
-                | Self::FunctionReview
-                | Self::RegisterInitModel
-                | Self::RegisterImportSvd
-                | Self::InterfaceInitPack
-                | Self::InterfaceValidate
-                | Self::RegisterReview
-                | Self::RegisterExportSvd
-                | Self::RegisterGeneratePac
-                | Self::RegisterGenerateBindings
-                | Self::ProjectPublish
-                | Self::SymbolInventory
-                | Self::InterfaceDiscover
-                | Self::AuditImageTargets
-                | Self::VerifyEvidence
-        )
+        !self.is_tooling()
+            && !matches!(
+                self,
+                Self::ProjectInit
+                    | Self::ProjectConfigure
+                    | Self::ProjectStatus
+                    | Self::FunctionInitPack
+                    | Self::FunctionValidate
+                    | Self::FunctionReview
+                    | Self::RegisterInitModel
+                    | Self::RegisterImportSvd
+                    | Self::InterfaceInitPack
+                    | Self::InterfaceValidate
+                    | Self::RegisterReview
+                    | Self::RegisterExportSvd
+                    | Self::RegisterGeneratePac
+                    | Self::RegisterGenerateBindings
+                    | Self::ProjectPublish
+                    | Self::SymbolInventory
+                    | Self::InterfaceDiscover
+                    | Self::AuditImageTargets
+                    | Self::VerifyEvidence
+            )
     }
 
     pub(crate) const fn uses_run_spec(self) -> bool {
-        !matches!(
-            self,
-            Self::ProjectInit
-                | Self::ProjectConfigure
-                | Self::FunctionInitPack
-                | Self::FunctionValidate
-                | Self::FunctionReview
-                | Self::InterfaceInitPack
-                | Self::InterfaceValidate
-                | Self::RegisterInitModel
-                | Self::RegisterImportSvd
-                | Self::RegisterValidate
-                | Self::RegisterReview
-                | Self::RegisterExportSvd
-                | Self::RegisterGeneratePac
-                | Self::RegisterGenerateBindings
-                | Self::ProjectPublish
-                | Self::VerifyEvidence
-        )
+        !self.is_tooling()
+            && !matches!(
+                self,
+                Self::ProjectInit
+                    | Self::ProjectConfigure
+                    | Self::FunctionInitPack
+                    | Self::FunctionValidate
+                    | Self::FunctionReview
+                    | Self::InterfaceInitPack
+                    | Self::InterfaceValidate
+                    | Self::RegisterInitModel
+                    | Self::RegisterImportSvd
+                    | Self::RegisterValidate
+                    | Self::RegisterReview
+                    | Self::RegisterExportSvd
+                    | Self::RegisterGeneratePac
+                    | Self::RegisterGenerateBindings
+                    | Self::ProjectPublish
+                    | Self::VerifyEvidence
+            )
     }
 
     pub(crate) fn accepts_run_input_role(self, role: &crate::run_spec::InputRole) -> bool {
         use crate::run_spec::InputRole;
 
         match self {
-            Self::ProjectInit
+            Self::GenerateCompletions
+            | Self::GenerateManpage
+            | Self::ProjectInit
             | Self::ProjectConfigure
             | Self::ProjectDoctor
             | Self::ProjectStatus
@@ -573,6 +626,10 @@ impl ParsedInvocation {
             arguments,
         })
     }
+}
+
+pub(super) fn command_definition() -> clap::Command {
+    Cli::command()
 }
 
 #[cfg(test)]

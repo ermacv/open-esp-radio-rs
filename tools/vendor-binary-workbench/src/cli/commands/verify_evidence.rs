@@ -85,7 +85,7 @@ mod tests {
         ));
         fs::write(
             &report,
-            r#"{"schema_version":3,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
+            r#"{"schema_version":4,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
         )
         .unwrap();
         fs::write(&baseline, "evidence rom leaf symbolic\n").unwrap();

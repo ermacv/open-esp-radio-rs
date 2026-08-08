@@ -388,6 +388,11 @@ fn discovery_map(svd: &MmioRegisterMap, ranges: &[DiscoveryRange]) -> MmioRegist
     map
 }
 
+#[tracing::instrument(
+    name = "discover_mmio",
+    skip(artifacts, ranges, svd),
+    fields(artifacts = artifacts.len(), ranges = ranges.len(), symbol_prefix)
+)]
 pub(crate) fn discover_mmio(
     artifacts: &[(String, PathBuf)],
     ranges: &[DiscoveryRange],

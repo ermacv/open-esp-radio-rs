@@ -11,11 +11,17 @@ use serde_json::{Map, Value};
 use super::review_ir::{
     ReviewFieldEvidence, ReviewIrRegister, ReviewPredicateEvidence, ReviewSemanticEvidence,
 };
-use crate::{Result, parse_u32};
+use crate::{Result, error::WorkbenchError, parse_u32};
 
+#[tracing::instrument(name = "load_register_review_ir", fields(path = %path.display()))]
 pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
     let input = fs::read_to_string(path)?;
-    let root: Value = serde_json::from_str(&input)?;
+    parse_report_text(path, &input)
+        .map_err(|error| WorkbenchError::manifest("linked-IR review report", path, error))
+}
+
+fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> {
+    let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
     if integer(root, "schema_version", "linked-IR report")? != 32 {
         return Err(format!(

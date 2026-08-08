@@ -163,7 +163,7 @@ fn verification_json_report_contains_reproducible_inputs() {
     ));
     let mut evidence = EvidenceSet::new();
     record_evidence(&mut evidence, "archive", "symbol", "symbolic").unwrap();
-    let document = verification_document(VerificationDocumentInputs {
+    let verification = verification_core_report(VerificationCoreInputs {
         target: &target,
         gate: VerificationGate::Regression { match_floor: 1 },
         summary: VerifySummary {
@@ -180,11 +180,22 @@ fn verification_json_report_contains_reproducible_inputs() {
         qualification_gaps: &[],
     })
     .unwrap();
+    let sources = [];
+    let document = VerificationCommandReport {
+        schema_version: VERIFICATION_REPORT_SCHEMA,
+        command: "verify inventory",
+        verification: &verification,
+        sources: &sources,
+        inventory: Vec::new(),
+        protocols: None,
+        evidence_comparison: None,
+        report: None,
+    };
     write_verification_json_report(&path, &document).unwrap();
     let report = fs::read_to_string(&path).unwrap();
     let loaded_evidence = load_evidence_report(&path).unwrap();
     fs::remove_file(path).unwrap();
-    assert!(report.contains("\"schema_version\": 3"));
+    assert!(report.contains("\"schema_version\": 4"));
     assert!(report.contains("\"command\": \"verify inventory\""));
     assert!(report.contains("\"calling_convention\": \"riscv-ilp32\""));
     assert!(report.contains("\"passed\": true"));

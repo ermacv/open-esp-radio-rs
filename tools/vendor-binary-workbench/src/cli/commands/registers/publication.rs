@@ -96,6 +96,7 @@ impl PreparedPublication {
     }
 }
 
+#[tracing::instrument(name = "prepare_project_svd", skip_all)]
 pub(crate) fn prepare_project_svd(
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<PreparedPublication> {
@@ -113,6 +114,7 @@ pub(crate) fn prepare_project_svd(
     })
 }
 
+#[tracing::instrument(name = "prepare_project_pac", skip_all)]
 pub(crate) fn prepare_project_pac(
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<PreparedPublication> {
@@ -181,6 +183,7 @@ fn load_release_workspace(
     Ok(workspace)
 }
 
+#[tracing::instrument(name = "export_svd", skip_all)]
 pub(super) fn export_svd(
     arguments: RegisterExportArgs,
     paths: &crate::project::RegisterWorkspacePaths,
@@ -218,6 +221,7 @@ pub(super) fn export_svd(
     Ok(true)
 }
 
+#[tracing::instrument(name = "generate_pac", skip_all)]
 pub(super) fn generate_pac_source(
     arguments: RegisterPacArgs,
     paths: &crate::project::RegisterWorkspacePaths,

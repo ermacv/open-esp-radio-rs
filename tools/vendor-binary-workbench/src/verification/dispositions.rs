@@ -1,4 +1,4 @@
-//! Machine-readable implementation disposition for the vendor PHY inventory.
+//! Machine-readable implementation disposition parsing and inventory validation.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -8,294 +8,15 @@ use std::{
 
 use crate::{ArtifactSymbolIdentity, Result};
 
-use super::bindings::{Binding, BindingVersion, DriverAdapter};
-use super::effect_contract::{
-    EffectComparison, EffectDisposition, EffectPolicy, EffectSelector, parse_effect_rule,
-};
+use super::bindings::{BindingVersion, DriverAdapter};
+use super::effect_contract::{EffectComparison, parse_effect_rule};
+#[cfg(test)]
+use super::effect_contract::{EffectDisposition, EffectSelector};
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum Protocol {
-    Shared,
-    Wifi,
-    Bluetooth,
-    Ble,
-    Coex,
-    Ieee802154,
-    Unknown,
-}
+mod model;
 
-impl Protocol {
-    fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "shared" => Ok(Self::Shared),
-            "wifi" => Ok(Self::Wifi),
-            "bluetooth" => Ok(Self::Bluetooth),
-            "ble" => Ok(Self::Ble),
-            "coex" => Ok(Self::Coex),
-            "ieee802154" => Ok(Self::Ieee802154),
-            "unknown" => Ok(Self::Unknown),
-            _ => Err(format!("invalid protocol {value:?} at line {line}").into()),
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Shared => "shared",
-            Self::Wifi => "wifi",
-            Self::Bluetooth => "bluetooth",
-            Self::Ble => "ble",
-            Self::Coex => "coex",
-            Self::Ieee802154 => "ieee802154",
-            Self::Unknown => "unknown",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Disposition {
-    Direct,
-    StateTransition,
-    ReplacedByComposition,
-    GenerationCandidate,
-    NotYetPorted,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SemanticContract(String);
-
-impl SemanticContract {
-    fn parse(value: &str, line: usize) -> Result<Self> {
-        if value.is_empty()
-            || !value.bytes().all(|byte| {
-                byte.is_ascii_lowercase()
-                    || byte.is_ascii_digit()
-                    || matches!(byte, b'-' | b'_' | b'.')
-            })
-        {
-            return Err(format!("invalid semantic contract id {value:?} at line {line}").into());
-        }
-        Ok(Self(value.to_owned()))
-    }
-
-    pub fn label(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Disposition {
-    fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "direct" => Ok(Self::Direct),
-            "state-transition" => Ok(Self::StateTransition),
-            "replaced-by-composition" => Ok(Self::ReplacedByComposition),
-            "generation-candidate" => Ok(Self::GenerationCandidate),
-            "not-yet-ported" => Ok(Self::NotYetPorted),
-            _ => Err(format!("invalid disposition {value:?} at line {line}").into()),
-        }
-    }
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Direct => "direct",
-            Self::StateTransition => "state-transition",
-            Self::ReplacedByComposition => "replaced-by-composition",
-            Self::GenerationCandidate => "generation-candidate",
-            Self::NotYetPorted => "not-yet-ported",
-        }
-    }
-
-    pub const fn is_implemented(self) -> bool {
-        matches!(
-            self,
-            Self::Direct | Self::StateTransition | Self::ReplacedByComposition
-        )
-    }
-}
-
-#[derive(Clone, Debug)]
-struct ProtocolPrefix {
-    source: String,
-    prefix: String,
-    protocol: Protocol,
-}
-
-#[derive(Clone, Debug)]
-pub struct Entry {
-    pub source: String,
-    pub symbol: String,
-    pub disposition: Disposition,
-    pub protocol: Option<Protocol>,
-    pub rust_component: Option<String>,
-    pub hil_evidence: Option<String>,
-    pub semantic_contract: Option<SemanticContract>,
-    pub effect_contract: Option<EffectPolicy>,
-    pub binding: Option<Binding>,
-    pub qualification_blockers: Vec<(String, String)>,
-}
-
-#[derive(Clone, Debug)]
-struct EntryBuilder {
-    source: String,
-    symbol: String,
-    disposition: Option<Disposition>,
-    protocol: Option<Protocol>,
-    rust_component: Option<String>,
-    hil_evidence: Option<String>,
-    semantic_contract: Option<SemanticContract>,
-    effect_comparison: Option<EffectComparison>,
-    effect_rules: Vec<(EffectSelector, EffectDisposition)>,
-    binding_version: Option<BindingVersion>,
-    rust_probe: Option<String>,
-    compare_return: Option<bool>,
-    driver_adapter: Option<DriverAdapter>,
-    qualification_blockers: Vec<(String, String)>,
-    line: usize,
-}
-
-impl EntryBuilder {
-    fn finish(self) -> Result<Entry> {
-        let disposition = self.disposition.ok_or_else(|| {
-            format!(
-                "function {} {} has no disposition (started at line {})",
-                self.source, self.symbol, self.line
-            )
-        })?;
-        if disposition.is_implemented() && self.rust_component.is_none() {
-            return Err(format!(
-                "implemented function {} {} has no rust-component",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.semantic_contract.is_some() && !disposition.is_implemented() {
-            return Err(format!(
-                "unimplemented function {} {} cannot have a semantic-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.effect_comparison.is_some()
-            && !disposition.is_implemented()
-            && disposition != Disposition::GenerationCandidate
-        {
-            return Err(format!(
-                "unimplemented function {} {} cannot have an effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.semantic_contract.is_some() && self.effect_comparison.is_some() {
-            return Err(format!(
-                "function {} {} cannot combine semantic-contract and effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.effect_comparison.is_none() && !self.effect_rules.is_empty() {
-            return Err(format!(
-                "function {} {} has effect rules but no effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if !self.qualification_blockers.is_empty() && !disposition.is_implemented() {
-            return Err(format!(
-                "unimplemented function {} {} cannot have qualification blockers",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if !self.qualification_blockers.is_empty()
-            && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
-        {
-            return Err(format!(
-                "qualified function {} {} cannot have qualification blockers",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        let effect_contract = self
-            .effect_comparison
-            .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
-            .transpose()?;
-        let has_binding_fields = self.rust_probe.is_some()
-            || self.compare_return.is_some()
-            || self.driver_adapter.is_some();
-        let binding = match self.binding_version {
-            Some(version) => Some(Binding::new(
-                version,
-                self.rust_probe.ok_or_else(|| {
-                    format!("binding {} {} has no rust-probe", self.source, self.symbol)
-                })?,
-                self.compare_return.unwrap_or(false),
-                self.driver_adapter,
-            )?),
-            None if has_binding_fields => {
-                return Err(format!(
-                    "function {} {} has binding fields but no binding version",
-                    self.source, self.symbol
-                )
-                .into());
-            }
-            None => None,
-        };
-        if effect_contract.is_some()
-            && binding.is_none()
-            && disposition != Disposition::GenerationCandidate
-        {
-            return Err(format!(
-                "effect contract {} {} has no executable binding",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
-            return Err(format!(
-                "binding {} {} has no registered effect or semantic contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if binding
-            .as_ref()
-            .is_some_and(|binding| binding.driver_adapter.is_some())
-            && effect_contract.is_none()
-        {
-            return Err(format!(
-                "driver adapter {} {} requires an effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        Ok(Entry {
-            source: self.source,
-            symbol: self.symbol,
-            disposition,
-            protocol: self.protocol,
-            rust_component: self.rust_component,
-            hil_evidence: self.hil_evidence,
-            semantic_contract: self.semantic_contract,
-            effect_contract,
-            binding,
-            qualification_blockers: self.qualification_blockers,
-        })
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct ResolvedDisposition<'a> {
-    pub disposition: Disposition,
-    pub protocol: Protocol,
-    pub entry: Option<&'a Entry>,
-}
-
-#[derive(Clone, Debug)]
-pub struct Manifest {
-    default_disposition: Disposition,
-    default_protocol: Protocol,
-    protocol_prefixes: Vec<ProtocolPrefix>,
-    entries: BTreeMap<(String, String), Entry>,
-}
+pub use model::{Disposition, Entry, Manifest, Protocol, ResolvedDisposition, SemanticContract};
+use model::{EntryBuilder, ProtocolPrefix};
 
 fn directive_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
     line.split_once(char::is_whitespace)
@@ -310,8 +31,15 @@ pub(crate) fn validate_source_id(value: &str, line: usize) -> Result<&str> {
 }
 
 impl Manifest {
+    #[tracing::instrument(name = "load_disposition_manifest", fields(path = %path.display()))]
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
+        Self::parse(&input).map_err(|error| {
+            crate::error::WorkbenchError::manifest("disposition manifest", path, error)
+        })
+    }
+
+    fn parse(input: &str) -> Result<Self> {
         let mut default_disposition = None;
         let mut default_protocol = None;
         let mut protocol_prefixes = Vec::new();
@@ -489,11 +217,9 @@ impl Manifest {
                                 .into());
                             }
                         }
-                        "effect" => {
-                            builder
-                                .effect_rules
-                                .push(parse_effect_rule(value, line_number)?);
-                        }
+                        "effect" => builder
+                            .effect_rules
+                            .push(parse_effect_rule(value, line_number)?),
                         "binding" => {
                             if builder
                                 .binding_version

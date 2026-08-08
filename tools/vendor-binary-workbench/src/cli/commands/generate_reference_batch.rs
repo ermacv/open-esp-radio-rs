@@ -183,6 +183,11 @@ fn print_generation_report(
     );
 }
 
+#[tracing::instrument(
+    name = "generate_reference_batch",
+    skip_all,
+    fields(artifact = tracing::field::Empty, symbol_prefix = %arguments.symbol_prefix)
+)]
 pub(super) fn run(
     arguments: ReferenceBatchArgs,
     svd: &MmioRegisterMap,
@@ -192,6 +197,7 @@ pub(super) fn run(
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
     let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    tracing::Span::current().record("artifact", tracing::field::display(artifact.display()));
     let output_dir = arguments.output_dir.ok_or("missing --output-dir")?;
     let manifest = arguments
         .manifest

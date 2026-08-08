@@ -17,6 +17,10 @@ use defaults::{apply_project_defaults, apply_run_spec_defaults, apply_target_def
 /// target context. Every ordinary command instead receives the same resolved,
 /// owned context regardless of which domain workflow will consume it.
 pub(super) enum ResolvedInvocation {
+    Tooling {
+        command: Command,
+        arguments: CommandArguments,
+    },
     ProjectInit {
         arguments: CommandArguments,
     },
@@ -59,6 +63,23 @@ fn resolve_from(
         mut svd_paths,
         arguments: mut command_arguments,
     } = invocation;
+
+    if command.is_tooling() {
+        if requested_project.is_some()
+            || requested_target.is_some()
+            || requested_run_spec.is_some()
+            || !svd_paths.is_empty()
+        {
+            return Err(
+                "tooling commands do not accept --project, --target-spec, --run-spec or --svd"
+                    .into(),
+            );
+        }
+        return Ok(ResolvedInvocation::Tooling {
+            command,
+            arguments: command_arguments,
+        });
+    }
 
     if command == Command::ProjectInit {
         if requested_project.is_some()

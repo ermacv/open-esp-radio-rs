@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 use serde::{Deserialize, Serialize};
 use svd_rs::{Device, RegisterCluster};
 
-use crate::Result;
+use crate::{Error, Result};
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", deny_unknown_fields)]
@@ -18,8 +18,10 @@ pub struct RegisterLintPack {
 impl RegisterLintPack {
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let pack: Self = toml_edit::de::from_str(&input)?;
-        pack.validate(path)?;
+        let pack: Self = toml_edit::de::from_str(&input)
+            .map_err(|error| Error::manifest("register lint pack", path, error))?;
+        pack.validate(path)
+            .map_err(|error| Error::manifest("register lint pack", path, error))?;
         Ok(pack)
     }
 

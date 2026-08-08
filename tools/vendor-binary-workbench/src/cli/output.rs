@@ -31,10 +31,19 @@ struct TextRecord {
     text: String,
 }
 
-#[derive(Serialize)]
-struct FileRecord {
-    path: String,
-    status: &'static str,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(super) struct Publication {
+    pub(super) path: String,
+    pub(super) status: &'static str,
+}
+
+impl Publication {
+    pub(super) fn new(path: &Path, status: &'static str) -> Self {
+        Self {
+            path: path.display().to_string(),
+            status,
+        }
+    }
 }
 
 #[derive(Serialize)]
@@ -110,16 +119,6 @@ pub(super) fn render_report(
             unreachable!("structured command output was already emitted")
         }
     }
-}
-
-pub(super) fn file(kind: &'static str, path: &Path, status: &'static str) -> bool {
-    structured(
-        kind,
-        &FileRecord {
-            path: path.display().to_string(),
-            status,
-        },
-    )
 }
 
 fn emit_text(kind: &'static str, text: String, newline: bool) {

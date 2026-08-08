@@ -154,25 +154,35 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<
     }
 
     let report = discover_mmio(&artifacts, &ranges, &arguments.symbol_prefix, svd)?;
-    let document = super::discover_mmio_json::document(&report)?;
-    if !crate::cli::output::structured("mmio-discovery", &document) {
-        print_report(&report);
-    }
+    let publication = arguments.json_report.as_deref().map(|path| {
+        crate::cli::output::Publication::new(
+            path,
+            if arguments.check {
+                "verified"
+            } else {
+                "written"
+            },
+        )
+    });
     if let Some(path) = arguments.json_report.as_deref() {
-        let output = super::discover_mmio_json::render_document(&document)?;
+        let stored_document = super::discover_mmio_json::document(&report, None)?;
+        let output = super::discover_mmio_json::render_document(&stored_document)?;
         super::super::generated_output::write_or_check(
             path,
             &output,
             arguments.check,
             "MMIO discovery report",
         )?;
-        let status = if arguments.check {
-            "verified"
-        } else {
-            "written"
-        };
-        if !crate::cli::output::file("mmio-discovery-file", path, status) {
-            outputln!("JSON-REPORT\tstatus={status}\t{}", path.display());
+    }
+    let document = super::discover_mmio_json::document(&report, publication.clone())?;
+    if !crate::cli::output::structured("mmio-discovery", &document) {
+        print_report(&report);
+        if let Some(publication) = publication {
+            outputln!(
+                "PUBLICATION\tstatus={}\tpath={}",
+                publication.status,
+                publication.path
+            );
         }
     }
     // Discovery is intentionally best-effort. Diagnostics scope individual

@@ -58,6 +58,11 @@ impl PacEdition {
     }
 }
 
+#[tracing::instrument(
+    name = "render_pac_source",
+    skip_all,
+    fields(target = target.label(), edition = edition.label(), reviewed_api = api.is_some())
+)]
 pub(crate) fn generate_pac_with_api(
     svd: &str,
     target: PacTarget,

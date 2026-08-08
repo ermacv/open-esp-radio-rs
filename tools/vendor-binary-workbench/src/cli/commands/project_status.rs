@@ -45,23 +45,30 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
             publication::collect(&context),
         ],
     );
-    let document = render::document(&report);
-    if !crate::cli::output::structured("project-status", &document) {
-        render::print_text(&report);
-    }
+    let publication = options.json_report.as_deref().map(|path| {
+        crate::cli::output::Publication::new(
+            path,
+            if options.check { "verified" } else { "written" },
+        )
+    });
     if let Some(path) = options.json_report.as_deref() {
-        let document = render::json_document(&report)?;
+        let stored_document = render::document(&report, None);
+        let rendered = render::json_document(&stored_document)?;
         super::super::generated_output::write_or_check(
             path,
-            &document,
+            &rendered,
             options.check,
             "project status",
         )?;
-        let status = if options.check { "verified" } else { "written" };
-        if !crate::cli::output::file("project-status-file", path, status) {
+    }
+    let document = render::document(&report, publication.clone());
+    if !crate::cli::output::structured("project-status", &document) {
+        render::print_text(&report);
+        if let Some(publication) = publication {
             outputln!(
-                "PROJECT-STATUS-JSON\tstatus={status}\tpath={}",
-                path.display()
+                "PUBLICATION\tstatus={}\tpath={}",
+                publication.status,
+                publication.path
             );
         }
     }

@@ -213,6 +213,7 @@ fn print_report(discovery: &Discovery) {
     );
 }
 
+#[tracing::instrument(name = "discover_interfaces", skip_all)]
 pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Result<bool> {
     let options = resolve_options(arguments);
     if options.check && options.json_report.is_none() {
@@ -222,6 +223,7 @@ pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Resul
     if inputs.is_empty() {
         return Err("run spec has no artifact or inventory inputs for interface discovery".into());
     }
+    tracing::debug!(inputs = inputs.len(), "resolved interface discovery inputs");
     let discovery = discover(&inputs, &options)?;
     let document = super::interface_discovery_json::document(&discovery)?;
     if !crate::cli::output::structured("interface-discovery", &document) {

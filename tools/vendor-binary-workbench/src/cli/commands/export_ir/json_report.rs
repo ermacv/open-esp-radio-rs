@@ -163,6 +163,8 @@ pub(super) struct LinkedIrDocument<'a> {
     semantic_boundaries: &'a [SemanticBoundary],
     trampoline_slots: &'a [LinkedTrampolineSlot],
     functions: &'a [LinkedIrFunction],
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    publications: Vec<crate::cli::output::Publication>,
 }
 
 pub(super) fn document<'a>(
@@ -172,6 +174,7 @@ pub(super) fn document<'a>(
     entry_contract: EntryContractRef,
     report: &'a LinkedIrReport,
     include_reachable: bool,
+    publications: Vec<crate::cli::output::Publication>,
 ) -> Result<LinkedIrDocument<'a>> {
     Ok(LinkedIrDocument {
         schema_version: 32,
@@ -224,6 +227,7 @@ pub(super) fn document<'a>(
         semantic_boundaries: &report.semantic_boundaries,
         trampoline_slots: &report.trampoline_slots,
         functions: &report.functions,
+        publications,
     })
 }
 
@@ -233,8 +237,5 @@ pub(super) fn render_document(document: &LinkedIrDocument<'_>) -> Result<String>
 
 pub(super) fn write_json_report(path: &Path, document: &LinkedIrDocument<'_>) -> Result<()> {
     fs::write(path, render_document(document)?)?;
-    if !crate::cli::output::file("linked-ir-file", path, "written") {
-        outputln!("JSON-REPORT\t{}", path.display());
-    }
     Ok(())
 }

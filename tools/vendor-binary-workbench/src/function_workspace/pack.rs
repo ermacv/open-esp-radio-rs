@@ -101,12 +101,22 @@ impl FunctionWorkspace {
 }
 
 impl FunctionPack {
+    #[tracing::instrument(name = "load_function_pack", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let document = input.parse::<DocumentMut>()?;
+        let document = input.parse::<DocumentMut>().map_err(|error| {
+            crate::error::WorkbenchError::manifest_source(
+                "function pack",
+                path,
+                &input,
+                &error,
+                error.span(),
+            )
+        })?;
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
             return Err(format!("{} requires schema = 1", path.display()).into());
         }
         super::pack_parse::parse(&document)
+            .map_err(|error| crate::error::WorkbenchError::manifest("function pack", path, error))
     }
 }

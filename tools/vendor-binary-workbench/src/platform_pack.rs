@@ -8,7 +8,7 @@ use std::{
 
 use toml_edit::{DocumentMut, Item};
 
-use crate::{Result, interfaces::SemanticCatalogs, target::TargetSpec};
+use crate::{Result, error::WorkbenchError, interfaces::SemanticCatalogs, target::TargetSpec};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PlatformPack {
@@ -22,12 +22,21 @@ pub(crate) struct PlatformPack {
 }
 
 impl PlatformPack {
+    #[tracing::instrument(name = "load_platform_pack", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let path = path
             .canonicalize()
-            .map_err(|error| format!("cannot resolve platform pack {}: {error}", path.display()))?;
+            .map_err(|error| WorkbenchError::manifest("platform pack", path, error))?;
         let input = fs::read_to_string(&path)?;
-        let document = input.parse::<DocumentMut>()?;
+        let document = input.parse::<DocumentMut>().map_err(|error| {
+            WorkbenchError::manifest_source("platform pack", &path, &input, &error, error.span())
+        })?;
+        let diagnostic_path = path.clone();
+        Self::parse(path, document)
+            .map_err(|error| WorkbenchError::manifest("platform pack", diagnostic_path, error))
+    }
+
+    fn parse(path: PathBuf, document: DocumentMut) -> Result<Self> {
         reject_unknown_keys(&document, &path)?;
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
             return Err(format!("{} requires platform pack schema = 1", path.display()).into());
@@ -209,5 +218,26 @@ mod tests {
         assert_eq!(pack.semantic_operations, 1);
 
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn malformed_pack_reports_its_manifest_path() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-platform-malformed-{}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, "schema = [\n").unwrap();
+        let canonical = path.canonicalize().unwrap();
+        let error = PlatformPack::load(&path).unwrap_err();
+        fs::remove_file(path).unwrap();
+
+        assert!(matches!(
+            error,
+            WorkbenchError::ManifestSource {
+                kind: "platform pack",
+                path: reported,
+                ..
+            } if reported == canonical
+        ));
     }
 }

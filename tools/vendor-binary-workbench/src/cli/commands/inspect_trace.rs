@@ -10,8 +10,11 @@ pub(super) fn run(arguments: TraceInputArgs, svd: &MmioRegisterMap) -> Result<bo
     };
     let trace = extract(&input, svd)?;
     let document = trace_document(&trace);
-    if !crate::cli::output::structured("direct-trace", &document) {
-        print_trace(&trace);
-    }
+    crate::cli::output::render_report(
+        "direct-trace",
+        &document,
+        || print_trace(&trace),
+        || print_trace(&trace),
+    );
     Ok(trace.is_exact())
 }

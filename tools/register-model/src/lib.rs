@@ -46,6 +46,23 @@ pub enum Error {
 
     #[error(transparent)]
     Svd(#[from] svd_rs::SvdError),
+
+    #[error("invalid {kind} {path}: {reason}")]
+    Manifest {
+        kind: &'static str,
+        path: PathBuf,
+        reason: String,
+    },
+}
+
+impl Error {
+    fn manifest(kind: &'static str, path: &Path, error: impl std::fmt::Display) -> Self {
+        Self::Manifest {
+            kind,
+            path: path.to_owned(),
+            reason: error.to_string(),
+        }
+    }
 }
 
 impl From<String> for Error {
@@ -137,55 +154,90 @@ pub struct RegisterModel {
 impl RegisterModel {
     pub fn is_model_file(path: &Path) -> Result<bool> {
         let input = fs::read_to_string(path)?;
-        let document = input.parse::<toml_edit::DocumentMut>()?;
+        let document = input
+            .parse::<toml_edit::DocumentMut>()
+            .map_err(|error| Error::manifest("register model manifest", path, error))?;
         Ok(document.get("schema").and_then(toml_edit::Item::as_integer) == Some(2))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let manifest: RegisterModelManifest = toml_edit::de::from_str(&input)?;
+        let manifest: RegisterModelManifest = toml_edit::de::from_str(&input)
+            .map_err(|error| Error::manifest("register model manifest", path, error))?;
         if manifest.schema != 2 {
-            return Err(format!("{} requires register model schema = 2", path.display()).into());
+            return Err(Error::manifest(
+                "register model manifest",
+                path,
+                "requires schema = 2",
+            ));
         }
         if manifest.fragments.is_empty() {
-            return Err("register model requires at least one peripheral fragment".into());
+            return Err(Error::manifest(
+                "register model manifest",
+                path,
+                "requires at least one peripheral fragment",
+            ));
         }
         if manifest.address_space.is_empty() {
-            return Err("register model address-space must not be empty".into());
+            return Err(Error::manifest(
+                "register model manifest",
+                path,
+                "address-space must not be empty",
+            ));
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let mut seen_paths = BTreeSet::new();
         let mut fragments = Vec::with_capacity(manifest.fragments.len());
         let mut peripherals = Vec::new();
         for relative in &manifest.fragments {
-            validate_relative_fragment(relative)?;
+            validate_relative_fragment(relative)
+                .map_err(|error| Error::manifest("register model manifest", path, error))?;
             if !seen_paths.insert(relative) {
-                return Err(format!("duplicate register model fragment {relative:?}").into());
+                return Err(Error::manifest(
+                    "register model manifest",
+                    path,
+                    format!("duplicate fragment {relative:?}"),
+                ));
             }
             let fragment_path = base.join(relative);
             let input = fs::read_to_string(&fragment_path)?;
-            let fragment: RegisterModelFragment = toml_edit::de::from_str(&input)?;
+            let fragment: RegisterModelFragment =
+                toml_edit::de::from_str(&input).map_err(|error| {
+                    Error::manifest("register model fragment", &fragment_path, error)
+                })?;
             if fragment.schema != 2 {
-                return Err(
-                    format!("{} requires fragment schema = 2", fragment_path.display()).into(),
-                );
+                return Err(Error::manifest(
+                    "register model fragment",
+                    &fragment_path,
+                    "requires schema = 2",
+                ));
             }
             if fragment.peripherals.is_empty() {
-                return Err(format!("{} contains no peripherals", fragment_path.display()).into());
+                return Err(Error::manifest(
+                    "register model fragment",
+                    &fragment_path,
+                    "contains no peripherals",
+                ));
             }
             peripherals.extend(fragment.peripherals.iter().cloned());
             fragments.push(fragment);
         }
-        validate_peripheral_names(&peripherals)?;
-        validate_review_annotations(&fragments)?;
+        validate_peripheral_names(&peripherals)
+            .map_err(|error| Error::manifest("register model", path, error))?;
+        validate_review_annotations(&fragments)
+            .map_err(|error| Error::manifest("register model", path, error))?;
         let review = fragments
             .into_iter()
             .flat_map(|fragment| fragment.review)
             .collect();
-        let device = build_device(&manifest.device, peripherals)?;
-        model_validation::validate_device(&device)?;
+        let device = build_device(&manifest.device, peripherals)
+            .map_err(|error| Error::manifest("register model", path, error))?;
+        model_validation::validate_device(&device)
+            .map_err(|error| Error::manifest("register model", path, error))?;
         let model = Self { device, review };
-        model.register_identities()?;
+        model
+            .register_identities()
+            .map_err(|error| Error::manifest("register model", path, error))?;
         Ok(model)
     }
 
@@ -585,5 +637,25 @@ mod tests {
                 .to_string()
                 .contains("physical register ranges overlap")
         );
+    }
+
+    #[test]
+    fn malformed_manifest_error_retains_the_input_path() {
+        let path = std::env::temp_dir().join(format!(
+            "open-radio-register-model-malformed-{}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, "schema = [\n").unwrap();
+        let error = RegisterModel::load(&path).unwrap_err();
+        fs::remove_file(&path).unwrap();
+
+        assert!(matches!(
+            error,
+            Error::Manifest {
+                kind: "register model manifest",
+                path: reported,
+                ..
+            } if reported == path
+        ));
     }
 }

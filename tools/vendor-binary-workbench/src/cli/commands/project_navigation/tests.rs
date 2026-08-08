@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use serde_json::json;
 
-use super::build::build;
+use super::{build::build, inspect::inspect_report};
 use crate::{
     project::{InterfaceWorkspacePaths, ProjectSpec},
     project_analysis::{NavigationIndexSpec, SymbolInventorySpec},
@@ -125,5 +125,26 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     assert_eq!(document.summary.interface_callers, 1);
     assert_eq!(document.summary.interface_roots, 1);
     assert_eq!(document.summary.unmatched_interface_roots, 0);
+    let navigation_path = directory.join("navigation.json");
+    fs::write(
+        &navigation_path,
+        serde_json::to_string_pretty(&document).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(inspect_report(&navigation_path).unwrap().symbols, 2);
+
+    let mut stale_schema = serde_json::to_value(&document).unwrap();
+    stale_schema["legacy_field"] = json!(true);
+    fs::write(
+        &navigation_path,
+        serde_json::to_string_pretty(&stale_schema).unwrap(),
+    )
+    .unwrap();
+    assert!(
+        inspect_report(&navigation_path)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field")
+    );
     fs::remove_dir_all(directory).unwrap();
 }

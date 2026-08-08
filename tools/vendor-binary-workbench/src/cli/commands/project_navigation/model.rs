@@ -5,7 +5,7 @@ use std::{
     path::Path,
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::Result;
@@ -38,22 +38,25 @@ impl SymbolKey {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct InputDocument {
-    pub(super) kind: &'static str,
+    pub(super) kind: String,
     pub(super) id: String,
     pub(super) path: String,
     pub(super) sha256: String,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct ArtifactDocument {
     pub(super) sha256: String,
     pub(super) paths: BTreeSet<String>,
     pub(super) sources: BTreeSet<String>,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct InventoryObservation {
     pub(super) table: String,
     pub(super) definition: String,
@@ -61,27 +64,31 @@ pub(super) struct InventoryObservation {
     pub(super) resolution: String,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct IrObservation {
     pub(super) profile: String,
     pub(super) identity: String,
     pub(super) selection: String,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct InterfaceCallObservation {
     pub(super) site: String,
     pub(super) kind: String,
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct InterfaceRootObservation {
     pub(super) function: String,
     pub(super) site: String,
     pub(super) kind: String,
 }
 
-#[derive(Default, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SymbolDocument {
     pub(super) id: String,
     pub(super) artifact_sha256: String,
@@ -108,7 +115,8 @@ impl SymbolDocument {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct SummaryDocument {
     pub(super) artifacts: usize,
     pub(super) symbols: usize,
@@ -119,11 +127,12 @@ pub(super) struct SummaryDocument {
     pub(super) unmatched_interface_roots: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct NavigationDocument {
     pub(super) schema_version: u32,
-    pub(super) command: &'static str,
-    pub(super) identity_scheme: &'static str,
+    pub(super) command: String,
+    pub(super) identity_scheme: String,
     pub(super) semantic_claim: bool,
     pub(super) linker_resolution_claim: bool,
     pub(super) inputs: Vec<InputDocument>,
@@ -134,7 +143,7 @@ pub(super) struct NavigationDocument {
 
 pub(super) fn input(kind: &'static str, id: String, path: &Path) -> Result<InputDocument> {
     Ok(InputDocument {
-        kind,
+        kind: kind.to_owned(),
         id,
         path: path.display().to_string(),
         sha256: artifact_sha256(path)?,

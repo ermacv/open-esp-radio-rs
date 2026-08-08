@@ -166,11 +166,14 @@ struct InventoryDocument<'a> {
     artifacts: Vec<ArtifactDocument<'a>>,
     symbols: Vec<SymbolDocument<'a>>,
     summary: SummaryDocument,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
 }
 
 fn document<'a>(
     inventory: &'a ProjectLinkageInventory,
     options: &Options,
+    publication: Option<crate::cli::output::Publication>,
 ) -> Result<InventoryDocument<'a>> {
     let symbols = inventory
         .symbols
@@ -255,6 +258,7 @@ fn document<'a>(
             undefined,
             unresolved_or_associated: unresolved,
         },
+        publication,
     })
 }
 
@@ -276,21 +280,31 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         .map(|input| (input.role.to_string(), input.path.clone()))
         .collect::<Vec<_>>();
     let inventory = build_project_linkage_inventory(&inputs)?;
-    let document = document(&inventory, &options)?;
-    if !crate::cli::output::structured("symbol-inventory", &document) {
-        print_report(&inventory, &options);
-    }
+    let publication = options.json_report.as_deref().map(|path| {
+        crate::cli::output::Publication::new(
+            path,
+            if options.check { "verified" } else { "written" },
+        )
+    });
     if let Some(path) = options.json_report.as_deref() {
-        let output = render_json_report(&document)?;
+        let stored_document = document(&inventory, &options, None)?;
+        let output = render_json_report(&stored_document)?;
         super::super::generated_output::write_or_check(
             path,
             &output,
             options.check,
             "symbol inventory",
         )?;
-        let status = if options.check { "verified" } else { "written" };
-        if !crate::cli::output::file("symbol-inventory-file", path, status) {
-            outputln!("JSON-REPORT\tstatus={status}\t{}", path.display());
+    }
+    let document = document(&inventory, &options, publication.clone())?;
+    if !crate::cli::output::structured("symbol-inventory", &document) {
+        print_report(&inventory, &options);
+        if let Some(publication) = publication {
+            outputln!(
+                "PUBLICATION\tstatus={}\tpath={}",
+                publication.status,
+                publication.path
+            );
         }
     }
     Ok(true)

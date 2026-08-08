@@ -51,8 +51,11 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioRegisterMap) -> Resul
         &scenarios,
     )?;
     let matched = report.verdict == ComparisonVerdict::Match;
-    if !crate::cli::output::structured("execution-comparison", &report) {
-        print_execution_comparison(&report);
-    }
+    crate::cli::output::render_report(
+        "execution-comparison",
+        &report,
+        || print_execution_comparison(&report),
+        || print_execution_comparison(&report),
+    );
     Ok(matched)
 }

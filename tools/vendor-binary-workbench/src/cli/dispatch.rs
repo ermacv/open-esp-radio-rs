@@ -9,6 +9,9 @@ use crate::Result;
 
 pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
     match invocation {
+        ResolvedInvocation::Tooling { command, arguments } => {
+            commands::run_tooling(command, arguments)
+        }
         ResolvedInvocation::ProjectInit { arguments } => commands::run_project_init(arguments),
         ResolvedInvocation::ProjectConfigure {
             arguments,

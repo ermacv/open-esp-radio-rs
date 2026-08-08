@@ -91,8 +91,8 @@ pub(super) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
     };
     Ok(NavigationDocument {
         schema_version: SCHEMA_VERSION,
-        command: "project navigation",
-        identity_scheme: IDENTITY_SCHEME,
+        command: "project navigation".to_owned(),
+        identity_scheme: IDENTITY_SCHEME.to_owned(),
         semantic_claim: false,
         linker_resolution_claim: false,
         inputs,

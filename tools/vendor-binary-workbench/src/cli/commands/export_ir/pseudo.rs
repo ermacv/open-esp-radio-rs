@@ -474,8 +474,5 @@ pub(super) fn write_pseudo(
     include_reachable: bool,
 ) -> Result<()> {
     fs::write(path, render_pseudo(artifacts, report, include_reachable))?;
-    if !crate::cli::output::file("pseudo-ir-file", path, "written") {
-        outputln!("PSEUDO-IR\t{}", path.display());
-    }
     Ok(())
 }

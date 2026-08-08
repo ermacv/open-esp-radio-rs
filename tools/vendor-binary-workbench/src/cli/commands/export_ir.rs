@@ -55,6 +55,12 @@ pub(super) fn run(
         target,
     )?;
 
+    let publications = arguments
+        .json_report
+        .iter()
+        .chain(arguments.pseudo_rust.iter())
+        .map(|path| crate::cli::output::Publication::new(path, "written"))
+        .collect::<Vec<_>>();
     let document = document(
         &artifacts,
         &arguments.companion,
@@ -62,15 +68,23 @@ pub(super) fn run(
         entry_contract,
         &report,
         arguments.include_reachable,
+        publications.clone(),
     )?;
-    if !crate::cli::output::structured("linked-ir", &document) {
-        print_report(&artifacts, &report, arguments.include_reachable);
-    }
     if let Some(path) = arguments.pseudo_rust.as_deref() {
         write_pseudo(path, &artifacts, &report, arguments.include_reachable)?;
     }
     if let Some(path) = arguments.json_report.as_deref() {
         write_json_report(path, &document)?;
+    }
+    if !crate::cli::output::structured("linked-ir", &document) {
+        print_report(&artifacts, &report, arguments.include_reachable);
+        for publication in publications {
+            outputln!(
+                "PUBLICATION\tstatus={}\tpath={}",
+                publication.status,
+                publication.path
+            );
+        }
     }
     Ok(true)
 }
@@ -103,6 +117,7 @@ pub(super) fn generate_project_profile(
         entry_contract,
         &report,
         profile.include_reachable,
+        Vec::new(),
     )?;
     let json = render_document(&document)?;
     let pseudo = profile
@@ -119,6 +134,11 @@ pub(super) fn generate_project_profile(
     })
 }
 
+#[tracing::instrument(
+    name = "build_linked_ir",
+    skip(artifacts, companions, svd, target),
+    fields(artifacts = artifacts.len(), companions = companions.len(), symbol_prefix, include_reachable)
+)]
 fn analyze(
     artifacts: &[IrArtifactInput],
     companions: &[PathBuf],

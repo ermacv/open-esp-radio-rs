@@ -29,6 +29,7 @@ mod project_publication;
 mod project_status;
 mod registers;
 mod symbol_inventory;
+mod tooling;
 mod verify_contract_channel;
 mod verify_contract_rf_init;
 mod verify_evidence;
@@ -48,6 +49,10 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) memory_map: Option<&'a crate::MemoryMap>,
     pub(crate) svd_paths: &'a [std::path::PathBuf],
     pub(crate) svd: &'a MmioRegisterMap,
+}
+
+pub(super) fn run_tooling(command: Command, arguments: CommandArguments) -> Result<bool> {
+    tooling::run(command, arguments)
 }
 
 pub(super) fn run_project_init(arguments: CommandArguments) -> Result<bool> {
@@ -179,7 +184,9 @@ pub(super) fn run(
     target: &TargetSpec,
 ) -> Result<bool> {
     match command {
-        Command::ProjectInit
+        Command::GenerateCompletions
+        | Command::GenerateManpage
+        | Command::ProjectInit
         | Command::ProjectConfigure
         | Command::ProjectDoctor
         | Command::ProjectStatus

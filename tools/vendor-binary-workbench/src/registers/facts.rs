@@ -4,7 +4,7 @@ use std::{collections::BTreeSet, fs, path::Path};
 
 use serde_json::{Map, Value};
 
-use crate::{Result, parse_u32};
+use crate::{Result, error::WorkbenchError, parse_u32};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FactRange {
@@ -52,9 +52,15 @@ pub(crate) struct RegisterFacts {
 }
 
 impl RegisterFacts {
+    #[tracing::instrument(name = "load_register_facts", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let root: Value = serde_json::from_str(&input)?;
+        Self::parse(&input)
+            .map_err(|error| WorkbenchError::manifest("MMIO discovery report", path, error))
+    }
+
+    fn parse(input: &str) -> Result<Self> {
+        let root: Value = serde_json::from_str(input)?;
         let root = object(&root, "MMIO facts root")?;
         if integer(root, "schema_version", "MMIO facts")? != 2 {
             return Err("MMIO facts require schema_version 2".into());

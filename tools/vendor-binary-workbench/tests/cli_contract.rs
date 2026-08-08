@@ -401,6 +401,7 @@ fn project_analyze_is_the_only_project_analysis_entry_point() {
     let help = String::from_utf8_lossy(&help.stdout);
     assert!(help.contains("--check"));
     assert!(help.contains("--deny-unreviewed"));
+    assert!(help.contains("--progress"));
 
     for removed in ["build", "check"] {
         let output = run(&["project", removed]);
@@ -432,6 +433,9 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(document["status"], "failed");
     assert!(document["blocked"].as_u64().unwrap() > 0);
     assert!(document["stages"].is_array());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.contains("Project analysis"));
+    assert!(!stderr.contains("Project stage:"));
     assert!(
         document["stages"]
             .as_array()

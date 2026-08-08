@@ -22,6 +22,7 @@ static STATE: Mutex<OutputState> = Mutex::new(OutputState {
 
 thread_local! {
     static SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+    static PROGRESS_SUSPENSION_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
 struct OutputState {
@@ -100,8 +101,8 @@ pub(super) fn render_report(value: &impl Serialize, human: impl FnOnce(), tsv: i
         return;
     }
     match format() {
-        OutputFormat::Human => human(),
-        OutputFormat::Tsv => tsv(),
+        OutputFormat::Human => with_progress_suspended(human),
+        OutputFormat::Tsv => with_progress_suspended(tsv),
         OutputFormat::Json | OutputFormat::Jsonl => {
             unreachable!("structured command output was already emitted")
         }
@@ -114,12 +115,14 @@ fn emit_text(text: String, newline: bool) {
     }
     match FORMAT.get().copied().unwrap_or_default() {
         OutputFormat::Human | OutputFormat::Tsv => {
-            let mut stdout = io::stdout().lock();
-            if newline {
-                writeln!(stdout, "{text}").expect("writing command output to stdout");
-            } else {
-                write!(stdout, "{text}").expect("writing command output to stdout");
-            }
+            with_progress_suspended(|| {
+                let mut stdout = io::stdout().lock();
+                if newline {
+                    writeln!(stdout, "{text}").expect("writing command output to stdout");
+                } else {
+                    write!(stdout, "{text}").expect("writing command output to stdout");
+                }
+            });
         }
         OutputFormat::Json | OutputFormat::Jsonl => {
             panic!("machine output requires one typed command report")
@@ -142,9 +145,11 @@ fn emit_report(report: Box<RawValue>) {
         OutputFormat::Json => state.report = Some(report),
         OutputFormat::Jsonl => {
             drop(state);
-            let mut stdout = io::stdout().lock();
-            serde_json::to_writer(&mut stdout, &report).expect("serializing command report");
-            writeln!(stdout).expect("writing command output to stdout");
+            with_progress_suspended(|| {
+                let mut stdout = io::stdout().lock();
+                serde_json::to_writer(&mut stdout, &report).expect("serializing command report");
+                writeln!(stdout).expect("writing command output to stdout");
+            });
         }
         OutputFormat::Human | OutputFormat::Tsv => {
             unreachable!("typed reports are emitted only for machine output")
@@ -161,8 +166,28 @@ pub(super) fn finish() -> Result<()> {
         .report
         .as_ref()
         .expect("a successful JSON command must emit one typed report");
-    let mut stdout = io::stdout().lock();
-    serde_json::to_writer_pretty(&mut stdout, report)?;
-    writeln!(stdout)?;
+    with_progress_suspended(|| -> Result<()> {
+        let mut stdout = io::stdout().lock();
+        serde_json::to_writer_pretty(&mut stdout, report)?;
+        writeln!(stdout)?;
+        Ok(())
+    })?;
     Ok(())
+}
+
+fn with_progress_suspended<T>(action: impl FnOnce() -> T) -> T {
+    struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            PROGRESS_SUSPENSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+
+    if PROGRESS_SUSPENSION_DEPTH.with(|depth| depth.get() != 0) {
+        return action();
+    }
+    PROGRESS_SUSPENSION_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    let _guard = Guard;
+    tracing_indicatif::suspend_tracing_indicatif(action)
 }

@@ -24,6 +24,14 @@ pub(crate) enum OutputFormat {
     Tsv,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(crate) enum ProgressMode {
+    #[default]
+    Auto,
+    Always,
+    Never,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct UiArgs {
     /// Increase diagnostic verbosity; repeat for debug and trace output.
@@ -41,6 +49,10 @@ pub(crate) struct UiArgs {
     /// Select the command-result representation written to stdout.
     #[arg(long, global = true, value_enum, default_value_t)]
     pub(crate) format: OutputFormat,
+
+    /// Control progress rendering on stderr.
+    #[arg(long, global = true, value_enum, default_value_t)]
+    pub(crate) progress: ProgressMode,
 }
 
 #[derive(Debug, Parser)]
@@ -648,11 +660,14 @@ mod tests {
             "--include-reachable".to_owned(),
             "--svd".to_owned(),
             "radio.svd".to_owned(),
+            "--progress".to_owned(),
+            "never".to_owned(),
         ])
         .unwrap();
         assert_eq!(invocation.command, Command::ExportIr);
         assert_eq!(invocation.target_spec, Some(PathBuf::from("target.spec")));
         assert_eq!(invocation.svd_paths, [PathBuf::from("radio.svd")]);
+        assert_eq!(invocation.ui.progress, ProgressMode::Never);
         let CommandArguments::IrExport(arguments) = invocation.arguments else {
             panic!("unexpected argument type")
         };

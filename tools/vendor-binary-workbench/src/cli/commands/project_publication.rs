@@ -4,7 +4,7 @@ use super::{Command, CommandArguments, Result, registers};
 use serde::Serialize;
 
 use crate::MemoryMap;
-use crate::cli::{CheckArgs, ValidationArgs, args::OutputFormat};
+use crate::cli::{CheckArgs, ValidationArgs};
 use crate::project::{ProjectSpec, RegisterWorkspacePaths};
 
 use super::project_pipeline::status::{
@@ -247,15 +247,11 @@ fn finish(check: bool, summary: PipelineSummary) -> Result<bool> {
         blocked: summary.blocked,
         not_configured: summary.not_configured,
     };
-    if !crate::cli::output::structured(&document) {
-        match crate::cli::output::format() {
-            OutputFormat::Human => print_human(&document),
-            OutputFormat::Tsv => print_tsv(&document),
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                unreachable!("structured publication output was already emitted")
-            }
-        }
-    }
+    crate::cli::output::render_report(
+        &document,
+        || print_human(&document),
+        || print_tsv(&document),
+    );
     Ok(summary.succeeded())
 }
 

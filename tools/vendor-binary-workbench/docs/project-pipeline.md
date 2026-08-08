@@ -106,6 +106,12 @@ the normal unsuccessful-result exit status. Detailed configuration parsing
 errors that prevent constructing the project at all are reported before the
 analysis begins.
 
+In an interactive terminal the active workflow and stage are shown on stderr.
+`--progress auto` is the default and is disabled automatically for TSV, JSON,
+JSONL, redirected stderr, and `--quiet`. Use `--progress always` only when a
+caller explicitly wants terminal progress despite those defaults, or
+`--progress never` for deterministic silent stderr apart from diagnostics.
+
 ## Strict review coverage
 
 By default, workspace validation checks schema, identities, provenance guards,

@@ -68,10 +68,11 @@ dispatch path:
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
 | `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
 | `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
+| `cli/progress.rs` | TTY/machine-output progress policy and reusable operation/stage spans |
 | `cli/commands/tooling.rs` | Shell completions and roff manual pages generated from the canonical `clap` grammar without loading a project |
 | `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Typed reviewed-workspace DTOs plus human/TSV presentation |
 | `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
-| `cli/ui.rs` | miette diagnostics and tracing configuration on stderr |
+| `cli/ui.rs` | miette diagnostics plus tracing/progress layer composition on stderr |
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
 | `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
 
@@ -118,6 +119,16 @@ only workbench targets to info, debug and trace. An explicit `RUST_LOG` owns
 the complete non-quiet filter. `--quiet` always disables tracing. A command
 that fails before producing a result leaves stdout empty, including in JSON
 mode; its diagnostic is rendered only on stderr.
+
+Long-running commands expose progress through the same tracing spans. The
+global `--progress auto|always|never` policy defaults to `auto`: progress is
+shown only for human output when stderr is a terminal. Machine formats and
+redirected stderr therefore stay quiet by default; `always` is an explicit
+override, while `--quiet` suppresses progress regardless of this setting.
+`tracing-indicatif` supplies the stderr writer used by the tracing formatter,
+so `-v` diagnostics cannot overwrite an active progress bar. Project analysis
+and publication use nested workflow/stage spans; direct long-running commands
+use one root operation span.
 
 Machine output is the command's typed report itself; there is no generic
 record envelope. The output boundary owns a single report slot: a second
@@ -450,12 +461,10 @@ These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or
 clarifying the dependency direction is not an architectural improvement.
 
-## Deferred terminal UX
+## Deferred interactive UX
 
-Progress bars, an interactive project wizard and an IR TUI are not part of the
-current command contract. Long operations already expose nested tracing spans
-on stderr, while every project-init/configuration operation remains fully
-scriptable through typed arguments and checked-in manifests. If progress is
-added later it must be stderr/TTY-only and must not affect JSON, JSONL or TSV;
-an interactive wizard must remain a frontend over the same resolver. A TUI
-should consume the typed reports rather than introduce a second analysis path.
+An interactive project wizard and an IR TUI are not part of the current
+command contract. Every project-init/configuration operation remains fully
+scriptable through typed arguments and checked-in manifests. An interactive
+wizard must remain a frontend over the same resolver, and a TUI should consume
+the typed reports rather than introduce a second analysis path.

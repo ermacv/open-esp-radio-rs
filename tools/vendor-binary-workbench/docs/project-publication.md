@@ -72,6 +72,9 @@ Statuses are `written`, `verified`, `failed`, `blocked`, and
 report containing the ordered stages and aggregate counts. Output from the
 nested validation and generation commands is intentionally suppressed at this
 composition boundary; diagnostics and tracing still go to stderr.
+Interactive runs also show the active publication stage on stderr under the
+global `--progress auto|always|never` policy; this never changes the typed
+stdout report.
 
 ## Relationship to other commands
 

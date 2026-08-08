@@ -3,7 +3,6 @@
 use serde::Serialize;
 
 use super::Result;
-use crate::cli::args::OutputFormat;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
@@ -113,7 +112,7 @@ pub(crate) fn execute(
     success: StageSuccess,
     action: impl FnOnce() -> Result<bool>,
 ) -> StageOutcome {
-    let span = tracing::info_span!("project_stage", stage = name);
+    let span = crate::cli::progress::stage_span(name);
     let _entered = span.enter();
     tracing::info!("started");
     let outcome = match crate::cli::output::suppress(action) {
@@ -147,15 +146,11 @@ pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
         blocked: summary.blocked,
         not_configured: summary.not_configured,
     };
-    if !crate::cli::output::structured(&document) {
-        match crate::cli::output::format() {
-            OutputFormat::Human => print_human(&document),
-            OutputFormat::Tsv => print_tsv(&document),
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                unreachable!("structured project analysis output was already emitted")
-            }
-        }
-    }
+    crate::cli::output::render_report(
+        &document,
+        || print_human(&document),
+        || print_tsv(&document),
+    );
 }
 
 fn print_human(document: &AnalysisDocument<'_>) {

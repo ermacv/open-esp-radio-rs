@@ -17,6 +17,7 @@ path = "src/main.rs"
 clap = { version = "=4.5.48", features = ["derive"] }
 clap_complete = "=4.5.58"
 clap_mangen = "=0.2.30"
+indicatif = { version = "=0.18.6", default-features = false, features = ["unicode-width"] }
 miette = { version = "=7.6.0", features = ["fancy"] }
 open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
 open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31" }
@@ -34,6 +35,7 @@ tabled = { version = "=0.21.0", default-features = false, features = ["std"] }
 toml_edit = { version = "=0.25.13", features = ["serde"] }
 thiserror = "=2.0.19"
 tracing = "=0.1.44"
+tracing-indicatif = "=0.3.14"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
 
 [lints]

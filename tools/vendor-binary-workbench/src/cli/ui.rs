@@ -5,32 +5,61 @@ use std::{
     io::{IsTerminal, stderr},
 };
 
+use indicatif::ProgressStyle;
 use tracing::level_filters::LevelFilter;
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_indicatif::{
+    IndicatifLayer,
+    filter::{IndicatifFilter, hide_indicatif_span_fields},
+};
+use tracing_subscriber::{
+    EnvFilter,
+    fmt::{self, format::DefaultFields},
+    layer::{Layer, SubscriberExt},
+    util::SubscriberInitExt,
+};
 
 use super::args::{ColorMode, UiArgs};
 use crate::Result;
 
 pub(super) fn init(arguments: &UiArgs) -> Result<()> {
     let filter = diagnostic_filter(arguments);
+    let stderr_is_terminal = stderr().is_terminal();
+    let progress_enabled = super::progress::enabled_for(arguments, stderr_is_terminal);
     let ansi = match arguments.color {
-        ColorMode::Auto => stderr().is_terminal(),
+        ColorMode::Auto => stderr_is_terminal,
         ColorMode::Always => true,
         ColorMode::Never => false,
     };
     miette::set_hook(Box::new(move |_| {
         Box::new(miette::MietteHandlerOpts::new().color(ansi).build())
     }))?;
+    let indicatif = IndicatifLayer::new()
+        .with_span_field_formatter(hide_indicatif_span_fields(DefaultFields::new()))
+        .with_progress_style(progress_style(ansi));
+    let diagnostic_writer = indicatif.get_stderr_writer();
+    let indicatif = progress_enabled.then(|| indicatif.with_filter(IndicatifFilter::new(false)));
     tracing_subscriber::registry()
-        .with(filter)
         .with(
             fmt::layer()
                 .with_ansi(ansi)
                 .with_target(false)
-                .with_writer(stderr),
+                .with_writer(diagnostic_writer)
+                .with_filter(filter),
         )
+        .with(indicatif)
         .try_init()?;
     Ok(())
+}
+
+fn progress_style(ansi: bool) -> ProgressStyle {
+    let template = if ansi {
+        "{spinner:.cyan} {msg}"
+    } else {
+        "{spinner} {msg}"
+    };
+    ProgressStyle::with_template(template)
+        .expect("static progress template")
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
 }
 
 fn diagnostic_filter(arguments: &UiArgs) -> EnvFilter {

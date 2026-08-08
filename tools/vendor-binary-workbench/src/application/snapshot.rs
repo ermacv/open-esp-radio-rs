@@ -1,21 +1,22 @@
 //! Read-only projection of every configured project workspace.
 
+mod comparisons;
+mod interfaces;
+mod registers;
+mod status;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{ProjectSession, model::*};
-use crate::{
-    function_workspace::{
-        FunctionFact, FunctionMemoryObjectFact, FunctionReviewStatus, FunctionWorkspace,
-        ReviewedFunction, ReviewedLogicalType, ReviewedMemoryObject,
-    },
-    interfaces::InterfaceWorkspace,
-    registers::ProjectRegisterWorkspace,
+use crate::function_workspace::{
+    FunctionFact, FunctionMemoryObjectFact, FunctionReviewStatus, FunctionWorkspace,
+    ReviewedFunction, ReviewedLogicalType, ReviewedMemoryObject,
 };
 
 pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSnapshot {
     let context = resolved.context();
     let status = crate::application::status::collect(&context);
-    let project_status = project_status_snapshot(&status);
+    let project_status = self::status::collect(&status);
     let mut diagnostics = status
         .phases
         .iter()
@@ -40,9 +41,9 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         })
         .collect::<Vec<_>>();
     let (functions, logical_types) = functions(resolved, &mut diagnostics);
-    let registers = registers(resolved, &mut diagnostics);
-    let interfaces = interfaces(resolved, &mut diagnostics);
-    let comparisons = comparisons(resolved, &mut diagnostics);
+    let registers = self::registers::collect(resolved, &mut diagnostics);
+    let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
+    let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
     diagnostics.sort_by(|left, right| {
         (&left.component, &left.message).cmp(&(&right.component, &right.message))
     });
@@ -56,104 +57,6 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         interfaces,
         comparisons,
         diagnostics,
-    }
-}
-
-fn comparisons(
-    resolved: &ProjectSession,
-    diagnostics: &mut Vec<DiagnosticRecord>,
-) -> Vec<ComparisonProfileSummary> {
-    let Some(workspace) = resolved.project.verification.as_ref() else {
-        return Vec::new();
-    };
-    let mut output = Vec::new();
-    let mut names = BTreeSet::new();
-    for path in &workspace.profiles {
-        let profiles = match crate::verification::profiles::load(path) {
-            Ok(profiles) => profiles,
-            Err(error) => {
-                push_error(
-                    diagnostics,
-                    "verification.profiles",
-                    error,
-                    Some(path.clone()),
-                );
-                continue;
-            }
-        };
-        for profile in profiles {
-            if !names.insert(profile.name.clone()) {
-                diagnostics.push(DiagnosticRecord {
-                    severity: DiagnosticSeverity::Error,
-                    component: "verification.profiles".to_owned(),
-                    message: format!("duplicate comparison profile {:?}", profile.name),
-                    path: Some(path.clone()),
-                });
-                continue;
-            }
-            output.push(ComparisonProfileSummary {
-                name: profile.name,
-                path: path.clone(),
-                vendor_source: profile.vendor_source,
-                vendor_symbol: profile.vendor_symbol,
-                rust_symbol: profile.rust_symbol,
-                scenarios: profile.scenarios.len(),
-            });
-        }
-    }
-    output.sort_by(|left, right| left.name.cmp(&right.name));
-    output
-}
-
-fn project_status_snapshot(
-    report: &crate::application::status::model::StatusReport,
-) -> ProjectStatusSnapshot {
-    ProjectStatusSnapshot {
-        project_id: report.project_id.clone(),
-        manifest: report.manifest.clone(),
-        target_id: report.target.id.clone(),
-        architecture: report.target.architecture.clone(),
-        calling_convention: report.target.calling_convention.clone(),
-        harness: report.target.harness.clone(),
-        overall: readiness(report.overall),
-        phases: report
-            .phases
-            .iter()
-            .map(|phase| WorkspacePhaseSnapshot {
-                name: phase.name.to_owned(),
-                status: readiness(phase.status),
-                components: phase
-                    .components
-                    .iter()
-                    .map(|component| WorkspaceComponentSnapshot {
-                        name: component.name.to_owned(),
-                        status: readiness(component.status),
-                        details: component
-                            .details
-                            .iter()
-                            .map(|(key, value)| {
-                                (
-                                    key.clone(),
-                                    serde_json::to_value(value)
-                                        .expect("status detail values are serializable"),
-                                )
-                            })
-                            .collect(),
-                        diagnostic: component.diagnostic.clone(),
-                    })
-                    .collect(),
-            })
-            .collect(),
-    }
-}
-
-fn readiness(value: crate::application::status::model::Readiness) -> WorkspaceReadiness {
-    use crate::application::status::model::Readiness;
-    match value {
-        Readiness::Ready => WorkspaceReadiness::Ready,
-        Readiness::Incomplete => WorkspaceReadiness::Incomplete,
-        Readiness::NotConfigured => WorkspaceReadiness::NotConfigured,
-        Readiness::Invalid => WorkspaceReadiness::Invalid,
     }
 }
 
@@ -621,174 +524,7 @@ fn function_selection(selection: &str) -> FunctionSelection {
     }
 }
 
-fn registers(
-    resolved: &ProjectSession,
-    diagnostics: &mut Vec<DiagnosticRecord>,
-) -> RegisterWorkspaceReport {
-    let configured = resolved.project.registers.is_some();
-    let model = resolved
-        .project
-        .registers
-        .as_ref()
-        .map(|paths| paths.model.clone());
-    let summary = resolved.project.registers.as_ref().and_then(|paths| {
-        if !paths.model.is_file() {
-            return None;
-        }
-        match ProjectRegisterWorkspace::load(&paths.facts, &paths.model)
-            .and_then(|workspace| workspace.summary())
-        {
-            Ok(summary) => Some(summary),
-            Err(error) => {
-                push_error(diagnostics, "registers", error, Some(paths.model.clone()));
-                None
-            }
-        }
-    });
-    RegisterWorkspaceReport {
-        configured,
-        model,
-        ranges: summary.map_or(0, |summary| summary.ranges),
-        observed: summary.map_or(0, |summary| summary.observed),
-        reviewed: summary.map_or(0, |summary| summary.reviewed),
-        manual: summary.map_or(0, |summary| summary.manual),
-        unreviewed: summary.map_or(0, |summary| summary.unreviewed),
-        fields: summary.map_or(0, |summary| summary.fields),
-        registers: resolved
-            .mmio
-            .registers
-            .iter()
-            .map(|register| RegisterSummary {
-                address: register.address,
-                name: register.name.clone(),
-            })
-            .collect(),
-    }
-}
-
-fn interfaces(
-    resolved: &ProjectSession,
-    diagnostics: &mut Vec<DiagnosticRecord>,
-) -> InterfaceWorkspaceReport {
-    let Some(paths) = resolved.project.interfaces.as_ref() else {
-        return InterfaceWorkspaceReport {
-            configured: false,
-            facts: None,
-            pack: None,
-            observed_slots: 0,
-            reviewed_slots: 0,
-            unreviewed_slots: 0,
-            contracts: Vec::new(),
-            slots: Vec::new(),
-        };
-    };
-    let Some(pack) = paths.pack.as_ref().filter(|pack| pack.is_file()) else {
-        return InterfaceWorkspaceReport {
-            configured: true,
-            facts: Some(paths.facts.clone()),
-            pack: paths.pack.clone(),
-            observed_slots: 0,
-            reviewed_slots: 0,
-            unreviewed_slots: 0,
-            contracts: Vec::new(),
-            slots: Vec::new(),
-        };
-    };
-    if !paths.facts.is_file() {
-        return InterfaceWorkspaceReport {
-            configured: true,
-            facts: Some(paths.facts.clone()),
-            pack: Some(pack.clone()),
-            observed_slots: 0,
-            reviewed_slots: 0,
-            unreviewed_slots: 0,
-            contracts: Vec::new(),
-            slots: Vec::new(),
-        };
-    }
-    let harness = resolved
-        .target
-        .harness
-        .as_deref()
-        .and_then(|harness| crate::harnesses::contracts(harness).ok());
-    let workspace = match InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        resolved.target.calling_convention.label(),
-        harness,
-    ) {
-        Ok(workspace) => workspace,
-        Err(error) => {
-            push_error(diagnostics, "interfaces", error, Some(pack.clone()));
-            return InterfaceWorkspaceReport {
-                configured: true,
-                facts: Some(paths.facts.clone()),
-                pack: Some(pack.clone()),
-                observed_slots: 0,
-                reviewed_slots: 0,
-                unreviewed_slots: 0,
-                contracts: Vec::new(),
-                slots: Vec::new(),
-            };
-        }
-    };
-    let summary = workspace.summary();
-    InterfaceWorkspaceReport {
-        configured: true,
-        facts: Some(paths.facts.clone()),
-        pack: Some(pack.clone()),
-        observed_slots: summary.observed_slots,
-        reviewed_slots: summary.reviewed_slots,
-        unreviewed_slots: summary.unreviewed_slots,
-        contracts: workspace
-            .contracts()
-            .iter()
-            .map(|contract| InterfaceContractSummary {
-                id: contract.id.clone(),
-                source: contract.source.clone(),
-                layout_version: contract.layout_version.clone(),
-                pointer_width: contract.pointer_width,
-                layout_size: contract.layout_size,
-                slot_stride: contract.slot_stride,
-                guards: contract.guards.len(),
-                execution_contract: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.id.clone()),
-                slots: contract.slots.clone(),
-            })
-            .collect(),
-        slots: workspace
-            .bindings()
-            .iter()
-            .map(|slot| InterfaceSlotSummary {
-                id: slot.id.clone(),
-                contract: slot.contract.clone(),
-                offset: slot.offset,
-                width: slot.width,
-                name: slot.name.clone(),
-                arguments: slot.arguments.clone(),
-                return_type: slot.return_type.clone(),
-                variadic: slot.variadic,
-                semantic: slot.semantic.clone(),
-                effects: slot
-                    .semantic_annotation
-                    .as_ref()
-                    .map_or_else(Vec::new, |semantic| semantic.effects.clone()),
-                replacement: slot
-                    .semantic_annotation
-                    .as_ref()
-                    .and_then(|semantic| semantic.replacement.clone()),
-                execution_model: slot.execution_model.as_ref().map(|model| model.id.clone()),
-                functions: slot.functions.iter().cloned().collect(),
-                call_sites: slot.calls.iter().map(|call| call.site).collect(),
-            })
-            .collect(),
-    }
-}
-
-fn push_error(
+pub(super) fn push_error(
     diagnostics: &mut Vec<DiagnosticRecord>,
     component: &str,
     error: crate::Error,

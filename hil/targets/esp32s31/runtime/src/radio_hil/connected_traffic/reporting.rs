@@ -58,13 +58,35 @@ pub(in crate::radio_hil) fn log_open_radio_ampdu_interval(
     ));
     emergency_log(format_args!(
         "OAMPT preparation_us={} preparation_max_us={} publication_us={} \
-         publication_max_us={} exchange_us={} exchange_max_us={}",
+         publication_max_us={} exchange_us={} exchange_max_us={} \
+         first_exchanges={} first_exchange_us={} first_exchange_max_us={} \
+         retried_exchanges={} retry_publications={} retry_exchange_us={} retry_exchange_max_us={}",
         aggregate.preparation_micros,
         aggregate.preparation_lifetime_max_micros,
         aggregate.publication_program_micros,
         aggregate.publication_program_lifetime_max_micros,
         aggregate.exchange_micros,
         aggregate.exchange_lifetime_max_micros,
+        aggregate.single_publication_exchanges,
+        aggregate.single_publication_exchange_micros,
+        aggregate.single_publication_exchange_lifetime_max_micros,
+        aggregate.retried_exchanges,
+        aggregate.retried_exchange_publications,
+        aggregate.retried_exchange_micros,
+        aggregate.retried_exchange_lifetime_max_micros,
+    ));
+    emergency_log(format_args!(
+        "OAMPI tx_irq_epochs={} tx_irq_samples={} tx_irq_skew={} \
+         tx_irq_service_us={} tx_irq_service_max_us={} tx_flight_samples={} \
+         tx_flight_us={} tx_flight_max_us={}",
+        aggregate.tx_irq_epochs,
+        aggregate.tx_irq_service_samples,
+        aggregate.tx_irq_clock_skew_samples,
+        aggregate.tx_irq_to_service_micros,
+        aggregate.tx_irq_to_service_lifetime_max_micros,
+        aggregate.tx_publication_to_irq_samples,
+        aggregate.tx_publication_to_irq_micros,
+        aggregate.tx_publication_to_irq_lifetime_max_micros,
     ));
 }
 

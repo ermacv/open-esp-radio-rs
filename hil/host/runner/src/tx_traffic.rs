@@ -577,7 +577,11 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
              - Hardware timeouts/collisions: `{}` / `{}`\n\
              - Preparation average/max: `{:.2}` / `{}` us\n\
              - Publication average/max: `{:.2}` / `{}` us\n\
-             - Exchange average/max: `{:.2}` / `{}` us\n\n\
+             - Exchange average/max: `{:.2}` / `{}` us\n\
+             - First-publication exchange average/max: `{:.2}` / `{}` us across `{}` exchanges\n\
+             - Retried exchange average/max: `{:.2}` / `{}` us across `{}` exchanges and `{}` publications\n\
+             - TX IRQ wake epochs/samples/clock-skew rejects: `{}` / `{}` / `{}`; IRQ-to-service average/max: `{:.2}` / `{}` us\n\
+             - Sampled publication-to-IRQ flight average/max: `{:.2}` / `{}` us across `{}` samples\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             report.options.device,
             report.host_address,
@@ -609,6 +613,21 @@ fn write_report(output: &Path, report: TxReport<'_>) -> Result<()> {
             report.ampdu.publication_max_us,
             report.ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64,
             report.ampdu.exchange_max_us,
+            report.ampdu.first_exchange_us as f64 / report.ampdu.first_exchanges.max(1) as f64,
+            report.ampdu.first_exchange_max_us,
+            report.ampdu.first_exchanges,
+            report.ampdu.retry_exchange_us as f64 / report.ampdu.retried_exchanges.max(1) as f64,
+            report.ampdu.retry_exchange_max_us,
+            report.ampdu.retried_exchanges,
+            report.ampdu.retry_publications,
+            report.ampdu.tx_irq_epochs,
+            report.ampdu.tx_irq_samples,
+            report.ampdu.tx_irq_skew,
+            report.ampdu.tx_irq_service_us as f64 / report.ampdu.tx_irq_samples.max(1) as f64,
+            report.ampdu.tx_irq_service_max_us,
+            report.ampdu.tx_flight_us as f64 / report.ampdu.tx_flight_samples.max(1) as f64,
+            report.ampdu.tx_flight_max_us,
+            report.ampdu.tx_flight_samples,
         ),
     )?;
     Ok(())

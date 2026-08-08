@@ -71,7 +71,10 @@ use open_esp_radio::{
             target_executor::PhyTargetPortError,
         },
         wifi::lmac::{
-            irq::{IrqSink, MAC_INT_RX_SUCCESS},
+            irq::{
+                IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
+                MAC_INT_TX_TIMEOUT,
+            },
             rx::{HeGuardIntervalAndLtf, RxIngressConfig},
             rx_pool::RxStagePool,
             scan::ScanTable,
@@ -1189,6 +1192,14 @@ impl IrqSink for OpenRadioMacIrqSink {
             if !OPEN_RADIO_IRQ_RUNTIME.rx_signaled() {
                 OPEN_RADIO_RX_PIPELINE_COUNTERS.record_rx_irq_epoch();
             }
+        }
+        const TX_EVENTS: u32 =
+            MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
+        if mac_pending & TX_EVENTS != 0 && !OPEN_RADIO_IRQ_RUNTIME.tx_signaled() {
+            // Match the RX timing boundary: preserve the oldest unconsumed TX
+            // wake and sample its timestamp before the cross-core signal.
+            OPEN_RADIO_TX_AGGREGATE_COUNTERS
+                .record_tx_irq_epoch(open_radio_rx_telemetry_now_micros);
         }
         OPEN_RADIO_IRQ_RUNTIME.publish(mac_pending);
     }

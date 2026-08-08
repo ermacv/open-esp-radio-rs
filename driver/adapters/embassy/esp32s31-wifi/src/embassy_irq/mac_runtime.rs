@@ -102,6 +102,12 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx.signaled()
     }
 
+    /// Whether the TX bottom half has durable pending work.
+    #[inline]
+    pub fn tx_signaled(&self) -> bool {
+        self.tx.signaled()
+    }
+
     /// Consume a stale TX wake before publishing a new transaction.
     #[inline]
     pub fn try_take_tx(&self) -> Option<u32> {

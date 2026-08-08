@@ -25,6 +25,14 @@ pub enum AggregateBuildStop {
 /// Value-only observations emitted by the production aggregate TX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxObservation {
+    /// A coalesced hardware TX interrupt has reached the connected TX owner.
+    ///
+    /// This timestamp is emitted only when an observer is attached. It lets a
+    /// HIL observer correlate the hard-ISR publication with bottom-half
+    /// service without placing timing policy in the production owner.
+    InterruptServiceStarted {
+        at_micros: u64,
+    },
     NetworkSingleMpdu {
         reason: NetworkSingleMpduReason,
         ethernet_length: usize,
@@ -37,6 +45,8 @@ pub enum AggregateTxObservation {
         micros: u64,
     },
     Published {
+        /// Clock image captured immediately before queue programming began.
+        at_micros: u64,
         program_micros: u64,
     },
     Completed {
@@ -47,6 +57,9 @@ pub enum AggregateTxObservation {
     Collision,
     ExchangeCompleted {
         micros: u64,
+        /// Number of hardware aggregate publications required to reach the
+        /// terminal result, including the initial publication.
+        publications: u8,
     },
 }
 

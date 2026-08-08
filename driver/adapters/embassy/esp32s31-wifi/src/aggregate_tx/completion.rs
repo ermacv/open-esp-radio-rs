@@ -43,6 +43,13 @@ where
         hardware: &mut H,
         wake: WifiTxWake,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        if matches!(wake, WifiTxWake::Interrupt { .. }) {
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::InterruptServiceStarted {
+                    at_micros: self.ordinary.now_micros(),
+                });
+            }
+        }
         let active = mem::replace(&mut self.active, ConnectedTxActive::Idle);
         match active {
             ConnectedTxActive::Idle => Err(AggregateTxError::InactiveTransaction),
@@ -251,6 +258,7 @@ where
         if let Some(started_micros) = active.first_publication_micros {
             observer.observe(AggregateTxObservation::ExchangeCompleted {
                 micros: finished_micros.wrapping_sub(started_micros),
+                publications: active.retry.aggregate_attempts(),
             });
         }
     }

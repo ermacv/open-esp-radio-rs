@@ -181,7 +181,7 @@ where
         first_sequence: u16,
         cookie: TxCookie,
     ) -> Result<(), AggregateTxError> {
-        self.push_frame(first)?;
+        self.push_frame(first, AggregateFrameAdmission::FreshExact)?;
 
         let build_stop = loop {
             if self.ampdu.held_backing_count() >= usize::from(self.config.frame_limit) {
@@ -193,7 +193,12 @@ where
             let Some(frame) = network.try_receive() else {
                 break AggregateBuildStop::QueueEmpty;
             };
-            self.push_frame(frame)?;
+            let admission = match self.config.rate {
+                TxPhyRate::Ht(_) => AggregateFrameAdmission::HtQueueCapacity,
+                TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
+                TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
+            };
+            self.push_frame(frame, admission)?;
         };
 
         let aggregate = self.ampdu.prepared_aggregate(cookie)?;
@@ -256,8 +261,12 @@ where
     fn push_frame(
         &mut self,
         mut frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        admission: AggregateFrameAdmission,
     ) -> Result<(), AggregateTxError> {
-        if self.ampdu.held_backing_count() >= SLOTS || !self.can_push(frame.ethernet_length())? {
+        if self.ampdu.held_backing_count() >= SLOTS
+            || (admission == AggregateFrameAdmission::NeedsExactCheck
+                && !self.can_push(frame.ethernet_length())?)
+        {
             return Err(HtAmpduTxError::AggregateFull.into());
         }
         let metadata = self
@@ -426,6 +435,7 @@ where
                 active.first_publication_micros = Some(publication_started);
             }
             observer.observe(AggregateTxObservation::Published {
+                at_micros: publication_started,
                 program_micros: publication_finished.wrapping_sub(publication_started),
             });
         }

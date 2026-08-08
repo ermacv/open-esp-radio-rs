@@ -153,6 +153,18 @@ enum ConnectedTxActive<const SLOTS: usize> {
     Aggregate(AggregateActive<SLOTS>),
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AggregateFrameAdmission {
+    /// The exact frame geometry was checked before the aggregate reservation.
+    FreshExact,
+    /// HT admission used `FRAME_CAPACITY`, which is an upper bound for every
+    /// frame obtainable from this typed network queue.
+    HtQueueCapacity,
+    /// HE delimiter policy depends on the actual encoded length, so the
+    /// dequeued frame still needs an exact check before consuming PN/sequence.
+    NeedsExactCheck,
+}
+
 struct TeardownResource<T>(Option<T>);
 
 impl<T> TeardownResource<T> {

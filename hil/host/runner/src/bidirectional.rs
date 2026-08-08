@@ -146,6 +146,25 @@ struct AmpduTimingSample {
     publication_max_us: u64,
     exchange_us: u64,
     exchange_max_us: u64,
+    first_exchanges: u64,
+    first_exchange_us: u64,
+    first_exchange_max_us: u64,
+    retried_exchanges: u64,
+    retry_publications: u64,
+    retry_exchange_us: u64,
+    retry_exchange_max_us: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct TxIrqTimingSample {
+    tx_irq_epochs: u64,
+    tx_irq_samples: u64,
+    tx_irq_skew: u64,
+    tx_irq_service_us: u64,
+    tx_irq_service_max_us: u64,
+    tx_flight_samples: u64,
+    tx_flight_us: u64,
+    tx_flight_max_us: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -178,6 +197,21 @@ pub(crate) struct AmpduEvidence {
     pub(crate) publication_max_us: u64,
     pub(crate) exchange_us: u64,
     pub(crate) exchange_max_us: u64,
+    pub(crate) first_exchanges: u64,
+    pub(crate) first_exchange_us: u64,
+    pub(crate) first_exchange_max_us: u64,
+    pub(crate) retried_exchanges: u64,
+    pub(crate) retry_publications: u64,
+    pub(crate) retry_exchange_us: u64,
+    pub(crate) retry_exchange_max_us: u64,
+    pub(crate) tx_irq_epochs: u64,
+    pub(crate) tx_irq_samples: u64,
+    pub(crate) tx_irq_skew: u64,
+    pub(crate) tx_irq_service_us: u64,
+    pub(crate) tx_irq_service_max_us: u64,
+    pub(crate) tx_flight_samples: u64,
+    pub(crate) tx_flight_us: u64,
+    pub(crate) tx_flight_max_us: u64,
 }
 
 impl AmpduEvidence {
@@ -234,6 +268,45 @@ impl AmpduEvidence {
                 evidence.publication_max_us.max(sample.publication_max_us);
             evidence.exchange_us = evidence.exchange_us.saturating_add(sample.exchange_us);
             evidence.exchange_max_us = evidence.exchange_max_us.max(sample.exchange_max_us);
+            evidence.first_exchanges = evidence
+                .first_exchanges
+                .saturating_add(sample.first_exchanges);
+            evidence.first_exchange_us = evidence
+                .first_exchange_us
+                .saturating_add(sample.first_exchange_us);
+            evidence.first_exchange_max_us = evidence
+                .first_exchange_max_us
+                .max(sample.first_exchange_max_us);
+            evidence.retried_exchanges = evidence
+                .retried_exchanges
+                .saturating_add(sample.retried_exchanges);
+            evidence.retry_publications = evidence
+                .retry_publications
+                .saturating_add(sample.retry_publications);
+            evidence.retry_exchange_us = evidence
+                .retry_exchange_us
+                .saturating_add(sample.retry_exchange_us);
+            evidence.retry_exchange_max_us = evidence
+                .retry_exchange_max_us
+                .max(sample.retry_exchange_max_us);
+        }
+        for sample in &report.tx_irq_timings {
+            evidence.tx_irq_epochs = evidence.tx_irq_epochs.saturating_add(sample.tx_irq_epochs);
+            evidence.tx_irq_samples = evidence
+                .tx_irq_samples
+                .saturating_add(sample.tx_irq_samples);
+            evidence.tx_irq_skew = evidence.tx_irq_skew.saturating_add(sample.tx_irq_skew);
+            evidence.tx_irq_service_us = evidence
+                .tx_irq_service_us
+                .saturating_add(sample.tx_irq_service_us);
+            evidence.tx_irq_service_max_us = evidence
+                .tx_irq_service_max_us
+                .max(sample.tx_irq_service_max_us);
+            evidence.tx_flight_samples = evidence
+                .tx_flight_samples
+                .saturating_add(sample.tx_flight_samples);
+            evidence.tx_flight_us = evidence.tx_flight_us.saturating_add(sample.tx_flight_us);
+            evidence.tx_flight_max_us = evidence.tx_flight_max_us.max(sample.tx_flight_max_us);
         }
         evidence
     }
@@ -828,6 +901,7 @@ struct DeviceReport {
     ampdu: Vec<AmpduSample>,
     ampdu_histograms: Vec<AmpduHistogramSample>,
     ampdu_timings: Vec<AmpduTimingSample>,
+    tx_irq_timings: Vec<TxIrqTimingSample>,
     rx_mcs_histograms: Vec<([u64; 12], u64)>,
     rx_s_mpdu: Vec<RxSmpduEvidence>,
     rx_ampdu: Vec<RxAmpduEvidence>,
@@ -1253,6 +1327,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 Some(publication_max_us),
                 Some(exchange_us),
                 Some(exchange_max_us),
+                Some(first_exchanges),
+                Some(first_exchange_us),
+                Some(first_exchange_max_us),
+                Some(retried_exchanges),
+                Some(retry_publications),
+                Some(retry_exchange_us),
+                Some(retry_exchange_max_us),
             ) = (
                 field(line, "preparation_us"),
                 field(line, "preparation_max_us"),
@@ -1260,6 +1341,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 field(line, "publication_max_us"),
                 field(line, "exchange_us"),
                 field(line, "exchange_max_us"),
+                field(line, "first_exchanges"),
+                field(line, "first_exchange_us"),
+                field(line, "first_exchange_max_us"),
+                field(line, "retried_exchanges"),
+                field(line, "retry_publications"),
+                field(line, "retry_exchange_us"),
+                field(line, "retry_exchange_max_us"),
             ) {
                 report.ampdu_timings.push(AmpduTimingSample {
                     preparation_us,
@@ -1268,6 +1356,45 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     publication_max_us,
                     exchange_us,
                     exchange_max_us,
+                    first_exchanges,
+                    first_exchange_us,
+                    first_exchange_max_us,
+                    retried_exchanges,
+                    retry_publications,
+                    retry_exchange_us,
+                    retry_exchange_max_us,
+                });
+            }
+        }
+        if line.contains("OAMPI tx_irq_epochs=") {
+            if let (
+                Some(tx_irq_epochs),
+                Some(tx_irq_samples),
+                Some(tx_irq_skew),
+                Some(tx_irq_service_us),
+                Some(tx_irq_service_max_us),
+                Some(tx_flight_samples),
+                Some(tx_flight_us),
+                Some(tx_flight_max_us),
+            ) = (
+                field(line, "tx_irq_epochs"),
+                field(line, "tx_irq_samples"),
+                field(line, "tx_irq_skew"),
+                field(line, "tx_irq_service_us"),
+                field(line, "tx_irq_service_max_us"),
+                field(line, "tx_flight_samples"),
+                field(line, "tx_flight_us"),
+                field(line, "tx_flight_max_us"),
+            ) {
+                report.tx_irq_timings.push(TxIrqTimingSample {
+                    tx_irq_epochs,
+                    tx_irq_samples,
+                    tx_irq_skew,
+                    tx_irq_service_us,
+                    tx_irq_service_max_us,
+                    tx_flight_samples,
+                    tx_flight_us,
+                    tx_flight_max_us,
                 });
             }
         }
@@ -1746,6 +1873,15 @@ fn qualify_ampdu(report: &DeviceReport) -> Result<AmpduEvidence> {
     }
     if report.ampdu_timings.is_empty() {
         return Err("missing A-MPDU preparation/publication/exchange timing".into());
+    }
+    if report.tx_irq_timings.is_empty() {
+        return Err("missing TX IRQ-to-service timing".into());
+    }
+    if ampdu.tx_irq_epochs != 0 && ampdu.tx_irq_samples.saturating_add(ampdu.tx_irq_skew) == 0 {
+        return Err("TX IRQ timing sampled no service edge".into());
+    }
+    if ampdu.tx_flight_samples == 0 {
+        return Err("TX timing sampled no aggregate publication-to-IRQ flight".into());
     }
     if ampdu.timeout != 0 || ampdu.collision != 0 {
         return Err(format!(
@@ -2317,6 +2453,13 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
         .saturating_add(ampdu.timeout)
         .saturating_add(ampdu.collision);
     let average_exchange_us = ampdu.exchange_us as f64 / terminal_exchanges.max(1) as f64;
+    let average_first_exchange_us =
+        ampdu.first_exchange_us as f64 / ampdu.first_exchanges.max(1) as f64;
+    let average_retry_exchange_us =
+        ampdu.retry_exchange_us as f64 / ampdu.retried_exchanges.max(1) as f64;
+    let average_tx_irq_service_us =
+        ampdu.tx_irq_service_us as f64 / ampdu.tx_irq_samples.max(1) as f64;
+    let average_tx_flight_us = ampdu.tx_flight_us as f64 / ampdu.tx_flight_samples.max(1) as f64;
     let task_poll_report = task_poll_markdown(rx.task_polls);
     let udp_sequence_report = udp_sequence_markdown(rx.sequence, host.datagrams);
     let rx_order_report = rx_order_markdown(rx.order);
@@ -2402,6 +2545,10 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              - Hardware publication programming: `{:.2} us` average, \
                `{}` us boot maximum\n\
              - Aggregate exchange: `{:.2} us` average, `{}` us boot maximum\n\n\
+             - First-publication exchange: `{:.2} us` average, `{}` us boot maximum across `{}` exchanges\n\
+             - Retried exchange: `{:.2} us` average, `{}` us boot maximum across `{}` exchanges and `{}` publications\n\
+             - TX IRQ wake epochs/samples/clock-skew rejects: `{}` / `{}` / `{}`; IRQ-to-service: `{:.2} us` average, `{}` us boot maximum\n\
+             - Sampled publication-to-IRQ flight: `{:.2} us` average, `{}` us boot maximum across `{}` samples\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
             options.phy.name().to_uppercase(),
             options.address,
@@ -2535,6 +2682,21 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
             ampdu.publication_max_us,
             average_exchange_us,
             ampdu.exchange_max_us,
+            average_first_exchange_us,
+            ampdu.first_exchange_max_us,
+            ampdu.first_exchanges,
+            average_retry_exchange_us,
+            ampdu.retry_exchange_max_us,
+            ampdu.retried_exchanges,
+            ampdu.retry_publications,
+            ampdu.tx_irq_epochs,
+            ampdu.tx_irq_samples,
+            ampdu.tx_irq_skew,
+            average_tx_irq_service_us,
+            ampdu.tx_irq_service_max_us,
+            average_tx_flight_us,
+            ampdu.tx_flight_max_us,
+            ampdu.tx_flight_samples,
         ),
     )?;
     Ok(())
@@ -2641,7 +2803,8 @@ mod tests {
             "OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=121 completed=120 subframes=3744 acknowledged=3744 single=2 individual_retry=0 timeout=0 collision=0 min=2 max=32 stop_frame=116 stop_capacity=0 stop_empty=4\n\
              OAMPH one=0 two_three=1 four_seven=1 eight_fifteen=1 sixteen_twentythree=1 twentyfour_thirty=0 thirtyone=0 full32=116\n\
-             OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240\n\
+             OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240 first_exchanges=119 first_exchange_us=23760 first_exchange_max_us=210 retried_exchanges=1 retry_publications=2 retry_exchange_us=240 retry_exchange_max_us=240\n\
+             OAMPI tx_irq_epochs=121 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=18 tx_irq_service_max_us=11 tx_flight_samples=2 tx_flight_us=390 tx_flight_max_us=210\n\
              ORX b=6000000 d=5000 u=5000000 k=9600\n\
              ORXP f=4 r=11 m=11\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
@@ -2674,6 +2837,16 @@ mod tests {
         assert_eq!(ampdu.full32, 116);
         assert_eq!(ampdu.maximum, 32);
         assert_eq!(ampdu.preparation_us, 1_200);
+        assert_eq!(ampdu.first_exchanges, 119);
+        assert_eq!(ampdu.first_exchange_us, 23_760);
+        assert_eq!(ampdu.retried_exchanges, 1);
+        assert_eq!(ampdu.retry_publications, 2);
+        assert_eq!(ampdu.retry_exchange_us, 240);
+        assert_eq!(ampdu.tx_irq_samples, 2);
+        assert_eq!(ampdu.tx_irq_service_us, 18);
+        assert_eq!(ampdu.tx_flight_samples, 2);
+        assert_eq!(ampdu.tx_flight_us, 390);
+        assert_eq!(ampdu.tx_flight_max_us, 210);
     }
 
     #[test]
@@ -2698,7 +2871,8 @@ mod tests {
              OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=120 completed=120 subframes=3840 acknowledged=3840 single=0 individual_retry=0 timeout=0 collision=0 min=32 max=32 stop_frame=120 stop_capacity=0 stop_empty=0\n\
              OAMPH one=0 two_three=0 four_seven=0 eight_fifteen=0 sixteen_twentythree=0 twentyfour_thirty=0 thirtyone=0 full32=120\n\
-             OAMPT preparation_us=1200 preparation_max_us=12 publication_us=600 publication_max_us=6 exchange_us=24000 exchange_max_us=210\n",
+             OAMPT preparation_us=1200 preparation_max_us=12 publication_us=600 publication_max_us=6 exchange_us=24000 exchange_max_us=210 first_exchanges=120 first_exchange_us=24000 first_exchange_max_us=210 retried_exchanges=0 retry_publications=0 retry_exchange_us=0 retry_exchange_max_us=0\n\
+             OAMPI tx_irq_epochs=120 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=17 tx_irq_service_max_us=10 tx_flight_samples=2 tx_flight_us=388 tx_flight_max_us=204\n",
         );
 
         assert_eq!(report.rx.len(), 1);

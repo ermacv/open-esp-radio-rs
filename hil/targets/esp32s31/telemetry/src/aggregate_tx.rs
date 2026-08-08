@@ -39,8 +39,25 @@ pub struct AggregateTxCounters {
     preparation_lifetime_max_micros: AtomicU32,
     publication_program_micros: AtomicU32,
     publication_program_lifetime_max_micros: AtomicU32,
+    last_publication_micros: AtomicU32,
     exchange_micros: AtomicU32,
     exchange_lifetime_max_micros: AtomicU32,
+    single_publication_exchanges: AtomicU32,
+    single_publication_exchange_micros: AtomicU32,
+    single_publication_exchange_lifetime_max_micros: AtomicU32,
+    retried_exchanges: AtomicU32,
+    retried_exchange_publications: AtomicU32,
+    retried_exchange_micros: AtomicU32,
+    retried_exchange_lifetime_max_micros: AtomicU32,
+    tx_irq_epochs: AtomicU32,
+    tx_irq_service_samples: AtomicU32,
+    tx_irq_clock_skew_samples: AtomicU32,
+    tx_irq_to_service_micros: AtomicU32,
+    tx_irq_to_service_lifetime_max_micros: AtomicU32,
+    tx_publication_to_irq_samples: AtomicU32,
+    tx_publication_to_irq_micros: AtomicU32,
+    tx_publication_to_irq_lifetime_max_micros: AtomicU32,
+    pending_tx_irq_micros: AtomicU32,
     stopped_at_frame_limit: AtomicU32,
     stopped_at_capacity_limit: AtomicU32,
     stopped_on_empty_queue: AtomicU32,
@@ -48,6 +65,10 @@ pub struct AggregateTxCounters {
 }
 
 impl AggregateTxCounters {
+    const IRQ_SAMPLE_MASK: u32 = 0x3f;
+    const IRQ_TIME_VALID: u32 = 1 << 31;
+    const IRQ_TIME_MASK: u32 = Self::IRQ_TIME_VALID - 1;
+
     pub const fn new() -> Self {
         Self {
             network_single_mpdu_started: AtomicU32::new(0),
@@ -67,8 +88,25 @@ impl AggregateTxCounters {
             preparation_lifetime_max_micros: AtomicU32::new(0),
             publication_program_micros: AtomicU32::new(0),
             publication_program_lifetime_max_micros: AtomicU32::new(0),
+            last_publication_micros: AtomicU32::new(0),
             exchange_micros: AtomicU32::new(0),
             exchange_lifetime_max_micros: AtomicU32::new(0),
+            single_publication_exchanges: AtomicU32::new(0),
+            single_publication_exchange_micros: AtomicU32::new(0),
+            single_publication_exchange_lifetime_max_micros: AtomicU32::new(0),
+            retried_exchanges: AtomicU32::new(0),
+            retried_exchange_publications: AtomicU32::new(0),
+            retried_exchange_micros: AtomicU32::new(0),
+            retried_exchange_lifetime_max_micros: AtomicU32::new(0),
+            tx_irq_epochs: AtomicU32::new(0),
+            tx_irq_service_samples: AtomicU32::new(0),
+            tx_irq_clock_skew_samples: AtomicU32::new(0),
+            tx_irq_to_service_micros: AtomicU32::new(0),
+            tx_irq_to_service_lifetime_max_micros: AtomicU32::new(0),
+            tx_publication_to_irq_samples: AtomicU32::new(0),
+            tx_publication_to_irq_micros: AtomicU32::new(0),
+            tx_publication_to_irq_lifetime_max_micros: AtomicU32::new(0),
+            pending_tx_irq_micros: AtomicU32::new(0),
             stopped_at_frame_limit: AtomicU32::new(0),
             stopped_at_capacity_limit: AtomicU32::new(0),
             stopped_on_empty_queue: AtomicU32::new(0),
@@ -107,6 +145,37 @@ impl AggregateTxCounters {
                 .load(Ordering::Relaxed),
             exchange_micros: self.exchange_micros.load(Ordering::Relaxed),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros.load(Ordering::Relaxed),
+            single_publication_exchanges: self.single_publication_exchanges.load(Ordering::Relaxed),
+            single_publication_exchange_micros: self
+                .single_publication_exchange_micros
+                .load(Ordering::Relaxed),
+            single_publication_exchange_lifetime_max_micros: self
+                .single_publication_exchange_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            retried_exchanges: self.retried_exchanges.load(Ordering::Relaxed),
+            retried_exchange_publications: self
+                .retried_exchange_publications
+                .load(Ordering::Relaxed),
+            retried_exchange_micros: self.retried_exchange_micros.load(Ordering::Relaxed),
+            retried_exchange_lifetime_max_micros: self
+                .retried_exchange_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            tx_irq_epochs: self.tx_irq_epochs.load(Ordering::Relaxed),
+            tx_irq_service_samples: self.tx_irq_service_samples.load(Ordering::Relaxed),
+            tx_irq_clock_skew_samples: self.tx_irq_clock_skew_samples.load(Ordering::Relaxed),
+            tx_irq_to_service_micros: self.tx_irq_to_service_micros.load(Ordering::Relaxed),
+            tx_irq_to_service_lifetime_max_micros: self
+                .tx_irq_to_service_lifetime_max_micros
+                .load(Ordering::Relaxed),
+            tx_publication_to_irq_samples: self
+                .tx_publication_to_irq_samples
+                .load(Ordering::Relaxed),
+            tx_publication_to_irq_micros: self
+                .tx_publication_to_irq_micros
+                .load(Ordering::Relaxed),
+            tx_publication_to_irq_lifetime_max_micros: self
+                .tx_publication_to_irq_lifetime_max_micros
+                .load(Ordering::Relaxed),
             stopped_at_frame_limit: self.stopped_at_frame_limit.load(Ordering::Relaxed),
             stopped_at_capacity_limit: self.stopped_at_capacity_limit.load(Ordering::Relaxed),
             stopped_on_empty_queue: self.stopped_on_empty_queue.load(Ordering::Relaxed),
@@ -170,7 +239,11 @@ impl AggregateTxCounters {
         );
     }
 
-    pub(crate) fn record_publication(&self, program_micros: u64) {
+    pub(crate) fn record_publication(&self, at_micros: u64, program_micros: u64) {
+        self.last_publication_micros.store(
+            Self::IRQ_TIME_VALID | (at_micros as u32 & Self::IRQ_TIME_MASK),
+            Ordering::Release,
+        );
         self.aggregate_publications.fetch_add(1, Ordering::Relaxed);
         Self::record_time(
             &self.publication_program_micros,
@@ -196,12 +269,94 @@ impl AggregateTxCounters {
         self.collisions.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub(crate) fn record_exchange_time(&self, micros: u64) {
+    pub(crate) fn record_exchange_time(&self, micros: u64, publications: u8) {
         Self::record_time(
             &self.exchange_micros,
             &self.exchange_lifetime_max_micros,
             micros,
         );
+        if publications <= 1 {
+            self.single_publication_exchanges
+                .fetch_add(1, Ordering::Relaxed);
+            Self::record_time(
+                &self.single_publication_exchange_micros,
+                &self.single_publication_exchange_lifetime_max_micros,
+                micros,
+            );
+        } else {
+            self.retried_exchanges.fetch_add(1, Ordering::Relaxed);
+            self.retried_exchange_publications
+                .fetch_add(u32::from(publications), Ordering::Relaxed);
+            Self::record_time(
+                &self.retried_exchange_micros,
+                &self.retried_exchange_lifetime_max_micros,
+                micros,
+            );
+        }
+    }
+
+    /// Sample one newly published TX wake epoch at the ISR-to-executor handoff.
+    ///
+    /// The caller supplies the clock lazily so the hard ISR reads it only for
+    /// one in 64 wake epochs. Epoch counting remains exact, and an already
+    /// pending sample is never replaced by a newer coalesced interrupt.
+    #[inline]
+    pub fn record_tx_irq_epoch(&self, now_micros: impl FnOnce() -> u64) {
+        // Consume this correlation on every TX edge, including unsampled
+        // epochs, so an ordinary completion cannot inherit an older A-MPDU
+        // publication timestamp.
+        let publication = self.last_publication_micros.swap(0, Ordering::AcqRel);
+        let epoch = self.tx_irq_epochs.fetch_add(1, Ordering::Relaxed);
+        if epoch & Self::IRQ_SAMPLE_MASK != 0 {
+            return;
+        }
+        let now_modulo = now_micros() as u32 & Self::IRQ_TIME_MASK;
+        let timestamp = Self::IRQ_TIME_VALID | now_modulo;
+        if publication != 0 {
+            let posted_modulo = publication & Self::IRQ_TIME_MASK;
+            let elapsed = now_modulo.wrapping_sub(posted_modulo) & Self::IRQ_TIME_MASK;
+            if elapsed <= Self::IRQ_TIME_MASK / 2 {
+                self.tx_publication_to_irq_samples
+                    .fetch_add(1, Ordering::Relaxed);
+                Self::record_time(
+                    &self.tx_publication_to_irq_micros,
+                    &self.tx_publication_to_irq_lifetime_max_micros,
+                    u64::from(elapsed),
+                );
+            }
+        }
+        let _ = self.pending_tx_irq_micros.compare_exchange(
+            0,
+            timestamp,
+            Ordering::Release,
+            Ordering::Relaxed,
+        );
+    }
+
+    fn record_tx_service_started(&self, started: u64) {
+        let pending = if self.pending_tx_irq_micros.load(Ordering::Acquire) == 0 {
+            0
+        } else {
+            self.pending_tx_irq_micros.swap(0, Ordering::AcqRel)
+        };
+        if pending == 0 {
+            return;
+        }
+        let started_modulo = started as u32 & Self::IRQ_TIME_MASK;
+        let posted_modulo = pending & Self::IRQ_TIME_MASK;
+        let elapsed = started_modulo.wrapping_sub(posted_modulo) & Self::IRQ_TIME_MASK;
+        if elapsed <= Self::IRQ_TIME_MASK / 2 {
+            self.tx_irq_service_samples.fetch_add(1, Ordering::Relaxed);
+            Self::record_time(
+                &self.tx_irq_to_service_micros,
+                &self.tx_irq_to_service_lifetime_max_micros,
+                u64::from(elapsed),
+            );
+        } else {
+            // The clock can differ slightly across the ISR and radio cores.
+            self.tx_irq_clock_skew_samples
+                .fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     pub(crate) fn record_time(total: &AtomicU32, maximum: &AtomicU32, micros: u64) {
@@ -214,6 +369,9 @@ impl AggregateTxCounters {
 impl AggregateTxObserver for AggregateTxCounters {
     fn observe(&self, observation: AggregateTxObservation) {
         match observation {
+            AggregateTxObservation::InterruptServiceStarted { at_micros } => {
+                self.record_tx_service_started(at_micros);
+            }
             AggregateTxObservation::NetworkSingleMpdu {
                 reason,
                 ethernet_length,
@@ -224,8 +382,11 @@ impl AggregateTxObserver for AggregateTxCounters {
             AggregateTxObservation::PreparationCompleted { micros } => {
                 self.record_preparation_time(micros);
             }
-            AggregateTxObservation::Published { program_micros } => {
-                self.record_publication(program_micros);
+            AggregateTxObservation::Published {
+                at_micros,
+                program_micros,
+            } => {
+                self.record_publication(at_micros, program_micros);
             }
             AggregateTxObservation::Completed {
                 acknowledged,
@@ -233,8 +394,11 @@ impl AggregateTxObserver for AggregateTxCounters {
             } => self.record_complete(acknowledged, individual_retry),
             AggregateTxObservation::HardwareTimeout => self.record_hardware_timeout(),
             AggregateTxObservation::Collision => self.record_collision(),
-            AggregateTxObservation::ExchangeCompleted { micros } => {
-                self.record_exchange_time(micros);
+            AggregateTxObservation::ExchangeCompleted {
+                micros,
+                publications,
+            } => {
+                self.record_exchange_time(micros, publications);
             }
         }
     }
@@ -276,6 +440,25 @@ pub struct AggregateTxCounterSnapshot {
     pub exchange_micros: u32,
     /// Maximum observed since boot, not an interval delta.
     pub exchange_lifetime_max_micros: u32,
+    pub single_publication_exchanges: u32,
+    pub single_publication_exchange_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub single_publication_exchange_lifetime_max_micros: u32,
+    pub retried_exchanges: u32,
+    pub retried_exchange_publications: u32,
+    pub retried_exchange_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub retried_exchange_lifetime_max_micros: u32,
+    pub tx_irq_epochs: u32,
+    pub tx_irq_service_samples: u32,
+    pub tx_irq_clock_skew_samples: u32,
+    pub tx_irq_to_service_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub tx_irq_to_service_lifetime_max_micros: u32,
+    pub tx_publication_to_irq_samples: u32,
+    pub tx_publication_to_irq_micros: u32,
+    /// Maximum observed since boot, not an interval delta.
+    pub tx_publication_to_irq_lifetime_max_micros: u32,
     pub stopped_at_frame_limit: u32,
     pub stopped_at_capacity_limit: u32,
     pub stopped_on_empty_queue: u32,
@@ -331,6 +514,44 @@ impl AggregateTxCounterSnapshot {
             publication_program_lifetime_max_micros: self.publication_program_lifetime_max_micros,
             exchange_micros: self.exchange_micros.wrapping_sub(earlier.exchange_micros),
             exchange_lifetime_max_micros: self.exchange_lifetime_max_micros,
+            single_publication_exchanges: self
+                .single_publication_exchanges
+                .wrapping_sub(earlier.single_publication_exchanges),
+            single_publication_exchange_micros: self
+                .single_publication_exchange_micros
+                .wrapping_sub(earlier.single_publication_exchange_micros),
+            single_publication_exchange_lifetime_max_micros: self
+                .single_publication_exchange_lifetime_max_micros,
+            retried_exchanges: self
+                .retried_exchanges
+                .wrapping_sub(earlier.retried_exchanges),
+            retried_exchange_publications: self
+                .retried_exchange_publications
+                .wrapping_sub(earlier.retried_exchange_publications),
+            retried_exchange_micros: self
+                .retried_exchange_micros
+                .wrapping_sub(earlier.retried_exchange_micros),
+            retried_exchange_lifetime_max_micros: self.retried_exchange_lifetime_max_micros,
+            tx_irq_epochs: self.tx_irq_epochs.wrapping_sub(earlier.tx_irq_epochs),
+            tx_irq_service_samples: self
+                .tx_irq_service_samples
+                .wrapping_sub(earlier.tx_irq_service_samples),
+            tx_irq_clock_skew_samples: self
+                .tx_irq_clock_skew_samples
+                .wrapping_sub(earlier.tx_irq_clock_skew_samples),
+            tx_irq_to_service_micros: self
+                .tx_irq_to_service_micros
+                .wrapping_sub(earlier.tx_irq_to_service_micros),
+            tx_irq_to_service_lifetime_max_micros: self
+                .tx_irq_to_service_lifetime_max_micros,
+            tx_publication_to_irq_samples: self
+                .tx_publication_to_irq_samples
+                .wrapping_sub(earlier.tx_publication_to_irq_samples),
+            tx_publication_to_irq_micros: self
+                .tx_publication_to_irq_micros
+                .wrapping_sub(earlier.tx_publication_to_irq_micros),
+            tx_publication_to_irq_lifetime_max_micros: self
+                .tx_publication_to_irq_lifetime_max_micros,
             stopped_at_frame_limit: self
                 .stopped_at_frame_limit
                 .wrapping_sub(earlier.stopped_at_frame_limit),
@@ -403,17 +624,31 @@ mod tests {
             subframes: 32,
             stop: AggregateBuildStop::FrameLimit,
         });
-        counters.observe(AggregateTxObservation::Published { program_micros: 3 });
-        counters.observe(AggregateTxObservation::Published { program_micros: 5 });
+        counters.observe(AggregateTxObservation::Published {
+            at_micros: 80,
+            program_micros: 3,
+        });
+        counters.observe(AggregateTxObservation::Published {
+            at_micros: 95,
+            program_micros: 5,
+        });
         counters.observe(AggregateTxObservation::Completed {
             acknowledged: 31,
             individual_retry: true,
         });
         counters.observe(AggregateTxObservation::HardwareTimeout);
-        counters.observe(AggregateTxObservation::ExchangeCompleted { micros: 41 });
-        counters.observe(AggregateTxObservation::ExchangeCompleted { micros: 59 });
+        counters.observe(AggregateTxObservation::ExchangeCompleted {
+            micros: 41,
+            publications: 1,
+        });
+        counters.observe(AggregateTxObservation::ExchangeCompleted {
+            micros: 59,
+            publications: 3,
+        });
         counters.observe(AggregateTxObservation::PreparationCompleted { micros: 7 });
         counters.observe(AggregateTxObservation::PreparationCompleted { micros: 11 });
+        counters.record_tx_irq_epoch(|| 100);
+        counters.observe(AggregateTxObservation::InterruptServiceStarted { at_micros: 109 });
 
         let delta = counters.snapshot().wrapping_delta_since(before);
         assert_eq!(delta.network_single_mpdu_started, 1);
@@ -444,8 +679,40 @@ mod tests {
         assert_eq!(delta.publication_program_lifetime_max_micros, 5);
         assert_eq!(delta.exchange_micros, 100);
         assert_eq!(delta.exchange_lifetime_max_micros, 59);
+        assert_eq!(delta.single_publication_exchanges, 1);
+        assert_eq!(delta.single_publication_exchange_micros, 41);
+        assert_eq!(delta.single_publication_exchange_lifetime_max_micros, 41);
+        assert_eq!(delta.retried_exchanges, 1);
+        assert_eq!(delta.retried_exchange_publications, 3);
+        assert_eq!(delta.retried_exchange_micros, 59);
+        assert_eq!(delta.retried_exchange_lifetime_max_micros, 59);
+        assert_eq!(delta.tx_irq_epochs, 1);
+        assert_eq!(delta.tx_irq_service_samples, 1);
+        assert_eq!(delta.tx_irq_clock_skew_samples, 0);
+        assert_eq!(delta.tx_irq_to_service_micros, 9);
+        assert_eq!(delta.tx_irq_to_service_lifetime_max_micros, 9);
+        assert_eq!(delta.tx_publication_to_irq_samples, 1);
+        assert_eq!(delta.tx_publication_to_irq_micros, 5);
+        assert_eq!(delta.tx_publication_to_irq_lifetime_max_micros, 5);
         assert_eq!(delta.stopped_at_frame_limit, 1);
         assert_eq!(delta.stopped_at_capacity_limit, 0);
         assert_eq!(delta.stopped_on_empty_queue, 1);
+    }
+
+    #[test]
+    fn tx_irq_clock_is_read_only_for_sampled_epochs() {
+        use core::cell::Cell;
+
+        let counters = AggregateTxCounters::new();
+        let reads = Cell::new(0_u32);
+        for _ in 0..64 {
+            counters.record_tx_irq_epoch(|| {
+                reads.set(reads.get() + 1);
+                100
+            });
+        }
+
+        assert_eq!(reads.get(), 1);
+        assert_eq!(counters.snapshot().tx_irq_epochs, 64);
     }
 }

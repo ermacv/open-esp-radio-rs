@@ -5,50 +5,50 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use super::args::{Command, OutputFormat, ProgressMode, UiArgs};
 
-pub(super) fn command_span(command: Command) -> Option<Span> {
+pub(super) fn command_span(command: &Command) -> Option<Span> {
     let message = match command {
-        Command::GenerateCompletions
-        | Command::GenerateManpage
-        | Command::ProjectInit
-        | Command::ProjectConfigure
-        | Command::ProjectInputsInit
-        | Command::ProjectDoctor
-        | Command::ProjectStatus
-        | Command::ProjectBrowse
-        | Command::FunctionInitPack
-        | Command::InterfaceInitPack
-        | Command::RegisterInitModel
-        | Command::VerifyEvidence => return None,
-        Command::ProjectAnalyze => "Project analysis",
-        Command::ProjectPublish => "Project publication",
-        Command::FunctionValidate => "Function validation",
-        Command::FunctionReview => "Function review",
-        Command::RegisterImportSvd => "SVD import",
-        Command::RegisterValidate => "Register validation",
-        Command::RegisterReview => "Register review",
-        Command::RegisterExportSvd => "SVD export",
-        Command::RegisterGeneratePac => "PAC generation",
-        Command::RegisterGenerateBindings => "PAC binding generation",
-        Command::SymbolInventory => "Symbol inventory",
-        Command::InterfaceDiscover => "Interface discovery",
-        Command::InterfaceValidate => "Interface validation",
-        Command::AuditImageTargets => "Linked-image audit",
-        Command::DiscoverMmio => "MMIO discovery",
-        Command::ExportIr => "IR export",
-        Command::BuildIr => "Linked IR build",
-        Command::VerifyContractChannel => "Channel contract verification",
-        Command::VerifyContractRfInit => "RF-init contract verification",
-        Command::ExecuteRun => "Vendor function execution",
-        Command::ExecuteCompare => "Function comparison",
-        Command::VerifyProfiles => "Profile verification",
-        Command::GenerateReference => "Reference generation",
-        Command::GenerateReferenceBatch => "Batch reference generation",
-        Command::GenerateDriver => "Driver generation",
-        Command::InspectAnalyze => "Artifact analysis",
-        Command::VerifyInventory => "Inventory verification",
-        Command::VerifySource => "Source verification",
-        Command::InspectTrace => "Trace extraction",
-        Command::InspectCompare => "Trace comparison",
+        Command::GenerateCompletions(_)
+        | Command::GenerateManpage(_)
+        | Command::ProjectInit(_)
+        | Command::ProjectConfigure(_)
+        | Command::ProjectInputsInit(_)
+        | Command::ProjectDoctor(_)
+        | Command::ProjectStatus(_)
+        | Command::ProjectBrowse(_)
+        | Command::FunctionInitPack(_)
+        | Command::InterfaceInitPack(_)
+        | Command::RegisterInitModel(_)
+        | Command::VerifyEvidence(_) => return None,
+        Command::ProjectAnalyze(_) => "Project analysis",
+        Command::ProjectPublish(_) => "Project publication",
+        Command::FunctionValidate(_) => "Function validation",
+        Command::FunctionReview(_) => "Function review",
+        Command::RegisterImportSvd(_) => "SVD import",
+        Command::RegisterValidate(_) => "Register validation",
+        Command::RegisterReview(_) => "Register review",
+        Command::RegisterExportSvd(_) => "SVD export",
+        Command::RegisterGeneratePac(_) => "PAC generation",
+        Command::RegisterGenerateBindings(_) => "PAC binding generation",
+        Command::SymbolInventory(_) => "Symbol inventory",
+        Command::InterfaceDiscover(_) => "Interface discovery",
+        Command::InterfaceValidate(_) => "Interface validation",
+        Command::AuditImageTargets(_) => "Linked-image audit",
+        Command::DiscoverMmio(_) => "MMIO discovery",
+        Command::ExportIr(_) => "IR export",
+        Command::BuildIr(_) => "Linked IR build",
+        Command::VerifyContractChannel(_) => "Channel contract verification",
+        Command::VerifyContractRfInit(_) => "RF-init contract verification",
+        Command::ExecuteRun(_) => "Vendor function execution",
+        Command::ExecuteCompare(_) => "Function comparison",
+        Command::VerifyProfiles(_) => "Profile verification",
+        Command::GenerateReference(_) => "Reference generation",
+        Command::GenerateReferenceBatch(_) => "Batch reference generation",
+        Command::GenerateDriver(_) => "Driver generation",
+        Command::InspectAnalyze(_) => "Artifact analysis",
+        Command::VerifyInventory(_) => "Inventory verification",
+        Command::VerifySource(_) => "Source verification",
+        Command::InspectTrace(_) => "Trace extraction",
+        Command::InspectCompare(_) => "Trace comparison",
     };
     Some(operation_span(message))
 }
@@ -87,6 +87,7 @@ pub(super) fn enabled_for(arguments: &UiArgs, stderr_is_terminal: bool) -> bool 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::args::{CompletionArgs, CompletionShell};
 
     #[test]
     fn automatic_progress_requires_a_human_terminal() {
@@ -129,9 +130,15 @@ mod tests {
 
     #[test]
     fn long_commands_get_root_spans_but_inspection_commands_do_not() {
-        assert!(command_span(Command::DiscoverMmio).is_some());
-        assert!(command_span(Command::ProjectAnalyze).is_some());
-        assert!(command_span(Command::ProjectStatus).is_none());
-        assert!(command_span(Command::GenerateCompletions).is_none());
+        assert!(command_span(&Command::DiscoverMmio(Default::default())).is_some());
+        assert!(command_span(&Command::ProjectAnalyze(Default::default())).is_some());
+        assert!(command_span(&Command::ProjectStatus(Default::default())).is_none());
+        assert!(
+            command_span(&Command::GenerateCompletions(CompletionArgs {
+                shell: CompletionShell::Bash,
+                output: "completion".into(),
+            }))
+            .is_none()
+        );
     }
 }

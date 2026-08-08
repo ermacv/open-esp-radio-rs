@@ -1,18 +1,13 @@
 //! Dispatch of fully resolved invocations into domain workflows.
 
-use super::{
-    args::Command,
-    commands,
-    resolver::{ResolvedCommandInvocation, ResolvedInvocation},
-};
+use super::{commands, resolver::ResolvedInvocation};
 use crate::Result;
 
 pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
     match invocation {
-        ResolvedInvocation::Tooling { command, arguments } => {
-            commands::run_tooling(command, arguments)
-        }
-        ResolvedInvocation::ProjectInit { arguments } => commands::run_project_init(arguments),
+        ResolvedInvocation::GenerateCompletions(arguments) => commands::run_completions(arguments),
+        ResolvedInvocation::GenerateManpage(arguments) => commands::run_manpage(arguments),
+        ResolvedInvocation::ProjectInit(arguments) => commands::run_project_init(arguments),
         ResolvedInvocation::ProjectConfigure {
             arguments,
             project_path,
@@ -21,144 +16,67 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             arguments,
             project_path,
         } => commands::run_project_inputs_init(arguments, &project_path),
-        ResolvedInvocation::ProjectBrowse {
-            arguments,
-            project_path,
-        } => commands::run_project_browser(arguments, &project_path),
-        ResolvedInvocation::Command(invocation) => run_command(*invocation),
-    }
-}
-
-fn run_command(invocation: ResolvedCommandInvocation) -> Result<bool> {
-    let ResolvedCommandInvocation {
-        command,
-        arguments,
-        project_path,
-        project,
-        target_path,
-        target,
-        run_spec_path,
-        run_spec,
-        memory_map,
-        svd_paths,
-        svd,
-    } = invocation;
-
-    if matches!(command, Command::ProjectDoctor | Command::ProjectStatus) {
-        let context = crate::application::ProjectContext {
-            project_path: project_path
-                .as_deref()
-                .expect("project inspection requires a manifest path"),
-            project: project
-                .as_ref()
-                .expect("project inspection requires a loaded project"),
-            target_path: &target_path,
-            target: &target,
-            run_spec_path: run_spec_path.as_deref(),
-            run_spec: run_spec.as_ref(),
-            memory_map: memory_map.as_ref(),
-            svd_paths: &svd_paths,
-            svd: &svd,
-        };
-        return if command == Command::ProjectDoctor {
-            commands::run_project_doctor(arguments, context)
-        } else {
-            commands::run_project_status(arguments, context)
-        };
-    }
-    if command == Command::ProjectAnalyze {
-        return commands::run_project_analysis(
-            arguments,
-            project
-                .as_ref()
-                .expect("project analysis requires a loaded project"),
-            run_spec.as_ref(),
-            memory_map.as_ref(),
-            &svd,
-            &target,
-        );
-    }
-    if command == Command::ProjectPublish {
-        return commands::run_project_publication(
-            arguments,
-            project
-                .as_ref()
-                .expect("project publication requires a loaded project"),
-            memory_map.as_ref(),
-        );
-    }
-    if matches!(
-        command,
-        Command::FunctionInitPack | Command::FunctionValidate | Command::FunctionReview
-    ) {
-        return commands::run_function_pack_command(
+        ResolvedInvocation::ProjectBrowse { project_path } => {
+            commands::run_project_browser(&project_path)
+        }
+        ResolvedInvocation::ProjectDoctor(session) => {
+            commands::run_project_doctor(session.context())
+        }
+        ResolvedInvocation::ProjectStatus { arguments, session } => {
+            commands::run_project_status(arguments, session.context())
+        }
+        ResolvedInvocation::ProjectAnalyze { arguments, session } => {
+            commands::run_project_analysis(
+                arguments,
+                &session.project,
+                session.run_spec.as_ref(),
+                session.memory_map.as_ref(),
+                &session.mmio,
+                &session.target,
+            )
+        }
+        ResolvedInvocation::ProjectPublish { arguments, session } => {
+            commands::run_project_publication(
+                arguments,
+                &session.project,
+                session.memory_map.as_ref(),
+            )
+        }
+        ResolvedInvocation::FunctionWorkspace {
             command,
-            arguments,
-            project
-                .as_ref()
-                .expect("function pack commands require a loaded project"),
-            &target,
-        );
-    }
-    if command == Command::SymbolInventory {
-        let run_spec = run_spec
-            .as_ref()
-            .ok_or("symbols inventory requires a run spec with artifact bindings")
-            .map_err(crate::Error::invalid)?;
-        return commands::run_symbol_inventory(arguments, run_spec);
-    }
-    if command == Command::InterfaceDiscover {
-        let run_spec = run_spec
-            .as_ref()
-            .ok_or("interfaces discover requires a run spec with artifact bindings")
-            .map_err(crate::Error::invalid)?;
-        return commands::run_interface_discovery(arguments, run_spec);
-    }
-    if matches!(
-        command,
-        Command::InterfaceInitPack | Command::InterfaceValidate
-    ) {
-        return commands::run_interface_pack_command(
+            project,
+            target,
+        } => commands::run_function_pack_command(command, &project, &target),
+        ResolvedInvocation::RegisterWorkspace {
             command,
-            arguments,
-            project
-                .as_ref()
-                .expect("interface pack commands require a loaded project"),
-            &target,
-        );
-    }
-    if matches!(
-        command,
-        Command::RegisterInitModel
-            | Command::RegisterImportSvd
-            | Command::RegisterValidate
-            | Command::RegisterReview
-            | Command::RegisterExportSvd
-            | Command::RegisterGeneratePac
-            | Command::RegisterGenerateBindings
-    ) {
-        return commands::run_register_command(
+            project,
+            memory_map,
+        } => commands::run_register_command(command, &project, memory_map.as_ref()),
+        ResolvedInvocation::InterfaceWorkspace {
             command,
+            project,
+            target,
+        } => commands::run_interface_pack_command(command, &project, &target),
+        ResolvedInvocation::SymbolInventory {
             arguments,
-            project
-                .as_ref()
-                .expect("register commands require a loaded project"),
-            memory_map.as_ref(),
-        );
-    }
-    if command == Command::BuildIr {
-        return commands::run_ir_build(
+            run_spec,
+        } => commands::run_symbol_inventory(arguments, &run_spec),
+        ResolvedInvocation::InterfaceDiscover {
             arguments,
-            project
-                .as_ref()
-                .expect("project IR build requires a loaded project"),
-            run_spec
-                .as_ref()
-                .ok_or("ir build requires a run spec with source artifact bindings")
-                .map_err(crate::Error::invalid)?,
-            &svd,
-            &target,
-        );
+            run_spec,
+        } => commands::run_interface_discovery(arguments, &run_spec),
+        ResolvedInvocation::BuildIr {
+            arguments,
+            project,
+            run_spec,
+            target,
+            svd,
+        } => commands::run_ir_build(arguments, &project, &run_spec, &svd, &target),
+        ResolvedInvocation::VerifyEvidence(arguments) => commands::run_verify_evidence(arguments),
+        ResolvedInvocation::Target {
+            command,
+            target,
+            svd,
+        } => commands::run_target(command, &svd, &target),
     }
-    commands::run(command, arguments, &svd, &target)
 }

@@ -2,10 +2,11 @@
 
 use std::path::Path;
 
-use super::{Command, CommandArguments, MmioMap, Result, TargetSpec};
+use super::{MmioMap, Result, TargetSpec};
 use crate::cli::{
     InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
     RegisterReviewArgs, ReviewArgs, SourcePath, SymbolInventoryArgs, ValidationArgs,
+    resolver::{FunctionWorkspaceCommand, InterfaceWorkspaceCommand, RegisterWorkspaceCommand},
 };
 use crate::{
     MemoryMap,
@@ -138,8 +139,7 @@ pub(super) fn run(
         }
         Some(_) => execute("register-validation", StageSuccess::Verified, || {
             super::registers::run(
-                Command::RegisterValidate,
-                CommandArguments::Validation(ValidationArgs {
+                RegisterWorkspaceCommand::Validate(ValidationArgs {
                     deny_unreviewed: options.deny_unreviewed,
                 }),
                 project,
@@ -165,8 +165,7 @@ pub(super) fn run(
         }
         Some(_) => execute("register-review", mode.generated_success(), || {
             super::registers::run(
-                Command::RegisterReview,
-                CommandArguments::RegisterReview(RegisterReviewArgs {
+                RegisterWorkspaceCommand::Review(RegisterReviewArgs {
                     check: mode.is_check(),
                     ..Default::default()
                 }),
@@ -184,8 +183,7 @@ pub(super) fn run(
         }
         Some(_) => execute("function-validation", StageSuccess::Verified, || {
             super::function_pack::run(
-                Command::FunctionValidate,
-                CommandArguments::Validation(ValidationArgs {
+                FunctionWorkspaceCommand::Validate(ValidationArgs {
                     deny_unreviewed: options.deny_unreviewed,
                 }),
                 project,
@@ -215,8 +213,7 @@ pub(super) fn run(
         }
         Some(_) => execute("function-review", mode.generated_success(), || {
             super::function_pack::run(
-                Command::FunctionReview,
-                CommandArguments::Review(ReviewArgs {
+                FunctionWorkspaceCommand::Review(ReviewArgs {
                     check: mode.is_check(),
                     ..Default::default()
                 }),
@@ -237,8 +234,7 @@ pub(super) fn run(
         }
         Some(_) => execute("interface-validation", StageSuccess::Verified, || {
             super::interface_pack::run(
-                Command::InterfaceValidate,
-                CommandArguments::Validation(ValidationArgs {
+                InterfaceWorkspaceCommand::Validate(ValidationArgs {
                     deny_unreviewed: options.deny_unreviewed,
                 }),
                 project,

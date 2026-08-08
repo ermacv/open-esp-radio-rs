@@ -4,6 +4,7 @@ use std::path::Path;
 
 use super::super::*;
 use crate::{
+    cli::resolver::FunctionWorkspaceCommand,
     function_workspace::{
         FunctionFacts, FunctionWorkspace, link_reviewed_interfaces, render_function_review,
         write_function_pack_template,
@@ -17,8 +18,7 @@ mod report;
 use report::*;
 
 pub(super) fn run(
-    command: Command,
-    arguments: CommandArguments,
+    command: FunctionWorkspaceCommand,
     project: &ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -27,17 +27,10 @@ pub(super) fn run(
         .as_ref()
         .ok_or("project has no [functions] table; configure a reviewed pack first")
         .map_err(crate::Error::invalid)?;
-    match (command, arguments) {
-        (Command::FunctionInitPack, CommandArguments::Output(arguments)) => {
-            init_pack(arguments, project, &paths.pack)
-        }
-        (Command::FunctionValidate, CommandArguments::Validation(arguments)) => {
-            validate(arguments, project, &paths.pack)
-        }
-        (Command::FunctionReview, CommandArguments::Review(arguments)) => {
-            review(arguments, project, paths, target)
-        }
-        _ => unreachable!("function pack dispatcher received another command"),
+    match command {
+        FunctionWorkspaceCommand::InitPack(arguments) => init_pack(arguments, project, &paths.pack),
+        FunctionWorkspaceCommand::Validate(arguments) => validate(arguments, project, &paths.pack),
+        FunctionWorkspaceCommand::Review(arguments) => review(arguments, project, paths, target),
     }
 }
 

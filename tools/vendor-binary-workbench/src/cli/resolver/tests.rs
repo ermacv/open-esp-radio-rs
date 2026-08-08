@@ -63,19 +63,43 @@ fn run_spec(name: &str, contents: &str) -> (std::path::PathBuf, RunSpec) {
 }
 
 #[test]
+fn command_resources_are_classified_by_one_positive_plan() {
+    assert_eq!(
+        ResolutionNeeds::for_command(&Command::ProjectStatus(Default::default())),
+        ResolutionNeeds::new(true, false, false, false, true, false, true)
+    );
+    assert_eq!(
+        ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default())),
+        ResolutionNeeds::new(true, true, false, false, true, true, true)
+    );
+    assert_eq!(
+        ResolutionNeeds::for_command(&Command::RegisterValidate(Default::default())),
+        ResolutionNeeds::new(true, false, false, false, true, true, false)
+    );
+    assert_eq!(
+        ResolutionNeeds::for_command(&Command::ExecuteRun(Default::default())),
+        ResolutionNeeds::new(false, true, false, true, true, true, true)
+    );
+    assert_eq!(
+        ResolutionNeeds::for_command(&Command::GenerateReference(Default::default())),
+        ResolutionNeeds::new(true, true, true, true, true, true, true)
+    );
+}
+
+#[test]
 fn explicit_cli_paths_win_over_all_run_spec_defaults() {
     let (path, run_spec) = run_spec(
         "explicit",
         "input artifact default.elf\ninput companion first.a\ninput companion second.a\n",
     );
-    let mut arguments = CommandArguments::Reference(ReferenceArgs {
+    let mut command = Command::GenerateReference(ReferenceArgs {
         artifact: Some("explicit.elf".into()),
         companion: vec!["explicit.a".into()],
         ..Default::default()
     });
-    apply_run_spec_defaults(Command::GenerateReference, &mut arguments, &run_spec);
+    apply_run_spec_defaults(&mut command, &run_spec);
     std::fs::remove_file(path).unwrap();
-    let CommandArguments::Reference(arguments) = arguments else {
+    let Command::GenerateReference(arguments) = command else {
         panic!("unexpected argument type")
     };
     assert_eq!(arguments.artifact, Some("explicit.elf".into()));
@@ -88,10 +112,10 @@ fn all_default_companions_are_preserved_when_cli_has_none() {
         "companions",
         "input artifact default.elf\ninput companion first.a\ninput companion second.a\n",
     );
-    let mut arguments = CommandArguments::Reference(ReferenceArgs::default());
-    apply_run_spec_defaults(Command::GenerateReference, &mut arguments, &run_spec);
+    let mut command = Command::GenerateReference(ReferenceArgs::default());
+    apply_run_spec_defaults(&mut command, &run_spec);
     std::fs::remove_file(path).unwrap();
-    let CommandArguments::Reference(arguments) = arguments else {
+    let Command::GenerateReference(arguments) = command else {
         panic!("unexpected argument type")
     };
     assert!(arguments.artifact.unwrap().ends_with("default.elf"));
@@ -106,13 +130,13 @@ fn source_qualified_cli_artifacts_override_only_the_same_source() {
         "sources",
         "input source-artifact:rom default-rom.elf\ninput source-artifact:archive archive.elf\n",
     );
-    let mut arguments = CommandArguments::IrExport(IrExportArgs {
+    let mut command = Command::ExportIr(IrExportArgs {
         artifact: vec!["rom=explicit-rom.elf".parse().unwrap()],
         ..Default::default()
     });
-    apply_run_spec_defaults(Command::ExportIr, &mut arguments, &run_spec);
+    apply_run_spec_defaults(&mut command, &run_spec);
     std::fs::remove_file(path).unwrap();
-    let CommandArguments::IrExport(arguments) = arguments else {
+    let Command::ExportIr(arguments) = command else {
         panic!("unexpected argument type")
     };
     assert_eq!(arguments.artifact[0].source.as_str(), "rom");
@@ -141,17 +165,14 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
     .unwrap();
 
     let resolved = resolve_from(parse(&["project", "status"]), &nested).unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
+    let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
+        panic!("expected a resolved project-status command")
     };
+    assert_eq!(session.manifest, directory.join(DEFAULT_PROJECT_MANIFEST));
+    assert_eq!(session.target_path, directory.join("target.spec"));
+    assert_eq!(session.run_spec_path, Some(directory.join("local.run")));
     assert_eq!(
-        resolved.project_path,
-        Some(directory.join(DEFAULT_PROJECT_MANIFEST))
-    );
-    assert_eq!(resolved.target_path, directory.join("target.spec"));
-    assert_eq!(resolved.run_spec_path, Some(directory.join("local.run")));
-    assert_eq!(
-        resolved.run_spec.unwrap().inputs()[0].path,
+        session.run_spec.unwrap().inputs()[0].path,
         directory.join("artifacts/vendor.elf")
     );
 
@@ -206,12 +227,12 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
         &directory,
     )
     .unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
+    let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
+        panic!("expected a resolved project-status command")
     };
-    assert_eq!(resolved.run_spec_path, Some(directory.join("local.run")));
+    assert_eq!(session.run_spec_path, Some(directory.join("local.run")));
     assert!(
-        resolved.run_spec.unwrap().inputs()[0]
+        session.run_spec.unwrap().inputs()[0]
             .path
             .ends_with("discovered.elf")
     );
@@ -235,11 +256,11 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
         &directory,
     )
     .unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
+    let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
+        panic!("expected a resolved project-status command")
     };
     assert_eq!(
-        resolved.run_spec_path,
+        session.run_spec_path,
         Some(directory.join("configured.run"))
     );
 
@@ -279,16 +300,16 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
         &directory,
     )
     .unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
+    let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
+        panic!("expected a resolved project-status command")
     };
-    assert_eq!(resolved.run_spec_path, Some(directory.join("explicit.run")));
+    assert_eq!(session.run_spec_path, Some(directory.join("explicit.run")));
     assert!(
-        resolved.run_spec.unwrap().inputs()[0]
+        session.run_spec.unwrap().inputs()[0]
             .path
             .ends_with("explicit.elf")
     );
-    assert_eq!(resolved.svd_paths, [PathBuf::from("cli.svd")]);
+    assert_eq!(session.svd_paths, [PathBuf::from("cli.svd")]);
 
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -319,10 +340,11 @@ fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
         &directory,
     )
     .unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
-    };
-    let CommandArguments::ImageAudit(ImageAuditArgs { artifact, .. }) = resolved.arguments else {
+    let ResolvedInvocation::Target {
+        command: TargetCommand::AuditImageTargets(ImageAuditArgs { artifact, .. }),
+        ..
+    } = resolved
+    else {
         panic!("expected image-audit arguments")
     };
     assert_eq!(artifact, Some(PathBuf::from("cli.elf")));
@@ -355,10 +377,7 @@ fn project_symbol_inventory_supplies_the_default_report_path() {
         &directory,
     )
     .unwrap();
-    let ResolvedInvocation::Command(resolved) = resolved else {
-        panic!("expected an ordinary resolved command")
-    };
-    let CommandArguments::SymbolInventory(arguments) = resolved.arguments else {
+    let ResolvedInvocation::SymbolInventory { arguments, .. } = resolved else {
         panic!("expected symbol-inventory arguments")
     };
     assert!(arguments.check);

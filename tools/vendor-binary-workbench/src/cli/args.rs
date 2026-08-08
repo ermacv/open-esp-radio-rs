@@ -200,9 +200,9 @@ macro_rules! leaf_commands {
         }
 
         impl $name {
-            fn into_parts(self) -> (Command, CommandArguments) {
+            fn into_command(self) -> Command {
                 match self {
-                    $(Self::$variant(arguments) => ($command, CommandArguments::$data(arguments))),+
+                    $(Self::$variant(arguments) => $command(arguments)),+
                 }
             }
         }
@@ -232,30 +232,16 @@ enum ProjectCommand {
 }
 
 impl ProjectCommand {
-    fn into_parts(self) -> (Command, CommandArguments) {
+    fn into_command(self) -> Command {
         match self {
-            Self::Init(arguments) => (
-                Command::ProjectInit,
-                CommandArguments::ProjectInit(arguments),
-            ),
-            Self::Configure(arguments) => (
-                Command::ProjectConfigure,
-                CommandArguments::ProjectConfigure(arguments),
-            ),
-            Self::Inputs { command } => command.into_parts(),
-            Self::Doctor(arguments) => (Command::ProjectDoctor, CommandArguments::Empty(arguments)),
-            Self::Status(arguments) => (
-                Command::ProjectStatus,
-                CommandArguments::ProjectStatus(arguments),
-            ),
-            Self::Browse(arguments) => (Command::ProjectBrowse, CommandArguments::Empty(arguments)),
-            Self::Analyze(arguments) => (
-                Command::ProjectAnalyze,
-                CommandArguments::ProjectAnalyze(arguments),
-            ),
-            Self::Publish(arguments) => {
-                (Command::ProjectPublish, CommandArguments::Check(arguments))
-            }
+            Self::Init(arguments) => Command::ProjectInit(arguments),
+            Self::Configure(arguments) => Command::ProjectConfigure(arguments),
+            Self::Inputs { command } => command.into_command(),
+            Self::Doctor(arguments) => Command::ProjectDoctor(arguments),
+            Self::Status(arguments) => Command::ProjectStatus(arguments),
+            Self::Browse(arguments) => Command::ProjectBrowse(arguments),
+            Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
+            Self::Publish(arguments) => Command::ProjectPublish(arguments),
         }
     }
 }
@@ -336,25 +322,13 @@ enum VerifyCommand {
 }
 
 impl VerifyCommand {
-    fn into_parts(self) -> (Command, CommandArguments) {
+    fn into_command(self) -> Command {
         match self {
-            Self::Profiles(arguments) => (
-                Command::VerifyProfiles,
-                CommandArguments::VerifyProfiles(arguments),
-            ),
-            Self::Source(arguments) => (
-                Command::VerifySource,
-                CommandArguments::VerifySource(arguments),
-            ),
-            Self::Inventory(arguments) => (
-                Command::VerifyInventory,
-                CommandArguments::VerifyInventory(arguments),
-            ),
-            Self::Evidence(arguments) => (
-                Command::VerifyEvidence,
-                CommandArguments::VerifyEvidence(arguments),
-            ),
-            Self::Contract { command } => command.into_parts(),
+            Self::Profiles(arguments) => Command::VerifyProfiles(arguments),
+            Self::Source(arguments) => Command::VerifySource(arguments),
+            Self::Inventory(arguments) => Command::VerifyInventory(arguments),
+            Self::Evidence(arguments) => Command::VerifyEvidence(arguments),
+            Self::Contract { command } => command.into_command(),
         }
     }
 }
@@ -365,305 +339,70 @@ leaf_commands!(VerifyContractCommand {
 });
 
 impl Workflow {
-    fn into_parts(self) -> (Command, CommandArguments) {
+    fn into_command(self) -> Command {
         match self {
-            Self::Tooling { command } => command.into_parts(),
-            Self::Project { command } => command.into_parts(),
-            Self::Functions { command } => command.into_parts(),
-            Self::Symbols { command } => command.into_parts(),
-            Self::Interfaces { command } => command.into_parts(),
-            Self::Registers { command } => command.into_parts(),
-            Self::Inspect { command } => command.into_parts(),
-            Self::Mmio { command } => command.into_parts(),
-            Self::Ir { command } => command.into_parts(),
-            Self::Reference { command } => command.into_parts(),
-            Self::Driver { command } => command.into_parts(),
-            Self::Execute { command } => command.into_parts(),
-            Self::Verify { command } => command.into_parts(),
-            Self::Image { command } => command.into_parts(),
+            Self::Tooling { command } => command.into_command(),
+            Self::Project { command } => command.into_command(),
+            Self::Functions { command } => command.into_command(),
+            Self::Symbols { command } => command.into_command(),
+            Self::Interfaces { command } => command.into_command(),
+            Self::Registers { command } => command.into_command(),
+            Self::Inspect { command } => command.into_command(),
+            Self::Mmio { command } => command.into_command(),
+            Self::Ir { command } => command.into_command(),
+            Self::Reference { command } => command.into_command(),
+            Self::Driver { command } => command.into_command(),
+            Self::Execute { command } => command.into_command(),
+            Self::Verify { command } => command.into_command(),
+            Self::Image { command } => command.into_command(),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum CommandArguments {
-    Completion(CompletionArgs),
-    Manpage(ManpageArgs),
-    Empty(EmptyArgs),
+pub(crate) enum Command {
+    GenerateCompletions(CompletionArgs),
+    GenerateManpage(ManpageArgs),
     ProjectInit(ProjectInitArgs),
     ProjectConfigure(ProjectConfigureArgs),
     ProjectInputsInit(ProjectInputsInitArgs),
+    ProjectDoctor(EmptyArgs),
     ProjectStatus(ProjectStatusArgs),
+    ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
-    Check(CheckArgs),
-    Output(OutputArgs),
-    Validation(ValidationArgs),
-    Review(ReviewArgs),
+    ProjectPublish(CheckArgs),
+    FunctionInitPack(OutputArgs),
+    FunctionValidate(ValidationArgs),
+    FunctionReview(ReviewArgs),
     SymbolInventory(SymbolInventoryArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
-    RegisterModel(RegisterModelArgs),
-    RegisterImport(RegisterImportArgs),
+    InterfaceInitPack(OutputArgs),
+    InterfaceValidate(ValidationArgs),
+    RegisterInitModel(RegisterModelArgs),
+    RegisterImportSvd(RegisterImportArgs),
+    RegisterValidate(ValidationArgs),
     RegisterReview(RegisterReviewArgs),
-    RegisterExport(RegisterExportArgs),
-    RegisterPac(RegisterPacArgs),
-    RegisterBindings(RegisterBindingsArgs),
-    ImageAudit(ImageAuditArgs),
-    MmioDiscover(MmioDiscoverArgs),
-    IrExport(IrExportArgs),
-    IrBuild(IrBuildArgs),
-    TraceInput(TraceInputArgs),
-    InspectCompare(InspectCompareArgs),
-    InspectAnalyze(InspectAnalyzeArgs),
-    Reference(ReferenceArgs),
-    ReferenceBatch(ReferenceBatchArgs),
-    DriverGenerate(DriverGenerateArgs),
+    RegisterExportSvd(RegisterExportArgs),
+    RegisterGeneratePac(RegisterPacArgs),
+    RegisterGenerateBindings(RegisterBindingsArgs),
+    AuditImageTargets(ImageAuditArgs),
+    DiscoverMmio(MmioDiscoverArgs),
+    ExportIr(IrExportArgs),
+    BuildIr(IrBuildArgs),
+    VerifyContractChannel(VerifyContractArgs),
+    VerifyContractRfInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),
-    VerifySource(VerifySourceArgs),
-    VerifyInventory(VerifyInventoryArgs),
     VerifyEvidence(VerifyEvidenceArgs),
-    VerifyContract(VerifyContractArgs),
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Command {
-    GenerateCompletions,
-    GenerateManpage,
-    ProjectInit,
-    ProjectConfigure,
-    ProjectInputsInit,
-    ProjectDoctor,
-    ProjectStatus,
-    ProjectBrowse,
-    ProjectAnalyze,
-    ProjectPublish,
-    FunctionInitPack,
-    FunctionValidate,
-    FunctionReview,
-    RegisterInitModel,
-    RegisterImportSvd,
-    RegisterValidate,
-    RegisterReview,
-    RegisterExportSvd,
-    RegisterGeneratePac,
-    RegisterGenerateBindings,
-    SymbolInventory,
-    InterfaceDiscover,
-    InterfaceInitPack,
-    InterfaceValidate,
-    AuditImageTargets,
-    DiscoverMmio,
-    ExportIr,
-    BuildIr,
-    VerifyContractChannel,
-    VerifyContractRfInit,
-    ExecuteRun,
-    ExecuteCompare,
-    VerifyProfiles,
-    VerifyEvidence,
-    GenerateReference,
-    GenerateReferenceBatch,
-    GenerateDriver,
-    InspectAnalyze,
-    VerifyInventory,
-    VerifySource,
-    InspectTrace,
-    InspectCompare,
-}
-
-impl Command {
-    pub(crate) const fn is_tooling(self) -> bool {
-        matches!(self, Self::GenerateCompletions | Self::GenerateManpage)
-    }
-
-    pub(crate) const fn requires_harness(self) -> bool {
-        matches!(
-            self,
-            Self::VerifyContractChannel
-                | Self::VerifyContractRfInit
-                | Self::GenerateReference
-                | Self::GenerateReferenceBatch
-                | Self::GenerateDriver
-                | Self::InspectAnalyze
-                | Self::VerifyInventory
-                | Self::VerifySource
-        )
-    }
-
-    pub(crate) const fn requires_backend(self) -> bool {
-        !self.is_tooling()
-            && !matches!(
-                self,
-                Self::ProjectInit
-                    | Self::ProjectConfigure
-                    | Self::ProjectInputsInit
-                    | Self::ProjectDoctor
-                    | Self::ProjectStatus
-                    | Self::ProjectBrowse
-                    | Self::ProjectPublish
-                    | Self::FunctionInitPack
-                    | Self::FunctionValidate
-                    | Self::FunctionReview
-                    | Self::InterfaceInitPack
-                    | Self::InterfaceValidate
-                    | Self::RegisterInitModel
-                    | Self::RegisterImportSvd
-                    | Self::RegisterValidate
-                    | Self::RegisterReview
-                    | Self::RegisterExportSvd
-                    | Self::RegisterGeneratePac
-                    | Self::RegisterGenerateBindings
-                    | Self::VerifyEvidence
-            )
-    }
-
-    pub(crate) const fn requires_mmio_map(self) -> bool {
-        !self.is_tooling()
-            && !matches!(
-                self,
-                Self::ProjectInit
-                    | Self::ProjectConfigure
-                    | Self::ProjectInputsInit
-                    | Self::ProjectDoctor
-                    | Self::ProjectStatus
-                    | Self::ProjectBrowse
-                    | Self::ProjectAnalyze
-                    | Self::ProjectPublish
-                    | Self::FunctionInitPack
-                    | Self::FunctionValidate
-                    | Self::FunctionReview
-                    | Self::InterfaceInitPack
-                    | Self::InterfaceValidate
-                    | Self::RegisterInitModel
-                    | Self::RegisterImportSvd
-                    | Self::RegisterValidate
-                    | Self::RegisterReview
-                    | Self::RegisterExportSvd
-                    | Self::RegisterGeneratePac
-                    | Self::RegisterGenerateBindings
-                    | Self::SymbolInventory
-                    | Self::InterfaceDiscover
-                    | Self::AuditImageTargets
-                    | Self::DiscoverMmio
-                    | Self::ExportIr
-                    | Self::BuildIr
-                    | Self::VerifyEvidence
-            )
-    }
-
-    pub(crate) const fn uses_memory_map(self) -> bool {
-        !self.is_tooling()
-            && !matches!(
-                self,
-                Self::ProjectInit
-                    | Self::ProjectConfigure
-                    | Self::ProjectInputsInit
-                    | Self::FunctionInitPack
-                    | Self::FunctionValidate
-                    | Self::FunctionReview
-                    | Self::InterfaceInitPack
-                    | Self::InterfaceValidate
-                    | Self::RegisterReview
-                    | Self::RegisterExportSvd
-                    | Self::RegisterGeneratePac
-                    | Self::RegisterGenerateBindings
-                    | Self::SymbolInventory
-                    | Self::InterfaceDiscover
-                    | Self::AuditImageTargets
-                    | Self::VerifyEvidence
-            )
-    }
-
-    pub(crate) const fn uses_register_catalog(self) -> bool {
-        !self.is_tooling()
-            && !matches!(
-                self,
-                Self::ProjectInit
-                    | Self::ProjectConfigure
-                    | Self::ProjectInputsInit
-                    | Self::ProjectStatus
-                    | Self::ProjectBrowse
-                    | Self::FunctionInitPack
-                    | Self::FunctionValidate
-                    | Self::FunctionReview
-                    | Self::RegisterInitModel
-                    | Self::RegisterImportSvd
-                    | Self::InterfaceInitPack
-                    | Self::InterfaceValidate
-                    | Self::RegisterReview
-                    | Self::RegisterExportSvd
-                    | Self::RegisterGeneratePac
-                    | Self::RegisterGenerateBindings
-                    | Self::ProjectPublish
-                    | Self::SymbolInventory
-                    | Self::InterfaceDiscover
-                    | Self::AuditImageTargets
-                    | Self::VerifyEvidence
-            )
-    }
-
-    pub(crate) const fn uses_run_spec(self) -> bool {
-        !self.is_tooling()
-            && !matches!(
-                self,
-                Self::ProjectInit
-                    | Self::ProjectConfigure
-                    | Self::ProjectInputsInit
-                    | Self::ProjectBrowse
-                    | Self::FunctionInitPack
-                    | Self::FunctionValidate
-                    | Self::FunctionReview
-                    | Self::InterfaceInitPack
-                    | Self::InterfaceValidate
-                    | Self::RegisterInitModel
-                    | Self::RegisterImportSvd
-                    | Self::RegisterValidate
-                    | Self::RegisterReview
-                    | Self::RegisterExportSvd
-                    | Self::RegisterGeneratePac
-                    | Self::RegisterGenerateBindings
-                    | Self::ProjectPublish
-                    | Self::VerifyEvidence
-            )
-    }
-
-    pub(crate) fn accepts_run_input_role(self, role: &crate::run_spec::InputRole) -> bool {
-        use crate::run_spec::InputRole;
-
-        match self {
-            Self::GenerateCompletions
-            | Self::GenerateManpage
-            | Self::ProjectInit
-            | Self::ProjectConfigure
-            | Self::ProjectInputsInit
-            | Self::ProjectDoctor
-            | Self::ProjectStatus
-            | Self::ProjectBrowse
-            | Self::ProjectAnalyze
-            | Self::ProjectPublish
-            | Self::FunctionInitPack
-            | Self::FunctionValidate
-            | Self::FunctionReview
-            | Self::InterfaceInitPack
-            | Self::InterfaceValidate
-            | Self::RegisterInitModel
-            | Self::RegisterImportSvd
-            | Self::RegisterValidate
-            | Self::RegisterReview
-            | Self::RegisterExportSvd
-            | Self::RegisterGeneratePac
-            | Self::RegisterGenerateBindings
-            | Self::SymbolInventory
-            | Self::InterfaceDiscover
-            | Self::BuildIr
-            | Self::VerifyEvidence => false,
-            Self::DiscoverMmio => matches!(role, InputRole::SourceArtifact(_)),
-            Self::ExportIr => matches!(role, InputRole::Companion | InputRole::SourceArtifact(_)),
-            Self::AuditImageTargets => role == &InputRole::Artifact,
-            _ => true,
-        }
-    }
+    GenerateReference(ReferenceArgs),
+    GenerateReferenceBatch(ReferenceBatchArgs),
+    GenerateDriver(DriverGenerateArgs),
+    InspectAnalyze(InspectAnalyzeArgs),
+    VerifyInventory(VerifyInventoryArgs),
+    VerifySource(VerifySourceArgs),
+    InspectTrace(TraceInputArgs),
+    InspectCompare(InspectCompareArgs),
 }
 
 #[derive(Clone, Debug)]
@@ -674,7 +413,6 @@ pub(crate) struct ParsedInvocation {
     pub(crate) target_spec: Option<PathBuf>,
     pub(crate) run_spec: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
-    pub(crate) arguments: CommandArguments,
 }
 
 impl ParsedInvocation {
@@ -682,8 +420,8 @@ impl ParsedInvocation {
         let cli = Cli::try_parse_from(
             std::iter::once("vendor-binary-workbench".to_owned()).chain(arguments),
         )?;
-        let (command, arguments) = cli.workflow.into_parts();
-        if command == Command::ProjectBrowse && cli.ui.format != OutputFormat::Human {
+        let command = cli.workflow.into_command();
+        if matches!(command, Command::ProjectBrowse(_)) && cli.ui.format != OutputFormat::Human {
             return Err(crate::Error::invalid(
                 "project browse is an interactive human frontend and does not accept a machine output format",
             ));
@@ -695,7 +433,6 @@ impl ParsedInvocation {
             target_spec: cli.target_spec,
             run_spec: cli.run_spec,
             svd_paths: cli.svd,
-            arguments,
         })
     }
 }
@@ -724,11 +461,10 @@ mod tests {
             "never".to_owned(),
         ])
         .unwrap();
-        assert_eq!(invocation.command, Command::ExportIr);
         assert_eq!(invocation.target_spec, Some(PathBuf::from("target.spec")));
         assert_eq!(invocation.svd_paths, [PathBuf::from("radio.svd")]);
         assert_eq!(invocation.ui.progress, ProgressMode::Never);
-        let CommandArguments::IrExport(arguments) = invocation.arguments else {
+        let Command::ExportIr(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
         assert_eq!(arguments.artifact[0].source.as_str(), "rom");
@@ -791,8 +527,7 @@ mod tests {
             "--deny-unreviewed".to_owned(),
         ])
         .unwrap();
-        assert_eq!(invocation.command, Command::ProjectAnalyze);
-        let CommandArguments::ProjectAnalyze(arguments) = invocation.arguments else {
+        let Command::ProjectAnalyze(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
         assert!(arguments.check);
@@ -816,8 +551,7 @@ mod tests {
             "--check".to_owned(),
         ])
         .unwrap();
-        assert_eq!(invocation.command, Command::ProjectInputsInit);
-        let CommandArguments::ProjectInputsInit(arguments) = invocation.arguments else {
+        let Command::ProjectInputsInit(arguments) = invocation.command else {
             panic!("unexpected argument type")
         };
         assert!(arguments.check);
@@ -847,8 +581,7 @@ mod tests {
             "vendor-project.toml".to_owned(),
         ])
         .unwrap();
-        assert_eq!(invocation.command, Command::ProjectBrowse);
-        assert!(matches!(invocation.arguments, CommandArguments::Empty(_)));
+        assert!(matches!(invocation.command, Command::ProjectBrowse(_)));
 
         let error = ParsedInvocation::parse([
             "project".to_owned(),

@@ -1,6 +1,7 @@
 //! Project-owned publication of reviewed register artifacts.
 
-use super::{Command, CommandArguments, Result, registers};
+use super::{Result, registers};
+use crate::cli::resolver::RegisterWorkspaceCommand;
 use serde::Serialize;
 
 use crate::MemoryMap;
@@ -45,8 +46,7 @@ pub(super) fn run(
 
     let validation = execute("register-validation", StageSuccess::Verified, || {
         registers::run(
-            Command::RegisterValidate,
-            CommandArguments::Validation(ValidationArgs {
+            RegisterWorkspaceCommand::Validate(ValidationArgs {
                 deny_unreviewed: true,
             }),
             project,

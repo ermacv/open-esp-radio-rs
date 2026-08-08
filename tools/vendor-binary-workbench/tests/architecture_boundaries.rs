@@ -87,3 +87,35 @@ fn register_catalog_uses_the_typed_model_without_an_xml_round_trip() {
         );
     }
 }
+
+#[test]
+fn cli_resolution_has_one_typed_command_axis() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli");
+    let arguments = fs::read_to_string(root.join("args.rs")).expect("read CLI grammar");
+    let resolver = fs::read_to_string(root.join("resolver.rs")).expect("read CLI resolver");
+    let dispatch = fs::read_to_string(root.join("dispatch.rs")).expect("read CLI dispatch");
+
+    assert!(
+        !arguments.contains("CommandArguments"),
+        "CLI restored the parallel command/argument representation"
+    );
+    for obsolete_policy in [
+        "requires_backend",
+        "requires_harness",
+        "requires_mmio_map",
+        "uses_memory_map",
+        "uses_register_catalog",
+        "uses_run_spec",
+    ] {
+        assert!(
+            !arguments.contains(obsolete_policy) && !resolver.contains(obsolete_policy),
+            "CLI restored independent capability policy `{obsolete_policy}`"
+        );
+    }
+    for impossible_branch in ["unreachable!", ".expect("] {
+        assert!(
+            !dispatch.contains(impossible_branch),
+            "resolved dispatch contains an impossible command/argument branch: {impossible_branch}"
+        );
+    }
+}

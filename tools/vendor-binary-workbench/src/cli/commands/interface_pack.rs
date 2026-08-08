@@ -2,6 +2,7 @@
 
 use super::super::*;
 use crate::{
+    cli::resolver::InterfaceWorkspaceCommand,
     interfaces::{InterfaceFacts, InterfaceWorkspace, write_pack_template},
     project::ProjectSpec,
 };
@@ -11,8 +12,7 @@ mod report;
 use report::*;
 
 pub(super) fn run(
-    command: Command,
-    arguments: CommandArguments,
+    command: InterfaceWorkspaceCommand,
     project: &ProjectSpec,
     target: &TargetSpec,
 ) -> Result<bool> {
@@ -21,14 +21,11 @@ pub(super) fn run(
         .as_ref()
         .ok_or("project has no [interfaces] table; configure facts and pack paths first")
         .map_err(crate::Error::invalid)?;
-    match (command, arguments) {
-        (Command::InterfaceInitPack, CommandArguments::Output(arguments)) => {
+    match command {
+        InterfaceWorkspaceCommand::InitPack(arguments) => {
             init_pack(arguments, project, target, paths)
         }
-        (Command::InterfaceValidate, CommandArguments::Validation(arguments)) => {
-            validate(arguments, target, paths)
-        }
-        _ => unreachable!("interface pack dispatcher received another command"),
+        InterfaceWorkspaceCommand::Validate(arguments) => validate(arguments, target, paths),
     }
 }
 

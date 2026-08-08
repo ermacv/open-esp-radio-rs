@@ -122,7 +122,7 @@ impl ProjectSession {
         })
     }
 
-    pub(super) fn context(&self) -> ProjectContext<'_> {
+    pub(crate) fn context(&self) -> ProjectContext<'_> {
         ProjectContext {
             project_path: &self.manifest,
             project: &self.project,

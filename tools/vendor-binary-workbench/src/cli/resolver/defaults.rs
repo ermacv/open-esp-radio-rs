@@ -7,57 +7,42 @@ use crate::{
     run_spec::{InputRole, RunSpec},
 };
 
-use super::super::{
-    NamedAddressRange, SourcePath,
-    args::{Command, CommandArguments},
-    arguments,
-};
+use super::super::{NamedAddressRange, SourcePath, args::Command, arguments};
 
-pub(super) fn apply_target_defaults(
-    command: Command,
-    command_arguments: &mut CommandArguments,
-    target: &TargetSpec,
-) {
-    if command == Command::VerifyInventory
-        && let CommandArguments::VerifyInventory(arguments) = command_arguments
-    {
-        if !arguments.no_profiles && arguments.profiles.is_none() {
-            arguments.profiles.clone_from(&target.profiles);
-        }
-        if !arguments.no_dispositions && arguments.dispositions.is_none() {
-            arguments.dispositions.clone_from(&target.dispositions);
-        }
-    }
-    if matches!(command, Command::VerifyInventory | Command::VerifyEvidence) {
-        match command_arguments {
-            CommandArguments::VerifyInventory(arguments)
-                if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
-            {
+pub(super) fn apply_target_defaults(command: &mut Command, target: &TargetSpec) {
+    match command {
+        Command::VerifyInventory(arguments) => {
+            if !arguments.no_profiles && arguments.profiles.is_none() {
+                arguments.profiles.clone_from(&target.profiles);
+            }
+            if !arguments.no_dispositions && arguments.dispositions.is_none() {
+                arguments.dispositions.clone_from(&target.dispositions);
+            }
+            if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() {
                 arguments
                     .evidence_baseline
                     .clone_from(&target.evidence_baseline);
             }
-            CommandArguments::VerifyEvidence(arguments)
-                if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
-            {
-                arguments
-                    .evidence_baseline
-                    .clone_from(&target.evidence_baseline);
-            }
-            _ => {}
         }
+        Command::VerifyEvidence(arguments)
+            if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
+        {
+            arguments
+                .evidence_baseline
+                .clone_from(&target.evidence_baseline);
+        }
+        _ => {}
     }
 }
 
 pub(super) fn apply_project_defaults(
-    command: Command,
-    command_arguments: &mut CommandArguments,
+    command: &mut Command,
     project: Option<&ProjectSpec>,
     memory_map: Option<&MemoryMap>,
 ) -> Result<()> {
     if let Some(project) = project {
-        match command_arguments {
-            CommandArguments::VerifySource(arguments) => {
+        match command {
+            Command::VerifySource(arguments) => {
                 if arguments.rust_prefix.is_none() {
                     arguments.rust_prefix = project
                         .verification
@@ -79,7 +64,7 @@ pub(super) fn apply_project_defaults(
                     }
                 }
             }
-            CommandArguments::VerifyInventory(arguments) => {
+            Command::VerifyInventory(arguments) => {
                 if arguments.rust_prefix.is_none() {
                     arguments.rust_prefix = project
                         .verification
@@ -128,8 +113,7 @@ pub(super) fn apply_project_defaults(
             _ => {}
         }
     }
-    if command == Command::SymbolInventory
-        && let CommandArguments::SymbolInventory(arguments) = command_arguments
+    if let Command::SymbolInventory(arguments) = command
         && arguments.json_report.is_none()
         && let Some(path) = project
             .and_then(|project| project.symbol_inventory.as_ref())
@@ -137,17 +121,15 @@ pub(super) fn apply_project_defaults(
     {
         arguments.json_report = Some(path.clone());
     }
-    if command == Command::DiscoverMmio
+    if let Command::DiscoverMmio(arguments) = command
         && let Some(memory_map) = memory_map
-        && let CommandArguments::MmioDiscover(arguments) = command_arguments
         && arguments.range.is_empty()
     {
         for (name, start, end) in memory_map.mmio_ranges()? {
             arguments.range.push(NamedAddressRange { name, start, end });
         }
     }
-    if command == Command::DiscoverMmio
-        && let CommandArguments::MmioDiscover(arguments) = command_arguments
+    if let Command::DiscoverMmio(arguments) = command
         && arguments.json_report.is_none()
         && let Some(path) = project
             .and_then(|project| project.registers.as_ref())
@@ -155,8 +137,7 @@ pub(super) fn apply_project_defaults(
     {
         arguments.json_report = Some(path.clone());
     }
-    if command == Command::InterfaceDiscover
-        && let CommandArguments::InterfaceDiscover(arguments) = command_arguments
+    if let Command::InterfaceDiscover(arguments) = command
         && arguments.json_report.is_none()
         && let Some(path) = project
             .and_then(|project| project.interfaces.as_ref())
@@ -167,48 +148,41 @@ pub(super) fn apply_project_defaults(
     Ok(())
 }
 
-pub(super) fn apply_run_spec_defaults(
-    command: Command,
-    arguments: &mut CommandArguments,
-    run_spec: &RunSpec,
-) {
-    let use_default_companions = match arguments {
-        CommandArguments::IrExport(arguments) => arguments.companion.is_empty(),
-        CommandArguments::InspectAnalyze(arguments) => arguments.companion.is_empty(),
-        CommandArguments::Reference(arguments) => arguments.companion.is_empty(),
-        CommandArguments::ReferenceBatch(arguments) => arguments.companion.is_empty(),
-        CommandArguments::DriverGenerate(arguments) => arguments.companion.is_empty(),
+pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec) {
+    let use_default_companions = match command {
+        Command::ExportIr(arguments) => arguments.companion.is_empty(),
+        Command::InspectAnalyze(arguments) => arguments.companion.is_empty(),
+        Command::GenerateReference(arguments) => arguments.companion.is_empty(),
+        Command::GenerateReferenceBatch(arguments) => arguments.companion.is_empty(),
+        Command::GenerateDriver(arguments) => arguments.companion.is_empty(),
         _ => false,
     };
     for input in run_spec.inputs() {
         let role = &input.role;
         let path = &input.path;
-        if !command.accepts_run_input_role(role) {
-            continue;
-        }
-        match arguments {
-            CommandArguments::ImageAudit(args) if role == &InputRole::Artifact => {
+        match command {
+            Command::AuditImageTargets(args) if role == &InputRole::Artifact => {
                 args.artifact.get_or_insert_with(|| path.clone());
             }
-            CommandArguments::MmioDiscover(args) => {
+            Command::DiscoverMmio(args) => {
                 if let InputRole::SourceArtifact(source) = role {
                     push_source_path(&mut args.artifact, source, path);
                 }
             }
-            CommandArguments::IrExport(args) => {
+            Command::ExportIr(args) => {
                 if let InputRole::SourceArtifact(source) = role {
                     push_source_path(&mut args.artifact, source, path);
                 } else if role == &InputRole::Companion && use_default_companions {
                     args.companion.push(path.clone());
                 }
             }
-            CommandArguments::TraceInput(args) => apply_trace_input(args, role, path),
-            CommandArguments::InspectCompare(args) => {
+            Command::InspectTrace(args) => apply_trace_input(args, role, path),
+            Command::InspectCompare(args) => {
                 if role == &InputRole::Artifact && args.artifact.is_none() {
                     args.artifact = Some(path.clone());
                 }
             }
-            CommandArguments::InspectAnalyze(args) => {
+            Command::InspectAnalyze(args) => {
                 set_path_role(
                     &mut args.artifact,
                     &mut args.companion,
@@ -217,7 +191,7 @@ pub(super) fn apply_run_spec_defaults(
                     use_default_companions,
                 );
             }
-            CommandArguments::Reference(args) => {
+            Command::GenerateReference(args) => {
                 set_path_role(
                     &mut args.artifact,
                     &mut args.companion,
@@ -226,7 +200,7 @@ pub(super) fn apply_run_spec_defaults(
                     use_default_companions,
                 );
             }
-            CommandArguments::ReferenceBatch(args) => {
+            Command::GenerateReferenceBatch(args) => {
                 set_path_role(
                     &mut args.artifact,
                     &mut args.companion,
@@ -235,7 +209,7 @@ pub(super) fn apply_run_spec_defaults(
                     use_default_companions,
                 );
             }
-            CommandArguments::DriverGenerate(args) => {
+            Command::GenerateDriver(args) => {
                 set_path_role(
                     &mut args.artifact,
                     &mut args.companion,
@@ -244,14 +218,14 @@ pub(super) fn apply_run_spec_defaults(
                     use_default_companions,
                 );
             }
-            CommandArguments::ExecuteRun(args) => {
+            Command::ExecuteRun(args) => {
                 if role == &InputRole::Artifact && args.artifact.is_none() {
                     args.artifact = Some(path.clone());
                 } else if role == &InputRole::Companion && args.companion.is_none() {
                     args.companion = Some(path.clone());
                 }
             }
-            CommandArguments::ExecuteCompare(args) => match role {
+            Command::ExecuteCompare(args) => match role {
                 InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
@@ -266,7 +240,7 @@ pub(super) fn apply_run_spec_defaults(
                 }
                 _ => {}
             },
-            CommandArguments::VerifyProfiles(args) => match role {
+            Command::VerifyProfiles(args) => match role {
                 InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
@@ -281,7 +255,7 @@ pub(super) fn apply_run_spec_defaults(
                 }
                 _ => {}
             },
-            CommandArguments::VerifySource(args) => match role {
+            Command::VerifySource(args) => match role {
                 InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
@@ -299,7 +273,7 @@ pub(super) fn apply_run_spec_defaults(
                 }
                 _ => {}
             },
-            CommandArguments::VerifyInventory(args) => {
+            Command::VerifyInventory(args) => {
                 if let InputRole::SourceArtifact(source) = role {
                     push_source_path(&mut args.source_artifact, source, path);
                 } else if let InputRole::SourceInventory(source) = role {
@@ -312,15 +286,17 @@ pub(super) fn apply_run_spec_defaults(
                     args.rust_companion = Some(path.clone());
                 }
             }
-            CommandArguments::VerifyContract(args) => match role {
-                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
-                    args.vendor_artifact = Some(path.clone())
+            Command::VerifyContractChannel(args) | Command::VerifyContractRfInit(args) => {
+                match role {
+                    InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
+                        args.vendor_artifact = Some(path.clone())
+                    }
+                    InputRole::VendorCompanion if args.vendor_companion.is_none() => {
+                        args.vendor_companion = Some(path.clone())
+                    }
+                    _ => {}
                 }
-                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
-                    args.vendor_companion = Some(path.clone())
-                }
-                _ => {}
-            },
+            }
             _ => {}
         }
     }

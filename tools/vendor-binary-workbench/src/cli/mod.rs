@@ -25,7 +25,7 @@ use std::{
 };
 
 use crate::*;
-use args::{Command, CommandArguments, ParsedInvocation};
+use args::ParsedInvocation;
 pub(crate) use arguments::*;
 pub(crate) use values::*;
 
@@ -37,7 +37,7 @@ pub(crate) fn run() -> Result<bool> {
     let invocation = ParsedInvocation::parse(std::env::args().skip(1))?;
     ui::init(&invocation.ui)?;
     output::init(invocation.ui.format);
-    let progress = progress::command_span(invocation.command);
+    let progress = progress::command_span(&invocation.command);
     let _entered = progress.as_ref().map(tracing::Span::enter);
     dispatch::run(resolver::resolve(invocation)?)
 }

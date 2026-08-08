@@ -71,10 +71,10 @@ dispatch path:
 
 | Module | Responsibility |
 | --- | --- |
-| `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options, command capability policy and `ParsedInvocation` |
+| `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options and typed `Command`/`ParsedInvocation` values |
 | `cli/arguments.rs` | Typed leaf-command arguments, declarative conflicts and value grammar |
 | `application/resolve.rs` | Canonical project session: manifest, target/platform, run spec, memory map and register catalog |
-| `cli/resolver.rs` | Standalone-target resolution plus precedence-aware command defaults over the canonical project session |
+| `cli/resolver.rs` | Positive, exhaustive resource planning plus standalone-target resolution and typed `ResolvedInvocation` construction |
 | `cli/resolver/defaults.rs` | Typed CLI > run-spec > project/target argument-default merge |
 | `cli/resolver/register_catalog.rs` | SVD plus reviewed register-model composition |
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
@@ -115,7 +115,13 @@ clap argv -> ParsedInvocation
 
 The resolved form owns every loaded configuration object and effective path.
 Dispatch does not perform discovery, load configuration files or merge
-defaults. Project initialization and configuration are explicit resolved
+defaults. Every `Command` variant owns its exact leaf arguments, and every
+`ResolvedInvocation` variant owns the exact project/target/run/catalog context
+needed by its workflow. There is no parallel command discriminator/argument
+pair and no dispatch-time downcast or impossible branch. Resource loading is
+driven by one exhaustive positive `ResolutionNeeds` classification rather than
+independent `requires_*`/`uses_*` deny-lists. Project initialization and
+configuration are explicit resolved
 variants, so they never carry a fake or partially initialized target context.
 `--format` changes only stdout. Diagnostics, warnings and verbosity-controlled
 tracing stay on stderr, so JSON and JSONL output remains pipe-safe. Errors are

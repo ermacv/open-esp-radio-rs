@@ -1,7 +1,7 @@
 //! Project register-workspace lifecycle commands.
 
 use super::super::*;
-use crate::{project::ProjectSpec, registers::*};
+use crate::{cli::resolver::RegisterWorkspaceCommand, project::ProjectSpec, registers::*};
 
 mod publication;
 mod report;
@@ -14,8 +14,7 @@ use publication::{export_svd, generate_bindings, generate_pac_source};
 use report::*;
 
 pub(super) fn run(
-    command: Command,
-    arguments: CommandArguments,
+    command: RegisterWorkspaceCommand,
     project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
 ) -> Result<bool> {
@@ -24,29 +23,18 @@ pub(super) fn run(
         .as_ref()
         .ok_or("project has no [registers] table; configure facts and model paths first")
         .map_err(crate::Error::invalid)?;
-    match (command, arguments) {
-        (Command::RegisterInitModel, CommandArguments::RegisterModel(arguments)) => {
+    match command {
+        RegisterWorkspaceCommand::InitModel(arguments) => {
             init_model(arguments, project, memory_map, paths)
         }
-        (Command::RegisterImportSvd, CommandArguments::RegisterImport(arguments)) => {
-            import_svd(arguments, memory_map, paths)
-        }
-        (Command::RegisterValidate, CommandArguments::Validation(arguments)) => {
-            validate(arguments, memory_map, paths)
-        }
-        (Command::RegisterReview, CommandArguments::RegisterReview(arguments)) => {
-            review(arguments, paths)
-        }
-        (Command::RegisterExportSvd, CommandArguments::RegisterExport(arguments)) => {
-            export_svd(arguments, paths)
-        }
-        (Command::RegisterGeneratePac, CommandArguments::RegisterPac(arguments)) => {
-            generate_pac_source(arguments, paths)
-        }
-        (Command::RegisterGenerateBindings, CommandArguments::RegisterBindings(arguments)) => {
+        RegisterWorkspaceCommand::ImportSvd(arguments) => import_svd(arguments, memory_map, paths),
+        RegisterWorkspaceCommand::Validate(arguments) => validate(arguments, memory_map, paths),
+        RegisterWorkspaceCommand::Review(arguments) => review(arguments, paths),
+        RegisterWorkspaceCommand::ExportSvd(arguments) => export_svd(arguments, paths),
+        RegisterWorkspaceCommand::GeneratePac(arguments) => generate_pac_source(arguments, paths),
+        RegisterWorkspaceCommand::GenerateBindings(arguments) => {
             generate_bindings(arguments, paths)
         }
-        _ => unreachable!("register command dispatcher received another command"),
     }
 }
 

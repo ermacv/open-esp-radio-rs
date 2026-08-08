@@ -80,7 +80,21 @@ pub(crate) enum WorkbenchError {
     #[error(transparent)]
     Esp32s31Harness(#[from] open_radio_vendor_harness_esp32s31_semantic::Error),
     #[error(transparent)]
-    RegisterModel(#[from] open_esp_radio_register_model::Error),
+    RegisterModel(open_esp_radio_register_model::Error),
+}
+
+impl From<open_esp_radio_register_model::Error> for WorkbenchError {
+    fn from(error: open_esp_radio_register_model::Error) -> Self {
+        let diagnostic = error
+            .manifest_diagnostic()
+            .map(|(kind, path, reason, span)| (kind, path.to_owned(), reason.to_owned(), span));
+        if let Some((kind, path, reason, span)) = diagnostic
+            && let Ok(input) = std::fs::read_to_string(&path)
+        {
+            return Self::manifest_source(kind, &path, &input, reason, span);
+        }
+        Self::RegisterModel(error)
+    }
 }
 
 impl WorkbenchError {
@@ -109,7 +123,7 @@ impl WorkbenchError {
         error: impl std::fmt::Display,
         span: Option<std::ops::Range<usize>>,
     ) -> Self {
-        let span = span.unwrap_or(0..input.len().min(1));
+        let span = normalize_source_span(input, span);
         Self::ManifestSource {
             kind,
             path: path.to_owned(),
@@ -148,6 +162,18 @@ impl WorkbenchError {
             Some(span) => Self::manifest_source(kind, path, input, error, Some(span)),
             None => Self::manifest(kind, path, error),
         }
+    }
+}
+
+fn normalize_source_span(
+    input: &str,
+    span: Option<std::ops::Range<usize>>,
+) -> std::ops::Range<usize> {
+    match span {
+        Some(span) if !span.is_empty() => span,
+        Some(span) if span.start < input.len() => span.start..span.start + 1,
+        Some(_) if !input.is_empty() => input.len() - 1..input.len(),
+        _ => 0..input.len().min(1),
     }
 }
 
@@ -190,6 +216,29 @@ mod tests {
             error,
             WorkbenchError::ManifestSource { span, .. }
                 if span.offset() == input.find("  \"value\":,").unwrap()
+        ));
+    }
+
+    #[test]
+    fn register_model_diagnostic_is_promoted_to_a_source_diagnostic() {
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-register-diagnostic-{}.toml",
+            std::process::id()
+        ));
+        let input = "schema = [\n";
+        std::fs::write(&path, input).unwrap();
+        let error = open_esp_radio_register_model::RegisterModel::load(&path).unwrap_err();
+        let error = WorkbenchError::from(error);
+        std::fs::remove_file(&path).unwrap();
+
+        assert!(matches!(
+            error,
+            WorkbenchError::ManifestSource {
+                kind: "register model manifest",
+                path: reported,
+                span,
+                ..
+            } if reported == path && !span.is_empty()
         ));
     }
 }

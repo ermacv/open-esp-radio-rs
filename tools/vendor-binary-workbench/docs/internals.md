@@ -143,9 +143,12 @@ preserve their physical source line as a typed diagnostic span. TOML project,
 memory, platform, function and interface manifests retain parser-provided byte
 spans. Malformed JSON facts and verification reports retain the parser's
 physical source line instead of degrading to a path-only message. Function and
-interface semantic validation errors remain attached to the reviewed pack path
-after syntax parsing, including stale provenance, ABI/layout and semantic-link
-failures.
+interface semantic validation use source-neutral field locators to retain the
+exact reviewed pack field after syntax parsing, including stale provenance,
+ABI/layout and semantic-link failures. The generic register-model crate exposes
+manifest diagnostic metadata as `kind/path/reason/span` without depending on a
+terminal diagnostic library; the workbench facade promotes it to the same
+source diagnostic at the CLI boundary.
 
 Commands that publish JSON, pseudo-Rust or navigation files include the path
 and `written`/`verified` state in their primary typed result. Publication is

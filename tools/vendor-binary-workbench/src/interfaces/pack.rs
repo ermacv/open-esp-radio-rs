@@ -2,12 +2,12 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::validation::{ValidationError, ValidationResult};
 use super::{
     InterfaceAnchor, InterfaceFactRoot, InterfaceFacts, InterfaceGuard, InterfacePack,
     InterfaceRootSelector, InterfaceWorkspaceSummary, PackOrigin, ResolvedInterfaceSlot,
     ReviewStatus, SemanticCatalogs, validate_dotted_id,
 };
-use crate::Result;
 
 impl InterfacePack {
     pub(super) fn validate(
@@ -15,13 +15,17 @@ impl InterfacePack {
         facts: &InterfaceFacts,
         catalogs: &SemanticCatalogs,
         calling_convention: &str,
-    ) -> Result<(InterfaceWorkspaceSummary, Vec<ResolvedInterfaceSlot>)> {
-        validate_dotted_id(&self.id, "interface pack id")?;
+    ) -> ValidationResult<(InterfaceWorkspaceSummary, Vec<ResolvedInterfaceSlot>)> {
+        validate_dotted_id(&self.id, "interface pack id")
+            .map_err(|error| ValidationError::pack("id", error.to_string()))?;
         if self.calling_convention != calling_convention {
-            return Err(crate::Error::invalid(format!(
-                "interface pack calling convention {:?} does not match project target {:?}",
-                self.calling_convention, calling_convention
-            )));
+            return Err(ValidationError::pack(
+                "calling-convention",
+                format!(
+                    "interface pack calling convention {:?} does not match project target {:?}",
+                    self.calling_convention, calling_convention
+                ),
+            ));
         }
         let mut anchor_ids = BTreeSet::new();
         let mut matched_by = vec![None::<&str>; facts.tables.len()];
@@ -29,10 +33,11 @@ impl InterfacePack {
         for anchor in &self.anchors {
             validate_anchor_shape(anchor, catalogs)?;
             if !anchor_ids.insert(anchor.id.as_str()) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate interface anchor id {:?}",
-                    anchor.id
-                )));
+                return Err(ValidationError::anchor(
+                    anchor,
+                    "id",
+                    format!("duplicate interface anchor id {:?}", anchor.id),
+                ));
             }
             let base_matches = facts
                 .tables
@@ -51,10 +56,14 @@ impl InterfacePack {
                         .is_some_and(|artifact| artifact.sha256.is_none())
                 })
             {
-                return Err(crate::Error::invalid(format!(
-                    "anchor {:?} requires artifact SHA-256 but matching facts predate digest evidence; regenerate interfaces discover",
-                    anchor.id
-                )));
+                return Err(ValidationError::anchor(
+                    anchor,
+                    "guards",
+                    format!(
+                        "anchor {:?} requires artifact SHA-256 but matching facts predate digest evidence; regenerate interfaces discover",
+                        anchor.id
+                    ),
+                ));
             }
             let matches = base_matches
                 .into_iter()
@@ -62,25 +71,37 @@ impl InterfacePack {
                 .collect::<Vec<_>>();
             match anchor.origin {
                 PackOrigin::Observed if matches.is_empty() => {
-                    return Err(crate::Error::invalid(format!(
-                        "observed interface anchor {:?} is stale or has no matching fact",
-                        anchor.id
-                    )));
+                    return Err(ValidationError::anchor(
+                        anchor,
+                        "origin",
+                        format!(
+                            "observed interface anchor {:?} is stale or has no matching fact",
+                            anchor.id
+                        ),
+                    ));
                 }
                 PackOrigin::Manual if !matches.is_empty() => {
-                    return Err(crate::Error::invalid(format!(
-                        "manual interface anchor {:?} matches generated facts; use origin = \"observed\"",
-                        anchor.id
-                    )));
+                    return Err(ValidationError::anchor(
+                        anchor,
+                        "origin",
+                        format!(
+                            "manual interface anchor {:?} matches generated facts; use origin = \"observed\"",
+                            anchor.id
+                        ),
+                    ));
                 }
                 _ => {}
             }
             for index in &matches {
                 if let Some(other) = matched_by[*index].replace(&anchor.id) {
-                    return Err(crate::Error::invalid(format!(
-                        "interface fact matches both anchors {other:?} and {:?}; make selectors disjoint",
-                        anchor.id
-                    )));
+                    return Err(ValidationError::anchor(
+                        anchor,
+                        "root-kind",
+                        format!(
+                            "interface fact matches both anchors {other:?} and {:?}; make selectors disjoint",
+                            anchor.id
+                        ),
+                    ));
                 }
             }
             validate_anchor_evidence(anchor, facts, &matches)?;
@@ -93,7 +114,10 @@ impl InterfacePack {
     }
 }
 
-fn validate_anchor_shape(anchor: &InterfaceAnchor, catalogs: &SemanticCatalogs) -> Result<()> {
+fn validate_anchor_shape(
+    anchor: &InterfaceAnchor,
+    catalogs: &SemanticCatalogs,
+) -> ValidationResult<()> {
     super::pack_schema::validate_anchor_shape(anchor, catalogs)
 }
 
@@ -101,7 +125,7 @@ fn validate_anchor_evidence(
     anchor: &InterfaceAnchor,
     facts: &InterfaceFacts,
     matches: &[usize],
-) -> Result<()> {
+) -> ValidationResult<()> {
     let observed = matches
         .iter()
         .flat_map(|index| facts.tables[*index].slots.iter())
@@ -111,16 +135,26 @@ fn validate_anchor_evidence(
         let key = (slot.offset, slot.width);
         match slot.origin {
             PackOrigin::Observed if !observed.contains(&key) => {
-                return Err(crate::Error::invalid(format!(
-                    "observed slot at {:+#x}/{} in anchor {:?} is stale",
-                    slot.offset, slot.width, anchor.id
-                )));
+                return Err(ValidationError::slot(
+                    anchor,
+                    slot,
+                    "origin",
+                    format!(
+                        "observed slot at {:+#x}/{} in anchor {:?} is stale",
+                        slot.offset, slot.width, anchor.id
+                    ),
+                ));
             }
             PackOrigin::Manual if observed.contains(&key) => {
-                return Err(crate::Error::invalid(format!(
-                    "manual slot at {:+#x}/{} in anchor {:?} is now observed; change its origin",
-                    slot.offset, slot.width, anchor.id
-                )));
+                return Err(ValidationError::slot(
+                    anchor,
+                    slot,
+                    "origin",
+                    format!(
+                        "manual slot at {:+#x}/{} in anchor {:?} is now observed; change its origin",
+                        slot.offset, slot.width, anchor.id
+                    ),
+                ));
             }
             _ => {}
         }

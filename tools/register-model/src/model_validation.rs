@@ -6,7 +6,7 @@ use svd_rs::{
     Device, FieldInfo, RegisterCluster, RegisterInfo, RegisterProperties, Usage, WriteConstraint,
 };
 
-use crate::Result;
+use crate::{Error, Result};
 
 pub(super) fn validate_device(device: &Device) -> Result<()> {
     for peripheral in &device.peripherals {
@@ -33,10 +33,9 @@ fn validate_children(
             RegisterCluster::Cluster(cluster) => cluster.name.as_str(),
         };
         if !names.insert(name) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "duplicate register/cluster name {name:?} in model scope {parent}"
-            )
-            .into());
+            )));
         }
         match child {
             RegisterCluster::Register(register) => {
@@ -64,28 +63,28 @@ fn validate_register(
     let identity = format!("{parent}.{}", register.name);
     let size_bits = properties
         .size
-        .ok_or_else(|| format!("register {identity} has no inherited size"))?;
+        .ok_or_else(|| Error::message(format!("register {identity} has no inherited size")))?;
     if !(1..=128).contains(&size_bits) {
-        return Err(format!("register {identity} has unsupported size {size_bits}").into());
+        return Err(Error::message(format!(
+            "register {identity} has unsupported size {size_bits}"
+        )));
     }
     let mut names = BTreeSet::new();
     let mut occupied = 0_u128;
     for field in register.fields.iter().flatten() {
         if !names.insert(field.name.as_str()) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register {identity} contains duplicate field name {:?}",
                 field.name
-            )
-            .into());
+            )));
         }
         let offset = field.bit_offset();
         let width = field.bit_width();
         if width == 0 || offset.checked_add(width).is_none_or(|end| end > size_bits) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register {identity} field {} has invalid bit range {offset}+{width} for a {size_bits}-bit register",
                 field.name
-            )
-            .into());
+            )));
         }
         let mask = if width == 128 {
             u128::MAX
@@ -93,11 +92,10 @@ fn validate_register(
             ((1_u128 << width) - 1) << offset
         };
         if occupied & mask != 0 {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register {identity} field {} overlaps another field",
                 field.name
-            )
-            .into());
+            )));
         }
         occupied |= mask;
         validate_field_semantics(&identity, field)?;
@@ -113,11 +111,10 @@ fn validate_field_semantics(register: &str, field: &FieldInfo) -> Result<()> {
         let mut defaults = 0;
         for value in &values.values {
             if !names.insert(value.name.as_str()) {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "field {identity} contains duplicate enumerated name {:?}",
                     value.name
-                )
-                .into());
+                )));
             }
             if value.is_default() {
                 defaults += 1;
@@ -125,37 +122,34 @@ fn validate_field_semantics(register: &str, field: &FieldInfo) -> Result<()> {
             if let Some(value) = value.value
                 && !exact_values.insert(value)
             {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "field {identity} contains duplicate enumerated value {value}"
-                )
-                .into());
+                )));
             }
         }
         if defaults > 1 {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "field {identity} contains more than one default enumerated value"
-            )
-            .into());
+            )));
         }
     }
 
     match field.write_constraint {
-        Some(WriteConstraint::UseEnumeratedValues(false)) => {
-            Err(format!("field {identity} has non-operative useEnumeratedValues=false").into())
-        }
+        Some(WriteConstraint::UseEnumeratedValues(false)) => Err(Error::message(format!(
+            "field {identity} has non-operative useEnumeratedValues=false"
+        ))),
         Some(WriteConstraint::UseEnumeratedValues(true))
             if !field.enumerated_values.iter().any(|values| {
                 matches!(values.usage, None | Some(Usage::Write | Usage::ReadWrite))
             }) =>
         {
-            Err(format!(
+            Err(Error::message(format!(
                 "field {identity} requires enumerated writes but defines no write enumeration"
-            )
-            .into())
+            )))
         }
-        Some(WriteConstraint::WriteAsRead(false)) => {
-            Err(format!("field {identity} has non-operative writeAsRead=false").into())
-        }
+        Some(WriteConstraint::WriteAsRead(false)) => Err(Error::message(format!(
+            "field {identity} has non-operative writeAsRead=false"
+        ))),
         _ => Ok(()),
     }
 }

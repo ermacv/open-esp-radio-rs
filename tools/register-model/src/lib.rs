@@ -5,6 +5,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    ops::Range,
     path::{Component, Path, PathBuf},
 };
 
@@ -52,28 +53,44 @@ pub enum Error {
         kind: &'static str,
         path: PathBuf,
         reason: String,
+        span: Option<Range<usize>>,
     },
 }
 
 impl Error {
+    fn message(message: impl Into<String>) -> Self {
+        Self::Message(message.into())
+    }
+
     fn manifest(kind: &'static str, path: &Path, error: impl std::fmt::Display) -> Self {
+        Self::manifest_span(kind, path, error, None)
+    }
+
+    fn manifest_span(
+        kind: &'static str,
+        path: &Path,
+        error: impl std::fmt::Display,
+        span: Option<Range<usize>>,
+    ) -> Self {
         Self::Manifest {
             kind,
             path: path.to_owned(),
             reason: error.to_string(),
+            span,
         }
     }
-}
 
-impl From<String> for Error {
-    fn from(value: String) -> Self {
-        Self::Message(value)
-    }
-}
-
-impl From<&str> for Error {
-    fn from(value: &str) -> Self {
-        Self::Message(value.to_owned())
+    /// Returns source-neutral manifest diagnostic data for a presentation layer.
+    pub fn manifest_diagnostic(&self) -> Option<(&'static str, &Path, &str, Option<Range<usize>>)> {
+        match self {
+            Self::Manifest {
+                kind,
+                path,
+                reason,
+                span,
+            } => Some((*kind, path, reason, span.clone())),
+            _ => None,
+        }
     }
 }
 
@@ -154,35 +171,49 @@ pub struct RegisterModel {
 impl RegisterModel {
     pub fn is_model_file(path: &Path) -> Result<bool> {
         let input = fs::read_to_string(path)?;
-        let document = input
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|error| Error::manifest("register model manifest", path, error))?;
+        let document = input.parse::<toml_edit::DocumentMut>().map_err(|error| {
+            let span = error.span();
+            Error::manifest_span("register model manifest", path, error, span)
+        })?;
         Ok(document.get("schema").and_then(toml_edit::Item::as_integer) == Some(2))
     }
 
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        let manifest: RegisterModelManifest = toml_edit::de::from_str(&input)
-            .map_err(|error| Error::manifest("register model manifest", path, error))?;
+        let document = input
+            .parse::<toml_edit::Document<String>>()
+            .map_err(|error| {
+                let span = error.span();
+                Error::manifest_span("register model manifest", path, error, span)
+            })?;
+        let manifest: RegisterModelManifest = toml_edit::de::from_str(&input).map_err(|error| {
+            let span = error.span();
+            Error::manifest_span("register model manifest", path, error, span)
+        })?;
         if manifest.schema != 2 {
-            return Err(Error::manifest(
+            return Err(Error::manifest_span(
                 "register model manifest",
                 path,
                 "requires schema = 2",
+                document.get("schema").and_then(toml_edit::Item::span),
             ));
         }
         if manifest.fragments.is_empty() {
-            return Err(Error::manifest(
+            return Err(Error::manifest_span(
                 "register model manifest",
                 path,
                 "requires at least one peripheral fragment",
+                document.get("fragments").and_then(toml_edit::Item::span),
             ));
         }
         if manifest.address_space.is_empty() {
-            return Err(Error::manifest(
+            return Err(Error::manifest_span(
                 "register model manifest",
                 path,
                 "address-space must not be empty",
+                document
+                    .get("address-space")
+                    .and_then(toml_edit::Item::span),
             ));
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
@@ -201,22 +232,31 @@ impl RegisterModel {
             }
             let fragment_path = base.join(relative);
             let input = fs::read_to_string(&fragment_path)?;
+            let document = input
+                .parse::<toml_edit::Document<String>>()
+                .map_err(|error| {
+                    let span = error.span();
+                    Error::manifest_span("register model fragment", &fragment_path, error, span)
+                })?;
             let fragment: RegisterModelFragment =
                 toml_edit::de::from_str(&input).map_err(|error| {
-                    Error::manifest("register model fragment", &fragment_path, error)
+                    let span = error.span();
+                    Error::manifest_span("register model fragment", &fragment_path, error, span)
                 })?;
             if fragment.schema != 2 {
-                return Err(Error::manifest(
+                return Err(Error::manifest_span(
                     "register model fragment",
                     &fragment_path,
                     "requires schema = 2",
+                    document.get("schema").and_then(toml_edit::Item::span),
                 ));
             }
             if fragment.peripherals.is_empty() {
-                return Err(Error::manifest(
+                return Err(Error::manifest_span(
                     "register model fragment",
                     &fragment_path,
                     "contains no peripherals",
+                    document.get("peripherals").and_then(toml_edit::Item::span),
                 ));
             }
             peripherals.extend(fragment.peripherals.iter().cloned());
@@ -242,8 +282,9 @@ impl RegisterModel {
     }
 
     pub fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
-        let mut output = svd_encoder::encode(&self.device)
-            .map_err(|error| format!("failed to encode register model as SVD: {error}"))?;
+        let mut output = svd_encoder::encode(&self.device).map_err(|error| {
+            Error::message(format!("failed to encode register model as SVD: {error}"))
+        })?;
         if !output.ends_with('\n') {
             output.push('\n');
         }
@@ -305,29 +346,26 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
     let mut entities = BTreeSet::new();
     for annotation in fragments.iter().flat_map(|fragment| &fragment.review) {
         if annotation.entity.is_empty() || !entities.insert(annotation.entity.as_str()) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "empty or duplicate register review entity {:?}",
                 annotation.entity
-            )
-            .into());
+            )));
         }
         if !known_entities.contains(annotation.entity.as_str()) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register review entity {:?} does not exist in the model",
                 annotation.entity
-            )
-            .into());
+            )));
         }
         if annotation
             .confidence
             .as_ref()
             .is_some_and(|confidence| confidence.is_empty())
         {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register review entity {:?} has empty confidence",
                 annotation.entity
-            )
-            .into());
+            )));
         }
         let mut sources = BTreeSet::new();
         if annotation
@@ -335,11 +373,10 @@ fn validate_review_annotations(fragments: &[RegisterModelFragment]) -> Result<()
             .iter()
             .any(|source| source.is_empty() || !sources.insert(source))
         {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register review entity {:?} has empty or duplicate sources",
                 annotation.entity
-            )
-            .into());
+            )));
         }
     }
     Ok(())
@@ -405,9 +442,9 @@ fn validate_relative_fragment(value: &str) -> Result<()> {
             .components()
             .any(|component| !matches!(component, Component::Normal(_)))
     {
-        return Err(
-            format!("register model fragment must be a safe relative path: {value:?}").into(),
-        );
+        return Err(Error::message(format!(
+            "register model fragment must be a safe relative path: {value:?}"
+        )));
     }
     Ok(())
 }
@@ -416,9 +453,10 @@ fn validate_peripheral_names(peripherals: &[Peripheral]) -> Result<()> {
     let mut names = BTreeSet::new();
     for peripheral in peripherals {
         if !names.insert(peripheral.name.as_str()) {
-            return Err(
-                format!("duplicate register model peripheral {:?}", peripheral.name).into(),
-            );
+            return Err(Error::message(format!(
+                "duplicate register model peripheral {:?}",
+                peripheral.name
+            )));
         }
     }
     Ok(())
@@ -470,18 +508,20 @@ fn collect_registers(
                 for register in registers {
                     let properties = merge_properties(inherited, register.properties);
                     let width = properties.size.ok_or_else(|| {
-                        format!("register {path}.{} has no inherited size", register.name)
+                        Error::message(format!(
+                            "register {path}.{} has no inherited size",
+                            register.name
+                        ))
                     })?;
                     let address = peripheral_base
                         .checked_add(parent_offset)
                         .and_then(|address| address.checked_add(u64::from(register.address_offset)))
-                        .ok_or("register model address overflow")?;
+                        .ok_or_else(|| Error::message("register model address overflow"))?;
                     let identity = format!("{path}.{}", register.name);
                     if let Some(previous) = output.insert((address, width), identity.clone()) {
-                        return Err(format!(
+                        return Err(Error::message(format!(
                             "register model aliases {previous} and {identity} at {address:#010x}/{width}; explicit alias support is required"
-                        )
-                        .into());
+                        )));
                     }
                 }
             }
@@ -493,7 +533,7 @@ fn collect_registers(
                 for cluster in clusters {
                     let offset = parent_offset
                         .checked_add(u64::from(cluster.address_offset))
-                        .ok_or("register cluster address overflow")?;
+                        .ok_or_else(|| Error::message("register cluster address overflow"))?;
                     let properties =
                         merge_properties(inherited, cluster.default_register_properties);
                     collect_registers(
@@ -515,30 +555,27 @@ fn validate_expanded_register_layout(registers: &BTreeMap<(u64, u32), String>) -
     let mut previous: Option<(u64, u64, &str)> = None;
     for ((address, width), identity) in registers {
         if !(1..=128).contains(width) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register {identity} at {address:#010x} has unsupported width {width}"
-            )
-            .into());
+            )));
         }
         let size_bytes = u64::from(*width).div_ceil(8);
         if address % size_bytes != 0 {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register {identity} at {address:#010x} is not aligned to {size_bytes} bytes"
-            )
-            .into());
+            )));
         }
         let end = address
             .checked_add(size_bytes)
-            .ok_or("register model address overflow")?;
+            .ok_or_else(|| Error::message("register model address overflow"))?;
         if let Some((previous_start, previous_end, previous_identity)) = previous
             && *address < previous_end
         {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "physical register ranges overlap: {previous_identity} at \
                  {previous_start:#010x}..{previous_end:#010x} and {identity} at \
                  {address:#010x}..{end:#010x}; explicit alias support is required"
-            )
-            .into());
+            )));
         }
         previous = Some((*address, end, identity));
     }
@@ -649,13 +686,27 @@ mod tests {
         let error = RegisterModel::load(&path).unwrap_err();
         fs::remove_file(&path).unwrap();
 
-        assert!(matches!(
-            error,
-            Error::Manifest {
-                kind: "register model manifest",
-                path: reported,
-                ..
-            } if reported == path
+        let (kind, reported, _, span) = error.manifest_diagnostic().unwrap();
+        assert_eq!(kind, "register model manifest");
+        assert_eq!(reported, path);
+        assert!(span.is_some());
+    }
+
+    #[test]
+    fn schema_error_retains_the_exact_value_span() {
+        let path = std::env::temp_dir().join(format!(
+            "open-radio-register-model-schema-{}.toml",
+            std::process::id()
         ));
+        let input = "schema = 1\nfragments = [\"peripherals.toml\"]\n\n[device]\nname = \"device\"\nversion = \"1\"\ndescription = \"device\"\naddress-unit-bits = 8\nwidth = 32\n";
+        fs::write(&path, input).unwrap();
+        let error = RegisterModel::load(&path).unwrap_err();
+        fs::remove_file(&path).unwrap();
+
+        let (_, _, _, span) = error.manifest_diagnostic().unwrap();
+        assert_eq!(
+            span.unwrap(),
+            input.find('1').unwrap()..input.find('1').unwrap() + 1
+        );
     }
 }

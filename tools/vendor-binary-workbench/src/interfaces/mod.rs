@@ -9,6 +9,7 @@ mod pack_template;
 #[cfg(test)]
 mod pack_tests;
 mod semantics;
+mod validation;
 
 pub(crate) use facts::*;
 pub(crate) use pack_model::*;

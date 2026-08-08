@@ -249,12 +249,19 @@ fn unknown_semantic_operation_is_not_accepted_by_name() {
     let digest = fake_digest('a');
     write_facts(&facts, &digest);
     write_catalog(&catalog);
-    std::fs::write(&pack, reviewed_pack(&digest, "rtos.magic-name")).unwrap();
+    let pack_text = reviewed_pack(&digest, "rtos.magic-name");
+    let expected_span = pack_text.find("\"rtos.magic-name\"").unwrap();
+    std::fs::write(&pack, &pack_text).unwrap();
 
     let error = InterfaceWorkspace::load(&facts, &pack, &[catalog], "riscv-ilp32").unwrap_err();
-    std::fs::remove_dir_all(directory).unwrap();
     assert!(error.to_string().contains("unknown semantic operation"));
     assert!(error.to_string().contains(&pack.display().to_string()));
+    let actual_span = match error {
+        crate::error::WorkbenchError::ManifestSource { span, .. } => span.offset(),
+        error => panic!("expected source diagnostic, got {error:?}"),
+    };
+    assert_eq!(actual_span, expected_span);
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]

@@ -2,18 +2,19 @@
 
 use std::collections::BTreeSet;
 
+use super::validation::{ValidationError, ValidationResult};
 use super::{
     FunctionContextFieldFact, FunctionFact, FunctionFacts, FunctionInputFact, FunctionPack,
     FunctionReviewStatus, FunctionWorkspaceSummary, ReviewedContextField, ReviewedFunction,
     ReviewedFunctionInput,
 };
-use crate::Result;
 
 pub(super) fn validate(
     pack: &FunctionPack,
     facts: &FunctionFacts,
-) -> Result<FunctionWorkspaceSummary> {
-    validate_id(&pack.id, "function pack id")?;
+) -> ValidationResult<FunctionWorkspaceSummary> {
+    validate_id(&pack.id, "function pack id")
+        .map_err(|message| ValidationError::pack("id", message))?;
     validate_inputs(&pack.inputs, &facts.inputs)?;
     let mut summary = FunctionWorkspaceSummary {
         inputs: pack.inputs.len(),
@@ -25,20 +26,27 @@ pub(super) fn validate(
     for reviewed in &pack.functions {
         let key = (&reviewed.profile, &reviewed.source, &reviewed.identity);
         if !keys.insert(key) {
-            return Err(crate::Error::invalid(format!(
-                "duplicate reviewed function {}:{}",
-                reviewed.profile, reviewed.identity
-            )));
+            return Err(ValidationError::function(
+                reviewed,
+                "identity",
+                format!(
+                    "duplicate reviewed function {}:{}",
+                    reviewed.profile, reviewed.identity
+                ),
+            ));
         }
         let fact = facts
             .function(&reviewed.profile, &reviewed.source, &reviewed.identity)
             .ok_or_else(|| {
-                format!(
-                    "stale reviewed function {}:{}:{}",
-                    reviewed.profile, reviewed.source, reviewed.identity
+                ValidationError::function(
+                    reviewed,
+                    "identity",
+                    format!(
+                        "stale reviewed function {}:{}:{}",
+                        reviewed.profile, reviewed.source, reviewed.identity
+                    ),
                 )
-            })
-            .map_err(crate::Error::invalid)?;
+            })?;
         validate_function(reviewed, fact, &mut summary, &mut reviewed_names)?;
     }
     for fact in facts.root_functions() {
@@ -56,40 +64,61 @@ pub(super) fn validate(
     Ok(summary)
 }
 
-fn validate_inputs(reviewed: &[ReviewedFunctionInput], facts: &[FunctionInputFact]) -> Result<()> {
+fn validate_inputs(
+    reviewed: &[ReviewedFunctionInput],
+    facts: &[FunctionInputFact],
+) -> ValidationResult<()> {
     let mut keys = BTreeSet::new();
     for input in reviewed {
-        validate_id(&input.profile, "function input profile")?;
-        validate_id(&input.source, "function input source")?;
-        validate_sha256(&input.sha256, "function input")?;
+        validate_id(&input.profile, "function input profile")
+            .map_err(|message| ValidationError::input(input, "profile", message))?;
+        validate_id(&input.source, "function input source")
+            .map_err(|message| ValidationError::input(input, "source", message))?;
+        validate_sha256(&input.sha256, "function input")
+            .map_err(|message| ValidationError::input(input, "artifact-sha256", message))?;
         if !keys.insert((&input.profile, &input.source)) {
-            return Err(crate::Error::invalid(format!(
-                "duplicate function input guard {}:{}",
-                input.profile, input.source
-            )));
+            return Err(ValidationError::input(
+                input,
+                "profile",
+                format!(
+                    "duplicate function input guard {}:{}",
+                    input.profile, input.source
+                ),
+            ));
         }
         let Some(fact) = facts
             .iter()
             .find(|fact| fact.profile == input.profile && fact.source == input.source)
         else {
-            return Err(crate::Error::invalid(format!(
-                "stale function input guard {}:{}",
-                input.profile, input.source
-            )));
+            return Err(ValidationError::input(
+                input,
+                "profile",
+                format!(
+                    "stale function input guard {}:{}",
+                    input.profile, input.source
+                ),
+            ));
         };
         if fact.sha256 != input.sha256 {
-            return Err(crate::Error::invalid(format!(
-                "stale function input digest {}:{}; re-review the updated artifact",
-                input.profile, input.source
-            )));
+            return Err(ValidationError::input(
+                input,
+                "artifact-sha256",
+                format!(
+                    "stale function input digest {}:{}; re-review the updated artifact",
+                    input.profile, input.source
+                ),
+            ));
         }
     }
     if reviewed.len() != facts.len() {
-        return Err(crate::Error::invalid(format!(
-            "function pack guards {} inputs but generated facts contain {}; reinitialize or add reviewed guards",
-            reviewed.len(),
-            facts.len()
-        )));
+        return Err(ValidationError::pack(
+            "inputs",
+            format!(
+                "function pack guards {} inputs but generated facts contain {}; reinitialize or add reviewed guards",
+                reviewed.len(),
+                facts.len()
+            ),
+        ));
     }
     Ok(())
 }
@@ -99,7 +128,7 @@ fn validate_function(
     fact: &FunctionFact,
     summary: &mut FunctionWorkspaceSummary,
     reviewed_names: &mut BTreeSet<String>,
-) -> Result<()> {
+) -> ValidationResult<()> {
     match reviewed.status {
         FunctionReviewStatus::Unreviewed => {
             if reviewed.name.is_some()
@@ -107,10 +136,14 @@ fn validate_function(
                 || reviewed.summary.is_some()
                 || reviewed.accept_incomplete
             {
-                return Err(crate::Error::invalid(format!(
-                    "unreviewed function {}:{} cannot make reviewed claims",
-                    reviewed.profile, reviewed.identity
-                )));
+                return Err(ValidationError::function(
+                    reviewed,
+                    "status",
+                    format!(
+                        "unreviewed function {}:{} cannot make reviewed claims",
+                        reviewed.profile, reviewed.identity
+                    ),
+                ));
             }
             summary.unreviewed_functions += usize::from(fact.is_root());
         }
@@ -120,10 +153,14 @@ fn validate_function(
                 || reviewed.summary.is_some()
                 || !reviewed.contexts.is_empty()
             {
-                return Err(crate::Error::invalid(format!(
-                    "ignored function {}:{} cannot define names or contexts",
-                    reviewed.profile, reviewed.identity
-                )));
+                return Err(ValidationError::function(
+                    reviewed,
+                    "status",
+                    format!(
+                        "ignored function {}:{} cannot define names or contexts",
+                        reviewed.profile, reviewed.identity
+                    ),
+                ));
             }
             summary.ignored_functions += usize::from(fact.is_root());
             summary.ignored_fields += fact.context_fields.len();
@@ -137,28 +174,40 @@ fn validate_function(
         }
         FunctionReviewStatus::Reviewed => {
             let name = required_claim(&reviewed.name, "name", reviewed)?;
-            validate_identifier(name, "reviewed function name")?;
+            validate_identifier(name, "reviewed function name")
+                .map_err(|message| ValidationError::function(reviewed, "name", message))?;
             if !reviewed_names.insert(name.to_owned()) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate reviewed function name {name:?}"
-                )));
+                return Err(ValidationError::function(
+                    reviewed,
+                    "name",
+                    format!("duplicate reviewed function name {name:?}"),
+                ));
             }
             validate_id(
                 required_claim(&reviewed.role, "role", reviewed)?,
                 "function role",
-            )?;
+            )
+            .map_err(|message| ValidationError::function(reviewed, "role", message))?;
             let function_summary = required_claim(&reviewed.summary, "summary", reviewed)?;
             if function_summary.trim().is_empty() || function_summary.contains(['\r', '\n']) {
-                return Err(crate::Error::invalid(format!(
-                    "reviewed function {}:{} summary must be one line",
-                    reviewed.profile, reviewed.identity
-                )));
+                return Err(ValidationError::function(
+                    reviewed,
+                    "summary",
+                    format!(
+                        "reviewed function {}:{} summary must be one line",
+                        reviewed.profile, reviewed.identity
+                    ),
+                ));
             }
             if !fact.review_complete() && !reviewed.accept_incomplete {
-                return Err(crate::Error::invalid(format!(
-                    "reviewed function {}:{} has incomplete generated evidence; set accept-incomplete = true after reviewing blockers",
-                    reviewed.profile, reviewed.identity
-                )));
+                return Err(ValidationError::function(
+                    reviewed,
+                    "accept-incomplete",
+                    format!(
+                        "reviewed function {}:{} has incomplete generated evidence; set accept-incomplete = true after reviewing blockers",
+                        reviewed.profile, reviewed.identity
+                    ),
+                ));
             }
             summary.reviewed_functions += usize::from(fact.is_root());
             summary.accepted_incomplete += usize::from(!fact.review_complete());
@@ -171,7 +220,7 @@ fn validate_contexts(
     reviewed: &ReviewedFunction,
     fact: &FunctionFact,
     summary: &mut FunctionWorkspaceSummary,
-) -> Result<()> {
+) -> ValidationResult<()> {
     let mut contexts = BTreeSet::new();
     let mut context_names = BTreeSet::new();
     let mut fields = BTreeSet::new();
@@ -182,44 +231,73 @@ fn validate_contexts(
         .collect::<BTreeSet<_>>();
     for context in &reviewed.contexts {
         if !contexts.insert(context.argument) || context.argument >= 8 {
-            return Err(crate::Error::invalid(format!(
-                "function {}:{} has a duplicate or invalid context argument",
-                reviewed.profile, reviewed.identity
-            )));
+            return Err(ValidationError::context(
+                reviewed,
+                context,
+                "argument",
+                format!(
+                    "function {}:{} has a duplicate or invalid context argument",
+                    reviewed.profile, reviewed.identity
+                ),
+            ));
         }
         if !observed_arguments.contains(&context.argument) {
-            return Err(crate::Error::invalid(format!(
-                "stale context argument {} in {}:{}",
-                context.argument, reviewed.profile, reviewed.identity
-            )));
+            return Err(ValidationError::context(
+                reviewed,
+                context,
+                "argument",
+                format!(
+                    "stale context argument {} in {}:{}",
+                    context.argument, reviewed.profile, reviewed.identity
+                ),
+            ));
         }
         match context.status {
             FunctionReviewStatus::Reviewed => {
-                let name = context
-                    .name
-                    .as_deref()
-                    .ok_or("reviewed context requires name")
-                    .map_err(crate::Error::invalid)?;
-                validate_identifier(name, "reviewed context name")?;
+                let name = context.name.as_deref().ok_or_else(|| {
+                    ValidationError::context(
+                        reviewed,
+                        context,
+                        "name",
+                        "reviewed context requires name",
+                    )
+                })?;
+                validate_identifier(name, "reviewed context name").map_err(|message| {
+                    ValidationError::context(reviewed, context, "name", message)
+                })?;
                 if !context_names.insert(name) {
-                    return Err(crate::Error::invalid(format!(
-                        "function {}:{} has duplicate reviewed context name {name:?}",
-                        reviewed.profile, reviewed.identity
-                    )));
+                    return Err(ValidationError::context(
+                        reviewed,
+                        context,
+                        "name",
+                        format!(
+                            "function {}:{} has duplicate reviewed context name {name:?}",
+                            reviewed.profile, reviewed.identity
+                        ),
+                    ));
                 }
                 validate_identifier(
-                    context
-                        .type_name
-                        .as_deref()
-                        .ok_or("reviewed context requires type-name")
-                        .map_err(crate::Error::invalid)?,
+                    context.type_name.as_deref().ok_or_else(|| {
+                        ValidationError::context(
+                            reviewed,
+                            context,
+                            "type-name",
+                            "reviewed context requires type-name",
+                        )
+                    })?,
                     "reviewed context type-name",
-                )?;
+                )
+                .map_err(|message| {
+                    ValidationError::context(reviewed, context, "type-name", message)
+                })?;
                 summary.reviewed_contexts += 1;
             }
             FunctionReviewStatus::Unreviewed => {
                 if context.name.is_some() || context.type_name.is_some() {
-                    return Err(crate::Error::invalid(
+                    return Err(ValidationError::context(
+                        reviewed,
+                        context,
+                        "status",
                         "unreviewed context cannot define a name or type-name",
                     ));
                 }
@@ -230,7 +308,10 @@ fn validate_contexts(
                     || context.type_name.is_some()
                     || !context.fields.is_empty()
                 {
-                    return Err(crate::Error::invalid(
+                    return Err(ValidationError::context(
+                        reviewed,
+                        context,
+                        "status",
                         "ignored context cannot define names or fields",
                     ));
                 }
@@ -249,39 +330,60 @@ fn validate_contexts(
         for field in &context.fields {
             let key = (context.argument, field.offset, field.width);
             if !fields.insert(key) {
-                return Err(crate::Error::invalid(format!(
-                    "function {}:{} has a duplicate reviewed context field",
-                    reviewed.profile, reviewed.identity
-                )));
+                return Err(ValidationError::field(
+                    reviewed,
+                    context,
+                    field,
+                    "offset",
+                    format!(
+                        "function {}:{} has a duplicate reviewed context field",
+                        reviewed.profile, reviewed.identity
+                    ),
+                ));
             }
             fact.context_fields
                 .iter()
                 .find(|observed| field_matches(context.argument, field, observed))
                 .ok_or_else(|| {
-                    format!(
-                        "stale context field arg{} {:+#x}/{} in {}:{}",
-                        context.argument,
-                        field.offset,
-                        field.width,
-                        reviewed.profile,
-                        reviewed.identity
+                    ValidationError::field(
+                        reviewed,
+                        context,
+                        field,
+                        "offset",
+                        format!(
+                            "stale context field arg{} {:+#x}/{} in {}:{}",
+                            context.argument,
+                            field.offset,
+                            field.width,
+                            reviewed.profile,
+                            reviewed.identity
+                        ),
                     )
-                })
-                .map_err(crate::Error::invalid)?;
+                })?;
             if field.status == FunctionReviewStatus::Reviewed {
-                let name = field
-                    .name
-                    .as_deref()
-                    .ok_or("reviewed field requires name")
-                    .map_err(crate::Error::invalid)?;
+                let name = field.name.as_deref().ok_or_else(|| {
+                    ValidationError::field(
+                        reviewed,
+                        context,
+                        field,
+                        "name",
+                        "reviewed field requires name",
+                    )
+                })?;
                 if !field_names.insert(name) {
-                    return Err(crate::Error::invalid(format!(
-                        "function {}:{} context arg{} has duplicate reviewed field name {name:?}",
-                        reviewed.profile, reviewed.identity, context.argument
-                    )));
+                    return Err(ValidationError::field(
+                        reviewed,
+                        context,
+                        field,
+                        "name",
+                        format!(
+                            "function {}:{} context arg{} has duplicate reviewed field name {name:?}",
+                            reviewed.profile, reviewed.identity, context.argument
+                        ),
+                    ));
                 }
             }
-            validate_field(field, summary)?;
+            validate_field(reviewed, context, field, summary)?;
         }
     }
     summary.unreviewed_contexts += observed_arguments.difference(&contexts).count();
@@ -294,33 +396,52 @@ fn validate_contexts(
 }
 
 fn validate_field(
+    function: &ReviewedFunction,
+    context: &super::ReviewedContext,
     field: &ReviewedContextField,
     summary: &mut FunctionWorkspaceSummary,
-) -> Result<()> {
+) -> ValidationResult<()> {
     match field.status {
         FunctionReviewStatus::Reviewed => {
             validate_identifier(
-                field
-                    .name
-                    .as_deref()
-                    .ok_or("reviewed field requires name")
-                    .map_err(crate::Error::invalid)?,
+                field.name.as_deref().ok_or_else(|| {
+                    ValidationError::field(
+                        function,
+                        context,
+                        field,
+                        "name",
+                        "reviewed field requires name",
+                    )
+                })?,
                 "reviewed context field name",
-            )?;
-            let display_type = field
-                .display_type
-                .as_deref()
-                .ok_or("reviewed field requires display-type")
-                .map_err(crate::Error::invalid)?;
+            )
+            .map_err(|message| ValidationError::field(function, context, field, "name", message))?;
+            let display_type = field.display_type.as_deref().ok_or_else(|| {
+                ValidationError::field(
+                    function,
+                    context,
+                    field,
+                    "display-type",
+                    "reviewed field requires display-type",
+                )
+            })?;
             if display_type.trim().is_empty() || display_type.contains(['\r', '\n']) {
-                return Err(crate::Error::invalid(
+                return Err(ValidationError::field(
+                    function,
+                    context,
+                    field,
+                    "display-type",
                     "reviewed field display-type must be one non-empty line",
                 ));
             }
             if field.description.as_deref().is_some_and(|description| {
                 description.trim().is_empty() || description.contains(['\r', '\n'])
             }) {
-                return Err(crate::Error::invalid(
+                return Err(ValidationError::field(
+                    function,
+                    context,
+                    field,
+                    "description",
                     "reviewed field description must be one non-empty line",
                 ));
             }
@@ -328,7 +449,11 @@ fn validate_field(
         }
         FunctionReviewStatus::Unreviewed => {
             if field.name.is_some() || field.display_type.is_some() || field.description.is_some() {
-                return Err(crate::Error::invalid(
+                return Err(ValidationError::field(
+                    function,
+                    context,
+                    field,
+                    "status",
                     "unreviewed context field cannot define reviewed claims",
                 ));
             }
@@ -336,7 +461,11 @@ fn validate_field(
         }
         FunctionReviewStatus::Ignored => {
             if field.name.is_some() || field.display_type.is_some() || field.description.is_some() {
-                return Err(crate::Error::invalid(
+                return Err(ValidationError::field(
+                    function,
+                    context,
+                    field,
+                    "status",
                     "ignored context field cannot define reviewed claims",
                 ));
             }
@@ -358,56 +487,54 @@ fn field_matches(
 
 fn required_claim<'a>(
     value: &'a Option<String>,
-    name: &str,
+    name: &'static str,
     function: &ReviewedFunction,
-) -> Result<&'a str> {
+) -> ValidationResult<&'a str> {
     value
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "reviewed function {}:{} requires {name}",
-                function.profile, function.identity
-            ))
+            ValidationError::function(
+                function,
+                name,
+                format!(
+                    "reviewed function {}:{} requires {name}",
+                    function.profile, function.identity
+                ),
+            )
         })
 }
 
-fn validate_id(value: &str, context: &str) -> Result<()> {
+fn validate_id(value: &str, context: &str) -> std::result::Result<(), String> {
     if value.is_empty()
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
-        return Err(crate::Error::invalid(format!(
-            "invalid {context} {value:?}"
-        )));
+        return Err(format!("invalid {context} {value:?}"));
     }
     Ok(())
 }
 
-fn validate_identifier(value: &str, context: &str) -> Result<()> {
+fn validate_identifier(value: &str, context: &str) -> std::result::Result<(), String> {
     let mut bytes = value.bytes();
     if !bytes
         .next()
         .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
         || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
-        return Err(crate::Error::invalid(format!(
-            "invalid {context} {value:?}"
-        )));
+        return Err(format!("invalid {context} {value:?}"));
     }
     Ok(())
 }
 
-fn validate_sha256(value: &str, context: &str) -> Result<()> {
+fn validate_sha256(value: &str, context: &str) -> std::result::Result<(), String> {
     if value.len() != 64
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
-        return Err(crate::Error::invalid(format!(
-            "{context} has invalid lowercase SHA-256 {value:?}"
-        )));
+        return Err(format!("{context} has invalid lowercase SHA-256 {value:?}"));
     }
     Ok(())
 }

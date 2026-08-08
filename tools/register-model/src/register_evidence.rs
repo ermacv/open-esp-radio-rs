@@ -58,27 +58,34 @@ impl RegisterEvidenceCatalog {
 
     fn validate(&self, path: &Path) -> Result<()> {
         if self.schema != 1 {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register evidence catalog {} requires schema = 1",
                 path.display()
-            )
-            .into());
+            )));
         }
         let mut sources = BTreeSet::new();
         let mut confidence_levels = BTreeSet::new();
         for confidence in &self.confidence_levels {
             validate_id(confidence, "confidence level")?;
             if !confidence_levels.insert(confidence) {
-                return Err(format!("duplicate confidence level {confidence:?}").into());
+                return Err(Error::message(format!(
+                    "duplicate confidence level {confidence:?}"
+                )));
             }
         }
         for source in &self.sources {
             validate_id(&source.id, "evidence source")?;
             if source.description.trim().is_empty() {
-                return Err(format!("evidence source {:?} has no description", source.id).into());
+                return Err(Error::message(format!(
+                    "evidence source {:?} has no description",
+                    source.id
+                )));
             }
             if !sources.insert(source.id.as_str()) {
-                return Err(format!("duplicate evidence source {:?}", source.id).into());
+                return Err(Error::message(format!(
+                    "duplicate evidence source {:?}",
+                    source.id
+                )));
             }
         }
         let mut names = BTreeSet::new();
@@ -86,13 +93,22 @@ impl RegisterEvidenceCatalog {
         for range in &self.ranges {
             validate_id(&range.name, "evidence range")?;
             if !names.insert(range.name.as_str()) {
-                return Err(format!("duplicate evidence range {:?}", range.name).into());
+                return Err(Error::message(format!(
+                    "duplicate evidence range {:?}",
+                    range.name
+                )));
             }
             if range.start >= range.end_exclusive {
-                return Err(format!("evidence range {:?} is empty or reversed", range.name).into());
+                return Err(Error::message(format!(
+                    "evidence range {:?} is empty or reversed",
+                    range.name
+                )));
             }
             if range.start % 4 != 0 || range.end_exclusive % 4 != 0 {
-                return Err(format!("evidence range {:?} is not word-aligned", range.name).into());
+                return Err(Error::message(format!(
+                    "evidence range {:?} is not word-aligned",
+                    range.name
+                )));
             }
             validate_sources(&range.name, &range.sources)?;
             if let Some(source) = range
@@ -100,22 +116,20 @@ impl RegisterEvidenceCatalog {
                 .iter()
                 .find(|source| !sources.contains(source.as_str()))
             {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "evidence range {:?} references undefined source {source:?}",
                     range.name
-                )
-                .into());
+                )));
             }
             ranges.push((range.start, range.end_exclusive, range.name.as_str()));
         }
         ranges.sort_unstable();
         for pair in ranges.windows(2) {
             if pair[0].1 > pair[1].0 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "evidence ranges {:?} and {:?} overlap",
                     pair[0].2, pair[1].2
-                )
-                .into());
+                )));
             }
         }
         Ok(())
@@ -133,13 +147,17 @@ impl RegisterEvidenceSet {
             for source in catalog.sources {
                 let id = source.id.clone();
                 if sources.insert(id.clone(), source).is_some() {
-                    return Err(format!("duplicate evidence source {id:?} across catalogs").into());
+                    return Err(Error::message(format!(
+                        "duplicate evidence source {id:?} across catalogs"
+                    )));
                 }
             }
             for range in catalog.ranges {
                 let name = range.name.clone();
                 if ranges.insert(name.clone(), range).is_some() {
-                    return Err(format!("duplicate evidence range {name:?} across catalogs").into());
+                    return Err(Error::message(format!(
+                        "duplicate evidence range {name:?} across catalogs"
+                    )));
                 }
             }
         }
@@ -169,9 +187,9 @@ impl RegisterEvidenceSet {
             .into_iter()
             .find(|reference| !sources.contains(reference))
         {
-            return Err(
-                format!("{context} references undefined evidence source {reference:?}").into(),
-            );
+            return Err(Error::message(format!(
+                "{context} references undefined evidence source {reference:?}"
+            )));
         }
         Ok(())
     }
@@ -187,7 +205,9 @@ impl RegisterEvidenceSet {
             .map(String::as_str)
             .collect::<BTreeSet<_>>();
         if let Some(level) = levels.into_iter().find(|level| !allowed.contains(level)) {
-            return Err(format!("{context} uses undefined confidence level {level:?}").into());
+            return Err(Error::message(format!(
+                "{context} uses undefined confidence level {level:?}"
+            )));
         }
         Ok(())
     }
@@ -201,11 +221,10 @@ impl RegisterEvidenceSet {
         ranges.sort_unstable();
         for pair in ranges.windows(2) {
             if pair[0].1 > pair[1].0 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "evidence ranges {:?} and {:?} overlap across catalogs",
                     pair[0].2, pair[1].2
-                )
-                .into());
+                )));
             }
         }
         Ok(())
@@ -214,14 +233,16 @@ impl RegisterEvidenceSet {
 
 fn validate_sources(owner: &str, sources: &[String]) -> Result<()> {
     if sources.is_empty() {
-        return Err(format!("{owner:?} has no evidence sources").into());
+        return Err(Error::message(format!("{owner:?} has no evidence sources")));
     }
     let mut unique = BTreeSet::new();
     if sources
         .iter()
         .any(|source| source.is_empty() || !unique.insert(source))
     {
-        return Err(format!("{owner:?} has an empty or duplicate evidence source").into());
+        return Err(Error::message(format!(
+            "{owner:?} has an empty or duplicate evidence source"
+        )));
     }
     Ok(())
 }
@@ -232,7 +253,7 @@ fn validate_id(value: &str, kind: &str) -> Result<()> {
             .bytes()
             .all(|byte| byte == b'_' || byte == b'-' || byte.is_ascii_alphanumeric())
     {
-        return Err(format!("invalid {kind} id {value:?}").into());
+        return Err(Error::message(format!("invalid {kind} id {value:?}")));
     }
     Ok(())
 }

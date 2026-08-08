@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, fs, path::Path};
 
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{Document, DocumentMut, Item};
 
 use super::{InterfaceFactStep, InterfaceFacts, SemanticCatalogs};
 use crate::Result;
@@ -86,6 +86,12 @@ pub(crate) struct InterfacePack {
     pub(crate) anchors: Vec<InterfaceAnchor>,
 }
 
+struct LoadedInterfacePack {
+    value: InterfacePack,
+    input: String,
+    document: Document<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct InterfaceWorkspaceSummary {
     pub(crate) fact_tables: usize,
@@ -158,9 +164,16 @@ impl InterfaceWorkspace {
         let catalogs = SemanticCatalogs::load(semantic_paths)?;
         let pack = InterfacePack::load(pack_path)?;
         let (summary, bindings) = pack
+            .value
             .validate(&facts, &catalogs, calling_convention)
             .map_err(|error| {
-                crate::error::WorkbenchError::manifest("interface pack", pack_path, error)
+                crate::error::WorkbenchError::manifest_source(
+                    "interface pack",
+                    pack_path,
+                    &pack.input,
+                    &error,
+                    error.span(&pack.document),
+                )
             })?;
         Ok(Self { summary, bindings })
     }
@@ -176,9 +189,9 @@ impl InterfaceWorkspace {
 
 impl InterfacePack {
     #[tracing::instrument(name = "load_interface_pack", fields(path = %path.display()))]
-    pub(crate) fn load(path: &Path) -> Result<Self> {
+    fn load(path: &Path) -> Result<LoadedInterfacePack> {
         let input = fs::read_to_string(path)?;
-        let document = input.parse::<DocumentMut>().map_err(|error| {
+        let source_document = Document::parse(input.clone()).map_err(|error| {
             crate::error::WorkbenchError::manifest_source(
                 "interface pack",
                 path,
@@ -187,13 +200,23 @@ impl InterfacePack {
                 error.span(),
             )
         })?;
+        let document: DocumentMut = source_document.clone().into_mut();
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
-            return Err(crate::Error::invalid(format!(
-                "{} requires schema = 1",
-                path.display()
-            )));
+            return Err(crate::error::WorkbenchError::manifest_source(
+                "interface pack",
+                path,
+                &input,
+                "requires schema = 1",
+                source_document.get("schema").and_then(Item::span),
+            ));
         }
-        super::pack_parse::parse(&document)
-            .map_err(|error| crate::error::WorkbenchError::manifest("interface pack", path, error))
+        let value = super::pack_parse::parse(&document).map_err(|error| {
+            crate::error::WorkbenchError::manifest("interface pack", path, error)
+        })?;
+        Ok(LoadedInterfacePack {
+            value,
+            input,
+            document: source_document,
+        })
     }
 }

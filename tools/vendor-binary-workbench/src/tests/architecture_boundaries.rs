@@ -65,17 +65,27 @@ fn production_modules_cannot_bypass_the_command_output_boundary() {
 }
 
 #[test]
-fn facade_errors_cannot_implicitly_absorb_strings() {
-    let source =
-        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/error.rs")).unwrap();
+fn facade_and_register_model_errors_cannot_implicitly_absorb_strings() {
+    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let sources = [
+        manifest_root.join("src/error.rs"),
+        manifest_root.join("../register-model/src/lib.rs"),
+    ];
     for forbidden in [
         "impl From<String> for WorkbenchError",
         "impl From<&str> for WorkbenchError",
+        "impl From<String> for Error",
+        "impl From<&str> for Error",
+        "Message(#[from] String)",
     ] {
-        assert!(
-            !source.contains(forbidden),
-            "implicit string error conversion survived: {forbidden}"
-        );
+        for path in &sources {
+            let source = fs::read_to_string(path).unwrap();
+            assert!(
+                !source.contains(forbidden),
+                "implicit string error conversion {forbidden} survived in {}",
+                path.display()
+            );
+        }
     }
 }
 

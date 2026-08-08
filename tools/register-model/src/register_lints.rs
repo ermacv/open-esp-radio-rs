@@ -27,9 +27,10 @@ impl RegisterLintPack {
 
     fn validate(&self, path: &Path) -> Result<()> {
         if self.schema != 1 {
-            return Err(
-                format!("register lint pack {} requires schema = 1", path.display()).into(),
-            );
+            return Err(Error::message(format!(
+                "register lint pack {} requires schema = 1",
+                path.display()
+            )));
         }
         let mut patterns = BTreeSet::new();
         if self
@@ -37,11 +38,10 @@ impl RegisterLintPack {
             .iter()
             .any(|pattern| pattern.trim().is_empty() || !patterns.insert(pattern.as_str()))
         {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "register lint pack {} contains an empty or duplicate field-name substring",
                 path.display()
-            )
-            .into());
+            )));
         }
         Ok(())
     }
@@ -66,11 +66,10 @@ impl RegisterLintPack {
                             .iter()
                             .find(|pattern| field.name.contains(pattern.as_str()))
                         {
-                            return Err(format!(
+                            return Err(Error::message(format!(
                                 "register field {identity}.{} contains project-forbidden substring {pattern:?}",
                                 field.name
-                            )
-                            .into());
+                            )));
                         }
                     }
                 }

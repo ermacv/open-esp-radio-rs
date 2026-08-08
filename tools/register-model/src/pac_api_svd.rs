@@ -5,7 +5,7 @@ use svd_rs::{
     RegisterProperties, Usage, WriteConstraint,
 };
 
-use crate::{PacApiPack, Result};
+use crate::{Error, PacApiPack, Result};
 
 #[derive(Clone, Copy)]
 pub(super) struct RegisterBinding<'a> {
@@ -18,7 +18,7 @@ impl PacApiPack {
     /// Prove that every reviewed transaction is compatible with the release SVD.
     pub fn validate_against_svd(&self, svd: &str) -> Result<()> {
         self.validate()?;
-        let device = svd_parser::parse(svd).map_err(|error| error.to_string())?;
+        let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
 
         for operation in &self.interrupt_snapshots {
             let status = register(
@@ -42,19 +42,17 @@ impl PacApiPack {
             if clear.properties.size != Some(32)
                 || clear.info.modified_write_values != Some(ModifiedWriteValues::OneToClear)
             {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API interrupt snapshot {:?} clear register must be 32-bit one-to-clear",
                     operation.name
-                )
-                .into());
+                )));
             }
             let field = field(&operation.name, clear.info, &operation.clear_field)?;
             if field.bit_offset() != 0 || field.bit_width() != 32 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API interrupt snapshot {:?} clear field must cover all 32 bits",
                     operation.name
-                )
-                .into());
+                )));
             }
         }
 
@@ -66,17 +64,16 @@ impl PacApiPack {
                 &operation.register,
             )?;
             let fields = binding.info.fields.as_deref().ok_or_else(|| {
-                format!(
+                Error::message(format!(
                     "PAC API operation {:?} register has no fields",
                     operation.name
-                )
+                ))
             })?;
             if fields.len() != 1 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API full-register-write {:?} requires exactly one field",
                     operation.name
-                )
-                .into());
+                )));
             }
             let field = field(&operation.name, binding.info, &operation.field)?;
             require_full_field(&operation.name, field)?;
@@ -91,17 +88,16 @@ impl PacApiPack {
                 &operation.register,
             )?;
             let fields = binding.info.fields.as_deref().ok_or_else(|| {
-                format!(
+                Error::message(format!(
                     "PAC API operation {:?} register has no fields",
                     operation.name
-                )
+                ))
             })?;
             if fields.len() != 1 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API fixed-register-write {:?} requires exactly one field",
                     operation.name
-                )
-                .into());
+                )));
             }
             let field = field(&operation.name, binding.info, &operation.field)?;
             require_full_field(&operation.name, field)?;
@@ -112,11 +108,10 @@ impl PacApiPack {
                 .flat_map(|values| &values.values)
                 .any(|value| value.name == operation.variant);
             if !writable_variant {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API fixed-register-write {:?} references unknown writable variant {:?}",
                     operation.name, operation.variant
-                )
-                .into());
+                )));
             }
         }
 
@@ -155,19 +150,17 @@ impl PacApiPack {
             for field_name in &operation.fields {
                 let field = field(&operation.name, binding.info, field_name)?;
                 if field.access == Some(Access::ReadOnly) {
-                    return Err(format!(
+                    return Err(Error::message(format!(
                         "PAC API zero-based-field-write {:?} field {field_name:?} is read-only",
                         operation.name
-                    )
-                    .into());
+                    )));
                 }
                 let width = field.bit_width();
                 if !(1..=32).contains(&width) {
-                    return Err(format!(
+                    return Err(Error::message(format!(
                         "PAC API zero-based-field-write {:?} field {field_name:?} has invalid width {width}",
                         operation.name
-                    )
-                    .into());
+                    )));
                 }
                 if width != 1 {
                     require_full_range(&operation.name, field, width)?;
@@ -200,12 +193,14 @@ pub(super) fn register<'a>(
         .iter()
         .find(|peripheral| peripheral.name == peripheral_name)
         .ok_or_else(|| {
-            format!(
+            Error::message(format!(
                 "PAC API operation {operation:?} references unknown peripheral {peripheral_name:?}"
-            )
+            ))
         })?;
     let children = peripheral.registers.as_deref().ok_or_else(|| {
-        format!("PAC API operation {operation:?} peripheral {peripheral_name:?} has no registers")
+        Error::message(format!(
+            "PAC API operation {operation:?} peripheral {peripheral_name:?} has no registers"
+        ))
     })?;
     let (info, is_array) = children
         .iter()
@@ -216,9 +211,9 @@ pub(super) fn register<'a>(
             _ => None,
         })
         .ok_or_else(|| {
-            format!(
+            Error::message(format!(
                 "PAC API operation {operation:?} references unknown register {peripheral_name}.{register_name}"
-            )
+            ))
         })?;
     let properties = merge_properties(
         merge_properties(
@@ -245,11 +240,10 @@ pub(super) fn field<'a>(
         .and_then(|fields| fields.iter().find(|field| field.name == name))
         .map(|field| &**field)
         .ok_or_else(|| {
-            format!(
+            Error::message(format!(
                 "PAC API operation {operation:?} references unknown field {}.{name}",
                 register.name
-            )
-            .into()
+            ))
         })
 }
 
@@ -266,9 +260,9 @@ fn writable_register<'a>(
             Some(Access::WriteOnly | Access::ReadWrite)
         )
     {
-        return Err(
-            format!("PAC API operation {operation:?} requires a writable 32-bit register").into(),
-        );
+        return Err(Error::message(format!(
+            "PAC API operation {operation:?} requires a writable 32-bit register"
+        )));
     }
     Ok(binding)
 }
@@ -286,10 +280,9 @@ fn ordinary_writable_register<'a>(
 
 fn require_ordinary(operation: &str, register: &RegisterInfo) -> Result<()> {
     if register.modified_write_values.is_some() {
-        return Err(format!(
+        return Err(Error::message(format!(
             "PAC API operation {operation:?} cannot target modified-write semantics"
-        )
-        .into());
+        )));
     }
     Ok(())
 }
@@ -301,19 +294,18 @@ fn require_size_access(
     label: &str,
 ) -> Result<()> {
     if binding.properties.size != Some(32) || binding.properties.access != Some(access) {
-        return Err(
-            format!("PAC API operation {operation:?} requires a 32-bit {label} register").into(),
-        );
+        return Err(Error::message(format!(
+            "PAC API operation {operation:?} requires a 32-bit {label} register"
+        )));
     }
     Ok(())
 }
 
 fn require_full_field(operation: &str, field: &FieldInfo) -> Result<()> {
     if field.bit_offset() != 0 || field.bit_width() != 32 {
-        return Err(format!(
+        return Err(Error::message(format!(
             "PAC API operation {operation:?} field must cover the complete 32-bit register"
-        )
-        .into());
+        )));
     }
     Ok(())
 }
@@ -328,10 +320,9 @@ fn require_full_range(operation: &str, field: &FieldInfo, width: u32) -> Result<
         field.write_constraint,
         Some(WriteConstraint::Range(range)) if range.min == 0 && range.max == maximum
     ) {
-        return Err(format!(
+        return Err(Error::message(format!(
             "PAC API operation {operation:?} field must accept every {width}-bit value"
-        )
-        .into());
+        )));
     }
     Ok(())
 }

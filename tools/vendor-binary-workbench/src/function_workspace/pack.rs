@@ -2,7 +2,7 @@
 
 use std::{fs, path::Path};
 
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{Document, DocumentMut, Item};
 
 use super::FunctionFacts;
 use crate::Result;
@@ -60,6 +60,12 @@ pub(crate) struct FunctionPack {
     pub(crate) functions: Vec<ReviewedFunction>,
 }
 
+struct LoadedFunctionPack {
+    value: FunctionPack,
+    input: String,
+    document: Document<String>,
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct FunctionWorkspaceSummary {
     pub(crate) inputs: usize,
@@ -87,12 +93,18 @@ impl FunctionWorkspace {
     pub(crate) fn load(reports: &[(String, std::path::PathBuf)], pack_path: &Path) -> Result<Self> {
         let facts = FunctionFacts::load(reports)?;
         let pack = FunctionPack::load(pack_path)?;
-        let summary = super::pack_validate::validate(&pack, &facts).map_err(|error| {
-            crate::error::WorkbenchError::manifest("function pack", pack_path, error)
+        let summary = super::pack_validate::validate(&pack.value, &facts).map_err(|error| {
+            crate::error::WorkbenchError::manifest_source(
+                "function pack",
+                pack_path,
+                &pack.input,
+                &error,
+                error.span(&pack.document),
+            )
         })?;
         Ok(Self {
             facts,
-            pack,
+            pack: pack.value,
             summary,
         })
     }
@@ -104,9 +116,9 @@ impl FunctionWorkspace {
 
 impl FunctionPack {
     #[tracing::instrument(name = "load_function_pack", fields(path = %path.display()))]
-    pub(crate) fn load(path: &Path) -> Result<Self> {
+    fn load(path: &Path) -> Result<LoadedFunctionPack> {
         let input = fs::read_to_string(path)?;
-        let document = input.parse::<DocumentMut>().map_err(|error| {
+        let source_document = Document::parse(input.clone()).map_err(|error| {
             crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
@@ -115,13 +127,23 @@ impl FunctionPack {
                 error.span(),
             )
         })?;
+        let document: DocumentMut = source_document.clone().into_mut();
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
-            return Err(crate::Error::invalid(format!(
-                "{} requires schema = 1",
-                path.display()
-            )));
+            return Err(crate::error::WorkbenchError::manifest_source(
+                "function pack",
+                path,
+                &input,
+                "requires schema = 1",
+                source_document.get("schema").and_then(Item::span),
+            ));
         }
-        super::pack_parse::parse(&document)
-            .map_err(|error| crate::error::WorkbenchError::manifest("function pack", path, error))
+        let value = super::pack_parse::parse(&document).map_err(|error| {
+            crate::error::WorkbenchError::manifest("function pack", path, error)
+        })?;
+        Ok(LoadedFunctionPack {
+            value,
+            input,
+            document: source_document,
+        })
     }
 }

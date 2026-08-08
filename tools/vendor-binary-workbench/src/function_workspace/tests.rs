@@ -239,10 +239,16 @@ description = "Observed read/write event word."
     let stale = std::fs::read_to_string(&pack)
         .unwrap()
         .replace(&"a".repeat(64), &"b".repeat(64));
-    std::fs::write(&pack, stale).unwrap();
+    let expected_span = stale.find(&format!("\"{}\"", "b".repeat(64))).unwrap();
+    std::fs::write(&pack, &stale).unwrap();
     let error = FunctionWorkspace::load(&reports, &pack).unwrap_err();
     assert!(error.to_string().contains("stale function input digest"));
     assert!(error.to_string().contains(&pack.display().to_string()));
+    let actual_span = match error {
+        crate::error::WorkbenchError::ManifestSource { span, .. } => span.offset(),
+        error => panic!("expected source diagnostic, got {error:?}"),
+    };
+    assert_eq!(actual_span, expected_span);
     std::fs::remove_dir_all(directory).unwrap();
 }
 

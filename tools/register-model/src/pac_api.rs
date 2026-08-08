@@ -97,12 +97,15 @@ impl PacApiPack {
 
     pub fn validate(&self) -> Result<()> {
         if self.schema != 1 {
-            return Err(format!("PAC API pack requires schema = 1, got {}", self.schema).into());
+            return Err(Error::message(format!(
+                "PAC API pack requires schema = 1, got {}",
+                self.schema
+            )));
         }
         if self.options.peripheral_ownership && self.interrupt_snapshots.is_empty() {
-            return Err(
-                "PAC API peripheral-ownership requires at least one interrupt snapshot".into(),
-            );
+            return Err(Error::message(
+                "PAC API peripheral-ownership requires at least one interrupt snapshot",
+            ));
         }
         validate_operations("interrupt-snapshot", &self.interrupt_snapshots)?;
         validate_operations("full-register-write", &self.full_register_writes)?;
@@ -131,21 +134,19 @@ impl PacApiPack {
         }
         for operation in &self.zero_based_field_writes {
             if operation.fields.is_empty() {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API operation {:?} requires at least one field",
                     operation.name
-                )
-                .into());
+                )));
             }
             let mut fields = BTreeSet::new();
             for field in &operation.fields {
                 validate_component("field", &operation.name, field)?;
                 if !fields.insert(field) {
-                    return Err(format!(
+                    return Err(Error::message(format!(
                         "PAC API operation {:?} repeats field {field:?}",
                         operation.name
-                    )
-                    .into());
+                    )));
                 }
             }
         }
@@ -154,18 +155,16 @@ impl PacApiPack {
                 || operation.preserve_mask & operation.set_mask != 0
                 || operation.input_mask & operation.set_mask != 0
             {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API masked-register-modify {:?} has overlapping masks",
                     operation.name
-                )
-                .into());
+                )));
             }
             if operation.preserve_mask | operation.input_mask | operation.set_mask != u32::MAX {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API masked-register-modify {:?} masks do not partition all 32 bits",
                     operation.name
-                )
-                .into());
+                )));
             }
         }
         Ok(())
@@ -252,34 +251,34 @@ fn validate_operations<T: Operation>(kind: &str, operations: &[T]) -> Result<()>
     let mut names = BTreeSet::new();
     for operation in operations {
         if !is_lower_snake_case(operation.name()) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "PAC API {kind} name {:?} is not lower snake case",
                 operation.name()
-            )
-            .into());
+            )));
         }
         if !names.insert(operation.name()) {
-            return Err(format!(
+            return Err(Error::message(format!(
                 "PAC API contains duplicate {kind} name {:?}",
                 operation.name()
-            )
-            .into());
+            )));
         }
         validate_component("peripheral", operation.name(), operation.peripheral())?;
         if let Some(register) = operation.register() {
             validate_component("register", operation.name(), register)?;
         }
         if operation.sources().is_empty() {
-            return Err(format!("PAC API operation {:?} has no sources", operation.name()).into());
+            return Err(Error::message(format!(
+                "PAC API operation {:?} has no sources",
+                operation.name()
+            )));
         }
         let mut sources = BTreeSet::new();
         for source in operation.sources() {
             if source.is_empty() || !sources.insert(source) {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "PAC API operation {:?} has an empty or duplicate source",
                     operation.name()
-                )
-                .into());
+                )));
             }
         }
     }
@@ -288,7 +287,9 @@ fn validate_operations<T: Operation>(kind: &str, operations: &[T]) -> Result<()>
 
 fn validate_component(kind: &str, operation: &str, value: &str) -> Result<()> {
     if value.is_empty() || value.chars().any(char::is_whitespace) {
-        return Err(format!("PAC API operation {operation:?} has invalid {kind} {value:?}").into());
+        return Err(Error::message(format!(
+            "PAC API operation {operation:?} has invalid {kind} {value:?}"
+        )));
     }
     Ok(())
 }

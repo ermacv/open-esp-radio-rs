@@ -7,6 +7,7 @@ mod pack_parse;
 mod pack_validate;
 mod review;
 mod template;
+mod validation;
 
 pub(crate) use facts::*;
 pub(crate) use interface_links::*;

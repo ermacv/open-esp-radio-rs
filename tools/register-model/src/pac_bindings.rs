@@ -105,9 +105,9 @@ pub fn validate_pac_crate_name(value: &str) -> Result<()> {
         .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
         || characters.any(|character| character != '_' && !character.is_ascii_alphanumeric())
     {
-        return Err(
-            format!("PAC binding crate name must be a Rust identifier, got {value:?}").into(),
-        );
+        return Err(Error::message(format!(
+            "PAC binding crate name must be a Rust identifier, got {value:?}"
+        )));
     }
     if matches!(
         value,
@@ -147,13 +147,15 @@ pub fn validate_pac_crate_name(value: &str) -> Result<()> {
             | "where"
             | "while"
     ) {
-        return Err(format!("PAC binding crate name is a Rust keyword: {value:?}").into());
+        return Err(Error::message(format!(
+            "PAC binding crate name is a Rust keyword: {value:?}"
+        )));
     }
     Ok(())
 }
 
 fn expanded_register_map(svd: &str) -> Result<BTreeMap<u64, Vec<ExpandedRegister>>> {
-    let device = svd_parser::parse(svd).map_err(|error| error.to_string())?;
+    let device = svd_parser::parse(svd).map_err(|error| Error::message(error.to_string()))?;
     let mut addresses = BTreeMap::new();
     for peripheral in &device.peripherals {
         let instances = match peripheral {
@@ -211,14 +213,14 @@ fn expand_registers(
                 };
                 for (register, rust_name, array_index) in instances {
                     let properties = merge_properties(inherited, register.properties);
-                    let size_bits = properties.size.ok_or_else(|| -> Error {
-                        format!("register {} has no inherited size", register.name).into()
+                    let size_bits = properties.size.ok_or_else(|| {
+                        Error::message(format!("register {} has no inherited size", register.name))
                     })?;
                     let fields = expand_fields(&register, properties)?;
                     let address = peripheral_base
                         .checked_add(parent_offset)
                         .and_then(|base| base.checked_add(u64::from(register.address_offset)))
-                        .ok_or("SVD register address overflow")?;
+                        .ok_or_else(|| Error::message("SVD register address overflow"))?;
                     let mut identity = peripheral_name.to_owned();
                     for item in scope {
                         identity.push('.');
@@ -269,7 +271,7 @@ fn expand_registers(
                     });
                     let offset = parent_offset
                         .checked_add(u64::from(cluster.address_offset))
-                        .ok_or("SVD cluster address overflow")?;
+                        .ok_or_else(|| Error::message("SVD cluster address overflow"))?;
                     expand_registers(
                         peripheral_name,
                         peripheral_base,
@@ -292,7 +294,7 @@ fn expand_fields(
 ) -> Result<Vec<ExpandedField>> {
     let size_bits = properties
         .size
-        .ok_or("register has no inherited size while expanding fields")?;
+        .ok_or_else(|| Error::message("register has no inherited size while expanding fields"))?;
     let mut expanded = Vec::new();
     let mut names = BTreeSet::new();
     let mut occupied = 0_u128;
@@ -314,11 +316,10 @@ fn expand_fields(
         };
         for (field, rust_name, array_index) in instances {
             if !names.insert(field.name.clone()) {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "register {} contains duplicate expanded field name {}",
                     register.name, field.name
-                )
-                .into());
+                )));
             }
             let bit_offset = field.bit_offset();
             let bit_width = field.bit_width();
@@ -327,11 +328,10 @@ fn expand_fields(
                     .checked_add(bit_width)
                     .is_none_or(|end| end > size_bits)
             {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "register {} field {} has invalid expanded bit range {bit_offset}+{bit_width} for a {size_bits}-bit register",
                     register.name, field.name
-                )
-                .into());
+                )));
             }
             let mask = if bit_width == 128 {
                 u128::MAX
@@ -339,11 +339,10 @@ fn expand_fields(
                 ((1_u128 << bit_width) - 1) << bit_offset
             };
             if occupied & mask != 0 {
-                return Err(format!(
+                return Err(Error::message(format!(
                     "register {} field {} overlaps another expanded field",
                     register.name, field.name
-                )
-                .into());
+                )));
             }
             occupied |= mask;
             expanded.push(ExpandedField {

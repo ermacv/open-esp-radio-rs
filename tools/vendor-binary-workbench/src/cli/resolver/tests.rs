@@ -159,6 +159,33 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
 }
 
 #[test]
+fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
+    let directory = fixture_directory("browser");
+    write_target(&directory.join("target.spec"), None);
+    write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
+
+    let resolved = resolve_from(parse(&["project", "browse"]), &directory).unwrap();
+    let ResolvedInvocation::ProjectBrowse { project_path, .. } = resolved else {
+        panic!("expected a project-browser invocation")
+    };
+    assert_eq!(project_path, directory.join(DEFAULT_PROJECT_MANIFEST));
+
+    let error = resolve_from(
+        parse(&["project", "browse", "--svd", "override.svd"]),
+        &directory,
+    )
+    .err()
+    .expect("browser must reject CLI catalog overrides");
+    assert!(
+        error
+            .to_string()
+            .contains("not --target-spec, --run-spec or --svd")
+    );
+
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let directory = fixture_directory("local-run-discovery");
     write_target(&directory.join("target.spec"), None);

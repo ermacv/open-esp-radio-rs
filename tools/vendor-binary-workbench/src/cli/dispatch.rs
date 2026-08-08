@@ -21,6 +21,10 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             arguments,
             project_path,
         } => commands::run_project_inputs_init(arguments, &project_path),
+        ResolvedInvocation::ProjectBrowse {
+            arguments,
+            project_path,
+        } => commands::run_project_browser(arguments, &project_path),
         ResolvedInvocation::Command(invocation) => run_command(*invocation),
     }
 }

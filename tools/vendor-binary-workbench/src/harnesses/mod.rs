@@ -102,7 +102,7 @@ pub(crate) fn semantic_contract_evidence_sources(
 pub(crate) fn verify_named_contract(
     harness: &str,
     name: &str,
-    svd: &crate::MmioRegisterMap,
+    svd: &crate::MmioMap,
     vendor_artifact: &std::path::Path,
     vendor_companion: &std::path::Path,
 ) -> crate::Result<QualificationReport> {

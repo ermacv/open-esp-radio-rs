@@ -9,9 +9,15 @@ fn unresolved_external_tail_call_fails_closed() {
     assert_eq!(inventory.unresolved_edges.len(), 1);
     assert!(inventory.branch_sites.is_empty());
 
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: Vec::new(),
-        windows: vec![crate::Window { start: 0, end: 1 }],
+        regions: vec![crate::MmioRegion {
+            name: "sentinel".to_owned(),
+            start: 0,
+            end: 1,
+            readable: true,
+            writable: true,
+        }],
     };
     let error = execute(&image, &svd, "wrapper", Scenario::default()).unwrap_err();
     assert!(
@@ -94,5 +100,190 @@ fn reviewed_call_model_rejects_missing_and_unused_responses() {
             .unwrap_err()
             .to_string()
             .contains("unconsumed modeled call responses")
+    );
+}
+
+#[test]
+fn runtime_table_instance_resolves_symbolic_slots_and_pointer_cells() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xb7, 0x32, 0x00, 0x00, // lui t0, 0x3
+            0x83, 0xa2, 0x02, 0x00, // lw t0, 0(t0)
+            0x83, 0xa2, 0x42, 0x00, // lw t0, 4(t0)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0x67, 0x80, 0x00, 0x00, // callback: ret
+        ],
+        32,
+    );
+    image.symbols_by_name.insert("callback".to_owned(), 0x101c);
+    image
+        .symbols_by_address
+        .insert(0x101c, "callback".to_owned());
+    let scenario = Scenario {
+        table_instances: vec![TableInstance {
+            layout_id: "reviewed-services-v1".to_owned(),
+            base_address: 0x4000,
+            layout_size: 0x20,
+            pointer_cells: vec![0x3000],
+            slots: vec![TableInstanceSlot {
+                offset: 4,
+                target: TableSlotTarget::Symbol("callback".to_owned()),
+            }],
+        }],
+        ..Scenario::default()
+    };
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert_eq!(result.ordered_calls.len(), 1);
+    assert_eq!(result.ordered_calls[0].symbol, "callback");
+    assert!(
+        result
+            .indirect_calls
+            .iter()
+            .any(|call| { call.site == 0x1010 && call.symbol == "callback" })
+    );
+    assert!(result.table_lifecycle_complete);
+    assert!(matches!(
+        &result.table_lifecycle[0],
+        TableLifecycleEvent::SlotInitialized {
+            layout_id,
+            offset: 4,
+            target: 0x101c,
+        } if layout_id == "reviewed-services-v1"
+    ));
+    assert!(matches!(
+        result.table_lifecycle.last(),
+        Some(TableLifecycleEvent::IndirectCall {
+            layout_id: Some(layout_id),
+            slot_offset: Some(4),
+            site: 0x1010,
+            target: 0x101c,
+            symbol,
+        }) if layout_id == "reviewed-services-v1" && symbol == "callback"
+    ));
+    assert_eq!(
+        (0..4)
+            .map(|offset| result.initial_memory[&(0x3000 + offset)])
+            .collect::<Vec<_>>(),
+        0x4000_u32.to_le_bytes()
+    );
+    assert_eq!(
+        (0..4)
+            .map(|offset| result.initial_memory[&(0x4004 + offset)])
+            .collect::<Vec<_>>(),
+        0x101c_u32.to_le_bytes()
+    );
+}
+
+#[test]
+fn runtime_table_lifecycle_records_slot_install_before_indirect_call() {
+    let mut image = tiny_image(
+        vec![
+            0x13, 0x84, 0x00, 0x00, // addi s0, ra, 0
+            0xb7, 0x42, 0x00, 0x00, // lui t0, 0x4
+            0x03, 0xa3, 0x42, 0x00, // lw t1, 4(t0)
+            0x23, 0xa2, 0x62, 0x00, // sw t1, 4(t0)
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x93, 0x00, 0x04, 0x00, // addi ra, s0, 0
+            0x67, 0x80, 0x00, 0x00, // ret
+            0x67, 0x80, 0x00, 0x00, // callback: ret
+        ],
+        32,
+    );
+    image.symbols_by_name.insert("callback".to_owned(), 0x101c);
+    image
+        .symbols_by_address
+        .insert(0x101c, "callback".to_owned());
+    let scenario = Scenario {
+        table_instances: vec![TableInstance {
+            layout_id: "services-v2".to_owned(),
+            base_address: 0x4000,
+            layout_size: 0x20,
+            pointer_cells: Vec::new(),
+            slots: vec![TableInstanceSlot {
+                offset: 4,
+                target: TableSlotTarget::Symbol("callback".to_owned()),
+            }],
+        }],
+        ..Scenario::default()
+    };
+
+    let result = execute(&image, &empty_svd(), "test", scenario).unwrap();
+    assert!(result.table_lifecycle_complete);
+    assert!(
+        matches!(
+            &result.table_lifecycle[..],
+            [
+                TableLifecycleEvent::SlotInitialized {
+                    layout_id: initialized,
+                    offset: 4,
+                    target: 0x101c,
+                },
+                TableLifecycleEvent::SlotWritten {
+                    layout_id: written,
+                    offset: 4,
+                    width: 32,
+                    value: 0x101c,
+                    site: 0x100c,
+                },
+                TableLifecycleEvent::IndirectCall {
+                    layout_id: Some(called),
+                    slot_offset: Some(4),
+                    site: 0x1010,
+                    target: 0x101c,
+                    symbol,
+                },
+            ] if initialized == "services-v2"
+                && written == "services-v2"
+                && called == "services-v2"
+                && symbol == "callback"
+        ),
+        "{:#?}",
+        result.table_lifecycle
+    );
+}
+
+#[test]
+fn runtime_table_instance_rejects_stale_layouts_and_ram_conflicts() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let outside_layout = Scenario {
+        table_instances: vec![TableInstance {
+            layout_id: "services".to_owned(),
+            base_address: 0x4000,
+            layout_size: 4,
+            pointer_cells: Vec::new(),
+            slots: vec![TableInstanceSlot {
+                offset: 4,
+                target: TableSlotTarget::Address(0x1000),
+            }],
+        }],
+        ..Scenario::default()
+    };
+    assert!(
+        execute(&image, &empty_svd(), "test", outside_layout)
+            .unwrap_err()
+            .to_string()
+            .contains("outside its")
+    );
+
+    let conflict = Scenario {
+        memory_initial: BTreeMap::from([(0x3000, 1)]),
+        table_instances: vec![TableInstance {
+            layout_id: "services".to_owned(),
+            base_address: 0x4000,
+            layout_size: 4,
+            pointer_cells: vec![0x3000],
+            slots: Vec::new(),
+        }],
+        ..Scenario::default()
+    };
+    assert!(
+        execute(&image, &empty_svd(), "test", conflict)
+            .unwrap_err()
+            .to_string()
+            .contains("conflicts with scenario RAM")
     );
 }

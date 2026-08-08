@@ -4,6 +4,7 @@ use std::{collections::BTreeMap, fmt::Write as _};
 
 use super::{
     FunctionFact, FunctionInterfaceLink, FunctionReviewStatus, FunctionWorkspace, ReviewedFunction,
+    ReviewedMemoryObject,
 };
 use crate::Result;
 
@@ -74,6 +75,71 @@ pub(crate) fn render_function_review(
         summary.accepted_incomplete
     )
     .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Logical types: {} with {} bindings and {} classified fields",
+        summary.logical_types, summary.type_bindings, summary.type_fields
+    )
+    .expect("writing to String cannot fail");
+
+    if !workspace.pack.types.is_empty() {
+        output.push_str("\n## Reviewed logical types\n\n");
+        output.push_str(
+            "Types are explicit reviewer-owned unification claims over generated memory-object evidence. Matching offsets alone never create a type.\n",
+        );
+        for logical_type in &workspace.pack.types {
+            writeln!(
+                output,
+                "\n### `{}` — `{}`\n",
+                markdown_code(&logical_type.name),
+                markdown_code(&logical_type.id)
+            )
+            .expect("writing to String cannot fail");
+            if let Some(description) = &logical_type.description {
+                writeln!(output, "{}\n", markdown_text(description))
+                    .expect("writing to String cannot fail");
+            }
+            output.push_str("Bindings:\n\n");
+            for binding in &logical_type.bindings {
+                writeln!(
+                    output,
+                    "- `{}` = `{}` in `{}` / `{}`",
+                    markdown_code(&binding.name),
+                    markdown_code(&reviewed_object_label(&binding.object)),
+                    markdown_code(&binding.profile),
+                    markdown_code(&binding.source)
+                )
+                .expect("writing to String cannot fail");
+            }
+            output.push_str("\n| Offset | Width | Status | Name | Display type | Description |\n");
+            output.push_str("| ---: | ---: | --- | --- | --- | --- |\n");
+            for field in &logical_type.fields {
+                writeln!(
+                    output,
+                    "| `{:+#x}` | {} | {} | {} | {} | {} |",
+                    field.offset,
+                    field.width,
+                    review_status(field.status),
+                    field
+                        .name
+                        .as_deref()
+                        .map(markdown_code)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    field
+                        .display_type
+                        .as_deref()
+                        .map(markdown_code)
+                        .unwrap_or_else(|| "-".to_owned()),
+                    field
+                        .description
+                        .as_deref()
+                        .map(markdown_text)
+                        .unwrap_or_else(|| "-".to_owned()),
+                )
+                .expect("writing to String cannot fail");
+            }
+        }
+    }
 
     let reviewed = workspace
         .pack
@@ -109,6 +175,37 @@ pub(crate) fn render_function_review(
         }
     }
     Ok(output)
+}
+
+fn reviewed_object_label(object: &ReviewedMemoryObject) -> String {
+    match object {
+        ReviewedMemoryObject::Argument { function, index } => {
+            format!("{function}::arg{index}")
+        }
+        ReviewedMemoryObject::Global { member, symbol } => {
+            format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
+        }
+        ReviewedMemoryObject::DereferencedGlobal {
+            member,
+            symbol,
+            pointer_offset,
+        } => format!(
+            "*({}::{symbol}{pointer_offset:+#x})",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        ReviewedMemoryObject::Absolute {
+            address_space,
+            address,
+        } => format!("absolute<{address_space}>({address:#010x})"),
+    }
+}
+
+fn review_status(status: FunctionReviewStatus) -> &'static str {
+    match status {
+        FunctionReviewStatus::Reviewed => "reviewed",
+        FunctionReviewStatus::Ignored => "ignored",
+        FunctionReviewStatus::Unreviewed => "unreviewed",
+    }
 }
 
 fn write_fact(
@@ -222,6 +319,7 @@ fn write_function(
     }
     write_interface_links(output, interface_links);
     write_contexts(output, fact, reviewed)?;
+    write_memory_objects(output, fact);
     output.push_str("\n#### Generated pseudo-code\n\n```text\n");
     output.push_str(&fence_text(&fact.pseudo));
     if !fact.pseudo.ends_with('\n') {
@@ -231,16 +329,57 @@ fn write_function(
     Ok(())
 }
 
+fn write_memory_objects(output: &mut String, fact: &FunctionFact) {
+    if fact.memory_fields.is_empty() {
+        return;
+    }
+    output.push_str("\n#### Generated memory-object fields\n\n");
+    output.push_str("| Object | Offset | Width | Reads | Writes | Write mask |\n");
+    output.push_str("| --- | ---: | ---: | ---: | ---: | ---: |\n");
+    for field in &fact.memory_fields {
+        let object = match &field.object {
+            super::FunctionMemoryObjectFact::Argument { index } => format!("argument:{index}"),
+            super::FunctionMemoryObjectFact::Global { member, symbol } => format!(
+                "global:{}::{symbol}",
+                member.as_deref().unwrap_or("<linked>")
+            ),
+            super::FunctionMemoryObjectFact::DereferencedGlobal {
+                member,
+                symbol,
+                pointer_offset,
+            } => format!(
+                "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
+                member.as_deref().unwrap_or("<linked>")
+            ),
+            super::FunctionMemoryObjectFact::Absolute {
+                address_space,
+                address,
+            } => format!("absolute:{address_space}:{address:#010x}"),
+        };
+        writeln!(
+            output,
+            "| `{}` | `{:+#x}` | {} | {} | {} | `{:#010x}` |",
+            markdown_code(&object),
+            field.offset,
+            field.width,
+            field.reads,
+            field.writes,
+            field.write_mask
+        )
+        .expect("writing to String cannot fail");
+    }
+}
+
 fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) {
     if links.is_empty() {
         return;
     }
     output.push_str("\n#### Validated interface call sites\n\n");
     output.push_str(
-        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v32 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
+        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v35 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
     );
-    output.push_str("| Anchor/version | Slot | Static site | Caller/kind | Recovered arguments | Linked-IR CFG evidence | ABI | Semantic |\n");
-    output.push_str("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
+    output.push_str("| Contract/version | Slot | Static site | Caller/kind | Recovered arguments | Linked-IR CFG evidence | ABI | Semantic | Execution model |\n");
+    output.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
     for link in links {
         let mut abi_arguments = link.arguments.join(", ");
         if link.variadic {
@@ -276,16 +415,35 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
             );
             writeln!(
                 output,
-                "| `{}` / `{}` | `{:+#x}/{}` `{}` | {} | `{}` @ `{:#010x}` ({}, jalr {:+#x}) | {} | {} | `({}) -> {}` | {} |",
-                markdown_code(&link.anchor),
+                "| `{}` / `{}` | `{}` `{:+#x}/{}` `{}` | {} | `{}` @ `{:#010x}` ({}, jalr {:+#x}) | {} | {} | `({}) -> {}` | {} | {} |",
+                markdown_code(&link.contract),
                 markdown_code(&link.layout_version),
+                markdown_code(&link.slot),
                 link.offset,
                 link.width,
                 markdown_code(&link.name),
                 location,
                 markdown_code(&call.caller),
                 call.function_address,
-                markdown_text(&call.kind),
+                markdown_text(
+                    &call.slot_selector.as_ref().map_or_else(
+                        || call.kind.clone(),
+                        |selector| {
+                            let domain = call.slot_index_domain.as_ref().map_or_else(
+                                || "unproven-domain".to_owned(),
+                                |(argument, min, max, evidence)| {
+                                    format!("arg{argument}:{min}..={max} evidence={evidence}")
+                                },
+                            );
+                            format!(
+                                "{} indexed({selector}) index={} {domain}",
+                                call.kind,
+                                call.slot_index
+                                    .map_or_else(|| "?".to_owned(), |index| index.to_string())
+                            )
+                        },
+                    ),
+                ),
                 call.jalr_offset,
                 if recovered_arguments.is_empty() {
                     "-"
@@ -296,6 +454,7 @@ fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) 
                 markdown_code(&abi_arguments),
                 markdown_code(&link.return_type),
                 optional_code(link.semantic.as_deref()),
+                optional_code(link.execution_model.as_deref()),
             )
             .expect("writing to String cannot fail");
         }

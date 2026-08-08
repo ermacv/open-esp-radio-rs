@@ -125,7 +125,12 @@ fn concrete_rom_execution_keeps_target_specific_call_and_mmio_semantics() {
         .nth(2)
         .expect("workbench facade remains under tools");
     let image = execution::ExecutableImage::load(&rom).unwrap();
-    let svd = MmioRegisterMap::load(&root.join("svd/esp32s31-radio.svd")).unwrap();
+    let mut svd = MmioMap::load(&root.join("svd/esp32s31-radio.svd")).unwrap();
+    svd.regions =
+        crate::MemoryMap::load(&root.join("verification/vendor/targets/esp32s31/memory.toml"))
+            .unwrap()
+            .resolved_mmio_regions()
+            .unwrap();
 
     let mut frequency = execution::Scenario {
         arguments: vec![1],
@@ -140,7 +145,8 @@ fn concrete_rom_execution_keeps_target_specific_call_and_mmio_semantics() {
         execution::ExecutionEvent::Write {
             width: 32,
             address: 0x2010_7030,
-            register: "PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL".to_owned(),
+            region: "modem-radio-core".to_owned(),
+            register: Some("PHY_AGC_ORACLE.AGC_ANTENNA_CONTROL".to_owned()),
             value: !(1 << 5),
         }
     );
@@ -149,7 +155,8 @@ fn concrete_rom_execution_keeps_target_specific_call_and_mmio_semantics() {
         execution::ExecutionEvent::Write {
             width: 32,
             address: 0x2010_7ce4,
-            register: "PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1".to_owned(),
+            region: "modem-radio-core".to_owned(),
+            register: Some("PHY_FREQUENCY_CHANNEL_ORACLE.CHANNEL_CBW_CONTROL_1".to_owned(),),
             value: 1 << 5,
         }
     );
@@ -192,7 +199,7 @@ fn generated_reference_survives_compile_and_reextract_for_selected_target() {
         .ancestors()
         .nth(2)
         .expect("workbench facade remains under tools");
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])

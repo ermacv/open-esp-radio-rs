@@ -37,9 +37,9 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
     };
-    let map = MmioRegisterMap {
+    let map = MmioMap {
         registers: Vec::new(),
-        windows: Vec::new(),
+        regions: Vec::new(),
     };
 
     let report = build_linked_ir_for_source(&resolver, "private_", &map, "primary", false, false);

@@ -17,9 +17,9 @@ pub(crate) fn inspect_project_ir_report(path: &Path) -> Result<ProjectIrReportSu
     let input = fs::read_to_string(path)?;
     let root: Value = serde_json::from_str(&input)?;
     let root = object(&root, "linked-IR root")?;
-    if integer(root, "schema_version", "linked-IR report")? != 32 {
+    if integer(root, "schema_version", "linked-IR report")? != 35 {
         return Err(crate::Error::invalid(format!(
-            "project IR output requires schema 32 in {}",
+            "project IR output requires schema 35 in {}",
             path.display()
         )));
     }
@@ -97,7 +97,7 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
-  "schema_version": 32,
+  "schema_version": 35,
   "command": "ir export",
   "completeness_claim": false,
   "mmio_field_semantics_claim": false,

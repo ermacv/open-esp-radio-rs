@@ -11,9 +11,9 @@ use super::*;
 pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "interface facts root")?;
-    if integer(root, "schema_version", "interface facts")? != 2 {
+    if integer(root, "schema_version", "interface facts")? != 3 {
         return Err(crate::Error::invalid(
-            "interface facts require schema_version 2",
+            "interface facts require schema_version 3",
         ));
     }
     if string(root, "command", "interface facts")? != "interfaces discover" {
@@ -228,6 +228,7 @@ fn parse_slots(
                 width: integer(value, "width", &context)?
                     .try_into()
                     .map_err(|_| format!("width does not fit u8 in {context}")).map_err(crate::Error::invalid)?,
+                selector: parse_selector(value, &context)?,
                 functions,
             })
         })
@@ -280,9 +281,37 @@ fn parse_steps(
                     .try_into()
                     .map_err(|_| format!("width does not fit u8 in {context}"))
                     .map_err(crate::Error::invalid)?,
+                selector: parse_selector(value, &context)?,
             })
         })
         .collect()
+}
+
+fn parse_selector(
+    object: &Map<String, Value>,
+    context: &str,
+) -> Result<Option<InterfaceFactSelector>> {
+    object
+        .get("selector")
+        .map(|value| {
+            let selector_context = format!("{context}.selector");
+            let selector = self::object(value, &selector_context)?;
+            Ok(InterfaceFactSelector {
+                argument: integer(selector, "argument", &selector_context)?
+                    .try_into()
+                    .map_err(|_| format!("argument does not fit u8 in {selector_context}"))
+                    .map_err(crate::Error::invalid)?,
+                scale: integer(selector, "scale", &selector_context)?
+                    .try_into()
+                    .map_err(|_| format!("scale does not fit u32 in {selector_context}"))
+                    .map_err(crate::Error::invalid)?,
+                addend: signed_integer(selector, "addend", &selector_context)?
+                    .try_into()
+                    .map_err(|_| format!("addend does not fit i32 in {selector_context}"))
+                    .map_err(crate::Error::invalid)?,
+            })
+        })
+        .transpose()
 }
 
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {

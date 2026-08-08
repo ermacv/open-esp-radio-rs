@@ -121,6 +121,133 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
 }
 
 #[test]
+fn memory_object_map_keeps_relocated_global_symbol_identity() {
+    let trace = FunctionAnalysis {
+        symbol: "update_global".to_owned(),
+        events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width: 16,
+            address: SymbolicValue::SymbolAddress {
+                member: Some("state.o".to_owned()),
+                symbol: "phy_state".to_owned(),
+                hi_addend: 4,
+                lo_addend: Some(4),
+                post_offset: 8,
+            },
+            region: "symbol:state.o::phy_state".to_owned(),
+            value: Some(SymbolicValue::Constant(7)),
+        }],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    let accesses = memory_object_accesses_for_trace(&trace);
+    let fields = memory_object_fields_for_accesses(&accesses);
+    assert_eq!(accesses.len(), 1);
+    assert_eq!(accesses[0].offset, 12);
+    assert!(matches!(
+        &accesses[0].object,
+        LinkedMemoryObject::Global { member, symbol }
+            if member.as_deref() == Some("state.o") && symbol == "phy_state"
+    ));
+    assert_eq!(fields[0].writes, 1);
+    assert_eq!(fields[0].write_mask, 0xffff);
+}
+
+#[test]
+fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
+    let global_address = SymbolicValue::SymbolAddress {
+        member: Some("state.o".to_owned()),
+        symbol: "g_state".to_owned(),
+        hi_addend: 0,
+        lo_addend: Some(0),
+        post_offset: 0,
+    };
+    let trace = FunctionAnalysis {
+        symbol: "update_indirect_state".to_owned(),
+        events: Vec::new(),
+        reference_events: vec![
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 32,
+                address: global_address,
+                region: "symbol:state.o::g_state".to_owned(),
+                value: None,
+            },
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 16,
+                address: SymbolicValue::memory_read(0, 32, false).add_constant(0x1c),
+                region: "dereferenced relocated global pointer RAM".to_owned(),
+                value: Some(SymbolicValue::Constant(9)),
+            },
+        ],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    let accesses = memory_object_accesses_for_trace(&trace);
+    assert_eq!(accesses.len(), 2);
+    assert!(
+        accesses
+            .iter()
+            .any(|access| matches!(access.object, LinkedMemoryObject::Global { .. }))
+    );
+    let pointee = accesses
+        .iter()
+        .find(|access| matches!(access.object, LinkedMemoryObject::DereferencedGlobal { .. }))
+        .expect("dereferenced global access");
+    assert!(matches!(
+        &pointee.object,
+        LinkedMemoryObject::DereferencedGlobal {
+            member,
+            symbol,
+            pointer_offset: 0,
+        } if member.as_deref() == Some("state.o") && symbol == "g_state"
+    ));
+    assert_eq!(pointee.offset, 0x1c);
+}
+
+#[test]
+fn memory_object_map_keeps_absolute_address_space() {
+    let trace = FunctionAnalysis {
+        symbol: "update_absolute".to_owned(),
+        events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::Memory {
+            access: MemoryAccess::Write,
+            width: 32,
+            address: SymbolicValue::Constant(0x3fc8_1000),
+            region: "dram".to_owned(),
+            value: Some(SymbolicValue::Constant(1)),
+        }],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(0),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    let accesses = memory_object_accesses_for_trace(&trace);
+    assert!(matches!(
+        &accesses[0].object,
+        LinkedMemoryObject::Absolute {
+            address_space,
+            address: 0x3fc8_1000,
+        } if address_space == "dram"
+    ));
+}
+
+#[test]
 fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
     assert_eq!(
         candidate_bit_ranges(0x3000_00f3, 32),

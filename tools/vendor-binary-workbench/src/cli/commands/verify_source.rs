@@ -2,11 +2,7 @@
 
 use super::super::*;
 
-pub(super) fn run(
-    arguments: VerifySourceArgs,
-    svd: &MmioRegisterMap,
-    target: &TargetSpec,
-) -> Result<bool> {
+pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
     let vendor_artifact = arguments
         .vendor_artifact
         .ok_or("missing --vendor-artifact")

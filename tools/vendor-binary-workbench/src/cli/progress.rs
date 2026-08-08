@@ -14,6 +14,7 @@ pub(super) fn command_span(command: Command) -> Option<Span> {
         | Command::ProjectInputsInit
         | Command::ProjectDoctor
         | Command::ProjectStatus
+        | Command::ProjectBrowse
         | Command::FunctionInitPack
         | Command::InterfaceInitPack
         | Command::RegisterInitModel

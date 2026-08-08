@@ -28,7 +28,7 @@ use rf::{
 
 pub(super) fn reference_intrinsic_trace(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     pointer_context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
     let intrinsic_arguments: Rv32CallArguments =

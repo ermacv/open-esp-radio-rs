@@ -1,6 +1,7 @@
 //! Effect Contract parsing and comparison tests.
 
 use super::*;
+use crate::{EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict};
 
 fn register() -> RegisterId {
     RegisterId {
@@ -24,8 +25,15 @@ fn exact_policy_rejects_an_unclassified_vendor_effect() {
         [(EffectSelector::Delay, EffectDisposition::Required)],
     )
     .unwrap();
-    let error = compare_effects(&[read()], &[read()], &policy).unwrap_err();
-    assert!(error.to_string().contains("unclassified vendor effect"));
+    let outcome = compare_effects(&[read()], &[read()], &policy).unwrap();
+    assert_eq!(outcome.mode, EquivalenceMode::Semantic);
+    assert_eq!(outcome.verdict, EquivalenceVerdict::Incomplete);
+    assert!(
+        outcome
+            .reason
+            .unwrap()
+            .contains("unclassified vendor effect")
+    );
 }
 
 #[test]
@@ -36,8 +44,14 @@ fn exact_policy_rejects_an_extra_rust_effect() {
         [(selector, EffectDisposition::Required)],
     )
     .unwrap();
-    let error = compare_effects(&[read()], &[read(), read()], &policy).unwrap_err();
-    assert!(error.to_string().contains("unclassified extra Rust effect"));
+    let outcome = compare_effects(&[read()], &[read(), read()], &policy).unwrap();
+    assert_eq!(outcome.verdict, EquivalenceVerdict::Incomplete);
+    assert!(
+        outcome
+            .reason
+            .unwrap()
+            .contains("unclassified extra Rust effect")
+    );
 }
 
 #[test]
@@ -56,17 +70,17 @@ fn blocking_effect_requires_an_explicit_await_ready_replacement() {
     let vendor = [ContractEffect::Delay {
         micros: ContractValue::Concrete(1),
     }];
-    assert!(matches!(
-        compare_effects(&vendor, &[], &policy).unwrap(),
-        EffectComparisonVerdict::Mismatch(_)
-    ));
+    assert_eq!(
+        compare_effects(&vendor, &[], &policy).unwrap().verdict,
+        EquivalenceVerdict::Diff
+    );
     let rust = [ContractEffect::AwaitReady {
         condition: ReadyCondition::Named("iq-estimator-ready".to_owned()),
         timeout: Timeout::Attempts(100),
     }];
     assert_eq!(
         compare_effects(&vendor, &rust, &policy).unwrap(),
-        EffectComparisonVerdict::Match
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
     );
 }
 
@@ -171,13 +185,15 @@ fn semantic_boundary_dispositions_require_exact_typed_replacements() {
     ];
     assert_eq!(
         compare_effects(&vendor, &rust, &policy).unwrap(),
-        EffectComparisonVerdict::Match
+        EquivalenceOutcome::matched(EquivalenceMode::Semantic)
     );
-    assert!(matches!(
-        compare_effects(&vendor, &rust[..3], &policy).unwrap(),
-        EffectComparisonVerdict::Mismatch(reason)
-            if reason.contains("initialization-prerequisite")
-    ));
+    let outcome = compare_effects(&vendor, &rust[..3], &policy).unwrap();
+    assert_eq!(outcome.verdict, EquivalenceVerdict::Diff);
+    assert!(
+        outcome
+            .reason
+            .is_some_and(|reason| reason.contains("initialization-prerequisite"))
+    );
 }
 
 #[test]

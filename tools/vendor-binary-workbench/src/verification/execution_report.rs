@@ -1,54 +1,42 @@
 //! Typed result model and human renderer for concrete execution comparison.
 
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 use crate::execution;
+use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ComparisonVerdict {
-    Match,
-    Mismatch,
-    Incomplete,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ArtifactReport {
+    pub path: String,
+    pub sha256: String,
+    pub companion: Option<ArtifactIdentity>,
+    pub symbol: String,
 }
 
-impl ComparisonVerdict {
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Match => "MATCH",
-            Self::Mismatch => "MISMATCH",
-            Self::Incomplete => "INCOMPLETE",
-        }
-    }
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ArtifactIdentity {
+    pub path: String,
+    pub sha256: String,
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct ArtifactReport {
-    pub(crate) path: String,
-    pub(crate) sha256: String,
-    pub(crate) companion: Option<ArtifactIdentity>,
-    pub(crate) symbol: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct ArtifactIdentity {
-    pub(crate) path: String,
-    pub(crate) sha256: String,
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
-pub(crate) enum ExecutionEventReport {
+pub enum ExecutionEventReport {
     Read {
         width: u8,
         address: u32,
-        register: String,
+        region: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        register: Option<String>,
         value: u32,
     },
     Write {
         width: u8,
         address: u32,
-        register: String,
+        region: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        register: Option<String>,
         value: u32,
     },
     DelayMicros {
@@ -67,22 +55,26 @@ impl From<&execution::ExecutionEvent> for ExecutionEventReport {
             execution::ExecutionEvent::Read {
                 width,
                 address,
+                region,
                 register,
                 value,
             } => Self::Read {
                 width: *width,
                 address: *address,
+                region: region.clone(),
                 register: register.clone(),
                 value: *value,
             },
             execution::ExecutionEvent::Write {
                 width,
                 address,
+                region,
                 register,
                 value,
             } => Self::Write {
                 width: *width,
                 address: *address,
+                region: region.clone(),
                 register: register.clone(),
                 value: *value,
             },
@@ -100,11 +92,11 @@ impl From<&execution::ExecutionEvent> for ExecutionEventReport {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct MemoryChangeReport {
-    pub(crate) address: u32,
-    pub(crate) before: u8,
-    pub(crate) after: u8,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct MemoryChangeReport {
+    pub address: u32,
+    pub before: u8,
+    pub after: u8,
 }
 
 impl From<&execution::MemoryChange> for MemoryChangeReport {
@@ -117,78 +109,238 @@ impl From<&execution::MemoryChange> for MemoryChangeReport {
     }
 }
 
-#[derive(Debug, Serialize)]
-pub(crate) struct ExecutionOutcomeReport {
-    pub(crate) events: Vec<ExecutionEventReport>,
-    pub(crate) memory_changes: Vec<MemoryChangeReport>,
-    pub(crate) return_value: u32,
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum DifferenceKind {
+    Event,
+    Memory,
+    ReturnValue,
+    Coverage,
 }
 
-impl From<&execution::ExecutionResult> for ExecutionOutcomeReport {
-    fn from(result: &execution::ExecutionResult) -> Self {
-        Self {
-            events: result.events.iter().map(Into::into).collect(),
-            memory_changes: result.memory_changes.iter().map(Into::into).collect(),
-            return_value: result.return_value,
+impl DifferenceKind {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Event => "event",
+            Self::Memory => "memory",
+            Self::ReturnValue => "return-value",
+            Self::Coverage => "coverage",
         }
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TraceItemReport {
+    Event { event: ExecutionEventReport },
+    Memory { change: MemoryChangeReport },
+    ReturnValue { value: u32 },
+    Coverage { issue: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct AlignedTraceItemReport {
+    pub index: usize,
+    pub vendor: Option<TraceItemReport>,
+    pub rust: Option<TraceItemReport>,
+    pub equal: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct BranchDecisionReport {
+    pub site: u32,
+    pub taken: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct OrderedCallReport {
+    pub site: u32,
+    pub symbol: String,
+    pub arguments: [u32; 8],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExecutionPathSideReport {
+    pub branches: Vec<BranchDecisionReport>,
+    pub calls: Vec<OrderedCallReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ExecutionPathReport {
+    pub vendor: ExecutionPathSideReport,
+    pub rust: ExecutionPathSideReport,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TraceDiffReport {
+    pub first_difference: usize,
+    pub kind: DifferenceKind,
+    pub vendor: Option<TraceItemReport>,
+    pub rust: Option<TraceItemReport>,
+    pub context_before: Vec<AlignedTraceItemReport>,
+    pub context_after: Vec<AlignedTraceItemReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<ExecutionPathReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum TableSlotTargetReport {
+    Null,
+    Address { address: u32 },
+    Symbol { symbol: String },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TableInstanceSlotReport {
+    pub offset: u32,
+    pub target: TableSlotTargetReport,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct TableInstanceReport {
+    pub layout_id: String,
+    pub base_address: u32,
+    pub layout_size: u32,
+    pub pointer_cells: Vec<u32>,
+    pub slots: Vec<TableInstanceSlotReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum RuntimeMemoryBindingReport {
+    Argument { index: usize },
+    Global { symbol: String },
+    DereferencedGlobal { symbol: String, pointer_offset: u32 },
+    Absolute { address_space: String, address: u32 },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeMemoryInstanceReport {
+    pub id: String,
+    pub base_address: u32,
+    pub length: u32,
+    pub bindings: Vec<RuntimeMemoryBindingReport>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(tag = "action", rename_all = "kebab-case")]
+pub enum TableLifecycleReport {
+    SlotInitialized {
+        layout_id: String,
+        offset: u32,
+        target: u32,
+    },
+    SlotWritten {
+        layout_id: String,
+        offset: u32,
+        width: u8,
+        value: u32,
+        site: u32,
+    },
+    PointerInstalled {
+        layout_id: String,
+        address: u32,
+        base_address: u32,
+    },
+    IndirectCall {
+        layout_id: Option<String>,
+        slot_offset: Option<u32>,
+        site: u32,
+        target: u32,
+        symbol: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DeviceModelReport {
+    pub id: String,
+    pub kind: String,
+    pub start: u32,
+    pub length: u32,
+    pub configuration: BTreeMap<String, String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct DeviceModelCoverageReport {
+    pub id: String,
+    pub kind: String,
+    pub complete: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+pub struct ScenarioEnvironmentReport {
+    pub vendor_tables: Vec<TableInstanceReport>,
+    pub rust_tables: Vec<TableInstanceReport>,
+    pub vendor_memory_instances: Vec<RuntimeMemoryInstanceReport>,
+    pub rust_memory_instances: Vec<RuntimeMemoryInstanceReport>,
+    pub device_models: Vec<DeviceModelReport>,
+    pub vendor_device_coverage: Vec<DeviceModelCoverageReport>,
+    pub rust_device_coverage: Vec<DeviceModelCoverageReport>,
+    pub vendor_table_lifecycle: Vec<TableLifecycleReport>,
+    pub rust_table_lifecycle: Vec<TableLifecycleReport>,
+    pub vendor_table_lifecycle_complete: Option<bool>,
+    pub rust_table_lifecycle_complete: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(tag = "verdict", rename_all = "kebab-case")]
-pub(crate) enum CaseReport {
+pub enum CaseReport {
     Match {
         name: String,
+        environment: ScenarioEnvironmentReport,
         events: usize,
         memory_changes: usize,
         return_compared: bool,
     },
-    Mismatch {
+    Diff {
         name: String,
-        vendor: ExecutionOutcomeReport,
-        rust: ExecutionOutcomeReport,
+        environment: ScenarioEnvironmentReport,
+        difference: Box<TraceDiffReport>,
     },
     Incomplete {
         name: String,
+        environment: ScenarioEnvironmentReport,
         vendor_error: Option<String>,
         rust_error: Option<String>,
     },
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct BranchOutcomeReport {
-    pub(crate) site: u32,
-    pub(crate) location: String,
-    pub(crate) taken: bool,
-    pub(crate) covered: bool,
+pub struct BranchOutcomeReport {
+    pub site: u32,
+    pub location: String,
+    pub taken: bool,
+    pub covered: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ControlFlowReport {
-    pub(crate) site: u32,
-    pub(crate) location: String,
-    pub(crate) edge: String,
-    pub(crate) targets: Vec<String>,
-    pub(crate) covered: bool,
+pub struct ControlFlowReport {
+    pub site: u32,
+    pub location: String,
+    pub edge: String,
+    pub targets: Vec<String>,
+    pub covered: bool,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct CoverageReport {
-    pub(crate) covered_calls: Vec<String>,
-    pub(crate) branch_outcomes: Vec<BranchOutcomeReport>,
-    pub(crate) unresolved_control_flow: Vec<ControlFlowReport>,
-    pub(crate) unmapped_mmio: Vec<u32>,
+pub struct CoverageReport {
+    pub covered_calls: Vec<String>,
+    pub branch_outcomes: Vec<BranchOutcomeReport>,
+    pub unresolved_control_flow: Vec<ControlFlowReport>,
+    pub unnamed_mmio: Vec<u32>,
 }
 
 impl CoverageReport {
-    pub(crate) fn uncovered_branch_outcomes(&self) -> usize {
+    pub fn uncovered_branch_outcomes(&self) -> usize {
         self.branch_outcomes
             .iter()
             .filter(|outcome| !outcome.covered)
             .count()
     }
 
-    pub(crate) fn uncovered_control_flow(&self) -> usize {
+    pub fn uncovered_control_flow(&self) -> usize {
         self.unresolved_control_flow
             .iter()
             .filter(|edge| !edge.covered)
@@ -197,61 +349,116 @@ impl CoverageReport {
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ComparisonSummary {
-    pub(crate) cases: usize,
-    pub(crate) matched: usize,
-    pub(crate) mismatched: usize,
-    pub(crate) incomplete: usize,
-    pub(crate) vendor_uncovered_branch_outcomes: usize,
-    pub(crate) rust_uncovered_branch_outcomes: usize,
-    pub(crate) vendor_unresolved_control_flow: usize,
-    pub(crate) rust_unresolved_control_flow: usize,
-    pub(crate) vendor_unmapped_mmio: usize,
-    pub(crate) rust_unmapped_mmio: usize,
+pub struct ComparisonSummary {
+    pub cases: usize,
+    pub matched: usize,
+    pub different: usize,
+    pub incomplete: usize,
+    pub vendor_uncovered_branch_outcomes: usize,
+    pub rust_uncovered_branch_outcomes: usize,
+    pub vendor_unresolved_control_flow: usize,
+    pub rust_unresolved_control_flow: usize,
+    pub vendor_unnamed_mmio: usize,
+    pub rust_unnamed_mmio: usize,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct ExecutionComparisonReport {
-    pub(crate) schema_version: u32,
-    pub(crate) command: &'static str,
-    pub(crate) vendor: ArtifactReport,
-    pub(crate) rust: ArtifactReport,
-    pub(crate) compare_return: bool,
-    pub(crate) cases: Vec<CaseReport>,
-    pub(crate) vendor_coverage: CoverageReport,
-    pub(crate) rust_coverage: CoverageReport,
-    pub(crate) summary: ComparisonSummary,
-    pub(crate) verdict: ComparisonVerdict,
+pub struct ExecutionComparisonReport {
+    pub schema_version: u32,
+    pub command: &'static str,
+    pub mode: EquivalenceMode,
+    pub vendor: ArtifactReport,
+    pub rust: ArtifactReport,
+    pub compare_return: bool,
+    pub cases: Vec<CaseReport>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub coverage_gap: Option<TraceDiffReport>,
+    pub vendor_coverage: CoverageReport,
+    pub rust_coverage: CoverageReport,
+    pub summary: ComparisonSummary,
+    pub verdict: EquivalenceVerdict,
 }
 
-fn print_event(side: &str, index: usize, event: &ExecutionEventReport) {
-    match event {
-        ExecutionEventReport::Read {
-            width,
-            address,
-            register,
-            value,
-        } => outputln!(
-            "TRACE-EVENT\t{side}\t{index}\tR\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}"
+fn trace_item_text(item: Option<&TraceItemReport>) -> String {
+    let Some(item) = item else {
+        return "<missing>".to_owned();
+    };
+    match item {
+        TraceItemReport::Event { event } => match event {
+            ExecutionEventReport::Read {
+                width,
+                address,
+                region,
+                register,
+                value,
+            } => format!(
+                "READ/{width} {address:#010x} region={region} register={} -> {value:#010x}",
+                register.as_deref().unwrap_or("-")
+            ),
+            ExecutionEventReport::Write {
+                width,
+                address,
+                region,
+                register,
+                value,
+            } => format!(
+                "WRITE/{width} {address:#010x} region={region} register={} <- {value:#010x}",
+                register.as_deref().unwrap_or("-")
+            ),
+            ExecutionEventReport::DelayMicros { micros } => format!("DELAY {micros} us"),
+            ExecutionEventReport::Fence {
+                fm,
+                predecessor,
+                successor,
+            } => format!("FENCE fm={fm:#x} pred={predecessor:#x} succ={successor:#x}"),
+        },
+        TraceItemReport::Memory { change } => format!(
+            "RAM {:#010x} {:#04x} -> {:#04x}",
+            change.address, change.before, change.after
         ),
-        ExecutionEventReport::Write {
-            width,
-            address,
-            register,
-            value,
-        } => outputln!(
-            "TRACE-EVENT\t{side}\t{index}\tW\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}"
-        ),
-        ExecutionEventReport::DelayMicros { micros } => {
-            outputln!("TRACE-EVENT\t{side}\t{index}\tDELAY\tmicros={micros}");
-        }
-        ExecutionEventReport::Fence {
-            fm,
-            predecessor,
-            successor,
-        } => outputln!(
-            "TRACE-EVENT\t{side}\t{index}\tFENCE\tfm={fm:#x}\tpred={predecessor:#x}\tsucc={successor:#x}"
-        ),
+        TraceItemReport::ReturnValue { value } => format!("RETURN {value:#010x}"),
+        TraceItemReport::Coverage { issue } => issue.clone(),
+    }
+}
+
+fn print_difference(case: &str, difference: &TraceDiffReport) {
+    outputln!(
+        "FIRST-DIFFERENCE\tcase={case}\tkind={}\tindex={}",
+        difference.kind.label(),
+        difference.first_difference
+    );
+    for item in &difference.context_before {
+        outputln!(
+            "DIFF-CONTEXT\tbefore\t{}\tequal={}\tvendor={}\trust={}",
+            item.index,
+            item.equal,
+            trace_item_text(item.vendor.as_ref()),
+            trace_item_text(item.rust.as_ref())
+        );
+    }
+    outputln!(
+        "DIFF-ITEM\t{}\tvendor={}\trust={}",
+        difference.first_difference,
+        trace_item_text(difference.vendor.as_ref()),
+        trace_item_text(difference.rust.as_ref())
+    );
+    for item in &difference.context_after {
+        outputln!(
+            "DIFF-CONTEXT\tafter\t{}\tequal={}\tvendor={}\trust={}",
+            item.index,
+            item.equal,
+            trace_item_text(item.vendor.as_ref()),
+            trace_item_text(item.rust.as_ref())
+        );
+    }
+    if let Some(path) = &difference.path {
+        outputln!(
+            "DIFF-PATH\tvendor-branches={}\trust-branches={}\tvendor-calls={}\trust-calls={}",
+            path.vendor.branches.len(),
+            path.rust.branches.len(),
+            path.vendor.calls.len(),
+            path.rust.calls.len()
+        );
     }
 }
 
@@ -298,12 +505,12 @@ fn print_coverage(side: &str, coverage: &CoverageReport) {
             );
         }
     }
-    for address in &coverage.unmapped_mmio {
-        outputln!("UNCOVERED-MMIO\t{side}\t{address:#010x}");
+    for address in &coverage.unnamed_mmio {
+        outputln!("UNNAMED-MMIO\t{side}\t{address:#010x}");
     }
 }
 
-pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
+pub fn print_execution_comparison(report: &ExecutionComparisonReport) {
     outputln!(
         "ORACLE\t{}\tsha256={}",
         report.vendor.path,
@@ -316,76 +523,145 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
         match case {
             CaseReport::Match {
                 name,
+                environment,
                 events,
                 memory_changes,
                 return_compared,
-            } => outputln!(
-                "CASE\t{name}\tMATCH\tevents={events}\tmemory-changes={memory_changes}\treturn={}",
-                if *return_compared {
-                    "checked"
-                } else {
-                    "ignored"
-                }
-            ),
+            } => {
+                print_table_environment(name, environment);
+                outputln!(
+                    "CASE\t{name}\tMATCH\tevents={events}\tmemory-changes={memory_changes}\treturn={}",
+                    if *return_compared {
+                        "checked"
+                    } else {
+                        "ignored"
+                    }
+                );
+            }
             CaseReport::Incomplete {
                 name,
+                environment,
                 vendor_error,
                 rust_error,
-            } => outputln!(
-                "CASE\t{name}\tINCOMPLETE\tvendor={}\trust={}",
-                vendor_error.as_deref().unwrap_or("complete"),
-                rust_error.as_deref().unwrap_or("complete")
-            ),
-            CaseReport::Mismatch { name, vendor, rust } => {
+            } => {
+                print_table_environment(name, environment);
                 outputln!(
-                    "CASE\t{name}\tMISMATCH\tvendor-events={}\trust-events={}\tvendor-memory-changes={}\trust-memory-changes={}\tvendor-return={:#010x}\trust-return={:#010x}",
-                    vendor.events.len(),
-                    rust.events.len(),
-                    vendor.memory_changes.len(),
-                    rust.memory_changes.len(),
-                    vendor.return_value,
-                    rust.return_value
+                    "CASE\t{name}\tINCOMPLETE\tvendor={}\trust={}",
+                    vendor_error.as_deref().unwrap_or("complete"),
+                    rust_error.as_deref().unwrap_or("complete")
                 );
-                for (index, event) in vendor.events.iter().enumerate() {
-                    print_event("vendor", index, event);
-                }
-                for (index, event) in rust.events.iter().enumerate() {
-                    print_event("rust", index, event);
-                }
-                for change in &vendor.memory_changes {
-                    outputln!(
-                        "MEMORY-CHANGE\tvendor\t{:#010x}\tbefore={:#04x}\tafter={:#04x}",
-                        change.address,
-                        change.before,
-                        change.after
-                    );
-                }
-                for change in &rust.memory_changes {
-                    outputln!(
-                        "MEMORY-CHANGE\trust\t{:#010x}\tbefore={:#04x}\tafter={:#04x}",
-                        change.address,
-                        change.before,
-                        change.after
-                    );
-                }
+            }
+            CaseReport::Diff {
+                name,
+                environment,
+                difference,
+            } => {
+                print_table_environment(name, environment);
+                outputln!(
+                    "CASE\t{name}\tDIFF\tkind={}\tfirst-difference={}",
+                    difference.kind.label(),
+                    difference.first_difference,
+                );
+                print_difference(name, difference);
             }
         }
+    }
+    if let Some(gap) = &report.coverage_gap {
+        print_difference("coverage", gap);
     }
     print_coverage("vendor", &report.vendor_coverage);
     print_coverage("rust", &report.rust_coverage);
     let summary = &report.summary;
     outputln!(
-        "SUMMARY\tcases={}\tmatched={}\tmismatched={}\tincomplete={}\tvendor-uncovered-branch-outcomes={}\trust-uncovered-branch-outcomes={}\tvendor-unresolved-control-flow={}\trust-unresolved-control-flow={}\tvendor-unmapped-mmio={}\trust-unmapped-mmio={}",
+        "SUMMARY\tcases={}\tmatched={}\tdifferent={}\tincomplete={}\tvendor-uncovered-branch-outcomes={}\trust-uncovered-branch-outcomes={}\tvendor-unresolved-control-flow={}\trust-unresolved-control-flow={}\tvendor-unnamed-mmio={}\trust-unnamed-mmio={}",
         summary.cases,
         summary.matched,
-        summary.mismatched,
+        summary.different,
         summary.incomplete,
         summary.vendor_uncovered_branch_outcomes,
         summary.rust_uncovered_branch_outcomes,
         summary.vendor_unresolved_control_flow,
         summary.rust_unresolved_control_flow,
-        summary.vendor_unmapped_mmio,
-        summary.rust_unmapped_mmio
+        summary.vendor_unnamed_mmio,
+        summary.rust_unnamed_mmio
     );
-    outputln!("VERDICT\t{}", report.verdict.label());
+    outputln!(
+        "VERDICT\tmode={}\t{}",
+        report.mode.label(),
+        report.verdict.label()
+    );
+}
+
+fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) {
+    for (side, instances) in [
+        ("vendor", &environment.vendor_tables),
+        ("rust", &environment.rust_tables),
+    ] {
+        for instance in instances {
+            outputln!(
+                "TABLE-INSTANCE\tcase={case}\tside={side}\tlayout={}\tbase={:#010x}\tsize={:#x}\tpointer-cells={}\tslots={}",
+                instance.layout_id,
+                instance.base_address,
+                instance.layout_size,
+                instance.pointer_cells.len(),
+                instance.slots.len(),
+            );
+        }
+    }
+    for device in &environment.device_models {
+        outputln!(
+            "DEVICE-MODEL\tcase={case}\tid={}\tkind={}\tstart={:#010x}\tlength={:#x}",
+            device.id,
+            device.kind,
+            device.start,
+            device.length,
+        );
+    }
+    for (side, coverage) in [
+        ("vendor", &environment.vendor_device_coverage),
+        ("rust", &environment.rust_device_coverage),
+    ] {
+        for model in coverage {
+            outputln!(
+                "DEVICE-COVERAGE\tcase={case}\tside={side}\tid={}\tkind={}\tcomplete={}\treason={}",
+                model.id,
+                model.kind,
+                model.complete,
+                model.reason.as_deref().unwrap_or("-"),
+            );
+        }
+    }
+    for (side, instances) in [
+        ("vendor", &environment.vendor_memory_instances),
+        ("rust", &environment.rust_memory_instances),
+    ] {
+        for instance in instances {
+            outputln!(
+                "MEMORY-INSTANCE\tcase={case}\tside={side}\tid={}\tbase={:#010x}\tlength={:#x}\tbindings={}",
+                instance.id,
+                instance.base_address,
+                instance.length,
+                instance.bindings.len(),
+            );
+        }
+    }
+    for (side, events, complete) in [
+        (
+            "vendor",
+            &environment.vendor_table_lifecycle,
+            environment.vendor_table_lifecycle_complete,
+        ),
+        (
+            "rust",
+            &environment.rust_table_lifecycle,
+            environment.rust_table_lifecycle_complete,
+        ),
+    ] {
+        if let Some(complete) = complete {
+            outputln!(
+                "TABLE-LIFECYCLE\tcase={case}\tside={side}\tcomplete={complete}\tevents={}",
+                events.len()
+            );
+        }
+    }
 }

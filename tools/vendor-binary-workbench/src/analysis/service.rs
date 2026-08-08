@@ -8,9 +8,7 @@ use std::{
 use serde::Serialize;
 
 use super::{ReferenceResolver, StructuralPointerContext, trace_binary_symbol};
-use crate::{
-    ArtifactSymbolIdentity, FunctionAnalysis, MmioRegisterMap, ObservableEvent, Result, artifact,
-};
+use crate::{ArtifactSymbolIdentity, FunctionAnalysis, MmioMap, ObservableEvent, Result, artifact};
 
 pub(crate) fn list_code_symbols(
     artifact: &Path,
@@ -79,10 +77,7 @@ pub(crate) fn trace_document(trace: &FunctionAnalysis) -> TraceDocument<'_> {
     }
 }
 
-pub(crate) fn extract(
-    input: &ArtifactSymbolSelector,
-    svd: &MmioRegisterMap,
-) -> Result<FunctionAnalysis> {
+pub(crate) fn extract(input: &ArtifactSymbolSelector, svd: &MmioMap) -> Result<FunctionAnalysis> {
     let symbols = artifact::load_symbols(&input.artifact, &input.symbol)?;
     let symbol = symbols
         .iter()
@@ -114,7 +109,7 @@ pub(crate) fn extract_reference(
     companions: &[PathBuf],
     harness: &'static crate::RiscvHarnessSpec,
     entry_contract: crate::EntryContractRef,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Result<FunctionAnalysis> {
     Ok(ReferenceResolver::load_with_entry_contract(
         &input.artifact,

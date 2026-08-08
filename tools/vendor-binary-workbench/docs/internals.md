@@ -111,6 +111,37 @@ typed at every workbench crate boundary; there is no boxed external-error
 escape hatch in the facade. The facade error itself implements `miette::Diagnostic`;
 project, run-spec and target parse failures retain their named source and
 labelled span through the common renderer.
+The project loader validates an immutable `toml_edit::Document`, because
+conversion to `DocumentMut` removes parser spans. A shared `ProjectSource`
+context reaches the analysis, register, interface and function-section
+decoders, so nested type, value and cross-reference failures label the exact
+physical manifest value instead of falling back to a location-less string.
+Platform packs and memory maps follow the same immutable-document rule through
+the reusable `ManifestContext`. Their type checks and semantic validation
+(including catalog entries, address spaces, ranges, aliases and overlaps)
+therefore retain the responsible TOML value instead of wrapping the failure in
+a path-only manifest error. Optional fields reject the wrong type rather than
+silently behaving as if the field were absent, and unknown keys are rejected at
+the table where they occur.
+
+Concrete MMIO execution keeps physical classification separate from register
+catalog enrichment. `MmioRegion` carries the project-owned name, half-open
+range and read/write permissions; an execution event carries that region and
+an optional register name. Missing SVD metadata is therefore visible without
+being confused with incomplete bus coverage. Structural reference generation
+retains its stricter requirement for a fully named register bank because those
+names participate in generated preconditions.
+
+Reviewed interface metadata follows the same separation of evidence and
+behavior. `InterfaceWorkspace` produces stable `ResolvedInterfaceContract`
+and slot identities from facts, the reviewed pack and semantic catalogs. A
+semantic annotation never becomes executable behavior implicitly. Optional
+`execution-contract` and `execution-model` foreign keys must resolve against
+the selected compiled platform harness and agree on layout size, slot offset,
+ABI arity and semantic operation before the execution model is exposed to
+linked-IR/function review. Runtime table contents remain scenario state for a
+later `TableInstance` layer.
+
 `WorkbenchError` deliberately has no `From<String>` or `From<&str>` escape
 hatch. A facade boundary must select `InvalidInput` explicitly, while errors
 from domain crates retain their dedicated transparent variants.
@@ -398,7 +429,7 @@ claims, validation, and presentation separate:
 
 | Module | Responsibility |
 | --- | --- |
-| `facts.rs` | Strict minimal projection of schema-v32 linked IR, including site-bearing calls and guard expressions |
+| `facts.rs` | Strict minimal projection of schema-v35 linked IR, including site-bearing calls and guard expressions |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
 | `pack.rs` | Editable pack and resolved workspace models |
 | `pack_parse.rs` | TOML syntax parsing without evidence interpretation |
@@ -425,7 +456,7 @@ Generated interface facts follow the same direction:
 | Module | Responsibility |
 | --- | --- |
 | `interfaces/facts.rs` | Stable facts model, loading boundary and queries |
-| `interfaces/facts/parse.rs` | Strict schema-2 JSON projection |
+| `interfaces/facts/parse.rs` | Strict schema-3 JSON projection with affine indexed-slot evidence |
 | `interfaces/facts/validate.rs` | Cross-record identities, slot/call consistency and digest rules |
 
 Parsing constructs the model and then invokes validation once. Pack code can
@@ -445,7 +476,7 @@ and selects outputs. Rendering and domain-input validation are separate:
 | `json_report.rs` | Serde document envelope and report summary |
 | `tests.rs` | Artifact-domain input validation tests |
 
-Schema v32 serializes the typed `LinkedIrReport` model directly; the removed
+Schema v33 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,
@@ -463,10 +494,23 @@ These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or
 clarifying the dependency direction is not an architectural improvement.
 
-## Deferred interactive UX
+## Application and frontend boundary
 
-An interactive project wizard and an IR TUI are not part of the current
-command contract. Every project-init/configuration operation remains fully
-scriptable through typed arguments and checked-in manifests. An interactive
-wizard must remain a frontend over the same resolver, and a TUI should consume
-the typed reports rather than introduce a second analysis path.
+`WorkbenchApplication` is the stateful, CLI-independent project facade. It
+resolves the manifest, target, platform composition, run spec, memory map and
+register catalogs once, owns generation-scoped analysis caches, and exposes
+typed workspace, analysis and execution-comparison reports. The CLI and the
+read-only TUI are consumers of this application state; neither may parse the
+other frontend's rendered output.
+
+The application snapshot deliberately tolerates missing generated facts and
+reports them as component diagnostics, so a partially built reverse-engineering
+workspace remains browsable. Invalid source configuration fails resolution.
+Reload is atomic: the old state remains usable if the new project cannot be
+resolved.
+
+See [Application API and alternate frontends](application-api.md) for the
+public API and frontend contract. Every project-init/configuration operation
+remains fully scriptable through typed arguments and checked-in manifests. A
+future interactive editor must remain an explicit frontend over the same
+validators; it must not silently rewrite reviewed project data.

@@ -30,7 +30,7 @@ impl ReturnBitDescriptor {
 fn return_bit_descriptor(
     source: BitSource,
     call_results: &BTreeMap<u32, String>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Option<ReturnBitDescriptor> {
     let descriptor = match source {
         BitSource::Input {
@@ -60,7 +60,7 @@ fn return_bit_descriptor(
             token: Some(read_token),
             target: None,
             address: Some(address),
-            register: Some(svd.register_name(address)),
+            register: Some(svd.display_register_name(address)),
         },
         BitSource::IndexedRegister {
             read_token,
@@ -140,7 +140,7 @@ fn return_bit_descriptor(
 pub(super) fn return_provenance(
     value: &SymbolicValue,
     call_results: &BTreeMap<u32, String>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> LinkedReturnProvenance {
     let bits = value.bits();
     let mut known_zero_bits = 0_u32;

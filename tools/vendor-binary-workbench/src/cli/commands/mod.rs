@@ -27,7 +27,7 @@ mod project_ir_doctor;
 mod project_navigation;
 mod project_pipeline;
 mod project_publication;
-mod project_status;
+pub(crate) mod project_status;
 mod registers;
 mod symbol_inventory;
 mod tooling;
@@ -37,7 +37,7 @@ mod verify_inventory;
 mod verify_profiles;
 mod verify_source;
 
-use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
+use super::{Command, CommandArguments, MmioMap, Result, TargetSpec};
 
 pub(crate) struct ProjectContext<'a> {
     pub(crate) project_path: &'a std::path::Path,
@@ -48,7 +48,7 @@ pub(crate) struct ProjectContext<'a> {
     pub(crate) run_spec: Option<&'a crate::run_spec::RunSpec>,
     pub(crate) memory_map: Option<&'a crate::MemoryMap>,
     pub(crate) svd_paths: &'a [std::path::PathBuf],
-    pub(crate) svd: &'a MmioRegisterMap,
+    pub(crate) svd: &'a MmioMap,
 }
 
 pub(super) fn run_tooling(command: Command, arguments: CommandArguments) -> Result<bool> {
@@ -102,12 +102,22 @@ pub(super) fn run_project_status(
     project_status::run(arguments, context)
 }
 
+pub(super) fn run_project_browser(
+    arguments: CommandArguments,
+    manifest: &std::path::Path,
+) -> Result<bool> {
+    let CommandArguments::Empty(_) = arguments else {
+        unreachable!("project browser received another argument type")
+    };
+    crate::tui::run(manifest)
+}
+
 pub(super) fn run_project_analysis(
     arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     run_spec: Option<&crate::run_spec::RunSpec>,
     memory_map: Option<&crate::MemoryMap>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let CommandArguments::ProjectAnalyze(arguments) = arguments else {
@@ -178,7 +188,7 @@ pub(super) fn run_ir_build(
     arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     run_spec: &crate::run_spec::RunSpec,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let CommandArguments::IrBuild(arguments) = arguments else {
@@ -190,7 +200,7 @@ pub(super) fn run_ir_build(
 pub(super) fn run(
     command: Command,
     arguments: CommandArguments,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     match command {
@@ -201,6 +211,7 @@ pub(super) fn run(
         | Command::ProjectInputsInit
         | Command::ProjectDoctor
         | Command::ProjectStatus
+        | Command::ProjectBrowse
         | Command::ProjectAnalyze
         | Command::ProjectPublish
         | Command::FunctionInitPack

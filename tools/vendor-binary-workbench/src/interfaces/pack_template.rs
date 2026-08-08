@@ -47,6 +47,15 @@ pub(crate) fn write_pack_template(
     .expect("writing to String cannot fail");
     let mut ids = BTreeSet::new();
     for (table_index, table) in facts.tables.iter().enumerate() {
+        if table
+            .container_path
+            .iter()
+            .any(|step| step.selector.is_some())
+        {
+            return Err(crate::Error::invalid(
+                "cannot initialize a reviewed anchor from an indexed container path; review the generated facts manually",
+            ));
+        }
         let artifact = facts
             .artifact(table.artifact)
             .expect("validated interface facts reference an artifact");
@@ -88,6 +97,7 @@ pub(crate) fn write_pack_template(
         let layout_size = table
             .slots
             .iter()
+            .filter(|slot| slot.selector.is_none())
             .filter_map(|slot| u32::try_from(slot.offset).ok())
             .filter_map(|offset| offset.checked_add(pointer_bytes))
             .max()
@@ -95,17 +105,50 @@ pub(crate) fn write_pack_template(
         writeln!(output, "pointer-width = {pointer_width}").expect("writing to String cannot fail");
         writeln!(output, "layout-size = {layout_size}").expect("writing to String cannot fail");
         writeln!(output, "slot-stride = {pointer_bytes}").expect("writing to String cannot fail");
+        output.push_str(
+            "# execution-contract = \"platform.table-v1\" # optional compiled harness table ID\n",
+        );
         if let Some(sha256) = &artifact.sha256 {
             output.push_str("\n[[anchors.guards]]\nkind = \"artifact-sha256\"\n");
             writeln!(output, "sha256 = \"{sha256}\"").expect("writing to String cannot fail");
         } else {
             output.push_str("# Before review, add an artifact-sha256 or runtime-value guard.\n");
         }
+        let indexed_arguments = table
+            .slots
+            .iter()
+            .filter_map(|slot| slot.selector.map(|selector| selector.argument))
+            .collect::<BTreeSet<_>>();
+        for argument in indexed_arguments {
+            output.push_str(
+                "\n# An indexed call is not bound until this reviewed control-flow contract is completed.\n",
+            );
+            output.push_str("# [[anchors.index-domains]]\n");
+            writeln!(output, "# argument = {argument}").expect("writing to String cannot fail");
+            output.push_str("# min = 0\n# max = 0\n");
+            output.push_str("# evidence = \"reviewed caller precondition or branch evidence\"\n");
+        }
         for slot in &table.slots {
+            if let Some(selector) = slot.selector {
+                writeln!(
+                    output,
+                    "# INDEXED-SLOT evidence: fixed-offset={} width={} selector=arg{}*{}{:+#x}; review its index domain, then add only the corresponding slots with origin = \"manual\".",
+                    slot.offset,
+                    slot.width,
+                    selector.argument,
+                    selector.scale,
+                    selector.addend,
+                )
+                .expect("writing to String cannot fail");
+                continue;
+            }
             output.push_str("\n[[anchors.slots]]\n");
             writeln!(output, "offset = {}", slot.offset).expect("writing to String cannot fail");
             writeln!(output, "width = {}", slot.width).expect("writing to String cannot fail");
             output.push_str("status = \"unreviewed\"\norigin = \"observed\"\n");
+            output.push_str(
+                "# execution-model = \"operation-id\" # requires anchor execution-contract\n",
+            );
         }
         if table_index + 1 == facts.tables.len() {
             output.push('\n');

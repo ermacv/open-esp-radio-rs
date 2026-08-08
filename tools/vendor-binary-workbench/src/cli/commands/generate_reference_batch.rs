@@ -190,7 +190,7 @@ fn print_generation_report(
 )]
 pub(super) fn run(
     arguments: ReferenceBatchArgs,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let harness = target.require_available_harness()?;

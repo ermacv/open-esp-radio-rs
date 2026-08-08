@@ -47,7 +47,7 @@ fn init_pack(arguments: OutputArgs, project: &ProjectSpec, configured: &Path) ->
     let output = arguments.output.as_deref().unwrap_or(configured);
     write_function_pack_template(output, &facts, &project.id)?;
     let report = FunctionPackDocument {
-        schema: 1,
+        schema: 2,
         command: "functions init-pack",
         status: "created",
         inputs: facts.inputs.len(),
@@ -74,9 +74,10 @@ fn validate(arguments: ValidationArgs, project: &ProjectSpec, pack: &Path) -> Re
     let passed = !arguments.deny_unreviewed
         || (summary.unreviewed_functions == 0
             && summary.unreviewed_contexts == 0
-            && summary.unreviewed_fields == 0);
+            && summary.unreviewed_fields == 0
+            && summary.unreviewed_type_fields == 0);
     let report = FunctionWorkspaceDocument {
-        schema: 1,
+        schema: 2,
         command: "functions validate",
         status: if passed { "valid" } else { "unreviewed" },
         deny_unreviewed: arguments.deny_unreviewed,
@@ -92,6 +93,11 @@ fn validate(arguments: ValidationArgs, project: &ProjectSpec, pack: &Path) -> Re
         ignored_fields: summary.ignored_fields,
         unreviewed_fields: summary.unreviewed_fields,
         accepted_incomplete: summary.accepted_incomplete,
+        logical_types: summary.logical_types,
+        type_bindings: summary.type_bindings,
+        reviewed_type_fields: summary.reviewed_type_fields,
+        ignored_type_fields: summary.ignored_type_fields,
+        unreviewed_type_fields: summary.unreviewed_type_fields,
         pack,
     };
     crate::cli::output::render_report(
@@ -126,7 +132,7 @@ fn review(
     )?;
     let summary = workspace.summary();
     let report = FunctionReviewDocument {
-        schema: 1,
+        schema: 2,
         command: "functions review",
         status: if arguments.check {
             "verified"
@@ -139,6 +145,8 @@ fn review(
         contexts: summary.reviewed_contexts,
         fields: summary.reviewed_fields,
         interface_links: interface_links.as_ref().map_or(0, Vec::len),
+        logical_types: summary.logical_types,
+        type_bindings: summary.type_bindings,
         output,
     };
     crate::cli::output::render_report(
@@ -165,6 +173,11 @@ fn reviewed_interface_links(
         pack,
         &paths.semantic_catalogs,
         target.calling_convention.label(),
+        target
+            .harness
+            .as_deref()
+            .map(crate::harnesses::contracts)
+            .transpose()?,
     )?;
     Ok(Some(link_reviewed_interfaces(
         functions,

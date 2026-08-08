@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 use serde::Serialize;
 
 /// One immutable input whose identity participates in a qualification run.
@@ -10,25 +11,6 @@ pub struct QualificationArtifact {
     pub role: &'static str,
     pub path: PathBuf,
     pub sha256: String,
-}
-
-/// Closed result of one concrete semantic scenario.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum QualificationVerdict {
-    Match,
-    Mismatch,
-    Incomplete,
-}
-
-impl QualificationVerdict {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Match => "match",
-            Self::Mismatch => "mismatch",
-            Self::Incomplete => "incomplete",
-        }
-    }
 }
 
 /// First concrete disagreement retained for manual inspection.
@@ -70,7 +52,7 @@ impl From<super::StateFootprintStats> for QualificationStateFootprint {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct QualificationCase {
     pub name: String,
-    pub verdict: QualificationVerdict,
+    pub verdict: EquivalenceVerdict,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub events: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,28 +67,8 @@ pub struct QualificationCase {
     pub call_events: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<QualificationStateFootprint>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub unmapped_mmio: Vec<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub difference: Option<QualificationDifference>,
-}
-
-impl QualificationCase {
-    pub fn incomplete(name: impl Into<String>, unmapped_mmio: Vec<u32>) -> Self {
-        Self {
-            name: name.into(),
-            verdict: QualificationVerdict::Incomplete,
-            events: None,
-            steps: None,
-            branch_outcomes: None,
-            branch_events: None,
-            calls: None,
-            call_events: None,
-            state: None,
-            unmapped_mmio,
-            difference: None,
-        }
-    }
 }
 
 /// Aggregate coverage totals for one named qualification contract.
@@ -126,9 +88,10 @@ pub struct QualificationSummary {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct QualificationReport {
     pub schema: u32,
+    pub mode: EquivalenceMode,
     pub contract: &'static str,
     pub vendor_symbol: &'static str,
-    pub verdict: QualificationVerdict,
+    pub verdict: EquivalenceVerdict,
     pub matched: bool,
     pub artifacts: Vec<QualificationArtifact>,
     pub cases: Vec<QualificationCase>,

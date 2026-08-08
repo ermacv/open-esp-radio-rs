@@ -115,7 +115,7 @@ pub(super) fn rf_frequency_offset_scratch_trace(
 
 pub(super) fn iq_estimator_poll_trace(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     pointer_context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
     const CONFIG0: u32 = 0x2010_044c;
@@ -143,7 +143,7 @@ pub(super) fn iq_estimator_poll_trace(
             access,
             width: 32,
             address,
-            register: svd.register_name(address),
+            register: svd.display_register_name(address),
             value,
         })
     };

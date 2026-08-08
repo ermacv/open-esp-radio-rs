@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> {
     let scenarios = if arguments.case.is_empty() {
         vec![NamedScenario::new("default".to_owned())]
     } else {
@@ -60,7 +60,7 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioRegisterMap) -> Resul
         &unconstrained_arguments,
         &scenarios,
     )?;
-    let matched = report.verdict == ComparisonVerdict::Match;
+    let matched = report.verdict == EquivalenceVerdict::Match;
     crate::cli::output::render_report(
         &report,
         || print_execution_comparison(&report),

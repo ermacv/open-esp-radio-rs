@@ -1,6 +1,7 @@
 //! Fail-closed memory, MMIO, atomic, stack and observation regressions.
 
 use super::*;
+use proptest::prelude::*;
 
 #[test]
 fn poison_memory_and_unseeded_mmio_fail_closed() {
@@ -15,11 +16,14 @@ fn poison_memory_and_unseeded_mmio_fail_closed() {
             .contains("poison/unmapped")
     );
 
-    let mmio_svd = MmioRegisterMap {
+    let mmio_svd = MmioMap {
         registers: Vec::new(),
-        windows: vec![crate::Window {
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
             start: 0x2010_0000,
             end: 0x2020_0000,
+            readable: true,
+            writable: true,
         }],
     };
     let mut machine = Machine::new(&image, &mmio_svd, 0x1000, Scenario::default());
@@ -29,6 +33,74 @@ fn poison_memory_and_unseeded_mmio_fail_closed() {
             .unwrap_err()
             .to_string()
             .contains("no explicit seed or response")
+    );
+}
+
+#[test]
+fn physical_mmio_without_a_register_name_is_an_observable_event() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
+            start: 0x2010_0000,
+            end: 0x2010_0100,
+            readable: true,
+            writable: true,
+        }],
+    };
+    let address = 0x2010_0010;
+    let mut scenario = Scenario::default();
+    scenario.mmio_initial.insert(address, 0x1234_5678);
+    let mut machine = Machine::new(&image, &map, 0x1000, scenario);
+
+    assert_eq!(machine.read(address, 32).unwrap(), 0x1234_5678);
+    assert_eq!(
+        machine.events,
+        [ExecutionEvent::Read {
+            width: 32,
+            address,
+            region: "radio".to_owned(),
+            register: None,
+            value: 0x1234_5678,
+        }]
+    );
+}
+
+#[test]
+fn mmio_accesses_fail_closed_at_region_and_permission_boundaries() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let read_only = MmioMap {
+        registers: Vec::new(),
+        regions: vec![crate::MmioRegion {
+            name: "status".to_owned(),
+            start: 0x2010_0000,
+            end: 0x2010_0004,
+            readable: true,
+            writable: false,
+        }],
+    };
+    let mut machine = Machine::new(&image, &read_only, 0x1000, Scenario::default());
+    assert!(
+        machine
+            .write(0x2010_0000, 32, 1)
+            .unwrap_err()
+            .to_string()
+            .contains("not permitted")
+    );
+    assert!(
+        machine
+            .read(0x2010_0002, 32)
+            .unwrap_err()
+            .to_string()
+            .contains("crosses the boundary")
+    );
+    assert!(
+        machine
+            .read(0x200f_fffe, 32)
+            .unwrap_err()
+            .to_string()
+            .contains("crosses the boundary")
     );
 }
 
@@ -126,11 +198,14 @@ fn ram_read_through_unresolved_relocated_word_requires_an_explicit_seed() {
 #[test]
 fn mmio_write_does_not_create_a_generic_readback_value() {
     let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
-    let mmio_svd = MmioRegisterMap {
+    let mmio_svd = MmioMap {
         registers: Vec::new(),
-        windows: vec![crate::Window {
+        regions: vec![crate::MmioRegion {
+            name: "radio".to_owned(),
             start: 0x2010_0000,
             end: 0x2020_0000,
+            readable: true,
+            writable: true,
         }],
     };
     let address = 0x2010_0010;
@@ -224,6 +299,21 @@ fn atomic_word_operations_preserve_rv32_wrapping_and_comparison_semantics() {
     assert_eq!(atomic_word_result(AmoOp::Max, u32::MAX, 1), 1);
     assert_eq!(atomic_word_result(AmoOp::Minu, u32::MAX, 1), 1);
     assert_eq!(atomic_word_result(AmoOp::Maxu, u32::MAX, 1), u32::MAX);
+}
+
+proptest! {
+    #[test]
+    fn atomic_word_semantics_hold_for_arbitrary_rv32_words(current in any::<u32>(), source in any::<u32>()) {
+        prop_assert_eq!(atomic_word_result(AmoOp::Swap, current, source), source);
+        prop_assert_eq!(atomic_word_result(AmoOp::Add, current, source), current.wrapping_add(source));
+        prop_assert_eq!(atomic_word_result(AmoOp::Xor, current, source), current ^ source);
+        prop_assert_eq!(atomic_word_result(AmoOp::And, current, source), current & source);
+        prop_assert_eq!(atomic_word_result(AmoOp::Or, current, source), current | source);
+        prop_assert_eq!(atomic_word_result(AmoOp::Min, current, source), if (current as i32) < (source as i32) { current } else { source });
+        prop_assert_eq!(atomic_word_result(AmoOp::Max, current, source), if (current as i32) > (source as i32) { current } else { source });
+        prop_assert_eq!(atomic_word_result(AmoOp::Minu, current, source), current.min(source));
+        prop_assert_eq!(atomic_word_result(AmoOp::Maxu, current, source), current.max(source));
+    }
 }
 
 #[test]

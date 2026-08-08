@@ -1,7 +1,7 @@
 use std::fs;
 
 use super::*;
-use crate::{MemoryMap, MmioRegisterMap, TargetSpec, cli::ProjectInitArgs, project::ProjectSpec};
+use crate::{MemoryMap, MmioMap, TargetSpec, cli::ProjectInitArgs, project::ProjectSpec};
 
 #[test]
 fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
@@ -34,7 +34,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
         .unwrap();
     let memory = MemoryMap::load(project.memory_map.as_deref().unwrap()).unwrap();
     let svd_paths = Vec::new();
-    let svd = MmioRegisterMap::load_all(&[]).unwrap();
+    let svd = MmioMap::load_all(&[]).unwrap();
     let output = root.join("status.json");
     let context = || ProjectContext {
         project_path: &manifest,

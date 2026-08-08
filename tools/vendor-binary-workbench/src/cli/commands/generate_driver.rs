@@ -46,7 +46,7 @@ impl OutputKind {
 
 pub(super) fn run(
     arguments: DriverGenerateArgs,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let harness = target.require_available_harness()?;

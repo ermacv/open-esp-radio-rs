@@ -3,11 +3,11 @@
 use std::collections::{BTreeMap, VecDeque};
 
 use super::super::{
-    ExecutionEvent, ExecutionTimelineEvent, MemoryChange, MemoryOwner, MmioValue,
-    execution_stack_contains,
+    ExecutionEvent, ExecutionTimelineEvent, MemoryChange, MemoryOwner, MemoryRange, MmioValue,
+    TableLifecycleEvent, execution_stack_contains,
 };
 use super::Machine;
-use crate::Result;
+use crate::{MmioAccessKind, Result};
 
 impl Machine<'_> {
     pub(in crate::execution) fn normal_byte(&self, address: u32) -> Result<u8> {
@@ -40,26 +40,39 @@ impl Machine<'_> {
     }
 
     pub(in crate::execution) fn read(&mut self, address: u32, width: u8) -> Result<u32> {
-        if self.svd.contains_mmio(address) {
-            let sequenced = self
-                .mmio_reads
-                .get_mut(&address)
-                .and_then(VecDeque::pop_front);
-            let value = match sequenced {
-                Some(value) => value & MmioValue::mask(width),
-                None => self
-                    .mmio_read_seeds
-                    .get(&address)
-                    .copied()
-                    .map(|value| value & MmioValue::mask(width))
-                    .ok_or_else(|| {
-                        format!("MMIO read at {address:#010x} has no explicit seed or response")
-                    })?,
+        if self.svd.intersects_mmio(address, width) {
+            let identity = self
+                .svd
+                .classify_access(address, width, MmioAccessKind::Read)
+                .map_err(|error| error.to_string())?;
+            let device = self
+                .devices
+                .iter_mut()
+                .find(|device| device.contains_access(address, width));
+            let value = if let Some(device) = device {
+                device.instance.read(address, width)? & MmioValue::mask(width)
+            } else {
+                let sequenced = self
+                    .mmio_reads
+                    .get_mut(&address)
+                    .and_then(VecDeque::pop_front);
+                match sequenced {
+                    Some(value) => value & MmioValue::mask(width),
+                    None => self
+                        .mmio_read_seeds
+                        .get(&address)
+                        .copied()
+                        .map(|value| value & MmioValue::mask(width))
+                        .ok_or_else(|| {
+                            format!("MMIO read at {address:#010x} has no explicit seed or response")
+                        })?,
+                }
             };
             self.record_event(ExecutionEvent::Read {
-                width,
-                address,
-                register: self.svd.register_name(address),
+                width: identity.width,
+                address: identity.address,
+                region: identity.region,
+                register: identity.register,
                 value,
             });
             return Ok(value);
@@ -91,6 +104,13 @@ impl Machine<'_> {
                     .checked_sub(alias.start)
                     .is_some_and(|offset| offset < alias.length)
             })
+            || self.table_layouts.iter().any(|layout| {
+                MemoryRange {
+                    start: layout.base_address,
+                    length: layout.layout_size,
+                }
+                .contains(address)
+            })
     }
 
     pub(in crate::execution) fn write(
@@ -100,11 +120,23 @@ impl Machine<'_> {
         value: u32,
     ) -> Result<()> {
         let bytes = usize::from(width / 8);
-        if self.svd.contains_mmio(address) {
+        if self.svd.intersects_mmio(address, width) {
+            let identity = self
+                .svd
+                .classify_access(address, width, MmioAccessKind::Write)
+                .map_err(|error| error.to_string())?;
+            if let Some(device) = self
+                .devices
+                .iter_mut()
+                .find(|device| device.contains_access(address, width))
+            {
+                device.instance.write(address, width, value)?;
+            }
             self.record_event(ExecutionEvent::Write {
-                width,
-                address,
-                register: self.svd.register_name(address),
+                width: identity.width,
+                address: identity.address,
+                region: identity.region,
+                register: identity.register,
                 value: value & MmioValue::mask(width),
             });
             return Ok(());
@@ -137,6 +169,25 @@ impl Machine<'_> {
             address,
             value: value & MmioValue::mask(width),
         });
+        let table_writes = self
+            .table_layouts
+            .iter()
+            .filter(|layout| {
+                MemoryRange {
+                    start: layout.base_address,
+                    length: layout.layout_size,
+                }
+                .contains_access(address, width)
+            })
+            .map(|layout| TableLifecycleEvent::SlotWritten {
+                layout_id: layout.layout_id.clone(),
+                offset: address.wrapping_sub(layout.base_address),
+                width,
+                value: value & MmioValue::mask(width),
+                site: self.pc,
+            })
+            .collect::<Vec<_>>();
+        self.table_lifecycle.extend(table_writes);
         Ok(())
     }
 

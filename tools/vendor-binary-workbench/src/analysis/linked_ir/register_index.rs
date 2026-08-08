@@ -678,6 +678,18 @@ pub(super) fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> Linke
         .iter()
         .map(|function| function.context_fields.len())
         .sum();
+    let memory_functions = functions
+        .iter()
+        .filter(|function| !function.memory_accesses.is_empty())
+        .count();
+    let memory_accesses = functions
+        .iter()
+        .map(|function| function.memory_accesses.len())
+        .sum();
+    let memory_fields = functions
+        .iter()
+        .map(|function| function.memory_fields.len())
+        .sum();
     let complete_functions = functions
         .iter()
         .filter(|function| function.complete)
@@ -731,6 +743,14 @@ pub(super) fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> Linke
     let projected_context_fields = functions
         .iter()
         .map(|function| function.effect_summary.context_fields.len())
+        .sum();
+    let projected_memory_fields = functions
+        .iter()
+        .map(|function| function.effect_summary.memory_fields.len())
+        .sum();
+    let scenario_suggestions = functions
+        .iter()
+        .map(|function| function.scenario_suggestions.len())
         .sum();
     let semantic_calls = functions
         .iter()
@@ -818,6 +838,9 @@ pub(super) fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> Linke
         context_functions,
         context_accesses,
         context_fields,
+        memory_functions,
+        memory_accesses,
+        memory_fields,
         complete_functions,
         structured_functions,
         internal_calls,
@@ -830,5 +853,7 @@ pub(super) fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> Linke
         recursive_effect_summaries,
         complete_context_projections,
         projected_context_fields,
+        projected_memory_fields,
+        scenario_suggestions,
     }
 }

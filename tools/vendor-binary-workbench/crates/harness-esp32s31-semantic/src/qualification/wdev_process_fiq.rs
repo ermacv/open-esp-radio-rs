@@ -21,7 +21,7 @@ use open_radio_vendor_semantics::{
     DriverAdapterVerification, EffectDisposition, EffectPolicy, EffectSelector,
 };
 
-use crate::{MmioRegisterMap, Result, execution};
+use crate::{MmioMap, Result, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -387,7 +387,7 @@ fn validate_policy(policy: &EffectPolicy) -> Result<()> {
     reason = "verification binds both immutable artifacts, one exact symbol and its policy"
 )]
 pub fn verify_esp32s31_wdev_process_fiq_mac_slice(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_inventory: Option<&Path>,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
@@ -454,7 +454,8 @@ mod tests {
         execution::ExecutionEvent::Read {
             width: 32,
             address,
-            register: "TEST".to_owned(),
+            region: "test".to_owned(),
+            register: Some("TEST".to_owned()),
             value,
         }
     }
@@ -463,7 +464,8 @@ mod tests {
         execution::ExecutionEvent::Write {
             width: 32,
             address,
-            register: "TEST".to_owned(),
+            region: "test".to_owned(),
+            register: Some("TEST".to_owned()),
             value,
         }
     }

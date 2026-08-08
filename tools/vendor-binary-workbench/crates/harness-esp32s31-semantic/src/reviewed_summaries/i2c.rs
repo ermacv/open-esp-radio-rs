@@ -82,7 +82,7 @@ pub(super) fn phy_table_targets(
 
 pub(super) fn chip_i2c_write_reg_trace(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     pointer_context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
     let (enter_target, exit_target, host_id_target) = phy_table_targets(pointer_context)?;
@@ -169,7 +169,7 @@ pub(super) fn chip_i2c_write_reg_trace(
 
 pub(super) fn chip_i2c_read_reg_org_trace(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Option<FunctionAnalysis> {
     const ANA_CONF1: u32 = 0x2010_f81c;
 
@@ -185,7 +185,7 @@ pub(super) fn chip_i2c_read_reg_org_trace(
         access: MemoryAccess::Write,
         width: 32,
         address: ANA_CONF1,
-        register: svd.register_name(ANA_CONF1),
+        register: svd.display_register_name(ANA_CONF1),
         value: Some(SymbolicValue::input(1).xor(u32::MAX)),
     };
     let indexed_write = DraftReferenceEvent::IndexedMmio {
@@ -238,7 +238,7 @@ pub(super) fn chip_i2c_read_reg_org_trace(
 
 pub(super) fn host_id_trace(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     summary: HostIdSummary,
 ) -> FunctionAnalysis {
     const HOST_SELECT_REGISTER: u32 = 0x2010_f820;
@@ -255,14 +255,14 @@ pub(super) fn host_id_trace(
             access: MemoryAccess::Read,
             width: 32,
             address: HOST_SELECT_REGISTER,
-            register: svd.register_name(HOST_SELECT_REGISTER),
+            register: svd.display_register_name(HOST_SELECT_REGISTER),
             value: None,
         },
         ObservableEvent::Memory {
             access: MemoryAccess::Write,
             width: 32,
             address: HOST_SELECT_REGISTER,
-            register: svd.register_name(HOST_SELECT_REGISTER),
+            register: svd.display_register_name(HOST_SELECT_REGISTER),
             value: Some(read_value.and(summary.and_mask).or(summary.or_mask)),
         },
     ];

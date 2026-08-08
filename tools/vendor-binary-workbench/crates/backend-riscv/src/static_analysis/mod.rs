@@ -8,10 +8,10 @@ use crate::{
     BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
     DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation, ExternalReturnModel,
     ExternalTableRef, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister,
-    MemoryAccess, MmioRegisterMap, ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT,
-    RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG,
-    SymbolicValue, artifact, collect_evaluable_input_bits, encode_fence_set, evaluate_for_input,
-    indexed_mmio_domain,
+    MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap, ObservableEvent,
+    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
+    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
 };
 
 mod alu;
@@ -51,7 +51,7 @@ pub struct RiscvSummaryHooks {
         fn(&artifact::ArtifactSymbolDefinition) -> Option<&'static DirectSemanticFunctionSpec>,
     pub reference_intrinsic: fn(
         &artifact::ArtifactSymbolDefinition,
-        &MmioRegisterMap,
+        &MmioMap,
         &StructuralPointerContext,
     ) -> Option<FunctionAnalysis>,
     pub standard_memory_intrinsic: fn(
@@ -82,7 +82,7 @@ fn structural_set(values: &mut [SymbolicValue; 32], register: Reg, value: Symbol
 
 pub fn trace_binary_symbol(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
@@ -99,7 +99,7 @@ pub fn trace_binary_symbol(
 
 pub fn trace_binary_symbol_with_branches(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,

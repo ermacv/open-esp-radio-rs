@@ -2,7 +2,7 @@
 
 use open_radio_vendor_analysis_model::{
     DirectSemanticFunctionSpec, EntryContractRef, EntryContractSpec, FunctionAnalysis,
-    HarnessContractSpec, MmioRegisterMap, SymbolicValue,
+    HarnessContractSpec, MmioMap, SymbolicValue,
 };
 use open_radio_vendor_backend_riscv::{
     RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments, StructuralPointerContext, artifact,
@@ -35,7 +35,7 @@ fn no_direct_semantic(
 
 fn no_reference_intrinsic(
     _symbol: &artifact::ArtifactSymbolDefinition,
-    _svd: &MmioRegisterMap,
+    _svd: &MmioMap,
     _context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
     None

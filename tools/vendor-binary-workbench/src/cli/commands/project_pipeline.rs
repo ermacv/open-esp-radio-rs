@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
+use super::{Command, CommandArguments, MmioMap, Result, TargetSpec};
 use crate::cli::{
     InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
     RegisterReviewArgs, ReviewArgs, SourcePath, SymbolInventoryArgs, ValidationArgs,
@@ -29,7 +29,7 @@ pub(super) fn run(
     project: &ProjectSpec,
     run_spec: Option<&RunSpec>,
     memory_map: Option<&MemoryMap>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let mode = Mode::from_check(arguments.check);

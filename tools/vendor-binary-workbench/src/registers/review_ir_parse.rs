@@ -1,4 +1,4 @@
-//! Strict projection of schema-v32 linked-IR JSON into register-review evidence.
+//! Strict projection of schema-v35 linked-IR JSON into register-review evidence.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -24,9 +24,9 @@ pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
 fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> {
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
-    if integer(root, "schema_version", "linked-IR report")? != 32 {
+    if integer(root, "schema_version", "linked-IR report")? != 35 {
         return Err(crate::Error::invalid(format!(
-            "register review requires linked-IR schema 32 in {}",
+            "register review requires linked-IR schema 35 in {}",
             path.display()
         )));
     }

@@ -12,6 +12,7 @@ pub(super) struct StructuralTraceState {
     pub(super) unresolved_branch: Option<BranchCondition>,
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
+    pub(super) memory_read_sources: BTreeMap<u32, MemoryObjectLocation>,
     pub(super) next_call_token: u32,
     pub(super) next_external_call_token: u32,
     pub(super) next_private_stack_read_token: u32,
@@ -58,6 +59,7 @@ impl StructuralTraceState {
             unresolved_branch: None,
             next_mmio_read_token: 0,
             next_memory_read_token: 0,
+            memory_read_sources: BTreeMap::new(),
             next_call_token: 0,
             next_external_call_token: 0,
             next_private_stack_read_token: 0,
@@ -74,6 +76,7 @@ impl StructuralTraceState {
             reference_blockers_len: self.reference_blockers.len(),
             next_mmio_read_token: self.next_mmio_read_token,
             next_memory_read_token: self.next_memory_read_token,
+            memory_read_sources: self.memory_read_sources.clone(),
             next_call_token: self.next_call_token,
             next_external_call_token: self.next_external_call_token,
             stack: self.stack.clone(),
@@ -89,6 +92,7 @@ impl StructuralTraceState {
             .truncate(checkpoint.reference_blockers_len);
         self.next_mmio_read_token = checkpoint.next_mmio_read_token;
         self.next_memory_read_token = checkpoint.next_memory_read_token;
+        self.memory_read_sources = checkpoint.memory_read_sources;
         self.next_call_token = checkpoint.next_call_token;
         self.next_external_call_token = checkpoint.next_external_call_token;
         self.stack = checkpoint.stack;

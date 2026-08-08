@@ -112,12 +112,32 @@ return values. It statically inventories reachable
 conditional branches in each ELF, aggregates the outcomes exercised by every
 `--case`, and reports each missing true/false outcome as an uncovered branch.
 An unresolved indirect edge is reported as uncovered control flow, and a
-physical MMIO access without an SVD register is reported as uncovered MMIO.
+physical MMIO access is validation-grade whenever its complete byte range is
+inside a declared MMIO region and the region permits the requested read or
+write. SVD and reviewed register names are optional enrichment: an unnamed
+access is reported as `UNNAMED-MMIO`, but does not make the comparison
+incomplete.
 Each `--case` is a complete,
 self-contained scenario in the form `NAME[;KEY=VALUE...]`; this keeps repeated
-scenario groups typed and unambiguous at the CLI boundary. Any of these
-conditions makes the
-result `INCOMPLETE`, even when all observed events match.
+scenario groups typed and unambiguous at the CLI boundary. An access outside
+the declared map, one crossing a region boundary, a permission violation, an
+unseeded read, or incomplete control-flow coverage makes the result
+`INCOMPLETE`, even when the remaining observed events match.
+
+Concrete comparison has exactly three verdicts: `MATCH`, `DIFF`, and
+`INCOMPLETE`. `DIFF` means both executions completed but their requested
+observables differ. `INCOMPLETE` means the workbench cannot make that claim
+because execution, branch/control-flow coverage, MMIO classification or a
+required model is missing.
+
+Schema 7 reports a typed `TraceDiffReport` instead of dumping both complete
+outcomes for every difference. It identifies the first differing event, RAM
+change or return value, keeps up to three aligned items before and after it,
+and records the ordered branch/call paths for both sides. Coverage gaps use the
+same typed report with `kind = "coverage"` and remain an `INCOMPLETE` result.
+Every case also retains its source-specific runtime table instances and slot
+targets as typed scenario-environment provenance. This is the shared
+presentation model for JSON, human CLI and the TUI/application layer.
 
 The static coverage pass propagates instruction-level constants through direct
 and tail calls. Consequently, a child branch made unreachable by a fixed call
@@ -144,8 +164,9 @@ The profile format has `profile`, required `vendor-source`, `vendor-symbol`,
 `rust-symbol`, optional `contract` (`scenario` or `state`), optional
 `compare-return`, optional profile-level `arg-range INDEX MIN MAX`, and one or
 more `case` sections. Case directives are `arg`,
-`mmio`, `read`, `ram`, `vendor-ram-symbol`, `rust-ram-symbol`, `observe`, and
-`max-steps`. Source-specific `vendor-observe`/`rust-observe` ranges and
+`mmio`, `read`, `device-model`, `ram`, `vendor-ram-symbol`, `rust-ram-symbol`, runtime-table
+directives described below, `observe`, and `max-steps`. Source-specific
+`vendor-observe`/`rust-observe` ranges and
 `vendor-observe-symbol`/`rust-observe-symbol` ranges normalize corresponding
 state to the same comparison offsets; the symbolic form is
 `SYMBOL[+OFFSET]=LENGTH`. `vendor-ram` and `rust-ram` seed one source-specific
@@ -159,8 +180,109 @@ in coverage.
 Profiles are executable coverage input; they are not a parallel function
 ledger.
 
+### Runtime table instances
+
+A reviewed interface pack describes a stable table layout and ABI. A scenario
+describes one concrete runtime instance: where the table and optional pointer
+cell live, and which linked function is installed in each slot. These are
+separate claims. Use source-specific directives so vendor and Rust images may
+have different addresses and symbols:
+
+```text
+vendor-table esp32s31-radio-rev0::wifi-osi-v9 0x3fff1000 0x40 0x3fff0030
+vendor-table-slot esp32s31-radio-rev0::wifi-osi-v9 0x10 vendor_queue_send
+
+rust-table esp32s31-radio-rev0::wifi-osi-v9 0x3ffe1000 0x40
+rust-table-slot esp32s31-radio-rev0::wifi-osi-v9 0x10 open_queue_send
+```
+
+The table form is `LAYOUT-ID BASE SIZE [POINTER-CELL]`; a slot is
+`LAYOUT-ID OFFSET SYMBOL`. Use the literal `null` as the slot target when the initial callback is intentionally absent. A table must be declared before its slots in one
+case. The executor resolves every symbol against the exact side's ELF and then
+materializes 32-bit little-endian pointer cells and slots. It rejects duplicate
+instances/slots, unaligned locations, out-of-layout offsets, missing target
+symbols and conflicts with explicit RAM seeds. Thus a profile no longer needs
+to encode unstable linked callback addresses as raw words.
+
+At the backend boundary `LAYOUT-ID` is retained provenance, not proof that the
+runtime bytes satisfy a reviewed interface pack. Project-level layout/guard
+validation remains the owner of that assertion; concrete execution proves only
+the behavior of the explicitly materialized instance.
+
+Execution also retains a fail-closed lifecycle for each instance: initial slot
+contents, pointer-cell installation, CPU writes into the table, and indirect
+calls resolved back to a unique `(layout, slot)` pair. If an indirect target
+matches no slot or several slots in configured instances, lifecycle coverage is
+incomplete and `execute compare` returns `INCOMPLETE` even if the remaining bus
+events match. This separates the stable reviewed `TableLayout` claim from the
+scenario-specific `TableInstance` contents and makes callback replacement or
+uninstallation visible in reports.
+
+### Runtime memory-object instances
+
+Linked IR identifies caller-visible objects independently of their runtime
+placement: argument pointees, globals, pointers loaded from globals, and
+absolute objects. A comparison case can bind several such observations to one
+logical runtime instance:
+
+```text
+vendor-memory-instance phy-state 0x3fff2000 0x240
+vendor-memory-binding phy-state argument 0
+vendor-memory-binding phy-state dereferenced-global g_phy_state 0
+
+rust-memory-instance phy-state 0x3ffe2000 0x240
+rust-memory-binding phy-state argument 0
+rust-memory-binding phy-state global OPEN_PHY_STATE
+```
+
+The binding forms are `argument INDEX`, `global SYMBOL`,
+`dereferenced-global SYMBOL POINTER-OFFSET`, and
+`absolute ADDRESS-SPACE ADDRESS`. Materialization checks placement, symbol
+addresses and pointer cells instead of inferring nominal type identity from
+matching offsets. The shared instance ID is the explicit reviewer claim that
+the source-specific objects represent the same logical state.
+
+### Peripheral execution models
+
+`mmio ADDRESS=VALUE` and `read ADDRESS=VALUE` remain the simplest deterministic
+oracle: they provide constant or ordered read responses and never infer device
+state from writes. A case that needs real register behavior can instead own an
+explicit model:
+
+```text
+device-model w1c irq-status 0x60008020 32 0x0000000f 0x00000003 0x0000000c
+device-model sequence-read ready 0x60008024 32 0,0,1
+device-model fifo rx-fifo 0x60008028 32 0x41,0x42 -
+device-model indexed-bank rf-bank 0x6000802c 0x60008030 32 0x10,0x20,0x30
+```
+
+The serializable closed `DeviceModelSpec` vocabulary is `constant-read`,
+`sequence-read`, `w1c`, `read-to-clear`, `self-clearing`, `fifo`, and
+`indexed-bank`. Comma-separated lists are ordered expectations; `-` is an
+empty FIFO read/write list. W1C accepts `INITIAL CLEAR-MASK READ-CLEAR-MASK`;
+self-clearing accepts `INITIAL STORE-MASK COMMAND-MASK`. Raw reads and writes
+are always retained in the ordered effect trace; model state only determines
+the returned value and subsequent peripheral state.
+
+A device model exclusively owns its MMIO range for that case. Overlapping
+models and mixing a model with `mmio`/`read` seeds in the same range fail
+closed. The generic backend exposes `DeviceModel` and `DeviceModelInstance`
+traits so a platform crate can add FIFO or state-machine behavior without
+adding chip or RTOS vocabulary to the executor. Every comparison side receives
+a fresh instance from the same scenario factory. Every instance separately
+reports coverage at the end of execution. Unconsumed sequence values, FIFO
+reads, or expected FIFO writes make that side `INCOMPLETE`; they can never be
+silently ignored to obtain `MATCH`.
+
+Compiled platform implementations are published through
+`DeviceModelRegistry`. Registry IDs are exact foreign keys: duplicate and
+unknown IDs fail, and neither an address nor a familiar semantic name selects
+a model. This keeps the standard data vocabulary portable while giving a
+selected platform harness a controlled extension point for genuine device
+state machines.
+
 The default `verify profiles` view contains a profile coverage table and a
-scenario table with match, mismatch or incomplete details. `--format tsv`
+scenario table with match, diff or incomplete details. `--format tsv`
 retains the stable trace-oriented rows for scripts; JSON and JSONL serialize
 the same typed aggregate report directly.
 
@@ -230,7 +352,7 @@ generated frequency/CBW cases with replayable seeds. All 77 calls run through
 one persistent vendor/Rust state sequence rather than resetting `phy_param`
 for every case. A success is labeled
 `STATE-SCENARIO-MATCH`, not symbolic or domain-exhaustive equality. Any poison
-read, unmapped MMIO or event/state divergence fails closed and retains the
+read, invalid MMIO access or event/state divergence fails closed and retains the
 first complete normalized diff in the typed qualification report. Each case
 reports the number of state bytes read and
 written under the reviewed footprint. RF init runs twice through one persistent execution

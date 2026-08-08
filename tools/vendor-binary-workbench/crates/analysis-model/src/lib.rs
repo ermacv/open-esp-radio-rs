@@ -8,7 +8,10 @@ mod ir;
 mod mmio;
 
 pub use ir::*;
-pub use mmio::{MmioRegisterMap, Register, Window, reject_register_collisions};
+pub use mmio::{
+    MmioAccessError, MmioAccessIdentity, MmioAccessKind, MmioMap, MmioRegion, Register,
+    RegisterCatalog, reject_register_collisions,
+};
 pub use open_radio_vendor_contracts::*;
 
 #[derive(Debug, thiserror::Error)]

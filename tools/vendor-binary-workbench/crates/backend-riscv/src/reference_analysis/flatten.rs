@@ -9,7 +9,7 @@ pub(super) fn flatten_reference_trace(
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<FunctionAnalysis> {
     let source_events = std::mem::take(&mut trace.reference_events);

@@ -91,7 +91,7 @@ impl FunctionDoctorReport {
                     .as_ref()
                     .expect("available function report has review counts");
                 outputln!(
-                    "CAPABILITY\tfunction-workspace\tavailable\tprofiles={}\troot-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\taccepted-incomplete={}\tpack={}\treview-output={}",
+                    "CAPABILITY\tfunction-workspace\tavailable\tprofiles={}\troot-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\tlogical-types={}\ttype-bindings={}\treviewed-type-fields={}\tignored-type-fields={}\tunreviewed-type-fields={}\taccepted-incomplete={}\tpack={}\treview-output={}",
                     self.profiles,
                     self.root_functions,
                     review.reviewed_functions,
@@ -103,6 +103,11 @@ impl FunctionDoctorReport {
                     review.reviewed_fields,
                     review.ignored_fields,
                     review.unreviewed_fields,
+                    review.logical_types,
+                    review.type_bindings,
+                    review.reviewed_type_fields,
+                    review.ignored_type_fields,
+                    review.unreviewed_type_fields,
                     review.accepted_incomplete,
                     pack,
                     review_output
@@ -130,6 +135,11 @@ struct FunctionReviewCounts {
     reviewed_fields: usize,
     ignored_fields: usize,
     unreviewed_fields: usize,
+    logical_types: usize,
+    type_bindings: usize,
+    reviewed_type_fields: usize,
+    ignored_type_fields: usize,
+    unreviewed_type_fields: usize,
     accepted_incomplete: usize,
 }
 
@@ -220,6 +230,11 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
                 reviewed_fields: summary.reviewed_fields,
                 ignored_fields: summary.ignored_fields,
                 unreviewed_fields: summary.unreviewed_fields,
+                logical_types: summary.logical_types,
+                type_bindings: summary.type_bindings,
+                reviewed_type_fields: summary.reviewed_type_fields,
+                ignored_type_fields: summary.ignored_type_fields,
+                unreviewed_type_fields: summary.unreviewed_type_fields,
                 accepted_incomplete: summary.accepted_incomplete,
             });
             report.pack = Some(paths.pack.clone());

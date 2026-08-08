@@ -100,8 +100,9 @@ addressing = "absolute"
 container-path = [{ offset = 0, width = 32 }]
 layout-version = "vendor-v9"
 pointer-width = 32
-layout-size = 0x1d8
+layout-size = 0x200
 slot-stride = 4
+execution-contract = "esp32s31-wifi-osi-v9"
 
 [[anchors.guards]]
 kind = "artifact-sha256"
@@ -121,6 +122,36 @@ must match discovery exactly.
 A reviewed layout requires a non-placeholder version, pointer width, byte
 size, slot stride, and at least one guard. Slot offsets must be non-negative,
 stride-aligned, pointer-sized, and contained in `layout-size`.
+
+### Indexed slots
+
+Interface discovery schema 3 preserves affine slot selectors such as
+`table + arg1 * 4` instead of dropping the call or assigning it a fabricated
+fixed offset. The generated load contains the selector argument, byte scale and
+signed addend. `slot_offset` is `null`, and the same call can later appear as a
+candidate for several reviewed slots.
+
+`interfaces init-pack` does not turn an indexed selector into observed fixed
+slots. It writes an `INDEXED-SLOT` comment; the reviewer must establish the
+layout bounds and add each admissible slot with `origin = "manual"`. It must
+also record the finite index domain that was established from reviewed caller
+preconditions, branch evidence, or an external ABI contract:
+
+```toml
+[[anchors.index-domains]]
+argument = 1
+min = 0
+max = 7
+evidence = "caller rejects service_id > 7 before the dispatch"
+```
+
+During validation the reviewed domain is projected through the recovered
+selector and checked against `layout-size`, pointer width and stride. A dynamic
+call is linked only to reviewed slots reached by those concrete domain values.
+The resolved index and its domain remain visible in JSON, human, TSV and
+function-review output. Missing or invalid domain evidence leaves the call
+unbound and strict review unreviewed; layout size alone is never treated as
+proof of the runtime argument domain.
 
 ## Version, magic, and size guards
 
@@ -160,6 +191,7 @@ name = "queue_send_from_isr"
 arguments = ["opaque-handle", "const-ptr", "out-ptr"]
 return = "bool"
 semantic = "rtos.queue.send-from-isr"
+execution-model = "queue-send-from-isr"
 ```
 
 Supported scalar ABI types are `bool`, `i8`/`u8`, `i16`/`u16`, `i32`/`u32`,
@@ -211,6 +243,44 @@ operations. A project can add narrower operations when argument roles or
 effects differ. For example, a blocking vendor delay and a counted busy loop
 remain distinct operations even if both may eventually become an async timer.
 
+## Compiled execution models
+
+Semantic annotation and executable behavior are separate trust levels. A
+reviewed `semantic` says what an operation means for navigation and semantic
+comparison; it does not authorize the concrete executor to invent a return
+value, RAM mutation, scheduler effect, or storage effect.
+
+When a platform harness supplies reviewed executable behavior, bind it with
+two explicit foreign keys:
+
+```toml
+[[anchors]]
+execution-contract = "esp32s31-wifi-osi-v9"
+
+[[anchors.slots]]
+semantic = "rtos.queue.send-from-isr"
+execution-model = "queue-send-from-isr"
+```
+
+`interfaces validate` resolves these into a stable
+`ResolvedInterfaceContract` and slot identity such as
+`project-pack::wifi-osi-v9@+0x38`. It rejects a missing harness/table/model,
+layout-size mismatch, wrong model offset, argument-count mismatch, or a
+semantic mismatch. Neither a familiar slot name nor a matching offset is used
+to infer executable behavior.
+
+The resolved model currently establishes the reviewed bridge from pack
+evidence into the compiled harness and is visible in interface/function review
+reports. Runtime table location, contents, lifecycle and indirect dispatch are
+scenario state; they belong to `TableInstance`, not to the interface pack.
+Execution profiles create source-specific instances with `vendor-table` /
+`rust-table` and populate symbol-backed slots with the corresponding
+`*-table-slot` directives. The executor validates and materializes those
+concrete pointers against the exact ELF before running the scenario. The
+instance retains the layout ID as provenance; validating that ID against this
+reviewed contract remains a project-layer operation rather than backend
+instruction semantics.
+
 ## Trust boundary
 
 The validated workspace establishes that reviewed metadata is internally
@@ -220,9 +290,13 @@ static call instruction and preserves the recovered register arguments. It
 does not prove that a branch reaches that instruction at runtime, the order of
 calls, a C prototype, runtime table contents, callee behavior, storage
 durability, or Rust equivalence. Those claims belong to higher-level IR,
-effect contracts, and execution profiles. If an independent target-harness
-contract supplies a semantic ID for the same exact caller/site, function
-review fails on disagreement with the interface pack instead of choosing one.
+effect contracts, and execution profiles. An explicit
+`execution-contract`/`execution-model` pair must resolve against the selected
+compiled harness before executable behavior is exposed. Even that resolution
+does not establish a runtime table instance or prove that a scenario reached
+it. If an independent target-harness contract supplies a semantic ID for the
+same exact caller/site, function review fails on disagreement with the
+interface pack instead of choosing one.
 
 This separation keeps the generic backend useful for any RV32 vendor artifact:
 
@@ -232,7 +306,7 @@ RV32 ELF/archive -> generated interface facts
                               + reusable semantic catalogs
                                          |
                                          v
-                      resolved reviewed bindings + call sites
+                resolved contracts + reviewed slots + call sites
                                          |
                                          v
                            future IR/effect/adapter validation

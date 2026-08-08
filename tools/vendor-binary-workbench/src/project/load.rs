@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{Item, Table};
 
 use crate::{
     Result,
@@ -21,7 +21,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         path: path.to_owned(),
         source,
     })?;
-    let document = input.parse::<DocumentMut>().map_err(|error| {
+    let document = toml_edit::Document::parse(input.as_str()).map_err(|error| {
         let span = error.span().unwrap_or(0..input.len().min(1));
         ProjectError::Parse {
             message: error.message().to_owned(),
@@ -29,54 +29,32 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             span: (span.start, span.len().max(1)).into(),
         }
     })?;
+    let source = ProjectSource::new(path, &input);
     if document.get("schema").and_then(Item::as_integer) != Some(1) {
-        return Err(project_invalid(
-            path,
-            &input,
+        return Err(source.item(
             document.get("schema"),
             "project manifest requires schema = 1",
-        )
-        .into());
+        ));
     }
     let base = path.parent().unwrap_or_else(|| Path::new("."));
-    let id = required_string(&document, "id").ok_or_else(|| {
-        project_invalid(
-            path,
-            &input,
-            document.get("id"),
-            "project manifest requires string \"id\"",
-        )
-    })?;
-    validate_id(&id).map_err(|_| {
-        project_invalid(
-            path,
-            &input,
-            document.get("id"),
-            format!("invalid project id {id:?}"),
-        )
-    })?;
-    let target_spec_value = required_string(&document, "target-spec").ok_or_else(|| {
-        project_invalid(
-            path,
-            &input,
-            document.get("target-spec"),
-            "project manifest requires string \"target-spec\"",
-        )
-    })?;
+    let id = required_string(&document, "id", source)?;
+    validate_id(&id).map_err(|message| source.item(document.get("id"), message))?;
+    let target_spec_value = required_string(&document, "target-spec", source)?;
     let target_spec = resolve_path(base, &target_spec_value);
-    let platform_pack = optional_string(&document, "platform-pack")
+    let platform_pack = optional_string(&document, "platform-pack", source)?
         .map(|path| PlatformPack::load(&resolve_path(base, &path)))
         .transpose()?;
-    let run_spec = optional_string(&document, "run-spec").map(|path| resolve_path(base, &path));
-    let memory_map = optional_string(&document, "memory-map").map(|path| resolve_path(base, &path));
+    let run_spec =
+        optional_string(&document, "run-spec", source)?.map(|path| resolve_path(base, &path));
+    let memory_map =
+        optional_string(&document, "memory-map", source)?.map(|path| resolve_path(base, &path));
     let svd_configured = document.get("svd").is_some();
     let svd_paths = document
         .get("svd")
         .map(|item| {
-            let array = item
-                .as_array()
-                .ok_or("project manifest svd must be an array of paths")
-                .map_err(crate::Error::invalid)?;
+            let array = item.as_array().ok_or_else(|| {
+                source.item(Some(item), "project manifest svd must be an array of paths")
+            })?;
             array
                 .iter()
                 .enumerate()
@@ -85,71 +63,61 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                         .as_str()
                         .map(|path| resolve_path(base, path))
                         .ok_or_else(|| {
-                            crate::Error::invalid(format!(
-                                "project manifest svd[{index}] must be a string"
-                            ))
+                            source.error(
+                                value.span(),
+                                format!("project manifest svd[{index}] must be a string"),
+                            )
                         })
                 })
                 .collect::<Result<Vec<_>>>()
         })
         .transpose()?
         .unwrap_or_default();
-    let ir_profiles = load_ir_profiles(&document, base)?;
-    let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles)?;
-    let navigation_index =
-        load_navigation_index(&document, base, symbol_inventory.as_ref(), &ir_profiles)?;
+    let ir_profiles = load_ir_profiles(&document, base, source)?;
+    let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles, source)?;
+    let navigation_index = load_navigation_index(
+        &document,
+        base,
+        symbol_inventory.as_ref(),
+        &ir_profiles,
+        source,
+    )?;
     let registers = document
         .get("registers")
         .map(|item| -> Result<RegisterWorkspacePaths> {
             let table = item
                 .as_table()
-                .ok_or("project manifest registers must be a table").map_err(crate::Error::invalid)?;
-            if table.contains_key("overlay") {
-                return Err(crate::Error::invalid("unknown project registers key \"overlay\"; use the schema-2 \"model\" workspace"));
+                .ok_or_else(|| source.item(Some(item), "project manifest registers must be a table"))?;
+            if let Some(overlay) = table.get("overlay") {
+                return Err(source.item(Some(overlay), "unknown project registers key \"overlay\"; use the schema-2 \"model\" workspace"));
             }
-            let model = table
-                .get("model")
-                .and_then(Item::as_str)
-                .ok_or("project registers requires string \"model\"").map_err(crate::Error::invalid)?;
-            let review_output = nested_output_path(table, base, "review")?;
+            let model = table_string(table, "model", "project registers", source)?;
+            let review_output = nested_output_path(table, base, "review", source)?;
             let review_ir_reports =
-                nested_path_array(table, base, "review", "linked-ir")?;
-            let svd_output = nested_output_path(table, base, "svd")?;
+                nested_path_array(table, base, "review", "linked-ir", source)?;
+            let svd_output = nested_output_path(table, base, "svd", source)?;
             let pac = table
                 .get("pac")
                 .map(|item| -> Result<PacOutputSpec> {
                     let pac = item
                         .as_table()
-                        .ok_or("project registers.pac must be a table").map_err(crate::Error::invalid)?;
-                    let target = pac
-                        .get("target")
-                        .and_then(Item::as_str)
-                        .unwrap_or("none")
-                        .to_owned();
+                        .ok_or_else(|| source.item(Some(item), "project registers.pac must be a table"))?;
+                    let target = optional_table_string(pac, "target", "project registers.pac", source)?
+                        .unwrap_or_else(|| "none".to_owned());
                     if !matches!(target.as_str(), "none" | "riscv") {
-                        return Err(crate::Error::invalid(format!(
+                        return Err(source.table_key(pac, "target", format!(
                             "project registers.pac target must be \"none\" or \"riscv\", got {target:?}"
-                        )
-                        ));
+                        )));
                     }
-                    let edition = pac
-                        .get("edition")
-                        .and_then(Item::as_str)
-                        .unwrap_or("2024")
-                        .to_owned();
+                    let edition = optional_table_string(pac, "edition", "project registers.pac", source)?
+                        .unwrap_or_else(|| "2024".to_owned());
                     if !matches!(edition.as_str(), "2021" | "2024") {
-                        return Err(crate::Error::invalid(format!(
+                        return Err(source.table_key(pac, "edition", format!(
                             "project registers.pac edition must be \"2021\" or \"2024\", got {edition:?}"
-                        )
-                        ));
+                        )));
                     }
                     Ok(PacOutputSpec {
-                        output: resolve_path(
-                            base,
-                            pac.get("output").and_then(Item::as_str).ok_or(
-                                "project registers.pac requires string \"output\"",
-                            ).map_err(crate::Error::invalid)?,
-                        ),
+                        output: resolve_path(base, &table_string(pac, "output", "project registers.pac", source)?),
                         target,
                         edition,
                     })
@@ -160,20 +128,13 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 .map(|item| -> Result<PacBindingsOutputSpec> {
                     let bindings = item
                         .as_table()
-                        .ok_or("project registers.bindings must be a table").map_err(crate::Error::invalid)?;
-                    let crate_name = bindings
-                        .get("crate-name")
-                        .and_then(Item::as_str)
-                        .ok_or("project registers.bindings requires string \"crate-name\"").map_err(crate::Error::invalid)?;
-                    open_esp_radio_register_model::validate_pac_crate_name(crate_name)?;
+                        .ok_or_else(|| source.item(Some(item), "project registers.bindings must be a table"))?;
+                    let crate_name = table_string(bindings, "crate-name", "project registers.bindings", source)?;
+                    open_esp_radio_register_model::validate_pac_crate_name(&crate_name)
+                        .map_err(|error| source.table_key(bindings, "crate-name", error.to_string()))?;
                     Ok(PacBindingsOutputSpec {
-                        output: resolve_path(
-                            base,
-                            bindings.get("output").and_then(Item::as_str).ok_or(
-                                "project registers.bindings requires string \"output\"",
-                            ).map_err(crate::Error::invalid)?,
-                        ),
-                        crate_name: crate_name.to_owned(),
+                        output: resolve_path(base, &table_string(bindings, "output", "project registers.bindings", source)?),
+                        crate_name,
                     })
                 })
                 .transpose()?;
@@ -182,41 +143,33 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 .map(|item| -> Result<PathBuf> {
                     let api = item
                         .as_table()
-                        .ok_or("project registers.api must be a table").map_err(crate::Error::invalid)?;
+                        .ok_or_else(|| source.item(Some(item), "project registers.api must be a table"))?;
                     Ok(resolve_path(
                         base,
-                        api.get("pack")
-                            .and_then(Item::as_str)
-                            .ok_or("project registers.api requires string \"pack\"").map_err(crate::Error::invalid)?,
+                        &table_string(api, "pack", "project registers.api", source)?,
                     ))
                 })
                 .transpose()?;
             let evidence_catalogs =
-                nested_path_array(table, base, "evidence", "catalogs")?;
+                nested_path_array(table, base, "evidence", "catalogs", source)?;
             let lint_pack = table
                 .get("lints")
                 .map(|item| -> Result<PathBuf> {
                     let lints = item
                         .as_table()
-                        .ok_or("project registers.lints must be a table").map_err(crate::Error::invalid)?;
+                        .ok_or_else(|| source.item(Some(item), "project registers.lints must be a table"))?;
                     Ok(resolve_path(
                         base,
-                        lints
-                            .get("pack")
-                            .and_then(Item::as_str)
-                            .ok_or("project registers.lints requires string \"pack\"").map_err(crate::Error::invalid)?,
+                        &table_string(lints, "pack", "project registers.lints", source)?,
                     ))
                 })
                 .transpose()?;
             Ok(RegisterWorkspacePaths {
                 facts: resolve_path(
                     base,
-                    table
-                        .get("facts")
-                        .and_then(Item::as_str)
-                        .ok_or("project registers requires string \"facts\"").map_err(crate::Error::invalid)?,
+                    &table_string(table, "facts", "project registers", source)?,
                 ),
-                model: resolve_path(base, model),
+                model: resolve_path(base, &model),
                 review_output,
                 review_ir_reports,
                 svd_output,
@@ -233,9 +186,9 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         .map(|item| -> Result<InterfaceWorkspacePaths> {
             let table = item
                 .as_table()
-                .ok_or("project manifest interfaces must be a table").map_err(crate::Error::invalid)?;
-            if table.contains_key("semantic-catalogs") {
-                return Err(crate::Error::invalid("unknown project interfaces key \"semantic-catalogs\"; semantic catalogs belong to the platform pack"));
+                .ok_or_else(|| source.item(Some(item), "project manifest interfaces must be a table"))?;
+            if let Some(catalogs) = table.get("semantic-catalogs") {
+                return Err(source.item(Some(catalogs), "unknown project interfaces key \"semantic-catalogs\"; semantic catalogs belong to the platform pack"));
             }
             let semantic_catalogs = platform_pack
                 .as_ref()
@@ -244,15 +197,10 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             Ok(InterfaceWorkspacePaths {
                 facts: resolve_path(
                     base,
-                    table
-                        .get("facts")
-                        .and_then(Item::as_str)
-                        .ok_or("project interfaces requires string \"facts\"").map_err(crate::Error::invalid)?,
+                    &table_string(table, "facts", "project interfaces", source)?,
                 ),
-                pack: table
-                    .get("pack")
-                    .and_then(Item::as_str)
-                    .map(|path| resolve_path(base, path)),
+                pack: optional_table_string(table, "pack", "project interfaces", source)?
+                    .map(|path| resolve_path(base, &path)),
                 semantic_catalogs,
             })
         })
@@ -260,25 +208,24 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
     let functions = document
         .get("functions")
         .map(|item| -> Result<FunctionWorkspacePaths> {
-            let table = item
-                .as_table()
-                .ok_or("project manifest functions must be a table")
-                .map_err(crate::Error::invalid)?;
+            let table = item.as_table().ok_or_else(|| {
+                source.item(Some(item), "project manifest functions must be a table")
+            })?;
             let profiles = table
                 .get("profiles")
                 .map(|item| {
-                    let values = item
-                        .as_array()
-                        .ok_or("project functions.profiles must be an array")
-                        .map_err(crate::Error::invalid)?;
+                    let values = item.as_array().ok_or_else(|| {
+                        source.item(Some(item), "project functions.profiles must be an array")
+                    })?;
                     values
                         .iter()
                         .enumerate()
                         .map(|(index, value)| {
                             value.as_str().map(str::to_owned).ok_or_else(|| {
-                                crate::Error::invalid(format!(
-                                    "project functions.profiles[{index}] must be a string"
-                                ))
+                                source.error(
+                                    value.span(),
+                                    format!("project functions.profiles[{index}] must be a string"),
+                                )
                             })
                         })
                         .collect::<Result<Vec<_>>>()
@@ -291,53 +238,99 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                         .collect()
                 });
             if profiles.is_empty() {
-                return Err(crate::Error::invalid(
+                return Err(source.item(
+                    table.get("profiles").or(Some(item)),
                     "project [functions] requires at least one [[analysis.ir]] profile",
                 ));
             }
             let mut seen = std::collections::BTreeSet::new();
             for profile in &profiles {
                 if !seen.insert(profile) {
-                    return Err(crate::Error::invalid(format!(
-                        "duplicate project functions profile {profile:?}"
-                    )));
+                    return Err(source.table_key(
+                        table,
+                        "profiles",
+                        format!("duplicate project functions profile {profile:?}"),
+                    ));
                 }
                 if !ir_profiles.iter().any(|candidate| candidate.id == *profile) {
-                    return Err(crate::Error::invalid(format!(
-                        "project functions refers to unknown IR profile {profile:?}"
-                    )));
+                    return Err(source.table_key(
+                        table,
+                        "profiles",
+                        format!("project functions refers to unknown IR profile {profile:?}"),
+                    ));
                 }
             }
             let review_output = table
                 .get("review")
                 .map(|item| -> Result<PathBuf> {
-                    let review = item
-                        .as_table()
-                        .ok_or("project functions.review must be a table")
-                        .map_err(crate::Error::invalid)?;
-                    review
-                        .get("output")
-                        .and_then(Item::as_str)
-                        .map(|path| resolve_path(base, path))
-                        .ok_or_else(|| {
-                            crate::Error::invalid(
-                                "project functions.review requires string \"output\"",
-                            )
-                        })
+                    let review = item.as_table().ok_or_else(|| {
+                        source.item(Some(item), "project functions.review must be a table")
+                    })?;
+                    Ok(resolve_path(
+                        base,
+                        &table_string(review, "output", "project functions.review", source)?,
+                    ))
                 })
                 .transpose()?;
             Ok(FunctionWorkspacePaths {
                 pack: resolve_path(
                     base,
-                    table
-                        .get("pack")
-                        .and_then(Item::as_str)
-                        .ok_or("project functions requires string \"pack\"")
-                        .map_err(crate::Error::invalid)?,
+                    &table_string(table, "pack", "project functions", source)?,
                 ),
                 profiles,
                 review_output,
             })
+        })
+        .transpose()?;
+    let verification = document
+        .get("verification")
+        .map(|item| -> Result<VerificationWorkspacePaths> {
+            let table = item.as_table().ok_or_else(|| {
+                source.item(Some(item), "project manifest verification must be a table")
+            })?;
+            let profiles = table
+                .get("profiles")
+                .and_then(Item::as_array)
+                .ok_or_else(|| {
+                    source.table_key(
+                        table,
+                        "profiles",
+                        "project verification.profiles must be a non-empty array",
+                    )
+                })?
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    value
+                        .as_str()
+                        .map(|path| resolve_path(base, path))
+                        .ok_or_else(|| {
+                            source.error(
+                                value.span(),
+                                format!("project verification.profiles[{index}] must be a string"),
+                            )
+                        })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if profiles.is_empty() {
+                return Err(source.table_key(
+                    table,
+                    "profiles",
+                    "project verification.profiles must not be empty",
+                ));
+            }
+            let mut unique = std::collections::BTreeSet::new();
+            if let Some(duplicate) = profiles.iter().find(|path| !unique.insert(*path)) {
+                return Err(source.table_key(
+                    table,
+                    "profiles",
+                    format!(
+                        "project verification repeats profile file {}",
+                        duplicate.display()
+                    ),
+                ));
+            }
+            Ok(VerificationWorkspacePaths { profiles })
         })
         .transpose()?;
     if let Some(symbols) = &symbol_inventory {
@@ -348,10 +341,19 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             .chain(interfaces.as_ref().map(|paths| &paths.facts))
             .find(|path| **path == symbols.output);
         if let Some(path) = conflicting_fact {
-            return Err(crate::Error::invalid(format!(
-                "project symbol inventory reuses another analysis facts path {}",
-                path.display()
-            )));
+            let item = document
+                .get("analysis")
+                .and_then(Item::as_table)
+                .and_then(|analysis| analysis.get("symbols"))
+                .and_then(Item::as_table)
+                .and_then(|symbols| symbols.get("output"));
+            return Err(source.item(
+                item,
+                format!(
+                    "project symbol inventory reuses another analysis facts path {}",
+                    path.display()
+                ),
+            ));
         }
     }
     if let Some(navigation) = &navigation_index {
@@ -362,10 +364,19 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             .chain(interfaces.as_ref().map(|paths| &paths.facts))
             .find(|path| **path == navigation.output);
         if let Some(path) = conflicting_fact {
-            return Err(crate::Error::invalid(format!(
-                "project navigation index reuses another analysis facts path {}",
-                path.display()
-            )));
+            let item = document
+                .get("analysis")
+                .and_then(Item::as_table)
+                .and_then(|analysis| analysis.get("navigation"))
+                .and_then(Item::as_table)
+                .and_then(|navigation| navigation.get("output"));
+            return Err(source.item(
+                item,
+                format!(
+                    "project navigation index reuses another analysis facts path {}",
+                    path.display()
+                ),
+            ));
         }
     }
     Ok(ProjectSpec {
@@ -382,6 +393,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         registers,
         interfaces,
         functions,
+        verification,
     })
 }
 
@@ -389,19 +401,24 @@ fn nested_output_path(
     table: &toml_edit::Table,
     base: &Path,
     name: &str,
+    source: ProjectSource<'_>,
 ) -> Result<Option<PathBuf>> {
     table
         .get(name)
         .map(|item| {
-            let output = item
-                .as_table()
-                .ok_or_else(|| format!("project registers.{name} must be a table"))
-                .map_err(crate::Error::invalid)?
-                .get("output")
-                .and_then(Item::as_str)
-                .ok_or_else(|| format!("project registers.{name} requires string \"output\""))
-                .map_err(crate::Error::invalid)?;
-            Ok(resolve_path(base, output))
+            let output = item.as_table().ok_or_else(|| {
+                source.item(
+                    Some(item),
+                    format!("project registers.{name} must be a table"),
+                )
+            })?;
+            let output = table_string(
+                output,
+                "output",
+                &format!("project registers.{name}"),
+                source,
+            )?;
+            Ok(resolve_path(base, &output))
         })
         .transpose()
 }
@@ -411,62 +428,106 @@ fn nested_path_array(
     base: &Path,
     table_name: &str,
     key: &str,
+    source: ProjectSource<'_>,
 ) -> Result<Vec<PathBuf>> {
     let Some(item) = table.get(table_name) else {
         return Ok(Vec::new());
     };
-    let table = item
-        .as_table()
-        .ok_or_else(|| format!("project registers.{table_name} must be a table"))
-        .map_err(crate::Error::invalid)?;
+    let table = item.as_table().ok_or_else(|| {
+        source.item(
+            Some(item),
+            format!("project registers.{table_name} must be a table"),
+        )
+    })?;
     let Some(item) = table.get(key) else {
         return Ok(Vec::new());
     };
-    let values = item
-        .as_array()
-        .ok_or_else(|| format!("project registers.{table_name}.{key} must be an array"))
-        .map_err(crate::Error::invalid)?;
+    let values = item.as_array().ok_or_else(|| {
+        source.item(
+            Some(item),
+            format!("project registers.{table_name}.{key} must be an array"),
+        )
+    })?;
     let mut seen = std::collections::BTreeSet::new();
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let value = value
-                .as_str()
-                .ok_or_else(|| {
-                    format!("project registers.{table_name}.{key}[{index}] must be a string")
-                })
-                .map_err(crate::Error::invalid)?;
+            let value = value.as_str().ok_or_else(|| {
+                source.error(
+                    value.span(),
+                    format!("project registers.{table_name}.{key}[{index}] must be a string"),
+                )
+            })?;
             let path = resolve_path(base, value);
             if !seen.insert(path.clone()) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate project registers.{table_name}.{key} path {value:?}"
-                )));
+                return Err(source.error(
+                    values.get(index).and_then(toml_edit::Value::span),
+                    format!("duplicate project registers.{table_name}.{key} path {value:?}"),
+                ));
             }
             Ok(path)
         })
         .collect()
 }
 
-fn required_string(document: &DocumentMut, key: &str) -> Option<String> {
-    optional_string(document, key)
+fn required_string(document: &Table, key: &str, source: ProjectSource<'_>) -> Result<String> {
+    optional_string(document, key, source)?.ok_or_else(|| {
+        source.item(
+            document.get(key),
+            format!("project manifest requires string {key:?}"),
+        )
+    })
 }
 
-fn optional_string(document: &DocumentMut, key: &str) -> Option<String> {
-    document.get(key).and_then(Item::as_str).map(str::to_owned)
+fn optional_string(
+    document: &Table,
+    key: &str,
+    source: ProjectSource<'_>,
+) -> Result<Option<String>> {
+    match document.get(key) {
+        None => Ok(None),
+        Some(item) => item
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(|value| Some(value.to_owned()))
+            .ok_or_else(|| {
+                source.item(
+                    Some(item),
+                    format!("project manifest {key:?} must be a non-empty string"),
+                )
+            }),
+    }
 }
 
-fn project_invalid(
-    path: &Path,
-    input: &str,
-    item: Option<&Item>,
-    message: impl Into<String>,
-) -> ProjectError {
-    let span = item.and_then(Item::span).unwrap_or(0..input.len().min(1));
-    ProjectError::Invalid {
-        message: message.into(),
-        src: NamedSource::new(path.display().to_string(), input.to_owned()),
-        span: (span.start, span.len()).into(),
+fn table_string(
+    table: &toml_edit::Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<String> {
+    optional_table_string(table, key, context, source)?
+        .ok_or_else(|| source.table_key(table, key, format!("{context} requires string {key:?}")))
+}
+
+fn optional_table_string(
+    table: &toml_edit::Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<Option<String>> {
+    match table.get(key) {
+        None => Ok(None),
+        Some(item) => item
+            .as_str()
+            .filter(|value| !value.is_empty())
+            .map(|value| Some(value.to_owned()))
+            .ok_or_else(|| {
+                source.item(
+                    Some(item),
+                    format!("{context}.{key} must be a non-empty string"),
+                )
+            }),
     }
 }
 
@@ -479,15 +540,13 @@ fn resolve_path(base: &Path, value: &str) -> PathBuf {
     }
 }
 
-fn validate_id(value: &str) -> Result<()> {
+fn validate_id(value: &str) -> std::result::Result<(), String> {
     if value.is_empty()
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
-        return Err(crate::Error::invalid(format!(
-            "invalid project id {value:?}"
-        )));
+        return Err(format!("invalid project id {value:?}"));
     }
     Ok(())
 }

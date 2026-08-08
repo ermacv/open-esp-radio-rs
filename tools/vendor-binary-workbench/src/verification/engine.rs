@@ -23,7 +23,7 @@ pub(crate) use model::*;
     fields(source = source.name, artifact = %source.artifact.display())
 )]
 pub(crate) fn verify_source(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     harness: &str,
     rust_target: &str,
     source: VerifySource<'_>,
@@ -326,7 +326,7 @@ pub(crate) fn verify_source(
             )?;
             let verdict = comparison.verdict;
             match verdict {
-                ComparisonVerdict::Match => {
+                EquivalenceVerdict::Match => {
                     summary.matched += 1;
                     match profile.contract {
                         profiles::ProfileContract::Scenario => summary.scenario_matches += 1,
@@ -339,17 +339,17 @@ pub(crate) fn verify_source(
                         profile_evidence(profile),
                     )?;
                 }
-                ComparisonVerdict::Mismatch => summary.mismatched += 1,
-                ComparisonVerdict::Incomplete => summary.incomplete += 1,
+                EquivalenceVerdict::Diff => summary.mismatched += 1,
+                EquivalenceVerdict::Incomplete => summary.incomplete += 1,
             }
             let status = match verdict {
-                ComparisonVerdict::Match => FunctionVerificationStatus::Match,
-                ComparisonVerdict::Mismatch => FunctionVerificationStatus::Mismatch,
-                ComparisonVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
+                EquivalenceVerdict::Match => FunctionVerificationStatus::Match,
+                EquivalenceVerdict::Diff => FunctionVerificationStatus::Mismatch,
+                EquivalenceVerdict::Incomplete => FunctionVerificationStatus::Incomplete,
             };
             let mut function = FunctionVerificationReport::new(source.name, &vendor.name, status);
             function.rust_symbol = Some(rust.name.clone());
-            function.evidence = (verdict == ComparisonVerdict::Match)
+            function.evidence = (verdict == EquivalenceVerdict::Match)
                 .then(|| profile.contract.evidence().to_owned());
             function.profile = Some(profile.name.clone());
             function.execution = Some(comparison);
@@ -415,8 +415,14 @@ pub(crate) fn verify_source(
                 effect_contract::compare_effects(&generated_effects, &rust_effects, policy)?;
             let (status, reason) = match (vendor_to_rust, generated_to_rust) {
                 (
-                    effect_contract::EffectComparisonVerdict::Match,
-                    effect_contract::EffectComparisonVerdict::Match,
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Match,
+                        ..
+                    },
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Match,
+                        ..
+                    },
                 ) if !compare_return || returns_equal(&vendor_trace, &rust_trace) => {
                     summary.matched += 1;
                     summary.effect_contract_matches += 1;
@@ -435,8 +441,14 @@ pub(crate) fn verify_source(
                     (FunctionVerificationStatus::Match, None)
                 }
                 (
-                    effect_contract::EffectComparisonVerdict::Match,
-                    effect_contract::EffectComparisonVerdict::Match,
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Match,
+                        ..
+                    },
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Match,
+                        ..
+                    },
                 ) => {
                     summary.mismatched += 1;
                     (
@@ -444,15 +456,60 @@ pub(crate) fn verify_source(
                         Some("return".to_owned()),
                     )
                 }
-                (effect_contract::EffectComparisonVerdict::Mismatch(reason), _) => {
+                (
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Diff,
+                        reason,
+                        ..
+                    },
+                    _,
+                ) => {
                     summary.mismatched += 1;
-                    (FunctionVerificationStatus::Mismatch, Some(reason))
+                    (FunctionVerificationStatus::Mismatch, reason)
                 }
-                (_, effect_contract::EffectComparisonVerdict::Mismatch(reason)) => {
+                (
+                    _,
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Diff,
+                        reason,
+                        ..
+                    },
+                ) => {
                     summary.mismatched += 1;
                     (
                         FunctionVerificationStatus::Mismatch,
-                        Some(format!("generated-reference: {reason}")),
+                        Some(format!(
+                            "generated-reference: {}",
+                            reason.as_deref().unwrap_or("semantic difference")
+                        )),
+                    )
+                }
+                (
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Incomplete,
+                        reason,
+                        ..
+                    },
+                    _,
+                ) => {
+                    summary.incomplete += 1;
+                    (FunctionVerificationStatus::Incomplete, reason)
+                }
+                (
+                    _,
+                    effect_contract::EquivalenceOutcome {
+                        verdict: effect_contract::EquivalenceVerdict::Incomplete,
+                        reason,
+                        ..
+                    },
+                ) => {
+                    summary.incomplete += 1;
+                    (
+                        FunctionVerificationStatus::Incomplete,
+                        Some(format!(
+                            "generated-reference: {}",
+                            reason.as_deref().unwrap_or("semantic coverage incomplete")
+                        )),
                     )
                 }
             };

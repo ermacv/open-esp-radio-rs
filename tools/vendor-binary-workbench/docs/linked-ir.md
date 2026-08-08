@@ -25,7 +25,7 @@ cargo vendor-binary-workbench ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v32 records the selection mode plus root and
+`reachable-internal`, and schema v35 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -47,7 +47,7 @@ cargo vendor-binary-workbench ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v32 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v35 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -77,7 +77,7 @@ than a renderer-specific JSON transformation.
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v32 records
+symbolic states. Schema v33 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
 function's structured `diagnostics` keeps the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
@@ -111,6 +111,29 @@ avoid unbounded affine offsets or combinatorial output. The top-level
 both an already-composed caller flow and the separately analyzed callee are
 counted once while retaining both provenance paths.
 
+## Memory objects and reviewed type evidence
+
+Schema v33 generalizes caller-context observations into `memory_accesses` and
+`memory_fields`. A recovered affine address has one of two fail-closed roots:
+
+- `argument`, identified by an ABI argument index;
+- `relocated-symbol`, identified by the archive member containing a completed
+  relocation and its symbol name. The member is relocation provenance, not a
+  linker-definition claim; it is absent for a resolved linked image.
+
+Each access retains signed byte offset, width, read/write kind, path and value
+evidence. A field aggregates equal `(object, offset, width)` accesses while
+keeping counts and write masks. Incomplete HI/LO relocations, dynamic pointer
+arithmetic and unknown roots are not promoted to memory objects.
+
+`context_accesses` and `context_fields` remain the argument-only projection
+used for affine interprocedural composition. Reachable `effect_summary`
+`memory_fields` contains those projected root arguments plus relocation-rooted
+fields observed in the reachable closure. It is an origin-preserving
+inventory, not a nominal-type or aliasing proof. Function-pack schema 2 is the
+separate, reviewed layer that may bind several exact objects to one logical
+type.
+
 Every function has structured `return_provenance` in addition to the canonical
 `return_value` string. Constant-zero, constant-one and unknown output bits are
 separate masks. Dynamic bits are grouped into exact contiguous mappings from
@@ -133,7 +156,7 @@ contract source, stable ID and evidence rule that justified the semantic name.
 The `site_path` array records the lexical call-site chain from the report root
 to the action, and actions are stably ordered by that chain.
 
-Schema v32 additionally projects reviewed event-like contracts into
+Schema v33 additionally projects reviewed event-like contracts into
 `event_dispatches`. This is a higher-level navigation view over
 `semantic_actions`, not a second source of effects. Each record has a
 zero-based `semantic_action_index`, a reviewed mechanism and execution context,
@@ -215,6 +238,26 @@ manual-analysis inventory, not a total runtime order. Mutually exclusive paths
 can both contribute actions, loops are represented by recovered shapes rather
 than iteration counts, and recursive revisits stop at the projection boundary.
 
+## Scenario suggestions
+
+Schema v34 adds `functions[].scenario_suggestions`. This is an advisory bridge
+from structural evidence to concrete execution profiles, not a new verifier.
+The current bounded rules emit paired candidates for direct argument
+equality/inequality branches, equal/not-equal MMIO predicates, and polling
+registers (`ready-immediately` plus `one-retry-then-ready`). Each variant keeps
+typed ABI argument assignments or an ordered MMIO read sequence together with
+the originating condition, site, mask, and expected value.
+
+Suggestions intentionally cover only shapes whose concrete candidate values
+can be derived without solving arbitrary machine arithmetic. Their absence is
+not evidence that no scenario is needed, and their presence is not path
+feasibility or coverage proof. The top-level
+`scenario_suggestion_mode` is
+`"structural-candidates-require-concrete-replay"` and
+`scenario_suggestion_proof_claim` is `false`: a reviewer must select or edit a
+candidate, and only a successful fail-closed executor replay contributes to
+MATCH/DIFF/INCOMPLETE and coverage.
+
 ## Pseudo-Rust view
 
 The pseudo-Rust intentionally uses `u32` argument placeholders and is not
@@ -244,7 +287,7 @@ contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-pattern inventory remains available alongside the richer field
 candidate evidence.
 
-Schema v32 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v33 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate
@@ -292,7 +335,7 @@ with `direct_mmio_predicate_mode`,
 `direct_mmio_predicate_completeness_claim: false`,
 `mmio_field_candidate_mode` and `mmio_field_semantics_claim: false`.
 
-Schema-v32 JSON reports can be supplied to `registers review` as optional
+Schema-v33 JSON reports can be supplied to `registers review` as optional
 enrichment. The register workspace merges their field candidates, predicate
 details and semantic navigation links with artifact-wide MMIO facts while
 keeping all generated evidence outside the reviewed model and release SVD/PAC.

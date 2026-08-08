@@ -60,7 +60,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &interfaces_path,
         serde_json::to_string(&json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "interfaces discover",
             "artifacts": [{
                 "index": 0,
@@ -108,6 +108,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
             semantic_catalogs: Vec::new(),
         }),
         functions: None,
+        verification: None,
     };
     let document = build(&project).unwrap();
     let caller = document

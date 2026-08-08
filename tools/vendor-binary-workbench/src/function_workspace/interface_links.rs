@@ -23,6 +23,9 @@ pub(crate) struct FunctionInterfaceCall {
     pub(crate) site: u32,
     pub(crate) kind: String,
     pub(crate) jalr_offset: i32,
+    pub(crate) slot_selector: Option<String>,
+    pub(crate) slot_index: Option<u32>,
+    pub(crate) slot_index_domain: Option<(u8, u32, u32, String)>,
     pub(crate) arguments: Vec<(usize, String, String)>,
     pub(crate) linked_ir_matches: usize,
     pub(crate) linked_ir: Option<FunctionInterfaceIrCall>,
@@ -30,6 +33,8 @@ pub(crate) struct FunctionInterfaceCall {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionInterfaceLink {
+    pub(crate) contract: String,
+    pub(crate) slot: String,
     pub(crate) profile: String,
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -42,6 +47,7 @@ pub(crate) struct FunctionInterfaceLink {
     pub(crate) return_type: String,
     pub(crate) variadic: bool,
     pub(crate) semantic: Option<String>,
+    pub(crate) execution_model: Option<String>,
     pub(crate) calls: Vec<FunctionInterfaceCall>,
 }
 
@@ -112,6 +118,16 @@ pub(crate) fn link_reviewed_interfaces(
                         site: call.site,
                         kind: call.kind.clone(),
                         jalr_offset: call.jalr_offset,
+                        slot_selector: call.slot_selector.clone(),
+                        slot_index: call.slot_index,
+                        slot_index_domain: call.slot_index_domain.as_ref().map(|domain| {
+                            (
+                                domain.argument,
+                                domain.min,
+                                domain.max,
+                                domain.evidence.clone(),
+                            )
+                        }),
                         arguments: call
                             .arguments
                             .iter()
@@ -132,6 +148,8 @@ pub(crate) fn link_reviewed_interfaces(
                 continue;
             }
             output.push(FunctionInterfaceLink {
+                contract: binding.contract.clone(),
+                slot: binding.id.clone(),
                 profile: reviewed_function.profile.clone(),
                 source: reviewed_function.source.clone(),
                 identity: reviewed_function.identity.clone(),
@@ -144,6 +162,10 @@ pub(crate) fn link_reviewed_interfaces(
                 return_type: binding.return_type.clone(),
                 variadic: binding.variadic,
                 semantic: binding.semantic.clone(),
+                execution_model: binding
+                    .execution_model
+                    .as_ref()
+                    .map(|model| model.id.clone()),
                 calls: calls.into_iter().collect(),
             });
         }

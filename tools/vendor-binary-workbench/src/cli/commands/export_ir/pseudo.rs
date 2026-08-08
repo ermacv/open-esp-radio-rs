@@ -371,6 +371,37 @@ pub(super) fn render_pseudo(
             )
             .expect("writing to String cannot fail");
         }
+        for field in &summary.memory_fields {
+            let object = match &field.object {
+                LinkedMemoryObject::Argument { index } => format!("arg{index}"),
+                LinkedMemoryObject::Global { member, symbol } => {
+                    format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
+                }
+                LinkedMemoryObject::DereferencedGlobal {
+                    member,
+                    symbol,
+                    pointer_offset,
+                } => format!(
+                    "*({}::{symbol}{pointer_offset:+#x})",
+                    member.as_deref().unwrap_or("<linked>")
+                ),
+                LinkedMemoryObject::Absolute {
+                    address_space,
+                    address,
+                } => format!("absolute<{address_space}>({address:#010x})"),
+            };
+            writeln!(
+                output,
+                "// REACHABLE-MEMORY: {object}{:+#x} width={} reads={} writes={} mask={:#010x} via {}",
+                field.offset,
+                field.width,
+                field.reads,
+                field.writes,
+                field.write_mask,
+                field.origins.join(" | ")
+            )
+            .expect("writing to String cannot fail");
+        }
         for call in &summary.trampoline_calls {
             writeln!(
                 output,

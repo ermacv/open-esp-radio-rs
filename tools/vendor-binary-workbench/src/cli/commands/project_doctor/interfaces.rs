@@ -59,6 +59,11 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
         pack,
         &paths.semantic_catalogs,
         context.target.calling_convention.label(),
+        context
+            .target
+            .harness
+            .as_deref()
+            .and_then(|harness| crate::harnesses::contracts(harness).ok()),
     ) {
         Ok(workspace) => {
             let summary = workspace.summary();
@@ -76,6 +81,8 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                     .field("unreviewed-slots", summary.unreviewed_slots)
                     .field("semantic-links", summary.semantic_links)
                     .field("semantic-operations", summary.semantic_operations)
+                    .field("execution-contracts", summary.execution_contracts)
+                    .field("execution-models", summary.execution_models)
                     .field("facts", paths.facts.display().to_string())
                     .field("pack", pack.display().to_string()),
             );

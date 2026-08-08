@@ -37,8 +37,8 @@ fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
     }
 }
 
-fn map() -> MmioRegisterMap {
-    MmioRegisterMap {
+fn map() -> MmioMap {
+    MmioMap {
         registers: vec![
             Register {
                 address: 0x2010_f800,
@@ -57,9 +57,12 @@ fn map() -> MmioRegisterMap {
                 name: "I2C_ANA_MST.ANA_CONF2".to_owned(),
             },
         ],
-        windows: vec![Window {
+        regions: vec![MmioRegion {
+            name: "i2c-analog".to_owned(),
             start: 0x2010_f800,
             end: 0x2010_f900,
+            readable: true,
+            writable: true,
         }],
     }
 }

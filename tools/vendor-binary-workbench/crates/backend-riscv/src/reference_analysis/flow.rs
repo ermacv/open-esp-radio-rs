@@ -6,7 +6,7 @@ pub(super) struct ReferenceCalleeContext<'a> {
     pub(super) symbols_by_address: &'a BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
     pub(super) relocated_calls: &'a StructuralRelocatedCalls,
     pub(super) pointer_context: &'a StructuralPointerContext,
-    pub(super) svd: &'a MmioRegisterMap,
+    pub(super) svd: &'a MmioMap,
 }
 
 #[derive(Clone, Debug)]
@@ -89,7 +89,7 @@ fn build_reference_flow(
 
 pub(super) fn explore_reference_flow(
     symbol: &artifact::ArtifactSymbolDefinition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,

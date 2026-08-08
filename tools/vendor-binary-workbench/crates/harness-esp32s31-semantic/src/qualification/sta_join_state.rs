@@ -18,7 +18,7 @@ use open_radio_vendor_semantics::{
     PlatformOperation,
 };
 
-use crate::{MmioRegisterMap, Result, artifact, execution};
+use crate::{MmioMap, Result, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -299,7 +299,7 @@ fn case_matches(result: &execution::ExecutionResult, case: Case) -> bool {
     reason = "verification binds caller-owned vendor/Rust artifacts and one closed effect policy"
 )]
 pub fn verify_esp32s31_sta_join_state(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_inventory: Option<&Path>,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
@@ -384,6 +384,9 @@ mod tests {
             calls: Default::default(),
             ordered_calls: Vec::new(),
             indirect_calls: Default::default(),
+            table_lifecycle: Vec::new(),
+            table_lifecycle_complete: true,
+            device_model_coverage: Vec::new(),
             memory_changes: Vec::new(),
             initial_memory: Default::default(),
             persistent_memory: Default::default(),

@@ -5,9 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use toml_edit::{DocumentMut, Item, Table};
+use toml_edit::{Item, Table};
 
-use crate::{Result, source_id::validate_source_id};
+use crate::{Result, project::ProjectSource, source_id::validate_source_id};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectIrProfile {
@@ -21,23 +21,28 @@ pub(crate) struct ProjectIrProfile {
 }
 
 pub(crate) fn load_ir_profiles(
-    document: &DocumentMut,
+    document: &Table,
     base: &Path,
+    source: ProjectSource<'_>,
 ) -> Result<Vec<ProjectIrProfile>> {
-    let Some(analysis) = document.get("analysis") else {
+    let Some(analysis_item) = document.get("analysis") else {
         return Ok(Vec::new());
     };
-    let analysis = analysis
-        .as_table()
-        .ok_or("project manifest analysis must be a table")
-        .map_err(crate::Error::invalid)?;
-    let Some(ir) = analysis.get("ir") else {
+    let analysis = analysis_item.as_table().ok_or_else(|| {
+        source.item(
+            Some(analysis_item),
+            "project manifest analysis must be a table",
+        )
+    })?;
+    let Some(ir_item) = analysis.get("ir") else {
         return Ok(Vec::new());
     };
-    let profiles = ir
-        .as_array_of_tables()
-        .ok_or("project analysis.ir must be an array of tables")
-        .map_err(crate::Error::invalid)?;
+    let profiles = ir_item.as_array_of_tables().ok_or_else(|| {
+        source.item(
+            Some(ir_item),
+            "project analysis.ir must be an array of tables",
+        )
+    })?;
     let mut ids = BTreeSet::new();
     let mut outputs = BTreeSet::new();
     profiles
@@ -45,26 +50,31 @@ pub(crate) fn load_ir_profiles(
         .enumerate()
         .map(|(index, table)| {
             let context = format!("project analysis.ir[{index}]");
-            let id = required_string(table, "id", &context)?;
-            validate_profile_id(&id, &context)?;
+            let id = required_string(table, "id", &context, source)?;
+            validate_profile_id(&id, &context)
+                .map_err(|message| source.table_key(table, "id", message))?;
             if !ids.insert(id.clone()) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate project IR profile id {id:?}"
-                )));
+                return Err(source.table_key(
+                    table,
+                    "id",
+                    format!("duplicate project IR profile id {id:?}"),
+                ));
             }
-            let sources = sources(table, &context)?;
+            let sources = sources(table, &context, source)?;
             let symbol_prefix =
-                optional_string(table, "symbol-prefix", &context)?.unwrap_or_default();
+                optional_string(table, "symbol-prefix", &context, source)?.unwrap_or_default();
             let include_reachable =
-                optional_boolean(table, "include-reachable", &context)?.unwrap_or(true);
-            let entry_contract = optional_string(table, "entry-contract", &context)?
+                optional_boolean(table, "include-reachable", &context, source)?.unwrap_or(true);
+            let entry_contract = optional_string(table, "entry-contract", &context, source)?
                 .unwrap_or_else(|| "none".to_owned());
-            let output = resolve_path(base, &required_string(table, "output", &context)?);
-            reserve_output(&mut outputs, &output, &id)?;
-            let pseudo_rust = optional_string(table, "pseudo-rust", &context)?
+            let output = resolve_path(base, &required_string(table, "output", &context, source)?);
+            reserve_output(&mut outputs, &output, &id)
+                .map_err(|message| source.table_key(table, "output", message))?;
+            let pseudo_rust = optional_string(table, "pseudo-rust", &context, source)?
                 .map(|path| resolve_path(base, &path));
             if let Some(path) = &pseudo_rust {
-                reserve_output(&mut outputs, path, &id)?;
+                reserve_output(&mut outputs, path, &id)
+                    .map_err(|message| source.table_key(table, "pseudo-rust", message))?;
             }
             Ok(ProjectIrProfile {
                 id,
@@ -79,58 +89,77 @@ pub(crate) fn load_ir_profiles(
         .collect()
 }
 
-fn sources(table: &Table, context: &str) -> Result<Vec<String>> {
+fn sources(table: &Table, context: &str, source: ProjectSource<'_>) -> Result<Vec<String>> {
     let Some(item) = table.get("sources") else {
         return Ok(Vec::new());
     };
     let values = item
         .as_array()
-        .ok_or_else(|| format!("{context}.sources must be an array"))
-        .map_err(crate::Error::invalid)?;
+        .ok_or_else(|| source.item(Some(item), format!("{context}.sources must be an array")))?;
     if values.is_empty() {
-        return Err(crate::Error::invalid(format!(
-            "{context}.sources must not be empty"
-        )));
+        return Err(source.item(Some(item), format!("{context}.sources must not be empty")));
     }
     let mut seen = BTreeSet::new();
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            let source = value
+            let source_id = value
                 .as_str()
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| format!("{context}.sources[{index}] must be a non-empty string"))
-                .map_err(crate::Error::invalid)?;
-            validate_source_id(source)
-                .map_err(|_| format!("invalid source id {source:?} in {context}.sources[{index}]"))
-                .map_err(crate::Error::invalid)?;
-            if !seen.insert(source.to_owned()) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate source {source:?} in {context}"
-                )));
+                .ok_or_else(|| {
+                    source.error(
+                        value.span(),
+                        format!("{context}.sources[{index}] must be a non-empty string"),
+                    )
+                })?;
+            validate_source_id(source_id).map_err(|_| {
+                source.error(
+                    value.span(),
+                    format!("invalid source id {source_id:?} in {context}.sources[{index}]"),
+                )
+            })?;
+            if !seen.insert(source_id.to_owned()) {
+                return Err(source.error(
+                    value.span(),
+                    format!("duplicate source {source_id:?} in {context}"),
+                ));
             }
-            Ok(source.to_owned())
+            Ok(source_id.to_owned())
         })
         .collect()
 }
 
-fn reserve_output(outputs: &mut BTreeSet<PathBuf>, path: &Path, id: &str) -> Result<()> {
+fn reserve_output(
+    outputs: &mut BTreeSet<PathBuf>,
+    path: &Path,
+    id: &str,
+) -> std::result::Result<(), String> {
     if !outputs.insert(path.to_owned()) {
-        return Err(crate::Error::invalid(format!(
+        return Err(format!(
             "project IR profile {id:?} reuses output path {}",
             path.display()
-        )));
+        ));
     }
     Ok(())
 }
 
-fn required_string(table: &Table, key: &str, context: &str) -> Result<String> {
-    optional_string(table, key, context)?
-        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
+fn required_string(
+    table: &Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<String> {
+    optional_string(table, key, context, source)?
+        .ok_or_else(|| source.table_key(table, key, format!("{context} requires string {key:?}")))
 }
 
-fn optional_string(table: &Table, key: &str, context: &str) -> Result<Option<String>> {
+fn optional_string(
+    table: &Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<Option<String>> {
     match table.get(key) {
         None => Ok(None),
         Some(item) => item
@@ -138,34 +167,37 @@ fn optional_string(table: &Table, key: &str, context: &str) -> Result<Option<Str
             .filter(|value| !value.is_empty())
             .map(|value| Some(value.to_owned()))
             .ok_or_else(|| {
-                crate::Error::invalid(format!("{context}.{key} must be a non-empty string"))
+                source.item(
+                    Some(item),
+                    format!("{context}.{key} must be a non-empty string"),
+                )
             }),
     }
 }
 
-fn optional_boolean(table: &Table, key: &str, context: &str) -> Result<Option<bool>> {
+fn optional_boolean(
+    table: &Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<Option<bool>> {
     match table.get(key) {
         None => Ok(None),
-        Some(Item::Value(value)) => value
-            .as_bool()
-            .map(Some)
-            .ok_or_else(|| crate::Error::invalid(format!("{context}.{key} must be a boolean"))),
-        Some(_) => Err(crate::Error::invalid(format!(
-            "{context}.{key} must be a boolean"
-        ))),
+        Some(Item::Value(value)) => value.as_bool().map(Some).ok_or_else(|| {
+            source.error(value.span(), format!("{context}.{key} must be a boolean"))
+        }),
+        Some(item) => Err(source.item(Some(item), format!("{context}.{key} must be a boolean"))),
     }
 }
 
-fn validate_profile_id(id: &str, context: &str) -> Result<()> {
+fn validate_profile_id(id: &str, context: &str) -> std::result::Result<(), String> {
     if id
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
         Ok(())
     } else {
-        Err(crate::Error::invalid(format!(
-            "invalid IR profile id {id:?} in {context}"
-        )))
+        Err(format!("invalid IR profile id {id:?} in {context}"))
     }
 }
 
@@ -181,10 +213,11 @@ fn resolve_path(base: &Path, value: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use toml_edit::DocumentMut;
 
     #[test]
     fn parses_profiles_and_resolves_outputs_relative_to_the_project() {
-        let document = r#"
+        let input = r#"
 [analysis]
 
 [[analysis.ir]]
@@ -200,10 +233,14 @@ sources = ["rom"]
 include-reachable = false
 entry-contract = "none"
 output = "generated/rom.ir.json"
-"#
-        .parse::<DocumentMut>()
+"#;
+        let document = input.parse::<DocumentMut>().unwrap();
+        let profiles = load_ir_profiles(
+            &document,
+            Path::new("project"),
+            ProjectSource::new(Path::new("project.toml"), input),
+        )
         .unwrap();
-        let profiles = load_ir_profiles(&document, Path::new("project")).unwrap();
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].sources, ["rom", "archive"]);
         assert!(profiles[0].include_reachable);
@@ -217,7 +254,7 @@ output = "generated/rom.ir.json"
 
     #[test]
     fn rejects_duplicate_profile_outputs() {
-        let document = r#"
+        let input = r#"
 [[analysis.ir]]
 id = "one"
 output = "generated/shared.json"
@@ -225,10 +262,14 @@ output = "generated/shared.json"
 [[analysis.ir]]
 id = "two"
 output = "generated/shared.json"
-"#
-        .parse::<DocumentMut>()
-        .unwrap();
-        let error = load_ir_profiles(&document, Path::new("project")).unwrap_err();
+"#;
+        let document = input.parse::<DocumentMut>().unwrap();
+        let error = load_ir_profiles(
+            &document,
+            Path::new("project"),
+            ProjectSource::new(Path::new("project.toml"), input),
+        )
+        .unwrap_err();
         assert!(error.to_string().contains("reuses output path"));
     }
 }

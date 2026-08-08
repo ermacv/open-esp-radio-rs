@@ -100,6 +100,11 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
         pack,
         &paths.semantic_catalogs,
         context.target.calling_convention.label(),
+        context
+            .target
+            .harness
+            .as_deref()
+            .and_then(|harness| crate::harnesses::contracts(harness).ok()),
     ) {
         Ok(workspace) => {
             let summary = workspace.summary();
@@ -120,6 +125,8 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .detail("ignored_slots", summary.ignored_slots)
             .detail("unreviewed_slots", summary.unreviewed_slots)
             .detail("semantic_links", summary.semantic_links)
+            .detail("execution_contracts", summary.execution_contracts)
+            .detail("execution_models", summary.execution_models)
             .detail("resolved_calls", summary.resolved_calls)
         }
         Err(error) => Component::new("interfaces", Readiness::Invalid)
@@ -162,6 +169,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
                 if summary.unreviewed_functions == 0
                     && summary.unreviewed_contexts == 0
                     && summary.unreviewed_fields == 0
+                    && summary.unreviewed_type_fields == 0
                 {
                     Readiness::Ready
                 } else {
@@ -178,6 +186,9 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .detail("unreviewed_contexts", summary.unreviewed_contexts)
             .detail("reviewed_fields", summary.reviewed_fields)
             .detail("unreviewed_fields", summary.unreviewed_fields)
+            .detail("logical_types", summary.logical_types)
+            .detail("type_bindings", summary.type_bindings)
+            .detail("unreviewed_type_fields", summary.unreviewed_type_fields)
             .detail("accepted_incomplete", summary.accepted_incomplete)
         }
         Err(error) => Component::new("functions", Readiness::Invalid)

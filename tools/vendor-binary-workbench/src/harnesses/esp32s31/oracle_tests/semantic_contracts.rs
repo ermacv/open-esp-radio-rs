@@ -15,7 +15,7 @@ fn registered_phy_contract_composes_pinned_i2c_polling_summaries() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -53,7 +53,7 @@ fn registered_phy_contract_composes_exact_rom_wide_division() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -115,7 +115,7 @@ fn registered_phy_contract_composes_the_bounded_rfpll_poll() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -177,7 +177,7 @@ fn registered_phy_contract_composes_the_rfpll_cap_search() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -371,7 +371,7 @@ fn scratch_rejects_partial_overlap() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -559,7 +559,7 @@ fn live_reads_increment_only_on_active_not_done_iterations() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])

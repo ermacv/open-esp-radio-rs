@@ -1,4 +1,4 @@
-//! Minimal stable projection of schema-v32 linked IR used by function review.
+//! Minimal stable projection of schema-v35 linked IR used by function review.
 
 use std::{collections::BTreeSet, fs, path::PathBuf};
 
@@ -24,6 +24,36 @@ pub(crate) struct FunctionContextFieldFact {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum FunctionMemoryObjectFact {
+    Argument {
+        index: u8,
+    },
+    Global {
+        member: Option<String>,
+        symbol: String,
+    },
+    DereferencedGlobal {
+        member: Option<String>,
+        symbol: String,
+        pointer_offset: i64,
+    },
+    Absolute {
+        address_space: String,
+        address: u32,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionMemoryFieldFact {
+    pub(crate) object: FunctionMemoryObjectFact,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct FunctionCallFact {
     pub(crate) kind: String,
     pub(crate) target: String,
@@ -31,6 +61,35 @@ pub(crate) struct FunctionCallFact {
     pub(crate) site: Option<u32>,
     pub(crate) arguments: Vec<String>,
     pub(crate) guard_paths: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ScenarioArgumentFact {
+    pub(crate) index: u8,
+    pub(crate) value: u32,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ScenarioMmioReadFact {
+    pub(crate) address: u32,
+    pub(crate) mask: u32,
+    pub(crate) expected: u32,
+    pub(crate) values: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ScenarioSuggestionVariantFact {
+    pub(crate) name: String,
+    pub(crate) arguments: Vec<ScenarioArgumentFact>,
+    pub(crate) mmio_reads: Vec<ScenarioMmioReadFact>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ScenarioSuggestionFact {
+    pub(crate) kind: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) evidence: String,
+    pub(crate) variants: Vec<ScenarioSuggestionVariantFact>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -48,9 +107,11 @@ pub(crate) struct FunctionFact {
     pub(crate) reachable_functions: Vec<String>,
     pub(crate) calls: Vec<FunctionCallFact>,
     pub(crate) context_fields: Vec<FunctionContextFieldFact>,
+    pub(crate) memory_fields: Vec<FunctionMemoryFieldFact>,
     pub(crate) semantic_operations: Vec<String>,
     pub(crate) trampoline_calls: usize,
     pub(crate) event_dispatches: usize,
+    pub(crate) scenario_suggestions: Vec<ScenarioSuggestionFact>,
     pub(crate) pseudo: String,
 }
 
@@ -119,11 +180,11 @@ fn parse_report(profile: &str, input: &str) -> Result<(Vec<FunctionInputFact>, V
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
     let context = format!("linked-IR profile {profile:?}");
-    if integer(root, "schema_version", &context)? != 32
+    if integer(root, "schema_version", &context)? != 35
         || string(root, "command", &context)? != "ir export"
     {
         return Err(crate::Error::invalid(format!(
-            "function workspace requires a schema-v32 ir export report for profile {profile:?}"
+            "function workspace requires a schema-v35 ir export report for profile {profile:?}"
         )));
     }
     if boolean(root, "completeness_claim", &context)? {
@@ -204,6 +265,7 @@ fn parse_functions(
                 reachable_functions: strings(summary, "reachable_functions", &context)?,
                 calls: parse_calls(function, &context)?,
                 context_fields: parse_fields(summary, &context)?,
+                memory_fields: parse_memory_fields(summary, &context)?,
                 semantic_operations: array(summary, "semantic_operations", &context)?
                     .iter()
                     .enumerate()
@@ -220,7 +282,87 @@ fn parse_functions(
                     .collect::<Result<Vec<_>>>()?,
                 trampoline_calls: array(summary, "trampoline_calls", &context)?.len(),
                 event_dispatches: array(summary, "event_dispatches", &context)?.len(),
+                scenario_suggestions: parse_scenario_suggestions(function, &context)?,
                 pseudo: string(function, "pseudo", &context)?.to_owned(),
+            })
+        })
+        .collect()
+}
+
+fn parse_scenario_suggestions(
+    function: &Map<String, Value>,
+    context: &str,
+) -> Result<Vec<ScenarioSuggestionFact>> {
+    array(function, "scenario_suggestions", context)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let context = format!("{context}.scenario_suggestions[{index}]");
+            let suggestion = object(value, &context)?;
+            let variants = array(suggestion, "variants", &context)?
+                .iter()
+                .enumerate()
+                .map(|(variant_index, value)| {
+                    let context = format!("{context}.variants[{variant_index}]");
+                    let variant = object(value, &context)?;
+                    let arguments = array(variant, "arguments", &context)?
+                        .iter()
+                        .enumerate()
+                        .map(|(argument_index, value)| {
+                            let context = format!("{context}.arguments[{argument_index}]");
+                            let argument = object(value, &context)?;
+                            Ok(ScenarioArgumentFact {
+                                index: integer(argument, "index", &context)?.try_into().map_err(
+                                    |_| {
+                                        crate::Error::invalid(format!(
+                                            "invalid argument index in {context}"
+                                        ))
+                                    },
+                                )?,
+                                value: hex_u32(argument, "value", &context)?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    let mmio_reads = array(variant, "mmio_reads", &context)?
+                        .iter()
+                        .enumerate()
+                        .map(|(read_index, value)| {
+                            let context = format!("{context}.mmio_reads[{read_index}]");
+                            let read = object(value, &context)?;
+                            let values = array(read, "values", &context)?
+                                .iter()
+                                .enumerate()
+                                .map(|(value_index, value)| {
+                                    value
+                                        .as_u64()
+                                        .and_then(|value| value.try_into().ok())
+                                        .ok_or_else(|| {
+                                            crate::Error::invalid(format!(
+                                                "{context}.values[{value_index}] must be a u32"
+                                            ))
+                                        })
+                                })
+                                .collect::<Result<Vec<_>>>()?;
+                            Ok(ScenarioMmioReadFact {
+                                address: hex_u32(read, "address", &context)?,
+                                mask: hex_u32(read, "mask", &context)?,
+                                expected: hex_u32(read, "expected", &context)?,
+                                values,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    Ok(ScenarioSuggestionVariantFact {
+                        name: string(variant, "name", &context)?.to_owned(),
+                        arguments,
+                        mmio_reads,
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(ScenarioSuggestionFact {
+                kind: string(suggestion, "kind", &context)?.to_owned(),
+                site: optional_hex_u32(suggestion, "site", &context)?,
+                evidence: string(suggestion, "evidence", &context)?.to_owned(),
+                variants,
             })
         })
         .collect()
@@ -320,6 +462,65 @@ fn parse_fields(
         .collect()
 }
 
+fn parse_memory_fields(
+    summary: &Map<String, Value>,
+    context: &str,
+) -> Result<Vec<FunctionMemoryFieldFact>> {
+    array(summary, "memory_fields", context)?
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let context = format!("{context}.memory_fields[{index}]");
+            let field = object(value, &context)?;
+            let object_context = format!("{context}.object");
+            let object = object(
+                field
+                    .get("object")
+                    .ok_or_else(|| format!("{context} requires object"))
+                    .map_err(crate::Error::invalid)?,
+                &object_context,
+            )?;
+            let object = match string(object, "kind", &object_context)? {
+                "argument" => FunctionMemoryObjectFact::Argument {
+                    index: integer(object, "index", &object_context)?
+                        .try_into()
+                        .map_err(|_| format!("invalid argument index in {object_context}"))
+                        .map_err(crate::Error::invalid)?,
+                },
+                "global" => FunctionMemoryObjectFact::Global {
+                    member: optional_string(object, "member", &object_context)?,
+                    symbol: string(object, "symbol", &object_context)?.to_owned(),
+                },
+                "dereferenced-global" => FunctionMemoryObjectFact::DereferencedGlobal {
+                    member: optional_string(object, "member", &object_context)?,
+                    symbol: string(object, "symbol", &object_context)?.to_owned(),
+                    pointer_offset: signed(object, "pointer_offset", &object_context)?,
+                },
+                "absolute" => FunctionMemoryObjectFact::Absolute {
+                    address_space: string(object, "address_space", &object_context)?.to_owned(),
+                    address: hex_u32(object, "address", &object_context)?,
+                },
+                kind => {
+                    return Err(crate::Error::invalid(format!(
+                        "unsupported memory object kind {kind:?} in {object_context}"
+                    )));
+                }
+            };
+            Ok(FunctionMemoryFieldFact {
+                object,
+                offset: signed(field, "offset", &context)?,
+                width: integer(field, "width", &context)?
+                    .try_into()
+                    .map_err(|_| format!("invalid width in {context}"))
+                    .map_err(crate::Error::invalid)?,
+                reads: count(field, "reads", &context)?,
+                writes: count(field, "writes", &context)?,
+                write_mask: hex_u32(field, "write_mask", &context)?,
+            })
+        })
+        .collect()
+}
+
 fn validate(inputs: &[FunctionInputFact], functions: &[FunctionFact]) -> Result<()> {
     let mut input_keys = BTreeSet::new();
     for input in inputs {
@@ -370,6 +571,18 @@ fn validate(inputs: &[FunctionInputFact], functions: &[FunctionFact]) -> Result<
             if !fields.insert((field.argument, field.offset, field.width)) {
                 return Err(crate::Error::invalid(format!(
                     "function {}:{} has a duplicate context field",
+                    function.profile, function.identity
+                )));
+            }
+        }
+        let mut memory_fields = BTreeSet::new();
+        for field in &function.memory_fields {
+            if !matches!(field.width, 8 | 16 | 32 | 64)
+                || field.reads == 0 && field.writes == 0
+                || !memory_fields.insert((&field.object, field.offset, field.width))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "function {}:{} has an invalid or duplicate memory-object field",
                     function.profile, function.identity
                 )));
             }

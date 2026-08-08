@@ -34,6 +34,11 @@ pub(super) struct FunctionWorkspaceDocument<'a> {
     pub(super) ignored_fields: usize,
     pub(super) unreviewed_fields: usize,
     pub(super) accepted_incomplete: usize,
+    pub(super) logical_types: usize,
+    pub(super) type_bindings: usize,
+    pub(super) reviewed_type_fields: usize,
+    pub(super) ignored_type_fields: usize,
+    pub(super) unreviewed_type_fields: usize,
     pub(super) pack: &'a Path,
 }
 
@@ -48,6 +53,8 @@ pub(super) struct FunctionReviewDocument<'a> {
     pub(super) contexts: usize,
     pub(super) fields: usize,
     pub(super) interface_links: usize,
+    pub(super) logical_types: usize,
+    pub(super) type_bindings: usize,
     pub(super) output: &'a Path,
 }
 
@@ -119,6 +126,16 @@ pub(super) fn print_workspace_human(report: &FunctionWorkspaceDocument<'_>) {
                     report.ignored_fields.to_string(),
                     report.unreviewed_fields.to_string(),
                 ],
+                [
+                    "Type fields".into(),
+                    (report.reviewed_type_fields
+                        + report.ignored_type_fields
+                        + report.unreviewed_type_fields)
+                        .to_string(),
+                    report.reviewed_type_fields.to_string(),
+                    report.ignored_type_fields.to_string(),
+                    report.unreviewed_type_fields.to_string(),
+                ],
             ],
         )
     );
@@ -128,11 +145,16 @@ pub(super) fn print_workspace_human(report: &FunctionWorkspaceDocument<'_>) {
             report.accepted_incomplete
         );
     }
+    outputln!(
+        "Logical types: {} ({} bindings)",
+        report.logical_types,
+        report.type_bindings
+    );
 }
 
 pub(super) fn print_workspace_tsv(report: &FunctionWorkspaceDocument<'_>) {
     outputln!(
-        "FUNCTION-WORKSPACE\tstatus={}\tdeny-unreviewed={}\tinputs={}\tobserved-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\taccepted-incomplete={}\tpack={}",
+        "FUNCTION-WORKSPACE\tstatus={}\tdeny-unreviewed={}\tinputs={}\tobserved-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\tlogical-types={}\ttype-bindings={}\treviewed-type-fields={}\tignored-type-fields={}\tunreviewed-type-fields={}\taccepted-incomplete={}\tpack={}",
         report.status,
         report.deny_unreviewed,
         report.inputs,
@@ -146,6 +168,11 @@ pub(super) fn print_workspace_tsv(report: &FunctionWorkspaceDocument<'_>) {
         report.reviewed_fields,
         report.ignored_fields,
         report.unreviewed_fields,
+        report.logical_types,
+        report.type_bindings,
+        report.reviewed_type_fields,
+        report.ignored_type_fields,
+        report.unreviewed_type_fields,
         report.accepted_incomplete,
         report.pack.display()
     );
@@ -167,6 +194,8 @@ pub(super) fn print_review_human(report: &FunctionReviewDocument<'_>) {
                 "Contexts",
                 "Fields",
                 "Interface links",
+                "Logical types",
+                "Type bindings",
             ],
             [[
                 report.root_functions.to_string(),
@@ -175,6 +204,8 @@ pub(super) fn print_review_human(report: &FunctionReviewDocument<'_>) {
                 report.contexts.to_string(),
                 report.fields.to_string(),
                 report.interface_links.to_string(),
+                report.logical_types.to_string(),
+                report.type_bindings.to_string(),
             ]],
         )
     );
@@ -182,7 +213,7 @@ pub(super) fn print_review_human(report: &FunctionReviewDocument<'_>) {
 
 pub(super) fn print_review_tsv(report: &FunctionReviewDocument<'_>) {
     outputln!(
-        "FUNCTION-REVIEW\tstatus={}\troot-functions={}\treviewed={}\tunreviewed={}\tcontexts={}\tfields={}\tinterface-links={}\toutput={}",
+        "FUNCTION-REVIEW\tstatus={}\troot-functions={}\treviewed={}\tunreviewed={}\tcontexts={}\tfields={}\tinterface-links={}\tlogical-types={}\ttype-bindings={}\toutput={}",
         report.status,
         report.root_functions,
         report.reviewed,
@@ -190,6 +221,8 @@ pub(super) fn print_review_tsv(report: &FunctionReviewDocument<'_>) {
         report.contexts,
         report.fields,
         report.interface_links,
+        report.logical_types,
+        report.type_bindings,
         report.output.display()
     );
 }

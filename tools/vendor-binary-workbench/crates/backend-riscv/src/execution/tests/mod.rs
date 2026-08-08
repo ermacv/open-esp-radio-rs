@@ -6,7 +6,7 @@ use rv_asm::AmoOp;
 
 use super::image::UnresolvedRelocation;
 use super::*;
-use crate::MmioRegisterMap;
+use crate::MmioMap;
 
 fn tiny_image(bytes: Vec<u8>, memory_size: u32) -> ExecutableImage {
     ExecutableImage {
@@ -27,10 +27,10 @@ fn tiny_image(bytes: Vec<u8>, memory_size: u32) -> ExecutableImage {
     }
 }
 
-fn empty_svd() -> MmioRegisterMap {
-    MmioRegisterMap {
+fn empty_svd() -> MmioMap {
+    MmioMap {
         registers: Vec::new(),
-        windows: Vec::new(),
+        regions: Vec::new(),
     }
 }
 
@@ -77,6 +77,7 @@ fn tail_relocation_image(target: Option<u32>) -> ExecutableImage {
 }
 
 mod calls;
+mod devices;
 mod image_and_control;
 mod memory;
 mod session;

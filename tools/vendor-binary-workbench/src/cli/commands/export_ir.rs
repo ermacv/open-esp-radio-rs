@@ -35,11 +35,7 @@ pub(super) struct ProjectIrDocuments {
     pub(super) field_candidates: usize,
 }
 
-pub(super) fn run(
-    arguments: IrExportArgs,
-    svd: &MmioRegisterMap,
-    target: &TargetSpec,
-) -> Result<bool> {
+pub(super) fn run(arguments: IrExportArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
     let artifacts = arguments
         .artifact
         .into_iter()
@@ -93,7 +89,7 @@ pub(super) fn generate_project_profile(
     inputs: Vec<(String, PathBuf)>,
     companions: Vec<PathBuf>,
     profile: &crate::project_ir::ProjectIrProfile,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<ProjectIrDocuments> {
     let artifacts = inputs
@@ -145,7 +141,7 @@ fn analyze(
     symbol_prefix: &str,
     include_reachable: bool,
     entry_contract_id: &str,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let harness = target.harness.as_deref();

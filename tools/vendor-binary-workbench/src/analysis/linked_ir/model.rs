@@ -2,6 +2,8 @@
 
 use serde::Serialize;
 
+use crate::MemoryObjectRoot;
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCallArgument {
     pub(crate) position: usize,
@@ -190,6 +192,76 @@ pub(crate) struct ContextAccess {
     pub(crate) forced_one_mask: Option<u32>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub(crate) enum LinkedMemoryObject {
+    Argument {
+        index: u8,
+    },
+    Global {
+        member: Option<String>,
+        symbol: String,
+    },
+    DereferencedGlobal {
+        member: Option<String>,
+        symbol: String,
+        pointer_offset: i64,
+    },
+    Absolute {
+        address_space: String,
+        address: u32,
+    },
+}
+
+impl LinkedMemoryObject {
+    pub(crate) fn from_root(value: MemoryObjectRoot, address_space: &str) -> Self {
+        match value {
+            MemoryObjectRoot::Argument { index } => Self::Argument { index },
+            MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global { member, symbol },
+            MemoryObjectRoot::DereferencedGlobal {
+                member,
+                symbol,
+                pointer_offset,
+            } => Self::DereferencedGlobal {
+                member,
+                symbol,
+                pointer_offset,
+            },
+            MemoryObjectRoot::Absolute { address } => Self::Absolute {
+                address_space: address_space.to_owned(),
+                address,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct MemoryObjectAccess {
+    pub(crate) object: LinkedMemoryObject,
+    pub(crate) offset: i64,
+    pub(crate) access: &'static str,
+    pub(crate) width: u8,
+    pub(crate) path: String,
+    pub(crate) value: Option<String>,
+    pub(crate) value_pseudo: Option<String>,
+    pub(crate) write_mask: Option<u32>,
+    pub(crate) preserved_mask: Option<u32>,
+    pub(crate) forced_zero_mask: Option<u32>,
+    pub(crate) forced_one_mask: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MemoryObjectField {
+    pub(crate) object: LinkedMemoryObject,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+    pub(crate) paths: Vec<String>,
+    pub(crate) write_values: Vec<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct ContextField {
     pub(crate) argument: u8,
@@ -366,6 +438,19 @@ pub(crate) struct LinkedSummaryContextField {
     pub(crate) write_values: Vec<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedSummaryMemoryField {
+    pub(crate) object: LinkedMemoryObject,
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) reads: usize,
+    pub(crate) writes: usize,
+    pub(crate) write_mask: u32,
+    pub(crate) origins: Vec<String>,
+    pub(crate) paths: Vec<String>,
+    pub(crate) write_values: Vec<String>,
+}
+
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedProjectedCallArgument {
     pub(crate) position: usize,
@@ -440,6 +525,7 @@ pub(crate) struct LinkedEffectSummary {
     pub(crate) context_projection_complete: bool,
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) context_fields: Vec<LinkedSummaryContextField>,
+    pub(crate) memory_fields: Vec<LinkedSummaryMemoryField>,
     pub(crate) trampoline_calls: Vec<LinkedProjectedTrampolineCall>,
     pub(crate) semantic_actions: Vec<LinkedProjectedSemanticAction>,
     pub(crate) event_dispatches: Vec<LinkedEventDispatch>,
@@ -468,6 +554,35 @@ pub(crate) struct LinkedDiagnostic {
     pub(crate) fragments: Vec<LinkedDiagnosticFragment>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ScenarioArgumentAssignment {
+    pub(crate) index: u8,
+    pub(crate) value: u32,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ScenarioMmioReadAssignment {
+    pub(crate) address: u32,
+    pub(crate) mask: u32,
+    pub(crate) expected: u32,
+    pub(crate) values: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ScenarioSuggestionVariant {
+    pub(crate) name: &'static str,
+    pub(crate) arguments: Vec<ScenarioArgumentAssignment>,
+    pub(crate) mmio_reads: Vec<ScenarioMmioReadAssignment>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct ScenarioSuggestion {
+    pub(crate) kind: &'static str,
+    pub(crate) site: Option<u32>,
+    pub(crate) evidence: String,
+    pub(crate) variants: Vec<ScenarioSuggestionVariant>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
@@ -491,6 +606,9 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) delays: Vec<LinkedDelay>,
     pub(crate) context_accesses: Vec<ContextAccess>,
     pub(crate) context_fields: Vec<ContextField>,
+    pub(crate) memory_accesses: Vec<MemoryObjectAccess>,
+    pub(crate) memory_fields: Vec<MemoryObjectField>,
+    pub(crate) scenario_suggestions: Vec<ScenarioSuggestion>,
     pub(crate) effect_summary: LinkedEffectSummary,
     pub(crate) call_graph_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) direct_diagnostics: Vec<LinkedDiagnostic>,
@@ -518,6 +636,9 @@ pub(crate) struct LinkedIrReport {
     pub(crate) context_functions: usize,
     pub(crate) context_accesses: usize,
     pub(crate) context_fields: usize,
+    pub(crate) memory_functions: usize,
+    pub(crate) memory_accesses: usize,
+    pub(crate) memory_fields: usize,
     pub(crate) complete_functions: usize,
     pub(crate) structured_functions: usize,
     pub(crate) internal_calls: usize,
@@ -530,4 +651,6 @@ pub(crate) struct LinkedIrReport {
     pub(crate) recursive_effect_summaries: usize,
     pub(crate) complete_context_projections: usize,
     pub(crate) projected_context_fields: usize,
+    pub(crate) projected_memory_fields: usize,
+    pub(crate) scenario_suggestions: usize,
 }

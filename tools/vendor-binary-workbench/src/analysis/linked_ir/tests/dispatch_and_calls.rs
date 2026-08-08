@@ -171,9 +171,9 @@ fn direct_call_graph_survives_reference_summary_inlining() {
         )]),
         pointer_context: direct::StructuralPointerContext::default(),
     };
-    let map = MmioRegisterMap {
+    let map = MmioMap {
         registers: Vec::new(),
-        windows: Vec::new(),
+        regions: Vec::new(),
     };
 
     let identities = IrIdentityCatalog::new(&resolver, None);

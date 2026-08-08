@@ -53,6 +53,90 @@ pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord>
     })
 }
 
+pub(crate) fn parse_table_instance(value: &str, option: &str) -> Result<execution::TableInstance> {
+    let parts = value.split_whitespace().collect::<Vec<_>>();
+    if !(3..=4).contains(&parts.len()) {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires LAYOUT-ID BASE SIZE [POINTER-CELL]"
+        )));
+    }
+    let layout_id = parts[0];
+    if layout_id.is_empty() || layout_id.chars().any(char::is_whitespace) {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires one non-empty layout id"
+        )));
+    }
+    let base_address = parse_u32(parts[1])
+        .ok_or_else(|| format!("invalid {option} base address"))
+        .map_err(crate::Error::invalid)?;
+    let layout_size = parse_u32(parts[2])
+        .ok_or_else(|| format!("invalid {option} layout size"))
+        .map_err(crate::Error::invalid)?;
+    let pointer_cells = parts
+        .get(3)
+        .map(|value| {
+            parse_u32(value)
+                .ok_or_else(|| format!("invalid {option} pointer cell"))
+                .map_err(crate::Error::invalid)
+        })
+        .transpose()?
+        .into_iter()
+        .collect();
+    Ok(execution::TableInstance {
+        layout_id: layout_id.to_owned(),
+        base_address,
+        layout_size,
+        pointer_cells,
+        slots: Vec::new(),
+    })
+}
+
+pub(crate) fn parse_table_slot(
+    value: &str,
+    option: &str,
+) -> Result<(String, execution::TableInstanceSlot)> {
+    let parts = value.split_whitespace().collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires LAYOUT-ID OFFSET SYMBOL"
+        )));
+    }
+    let offset = parse_u32(parts[1])
+        .ok_or_else(|| format!("invalid {option} slot offset"))
+        .map_err(crate::Error::invalid)?;
+    if parts[0].is_empty() || parts[2].is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires non-empty layout and symbol names"
+        )));
+    }
+    Ok((
+        parts[0].to_owned(),
+        execution::TableInstanceSlot {
+            offset,
+            target: if parts[2] == "null" {
+                execution::TableSlotTarget::Null
+            } else {
+                execution::TableSlotTarget::Symbol(parts[2].to_owned())
+            },
+        },
+    ))
+}
+
+pub(crate) fn add_table_slot(
+    instances: &mut [execution::TableInstance],
+    layout_id: &str,
+    slot: execution::TableInstanceSlot,
+    option: &str,
+) -> Result<()> {
+    let instance = instances
+        .iter_mut()
+        .find(|instance| instance.layout_id == layout_id)
+        .ok_or_else(|| format!("{option} refers to undeclared table {layout_id}"))
+        .map_err(crate::Error::invalid)?;
+    instance.slots.push(slot);
+    Ok(())
+}
+
 pub(crate) fn parse_symbol_observation(value: &str, option: &str) -> Result<MemoryObservation> {
     let (target, length) = value
         .split_once('=')
@@ -120,6 +204,111 @@ pub(crate) struct SymbolWord {
     pub(crate) symbol: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum RuntimeMemoryObjectBinding {
+    Argument { index: usize },
+    Global { symbol: String },
+    DereferencedGlobal { symbol: String, pointer_offset: u32 },
+    Absolute { address_space: String, address: u32 },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeMemoryInstance {
+    pub(crate) id: String,
+    pub(crate) base_address: u32,
+    pub(crate) length: u32,
+    pub(crate) bindings: Vec<RuntimeMemoryObjectBinding>,
+}
+
+pub(crate) fn parse_memory_instance(value: &str, option: &str) -> Result<RuntimeMemoryInstance> {
+    let parts = value.split_whitespace().collect::<Vec<_>>();
+    let [id, base, length] = parts.as_slice() else {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires INSTANCE-ID BASE LENGTH"
+        )));
+    };
+    if id.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires a non-empty instance id"
+        )));
+    }
+    let base_address = parse_u32(base)
+        .ok_or_else(|| format!("invalid {option} base address"))
+        .map_err(crate::Error::invalid)?;
+    let length = parse_u32(length)
+        .filter(|length| *length != 0)
+        .ok_or_else(|| format!("invalid {option} length"))
+        .map_err(crate::Error::invalid)?;
+    base_address
+        .checked_add(length)
+        .ok_or_else(|| format!("{option} range overflows the 32-bit address space"))
+        .map_err(crate::Error::invalid)?;
+    Ok(RuntimeMemoryInstance {
+        id: (*id).to_owned(),
+        base_address,
+        length,
+        bindings: Vec::new(),
+    })
+}
+
+pub(crate) fn add_memory_instance_binding(
+    instances: &mut [RuntimeMemoryInstance],
+    value: &str,
+    option: &str,
+) -> Result<()> {
+    let parts = value.split_whitespace().collect::<Vec<_>>();
+    let Some((id, binding)) = parts.split_first() else {
+        return Err(crate::Error::invalid(format!(
+            "{option} requires INSTANCE-ID KIND ..."
+        )));
+    };
+    let instance = instances
+        .iter_mut()
+        .find(|instance| instance.id == *id)
+        .ok_or_else(|| format!("{option} refers to undeclared memory instance {id}"))
+        .map_err(crate::Error::invalid)?;
+    let binding = match binding {
+        ["argument", index] => RuntimeMemoryObjectBinding::Argument {
+            index: parse_u32(index)
+                .and_then(|index| usize::try_from(index).ok())
+                .filter(|index| *index < 8)
+                .ok_or_else(|| format!("invalid {option} argument index"))
+                .map_err(crate::Error::invalid)?,
+        },
+        ["global", symbol] if !symbol.is_empty() => RuntimeMemoryObjectBinding::Global {
+            symbol: (*symbol).to_owned(),
+        },
+        ["dereferenced-global", symbol, pointer_offset] if !symbol.is_empty() => {
+            RuntimeMemoryObjectBinding::DereferencedGlobal {
+                symbol: (*symbol).to_owned(),
+                pointer_offset: parse_u32(pointer_offset)
+                    .ok_or_else(|| format!("invalid {option} pointer offset"))
+                    .map_err(crate::Error::invalid)?,
+            }
+        }
+        ["absolute", address_space, address] if !address_space.is_empty() => {
+            RuntimeMemoryObjectBinding::Absolute {
+                address_space: (*address_space).to_owned(),
+                address: parse_u32(address)
+                    .ok_or_else(|| format!("invalid {option} absolute address"))
+                    .map_err(crate::Error::invalid)?,
+            }
+        }
+        _ => {
+            return Err(crate::Error::invalid(format!(
+                "{option} requires INSTANCE-ID followed by argument INDEX, global SYMBOL, dereferenced-global SYMBOL POINTER-OFFSET, or absolute ADDRESS-SPACE ADDRESS"
+            )));
+        }
+    };
+    if instance.bindings.contains(&binding) {
+        return Err(crate::Error::invalid(format!(
+            "{option} repeats a binding for memory instance {id}"
+        )));
+    }
+    instance.bindings.push(binding);
+    Ok(())
+}
+
 #[derive(Clone, Debug)]
 pub(crate) enum MemoryObservation {
     Absolute {
@@ -149,6 +338,10 @@ pub(crate) struct NamedScenario {
     pub(crate) rust_symbol_words: Vec<SymbolWord>,
     pub(crate) vendor_ram_words: Vec<(u32, u32)>,
     pub(crate) rust_ram_words: Vec<(u32, u32)>,
+    pub(crate) vendor_table_instances: Vec<execution::TableInstance>,
+    pub(crate) rust_table_instances: Vec<execution::TableInstance>,
+    pub(crate) vendor_memory_instances: Vec<RuntimeMemoryInstance>,
+    pub(crate) rust_memory_instances: Vec<RuntimeMemoryInstance>,
     pub(crate) vendor_observations: Vec<MemoryObservation>,
     pub(crate) rust_observations: Vec<MemoryObservation>,
 }
@@ -162,20 +355,24 @@ impl NamedScenario {
             rust_symbol_words: Vec::new(),
             vendor_ram_words: Vec::new(),
             rust_ram_words: Vec::new(),
+            vendor_table_instances: Vec::new(),
+            rust_table_instances: Vec::new(),
+            vendor_memory_instances: Vec::new(),
+            rust_memory_instances: Vec::new(),
             vendor_observations: Vec::new(),
             rust_observations: Vec::new(),
         }
     }
 }
 
-pub(crate) fn unmapped_execution_address(event: &execution::ExecutionEvent) -> Option<u32> {
+pub(crate) fn unnamed_execution_address(event: &execution::ExecutionEvent) -> Option<u32> {
     match event {
         execution::ExecutionEvent::Read {
             address, register, ..
         }
         | execution::ExecutionEvent::Write {
             address, register, ..
-        } if register == "UNMAPPED" => Some(*address),
+        } if register.is_none() => Some(*address),
         _ => None,
     }
 }
@@ -269,6 +466,22 @@ pub(crate) fn resolved_scenario(
     for (address, value) in ram_words {
         write_ram_word(&mut scenario, *address, *value);
     }
+    scenario.table_instances.extend(if vendor {
+        named.vendor_table_instances.clone()
+    } else {
+        named.rust_table_instances.clone()
+    });
+    materialize_memory_instances(
+        &mut scenario,
+        image,
+        if vendor {
+            &named.vendor_memory_instances
+        } else {
+            &named.rust_memory_instances
+        },
+        &named.name,
+        if vendor { "vendor" } else { "Rust" },
+    )?;
     for word in words {
         let value = image
             .symbol_address(&word.symbol)
@@ -322,4 +535,87 @@ pub(crate) fn resolved_scenario(
             .map_err(crate::Error::invalid)?;
     }
     Ok(scenario)
+}
+
+fn materialize_memory_instances(
+    scenario: &mut execution::Scenario,
+    image: &execution::ExecutableImage,
+    instances: &[RuntimeMemoryInstance],
+    scenario_name: &str,
+    side: &str,
+) -> Result<()> {
+    let mut ids = BTreeSet::new();
+    for instance in instances {
+        if !ids.insert(&instance.id) {
+            return Err(crate::Error::invalid(format!(
+                "scenario {scenario_name} repeats {side} memory instance {}",
+                instance.id
+            )));
+        }
+        if instance.bindings.len() < 2 {
+            return Err(crate::Error::invalid(format!(
+                "scenario {scenario_name} {side} memory instance {} needs at least two bindings",
+                instance.id
+            )));
+        }
+        for binding in &instance.bindings {
+            match binding {
+                RuntimeMemoryObjectBinding::Argument { index } => {
+                    if let Some(value) = scenario.arguments.get(*index)
+                        && *value != instance.base_address
+                    {
+                        return Err(crate::Error::invalid(format!(
+                            "scenario {scenario_name} {side} memory instance {} conflicts with argument {index}: {value:#010x} != {:#010x}",
+                            instance.id, instance.base_address
+                        )));
+                    }
+                    scenario
+                        .arguments
+                        .resize((*index + 1).max(scenario.arguments.len()), 0);
+                    scenario.arguments[*index] = instance.base_address;
+                }
+                RuntimeMemoryObjectBinding::Global { symbol } => {
+                    let address = image.symbol_address(symbol).ok_or_else(|| {
+                        crate::Error::invalid(format!(
+                            "scenario {scenario_name} {side} memory instance {} refers to missing global {symbol}",
+                            instance.id
+                        ))
+                    })?;
+                    if address != instance.base_address {
+                        return Err(crate::Error::invalid(format!(
+                            "scenario {scenario_name} {side} global {symbol} is at {address:#010x}, not runtime instance base {:#010x}",
+                            instance.base_address
+                        )));
+                    }
+                }
+                RuntimeMemoryObjectBinding::DereferencedGlobal {
+                    symbol,
+                    pointer_offset,
+                } => {
+                    let address = image
+                        .symbol_address(symbol)
+                        .and_then(|address| address.checked_add(*pointer_offset))
+                        .ok_or_else(|| {
+                            crate::Error::invalid(format!(
+                                "scenario {scenario_name} {side} memory instance {} cannot resolve pointer global {symbol}+{pointer_offset:#x}",
+                                instance.id
+                            ))
+                        })?;
+                    write_ram_word(scenario, address, instance.base_address);
+                }
+                RuntimeMemoryObjectBinding::Absolute {
+                    address_space,
+                    address,
+                } => {
+                    if *address != instance.base_address {
+                        return Err(crate::Error::invalid(format!(
+                            "scenario {scenario_name} {side} absolute object {address_space}:{address:#010x} does not equal runtime instance base {:#010x}",
+                            instance.base_address
+                        )));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }

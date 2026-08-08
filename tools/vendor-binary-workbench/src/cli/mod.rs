@@ -2,7 +2,7 @@
 
 mod args;
 mod arguments;
-mod commands;
+pub(crate) mod commands;
 mod dispatch;
 mod generated_output;
 mod output;

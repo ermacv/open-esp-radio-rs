@@ -80,7 +80,7 @@ pub(super) fn print_report(
     include_reachable: bool,
 ) {
     outputln!(
-        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-contract-declared-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tevent-dispatch-receiver-source=reviewed-contract-or-unknown\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
+        "PROJECT\tlinkage={}\tcall-linkage={}\tselection={}\tcall-compaction=stable-identity-universal-affine-bindings\tdiagnostic-compaction=exact-semicolon-fragment-inventory\tcontext-projection=affine-simple-call-paths\treturn-provenance=exact-bit-ranges-with-constant-and-unknown-masks\tsemantic-actions=lexical-site-paths-factorized-cfg-guards-affine-root-bindings\tevent-dispatch=reviewed-contract-declared-role-projection\tevent-dispatch-effect-completeness-claim=false\tevent-dispatch-receiver-inference=none\tevent-dispatch-receiver-source=reviewed-contract-or-unknown\tcfg-guards=forced-branch-paths-minimized-dnf-factorized-by-function\tcfg-guard-expressions=pseudo-rust-aligned-bit-masks-with-symbolic-fallback\tcfg-guard-result-sources=bit-provenance-with-operand-comparison-mapping-and-producer-targets\tcfg-guard-mmio-linkage=recursive-exact-bit-projection-with-producer-paths\tdirect-mmio-predicates=exact-bit-provenance-with-constant-comparison-mapping\tsemantic-field-guards=action-identity-and-path-coordinate-preserving\tdirect-mmio-predicate-completeness-claim=false\tscenario-suggestions=structural-candidates-require-concrete-replay\tscenario-suggestion-proof-claim=false\tmmio-field-candidates=contiguous-subregister-write-poll-and-direct-guard-evidence\tmmio-field-semantics-claim=false\tcfg-guard-completeness-claim=false\tartifacts={}",
         if artifacts.len() > 1 {
             "independent-artifacts"
         } else {
@@ -187,6 +187,44 @@ pub(super) fn print_report(
                     source.inverted,
                     optional_hex(source.comparison_value),
                     optional_hex(source.register_comparison_value),
+                );
+            }
+        }
+        for suggestion in &function.scenario_suggestions {
+            for variant in &suggestion.variants {
+                let arguments = variant
+                    .arguments
+                    .iter()
+                    .map(|argument| format!("a{}={:#010x}", argument.index, argument.value))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let reads = variant
+                    .mmio_reads
+                    .iter()
+                    .map(|read| {
+                        format!(
+                            "{:#010x}=[{}]",
+                            read.address,
+                            read.values
+                                .iter()
+                                .map(|value| format!("{value:#010x}"))
+                                .collect::<Vec<_>>()
+                                .join(",")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(";");
+                outputln!(
+                    "SCENARIO-SUGGESTION\t{}\tkind={}\tsite={}\tvariant={}\targuments={}\treads={}\tevidence={}",
+                    function.identity,
+                    suggestion.kind,
+                    suggestion
+                        .site
+                        .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}")),
+                    variant.name,
+                    arguments,
+                    reads,
+                    suggestion.evidence,
                 );
             }
         }
@@ -347,6 +385,32 @@ pub(super) fn print_report(
                 mask(access.forced_one_mask),
                 access.path,
                 access.value_pseudo.as_deref().unwrap_or("-"),
+            );
+        }
+        for field in &function.memory_fields {
+            outputln!(
+                "MEMORY-FIELD\t{}\tobject={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\tpaths={}\tvalues={}",
+                function.identity,
+                memory_object_label(&field.object),
+                field.offset,
+                field.width,
+                field.reads,
+                field.writes,
+                field.write_mask,
+                field.paths.len(),
+                field.write_values.join(" | "),
+            );
+        }
+        for access in &function.memory_accesses {
+            outputln!(
+                "MEMORY\t{}\tobject={}\toffset={:+#x}\twidth={}\taccess={}\tpath={}\tvalue={}",
+                function.identity,
+                memory_object_label(&access.object),
+                access.offset,
+                access.width,
+                access.access,
+                access.path,
+                access.value.as_deref().unwrap_or("-"),
             );
         }
         for blocker in &function.direct_blockers {
@@ -590,6 +654,21 @@ pub(super) fn print_report(
                 "EFFECT-CONTEXT-FIELD\t{}\targ={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\torigins={}\tpaths={}\tvalues={}",
                 function.identity,
                 field.argument,
+                field.offset,
+                field.width,
+                field.reads,
+                field.writes,
+                field.write_mask,
+                field.origins.join(","),
+                field.paths.join(" | "),
+                field.write_values.join(" | "),
+            );
+        }
+        for field in &summary.memory_fields {
+            outputln!(
+                "EFFECT-MEMORY-FIELD\t{}\tobject={}\toffset={:+#x}\twidth={}\treads={}\twrites={}\twrite-mask={:#010x}\torigins={}\tpaths={}\tvalues={}",
+                function.identity,
+                memory_object_label(&field.object),
                 field.offset,
                 field.width,
                 field.reads,
@@ -846,7 +925,7 @@ pub(super) fn print_report(
         direct_mmio_predicate_sources,
     ) = field_candidate_summary(report);
     outputln!(
-        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdirect-mmio-predicates={}\tdirect-mmio-predicate-sources={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}\ttransitive-guard-mmio-links={}",
+        "SUMMARY\tartifacts={}\tfunctions={}\troot-functions={}\tincluded-reachable-functions={}\texported={}\tlocal={}\tmmio-registers={}\tmmio-functions={}\tmmio-access-shapes={}\tmmio-field-candidate-registers={}\tmmio-field-candidates={}\tdirect-mmio-predicates={}\tdirect-mmio-predicate-sources={}\tdelay-functions={}\tdelay-shapes={}\tcontext-functions={}\tcontext-fields={}\tcontext-accesses={}\tmemory-functions={}\tmemory-fields={}\tmemory-accesses={}\tsemantic-operations={}\tsemantic-calls={}\ttrampoline-slots={}\ttrampoline-calls={}\tcomplete={}\tstructured={}\tinternal-calls={}\texternal-calls={}\tcall-argument-shapes={}\tproject-linked-calls={}\tambiguous-project-calls={}\tunresolved-calls={}\tclosed-effect-summaries={}\trecursive-effect-summaries={}\tcomplete-context-projections={}\tprojected-context-fields={}\tprojected-memory-fields={}\texact-return-functions={}\treturn-source-ranges={}\tmmio-return-sources={}\tguard-mmio-links={}\ttransitive-guard-mmio-links={}\tscenario-suggestions={}",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -865,6 +944,9 @@ pub(super) fn print_report(
         report.context_functions,
         report.context_fields,
         report.context_accesses,
+        report.memory_functions,
+        report.memory_fields,
+        report.memory_accesses,
         report.semantic_boundaries.len(),
         report.semantic_calls,
         report.trampoline_slots.len(),
@@ -881,10 +963,34 @@ pub(super) fn print_report(
         report.recursive_effect_summaries,
         report.complete_context_projections,
         report.projected_context_fields,
+        report.projected_memory_fields,
         exact_return_functions,
         return_source_ranges,
         mmio_return_sources,
         guard_mmio_links,
         transitive_guard_mmio_links,
+        report.scenario_suggestions,
     );
+}
+
+fn memory_object_label(object: &LinkedMemoryObject) -> String {
+    match object {
+        LinkedMemoryObject::Argument { index } => format!("argument:{index}"),
+        LinkedMemoryObject::Global { member, symbol } => format!(
+            "global:{}::{symbol}",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        LinkedMemoryObject::DereferencedGlobal {
+            member,
+            symbol,
+            pointer_offset,
+        } => format!(
+            "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        LinkedMemoryObject::Absolute {
+            address_space,
+            address,
+        } => format!("absolute:{address_space}:{address:#010x}"),
+    }
 }

@@ -5,7 +5,7 @@ use crate::harnesses::{QualificationCase, QualificationDifference, Qualification
 
 pub(super) fn run(
     arguments: VerifyContractArgs,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     harness: &str,
     contract: &str,
 ) -> Result<bool> {
@@ -69,16 +69,6 @@ fn render_case_human(case: &QualificationCase) {
             case.calls.unwrap_or_default(),
         );
     }
-    if !case.unmapped_mmio.is_empty() {
-        outputln!(
-            "    unmapped MMIO: {}",
-            case.unmapped_mmio
-                .iter()
-                .map(|address| format!("{address:#010x}"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
     if let Some(difference) = case.difference.as_ref() {
         render_difference_human(difference);
     }
@@ -114,14 +104,13 @@ fn render_tsv(report: &QualificationReport) {
     }
     for case in &report.cases {
         outputln!(
-            "VERIFICATION-CASE\t{}\t{}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}\tunmapped-mmio={}",
+            "VERIFICATION-CASE\t{}\t{}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}",
             case.name,
             case.verdict.label(),
             case.events.unwrap_or_default(),
             case.steps.unwrap_or_default(),
             case.branch_outcomes.unwrap_or_default(),
             case.calls.unwrap_or_default(),
-            case.unmapped_mmio.len(),
         );
     }
     outputln!(
@@ -141,22 +130,21 @@ fn render_tsv(report: &QualificationReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use open_radio_vendor_harness_esp32s31_semantic::verification::{
-        QualificationSummary, QualificationVerdict,
-    };
+    use open_radio_vendor_harness_esp32s31_semantic::verification::QualificationSummary;
 
     #[test]
     fn qualification_report_is_a_stable_typed_document() {
         let report = QualificationReport {
-            schema: 1,
+            schema: 2,
+            mode: EquivalenceMode::Semantic,
             contract: "fixture",
             vendor_symbol: "fixture_symbol",
-            verdict: QualificationVerdict::Match,
+            verdict: EquivalenceVerdict::Match,
             matched: true,
             artifacts: Vec::new(),
             cases: vec![QualificationCase {
                 name: "cold".to_owned(),
-                verdict: QualificationVerdict::Match,
+                verdict: EquivalenceVerdict::Match,
                 events: Some(3),
                 steps: Some(7),
                 branch_outcomes: Some(2),
@@ -164,7 +152,6 @@ mod tests {
                 calls: Some(1),
                 call_events: Some(1),
                 state: None,
-                unmapped_mmio: Vec::new(),
                 difference: None,
             }],
             summary: QualificationSummary {
@@ -179,7 +166,7 @@ mod tests {
             },
         };
         let document = serde_json::to_value(report).unwrap();
-        assert_eq!(document["schema"], 1);
+        assert_eq!(document["schema"], 2);
         assert_eq!(document["cases"][0]["verdict"], "match");
         assert_eq!(document["summary"]["matched"], 1);
     }

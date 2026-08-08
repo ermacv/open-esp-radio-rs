@@ -10,8 +10,8 @@ use std::{
 };
 
 use crate::{
-    BitSource, FunctionAnalysis, MemoryAccess, MmioRegisterMap, ObservableEvent, Result,
-    StructuralPointerContext, SymbolicValue, Window, artifact, direct,
+    BitSource, FunctionAnalysis, MemoryAccess, MmioMap, MmioRegion, ObservableEvent, Result,
+    StructuralPointerContext, SymbolicValue, artifact, direct,
 };
 
 const MAX_DISCOVERY_STATES: usize = 127;
@@ -307,7 +307,7 @@ fn collect_trace_diagnostics(
 
 fn explore_symbol(
     symbol: &artifact::ArtifactSymbolDefinition,
-    map: &MmioRegisterMap,
+    map: &MmioMap,
     relocated_calls: &direct::StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
 ) -> FunctionExploration {
@@ -377,14 +377,18 @@ fn explore_symbol(
     result
 }
 
-fn discovery_map(svd: &MmioRegisterMap, ranges: &[DiscoveryRange]) -> MmioRegisterMap {
+fn discovery_map(svd: &MmioMap, ranges: &[DiscoveryRange]) -> MmioMap {
     let mut map = svd.clone();
-    map.windows.extend(ranges.iter().map(|range| Window {
+    map.regions.extend(ranges.iter().map(|range| MmioRegion {
+        name: range.name.clone(),
         start: range.start,
         end: range.end,
+        readable: true,
+        writable: true,
     }));
-    map.windows.sort_by_key(|window| (window.start, window.end));
-    map.windows.dedup();
+    map.regions
+        .sort_by_key(|region| (region.start, region.end, region.name.clone()));
+    map.regions.dedup();
     map
 }
 
@@ -397,7 +401,7 @@ pub(crate) fn discover_mmio(
     artifacts: &[(String, PathBuf)],
     ranges: &[DiscoveryRange],
     symbol_prefix: &str,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Result<MmioDiscoveryReport> {
     let map = discovery_map(svd, ranges);
     let relocated_calls = BTreeMap::new();
@@ -543,11 +547,14 @@ mod tests {
             memory_regions: Vec::new(),
             relocations: Vec::new(),
         };
-        let map = MmioRegisterMap {
+        let map = MmioMap {
             registers: Vec::new(),
-            windows: vec![Window {
+            regions: vec![MmioRegion {
+                name: "radio".to_owned(),
                 start: 0x2010_7000,
                 end: 0x2010_7100,
+                readable: true,
+                writable: true,
             }],
         };
 

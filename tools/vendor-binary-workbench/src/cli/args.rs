@@ -225,6 +225,8 @@ enum ProjectCommand {
     },
     Doctor(EmptyArgs),
     Status(ProjectStatusArgs),
+    /// Browse the resolved project in a read-only terminal interface.
+    Browse(EmptyArgs),
     Analyze(ProjectAnalyzeArgs),
     Publish(CheckArgs),
 }
@@ -246,6 +248,7 @@ impl ProjectCommand {
                 Command::ProjectStatus,
                 CommandArguments::ProjectStatus(arguments),
             ),
+            Self::Browse(arguments) => (Command::ProjectBrowse, CommandArguments::Empty(arguments)),
             Self::Analyze(arguments) => (
                 Command::ProjectAnalyze,
                 CommandArguments::ProjectAnalyze(arguments),
@@ -432,6 +435,7 @@ pub(crate) enum Command {
     ProjectInputsInit,
     ProjectDoctor,
     ProjectStatus,
+    ProjectBrowse,
     ProjectAnalyze,
     ProjectPublish,
     FunctionInitPack,
@@ -496,6 +500,7 @@ impl Command {
                     | Self::ProjectInputsInit
                     | Self::ProjectDoctor
                     | Self::ProjectStatus
+                    | Self::ProjectBrowse
                     | Self::ProjectPublish
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
@@ -522,6 +527,7 @@ impl Command {
                     | Self::ProjectInputsInit
                     | Self::ProjectDoctor
                     | Self::ProjectStatus
+                    | Self::ProjectBrowse
                     | Self::ProjectAnalyze
                     | Self::ProjectPublish
                     | Self::FunctionInitPack
@@ -577,6 +583,7 @@ impl Command {
                     | Self::ProjectConfigure
                     | Self::ProjectInputsInit
                     | Self::ProjectStatus
+                    | Self::ProjectBrowse
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
                     | Self::FunctionReview
@@ -603,6 +610,7 @@ impl Command {
                 Self::ProjectInit
                     | Self::ProjectConfigure
                     | Self::ProjectInputsInit
+                    | Self::ProjectBrowse
                     | Self::FunctionInitPack
                     | Self::FunctionValidate
                     | Self::FunctionReview
@@ -631,6 +639,7 @@ impl Command {
             | Self::ProjectInputsInit
             | Self::ProjectDoctor
             | Self::ProjectStatus
+            | Self::ProjectBrowse
             | Self::ProjectAnalyze
             | Self::ProjectPublish
             | Self::FunctionInitPack
@@ -674,6 +683,11 @@ impl ParsedInvocation {
             std::iter::once("vendor-binary-workbench".to_owned()).chain(arguments),
         )?;
         let (command, arguments) = cli.workflow.into_parts();
+        if command == Command::ProjectBrowse && cli.ui.format != OutputFormat::Human {
+            return Err(crate::Error::invalid(
+                "project browse is an interactive human frontend and does not accept a machine output format",
+            ));
+        }
         Ok(Self {
             ui: cli.ui,
             command,
@@ -822,5 +836,27 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn project_browser_is_a_human_only_frontend() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "browse".to_owned(),
+            "--project".to_owned(),
+            "vendor-project.toml".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::ProjectBrowse);
+        assert!(matches!(invocation.arguments, CommandArguments::Empty(_)));
+
+        let error = ParsedInvocation::parse([
+            "project".to_owned(),
+            "browse".to_owned(),
+            "--format".to_owned(),
+            "json".to_owned(),
+        ])
+        .unwrap_err();
+        assert!(error.to_string().contains("interactive human frontend"));
     }
 }

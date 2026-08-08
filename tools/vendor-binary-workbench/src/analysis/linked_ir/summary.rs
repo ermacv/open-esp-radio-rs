@@ -1,61 +1,28 @@
 //! Reachable effect summaries, context projection, and event dispatch projection.
 
 use super::*;
+use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 
 fn recursive_call_graph_nodes(adjacency: &[Vec<usize>]) -> BTreeSet<usize> {
-    let mut visited = vec![false; adjacency.len()];
-    let mut finished = Vec::with_capacity(adjacency.len());
-    for start in 0..adjacency.len() {
-        if visited[start] {
-            continue;
-        }
-        visited[start] = true;
-        let mut stack = vec![(start, 0_usize)];
-        while let Some((node, next_target)) = stack.last_mut() {
-            if *next_target < adjacency[*node].len() {
-                let target = adjacency[*node][*next_target];
-                *next_target += 1;
-                if !visited[target] {
-                    visited[target] = true;
-                    stack.push((target, 0));
-                }
-            } else {
-                let (node, _) = stack.pop().expect("DFS stack is non-empty");
-                finished.push(node);
-            }
+    let mut graph =
+        DiGraph::<(), ()>::with_capacity(adjacency.len(), adjacency.iter().map(Vec::len).sum());
+    let nodes = (0..adjacency.len())
+        .map(|_| graph.add_node(()))
+        .collect::<Vec<_>>();
+    for (source, targets) in adjacency.iter().enumerate() {
+        for target in targets {
+            graph.add_edge(nodes[source], nodes[*target], ());
         }
     }
 
-    let mut reverse = vec![Vec::new(); adjacency.len()];
-    for (source, targets) in adjacency.iter().enumerate() {
-        for &target in targets {
-            reverse[target].push(source);
-        }
-    }
-    let mut assigned = vec![false; adjacency.len()];
     let mut recursive = BTreeSet::new();
-    for &start in finished.iter().rev() {
-        if assigned[start] {
-            continue;
-        }
-        assigned[start] = true;
-        let mut component = Vec::new();
-        let mut stack = vec![start];
-        while let Some(node) = stack.pop() {
-            component.push(node);
-            for &target in &reverse[node] {
-                if !assigned[target] {
-                    assigned[target] = true;
-                    stack.push(target);
-                }
-            }
-        }
+    for component in kosaraju_scc(&graph) {
         let self_recursive = component.len() == 1
-            && adjacency[component[0]]
+            && adjacency[component[0].index()]
                 .iter()
-                .any(|target| *target == component[0]);
+                .any(|target| *target == component[0].index());
         if component.len() > 1 || self_recursive {
-            recursive.extend(component);
+            recursive.extend(component.into_iter().map(|node| node.index()));
         }
     }
     recursive
@@ -110,6 +77,16 @@ struct SummaryContextAccumulator {
     write_values: BTreeSet<String>,
 }
 
+#[derive(Default)]
+struct SummaryMemoryAccumulator {
+    reads: usize,
+    writes: usize,
+    write_mask: u32,
+    origins: BTreeSet<String>,
+    paths: BTreeSet<String>,
+    write_values: BTreeSet<String>,
+}
+
 #[derive(Eq, Ord, PartialEq, PartialOrd)]
 struct ContextWriteShape {
     path: String,
@@ -127,6 +104,65 @@ struct ContextProjectionState {
     site_path: Vec<Option<u32>>,
     guard_scopes: Option<Vec<LinkedCallGuardScope>>,
     path: String,
+}
+
+fn project_memory_fields(
+    reachable: &[(usize, usize)],
+    functions: &[LinkedIrFunction],
+    contexts: &[LinkedSummaryContextField],
+) -> Vec<LinkedSummaryMemoryField> {
+    let mut fields = BTreeMap::<(LinkedMemoryObject, i64, u8), SummaryMemoryAccumulator>::new();
+    for context in contexts {
+        let object = LinkedMemoryObject::Argument {
+            index: context.argument,
+        };
+        let entry = fields
+            .entry((object, i64::from(context.offset), context.width))
+            .or_default();
+        entry.reads += context.reads;
+        entry.writes += context.writes;
+        entry.write_mask |= context.write_mask;
+        entry.origins.extend(context.origins.iter().cloned());
+        entry.paths.extend(context.paths.iter().cloned());
+        entry
+            .write_values
+            .extend(context.write_values.iter().cloned());
+    }
+    for (index, _) in reachable {
+        let function = &functions[*index];
+        for field in &function.memory_fields {
+            if matches!(field.object, LinkedMemoryObject::Argument { .. }) {
+                continue;
+            }
+            let entry = fields
+                .entry((field.object.clone(), field.offset, field.width))
+                .or_default();
+            entry.reads += field.reads;
+            entry.writes += field.writes;
+            entry.write_mask |= field.write_mask;
+            entry.origins.insert(function.identity.clone());
+            entry.paths.extend(field.paths.iter().cloned());
+            entry
+                .write_values
+                .extend(field.write_values.iter().cloned());
+        }
+    }
+    fields
+        .into_iter()
+        .map(
+            |((object, offset, width), entry)| LinkedSummaryMemoryField {
+                object,
+                offset,
+                width,
+                reads: entry.reads,
+                writes: entry.writes,
+                write_mask: entry.write_mask,
+                origins: entry.origins.into_iter().collect(),
+                paths: entry.paths.into_iter().collect(),
+                write_values: entry.write_values.into_iter().collect(),
+            },
+        )
+        .collect()
 }
 
 fn local_context_access(access: &ContextAccess) -> bool {
@@ -711,6 +747,8 @@ pub(super) fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 &projection_reachable,
                 call_graph_closed,
             );
+            let memory_fields =
+                project_memory_fields(&reachable, functions, &context_projection.fields);
             LinkedEffectSummary {
                 call_graph_closed,
                 max_depth: reachable
@@ -754,6 +792,7 @@ pub(super) fn populate_effect_summaries(functions: &mut [LinkedIrFunction]) {
                 context_projection_complete: context_projection.complete,
                 context_projection_blockers: context_projection.blockers,
                 context_fields: context_projection.fields,
+                memory_fields,
                 trampoline_calls: context_projection.trampoline_calls,
                 semantic_actions: context_projection.semantic_actions,
                 event_dispatches: context_projection.event_dispatches,

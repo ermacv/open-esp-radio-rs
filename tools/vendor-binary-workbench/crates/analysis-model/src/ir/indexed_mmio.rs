@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::value::{BitSource, ExpressionOperation, SymbolicValue};
-use crate::MmioRegisterMap;
+use crate::MmioMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AffineInput {
@@ -324,10 +324,7 @@ pub struct IndexedMmioDomain {
     pub guard: Option<IndexedMmioGuard>,
 }
 
-pub fn indexed_mmio_domain(
-    address: &SymbolicValue,
-    svd: &MmioRegisterMap,
-) -> Option<IndexedMmioDomain> {
+pub fn indexed_mmio_domain(address: &SymbolicValue, svd: &MmioMap) -> Option<IndexedMmioDomain> {
     const MAX_EXHAUSTIVE_INPUT_BITS: usize = 8;
     const MAX_GUARDED_REGISTERS: u32 = 32;
 

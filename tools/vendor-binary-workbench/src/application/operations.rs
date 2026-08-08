@@ -1,0 +1,120 @@
+//! Direct typed operations used by CLI-independent frontends.
+
+use super::{ResolvedProject, model::*};
+use crate::{ObservableEvent, analysis, interfaces::InterfaceWorkspace, verification::*};
+
+pub(super) fn analyze(
+    resolved: &ResolvedProject,
+    request: &AnalyzeRequest,
+) -> crate::Result<AnalysisReport> {
+    let trace = analysis::extract(
+        &analysis::ArtifactSymbolSelector {
+            artifact: request.artifact.clone(),
+            member: request.member.clone(),
+            symbol: request.symbol.clone(),
+        },
+        &resolved.mmio,
+    )?;
+    Ok(AnalysisReport {
+        symbol: trace.symbol.clone(),
+        exact: trace.is_exact(),
+        reference_codegen_eligible: trace.is_reference_eligible(),
+        return_value: trace.return_value.canonical(),
+        events: trace.events.iter().map(|event| event.canonical()).collect(),
+        blockers: trace.blockers.clone(),
+        reference_blockers: trace.reference_blockers.clone(),
+        unnamed_mmio: trace
+            .events
+            .iter()
+            .filter_map(ObservableEvent::unmapped_address)
+            .collect(),
+    })
+}
+
+pub(super) fn compare(
+    resolved: &ResolvedProject,
+    request: CompareRequest,
+) -> crate::Result<ExecutionComparisonReport> {
+    validate_table_instances(resolved, &request.scenarios)?;
+    let scenarios = if request.scenarios.is_empty() {
+        vec![NamedScenario::new("default".to_owned())]
+    } else {
+        request
+            .scenarios
+            .into_iter()
+            .map(|scenario| {
+                let mut named = NamedScenario::new(scenario.name);
+                named.scenario = scenario.scenario;
+                named.vendor_table_instances = scenario.vendor_table_instances;
+                named.rust_table_instances = scenario.rust_table_instances;
+                named
+            })
+            .collect()
+    };
+    let unconstrained = [[None; 8]];
+    let argument_domain: &[[Option<u32>; 8]] = if request.argument_domain.is_empty() {
+        &unconstrained[..]
+    } else {
+        request.argument_domain.as_slice()
+    };
+    compare_execution_scenarios(
+        &resolved.mmio,
+        ExecutionInput {
+            artifact: &request.vendor_artifact,
+            companion: request.vendor_companion.as_deref(),
+            symbol: &request.vendor_symbol,
+        },
+        ExecutionInput {
+            artifact: &request.rust_artifact,
+            companion: request.rust_companion.as_deref(),
+            symbol: &request.rust_symbol,
+        },
+        request.compare_return,
+        argument_domain,
+        &scenarios,
+    )
+}
+
+pub(super) fn validate_table_instances(
+    resolved: &ResolvedProject,
+    scenarios: &[ComparisonScenario],
+) -> crate::Result<()> {
+    let instances = scenarios.iter().flat_map(|scenario| {
+        scenario
+            .scenario
+            .table_instances
+            .iter()
+            .chain(&scenario.vendor_table_instances)
+            .chain(&scenario.rust_table_instances)
+    });
+    let instances = instances.collect::<Vec<_>>();
+    if instances.is_empty() {
+        return Ok(());
+    }
+    let paths = resolved.project.interfaces.as_ref().ok_or_else(|| {
+        crate::Error::invalid(
+            "application comparison with runtime tables requires configured interface facts and pack",
+        )
+    })?;
+    let pack = paths.pack.as_ref().ok_or_else(|| {
+        crate::Error::invalid(
+            "application comparison with runtime tables requires a reviewed interface pack",
+        )
+    })?;
+    let harness = resolved
+        .target
+        .harness
+        .as_deref()
+        .and_then(|harness| crate::harnesses::contracts(harness).ok());
+    let workspace = InterfaceWorkspace::load(
+        &paths.facts,
+        pack,
+        &paths.semantic_catalogs,
+        resolved.target.calling_convention.label(),
+        harness,
+    )?;
+    for instance in instances {
+        workspace.validate_table_instance(instance)?;
+    }
+    Ok(())
+}

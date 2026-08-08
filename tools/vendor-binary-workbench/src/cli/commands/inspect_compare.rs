@@ -5,23 +5,16 @@ use super::super::*;
 use serde::Serialize;
 
 #[derive(Serialize)]
-#[serde(rename_all = "kebab-case")]
-enum TraceComparisonVerdict {
-    Match,
-    Mismatch,
-    Incomplete,
-}
-
-#[derive(Serialize)]
 struct TraceComparisonDocument<'a> {
     schema_version: u32,
     command: &'static str,
+    mode: EquivalenceMode,
     left: TraceDocument<'a>,
     right: TraceDocument<'a>,
-    verdict: TraceComparisonVerdict,
+    verdict: EquivalenceVerdict,
 }
 
-pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioMap) -> Result<bool> {
     let left = ArtifactSymbolSelector {
         artifact: arguments
             .artifact
@@ -49,15 +42,16 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Resul
     let complete = left_trace.is_exact() && right_trace.is_exact();
     let equal = complete && traces_equal(&left_trace, &right_trace);
     let verdict = if !complete {
-        TraceComparisonVerdict::Incomplete
+        EquivalenceVerdict::Incomplete
     } else if equal {
-        TraceComparisonVerdict::Match
+        EquivalenceVerdict::Match
     } else {
-        TraceComparisonVerdict::Mismatch
+        EquivalenceVerdict::Diff
     };
     let document = TraceComparisonDocument {
-        schema_version: 1,
+        schema_version: 2,
         command: "inspect compare",
+        mode: EquivalenceMode::Physical,
         left: trace_document(&left_trace),
         right: trace_document(&right_trace),
         verdict,
@@ -72,7 +66,7 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Resul
             } else if equal {
                 "MATCH"
             } else {
-                "MISMATCH"
+                "DIFF"
             }
         );
     };

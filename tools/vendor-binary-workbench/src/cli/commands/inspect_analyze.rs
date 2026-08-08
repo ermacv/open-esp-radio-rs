@@ -342,7 +342,7 @@ fn print_analysis_report(
 
 pub(super) fn run(
     arguments: InspectAnalyzeArgs,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let harness = target.require_available_harness()?;

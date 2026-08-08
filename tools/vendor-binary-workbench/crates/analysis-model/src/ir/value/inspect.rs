@@ -36,6 +36,95 @@ impl SymbolicValue {
         self.caller_memory_location().is_some()
     }
 
+    /// Return a stable affine object root and byte offset when the address is
+    /// based on an ABI argument or a completed data-symbol relocation.
+    pub fn memory_object_location(&self) -> Option<MemoryObjectLocation> {
+        if let Some((index, offset)) = self.caller_memory_location() {
+            return Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Argument { index },
+                offset: i64::from(offset),
+            });
+        }
+        match self {
+            Self::Constant(address) => Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute { address: *address },
+                offset: 0,
+            }),
+            Self::SymbolAddress {
+                member,
+                symbol,
+                lo_addend: Some(addend),
+                post_offset,
+                ..
+            } => Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::RelocatedSymbol {
+                    member: member.clone(),
+                    symbol: symbol.clone(),
+                },
+                offset: addend.wrapping_add(*post_offset),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Resolve an affine address through exact 32-bit pointer loads whose
+    /// source memory object is known.
+    ///
+    /// The mapping is explicit so a memory-read token is never guessed from
+    /// event ordering by an individual consumer.
+    pub fn memory_object_location_with_reads(
+        &self,
+        read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    ) -> Option<MemoryObjectLocation> {
+        if let Some(location) = self.memory_object_location() {
+            return Some(location);
+        }
+        match self {
+            Self::MemoryImage {
+                read_token,
+                and_mask: u32::MAX,
+                or_mask: 0,
+            } => {
+                let source = read_sources.get(read_token)?;
+                let MemoryObjectRoot::RelocatedSymbol { member, symbol } = &source.root else {
+                    return None;
+                };
+                Some(MemoryObjectLocation {
+                    root: MemoryObjectRoot::DereferencedGlobal {
+                        member: member.clone(),
+                        symbol: symbol.clone(),
+                        pointer_offset: source.offset,
+                    },
+                    offset: 0,
+                })
+            }
+            Self::Expression {
+                operation: ExpressionOperation::Add,
+                left,
+                right,
+            } => match (
+                left.memory_object_location_with_reads(read_sources),
+                right.as_constant(),
+            ) {
+                (Some(mut location), Some(offset)) => {
+                    location.offset = location.offset.wrapping_add(i64::from(offset as i32));
+                    Some(location)
+                }
+                _ => match (
+                    right.memory_object_location_with_reads(read_sources),
+                    left.as_constant(),
+                ) {
+                    (Some(mut location), Some(offset)) => {
+                        location.offset = location.offset.wrapping_add(i64::from(offset as i32));
+                        Some(location)
+                    }
+                    _ => None,
+                },
+            },
+            _ => None,
+        }
+    }
+
     /// Return `(argument index, byte offset)` for an affine address rooted in
     /// one ABI argument.
     ///
@@ -426,5 +515,67 @@ mod tests {
         );
 
         assert_eq!(address.caller_memory_location(), None);
+    }
+
+    #[test]
+    fn memory_object_location_recovers_completed_global_relocations() {
+        let address = SymbolicValue::SymbolAddress {
+            member: Some("state.o".to_owned()),
+            symbol: "phy_state".to_owned(),
+            hi_addend: 4,
+            lo_addend: Some(4),
+            post_offset: 8,
+        };
+        assert_eq!(
+            address.memory_object_location(),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::RelocatedSymbol {
+                    member: Some("state.o".to_owned()),
+                    symbol: "phy_state".to_owned(),
+                },
+                offset: 12,
+            })
+        );
+    }
+
+    #[test]
+    fn memory_object_location_recovers_exact_dereferenced_global_pointer() {
+        let mut reads = BTreeMap::new();
+        reads.insert(
+            3,
+            MemoryObjectLocation {
+                root: MemoryObjectRoot::RelocatedSymbol {
+                    member: Some("globals.o".to_owned()),
+                    symbol: "g_state".to_owned(),
+                },
+                offset: 4,
+            },
+        );
+        let address = SymbolicValue::memory_read(3, 32, false).add_constant(0x1c);
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&reads),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::DereferencedGlobal {
+                    member: Some("globals.o".to_owned()),
+                    symbol: "g_state".to_owned(),
+                    pointer_offset: 4,
+                },
+                offset: 0x1c,
+            })
+        );
+    }
+
+    #[test]
+    fn memory_object_location_keeps_absolute_storage_identity() {
+        assert_eq!(
+            SymbolicValue::Constant(0x3fc8_1000).memory_object_location(),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute {
+                    address: 0x3fc8_1000,
+                },
+                offset: 0,
+            })
+        );
     }
 }

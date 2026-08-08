@@ -116,9 +116,9 @@ fn add_linked_ir(
 ) -> Result<()> {
     for profile in &project.ir_profiles {
         let report: IrReport = read(&profile.output, "linked-IR report")?;
-        if report.schema_version != 32 || report.command != "ir export" {
+        if report.schema_version != 35 || report.command != "ir export" {
             return Err(crate::Error::invalid(format!(
-                "project navigation requires linked-IR schema_version 32 for profile {:?}",
+                "project navigation requires linked-IR schema_version 35 for profile {:?}",
                 profile.id
             )));
         }
@@ -168,9 +168,9 @@ fn add_interfaces(
         return Ok(0);
     };
     let report: InterfaceReport = read(&paths.facts, "interface facts")?;
-    if report.schema_version != 2 || report.command != "interfaces discover" {
+    if report.schema_version != 3 || report.command != "interfaces discover" {
         return Err(crate::Error::invalid(
-            "project navigation requires interface facts schema_version 2",
+            "project navigation requires interface facts schema_version 3",
         ));
     }
     inputs.push(input(

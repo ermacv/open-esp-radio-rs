@@ -19,7 +19,7 @@ use open_radio_vendor_semantics::{
     SymbolicValue, evaluate_for_input,
 };
 
-use crate::{MmioRegisterMap, Result, StructuralPointerContext, artifact, execution};
+use crate::{MmioMap, Result, StructuralPointerContext, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -115,10 +115,7 @@ fn validate_domain(
     Ok(())
 }
 
-fn validate_vendor_register_slice(
-    vendor_inventory: &Path,
-    svd: &MmioRegisterMap,
-) -> Result<String> {
+fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Result<String> {
     let symbols = artifact::load_symbols(vendor_inventory, SYMBOL)?;
     let symbol = symbols
         .iter()
@@ -315,7 +312,7 @@ fn rust_register_slice_matches(
     reason = "verification binds caller-owned vendor and Rust artifacts plus the closed policy"
 )]
 pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_inventory: Option<&Path>,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
@@ -436,7 +433,8 @@ mod tests {
         execution::ExecutionEvent::Read {
             width: 32,
             address,
-            register: "TEST".to_owned(),
+            region: "test".to_owned(),
+            register: Some("TEST".to_owned()),
             value,
         }
     }
@@ -445,7 +443,8 @@ mod tests {
         execution::ExecutionEvent::Write {
             width: 32,
             address,
-            register: "TEST".to_owned(),
+            region: "test".to_owned(),
+            register: Some("TEST".to_owned()),
             value,
         }
     }

@@ -27,11 +27,7 @@ struct GeneratedReferenceReport {
         member = tracing::field::Empty
     )
 )]
-pub(super) fn run(
-    arguments: ReferenceArgs,
-    svd: &MmioRegisterMap,
-    target: &TargetSpec,
-) -> Result<bool> {
+pub(super) fn run(arguments: ReferenceArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;

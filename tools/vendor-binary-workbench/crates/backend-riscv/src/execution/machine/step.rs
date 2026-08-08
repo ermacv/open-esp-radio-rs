@@ -302,7 +302,7 @@ impl Machine<'_> {
                     )
                     .into());
                 }
-                if self.svd.contains_mmio(address) {
+                if self.svd.intersects_mmio(address, 32) {
                     return Err(format!(
                         "atomic word access to MMIO at {address:#010x} requires an explicit peripheral model"
                     )
@@ -402,6 +402,7 @@ impl Machine<'_> {
                             self.registers[usize::from(Reg::A0.0) + index]
                         }),
                     });
+                    self.record_indirect_table_call(self.pc, target, symbol);
                     self.set_register(Reg::A0, result);
                     if dest == Reg::ZERO {
                         let return_address = self.register(Reg::RA);
@@ -430,6 +431,7 @@ impl Machine<'_> {
                                 self.registers[usize::from(Reg::A0.0) + index]
                             }),
                         });
+                        self.record_indirect_table_call(self.pc, target, symbol);
                     }
                 }
                 self.pc = target;

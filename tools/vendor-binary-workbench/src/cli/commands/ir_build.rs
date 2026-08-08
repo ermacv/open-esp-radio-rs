@@ -8,7 +8,7 @@ use std::{
 
 use serde::Serialize;
 
-use super::{MmioRegisterMap, Result, TargetSpec, export_ir};
+use super::{MmioMap, Result, TargetSpec, export_ir};
 use crate::cli::{IrBuildArgs, args::OutputFormat};
 use crate::{
     project::ProjectSpec,
@@ -59,7 +59,7 @@ pub(super) fn run(
     arguments: IrBuildArgs,
     project: &ProjectSpec,
     run_spec: &RunSpec,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let options = BuildOptions {

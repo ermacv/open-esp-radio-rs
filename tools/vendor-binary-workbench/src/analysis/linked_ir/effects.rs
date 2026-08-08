@@ -1,6 +1,7 @@
 //! Extraction of context, MMIO, and delay effects from structural traces.
 
 use super::*;
+use open_radio_vendor_analysis_model::MemoryObjectLocation;
 
 fn context_write_masks(
     access: MemoryAccess,
@@ -28,25 +29,26 @@ fn context_write_masks(
     )
 }
 
-fn collect_context_access_from_event(
+fn collect_memory_object_access_from_event(
     event: &DraftReferenceEvent,
     path: &str,
-    output: &mut Vec<ContextAccess>,
+    read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    output: &mut Vec<MemoryObjectAccess>,
 ) {
     match event {
         DraftReferenceEvent::Memory {
             access,
             width,
             address,
+            region,
             value,
-            ..
         } => {
-            if let Some((argument, offset)) = address.caller_memory_location() {
+            if let Some(location) = address.memory_object_location_with_reads(read_sources) {
                 let (write_mask, preserved_mask, forced_zero_mask, forced_one_mask) =
                     context_write_masks(*access, *width, value.as_ref());
-                output.push(ContextAccess {
-                    argument,
-                    offset,
+                output.push(MemoryObjectAccess {
+                    object: LinkedMemoryObject::from_root(location.root, region),
+                    offset: location.offset,
                     access: match access {
                         MemoryAccess::Read => "read",
                         MemoryAccess::Write => "write",
@@ -65,17 +67,28 @@ fn collect_context_access_from_event(
         DraftReferenceEvent::BoundedPoll {
             body, on_exhausted, ..
         } => {
-            collect_context_access_from_flow(body, &nested_path(path, "bounded-poll"), output);
+            collect_memory_object_access_from_flow(
+                body,
+                &nested_path(path, "bounded-poll"),
+                read_sources,
+                output,
+            );
             if let Some(event) = on_exhausted.as_deref() {
-                collect_context_access_from_event(
+                collect_memory_object_access_from_event(
                     event,
                     &nested_path(path, "poll-exhausted"),
+                    read_sources,
                     output,
                 );
             }
         }
         DraftReferenceEvent::PollFlow { body, .. } => {
-            collect_context_access_from_flow(body, &nested_path(path, "poll"), output);
+            collect_memory_object_access_from_flow(
+                body,
+                &nested_path(path, "poll"),
+                read_sources,
+                output,
+            );
         }
         DraftReferenceEvent::SymmetricCalibrationSearch {
             initial_read,
@@ -90,14 +103,20 @@ fn collect_context_access_from_event(
                 ("calibration-write-candidate", write_candidate),
                 ("calibration-sample", sample),
             ] {
-                collect_context_access_from_flow(flow, &nested_path(path, scope), output);
+                collect_memory_object_access_from_flow(
+                    flow,
+                    &nested_path(path, scope),
+                    read_sources,
+                    output,
+                );
             }
         }
         DraftReferenceEvent::ComposedCall { symbol, flow, .. }
         | DraftReferenceEvent::ComposedCallWithScratch { symbol, flow, .. } => {
-            collect_context_access_from_flow(
+            collect_memory_object_access_from_flow(
                 flow,
                 &nested_path(path, &format!("call {symbol}")),
+                read_sources,
                 output,
             );
         }
@@ -105,13 +124,14 @@ fn collect_context_access_from_event(
     }
 }
 
-fn collect_context_access_from_flow(
+fn collect_memory_object_access_from_flow(
     flow: &DraftReferenceFlow,
     path: &str,
-    output: &mut Vec<ContextAccess>,
+    read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    output: &mut Vec<MemoryObjectAccess>,
 ) {
     for event in &flow.events {
-        collect_context_access_from_event(event, path, output);
+        collect_memory_object_access_from_event(event, path, read_sources, output);
     }
     if let DraftReferenceTerminator::Branch {
         condition,
@@ -120,31 +140,181 @@ fn collect_context_access_from_flow(
     } = &flow.terminator
     {
         let condition = branch_expression(condition);
-        collect_context_access_from_flow(
+        collect_memory_object_access_from_flow(
             taken,
             &nested_path(path, &format!("if {condition}")),
+            read_sources,
             output,
         );
-        collect_context_access_from_flow(
+        collect_memory_object_access_from_flow(
             not_taken,
             &nested_path(path, &format!("if !({condition})")),
+            read_sources,
             output,
         );
     }
 }
 
-pub(super) fn context_accesses_for_trace(trace: &FunctionAnalysis) -> Vec<ContextAccess> {
+pub(super) fn memory_object_accesses_for_trace(
+    trace: &FunctionAnalysis,
+) -> Vec<MemoryObjectAccess> {
+    let read_sources = memory_read_sources_for_trace(trace);
     let mut output = Vec::new();
     if let Some(flow) = trace.reference_flow.as_ref() {
-        collect_context_access_from_flow(flow, "entry", &mut output);
+        collect_memory_object_access_from_flow(flow, "entry", &read_sources, &mut output);
     } else {
         for event in &trace.reference_events {
-            collect_context_access_from_event(event, "entry", &mut output);
+            collect_memory_object_access_from_event(event, "entry", &read_sources, &mut output);
         }
     }
     output.sort();
     output.dedup();
     output
+}
+
+fn memory_read_sources_for_trace(trace: &FunctionAnalysis) -> BTreeMap<u32, MemoryObjectLocation> {
+    fn collect_event(
+        event: &DraftReferenceEvent,
+        next_token: &mut u32,
+        sources: &mut BTreeMap<u32, MemoryObjectLocation>,
+    ) {
+        match event {
+            DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                address,
+                ..
+            } => {
+                let token = *next_token;
+                *next_token = (*next_token).wrapping_add(1);
+                if let Some(location) = address.memory_object_location_with_reads(sources) {
+                    sources.insert(token, location);
+                }
+            }
+            DraftReferenceEvent::BoundedPoll {
+                body, on_exhausted, ..
+            } => {
+                collect_flow(body, next_token, sources);
+                if let Some(event) = on_exhausted.as_deref() {
+                    collect_event(event, next_token, sources);
+                }
+            }
+            DraftReferenceEvent::PollFlow { body, .. } => {
+                collect_flow(body, next_token, sources);
+            }
+            DraftReferenceEvent::SymmetricCalibrationSearch {
+                initial_read,
+                setup,
+                write_candidate,
+                sample,
+                ..
+            } => {
+                for flow in [initial_read, setup, write_candidate, sample] {
+                    collect_flow(flow, next_token, sources);
+                }
+            }
+            DraftReferenceEvent::ComposedCall { flow, .. }
+            | DraftReferenceEvent::ComposedCallWithScratch { flow, .. } => {
+                collect_flow(flow, next_token, sources);
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_flow(
+        flow: &DraftReferenceFlow,
+        next_token: &mut u32,
+        sources: &mut BTreeMap<u32, MemoryObjectLocation>,
+    ) {
+        for event in &flow.events {
+            collect_event(event, next_token, sources);
+        }
+        if let DraftReferenceTerminator::Branch {
+            taken, not_taken, ..
+        } = &flow.terminator
+        {
+            collect_flow(taken, next_token, sources);
+            collect_flow(not_taken, next_token, sources);
+        }
+    }
+
+    let mut sources = BTreeMap::new();
+    let mut next_token = 0;
+    if let Some(flow) = trace.reference_flow.as_ref() {
+        collect_flow(flow, &mut next_token, &mut sources);
+    } else {
+        for event in &trace.reference_events {
+            collect_event(event, &mut next_token, &mut sources);
+        }
+    }
+    sources
+}
+
+pub(super) fn memory_object_fields_for_accesses(
+    accesses: &[MemoryObjectAccess],
+) -> Vec<MemoryObjectField> {
+    let mut fields = BTreeMap::<(LinkedMemoryObject, i64, u8), MemoryObjectField>::new();
+    for access in accesses {
+        let field = fields
+            .entry((access.object.clone(), access.offset, access.width))
+            .or_insert_with(|| MemoryObjectField {
+                object: access.object.clone(),
+                offset: access.offset,
+                width: access.width,
+                reads: 0,
+                writes: 0,
+                write_mask: 0,
+                paths: Vec::new(),
+                write_values: Vec::new(),
+            });
+        match access.access {
+            "read" => field.reads += 1,
+            "write" => {
+                field.writes += 1;
+                field.write_mask |= access.write_mask.unwrap_or_default();
+                if let Some(value) = access.value_pseudo.as_ref()
+                    && !field.write_values.contains(value)
+                {
+                    field.write_values.push(value.clone());
+                }
+            }
+            _ => unreachable!("memory-object access has a closed access vocabulary"),
+        }
+        if !field.paths.contains(&access.path) {
+            field.paths.push(access.path.clone());
+        }
+    }
+    fields.into_values().collect()
+}
+
+pub(super) fn context_accesses_for_memory_objects(
+    accesses: &[MemoryObjectAccess],
+) -> Vec<ContextAccess> {
+    accesses
+        .iter()
+        .filter_map(|access| {
+            let LinkedMemoryObject::Argument { index } = access.object else {
+                return None;
+            };
+            Some(ContextAccess {
+                argument: index,
+                offset: access.offset.try_into().ok()?,
+                access: access.access,
+                width: access.width,
+                path: access.path.clone(),
+                value: access.value.clone(),
+                value_pseudo: access.value_pseudo.clone(),
+                write_mask: access.write_mask,
+                preserved_mask: access.preserved_mask,
+                forced_zero_mask: access.forced_zero_mask,
+                forced_one_mask: access.forced_one_mask,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+pub(super) fn context_accesses_for_trace(trace: &FunctionAnalysis) -> Vec<ContextAccess> {
+    context_accesses_for_memory_objects(&memory_object_accesses_for_trace(trace))
 }
 
 pub(super) fn context_fields_for_accesses(accesses: &[ContextAccess]) -> Vec<ContextField> {

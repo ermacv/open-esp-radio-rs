@@ -1,6 +1,6 @@
 //! Public verification-policy and accepted-evidence readiness.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{
     super::ProjectContext,
@@ -9,33 +9,58 @@ use super::{
 use crate::{profiles, verification::dispositions, verification::load_evidence_baseline};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
+    let project_profiles = context
+        .project
+        .verification
+        .as_ref()
+        .map(|workspace| workspace.profiles.iter().map(PathBuf::as_path).collect());
+    let target_profiles = context
+        .target
+        .profiles
+        .as_deref()
+        .map(|path| vec![path])
+        .unwrap_or_default();
     Phase::collect(
         "verification",
         vec![
-            profile_pack(context.target.profiles.as_deref()),
+            profile_packs(project_profiles.unwrap_or(target_profiles)),
             disposition_pack(context.target.dispositions.as_deref()),
             evidence_baseline(context.target.evidence_baseline.as_deref()),
         ],
     )
 }
 
-fn profile_pack(path: Option<&Path>) -> Component {
-    let Some(path) = path else {
+fn profile_packs(paths: Vec<&Path>) -> Component {
+    if paths.is_empty() {
         return Component::new("profiles", Readiness::NotConfigured);
-    };
-    if !path.is_file() {
-        return Component::new("profiles", Readiness::Incomplete)
-            .detail("path", path.display().to_string())
-            .diagnostic("verification profile pack is missing");
     }
-    match profiles::load(path) {
-        Ok(profiles) => Component::new("profiles", Readiness::Ready)
-            .detail("path", path.display().to_string())
-            .detail("contracts", profiles.len()),
-        Err(error) => Component::new("profiles", Readiness::Invalid)
-            .detail("path", path.display().to_string())
-            .diagnostic(error),
+    let display = paths
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    let mut contracts = 0usize;
+    for path in &paths {
+        if !path.is_file() {
+            return Component::new("profiles", Readiness::Incomplete)
+                .detail("paths", display)
+                .diagnostic(format!(
+                    "verification profile pack {} is missing",
+                    path.display()
+                ));
+        }
+        match profiles::load(path) {
+            Ok(loaded) => contracts += loaded.len(),
+            Err(error) => {
+                return Component::new("profiles", Readiness::Invalid)
+                    .detail("paths", display)
+                    .diagnostic(error);
+            }
+        }
     }
+    Component::new("profiles", Readiness::Ready)
+        .detail("paths", display)
+        .detail("packs", paths.len())
+        .detail("contracts", contracts)
 }
 
 fn disposition_pack(path: Option<&Path>) -> Component {
@@ -92,7 +117,13 @@ mod tests {
             TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.spec"))
                 .unwrap();
         for component in [
-            profile_pack(target.profiles.as_deref()),
+            profile_packs(
+                target
+                    .profiles
+                    .as_deref()
+                    .map(|path| vec![path])
+                    .unwrap_or_default(),
+            ),
             disposition_pack(target.dispositions.as_deref()),
             evidence_baseline(target.evidence_baseline.as_deref()),
         ] {

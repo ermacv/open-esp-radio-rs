@@ -77,9 +77,15 @@ fn companion_symbol_resolves_external_tail_relocation_without_fallthrough() {
     assert!(inventory.unresolved_edges.is_empty());
     assert!(inventory.branch_sites.is_empty());
 
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: Vec::new(),
-        windows: vec![crate::Window { start: 0, end: 1 }],
+        regions: vec![crate::MmioRegion {
+            name: "sentinel".to_owned(),
+            start: 0,
+            end: 1,
+            readable: true,
+            writable: true,
+        }],
     };
     let result = execute(&image, &svd, "wrapper", Scenario::default()).unwrap();
     assert!(result.calls.contains("callee"));

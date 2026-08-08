@@ -2,7 +2,7 @@
 
 use super::super::*;
 
-pub(super) fn run(arguments: TraceInputArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: TraceInputArgs, svd: &MmioMap) -> Result<bool> {
     let input = ArtifactSymbolSelector {
         artifact: arguments
             .artifact

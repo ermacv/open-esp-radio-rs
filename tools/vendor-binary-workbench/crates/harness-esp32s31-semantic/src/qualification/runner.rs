@@ -4,9 +4,10 @@ use std::{collections::BTreeSet, path::Path};
 
 use super::{
     QualificationArtifact, QualificationCase, QualificationDifference, QualificationReport,
-    QualificationSummary, QualificationVerdict, StateFootprintStats,
+    QualificationSummary, StateFootprintStats,
 };
 use crate::*;
+use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceVerdict};
 
 fn debug_events(events: &[impl std::fmt::Debug]) -> Vec<String> {
     events.iter().map(|event| format!("{event:?}")).collect()
@@ -20,7 +21,7 @@ fn matched_case(
 ) -> QualificationCase {
     QualificationCase {
         name: name.into(),
-        verdict: QualificationVerdict::Match,
+        verdict: EquivalenceVerdict::Match,
         events: Some(events),
         steps: Some(result.steps),
         branch_outcomes: Some(result.branches.len()),
@@ -28,7 +29,6 @@ fn matched_case(
         calls: Some(result.calls.len()),
         call_events: Some(result.ordered_calls.len()),
         state: Some(footprint.into()),
-        unmapped_mmio: Vec::new(),
         difference: None,
     }
 }
@@ -48,11 +48,12 @@ fn single_case_report(
     result: &execution::ExecutionResult,
     case: QualificationCase,
 ) -> QualificationReport {
-    let matched = case.verdict == QualificationVerdict::Match;
-    let mismatched = usize::from(case.verdict == QualificationVerdict::Mismatch);
-    let incomplete = usize::from(case.verdict == QualificationVerdict::Incomplete);
+    let matched = case.verdict == EquivalenceVerdict::Match;
+    let mismatched = usize::from(case.verdict == EquivalenceVerdict::Diff);
+    let incomplete = usize::from(case.verdict == EquivalenceVerdict::Incomplete);
     QualificationReport {
-        schema: 1,
+        schema: 2,
+        mode: EquivalenceMode::Semantic,
         contract,
         vendor_symbol,
         verdict: case.verdict,
@@ -73,7 +74,7 @@ fn single_case_report(
 }
 
 pub fn verify_esp32s31_channel(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
 ) -> Result<QualificationReport> {
@@ -159,18 +160,6 @@ pub fn verify_esp32s31_channel(
             execution::ResetPolicy::Continue
         };
         let result = vendor_session.execute(&image, svd, "phy_chip_set_chan", scenario)?;
-        let unmapped: BTreeSet<_> = result
-            .events
-            .iter()
-            .filter_map(unmapped_execution_address)
-            .collect();
-        if !unmapped.is_empty() {
-            case_reports.push(QualificationCase::incomplete(
-                name,
-                unmapped.into_iter().collect(),
-            ));
-            continue;
-        }
         let footprint = verification::vendor_channel_state_footprint(&result, phy_param)?;
         let vendor_events = verification::normalize_vendor_channel(
             &image,
@@ -191,7 +180,7 @@ pub fn verify_esp32s31_channel(
             reported_full_diff = true;
             case_reports.push(QualificationCase {
                 name,
-                verdict: QualificationVerdict::Mismatch,
+                verdict: EquivalenceVerdict::Diff,
                 events: Some(vendor_events.len()),
                 steps: Some(result.steps),
                 branch_outcomes: Some(result.branches.len()),
@@ -199,7 +188,6 @@ pub fn verify_esp32s31_channel(
                 calls: Some(result.calls.len()),
                 call_events: Some(result.ordered_calls.len()),
                 state: Some(footprint.into()),
-                unmapped_mmio: Vec::new(),
                 difference: Some(QualificationDifference {
                     index: Some(divergence),
                     vendor: vendor_events
@@ -233,19 +221,20 @@ pub fn verify_esp32s31_channel(
     let matched = passed == total;
     let incomplete = case_reports
         .iter()
-        .filter(|case| case.verdict == QualificationVerdict::Incomplete)
+        .filter(|case| case.verdict == EquivalenceVerdict::Incomplete)
         .count();
     let mismatched = total - passed - incomplete;
     Ok(QualificationReport {
-        schema: 1,
+        schema: 2,
+        mode: EquivalenceMode::Semantic,
         contract: "esp32s31-channel",
         vendor_symbol: "phy_chip_set_chan",
         verdict: if matched {
-            QualificationVerdict::Match
+            EquivalenceVerdict::Match
         } else if incomplete != 0 {
-            QualificationVerdict::Incomplete
+            EquivalenceVerdict::Incomplete
         } else {
-            QualificationVerdict::Mismatch
+            EquivalenceVerdict::Diff
         },
         matched,
         artifacts,
@@ -264,7 +253,7 @@ pub fn verify_esp32s31_channel(
 }
 
 pub fn verify_esp32s31_rf_init(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
 ) -> Result<QualificationReport> {
@@ -308,19 +297,6 @@ pub fn verify_esp32s31_rf_init(
             execution::ResetPolicy::Continue
         };
         let result = vendor_session.execute(&image, svd, "phy_rf_init", scenario)?;
-        let unmapped: BTreeSet<_> = result
-            .events
-            .iter()
-            .filter_map(unmapped_execution_address)
-            .collect();
-        if !unmapped.is_empty() {
-            case_reports.push(QualificationCase::incomplete(
-                name,
-                unmapped.into_iter().collect(),
-            ));
-            continue;
-        }
-
         let footprint = verification::vendor_rf_init_state_footprint(&result, phy_param)?;
         let vendor_events = verification::normalize_vendor_rf_init(&image, &result, phy_param)?;
         let (rust_events, next_state) = verification::rust_rf_init_events(rust_state)?;
@@ -333,7 +309,7 @@ pub fn verify_esp32s31_rf_init(
                 .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
             case_reports.push(QualificationCase {
                 name: name.to_owned(),
-                verdict: QualificationVerdict::Mismatch,
+                verdict: EquivalenceVerdict::Diff,
                 events: Some(vendor_events.len()),
                 steps: Some(result.steps),
                 branch_outcomes: Some(result.branches.len()),
@@ -341,7 +317,6 @@ pub fn verify_esp32s31_rf_init(
                 calls: Some(result.calls.len()),
                 call_events: Some(result.ordered_calls.len()),
                 state: Some(footprint.into()),
-                unmapped_mmio: Vec::new(),
                 difference: Some(QualificationDifference {
                     index: Some(divergence),
                     vendor: vendor_events
@@ -366,7 +341,7 @@ pub fn verify_esp32s31_rf_init(
         if retained_rc != rust_state.rc_calibration_complete() {
             case_reports.push(QualificationCase {
                 name: name.to_owned(),
-                verdict: QualificationVerdict::Mismatch,
+                verdict: EquivalenceVerdict::Diff,
                 events: Some(vendor_events.len()),
                 steps: Some(result.steps),
                 branch_outcomes: Some(result.branches.len()),
@@ -374,7 +349,6 @@ pub fn verify_esp32s31_rf_init(
                 calls: Some(result.calls.len()),
                 call_events: Some(result.ordered_calls.len()),
                 state: Some(footprint.into()),
-                unmapped_mmio: Vec::new(),
                 difference: Some(QualificationDifference {
                     reason: Some(format!(
                         "persistent RC state differs: vendor={retained_rc}, rust={}",
@@ -395,19 +369,20 @@ pub fn verify_esp32s31_rf_init(
     let matched = passed == cases.len();
     let incomplete = case_reports
         .iter()
-        .filter(|case| case.verdict == QualificationVerdict::Incomplete)
+        .filter(|case| case.verdict == EquivalenceVerdict::Incomplete)
         .count();
     let mismatched = cases.len() - passed - incomplete;
     Ok(QualificationReport {
-        schema: 1,
+        schema: 2,
+        mode: EquivalenceMode::Semantic,
         contract: "esp32s31-rf-init",
         vendor_symbol: "phy_rf_init",
         verdict: if matched {
-            QualificationVerdict::Match
+            EquivalenceVerdict::Match
         } else if incomplete != 0 {
-            QualificationVerdict::Incomplete
+            EquivalenceVerdict::Incomplete
         } else {
-            QualificationVerdict::Mismatch
+            EquivalenceVerdict::Diff
         },
         matched,
         artifacts,
@@ -426,7 +401,7 @@ pub fn verify_esp32s31_rf_init(
 }
 
 pub fn verify_esp32s31_bluetooth_txdc(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
 ) -> Result<QualificationReport> {
@@ -447,22 +422,6 @@ pub fn verify_esp32s31_bluetooth_txdc(
         .ok_or("vendor artifact has no g_phyFuns symbol")?;
     let scenario = verification::vendor_bluetooth_txdc_scenario(phy_param, phy_functions_pointer);
     let result = execution::execute(&image, svd, "phy_bt_txdc_cal_new", scenario)?;
-    let unmapped: BTreeSet<_> = result
-        .events
-        .iter()
-        .filter_map(unmapped_execution_address)
-        .collect();
-    if !unmapped.is_empty() {
-        let case = QualificationCase::incomplete("bluetooth-txdc", unmapped.into_iter().collect());
-        return Ok(single_case_report(
-            "esp32s31-bluetooth-txdc",
-            "phy_bt_txdc_cal_new",
-            artifacts,
-            &result,
-            case,
-        ));
-    }
-
     let vendor_events = verification::normalize_vendor_bluetooth_txdc(&image, &result, phy_param)?;
     let (rust_events, _) = verification::rust_bluetooth_txdc_events(
         open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
@@ -492,9 +451,9 @@ pub fn verify_esp32s31_bluetooth_txdc(
     let case = QualificationCase {
         name: "bluetooth-txdc".to_owned(),
         verdict: if matched {
-            QualificationVerdict::Match
+            EquivalenceVerdict::Match
         } else {
-            QualificationVerdict::Mismatch
+            EquivalenceVerdict::Diff
         },
         events: Some(vendor_events.len()),
         steps: Some(result.steps),
@@ -503,7 +462,6 @@ pub fn verify_esp32s31_bluetooth_txdc(
         calls: Some(result.calls.len()),
         call_events: Some(result.ordered_calls.len()),
         state: None,
-        unmapped_mmio: Vec::new(),
         difference,
     };
     Ok(single_case_report(
@@ -516,7 +474,7 @@ pub fn verify_esp32s31_bluetooth_txdc(
 }
 
 pub fn verify_esp32s31_bluetooth_tx_power(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
 ) -> Result<QualificationReport> {
@@ -538,23 +496,6 @@ pub fn verify_esp32s31_bluetooth_tx_power(
     let scenario =
         verification::vendor_bluetooth_tx_power_scenario(phy_param, phy_functions_pointer);
     let result = execution::execute(&image, svd, "phy_bt_tx_pwctrl_init", scenario)?;
-    let unmapped: BTreeSet<_> = result
-        .events
-        .iter()
-        .filter_map(unmapped_execution_address)
-        .collect();
-    if !unmapped.is_empty() {
-        let case =
-            QualificationCase::incomplete("bluetooth-tx-power", unmapped.into_iter().collect());
-        return Ok(single_case_report(
-            "esp32s31-bluetooth-tx-power",
-            "phy_bt_tx_pwctrl_init",
-            artifacts,
-            &result,
-            case,
-        ));
-    }
-
     let footprint = verification::vendor_bluetooth_tx_power_state_footprint(&result, phy_param)?;
     let vendor_events =
         verification::normalize_vendor_bluetooth_tx_power(&image, &result, phy_param)?;
@@ -586,9 +527,9 @@ pub fn verify_esp32s31_bluetooth_tx_power(
     let case = QualificationCase {
         name: "bluetooth-tx-power".to_owned(),
         verdict: if matched {
-            QualificationVerdict::Match
+            EquivalenceVerdict::Match
         } else {
-            QualificationVerdict::Mismatch
+            EquivalenceVerdict::Diff
         },
         events: Some(vendor_events.len()),
         steps: Some(result.steps),
@@ -597,7 +538,6 @@ pub fn verify_esp32s31_bluetooth_tx_power(
         calls: Some(result.calls.len()),
         call_events: Some(result.ordered_calls.len()),
         state: Some(footprint.into()),
-        unmapped_mmio: Vec::new(),
         difference,
     };
     Ok(single_case_report(
@@ -610,7 +550,7 @@ pub fn verify_esp32s31_bluetooth_tx_power(
 }
 
 pub fn verify_esp32s31_bluetooth_txdc_pwdet(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
 ) -> Result<QualificationReport> {
@@ -632,23 +572,6 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
     let scenario =
         verification::vendor_bluetooth_txdc_pwdet_scenario(phy_param, phy_functions_pointer);
     let result = execution::execute(&image, svd, "phy_txdc_cal_pwdet_init", scenario)?;
-    let unmapped: BTreeSet<_> = result
-        .events
-        .iter()
-        .filter_map(unmapped_execution_address)
-        .collect();
-    if !unmapped.is_empty() {
-        let case =
-            QualificationCase::incomplete("bluetooth-txdc-pwdet", unmapped.into_iter().collect());
-        return Ok(single_case_report(
-            "esp32s31-bluetooth-txdc-pwdet",
-            "phy_txdc_cal_pwdet_init",
-            artifacts,
-            &result,
-            case,
-        ));
-    }
-
     let footprint = verification::vendor_bluetooth_txdc_pwdet_state_footprint(&result, phy_param)?;
     let vendor_events =
         verification::normalize_vendor_bluetooth_txdc_pwdet(&image, &result, phy_param)?;
@@ -689,9 +612,9 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
     let case = QualificationCase {
         name: "bluetooth-txdc-pwdet".to_owned(),
         verdict: if matched {
-            QualificationVerdict::Match
+            EquivalenceVerdict::Match
         } else {
-            QualificationVerdict::Mismatch
+            EquivalenceVerdict::Diff
         },
         events: Some(vendor_events.len()),
         steps: Some(result.steps),
@@ -700,7 +623,6 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
         calls: Some(result.calls.len()),
         call_events: Some(result.ordered_calls.len()),
         state: Some(footprint.into()),
-        unmapped_mmio: Vec::new(),
         difference,
     };
     Ok(single_case_report(

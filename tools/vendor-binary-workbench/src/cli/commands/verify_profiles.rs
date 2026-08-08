@@ -16,7 +16,7 @@ struct ProfileComparisonReport {
 struct ProfileVerificationSummary {
     profiles: usize,
     matched: usize,
-    mismatched: usize,
+    different: usize,
     incomplete: usize,
 }
 
@@ -30,10 +30,10 @@ struct ProfileVerificationReport {
 
 fn coverage_summary(coverage: &CoverageReport) -> String {
     format!(
-        "branches={} control-flow={} MMIO={}",
+        "branches={} control-flow={} unnamed-MMIO={}",
         coverage.uncovered_branch_outcomes(),
         coverage.uncovered_control_flow(),
-        coverage.unmapped_mmio.len(),
+        coverage.unnamed_mmio.len(),
     )
 }
 
@@ -41,6 +41,7 @@ fn case_row(profile: &str, case: &CaseReport) -> [String; 4] {
     match case {
         CaseReport::Match {
             name,
+            environment: _,
             events,
             memory_changes,
             return_compared,
@@ -52,22 +53,22 @@ fn case_row(profile: &str, case: &CaseReport) -> [String; 4] {
                 "events={events} memory-changes={memory_changes} return-compared={return_compared}"
             ),
         ],
-        CaseReport::Mismatch { name, vendor, rust } => [
+        CaseReport::Diff {
+            name,
+            environment: _,
+            difference,
+        } => [
             profile.to_owned(),
             name.clone(),
-            "MISMATCH".to_owned(),
+            "DIFF".to_owned(),
             format!(
-                "vendor: events={} memory={} return={:#x}; rust: events={} memory={} return={:#x}",
-                vendor.events.len(),
-                vendor.memory_changes.len(),
-                vendor.return_value,
-                rust.events.len(),
-                rust.memory_changes.len(),
-                rust.return_value,
+                "kind={:?} first-difference={}",
+                difference.kind, difference.first_difference,
             ),
         ],
         CaseReport::Incomplete {
             name,
+            environment: _,
             vendor_error,
             rust_error,
         } => [
@@ -92,7 +93,7 @@ fn print_human(report: &ProfileVerificationReport) {
                 "Verdict",
                 "Cases",
                 "Matched",
-                "Mismatch",
+                "Different",
                 "Incomplete",
                 "Vendor gaps",
                 "Rust gaps",
@@ -102,7 +103,7 @@ fn print_human(report: &ProfileVerificationReport) {
                 profile.comparison.verdict.label().to_owned(),
                 profile.comparison.summary.cases.to_string(),
                 profile.comparison.summary.matched.to_string(),
-                profile.comparison.summary.mismatched.to_string(),
+                profile.comparison.summary.different.to_string(),
                 profile.comparison.summary.incomplete.to_string(),
                 coverage_summary(&profile.comparison.vendor_coverage),
                 coverage_summary(&profile.comparison.rust_coverage),
@@ -127,10 +128,10 @@ fn print_human(report: &ProfileVerificationReport) {
         );
     }
     outputln!(
-        "Summary: profiles={} matched={} mismatched={} incomplete={}",
+        "Summary: profiles={} matched={} different={} incomplete={}",
         report.summary.profiles,
         report.summary.matched,
-        report.summary.mismatched,
+        report.summary.different,
         report.summary.incomplete,
     );
 }
@@ -146,15 +147,15 @@ fn print_tsv(report: &ProfileVerificationReport) {
         );
     }
     outputln!(
-        "PROFILE-SUMMARY\tprofiles={}\tmatch={}\tmismatch={}\tincomplete={}",
+        "PROFILE-SUMMARY\tprofiles={}\tmatch={}\tdiff={}\tincomplete={}",
         report.summary.profiles,
         report.summary.matched,
-        report.summary.mismatched,
+        report.summary.different,
         report.summary.incomplete,
     );
 }
 
-pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> {
     let profile_path = arguments
         .profiles
         .ok_or("missing --profiles")
@@ -169,7 +170,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Resul
         .map_err(crate::Error::invalid)?;
     let loaded_profiles = profiles::load(&profile_path)?;
     let mut matched = 0_usize;
-    let mut mismatched = 0_usize;
+    let mut different = 0_usize;
     let mut reports = Vec::with_capacity(loaded_profiles.len());
     for profile in &loaded_profiles {
         let argument_domain = profile.coverage_argument_constraints();
@@ -190,9 +191,9 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Resul
             &profile.scenarios,
         )?;
         match comparison.verdict {
-            ComparisonVerdict::Match => matched += 1,
-            ComparisonVerdict::Mismatch => mismatched += 1,
-            ComparisonVerdict::Incomplete => {}
+            EquivalenceVerdict::Match => matched += 1,
+            EquivalenceVerdict::Diff => different += 1,
+            EquivalenceVerdict::Incomplete => {}
         }
         reports.push(ProfileComparisonReport {
             name: profile.name.clone(),
@@ -200,13 +201,13 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Resul
         });
     }
     let report = ProfileVerificationReport {
-        schema_version: 1,
+        schema_version: 2,
         command: "verify profiles",
         summary: ProfileVerificationSummary {
             profiles: loaded_profiles.len(),
             matched,
-            mismatched,
-            incomplete: loaded_profiles.len() - matched - mismatched,
+            different,
+            incomplete: loaded_profiles.len() - matched - different,
         },
         profiles: reports,
     };

@@ -13,30 +13,36 @@ fn generate_reference(
     codegen::generate(&program, artifact, artifact_sha256, member, companions)
 }
 
-fn map() -> MmioRegisterMap {
-    MmioRegisterMap {
+fn map() -> MmioMap {
+    MmioMap {
         registers: vec![Register {
             address: 0x2010_7030,
             name: "AGC.CONTROL".to_owned(),
         }],
-        windows: vec![Window {
+        regions: vec![MmioRegion {
+            name: "radio".to_owned(),
             start: 0x2010_0000,
             end: 0x2020_0000,
+            readable: true,
+            writable: true,
         }],
     }
 }
 
-fn indexed_map(base: u32, stride: u32, count: u32, family: &str) -> MmioRegisterMap {
-    MmioRegisterMap {
+fn indexed_map(base: u32, stride: u32, count: u32, family: &str) -> MmioMap {
+    MmioMap {
         registers: (0..count)
             .map(|index| Register {
                 address: base.wrapping_add(index.wrapping_mul(stride)),
                 name: format!("{family}{index}"),
             })
             .collect(),
-        windows: vec![Window {
+        regions: vec![MmioRegion {
+            name: family.to_owned(),
             start: base,
             end: base.wrapping_add(count.wrapping_mul(stride)),
+            readable: true,
+            writable: true,
         }],
     }
 }
@@ -54,7 +60,7 @@ fn affine_indexed_mmio_requires_a_contiguous_svd_bank_and_emits_a_guard() {
     assert_eq!(domain.registers.len(), 4);
     assert_eq!(domain.guard.unwrap().maximum, 3);
 
-    let missing_middle = MmioRegisterMap {
+    let missing_middle = MmioMap {
         registers: vec![
             Register {
                 address: 0x2010_4004,
@@ -65,7 +71,7 @@ fn affine_indexed_mmio_requires_a_contiguous_svd_bank_and_emits_a_guard() {
                 name: "WIFI.BSSID_HIGH2".to_owned(),
             },
         ],
-        windows: vec![],
+        regions: vec![],
     };
     assert!(indexed_mmio_domain(&address, &missing_middle).is_none());
 }
@@ -206,7 +212,7 @@ const TEST_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
 
 fn test_reference_intrinsic(
     symbol: &artifact::ArtifactSymbolDefinition,
-    _svd: &MmioRegisterMap,
+    _svd: &MmioMap,
     _pointer_context: &StructuralPointerContext,
 ) -> Option<FunctionAnalysis> {
     (symbol.name == "ets_delay_us").then(|| FunctionAnalysis {

@@ -4,52 +4,52 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub(super) struct LinkedIrProfileDetail {
-    pub(super) id: String,
-    pub(super) sources: Vec<String>,
-    pub(super) missing_sources: Vec<String>,
-    pub(super) entry_contract: String,
-    pub(super) contract_status: &'static str,
-    pub(super) contract_error: Option<String>,
-    pub(super) output: String,
-    pub(super) output_status: &'static str,
-    pub(super) output_error: Option<String>,
-    pub(super) functions: usize,
-    pub(super) registers: usize,
-    pub(super) field_candidates: usize,
-    pub(super) pseudo_rust: Option<String>,
-    pub(super) pseudo_status: &'static str,
+pub(crate) struct LinkedIrProfileDetail {
+    pub(crate) id: String,
+    pub(crate) sources: Vec<String>,
+    pub(crate) missing_sources: Vec<String>,
+    pub(crate) entry_contract: String,
+    pub(crate) contract_status: &'static str,
+    pub(crate) contract_error: Option<String>,
+    pub(crate) output: String,
+    pub(crate) output_status: &'static str,
+    pub(crate) output_error: Option<String>,
+    pub(crate) functions: usize,
+    pub(crate) registers: usize,
+    pub(crate) field_candidates: usize,
+    pub(crate) pseudo_rust: Option<String>,
+    pub(crate) pseudo_status: &'static str,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub(super) struct MmioRegionDetail {
-    pub(super) name: String,
-    pub(super) address_space: String,
-    pub(super) start: u64,
-    pub(super) end_exclusive: u64,
-    pub(super) permissions: String,
+pub(crate) struct MmioRegionDetail {
+    pub(crate) name: String,
+    pub(crate) address_space: String,
+    pub(crate) start: u64,
+    pub(crate) end_exclusive: u64,
+    pub(crate) permissions: String,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub(super) struct ArtifactDetail {
-    pub(super) role: String,
-    pub(super) status: &'static str,
-    pub(super) path: String,
+pub(crate) struct ArtifactDetail {
+    pub(crate) role: String,
+    pub(crate) status: &'static str,
+    pub(crate) path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) container: Option<&'static str>,
+    pub(crate) container: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) objects: Option<usize>,
+    pub(crate) objects: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) skipped_members: Option<usize>,
+    pub(crate) skipped_members: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) symbol_facts: Option<usize>,
+    pub(crate) symbol_facts: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) error: Option<String>,
+    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
-pub(super) enum DetailValue {
+pub(crate) enum DetailValue {
     String(String),
     Unsigned(usize),
     Bool(bool),
@@ -109,7 +109,7 @@ impl From<Vec<ArtifactDetail>> for DetailValue {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub(super) enum Readiness {
+pub(crate) enum Readiness {
     Ready,
     Incomplete,
     NotConfigured,
@@ -117,7 +117,7 @@ pub(super) enum Readiness {
 }
 
 impl Readiness {
-    pub(super) const fn label(self) -> &'static str {
+    pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Ready => "ready",
             Self::Incomplete => "incomplete",
@@ -128,15 +128,15 @@ impl Readiness {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct Component {
-    pub(super) name: &'static str,
-    pub(super) status: Readiness,
-    pub(super) details: BTreeMap<String, DetailValue>,
-    pub(super) diagnostic: Option<String>,
+pub(crate) struct Component {
+    pub(crate) name: &'static str,
+    pub(crate) status: Readiness,
+    pub(crate) details: BTreeMap<String, DetailValue>,
+    pub(crate) diagnostic: Option<String>,
 }
 
 impl Component {
-    pub(super) fn new(name: &'static str, status: Readiness) -> Self {
+    pub(crate) fn new(name: &'static str, status: Readiness) -> Self {
         Self {
             name,
             status,
@@ -145,26 +145,26 @@ impl Component {
         }
     }
 
-    pub(super) fn detail(mut self, key: &str, value: impl Into<DetailValue>) -> Self {
+    pub(crate) fn detail(mut self, key: &str, value: impl Into<DetailValue>) -> Self {
         self.details.insert(key.to_owned(), value.into());
         self
     }
 
-    pub(super) fn diagnostic(mut self, value: impl ToString) -> Self {
+    pub(crate) fn diagnostic(mut self, value: impl ToString) -> Self {
         self.diagnostic = Some(value.to_string());
         self
     }
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct Phase {
-    pub(super) name: &'static str,
-    pub(super) status: Readiness,
-    pub(super) components: Vec<Component>,
+pub(crate) struct Phase {
+    pub(crate) name: &'static str,
+    pub(crate) status: Readiness,
+    pub(crate) components: Vec<Component>,
 }
 
 impl Phase {
-    pub(super) fn collect(name: &'static str, components: Vec<Component>) -> Self {
+    pub(crate) fn collect(name: &'static str, components: Vec<Component>) -> Self {
         let status = if components
             .iter()
             .any(|component| component.status == Readiness::Invalid)
@@ -192,25 +192,25 @@ impl Phase {
 }
 
 #[derive(Debug, Eq, PartialEq, Serialize)]
-pub(super) struct TargetIdentity {
-    pub(super) id: String,
-    pub(super) architecture: String,
+pub(crate) struct TargetIdentity {
+    pub(crate) id: String,
+    pub(crate) architecture: String,
     #[serde(rename = "calling_convention")]
-    pub(super) calling_convention: String,
-    pub(super) harness: Option<String>,
+    pub(crate) calling_convention: String,
+    pub(crate) harness: Option<String>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(super) struct StatusReport {
-    pub(super) project_id: String,
-    pub(super) manifest: String,
-    pub(super) target: TargetIdentity,
-    pub(super) overall: Readiness,
-    pub(super) phases: Vec<Phase>,
+pub(crate) struct StatusReport {
+    pub(crate) project_id: String,
+    pub(crate) manifest: String,
+    pub(crate) target: TargetIdentity,
+    pub(crate) overall: Readiness,
+    pub(crate) phases: Vec<Phase>,
 }
 
 impl StatusReport {
-    pub(super) fn new(
+    pub(crate) fn new(
         project_id: String,
         manifest: String,
         target: TargetIdentity,

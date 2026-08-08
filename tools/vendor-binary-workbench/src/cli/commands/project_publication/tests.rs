@@ -153,6 +153,7 @@ bitWidth = 1
         registers: Some(paths),
         interfaces: None,
         functions: None,
+        verification: None,
     };
     (directory, project)
 }

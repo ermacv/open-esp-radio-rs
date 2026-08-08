@@ -5,8 +5,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::{
     BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
     DraftReferenceTerminator, ExpressionOperation, ExternalReturnModel, FunctionAnalysis,
-    MemoryAccess, MmioRegisterMap, ObservableEvent, ReferenceResolver, SymbolicValue, artifact,
-    direct,
+    MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver, SymbolicValue, artifact, direct,
 };
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
@@ -31,6 +30,9 @@ pub(crate) use calls::{effective_branch_operation, format_guard_path, format_gua
 mod direct_trace;
 
 use direct_trace::*;
+mod scenario_suggestions;
+
+use scenario_suggestions::*;
 fn nested_path(path: &str, scope: &str) -> String {
     format!("{path} / {scope}")
 }
@@ -117,7 +119,7 @@ fn annotate_direct_semantic_calls(
 pub(crate) fn build_linked_ir_for_source(
     resolver: &ReferenceResolver,
     symbol_prefix: &str,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     source: &str,
     namespace_identities: bool,
     include_reachable: bool,
@@ -169,10 +171,14 @@ pub(crate) fn build_linked_ir_for_source(
         let call_graph_blockers = rendered_diagnostics(&call_graph_diagnostics);
         match resolver.trace_symbol(&symbol, svd) {
             Ok(trace) => {
-                let context_accesses = context_accesses_for_trace(&trace);
+                let memory_accesses = memory_object_accesses_for_trace(&trace);
+                let memory_fields = memory_object_fields_for_accesses(&memory_accesses);
+                let context_accesses = context_accesses_for_memory_objects(&memory_accesses);
                 let context_fields = context_fields_for_accesses(&context_accesses);
                 let mmio_accesses = mmio_accesses_for_trace(&trace);
                 let delays = delays_for_trace(&trace);
+                let scenario_suggestions =
+                    scenario_suggestions(Some(&trace), &direct_mmio_predicates, &mmio_accesses);
                 let return_call_results = trace_call_results(&trace, &identities);
                 let return_provenance =
                     return_provenance(&trace.return_value, &return_call_results, svd);
@@ -233,6 +239,9 @@ pub(crate) fn build_linked_ir_for_source(
                     delays,
                     context_accesses,
                     context_fields,
+                    memory_accesses,
+                    memory_fields,
+                    scenario_suggestions,
                     effect_summary: LinkedEffectSummary::default(),
                     call_graph_diagnostics,
                     direct_diagnostics,
@@ -248,6 +257,7 @@ pub(crate) fn build_linked_ir_for_source(
                 let direct_blockers = rendered_diagnostics(&direct_diagnostics);
                 let mut calls = compact_calls(direct_calls);
                 annotate_direct_semantic_calls(&mut calls, resolver, &identities);
+                let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
                     identity: function_identity.clone(),
@@ -274,6 +284,9 @@ pub(crate) fn build_linked_ir_for_source(
                     delays: Vec::new(),
                     context_accesses: Vec::new(),
                     context_fields: Vec::new(),
+                    memory_accesses: Vec::new(),
+                    memory_fields: Vec::new(),
+                    scenario_suggestions,
                     effect_summary: LinkedEffectSummary::default(),
                     call_graph_diagnostics,
                     direct_diagnostics,

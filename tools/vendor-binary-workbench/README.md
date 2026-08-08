@@ -53,6 +53,7 @@ pass them directly or through an untracked project-local `local.run`.
 | Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
 | `project status` | Emit phase-based lifecycle and publication readiness as text or stable JSON | [Project status](docs/project-status.md) |
+| `project browse` | Browse project state and run typed trace comparisons in a read-only TUI | [Read-only project browser](docs/tui.md) |
 | `project analyze [--check]` | Generate or non-mutatingly verify project-owned symbol/navigation, MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
 | `project publish` | Strictly validate reviewed registers and write or check configured SVD/PAC/bindings | [Project publication](docs/project-publication.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
@@ -76,6 +77,11 @@ and migration constraints live in the repository-level
 [architecture document](../../docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md).
 The product, CLI, schema and lifecycle vocabulary is fixed by the
 [naming contract](../../docs/vendor-binary-workbench/NAMING.md).
+Alternate frontends consume the same typed, CLI-independent
+[`WorkbenchApplication`](docs/application-api.md) reports; they do not parse
+terminal output or introduce another analysis path.
+The policy for graph, debug, build, testing, solver, and multi-ISA dependencies
+is documented in [dependency and analysis-engine strategy](docs/dependency-strategy.md).
 
 ## Typical reverse-engineering pass
 
@@ -97,7 +103,7 @@ cargo vendor-binary-workbench interfaces discover \
   --json-report /tmp/esp32s31-interfaces.json
 ```
 
-This report keeps relocation/global-symbol associations, pointer-load chains,
+This report keeps relocation/relocated-symbol associations, pointer-load chains,
 slot offsets, call sites, and recoverable argument provenance separate from
 RTOS/NVS/logging names supplied by reviewed semantic packs. Interface
 validation preserves those concrete sites under each reviewed slot, and the

@@ -2,9 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
-use toml_edit::{DocumentMut, Item};
+use toml_edit::{Item, Table};
 
-use crate::{Result, project_ir::ProjectIrProfile};
+use crate::{Result, project::ProjectSource, project_ir::ProjectIrProfile};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SymbolInventorySpec {
@@ -17,29 +17,35 @@ pub(crate) struct NavigationIndexSpec {
 }
 
 pub(crate) fn load_symbol_inventory(
-    document: &DocumentMut,
+    document: &Table,
     base: &Path,
     ir_profiles: &[ProjectIrProfile],
+    source: ProjectSource<'_>,
 ) -> Result<Option<SymbolInventorySpec>> {
-    let Some(analysis) = document.get("analysis") else {
+    let Some(analysis_item) = document.get("analysis") else {
         return Ok(None);
     };
-    let analysis = analysis
-        .as_table()
-        .ok_or("project manifest analysis must be a table")
-        .map_err(crate::Error::invalid)?;
-    let Some(symbols) = analysis.get("symbols") else {
+    let analysis = analysis_item.as_table().ok_or_else(|| {
+        source.item(
+            Some(analysis_item),
+            "project manifest analysis must be a table",
+        )
+    })?;
+    let Some(symbols_item) = analysis.get("symbols") else {
         return Ok(None);
     };
-    let symbols = symbols
-        .as_table()
-        .ok_or("project analysis.symbols must be a table")
-        .map_err(crate::Error::invalid)?;
-    for (key, _) in symbols.iter() {
+    let symbols = symbols_item.as_table().ok_or_else(|| {
+        source.item(
+            Some(symbols_item),
+            "project analysis.symbols must be a table",
+        )
+    })?;
+    for (key, item) in symbols.iter() {
         if key != "output" {
-            return Err(crate::Error::invalid(format!(
-                "unknown project analysis.symbols key {key:?}"
-            )));
+            return Err(source.item(
+                Some(item),
+                format!("unknown project analysis.symbols key {key:?}"),
+            ));
         }
     }
     let output = symbols
@@ -47,45 +53,60 @@ pub(crate) fn load_symbol_inventory(
         .and_then(Item::as_str)
         .filter(|value| !value.is_empty())
         .map(|value| resolve_path(base, value))
-        .ok_or("project analysis.symbols requires non-empty string \"output\"")
-        .map_err(crate::Error::invalid)?;
+        .ok_or_else(|| {
+            source.table_key(
+                symbols,
+                "output",
+                "project analysis.symbols requires non-empty string \"output\"",
+            )
+        })?;
     if ir_profiles
         .iter()
         .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
     {
-        return Err(crate::Error::invalid(format!(
-            "project symbol inventory reuses linked-IR output path {}",
-            output.display()
-        )));
+        return Err(source.table_key(
+            symbols,
+            "output",
+            format!(
+                "project symbol inventory reuses linked-IR output path {}",
+                output.display()
+            ),
+        ));
     }
     Ok(Some(SymbolInventorySpec { output }))
 }
 
 pub(crate) fn load_navigation_index(
-    document: &DocumentMut,
+    document: &Table,
     base: &Path,
     symbols: Option<&SymbolInventorySpec>,
     ir_profiles: &[ProjectIrProfile],
+    source: ProjectSource<'_>,
 ) -> Result<Option<NavigationIndexSpec>> {
-    let Some(analysis) = document.get("analysis") else {
+    let Some(analysis_item) = document.get("analysis") else {
         return Ok(None);
     };
-    let analysis = analysis
-        .as_table()
-        .ok_or("project manifest analysis must be a table")
-        .map_err(crate::Error::invalid)?;
-    let Some(navigation) = analysis.get("navigation") else {
+    let analysis = analysis_item.as_table().ok_or_else(|| {
+        source.item(
+            Some(analysis_item),
+            "project manifest analysis must be a table",
+        )
+    })?;
+    let Some(navigation_item) = analysis.get("navigation") else {
         return Ok(None);
     };
-    let navigation = navigation
-        .as_table()
-        .ok_or("project analysis.navigation must be a table")
-        .map_err(crate::Error::invalid)?;
-    for (key, _) in navigation.iter() {
+    let navigation = navigation_item.as_table().ok_or_else(|| {
+        source.item(
+            Some(navigation_item),
+            "project analysis.navigation must be a table",
+        )
+    })?;
+    for (key, item) in navigation.iter() {
         if key != "output" {
-            return Err(crate::Error::invalid(format!(
-                "unknown project analysis.navigation key {key:?}"
-            )));
+            return Err(source.item(
+                Some(item),
+                format!("unknown project analysis.navigation key {key:?}"),
+            ));
         }
     }
     let output = navigation
@@ -93,13 +114,23 @@ pub(crate) fn load_navigation_index(
         .and_then(Item::as_str)
         .filter(|value| !value.is_empty())
         .map(|value| resolve_path(base, value))
-        .ok_or("project analysis.navigation requires non-empty string \"output\"")
-        .map_err(crate::Error::invalid)?;
-    let symbols = symbols
-        .ok_or("project analysis.navigation requires [analysis.symbols]")
-        .map_err(crate::Error::invalid)?;
+        .ok_or_else(|| {
+            source.table_key(
+                navigation,
+                "output",
+                "project analysis.navigation requires non-empty string \"output\"",
+            )
+        })?;
+    let symbols = symbols.ok_or_else(|| {
+        source.item(
+            Some(navigation_item),
+            "project analysis.navigation requires [analysis.symbols]",
+        )
+    })?;
     if output == symbols.output {
-        return Err(crate::Error::invalid(
+        return Err(source.table_key(
+            navigation,
+            "output",
             "project navigation index reuses symbol inventory output path",
         ));
     }
@@ -107,10 +138,14 @@ pub(crate) fn load_navigation_index(
         .iter()
         .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
     {
-        return Err(crate::Error::invalid(format!(
-            "project navigation index reuses linked-IR output path {}",
-            output.display()
-        )));
+        return Err(source.table_key(
+            navigation,
+            "output",
+            format!(
+                "project navigation index reuses linked-IR output path {}",
+                output.display()
+            ),
+        ));
     }
     Ok(Some(NavigationIndexSpec { output }))
 }
@@ -127,16 +162,17 @@ fn resolve_path(base: &Path, value: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use toml_edit::DocumentMut;
 
     #[test]
     fn resolves_inventory_output_and_rejects_ir_collisions() {
-        let document = r#"
+        let input = r#"
 [analysis.symbols]
 output = "generated/symbols.json"
-"#
-        .parse::<DocumentMut>()
-        .unwrap();
-        let spec = load_symbol_inventory(&document, Path::new("project"), &[])
+"#;
+        let document = input.parse::<DocumentMut>().unwrap();
+        let source = ProjectSource::new(Path::new("project.toml"), input);
+        let spec = load_symbol_inventory(&document, Path::new("project"), &[], source)
             .unwrap()
             .unwrap();
         assert_eq!(spec.output, PathBuf::from("project/generated/symbols.json"));
@@ -151,7 +187,7 @@ output = "generated/symbols.json"
             pseudo_rust: None,
         };
         assert!(
-            load_symbol_inventory(&document, Path::new("project"), &[profile])
+            load_symbol_inventory(&document, Path::new("project"), &[profile], source)
                 .unwrap_err()
                 .to_string()
                 .contains("reuses linked-IR output")
@@ -160,20 +196,20 @@ output = "generated/symbols.json"
 
     #[test]
     fn navigation_requires_symbols_and_owns_a_distinct_output() {
-        let document = r#"
+        let input = r#"
 [analysis.symbols]
 output = "generated/symbols.json"
 
 [analysis.navigation]
 output = "generated/navigation.json"
-"#
-        .parse::<DocumentMut>()
-        .unwrap();
-        let symbols = load_symbol_inventory(&document, Path::new("project"), &[])
+"#;
+        let document = input.parse::<DocumentMut>().unwrap();
+        let source = ProjectSource::new(Path::new("project.toml"), input);
+        let symbols = load_symbol_inventory(&document, Path::new("project"), &[], source)
             .unwrap()
             .unwrap();
         let navigation =
-            load_navigation_index(&document, Path::new("project"), Some(&symbols), &[])
+            load_navigation_index(&document, Path::new("project"), Some(&symbols), &[], source)
                 .unwrap()
                 .unwrap();
         assert_eq!(
@@ -181,7 +217,7 @@ output = "generated/navigation.json"
             PathBuf::from("project/generated/navigation.json")
         );
         assert!(
-            load_navigation_index(&document, Path::new("project"), None, &[])
+            load_navigation_index(&document, Path::new("project"), None, &[], source)
                 .unwrap_err()
                 .to_string()
                 .contains("requires [analysis.symbols]")

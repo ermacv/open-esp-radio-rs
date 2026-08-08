@@ -5,10 +5,10 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use super::*;
-use crate::MmioRegisterMap;
+use crate::MmioMap;
 use open_radio_vendor_semantics::{
-    ContractEffect, ContractValue, EffectComparisonVerdict, EffectPolicy, ReadyCondition,
-    RegisterId, StateField, Timeout, compare_effects,
+    ContractEffect, ContractValue, EffectPolicy, EquivalenceVerdict, ReadyCondition, RegisterId,
+    StateField, Timeout, compare_effects,
 };
 
 const PHY_PARAM_POINTER: u32 = 0x2f07_fc40;
@@ -75,26 +75,32 @@ fn push_mmio_effect(effects: &mut Vec<ContractEffect>, event: &execution::Execut
         execution::ExecutionEvent::Read {
             width,
             address,
+            region,
             register: name,
             value,
         } => effects.push(ContractEffect::MmioRead {
             register: RegisterId {
                 address: *address,
                 width: *width,
-                name: name.clone(),
+                name: name
+                    .clone()
+                    .unwrap_or_else(|| format!("{region}@{address:#010x}")),
             },
             value: ContractValue::Concrete(*value),
         }),
         execution::ExecutionEvent::Write {
             width,
             address,
+            region,
             register: name,
             value,
         } => effects.push(ContractEffect::MmioWrite {
             register: RegisterId {
                 address: *address,
                 width: *width,
-                name: name.clone(),
+                name: name
+                    .clone()
+                    .unwrap_or_else(|| format!("{region}@{address:#010x}")),
             },
             value: ContractValue::Concrete(*value),
         }),
@@ -540,7 +546,7 @@ fn validate_typed_timeout() -> Result<()> {
 }
 
 fn generated_reference_identity(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
     source_code_identity: &str,
@@ -583,7 +589,7 @@ fn generated_reference_identity(
     reason = "verification binds both immutable artifacts, one exact symbol and its policy"
 )]
 pub fn verify_esp32s31_iq_est_enable(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
     rust_artifact: &Path,
@@ -653,13 +659,16 @@ pub fn verify_esp32s31_iq_est_enable(
         if case.name == "active-inactive-ready" {
             let vendor_effects = contract_effects(&vendor_result.events, false)?;
             let rust_effects = contract_effects(&rust_result.events, true)?;
-            match compare_effects(&vendor_effects, &rust_effects, policy)? {
-                EffectComparisonVerdict::Match => {}
-                EffectComparisonVerdict::Mismatch(reason) => {
+            let comparison = compare_effects(&vendor_effects, &rust_effects, policy)?;
+            match comparison.verdict {
+                EquivalenceVerdict::Match => {}
+                EquivalenceVerdict::Diff | EquivalenceVerdict::Incomplete => {
                     matched = false;
                     canonical.push_str(&format!(
-                        "effect-difference {} reason={reason}\n",
-                        case.name
+                        "effect-{} {} reason={}\n",
+                        comparison.verdict.label().to_ascii_lowercase(),
+                        case.name,
+                        comparison.reason.as_deref().unwrap_or("unspecified"),
                     ));
                 }
             }
@@ -726,7 +735,8 @@ mod tests {
             execution::ExecutionEvent::Read {
                 width: 32,
                 address: ESTIMATOR_READY,
-                register: "READY".to_owned(),
+                region: "estimator".to_owned(),
+                register: Some("READY".to_owned()),
                 value: READY_MASK,
             },
         ];

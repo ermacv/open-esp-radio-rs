@@ -38,13 +38,47 @@ pub(super) struct InterfaceWorkspaceDocument<'a> {
     pub(super) semantic_operations: usize,
     pub(super) artifact_guards: usize,
     pub(super) runtime_guards: usize,
+    pub(super) execution_contracts: usize,
+    pub(super) execution_models: usize,
     pub(super) facts: &'a Path,
     pub(super) pack: &'a Path,
+    pub(super) contracts: Vec<InterfaceContractDocument<'a>>,
     pub(super) bindings: Vec<InterfaceBindingDocument<'a>>,
 }
 
 #[derive(Serialize)]
+pub(super) struct InterfaceContractDocument<'a> {
+    pub(super) id: &'a str,
+    pub(super) pack: &'a str,
+    pub(super) anchor: &'a str,
+    pub(super) source: &'a str,
+    pub(super) root_kind: &'static str,
+    pub(super) container_depth: usize,
+    pub(super) layout_version: &'a str,
+    pub(super) pointer_width: u8,
+    pub(super) layout_size: u32,
+    pub(super) slot_stride: u8,
+    pub(super) guards: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_contract: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_pointer_symbol: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_backing_symbol: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_version: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_magic: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_size: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_magic_offset: Option<u32>,
+    pub(super) slots: usize,
+}
+
+#[derive(Serialize)]
 pub(super) struct InterfaceBindingDocument<'a> {
+    pub(super) id: &'a str,
     pub(super) anchor: &'a str,
     pub(super) source: &'a str,
     pub(super) layout_version: &'a str,
@@ -56,8 +90,29 @@ pub(super) struct InterfaceBindingDocument<'a> {
     pub(super) variadic: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) semantic: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) semantic_summary: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) semantic_domain: Option<&'a str>,
+    pub(super) semantic_argument_roles: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) semantic_return_role: Option<&'a str>,
+    pub(super) semantic_effects: Vec<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) replacement: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) execution_model: Option<InterfaceExecutionModelDocument<'a>>,
     pub(super) functions: Vec<&'a str>,
     pub(super) calls: Vec<InterfaceCallDocument<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct InterfaceExecutionModelDocument<'a> {
+    pub(super) id: &'a str,
+    pub(super) table: &'a str,
+    pub(super) function: &'a str,
+    pub(super) c_name: &'a str,
+    pub(super) return_model: String,
 }
 
 #[derive(Serialize)]
@@ -70,7 +125,21 @@ pub(super) struct InterfaceCallDocument<'a> {
     pub(super) site: u32,
     pub(super) kind: &'a str,
     pub(super) jalr_offset: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) slot_selector: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) slot_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) slot_index_domain: Option<InterfaceIndexDomainDocument<'a>>,
     pub(super) arguments: Vec<InterfaceArgumentDocument<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct InterfaceIndexDomainDocument<'a> {
+    pub(super) argument: u8,
+    pub(super) min: u32,
+    pub(super) max: u32,
+    pub(super) evidence: &'a str,
 }
 
 #[derive(Serialize)]
@@ -147,16 +216,52 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
             ],
         )
     );
+    if !report.contracts.is_empty() {
+        outputln!(
+            "Resolved contracts:\n{}",
+            crate::cli::table::render(
+                [
+                    "Contract",
+                    "Source",
+                    "Root",
+                    "Layout",
+                    "Size",
+                    "Slots",
+                    "Execution contract",
+                ],
+                report.contracts.iter().map(|contract| [
+                    contract.id.to_owned(),
+                    contract.source.to_owned(),
+                    format!("{} depth={}", contract.root_kind, contract.container_depth),
+                    format!(
+                        "{} ptr={} stride={}",
+                        contract.layout_version, contract.pointer_width, contract.slot_stride
+                    ),
+                    format!("{:#x}", contract.layout_size),
+                    contract.slots.to_string(),
+                    contract.execution_contract.unwrap_or("-").to_owned(),
+                ]),
+            )
+        );
+    }
     if !report.bindings.is_empty() {
         outputln!(
             "Bindings:\n{}",
             crate::cli::table::render(
                 [
-                    "Anchor", "Source", "Layout", "Offset", "Width", "Name", "ABI", "Semantic",
+                    "Slot",
+                    "Source",
+                    "Layout",
+                    "Offset",
+                    "Width",
+                    "Name",
+                    "ABI",
+                    "Semantic",
+                    "Execution",
                     "Calls",
                 ],
                 report.bindings.iter().map(|binding| [
-                    binding.anchor.to_owned(),
+                    binding.id.to_owned(),
                     binding.source.to_owned(),
                     binding.layout_version.to_owned(),
                     format!("{:+#x}", binding.offset),
@@ -170,6 +275,11 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                         if binding.variadic { ", ..." } else { "" },
                     ),
                     binding.semantic.unwrap_or("-").to_owned(),
+                    binding
+                        .execution_model
+                        .as_ref()
+                        .map_or("-", |model| model.id)
+                        .to_owned(),
                     binding.calls.len().to_string(),
                 ]),
             )
@@ -183,7 +293,26 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                         binding.anchor.to_owned(),
                         call.function.to_owned(),
                         format!("{:#010x}", call.site),
-                        call.kind.to_owned(),
+                        call.slot_selector.map_or_else(
+                            || call.kind.to_owned(),
+                            |selector| {
+                                format!(
+                                    "{} indexed({selector}) index={} domain={}",
+                                    call.kind,
+                                    call.slot_index
+                                        .map_or_else(|| "?".to_owned(), |index| index.to_string()),
+                                    call.slot_index_domain.as_ref().map_or_else(
+                                        || "?".to_owned(),
+                                        |domain| {
+                                            format!(
+                                                "arg{}:{}..={}",
+                                                domain.argument, domain.min, domain.max
+                                            )
+                                        }
+                                    ),
+                                )
+                            },
+                        ),
                         call.arguments
                             .iter()
                             .map(|argument| {
@@ -209,20 +338,40 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
         }
     }
     outputln!(
-        "Summary: observed-calls={} resolved-calls={} semantic-links={} operations={} artifact-guards={} runtime-guards={}",
+        "Summary: observed-calls={} resolved-calls={} semantic-links={} operations={} execution-contracts={} execution-models={} artifact-guards={} runtime-guards={}",
         report.observed_calls,
         report.resolved_calls,
         report.semantic_links,
         report.semantic_operations,
+        report.execution_contracts,
+        report.execution_models,
         report.artifact_guards,
         report.runtime_guards,
     );
 }
 
 pub(super) fn print_workspace_tsv(report: &InterfaceWorkspaceDocument<'_>) {
+    for contract in &report.contracts {
+        outputln!(
+            "INTERFACE-CONTRACT\tid={}\tanchor={}\tsource={}\troot={}\tcontainer-depth={}\tlayout-version={}\tpointer-width={}\tlayout-size={:#x}\tslot-stride={}\tguards={}\texecution-contract={}\tslots={}",
+            contract.id,
+            contract.anchor,
+            contract.source,
+            contract.root_kind,
+            contract.container_depth,
+            contract.layout_version,
+            contract.pointer_width,
+            contract.layout_size,
+            contract.slot_stride,
+            contract.guards,
+            contract.execution_contract.unwrap_or("-"),
+            contract.slots,
+        );
+    }
     for binding in &report.bindings {
         outputln!(
-            "INTERFACE-BINDING\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\tfunctions={}\tcall-sites={}",
+            "INTERFACE-BINDING\tid={}\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\texecution-model={}\tfunctions={}\tcall-sites={}",
+            binding.id,
             binding.anchor,
             binding.source,
             binding.layout_version,
@@ -234,12 +383,16 @@ pub(super) fn print_workspace_tsv(report: &InterfaceWorkspaceDocument<'_>) {
             binding.return_type,
             if binding.variadic { ",..." } else { "" },
             binding.semantic.unwrap_or("-"),
+            binding
+                .execution_model
+                .as_ref()
+                .map_or("-", |model| model.id),
             binding.functions.join(","),
             binding.calls.len()
         );
         for call in &binding.calls {
             outputln!(
-                "INTERFACE-CALL\tanchor={}\tsource={}\toffset={:+#x}\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#010x}\tsite={:#010x}\tkind={}\tjalr-offset={:+#x}\targuments={}",
+                "INTERFACE-CALL\tanchor={}\tsource={}\toffset={:+#x}\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#010x}\tsite={:#010x}\tkind={}\tjalr-offset={:+#x}\tslot-selector={}\tslot-index={}\tslot-index-domain={}\targuments={}",
                 binding.anchor,
                 binding.source,
                 binding.offset,
@@ -250,6 +403,16 @@ pub(super) fn print_workspace_tsv(report: &InterfaceWorkspaceDocument<'_>) {
                 call.site,
                 call.kind,
                 call.jalr_offset,
+                call.slot_selector.unwrap_or("-"),
+                call.slot_index
+                    .map_or_else(|| "-".to_owned(), |index| index.to_string()),
+                call.slot_index_domain.as_ref().map_or_else(
+                    || "-".to_owned(),
+                    |domain| format!(
+                        "arg{}:{}..={}:{}",
+                        domain.argument, domain.min, domain.max, domain.evidence
+                    ),
+                ),
                 call.arguments
                     .iter()
                     .map(|argument| format!(

@@ -419,6 +419,79 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
 }
 
 #[test]
+fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("global_pointer.o".to_owned()),
+        name: "read_global_pointee".to_owned(),
+        address: 0,
+        bytes: vec![
+            0xb7, 0x07, 0x00, 0x00, // lui a5, %hi(g_state)
+            0x83, 0xa7, 0x07, 0x00, // lw a5, %lo(g_state)(a5)
+            0x03, 0xa5, 0xc7, 0x01, // lw a0, 0x1c(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: false,
+        memory_regions: Vec::new(),
+        relocations: vec![
+            artifact::SymbolRelocation {
+                address: 0,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_state".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 4,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_state".to_owned(),
+                addend: 0,
+            },
+        ],
+    };
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert_eq!(trace.reference_events.len(), 2);
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Read,
+        address,
+        region,
+        ..
+    } = &trace.reference_events[1]
+    else {
+        panic!("expected pointee read");
+    };
+    assert_eq!(region, "dereferenced relocated global pointer RAM");
+    let sources = BTreeMap::from([(
+        0,
+        MemoryObjectLocation {
+            root: MemoryObjectRoot::RelocatedSymbol {
+                member: Some("global_pointer.o".to_owned()),
+                symbol: "g_state".to_owned(),
+            },
+            offset: 0,
+        },
+    )]);
+    assert!(matches!(
+        address.memory_object_location_with_reads(&sources),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::DereferencedGlobal {
+                ref symbol,
+                pointer_offset: 0,
+                ..
+            },
+            offset: 0x1c,
+        }) if symbol == "g_state"
+    ));
+}
+
+#[test]
 fn mismatched_hi20_lo12_symbols_fail_closed() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: Some("mismatched_relocation.o".to_owned()),

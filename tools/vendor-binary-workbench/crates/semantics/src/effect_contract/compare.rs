@@ -1,6 +1,7 @@
 //! Observable-effect extraction and policy comparison.
 
 use super::*;
+use crate::{EquivalenceMode, EquivalenceOutcome};
 
 pub fn effects_from_observable(events: &[ObservableEvent]) -> Result<Vec<ContractEffect>> {
     let mut effects = Vec::with_capacity(events.len());
@@ -52,32 +53,41 @@ pub fn compare_effects(
     vendor: &[ContractEffect],
     rust: &[ContractEffect],
     policy: &EffectPolicy,
-) -> Result<EffectComparisonVerdict> {
+) -> Result<EquivalenceOutcome> {
     let mut rust_index = 0_usize;
     let mut used_rules = BTreeSet::new();
     for (vendor_index, vendor_effect) in vendor.iter().enumerate() {
         let selector = vendor_effect.selector();
-        let disposition = policy.disposition(&selector).ok_or_else(|| {
-            format!(
-                "unclassified vendor effect at index {vendor_index}: {}",
-                selector.canonical()
-            )
-        })?;
+        let Some(disposition) = policy.disposition(&selector) else {
+            return Ok(EquivalenceOutcome::incomplete(
+                EquivalenceMode::Semantic,
+                format!(
+                    "unclassified vendor effect at index {vendor_index}: {}",
+                    selector.canonical()
+                ),
+            ));
+        };
         used_rules.insert(selector.clone());
         match disposition {
             EffectDisposition::Required | EffectDisposition::PlatformOwned => {
                 let Some(rust_effect) = rust.get(rust_index) else {
-                    return Ok(EffectComparisonVerdict::Mismatch(format!(
-                        "required {} is missing from Rust effects",
-                        selector.canonical()
-                    )));
+                    return Ok(EquivalenceOutcome::different(
+                        EquivalenceMode::Semantic,
+                        format!(
+                            "required {} is missing from Rust effects",
+                            selector.canonical()
+                        ),
+                    ));
                 };
                 if !vendor_effect.equivalent(rust_effect) {
-                    return Ok(EffectComparisonVerdict::Mismatch(format!(
-                        "vendor effect {} does not match Rust effect {} at index {rust_index}",
-                        selector.canonical(),
-                        rust_effect.selector().canonical()
-                    )));
+                    return Ok(EquivalenceOutcome::different(
+                        EquivalenceMode::Semantic,
+                        format!(
+                            "vendor effect {} does not match Rust effect {} at index {rust_index}",
+                            selector.canonical(),
+                            rust_effect.selector().canonical()
+                        ),
+                    ));
                 }
                 rust_index += 1;
             }
@@ -87,19 +97,25 @@ pub fn compare_effects(
                     timeout: rust_timeout,
                 }) = rust.get(rust_index)
                 else {
-                    return Ok(EffectComparisonVerdict::Mismatch(format!(
-                        "{} requires one Rust await-ready replacement",
-                        selector.canonical()
-                    )));
+                    return Ok(EquivalenceOutcome::different(
+                        EquivalenceMode::Semantic,
+                        format!(
+                            "{} requires one Rust await-ready replacement",
+                            selector.canonical()
+                        ),
+                    ));
                 };
                 if rust_condition.id() != *condition || rust_timeout != timeout {
-                    return Ok(EffectComparisonVerdict::Mismatch(format!(
-                        "{} requires await-ready {condition} {}, received await-ready {} {}",
-                        selector.canonical(),
-                        timeout.canonical(),
-                        rust_condition.id(),
-                        rust_timeout.canonical(),
-                    )));
+                    return Ok(EquivalenceOutcome::different(
+                        EquivalenceMode::Semantic,
+                        format!(
+                            "{} requires await-ready {condition} {}, received await-ready {} {}",
+                            selector.canonical(),
+                            timeout.canonical(),
+                            rust_condition.id(),
+                            rust_timeout.canonical(),
+                        ),
+                    ));
                 }
                 rust_index += 1;
             }
@@ -109,7 +125,12 @@ pub fn compare_effects(
                 };
                 rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
                     Ok(next) => next,
-                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                    Err(reason) => {
+                        return Ok(EquivalenceOutcome::different(
+                            EquivalenceMode::Semantic,
+                            reason,
+                        ));
+                    }
                 };
             }
             EffectDisposition::PlatformProvidedService { service } => {
@@ -118,7 +139,12 @@ pub fn compare_effects(
                 };
                 rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
                     Ok(next) => next,
-                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                    Err(reason) => {
+                        return Ok(EquivalenceOutcome::different(
+                            EquivalenceMode::Semantic,
+                            reason,
+                        ));
+                    }
                 };
             }
             EffectDisposition::PublishedEvent { event } => {
@@ -127,7 +153,12 @@ pub fn compare_effects(
                 };
                 rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
                     Ok(next) => next,
-                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                    Err(reason) => {
+                        return Ok(EquivalenceOutcome::different(
+                            EquivalenceMode::Semantic,
+                            reason,
+                        ));
+                    }
                 };
             }
             EffectDisposition::InitializationPrerequisite { prerequisite } => {
@@ -136,7 +167,12 @@ pub fn compare_effects(
                 };
                 rust_index = match consume_replacement(&selector, &expected, rust, rust_index) {
                     Ok(next) => next,
-                    Err(reason) => return Ok(EffectComparisonVerdict::Mismatch(reason)),
+                    Err(reason) => {
+                        return Ok(EquivalenceOutcome::different(
+                            EquivalenceMode::Semantic,
+                            reason,
+                        ));
+                    }
                 };
             }
             EffectDisposition::AllowedOmission(_) => {
@@ -148,31 +184,37 @@ pub fn compare_effects(
                 }
             }
             EffectDisposition::Forbidden => {
-                return Err(format!(
-                    "forbidden vendor effect at index {vendor_index}: {}",
-                    selector.canonical()
-                )
-                .into());
+                return Ok(EquivalenceOutcome::different(
+                    EquivalenceMode::Semantic,
+                    format!(
+                        "forbidden vendor effect at index {vendor_index}: {}",
+                        selector.canonical()
+                    ),
+                ));
             }
         }
     }
     if let Some(extra) = rust.get(rust_index) {
-        return Err(format!(
-            "unclassified extra Rust effect at index {rust_index}: {}",
-            extra.selector().canonical()
-        )
-        .into());
+        return Ok(EquivalenceOutcome::incomplete(
+            EquivalenceMode::Semantic,
+            format!(
+                "unclassified extra Rust effect at index {rust_index}: {}",
+                extra.selector().canonical()
+            ),
+        ));
     }
     for (selector, disposition) in policy.rules() {
         if disposition != &EffectDisposition::Forbidden && !used_rules.contains(selector) {
-            return Err(format!(
-                "declared effect rule was not exercised: {}",
-                selector.canonical()
-            )
-            .into());
+            return Ok(EquivalenceOutcome::incomplete(
+                EquivalenceMode::Semantic,
+                format!(
+                    "declared effect rule was not exercised: {}",
+                    selector.canonical()
+                ),
+            ));
         }
     }
-    Ok(EffectComparisonVerdict::Match)
+    Ok(EquivalenceOutcome::matched(EquivalenceMode::Semantic))
 }
 
 fn consume_replacement(

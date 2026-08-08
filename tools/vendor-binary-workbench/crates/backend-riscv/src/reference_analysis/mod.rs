@@ -23,7 +23,7 @@ use super::static_analysis::{
 };
 use crate::{
     DEFERRED_CALLER_MEMORY_REGION, DraftReferenceEvent, DraftReferenceFlow,
-    DraftReferenceTerminator, FunctionAnalysis, IndexedMmioGuard, MemoryAccess, MmioRegisterMap,
+    DraftReferenceTerminator, FunctionAnalysis, IndexedMmioGuard, MemoryAccess, MmioMap,
     ObservableEvent, RV32_MODELED_ARGUMENT_COUNT, RV32_REGISTER_ARGUMENT_COUNT,
     RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG,
     SymbolicValue, artifact, execution, reference_event_is_mmio_read,
@@ -36,7 +36,7 @@ pub fn resolve_reference_trace(
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<FunctionAnalysis> {
     if let Some(mut trace) = pointer_context

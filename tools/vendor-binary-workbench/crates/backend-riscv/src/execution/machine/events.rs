@@ -2,7 +2,7 @@
 
 use rv_asm::Reg;
 
-use super::super::{ExecutionEvent, ExecutionTimelineEvent, OrderedCall};
+use super::super::{ExecutionEvent, ExecutionTimelineEvent, OrderedCall, TableLifecycleEvent};
 use super::Machine;
 use crate::Result;
 
@@ -32,6 +32,46 @@ impl Machine<'_> {
         };
         self.ordered_calls.push(call.clone());
         self.timeline.push(ExecutionTimelineEvent::Call(call));
+    }
+
+    pub(in crate::execution) fn record_indirect_table_call(
+        &mut self,
+        site: u32,
+        target: u32,
+        symbol: &str,
+    ) {
+        if self.table_layouts.is_empty() {
+            return;
+        }
+        let mut candidates = Vec::new();
+        for layout in &self.table_layouts {
+            for offset in (0..layout.layout_size).step_by(4) {
+                let address = layout.base_address.wrapping_add(offset);
+                let value = (0..4).try_fold(0_u32, |value, byte| {
+                    self.normal_byte(address.wrapping_add(byte))
+                        .ok()
+                        .map(|part| value | (u32::from(part) << (byte * 8)))
+                });
+                if value == Some(target) {
+                    candidates.push((layout.layout_id.clone(), offset));
+                }
+            }
+        }
+        let (layout_id, slot_offset) = if candidates.len() == 1 {
+            let (layout, offset) = candidates.pop().expect("one candidate");
+            (Some(layout), Some(offset))
+        } else {
+            self.table_lifecycle_complete = false;
+            (None, None)
+        };
+        self.table_lifecycle
+            .push(TableLifecycleEvent::IndirectCall {
+                layout_id,
+                slot_offset,
+                site,
+                target,
+                symbol: symbol.to_owned(),
+            });
     }
 
     pub(super) fn modeled_call_result(&mut self, symbol: &str, site: u32) -> Result<Option<u32>> {

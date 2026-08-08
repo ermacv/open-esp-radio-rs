@@ -8,7 +8,7 @@ mod tests;
 use std::{env, path::PathBuf};
 
 use super::args::{Command, CommandArguments, ParsedInvocation};
-use crate::{MemoryMap, MmioRegisterMap, ProjectSpec, Result, TargetSpec, run_spec::RunSpec};
+use crate::{MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, run_spec::RunSpec};
 use defaults::{apply_project_defaults, apply_run_spec_defaults, apply_target_defaults};
 
 /// The complete result of configuration resolution.
@@ -32,6 +32,10 @@ pub(super) enum ResolvedInvocation {
         arguments: CommandArguments,
         project_path: PathBuf,
     },
+    ProjectBrowse {
+        arguments: CommandArguments,
+        project_path: PathBuf,
+    },
     Command(Box<ResolvedCommandInvocation>),
 }
 
@@ -46,7 +50,7 @@ pub(super) struct ResolvedCommandInvocation {
     pub(super) run_spec: Option<RunSpec>,
     pub(super) memory_map: Option<MemoryMap>,
     pub(super) svd_paths: Vec<PathBuf>,
-    pub(super) svd: MmioRegisterMap,
+    pub(super) svd: MmioMap,
 }
 
 pub(super) fn resolve(invocation: ParsedInvocation) -> Result<ResolvedInvocation> {
@@ -132,6 +136,19 @@ fn resolve_from(
                 .map_err(crate::Error::invalid)?,
         });
     }
+    if command == Command::ProjectBrowse {
+        if requested_target.is_some() || requested_run_spec.is_some() || !svd_paths.is_empty() {
+            return Err(crate::Error::invalid(
+                "project browse accepts a project manifest, not --target-spec, --run-spec or --svd",
+            ));
+        }
+        return Ok(ResolvedInvocation::ProjectBrowse {
+            arguments: command_arguments,
+            project_path: project_path
+                .ok_or("project browse requires --project or a discovered manifest")
+                .map_err(crate::Error::invalid)?,
+        });
+    }
 
     let project = project_path.as_deref().map(ProjectSpec::load).transpose()?;
     require_project(command, project.as_ref())?;
@@ -200,11 +217,12 @@ fn resolve_from(
 
     let mut svd = register_catalog::load(command, &svd_paths, project.as_ref())?;
     if let Some(memory_map) = &memory_map {
-        svd.windows.extend(memory_map.mmio_windows()?);
-        svd.windows.sort_by_key(|window| (window.start, window.end));
-        svd.windows.dedup();
+        svd.regions.extend(memory_map.resolved_mmio_regions()?);
+        svd.regions
+            .sort_by_key(|region| (region.start, region.end, region.name.clone()));
+        svd.regions.dedup();
     }
-    if command.requires_mmio_map() && svd.windows.is_empty() {
+    if command.requires_mmio_map() && svd.regions.is_empty() {
         return Err(crate::Error::invalid(
             "command requires an MMIO region; add memory-map to the project",
         ));
@@ -237,6 +255,7 @@ fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()
         command,
         Command::ProjectDoctor
             | Command::ProjectStatus
+            | Command::ProjectBrowse
             | Command::ProjectConfigure
             | Command::ProjectAnalyze
             | Command::ProjectPublish

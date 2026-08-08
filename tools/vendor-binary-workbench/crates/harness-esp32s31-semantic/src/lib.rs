@@ -364,15 +364,3 @@ pub fn write_ram_word(scenario: &mut execution::Scenario, address: u32, value: u
             .insert(address.wrapping_add(offset as u32), byte);
     }
 }
-
-pub fn unmapped_execution_address(event: &execution::ExecutionEvent) -> Option<u32> {
-    match event {
-        execution::ExecutionEvent::Read {
-            address, register, ..
-        }
-        | execution::ExecutionEvent::Write {
-            address, register, ..
-        } if register == "UNMAPPED" => Some(*address),
-        _ => None,
-    }
-}

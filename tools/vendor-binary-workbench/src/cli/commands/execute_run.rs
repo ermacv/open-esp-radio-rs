@@ -66,7 +66,7 @@ struct ExecutionSummary {
     memory_changes: usize,
     uncovered_branch_outcomes: usize,
     unresolved_control_flow: usize,
-    unmapped_mmio: usize,
+    unnamed_mmio: usize,
     complete: bool,
 }
 
@@ -82,12 +82,12 @@ struct ExecutionDocument {
     timeline: Option<Vec<TimelineEventDocument>>,
     branch_outcomes: Vec<BranchOutcomeDocument>,
     unresolved_control_flow: Vec<ControlFlowGapDocument>,
-    unmapped_mmio: Vec<u32>,
+    unnamed_mmio: Vec<u32>,
     memory_changes: Vec<MemoryChangeReport>,
     summary: ExecutionSummary,
 }
 
-pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap) -> Result<bool> {
     let mut scenario = resolve_scenario(arguments.scenario)?;
     for assignment in arguments.call {
         let (symbol, value) = parse_call_return(&assignment, "--call")?;
@@ -211,10 +211,10 @@ fn execution_document(input: &ExecutionRenderInput<'_>) -> Result<ExecutionDocum
         inventory,
         result,
     } = input;
-    let unmapped_mmio = result
+    let unnamed_mmio = result
         .events
         .iter()
-        .filter_map(unmapped_execution_address)
+        .filter_map(unnamed_execution_address)
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -241,11 +241,9 @@ fn execution_document(input: &ExecutionRenderInput<'_>) -> Result<ExecutionDocum
             edge: edge.clone(),
         })
         .collect::<Vec<_>>();
-    let complete = uncovered_branch_outcomes == 0
-        && unresolved_control_flow.is_empty()
-        && unmapped_mmio.is_empty();
+    let complete = uncovered_branch_outcomes == 0 && unresolved_control_flow.is_empty();
     Ok(ExecutionDocument {
-        schema_version: 1,
+        schema_version: 2,
         command: "execute run",
         artifact: artifact_document(artifact)?,
         companion: companion.map(artifact_document).transpose()?,
@@ -261,7 +259,7 @@ fn execution_document(input: &ExecutionRenderInput<'_>) -> Result<ExecutionDocum
         }),
         branch_outcomes,
         unresolved_control_flow,
-        unmapped_mmio,
+        unnamed_mmio,
         memory_changes: result.memory_changes.iter().map(Into::into).collect(),
         summary: ExecutionSummary {
             evidence: if *concrete_only {
@@ -279,10 +277,10 @@ fn execution_document(input: &ExecutionRenderInput<'_>) -> Result<ExecutionDocum
             memory_changes: result.memory_changes.len(),
             uncovered_branch_outcomes,
             unresolved_control_flow: inventory.unresolved_edges.len(),
-            unmapped_mmio: result
+            unnamed_mmio: result
                 .events
                 .iter()
-                .filter_map(unmapped_execution_address)
+                .filter_map(unnamed_execution_address)
                 .collect::<BTreeSet<_>>()
                 .len(),
             complete,
@@ -346,25 +344,37 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
         result,
         ..
     } = input;
-    let unmapped: BTreeSet<_> = result
+    let unnamed: BTreeSet<_> = result
         .events
         .iter()
-        .filter_map(unmapped_execution_address)
+        .filter_map(unnamed_execution_address)
         .collect();
     for event in &result.events {
         match event {
             execution::ExecutionEvent::Read {
                 width,
                 address,
+                region,
                 register,
                 value,
-            } => outputln!("EVENT\tR\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}"),
+            } => {
+                let register = register.as_deref().unwrap_or("-");
+                outputln!(
+                    "EVENT\tR\t{width}\t{address:#010x}\tregion={region}\tregister={register}\tvalue={value:#010x}"
+                );
+            }
             execution::ExecutionEvent::Write {
                 width,
                 address,
+                region,
                 register,
                 value,
-            } => outputln!("EVENT\tW\t{width}\t{address:#010x}\t{register}\tvalue={value:#010x}",),
+            } => {
+                let register = register.as_deref().unwrap_or("-");
+                outputln!(
+                    "EVENT\tW\t{width}\t{address:#010x}\tregion={region}\tregister={register}\tvalue={value:#010x}"
+                );
+            }
             execution::ExecutionEvent::DelayMicros(micros) => {
                 outputln!("EVENT\tDELAY\tmicros={micros}");
             }
@@ -426,8 +436,8 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
             image.location(*address)
         );
     }
-    for address in &unmapped {
-        outputln!("UNCOVERED-MMIO\timage\t{address:#010x}");
+    for address in &unnamed {
+        outputln!("UNNAMED-MMIO\timage\t{address:#010x}");
     }
     for change in &result.memory_changes {
         outputln!(
@@ -438,7 +448,7 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
         );
     }
     outputln!(
-        "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tbranch-events={}\tcalls={}\tcall-events={}\ttimeline-events={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunmapped-mmio={}",
+        "RESULT\tsymbol={symbol}\tevidence={}\tsteps={}\treturn={:#010x}\tbranches={}\tbranch-events={}\tcalls={}\tcall-events={}\ttimeline-events={}\tmemory-changes={}\tuncovered-branch-outcomes={uncovered_branches}\tunresolved-control-flow={}\tunnamed-mmio={}",
         if *concrete_only {
             "concrete-only"
         } else {
@@ -453,6 +463,6 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
         result.timeline.len(),
         result.memory_changes.len(),
         inventory.unresolved_edges.len(),
-        unmapped.len(),
+        unnamed.len(),
     );
 }

@@ -17,9 +17,9 @@ use std::{
 use sha2::{Digest, Sha256};
 
 use crate::{
-    ArtifactSymbolSelector, FunctionAnalysis, MmioRegisterMap, ObservableEvent,
-    ResolvedReferenceProgram, Result, artifact_sha256, codegen, extract, extract_reference,
-    harnesses, returns_equal, traces_equal,
+    ArtifactSymbolSelector, FunctionAnalysis, MmioMap, ObservableEvent, ResolvedReferenceProgram,
+    Result, artifact_sha256, codegen, extract, extract_reference, harnesses, returns_equal,
+    traces_equal,
 };
 
 const HARNESS_VERSION: &str = "exact-mmio-leaf-v1";
@@ -252,7 +252,7 @@ fn compiler_identity() -> Result<(std::ffi::OsString, String)> {
 }
 
 fn prove_exact_mmio_leaf(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &str,
     vendor_trace: &FunctionAnalysis,
     generated_source: &str,
@@ -352,7 +352,7 @@ fn prove_exact_mmio_leaf(
 }
 
 pub(crate) fn generate_compile_and_prove_exact_mmio_leaf(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     harness: &str,
     target: &str,
     vendor_input: &ArtifactSymbolSelector,

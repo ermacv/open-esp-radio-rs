@@ -7,7 +7,7 @@ pub(super) fn apply_memory_instruction(
     decoded: artifact::DecodedInstruction,
     symbol: &artifact::ArtifactSymbolDefinition,
     pointer_context: &StructuralPointerContext,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     state: &mut StructuralTraceState,
 ) -> bool {
     let pc = decoded.address;
@@ -47,7 +47,12 @@ pub(super) fn apply_memory_instruction(
                     offset.as_i32(),
                 ) {
                     Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
-                    Ok(None) => structural_effective_address(&state.values, base, offset.as_i32()),
+                    Ok(None) => structural_effective_address(
+                        &state.values,
+                        &state.memory_read_sources,
+                        base,
+                        offset.as_i32(),
+                    ),
                     Err(error) => {
                         state
                             .reference_blockers
@@ -158,11 +163,29 @@ pub(super) fn apply_memory_instruction(
                 (_, Some(StructuralAddress::SymbolMemory(address))) => {
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
+                    if width == 32
+                        && let Some(location) = address.memory_object_location()
+                        && matches!(location.root, MemoryObjectRoot::RelocatedSymbol { .. })
+                    {
+                        state.memory_read_sources.insert(read_token, location);
+                    }
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
                         region: address.canonical(),
                         address,
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
+                (_, Some(StructuralAddress::DereferencedGlobalMemory(address))) => {
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address,
+                        region: "dereferenced relocated global pointer RAM".to_owned(),
                         value: None,
                     });
                     SymbolicValue::memory_read(read_token, width, signed)
@@ -174,7 +197,7 @@ pub(super) fn apply_memory_instruction(
                         access: MemoryAccess::Read,
                         width,
                         address,
-                        register: svd.register_name(address),
+                        register: svd.display_register_name(address),
                         value: None,
                     };
                     state.events.push(event.clone());
@@ -284,7 +307,12 @@ pub(super) fn apply_memory_instruction(
                 offset.as_i32(),
             ) {
                 Ok(Some(address)) => Some(StructuralAddress::SymbolMemory(address)),
-                Ok(None) => structural_effective_address(&state.values, base, offset.as_i32()),
+                Ok(None) => structural_effective_address(
+                    &state.values,
+                    &state.memory_read_sources,
+                    base,
+                    offset.as_i32(),
+                ),
                 Err(error) => {
                     state
                         .reference_blockers
@@ -331,6 +359,20 @@ pub(super) fn apply_memory_instruction(
                         value: Some(value),
                     });
                 }
+                Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address,
+                        region: "dereferenced relocated global pointer RAM".to_owned(),
+                        value: Some(value),
+                    });
+                }
                 Some(StructuralAddress::Absolute(address)) if svd.contains_mmio(address) => {
                     if !value.is_resolved() {
                         state.blockers.push(format!(
@@ -341,7 +383,7 @@ pub(super) fn apply_memory_instruction(
                         access: MemoryAccess::Write,
                         width,
                         address,
-                        register: svd.register_name(address),
+                        register: svd.display_register_name(address),
                         value: Some(value),
                     };
                     state.events.push(event.clone());

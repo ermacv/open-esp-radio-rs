@@ -116,7 +116,7 @@ fn print_report(report: &MmioDiscoveryReport) {
     );
 }
 
-pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<bool> {
+pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
     if arguments.check && arguments.json_report.is_none() {
         return Err(crate::Error::invalid(
             "mmio discover --check requires --json-report PATH",

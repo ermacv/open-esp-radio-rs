@@ -7,6 +7,44 @@ use thiserror::Error;
 
 use crate::{project::ProjectError, run_spec::RunSpecError, target::TargetError};
 
+#[derive(Clone, Copy)]
+pub(crate) struct ManifestContext<'a> {
+    kind: &'static str,
+    path: &'a std::path::Path,
+    input: &'a str,
+}
+
+impl<'a> ManifestContext<'a> {
+    pub(crate) fn new(kind: &'static str, path: &'a std::path::Path, input: &'a str) -> Self {
+        Self { kind, path, input }
+    }
+
+    pub(crate) fn error(
+        self,
+        span: Option<std::ops::Range<usize>>,
+        message: impl std::fmt::Display,
+    ) -> WorkbenchError {
+        WorkbenchError::manifest_source(self.kind, self.path, self.input, message, span)
+    }
+
+    pub(crate) fn item(
+        self,
+        item: Option<&toml_edit::Item>,
+        message: impl std::fmt::Display,
+    ) -> WorkbenchError {
+        self.error(item.and_then(toml_edit::Item::span), message)
+    }
+
+    pub(crate) fn table_key(
+        self,
+        table: &toml_edit::Table,
+        key: &str,
+        message: impl std::fmt::Display,
+    ) -> WorkbenchError {
+        self.item(table.get(key), message)
+    }
+}
+
 #[derive(Debug, Error, Diagnostic)]
 pub(crate) enum WorkbenchError {
     #[error("{message}")]

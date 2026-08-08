@@ -20,7 +20,7 @@ use open_radio_vendor_semantics::{
     PlatformOperation, Timeout,
 };
 
-use crate::{MmioRegisterMap, Result, artifact, execution};
+use crate::{MmioMap, Result, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -189,7 +189,7 @@ fn validate_policy(policy: &EffectPolicy) -> Result<()> {
     Ok(())
 }
 
-fn validate_vendor_shape(vendor_inventory: &Path, svd: &MmioRegisterMap) -> Result<String> {
+fn validate_vendor_shape(vendor_inventory: &Path, svd: &MmioMap) -> Result<String> {
     let symbols = artifact::load_symbols(vendor_inventory, SYMBOL)?;
     let symbol = symbols
         .iter()
@@ -290,7 +290,8 @@ fn read(address: u32, value: u32) -> execution::ExecutionEvent {
     execution::ExecutionEvent::Read {
         width: 32,
         address,
-        register: "RX_DMA".to_owned(),
+        region: "rx-dma".to_owned(),
+        register: Some("RX_DMA".to_owned()),
         value,
     }
 }
@@ -299,7 +300,8 @@ fn write(address: u32, value: u32) -> execution::ExecutionEvent {
     execution::ExecutionEvent::Write {
         width: 32,
         address,
-        register: "RX_DMA".to_owned(),
+        region: "rx-dma".to_owned(),
+        register: Some("RX_DMA".to_owned()),
         value,
     }
 }
@@ -502,7 +504,7 @@ fn rust_case_matches(result: &execution::ExecutionResult, case: Case) -> bool {
     reason = "verification binds caller-owned vendor/Rust artifacts and one closed effect policy"
 )]
 pub fn verify_esp32s31_wdev_append_rx_blocks(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor_inventory: Option<&Path>,
     vendor_artifact: &Path,
     vendor_companion: Option<&Path>,
@@ -595,6 +597,9 @@ mod tests {
             calls: Default::default(),
             ordered_calls: Vec::new(),
             indirect_calls: Default::default(),
+            table_lifecycle: Vec::new(),
+            table_lifecycle_complete: true,
+            device_model_coverage: Vec::new(),
             memory_changes: Vec::new(),
             initial_memory: Default::default(),
             persistent_memory: Default::default(),

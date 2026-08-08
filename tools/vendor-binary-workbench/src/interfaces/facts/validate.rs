@@ -98,7 +98,9 @@ fn validate_call(
         }
         None => {}
         Some((slot, container)) => {
-            if call.container_depth != container.len() || call.slot_offset != Some(slot.offset) {
+            let expected_fixed_offset = slot.selector.is_none().then_some(slot.offset);
+            if call.container_depth != container.len() || call.slot_offset != expected_fixed_offset
+            {
                 return Err(crate::Error::invalid(
                     "interface call has inconsistent container/slot metadata",
                 ));
@@ -113,10 +115,10 @@ fn validate_call(
                     "interface call has no matching table candidate",
                 ));
             };
-            let table_slot = table
-                .slots
-                .iter()
-                .find(|candidate| (candidate.offset, candidate.width) == (slot.offset, slot.width));
+            let table_slot = table.slots.iter().find(|candidate| {
+                (candidate.offset, candidate.width, candidate.selector)
+                    == (slot.offset, slot.width, slot.selector)
+            });
             let Some(table_slot) = table_slot else {
                 return Err(crate::Error::invalid(
                     "interface call has no matching table slot",
@@ -178,7 +180,8 @@ fn validate_steps(steps: &[InterfaceFactStep], context: &str) -> Result<()> {
                 step.width
             )));
         }
-        if !keys.insert((step.offset, step.width)) {
+        validate_selector(step.selector, context)?;
+        if !keys.insert((step.offset, step.width, step.selector)) {
             return Err(crate::Error::invalid(format!(
                 "{context} contains a duplicate step"
             )));
@@ -196,7 +199,8 @@ fn validate_slots(slots: &[InterfaceFactSlot], context: &str) -> Result<()> {
                 slot.width
             )));
         }
-        if !keys.insert((slot.offset, slot.width)) {
+        validate_selector(slot.selector, context)?;
+        if !keys.insert((slot.offset, slot.width, slot.selector)) {
             return Err(crate::Error::invalid(format!(
                 "{context} contains a duplicate slot"
             )));
@@ -206,6 +210,17 @@ fn validate_slots(slots: &[InterfaceFactSlot], context: &str) -> Result<()> {
                 "{context} contains a slot without calling functions"
             )));
         }
+    }
+    Ok(())
+}
+
+fn validate_selector(selector: Option<InterfaceFactSelector>, context: &str) -> Result<()> {
+    if let Some(selector) = selector
+        && (selector.argument >= 8 || selector.scale == 0)
+    {
+        return Err(crate::Error::invalid(format!(
+            "{context} has invalid indexed selector {selector:?}"
+        )));
     }
     Ok(())
 }

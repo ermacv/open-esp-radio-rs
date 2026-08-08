@@ -322,7 +322,7 @@ impl ReferenceResolver {
         &self,
         member: Option<&str>,
         name: &str,
-        svd: &MmioRegisterMap,
+        svd: &MmioMap,
     ) -> Result<FunctionAnalysis> {
         let symbol = self
             .symbols
@@ -338,7 +338,7 @@ impl ReferenceResolver {
     pub fn trace_symbol(
         &self,
         symbol: &artifact::ArtifactSymbolDefinition,
-        svd: &MmioRegisterMap,
+        svd: &MmioMap,
     ) -> Result<FunctionAnalysis> {
         let identity = symbol_key(symbol);
         let symbol_id = *self

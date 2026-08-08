@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    DraftReferenceEvent, FunctionAnalysis, MemoryAccess, MmioRegisterMap, ObservableEvent,
-    SymbolicValue, parse_fence_set, parse_u32,
+    DraftReferenceEvent, FunctionAnalysis, MemoryAccess, MmioMap, ObservableEvent, SymbolicValue,
+    parse_fence_set, parse_u32,
 };
 
 #[cfg(test)]
@@ -62,7 +62,7 @@ fn disassembly_label(line: &str) -> Option<&str> {
 pub(crate) fn trace_disassembly(
     symbol: &str,
     disassembly: &str,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> FunctionAnalysis {
     let mut values: HashMap<String, SymbolicValue> = HashMap::new();
     for (index, register) in ["a0", "a1", "a2", "a3", "a4", "a5", "a6", "a7"]
@@ -228,7 +228,7 @@ pub(crate) fn trace_disassembly(
                         access: MemoryAccess::Read,
                         width,
                         address,
-                        register: svd.register_name(address),
+                        register: svd.display_register_name(address),
                         value: None,
                     };
                     events.push(event.clone());
@@ -272,7 +272,7 @@ pub(crate) fn trace_disassembly(
                         access: MemoryAccess::Write,
                         width: width_for(mnemonic).unwrap(),
                         address,
-                        register: svd.register_name(address),
+                        register: svd.display_register_name(address),
                         value: Some(value),
                     };
                     events.push(event.clone());

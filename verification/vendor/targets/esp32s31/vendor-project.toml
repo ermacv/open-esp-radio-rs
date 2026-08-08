@@ -83,3 +83,11 @@ profiles = ["rom-phy", "archive-phy"]
 
 [functions.review]
 output = "generated/reports/function-review.md"
+
+[verification]
+profiles = [
+    "profiles/compiled-equivalence.profile",
+    "profiles/libpp-sta-tsf-wakeup.profile",
+    "profiles/libpp-tx-dma.profile",
+    "profiles/rom-sta-tsf-snapshot.profile",
+]

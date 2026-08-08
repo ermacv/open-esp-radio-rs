@@ -16,6 +16,11 @@ pub(super) fn validate_anchor_shape(
         .map_err(|error| ValidationError::anchor(anchor, "id", error.to_string()))?;
     validate_source_id(&anchor.source)
         .map_err(|message| ValidationError::anchor(anchor, "source", message))?;
+    if let Some(contract) = &anchor.execution_contract {
+        validate_dotted_id(contract, "interface execution contract id").map_err(|error| {
+            ValidationError::anchor(anchor, "execution-contract", error.to_string())
+        })?;
+    }
     if anchor.origin == PackOrigin::Manual && anchor.status != ReviewStatus::Reviewed {
         return Err(ValidationError::anchor(
             anchor,
@@ -47,9 +52,12 @@ pub(super) fn validate_anchor_shape(
     for (index, guard) in anchor.guards.iter().enumerate() {
         validate_guard(guard, anchor, index)?;
     }
+    validate_index_domains(anchor)?;
     match anchor.status {
         ReviewStatus::Reviewed => validate_reviewed_layout(anchor)?,
-        ReviewStatus::Ignored if !anchor.slots.is_empty() => {
+        ReviewStatus::Ignored
+            if !anchor.slots.is_empty() || anchor.execution_contract.is_some() =>
+        {
             return Err(ValidationError::anchor(
                 anchor,
                 "status",
@@ -57,11 +65,14 @@ pub(super) fn validate_anchor_shape(
             ));
         }
         ReviewStatus::Unreviewed => {
-            if anchor.slots.iter().any(|slot| {
-                slot.status != ReviewStatus::Unreviewed
-                    || slot.name.is_some()
-                    || slot.semantic.is_some()
-            }) {
+            if anchor.execution_contract.is_some()
+                || anchor.slots.iter().any(|slot| {
+                    slot.status != ReviewStatus::Unreviewed
+                        || slot.name.is_some()
+                        || slot.semantic.is_some()
+                        || slot.execution_model.is_some()
+                })
+            {
                 return Err(ValidationError::anchor(
                     anchor,
                     "status",
@@ -97,6 +108,55 @@ pub(super) fn validate_anchor_shape(
                     "anchor {:?} has duplicate reviewed slot name {name:?}",
                     anchor.id
                 ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_index_domains(anchor: &InterfaceAnchor) -> ValidationResult<()> {
+    let mut arguments = BTreeSet::new();
+    for domain in &anchor.index_domains {
+        if anchor.status != ReviewStatus::Reviewed {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                "index domains are reviewed control-flow contracts",
+            ));
+        }
+        if domain.argument >= 8 {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                "index-domain argument must be one of a0..a7",
+            ));
+        }
+        if !arguments.insert(domain.argument) {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                format!("duplicate index domain for argument {}", domain.argument),
+            ));
+        }
+        if domain.min > domain.max {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                "index-domain minimum exceeds maximum",
+            ));
+        }
+        if u64::from(domain.max) - u64::from(domain.min) + 1 > 4_096 {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                "index domain exceeds the 4096-value fail-closed limit",
+            ));
+        }
+        if domain.evidence.trim().is_empty() || domain.evidence.contains(['\r', '\n']) {
+            return Err(ValidationError::anchor(
+                anchor,
+                "index-domains",
+                "index-domain evidence must be one non-empty line",
             ));
         }
     }
@@ -298,6 +358,19 @@ fn validate_slot(
     anchor: &InterfaceAnchor,
     catalogs: &SemanticCatalogs,
 ) -> ValidationResult<()> {
+    if let Some(model) = &slot.execution_model {
+        validate_dotted_id(model, "interface execution model id").map_err(|error| {
+            ValidationError::slot(anchor, slot, "execution-model", error.to_string())
+        })?;
+        if anchor.execution_contract.is_none() {
+            return Err(ValidationError::slot(
+                anchor,
+                slot,
+                "execution-model",
+                format!("slot execution model {model:?} requires anchor execution-contract"),
+            ));
+        }
+    }
     if !matches!(slot.width, 16 | 32 | 64) {
         return Err(ValidationError::slot(
             anchor,
@@ -417,6 +490,7 @@ fn validate_slot(
                 || slot.arguments.is_some()
                 || slot.return_type.is_some()
                 || slot.semantic.is_some()
+                || slot.execution_model.is_some()
             {
                 return Err(ValidationError::slot(
                     anchor,
@@ -435,6 +509,7 @@ fn validate_slot(
                 || slot.arguments.is_some()
                 || slot.return_type.is_some()
                 || slot.semantic.is_some()
+                || slot.execution_model.is_some()
             {
                 return Err(ValidationError::slot(
                     anchor,

@@ -15,7 +15,7 @@ fn structural_polling_recognizes_real_rom_backedges() {
         eprintln!("private linked PHY fixtures are not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -55,7 +55,7 @@ fn constant_sar_output_loop_becomes_ordered_mmio_and_memory_effects() {
         eprintln!("private ROM fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -127,7 +127,7 @@ fn composite_svd_catalog_resolves_platform_owned_radio_dependencies() {
         .ancestors()
         .nth(2)
         .expect("workbench facade remains under tools");
-    let map = MmioRegisterMap::load_all(&[
+    let map = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -227,13 +227,16 @@ fn composite_svd_catalog_resolves_platform_owned_radio_dependencies() {
     ];
     for (address, expected) in recovered_phy_gaps {
         assert_eq!(
-            map.register_name(address),
+            map.display_register_name(address),
             expected,
             "address {address:#010x}"
         );
     }
 
-    assert_eq!(map.register_name(0x2010_9c18), "MODEM_SYSCON.WIFI_BB_CFG");
+    assert_eq!(
+        map.display_register_name(0x2010_9c18),
+        "MODEM_SYSCON.WIFI_BB_CFG"
+    );
     let modem_lpcon_registers = [
         "TEST_CONF",
         "LP_TIMER_CONF",
@@ -262,24 +265,48 @@ fn composite_svd_catalog_resolves_platform_owned_radio_dependencies() {
     for (index, register) in modem_lpcon_registers.into_iter().enumerate() {
         let address = 0x2010_f000 + u32::try_from(index).unwrap() * 4;
         assert_eq!(
-            map.register_name(address),
+            map.display_register_name(address),
             format!("MODEM_LPCON.{register}"),
             "MODEM_LPCON address {address:#010x}"
         );
     }
-    assert_eq!(map.register_name(0x2010_f800), "I2C_ANA_MST.I2C0_CTRL");
-    assert_eq!(map.register_name(0x2010_f824), "I2C_ANA_MST.I2C0_CTRL1");
-    assert_eq!(map.register_name(0x2010_f828), "I2C_ANA_MST.I2C1_CTRL1");
-    assert_eq!(map.register_name(0x2010_f82c), "I2C_ANA_MST.HW_I2C_CTRL");
     assert_eq!(
-        map.register_name(0x2070_1068),
+        map.display_register_name(0x2010_f800),
+        "I2C_ANA_MST.I2C0_CTRL"
+    );
+    assert_eq!(
+        map.display_register_name(0x2010_f824),
+        "I2C_ANA_MST.I2C0_CTRL1"
+    );
+    assert_eq!(
+        map.display_register_name(0x2010_f828),
+        "I2C_ANA_MST.I2C1_CTRL1"
+    );
+    assert_eq!(
+        map.display_register_name(0x2010_f82c),
+        "I2C_ANA_MST.HW_I2C_CTRL"
+    );
+    assert_eq!(
+        map.display_register_name(0x2070_1068),
         "LP_AON_CLKRST.RTC_SAR2_PWDET_CCT"
     );
-    assert_eq!(map.register_name(0x2070_401c), "PMU.HP_ACTIVE_HP_CK_POWER");
-    assert_eq!(map.register_name(0x2070_40f0), "PMU.IMM_HP_CK_POWER_0");
-    assert_eq!(map.register_name(0x2070_4184), "PMU.RF_PWC");
-    assert_eq!(map.register_name(0x2070_4208), "PMU.ANA_PERI_PWR_CTRL");
-    assert_eq!(map.register_name(0x2071_0030), "LP_PERICLKRST.TSENS_CTRL");
-    assert_eq!(map.register_name(0x2081_8000), "LP_TSENS.CTRL");
-    assert_eq!(map.register_name(0x2081_8018), "LP_TSENS.CLK_CONF");
+    assert_eq!(
+        map.display_register_name(0x2070_401c),
+        "PMU.HP_ACTIVE_HP_CK_POWER"
+    );
+    assert_eq!(
+        map.display_register_name(0x2070_40f0),
+        "PMU.IMM_HP_CK_POWER_0"
+    );
+    assert_eq!(map.display_register_name(0x2070_4184), "PMU.RF_PWC");
+    assert_eq!(
+        map.display_register_name(0x2070_4208),
+        "PMU.ANA_PERI_PWR_CTRL"
+    );
+    assert_eq!(
+        map.display_register_name(0x2071_0030),
+        "LP_PERICLKRST.TSENS_CTRL"
+    );
+    assert_eq!(map.display_register_name(0x2081_8000), "LP_TSENS.CTRL");
+    assert_eq!(map.display_register_name(0x2081_8018), "LP_TSENS.CLK_CONF");
 }

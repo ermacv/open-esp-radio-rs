@@ -172,6 +172,110 @@ fn runtime_errors_do_not_emit_usage_or_an_empty_json_result() {
 }
 
 #[test]
+fn project_manifest_diagnostics_highlight_the_nested_physical_value() {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-project-diagnostic-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+    )
+    .unwrap();
+
+    let output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("diagnose invalid project manifest");
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("project functions refers to unknown IR profile \"missing\""));
+    assert!(stderr.contains("profiles = [\"missing\"]"));
+    assert!(stderr.contains("invalid project configuration"));
+    assert!(stderr.contains("vendor-project.toml"));
+    assert!(!stderr.contains("Usage:"));
+}
+
+#[test]
+fn composed_manifest_diagnostics_highlight_the_physical_value() {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-composed-diagnostic-contract-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let project = directory.join("vendor-project.toml");
+    std::fs::write(
+        directory.join("target.spec"),
+        "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("platform.toml"),
+        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nharness = [\"bad\"]\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &project,
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nplatform-pack = \"platform.toml\"\n",
+    )
+    .unwrap();
+
+    let platform_output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&project)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("diagnose invalid platform pack");
+    assert!(!platform_output.status.success());
+    assert!(platform_output.stdout.is_empty());
+    let platform_stderr = String::from_utf8_lossy(&platform_output.stderr);
+    assert!(platform_stderr.contains("harness = [\"bad\"]"));
+    assert!(platform_stderr.contains("platform.toml"));
+    assert!(!platform_stderr.contains("Usage:"));
+
+    std::fs::write(
+        directory.join("memory.toml"),
+        "schema = 1\ndefault-address-space = \"cpu\"\n[[address-spaces]]\nid = \"cpu\"\naddress-width = 32\nendianness = \"little\"\n[[regions]]\nname = \"radio\"\naddress-space = \"cpu\"\nkind = \"peripheral\"\nstart = 0x1000\nend-exclusive = 0x2000\n",
+    )
+    .unwrap();
+    std::fs::write(
+        &project,
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nmemory-map = \"memory.toml\"\n",
+    )
+    .unwrap();
+    let memory_output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&project)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("diagnose invalid memory map");
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert!(!memory_output.status.success());
+    assert!(memory_output.stdout.is_empty());
+    let memory_stderr = String::from_utf8_lossy(&memory_output.stderr);
+    assert!(memory_stderr.contains("kind = \"peripheral\""));
+    assert!(memory_stderr.contains("memory.toml"));
+    assert!(!memory_stderr.contains("Usage:"));
+}
+
+#[test]
 fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
     for contract in ["channel", "rf-init"] {
         let output = run(&[

@@ -10,6 +10,7 @@ pub(super) struct StructuralCheckpoint {
     pub(super) reference_blockers_len: usize,
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
+    pub(super) memory_read_sources: BTreeMap<u32, MemoryObjectLocation>,
     pub(super) next_call_token: u32,
     pub(super) next_external_call_token: u32,
     pub(super) stack: SymbolicStack,
@@ -164,7 +165,7 @@ pub(super) fn recognize_structural_poll_loop(
     next_call_token: u32,
     next_external_call_token: u32,
     stack: &SymbolicStack,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Option<StructuralPollLoop> {
     if blockers.len() != checkpoint.blockers_len
         || reference_blockers.len() != checkpoint.reference_blockers_len

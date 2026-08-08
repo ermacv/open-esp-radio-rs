@@ -88,6 +88,51 @@ fn discovers_context_relative_nested_callback_without_platform_knowledge() {
 }
 
 #[test]
+fn preserves_affine_argument_indexed_slots_without_inventing_a_fixed_offset() {
+    let symbol = symbol(
+        vec![
+            0xb7, 0x07, 0x00, 0x00, // lui a5, 0
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5)
+            0x13, 0x13, 0x25, 0x00, // slli t1, a0, 2
+            0xb3, 0x87, 0x67, 0x00, // add a5, a5, t1
+            0x83, 0xa2, 0x07, 0x00, // lw t0, 0(a5)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        vec![
+            artifact::SymbolRelocation {
+                address: 0,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 4,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+        ],
+    );
+
+    let calls = discover_interface_calls(&symbol).unwrap();
+    assert_eq!(calls.len(), 1);
+    let slot = calls[0].target.slot().unwrap();
+    assert_eq!(slot.offset, 0);
+    assert_eq!(slot.width, 32);
+    assert_eq!(calls[0].target.fixed_slot(), None);
+    assert_eq!(
+        slot.selector,
+        Some(InterfaceSlotSelector {
+            argument: 0,
+            scale: 4,
+            addend: 0,
+        })
+    );
+    assert!(calls[0].target.canonical().contains("arg0*4"));
+}
+
+#[test]
 fn control_flow_join_drops_conflicting_pointer_provenance() {
     let symbol = symbol(
         vec![

@@ -1,5 +1,23 @@
 use super::*;
 
+fn invalid_project_span(input: &str, name: &str) -> (usize, usize, String) {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-workbench-project-diagnostic-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join(name);
+    std::fs::write(&path, input).unwrap();
+    let error = ProjectSpec::load(&path).unwrap_err();
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+    let message = error.to_string();
+    let crate::Error::Project(ProjectError::Invalid { span, .. }) = error else {
+        panic!("expected a source-aware project error, got {message}")
+    };
+    (span.offset(), span.len(), message)
+}
+
 #[test]
 fn resolves_composed_specs_relative_to_the_project() {
     let directory = std::env::temp_dir().join(format!(
@@ -71,6 +89,9 @@ profiles = ["vendor"]
 
 [functions.review]
 output = "generated/function-review.md"
+
+[verification]
+profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
 "#,
     )
     .unwrap();
@@ -152,6 +173,68 @@ output = "generated/function-review.md"
             directory.join("generated/vendor.ir.json")
         )]
     );
+    assert_eq!(
+        project.verification,
+        Some(VerificationWorkspacePaths {
+            profiles: vec![
+                directory.join("profiles/compiled.profile"),
+                directory.join("profiles/interrupts.profile"),
+            ],
+        })
+    );
+}
+
+#[test]
+fn nested_project_errors_retain_the_exact_manifest_value_span() {
+    let cases = [
+        (
+            "wrong-run-spec-type.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nrun-spec = 7\n",
+            "7",
+            "run-spec",
+        ),
+        (
+            "wrong-analysis-shape.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nanalysis = \"wrong\"\n",
+            "\"wrong\"",
+            "analysis must be a table",
+        ),
+        (
+            "wrong-source-id.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
+            "\"bad.source\"",
+            "invalid source id",
+        ),
+        (
+            "wrong-pac-edition.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "\"2018\"",
+            "edition must be",
+        ),
+        (
+            "removed-interface-key.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
+            "[]",
+            "semantic catalogs belong to the platform pack",
+        ),
+        (
+            "unknown-function-profile.toml",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+            "[\"missing\"]",
+            "unknown IR profile",
+        ),
+    ];
+
+    for (name, input, needle, expected_message) in cases {
+        let (offset, length, message) = invalid_project_span(input, name);
+        assert_eq!(
+            offset,
+            input.find(needle).unwrap(),
+            "case {name}: {message}"
+        );
+        assert_eq!(length, needle.len(), "case {name}: {message}");
+        assert!(message.contains(expected_message), "case {name}: {message}");
+    }
 }
 
 #[test]

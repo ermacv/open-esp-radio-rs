@@ -10,10 +10,12 @@ pub(super) enum StructuralAddress {
     FunctionTableSlot(FunctionTableRef, i32),
     CallerMemory(SymbolicValue),
     SymbolMemory(SymbolicValue),
+    DereferencedGlobalMemory(SymbolicValue),
 }
 
 pub(super) fn structural_effective_address(
     values: &[SymbolicValue; 32],
+    memory_read_sources: &BTreeMap<u32, MemoryObjectLocation>,
     base: Reg,
     offset: i32,
 ) -> Option<StructuralAddress> {
@@ -39,7 +41,12 @@ pub(super) fn structural_effective_address(
         _ if base.caller_memory_address() => Some(StructuralAddress::CallerMemory(
             base.clone().add_constant(offset as u32),
         )),
-        _ => None,
+        _ => {
+            let address = base.clone().add_constant(offset as u32);
+            let location = address.memory_object_location_with_reads(memory_read_sources)?;
+            matches!(location.root, MemoryObjectRoot::DereferencedGlobal { .. })
+                .then_some(StructuralAddress::DereferencedGlobalMemory(address))
+        }
     }
 }
 
@@ -92,6 +99,18 @@ pub(super) fn memory_intrinsic_load_byte(
                 width: 8,
                 region: address.canonical(),
                 address,
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                address,
+                region: "dereferenced relocated global pointer RAM".to_owned(),
                 value: None,
             });
             Ok(SymbolicValue::memory_read(read_token, 8, false))
@@ -160,6 +179,16 @@ pub(super) fn memory_intrinsic_store_byte(
                 width: 8,
                 region: address.canonical(),
                 address,
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address,
+                region: "dereferenced relocated global pointer RAM".to_owned(),
                 value: Some(value),
             });
             Ok(())
@@ -259,7 +288,7 @@ pub(super) fn structural_indexed_mmio_address(
     values: &[SymbolicValue; 32],
     base: Reg,
     offset: i32,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Option<(SymbolicValue, IndexedMmioDomain)> {
     let address = values[usize::from(base.0)]
         .clone()

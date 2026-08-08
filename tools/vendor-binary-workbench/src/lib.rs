@@ -10,6 +10,7 @@ macro_rules! outputln {
 }
 
 mod analysis;
+mod application;
 mod cli;
 mod digest;
 mod error;
@@ -24,15 +25,18 @@ mod project;
 mod project_analysis;
 mod project_ir;
 mod project_ir_report;
+mod register_catalog;
 mod registers;
 mod run_spec;
 mod source_id;
 mod target;
 #[cfg(test)]
 mod test_support;
+mod tui;
 mod verification;
 
 use analysis::*;
+pub use application::*;
 use cli::run;
 pub(crate) use digest::artifact_sha256;
 use error::WorkbenchError;
@@ -43,12 +47,24 @@ pub(crate) use harnesses::esp32s31::external_abi;
 use memory_map::MemoryMap;
 use open_radio_vendor_analysis_model::*;
 #[cfg(test)]
-use open_radio_vendor_analysis_model::{Register, Window, reject_register_collisions};
+use open_radio_vendor_analysis_model::{MmioRegion, Register, reject_register_collisions};
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
+pub use open_radio_vendor_backend_riscv::execution::{
+    DeviceModel as ExecutionDeviceModel, DeviceModelCoverage as ExecutionDeviceModelCoverage,
+    DeviceModelDescriptor as ExecutionDeviceModelDescriptor,
+    DeviceModelInstance as ExecutionDeviceModelInstance,
+    DeviceModelOutcome as ExecutionDeviceModelOutcome,
+    DeviceModelRegistry as ExecutionDeviceModelRegistry,
+    DeviceModelSpec as ExecutionDeviceModelSpec, Scenario as ExecutionScenario,
+    TableInstance as ExecutionTableInstance, TableInstanceSlot as ExecutionTableInstanceSlot,
+    TableLifecycleEvent as ExecutionTableLifecycleEvent,
+    TableSlotTarget as ExecutionTableSlotTarget,
+};
 pub(crate) use open_radio_vendor_backend_riscv::{
     artifact, codegen, direct_target_audit, execution, interface_discovery,
 };
+pub use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict};
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
 use project::ProjectSpec;
@@ -56,6 +72,15 @@ use target::TargetSpec;
 #[cfg(test)]
 use test_support::{private_input, trace_disassembly};
 use verification::*;
+pub use verification::{
+    AlignedTraceItemReport, ArtifactIdentity, ArtifactReport, BranchDecisionReport,
+    BranchOutcomeReport, CaseReport, ComparisonSummary, ControlFlowReport, CoverageReport,
+    DeviceModelCoverageReport, DeviceModelReport, DifferenceKind, ExecutionComparisonReport,
+    ExecutionEventReport, ExecutionPathReport, ExecutionPathSideReport, MemoryChangeReport,
+    OrderedCallReport, RuntimeMemoryBindingReport, RuntimeMemoryInstanceReport,
+    ScenarioEnvironmentReport, TableInstanceReport, TableInstanceSlotReport, TableLifecycleReport,
+    TableSlotTargetReport, TraceDiffReport, TraceItemReport,
+};
 
 use std::process::ExitCode;
 #[cfg(test)]

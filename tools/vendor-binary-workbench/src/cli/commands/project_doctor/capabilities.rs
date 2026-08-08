@@ -90,13 +90,13 @@ fn collect_register_catalog(context: &ProjectContext<'_>, report: &mut DoctorRep
     let capability = if context.svd_paths.is_empty() && !project_model {
         CapabilityReport::new("register-catalog", "not-configured")
             .field("registers", 0usize)
-            .field("mmio-windows", context.svd.windows.len())
+            .field("mmio-windows", context.svd.regions.len())
     } else {
         CapabilityReport::new("register-catalog", "available")
             .field("files", context.svd_paths.len())
             .field("project-model", project_model)
             .field("registers", context.svd.registers.len())
-            .field("mmio-windows", context.svd.windows.len())
+            .field("mmio-windows", context.svd.regions.len())
             .field(
                 "paths",
                 context

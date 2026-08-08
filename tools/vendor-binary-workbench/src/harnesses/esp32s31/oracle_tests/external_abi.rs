@@ -164,7 +164,7 @@ fn real_wdev_append_rx_blocks_recognizes_wifi_assert_as_a_diagnostic_boundary() 
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -203,7 +203,7 @@ fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -257,7 +257,7 @@ fn real_libpp_coex_runtime_leaves_generate_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -296,7 +296,7 @@ fn real_libpp_tsf_runtime_leaves_generate_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -337,7 +337,7 @@ fn real_libpp_remaining_mmio_leaves_generate_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -377,7 +377,7 @@ fn real_libpp_timer_update_generates_both_symbolic_cfg_paths() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -418,7 +418,7 @@ fn real_libpp_indexed_mmio_generates_guarded_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -476,7 +476,7 @@ fn real_libpp_caller_memory_accessors_generate_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -515,7 +515,7 @@ fn real_libpp_relocated_state_accessors_generate_compilable_references() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -550,7 +550,7 @@ fn real_libpp_hal_analysis_baseline_and_codegen_remain_stable() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let svd = MmioRegisterMap::load_all(&[
+    let svd = MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])

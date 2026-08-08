@@ -499,9 +499,3 @@ impl EffectPolicy {
         self.rules.get(selector)
     }
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum EffectComparisonVerdict {
-    Match,
-    Mismatch(String),
-}

@@ -1,10 +1,11 @@
 //! Machine-readable concrete equivalence profiles.
 
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{collections::BTreeSet, fs, path::Path, sync::Arc};
 
 use crate::{
-    MemoryObservation, NamedScenario, Result, execution, observe_memory, parse_assignment,
-    parse_symbol_observation, parse_symbol_word, parse_u32, seed_ram_word,
+    MemoryObservation, NamedScenario, Result, add_memory_instance_binding, add_table_slot,
+    execution, observe_memory, parse_assignment, parse_memory_instance, parse_symbol_observation,
+    parse_symbol_word, parse_table_instance, parse_table_slot, parse_u32, seed_ram_word,
 };
 
 use super::dispositions::validate_source_id;
@@ -148,6 +149,93 @@ fn parse_argument_range(value: &str, line: usize) -> Result<ArgumentRange> {
         .ok_or_else(|| format!("invalid arg-range maximum at line {line}"))
         .map_err(crate::Error::invalid)?;
     Ok(ArgumentRange { index, min, max })
+}
+
+fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModelSpec> {
+    let fields = value.split_whitespace().collect::<Vec<_>>();
+    let number = |value: &str, field: &str| {
+        parse_u32(value)
+            .ok_or_else(|| format!("invalid device-model {field} at line {line}"))
+            .map_err(crate::Error::invalid)
+    };
+    let width = |value: &str| {
+        u8::try_from(number(value, "width")?).map_err(|_| {
+            crate::Error::invalid(format!("invalid device-model width at line {line}"))
+        })
+    };
+    let list = |value: &str, field: &str| -> Result<Vec<u32>> {
+        if value == "-" {
+            return Ok(Vec::new());
+        }
+        value.split(',').map(|value| number(value, field)).collect()
+    };
+    Ok(match fields.as_slice() {
+        ["constant-read", id, address, bits, value] => execution::DeviceModelSpec::ConstantRead {
+            id: (*id).to_owned(),
+            address: number(address, "address")?,
+            width: width(bits)?,
+            value: number(value, "value")?,
+        },
+        ["sequence-read", id, address, bits, values] => execution::DeviceModelSpec::SequenceRead {
+            id: (*id).to_owned(),
+            address: number(address, "address")?,
+            width: width(bits)?,
+            values: list(values, "sequence value")?,
+        },
+        ["w1c", id, address, bits, initial, clear, read_clear] => execution::DeviceModelSpec::W1c {
+            id: (*id).to_owned(),
+            address: number(address, "address")?,
+            width: width(bits)?,
+            initial_value: number(initial, "initial value")?,
+            clear_mask: number(clear, "clear mask")?,
+            read_clear_mask: number(read_clear, "read-clear mask")?,
+        },
+        ["read-to-clear", id, address, bits, initial, clear] => {
+            execution::DeviceModelSpec::ReadToClear {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                initial_value: number(initial, "initial value")?,
+                clear_mask: number(clear, "clear mask")?,
+            }
+        }
+        ["self-clearing", id, address, bits, initial, store, command] => {
+            execution::DeviceModelSpec::SelfClearing {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                initial_value: number(initial, "initial value")?,
+                store_mask: number(store, "store mask")?,
+                command_mask: number(command, "command mask")?,
+            }
+        }
+        ["fifo", id, address, bits, reads, writes] => execution::DeviceModelSpec::Fifo {
+            id: (*id).to_owned(),
+            address: number(address, "address")?,
+            width: width(bits)?,
+            read_values: list(reads, "FIFO read value")?,
+            expected_writes: list(writes, "FIFO expected write")?,
+        },
+        [
+            "indexed-bank",
+            id,
+            index_address,
+            data_address,
+            bits,
+            values,
+        ] => execution::DeviceModelSpec::IndexedBank {
+            id: (*id).to_owned(),
+            index_address: number(index_address, "index address")?,
+            data_address: number(data_address, "data address")?,
+            width: width(bits)?,
+            initial_values: list(values, "bank value")?,
+        },
+        _ => {
+            return Err(crate::Error::invalid(format!(
+                "device-model requires a supported KIND and its arguments at line {line}"
+            )));
+        }
+    })
 }
 
 fn validate_argument_domain(
@@ -348,6 +436,13 @@ fn parse(input: &str) -> Result<Vec<Profile>> {
                         .or_default()
                         .push_back(value);
                 }
+                "device-model" => {
+                    let model = parse_device_model(value, line_number)?;
+                    profile
+                        .scenario(line_number)?
+                        .device_models
+                        .push(Arc::new(model));
+                }
                 "ram" => {
                     let (address, value) = parse_assignment(value, "ram")?;
                     seed_ram_word(profile.scenario(line_number)?, address, value);
@@ -381,6 +476,68 @@ fn parse(input: &str) -> Result<Vec<Profile>> {
                     .map_err(crate::Error::invalid)?
                     .rust_symbol_words
                     .push(parse_symbol_word(value, "rust-ram-symbol")?),
+                "vendor-table" | "rust-table" => {
+                    let instance = parse_table_instance(value, directive)?;
+                    let scenario = profile
+                        .current_scenario
+                        .as_mut()
+                        .ok_or_else(|| {
+                            format!("profile directive before case at line {line_number}")
+                        })
+                        .map_err(crate::Error::invalid)?;
+                    if directive == "vendor-table" {
+                        scenario.vendor_table_instances.push(instance);
+                    } else {
+                        scenario.rust_table_instances.push(instance);
+                    }
+                }
+                "vendor-table-slot" | "rust-table-slot" => {
+                    let (layout_id, slot) = parse_table_slot(value, directive)?;
+                    let scenario = profile
+                        .current_scenario
+                        .as_mut()
+                        .ok_or_else(|| {
+                            format!("profile directive before case at line {line_number}")
+                        })
+                        .map_err(crate::Error::invalid)?;
+                    let instances = if directive == "vendor-table-slot" {
+                        &mut scenario.vendor_table_instances
+                    } else {
+                        &mut scenario.rust_table_instances
+                    };
+                    add_table_slot(instances, &layout_id, slot, directive)?;
+                }
+                "vendor-memory-instance" | "rust-memory-instance" => {
+                    let instance = parse_memory_instance(value, directive)?;
+                    let scenario = profile
+                        .current_scenario
+                        .as_mut()
+                        .ok_or_else(|| {
+                            format!("profile directive before case at line {line_number}")
+                        })
+                        .map_err(crate::Error::invalid)?;
+                    let instances = if directive == "vendor-memory-instance" {
+                        &mut scenario.vendor_memory_instances
+                    } else {
+                        &mut scenario.rust_memory_instances
+                    };
+                    instances.push(instance);
+                }
+                "vendor-memory-binding" | "rust-memory-binding" => {
+                    let scenario = profile
+                        .current_scenario
+                        .as_mut()
+                        .ok_or_else(|| {
+                            format!("profile directive before case at line {line_number}")
+                        })
+                        .map_err(crate::Error::invalid)?;
+                    let instances = if directive == "vendor-memory-binding" {
+                        &mut scenario.vendor_memory_instances
+                    } else {
+                        &mut scenario.rust_memory_instances
+                    };
+                    add_memory_instance_binding(instances, value, directive)?;
+                }
                 "vendor-observe" | "rust-observe" => {
                     let (address, length) = parse_assignment(value, directive)?;
                     if length == 0 {

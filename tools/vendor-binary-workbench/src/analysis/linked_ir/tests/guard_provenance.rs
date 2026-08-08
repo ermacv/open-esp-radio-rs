@@ -49,12 +49,12 @@ fn direct_mmio_predicate_maps_shifted_comparison_back_to_register_bits() {
             .shift_right(4),
         right: SymbolicValue::Constant(3),
     };
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: vec![crate::Register {
             address,
             name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
         }],
-        windows: Vec::new(),
+        regions: Vec::new(),
     };
 
     assert_eq!(
@@ -87,12 +87,12 @@ fn direct_mmio_branch_is_inventoried_without_a_guarded_call() {
     };
     let resolver = empty_resolver();
     let identities = IrIdentityCatalog::new(&resolver, None);
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: vec![crate::Register {
             address,
             name: "WIFI_MAC_TX_COMMON.QUEUE_STATE".to_owned(),
         }],
-        windows: Vec::new(),
+        regions: Vec::new(),
     };
     let mut evidence = DirectTraceEvidence::default();
 
@@ -124,14 +124,17 @@ fn return_provenance_maps_result_ranges_back_to_mmio_bits() {
             inverted: false,
         };
     }
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: vec![crate::Register {
             address: 0x2010_4c48,
             name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
         }],
-        windows: vec![crate::Window {
+        regions: vec![crate::MmioRegion {
+            name: "wifi".to_owned(),
             start: 0x2010_0000,
             end: 0x2011_0000,
+            readable: true,
+            writable: true,
         }],
     };
 
@@ -215,12 +218,12 @@ fn guard_comparison_projects_through_shifted_inverted_producer_return() {
     let provenance = return_provenance(
         &SymbolicValue::Bits(Box::new(return_bits)),
         &BTreeMap::new(),
-        &MmioRegisterMap {
+        &MmioMap {
             registers: vec![crate::Register {
                 address,
                 name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
             }],
-            windows: Vec::new(),
+            regions: Vec::new(),
         },
     );
     let producers = BTreeMap::from([("hal::interrupt_status".to_owned(), provenance)]);
@@ -243,12 +246,12 @@ fn guard_comparison_projects_through_shifted_inverted_producer_return() {
 #[test]
 fn guard_mmio_sources_follow_exact_internal_return_wrappers() {
     let address = 0x2010_4c48;
-    let svd = MmioRegisterMap {
+    let svd = MmioMap {
         registers: vec![crate::Register {
             address,
             name: "WIFI_MAC_INTERRUPT.STATUS".to_owned(),
         }],
-        windows: Vec::new(),
+        regions: Vec::new(),
     };
     let mut leaf_bits = [BitSource::Constant(false); 32];
     for (output_bit, source) in leaf_bits.iter_mut().enumerate().take(8).skip(4) {

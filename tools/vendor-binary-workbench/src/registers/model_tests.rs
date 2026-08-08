@@ -99,8 +99,8 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
         std::process::id()
     ));
     std::fs::write(&generated, output).unwrap();
-    let original = crate::MmioRegisterMap::load(&root.join("svd/esp32s31-radio.svd")).unwrap();
-    let roundtrip = crate::MmioRegisterMap::load(&generated).unwrap();
+    let original = crate::MmioMap::load(&root.join("svd/esp32s31-radio.svd")).unwrap();
+    let roundtrip = crate::MmioMap::load(&generated).unwrap();
     std::fs::remove_file(generated).unwrap();
     assert_eq!(roundtrip.registers, original.registers);
 }

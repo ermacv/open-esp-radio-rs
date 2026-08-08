@@ -53,11 +53,60 @@ pub(crate) struct ReviewedFunction {
     pub(crate) contexts: Vec<ReviewedContext>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ReviewedMemoryObject {
+    Argument {
+        function: String,
+        index: u8,
+    },
+    Global {
+        member: Option<String>,
+        symbol: String,
+    },
+    DereferencedGlobal {
+        member: Option<String>,
+        symbol: String,
+        pointer_offset: i64,
+    },
+    Absolute {
+        address_space: String,
+        address: u32,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedTypeBinding {
+    pub(crate) profile: String,
+    pub(crate) source: String,
+    pub(crate) name: String,
+    pub(crate) object: ReviewedMemoryObject,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedTypeField {
+    pub(crate) offset: i64,
+    pub(crate) width: u8,
+    pub(crate) status: FunctionReviewStatus,
+    pub(crate) name: Option<String>,
+    pub(crate) display_type: Option<String>,
+    pub(crate) description: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewedLogicalType {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) bindings: Vec<ReviewedTypeBinding>,
+    pub(crate) fields: Vec<ReviewedTypeField>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionPack {
     pub(crate) id: String,
     pub(crate) inputs: Vec<ReviewedFunctionInput>,
     pub(crate) functions: Vec<ReviewedFunction>,
+    pub(crate) types: Vec<ReviewedLogicalType>,
 }
 
 struct LoadedFunctionPack {
@@ -80,6 +129,12 @@ pub(crate) struct FunctionWorkspaceSummary {
     pub(crate) ignored_fields: usize,
     pub(crate) unreviewed_fields: usize,
     pub(crate) accepted_incomplete: usize,
+    pub(crate) logical_types: usize,
+    pub(crate) type_bindings: usize,
+    pub(crate) type_fields: usize,
+    pub(crate) reviewed_type_fields: usize,
+    pub(crate) ignored_type_fields: usize,
+    pub(crate) unreviewed_type_fields: usize,
 }
 
 #[derive(Debug)]
@@ -128,12 +183,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(1) {
+        if document.get("schema").and_then(Item::as_integer) != Some(2) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 1",
+                "requires schema = 2",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

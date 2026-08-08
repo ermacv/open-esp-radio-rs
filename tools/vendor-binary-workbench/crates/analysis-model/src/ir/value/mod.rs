@@ -6,6 +6,35 @@ use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalTableRef, Functio
 
 pub const PRIVATE_STACK_READ_TOKEN_FLAG: u32 = 1 << 31;
 
+/// Stable root of an affine memory address recovered from machine code.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum MemoryObjectRoot {
+    Argument {
+        index: u8,
+    },
+    RelocatedSymbol {
+        member: Option<String>,
+        symbol: String,
+    },
+    /// Storage reached through a pointer loaded from a relocated global.
+    DereferencedGlobal {
+        member: Option<String>,
+        symbol: String,
+        pointer_offset: i64,
+    },
+    /// Statically known RAM address without a symbol identity.
+    Absolute {
+        address: u32,
+    },
+}
+
+/// A byte offset within a recovered memory object.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct MemoryObjectLocation {
+    pub root: MemoryObjectRoot,
+    pub offset: i64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SymbolicValue {
     Unknown,

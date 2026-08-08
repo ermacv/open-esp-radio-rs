@@ -86,6 +86,9 @@ profiles = ["vendor"]
 
 [functions.review]
 output = "generated/reports/function-review.md"
+
+[verification]
+profiles = ["profiles/compiled-equivalence.profile"]
 ```
 
 `target-spec` selects the architecture and ABI. It does not select a platform
@@ -183,6 +186,15 @@ remain in the register model, while trampoline ABI and RTOS/NVS/logging/delay
 semantics remain in interface and semantic packs. See
 [function and context packs](function-packs.md).
 
+The optional `[verification]` table makes one or more concrete execution
+profile files part of the project rather than an ad-hoc CLI argument. Profile
+names must be unique across the listed files. Artifact paths remain private:
+`vendor-source` is resolved through `source-artifact:ID` and
+`source-companion:ID` entries in `local.run`, while the Rust side uses
+`rust-artifact` and `rust-companion`. This split lets the read-only browser run
+a reviewed comparison without copying local binary paths into the shareable
+manifest.
+
 ## Project-wide generation
 
 Once the manifest and local run spec are ready, all configured generated
@@ -234,7 +246,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v32 reports and their register/field-candidate counts are reported;
+as schema-v35 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -245,7 +257,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v32 facts, artifact provenance guards, the pack lifecycle, review
+schema-v35 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 
@@ -309,9 +321,12 @@ permissions = "rw"
 alias-of = "radio"
 ```
 
-The current RISC-V backend consumes MMIO regions from the default address
-space as 32-bit windows. Keeping the source model address-space-aware avoids
-encoding that backend restriction into the project format.
+The current RISC-V backend consumes named MMIO regions from the default address
+space, including their read/write permissions. Concrete execution checks the
+full width of every bus access against the half-open region. Register names
+remain a separate optional catalog and do not decide whether a physical MMIO
+effect is covered. Keeping the source model address-space-aware avoids encoding
+the current 32-bit backend restriction into the project format.
 
 ## Discovery defaults
 

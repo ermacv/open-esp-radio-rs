@@ -3,8 +3,8 @@
 use toml_edit::{Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, Value};
 
 use super::{
-    InterfaceAnchor, InterfaceFactStep, InterfaceGuard, InterfacePack, InterfaceRootSelector,
-    InterfaceSlot, PackOrigin, ReviewStatus,
+    InterfaceAnchor, InterfaceFactStep, InterfaceGuard, InterfaceIndexDomain, InterfacePack,
+    InterfaceRootSelector, InterfaceSlot, PackOrigin, ReviewStatus,
 };
 use crate::Result;
 
@@ -47,6 +47,13 @@ fn parse_anchors(tables: &ArrayOfTables) -> Result<Vec<InterfaceAnchor>> {
                 pointer_width: optional_u8(table, "pointer-width", &context)?,
                 layout_size: optional_u32(table, "layout-size", &context)?,
                 slot_stride: optional_u8(table, "slot-stride", &context)?,
+                execution_contract: optional_table_string(table, "execution-contract"),
+                index_domains: table
+                    .get("index-domains")
+                    .and_then(Item::as_array_of_tables)
+                    .map(|domains| parse_index_domains(domains, &context))
+                    .transpose()?
+                    .unwrap_or_default(),
                 guards: table
                     .get("guards")
                     .and_then(Item::as_array_of_tables)
@@ -59,6 +66,22 @@ fn parse_anchors(tables: &ArrayOfTables) -> Result<Vec<InterfaceAnchor>> {
                     .map(|tables| parse_slots(tables, &context))
                     .transpose()?
                     .unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+fn parse_index_domains(tables: &ArrayOfTables, anchor: &str) -> Result<Vec<InterfaceIndexDomain>> {
+    tables
+        .iter()
+        .enumerate()
+        .map(|(index, table)| {
+            let context = format!("{anchor}.index-domains[{index}]");
+            Ok(InterfaceIndexDomain {
+                argument: required_u8(table, "argument", &context)?,
+                min: required_u32(table, "min", &context)?,
+                max: required_u32(table, "max", &context)?,
+                evidence: required_table_string(table, "evidence", &context)?,
             })
         })
         .collect()
@@ -145,6 +168,7 @@ fn parse_slots(tables: &ArrayOfTables, anchor: &str) -> Result<Vec<InterfaceSlot
                     .transpose()?
                     .unwrap_or(false),
                 semantic: optional_table_string(table, "semantic"),
+                execution_model: optional_table_string(table, "execution-model"),
             })
         })
         .collect()
@@ -169,6 +193,7 @@ fn parse_steps(array: &Array, context: &str) -> Result<Vec<InterfaceFactStep>> {
                     .try_into()
                     .map_err(|_| format!("{context}.width must fit u8"))
                     .map_err(crate::Error::invalid)?,
+                selector: None,
             })
         })
         .collect()

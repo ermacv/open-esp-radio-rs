@@ -9,7 +9,7 @@ use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
 
 use crate::{
-    Result,
+    Error, Result,
     platform_pack::PlatformPack,
     project_analysis::{NavigationIndexSpec, SymbolInventorySpec},
     project_ir::ProjectIrProfile,
@@ -46,6 +46,61 @@ pub(crate) enum ProjectError {
         #[label("invalid project configuration")]
         span: SourceSpan,
     },
+}
+
+/// Source context used by every project-manifest section decoder.
+///
+/// Keeping this next to `ProjectError` prevents nested configuration modules
+/// from falling back to location-less string errors.
+#[derive(Clone, Copy)]
+pub(crate) struct ProjectSource<'a> {
+    path: &'a Path,
+    input: &'a str,
+}
+
+impl<'a> ProjectSource<'a> {
+    pub(crate) const fn new(path: &'a Path, input: &'a str) -> Self {
+        Self { path, input }
+    }
+
+    pub(crate) fn error(
+        self,
+        span: Option<std::ops::Range<usize>>,
+        message: impl Into<String>,
+    ) -> Error {
+        let span = span
+            .filter(|span| span.start < self.input.len())
+            .unwrap_or(0..self.input.len().min(1));
+        let length = span
+            .len()
+            .max(1)
+            .min(self.input.len().saturating_sub(span.start).max(1));
+        ProjectError::Invalid {
+            message: message.into(),
+            src: NamedSource::new(self.path.display().to_string(), self.input.to_owned()),
+            span: (span.start, length).into(),
+        }
+        .into()
+    }
+
+    pub(crate) fn item(self, item: Option<&toml_edit::Item>, message: impl Into<String>) -> Error {
+        self.error(item.and_then(toml_edit::Item::span), message)
+    }
+
+    pub(crate) fn table_key(
+        self,
+        table: &toml_edit::Table,
+        key: &str,
+        message: impl Into<String>,
+    ) -> Error {
+        self.error(
+            table
+                .get(key)
+                .and_then(toml_edit::Item::span)
+                .or_else(|| table.span()),
+            message,
+        )
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -90,6 +145,11 @@ pub(crate) struct FunctionWorkspacePaths {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct VerificationWorkspacePaths {
+    pub(crate) profiles: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ProjectSpec {
     pub(crate) id: String,
     pub(crate) target_spec: PathBuf,
@@ -104,6 +164,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
     pub(crate) functions: Option<FunctionWorkspacePaths>,
+    pub(crate) verification: Option<VerificationWorkspacePaths>,
 }
 
 impl ProjectSpec {

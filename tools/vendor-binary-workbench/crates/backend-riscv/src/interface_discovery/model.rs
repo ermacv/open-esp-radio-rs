@@ -71,6 +71,25 @@ pub struct InterfaceLoad {
     pub site: u32,
     pub offset: i32,
     pub width: u8,
+    pub selector: Option<InterfaceSlotSelector>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct InterfaceSlotSelector {
+    pub argument: u8,
+    pub scale: u32,
+    pub addend: i32,
+}
+
+impl InterfaceSlotSelector {
+    pub fn canonical(&self) -> String {
+        format!("arg{}*{}{:+#x}", self.argument, self.scale, self.addend)
+    }
+
+    pub fn selects_offset(&self, offset: i32) -> bool {
+        let delta = i64::from(offset) - i64::from(self.addend);
+        delta >= 0 && self.scale != 0 && delta % i64::from(self.scale) == 0
+    }
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -84,7 +103,12 @@ impl InterfacePointer {
     pub fn canonical(&self) -> String {
         let mut value = self.root.canonical();
         for load in &self.loads {
-            value = format!("load{}({value}{:+#x})", load.width, load.offset);
+            let selector = load
+                .selector
+                .as_ref()
+                .map(|selector| format!("+{}", selector.canonical()))
+                .unwrap_or_default();
+            value = format!("load{}({value}{:+#x}{selector})", load.width, load.offset);
         }
         if self.post_offset != 0 {
             value.push_str(&format!("{:+#x}", self.post_offset));
@@ -94,6 +118,10 @@ impl InterfacePointer {
 
     pub fn slot(&self) -> Option<&InterfaceLoad> {
         self.loads.last()
+    }
+
+    pub fn fixed_slot(&self) -> Option<&InterfaceLoad> {
+        self.slot().filter(|load| load.selector.is_none())
     }
 
     pub fn container_loads(&self) -> &[InterfaceLoad] {

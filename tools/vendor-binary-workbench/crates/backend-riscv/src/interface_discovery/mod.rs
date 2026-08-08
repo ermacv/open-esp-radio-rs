@@ -13,7 +13,7 @@ mod model;
 mod state;
 pub use model::{
     InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
-    InterfacePointer, InterfaceRoot, InterfaceSymbolAddressing,
+    InterfacePointer, InterfaceRoot, InterfaceSlotSelector, InterfaceSymbolAddressing,
 };
 use state::*;
 
@@ -100,8 +100,28 @@ pub fn discover_interface_calls(
                     (Value::Constant(left), Value::Constant(right)) => {
                         Value::Constant(left.wrapping_add(right))
                     }
+                    (Value::Pointer(pointer), Value::Selector(selector))
+                    | (Value::Selector(selector), Value::Pointer(pointer)) => {
+                        Value::IndexedPointer(pointer, selector)
+                    }
+                    (Value::Pointer(pointer), Value::Argument { index, offset: 0 })
+                    | (Value::Argument { index, offset: 0 }, Value::Pointer(pointer)) => {
+                        Value::IndexedPointer(
+                            pointer,
+                            InterfaceSlotSelector {
+                                argument: index,
+                                scale: 1,
+                                addend: 0,
+                            },
+                        )
+                    }
                     _ => Value::Unknown,
                 };
+                set(&mut values, dest, value);
+                successors.push(index + 1);
+            }
+            Inst::Slli { imm, dest, src1 } | Inst::SlliW { imm, dest, src1 } => {
+                let value = values[usize::from(src1.0)].clone().shift_left(imm.as_u32());
                 set(&mut values, dest, value);
                 successors.push(index + 1);
             }
@@ -198,7 +218,7 @@ pub fn discover_interface_calls(
         if dest == Reg::ZERO && base == Reg::RA && offset.as_i32() == 0 {
             continue;
         }
-        let Value::Pointer(target) = &values[usize::from(base.0)] else {
+        let Some(target) = values[usize::from(base.0)].as_pointer() else {
             continue;
         };
         let kind = if dest == Reg::RA {
@@ -214,7 +234,7 @@ pub fn discover_interface_calls(
             function_address: symbol.address as u32,
             site: decoded.address as u32,
             kind,
-            target: target.clone(),
+            target,
             jalr_offset: offset.as_i32(),
             arguments: (0..RV32_REGISTER_ARGUMENT_COUNT)
                 .map(|argument| values[10 + argument].as_argument())

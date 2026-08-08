@@ -234,7 +234,7 @@ pub(super) fn direct_mmio_operand_sources(
     operand: &'static str,
     comparison_value: Option<u32>,
     operation: BranchOperation,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Vec<LinkedDirectMmioPredicateSource> {
     let mut sources = BTreeMap::<(u32, u32, bool), DirectMmioSourceAccumulator>::new();
     for (value_bit, source) in value.bits().into_iter().enumerate() {
@@ -277,7 +277,7 @@ pub(super) fn direct_mmio_operand_sources(
                 operand,
                 read_token,
                 address,
-                register: svd.register_name(address),
+                register: svd.display_register_name(address),
                 value_bits: evidence.value_bits,
                 register_bits: evidence.register_bits,
                 inverted,
@@ -292,7 +292,7 @@ pub(super) fn direct_mmio_operand_sources(
 
 pub(super) fn direct_mmio_predicate_sources(
     condition: &BranchCondition,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> Vec<LinkedDirectMmioPredicateSource> {
     let mut sources = direct_mmio_operand_sources(
         &condition.left,
@@ -384,7 +384,7 @@ pub(super) fn collect_guarded_direct_event(
     event: &DraftReferenceEvent,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     evidence: &mut DirectTraceEvidence,
 ) {
     if let DraftReferenceEvent::BranchDecision { condition, taken } = event {
@@ -428,7 +428,7 @@ pub(super) fn explore_direct_calls(
     symbol: &artifact::ArtifactSymbolDefinition,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
 ) -> DirectCallGraph {
     let mut result = DirectCallGraph::default();
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);

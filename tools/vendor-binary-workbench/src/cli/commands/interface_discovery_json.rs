@@ -12,7 +12,7 @@ use crate::{
     analysis::LinkageSymbolLocation,
     interface_discovery::{
         InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
-        InterfacePointer, InterfaceRoot,
+        InterfacePointer, InterfaceRoot, InterfaceSlotSelector,
     },
 };
 
@@ -93,6 +93,27 @@ struct LoadDocument {
     site: String,
     offset: i32,
     width: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector: Option<SelectorDocument>,
+}
+
+#[derive(Clone, Serialize)]
+struct SelectorDocument {
+    argument: u8,
+    scale: u32,
+    addend: i32,
+    canonical: String,
+}
+
+impl From<&InterfaceSlotSelector> for SelectorDocument {
+    fn from(selector: &InterfaceSlotSelector) -> Self {
+        Self {
+            argument: selector.argument,
+            scale: selector.scale,
+            addend: selector.addend,
+            canonical: selector.canonical(),
+        }
+    }
 }
 
 impl From<&InterfaceLoad> for LoadDocument {
@@ -101,6 +122,7 @@ impl From<&InterfaceLoad> for LoadDocument {
             site: format!("{:#x}", load.site),
             offset: load.offset,
             width: load.width,
+            selector: load.selector.as_ref().map(Into::into),
         }
     }
 }
@@ -156,6 +178,8 @@ struct TargetDocument {
     loads: Vec<LoadDocument>,
     container_depth: usize,
     slot_offset: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot_selector: Option<SelectorDocument>,
     jalr_offset: i32,
 }
 
@@ -166,7 +190,11 @@ impl TargetDocument {
             root: (&pointer.root).into(),
             loads: pointer.loads.iter().map(Into::into).collect(),
             container_depth: pointer.container_loads().len(),
-            slot_offset: pointer.slot().map(|load| load.offset),
+            slot_offset: pointer.fixed_slot().map(|load| load.offset),
+            slot_selector: pointer
+                .slot()
+                .and_then(|load| load.selector.as_ref())
+                .map(Into::into),
             jalr_offset,
         }
     }
@@ -229,12 +257,16 @@ fn call_document(discovery: &Discovery, discovered: &DiscoveredCall) -> CallDocu
 struct ContainerStepDocument {
     offset: i32,
     width: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector: Option<SelectorDocument>,
 }
 
 #[derive(Serialize)]
 struct SlotDocument {
     offset: i32,
     width: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    selector: Option<SelectorDocument>,
     functions: BTreeSet<String>,
     call_sites: usize,
 }
@@ -250,7 +282,8 @@ struct TableGroupDocument {
 }
 
 fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
-    type GroupKey = (usize, InterfaceRoot, Vec<(i32, u8)>);
+    type StepKey = (i32, u8, Option<InterfaceSlotSelector>);
+    type GroupKey = (usize, InterfaceRoot, Vec<StepKey>);
     let mut groups = BTreeMap::<GroupKey, Vec<&InterfaceCallCandidate>>::new();
     for discovered in &discovery.calls {
         if discovered.call.target.loads.is_empty() {
@@ -265,7 +298,7 @@ fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
                     .target
                     .container_loads()
                     .iter()
-                    .map(|load| (load.offset, load.width))
+                    .map(|load| (load.offset, load.width, load.selector.clone()))
                     .collect(),
             ))
             .or_default()
@@ -274,11 +307,11 @@ fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
     groups
         .into_iter()
         .map(|((artifact, root, container), calls)| {
-            let mut slots = BTreeMap::<(i32, u8), Vec<&InterfaceCallCandidate>>::new();
+            let mut slots = BTreeMap::<StepKey, Vec<&InterfaceCallCandidate>>::new();
             for call in &calls {
                 if let Some(slot) = call.target.slot() {
                     slots
-                        .entry((slot.offset, slot.width))
+                        .entry((slot.offset, slot.width, slot.selector.clone()))
                         .or_default()
                         .push(call);
                 }
@@ -288,13 +321,18 @@ fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
                 root: (&root).into(),
                 container_path: container
                     .into_iter()
-                    .map(|(offset, width)| ContainerStepDocument { offset, width })
+                    .map(|(offset, width, selector)| ContainerStepDocument {
+                        offset,
+                        width,
+                        selector: selector.as_ref().map(Into::into),
+                    })
                     .collect(),
                 slots: slots
                     .into_iter()
-                    .map(|((offset, width), slot_calls)| SlotDocument {
+                    .map(|((offset, width, selector), slot_calls)| SlotDocument {
                         offset,
                         width,
+                        selector: selector.as_ref().map(Into::into),
                         functions: slot_calls
                             .iter()
                             .map(|call| call.function.clone())
@@ -353,7 +391,7 @@ pub(super) struct InterfaceDiscoveryDocument<'a> {
 
 pub(super) fn document(discovery: &Discovery) -> Result<InterfaceDiscoveryDocument<'_>> {
     Ok(InterfaceDiscoveryDocument {
-        schema_version: 2,
+        schema_version: 3,
         command: "interfaces discover",
         analysis_scope: AnalysisScope {
             architecture: "riscv32",

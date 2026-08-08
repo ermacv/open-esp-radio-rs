@@ -1,6 +1,6 @@
 use super::*;
 
-fn calibration_execution_fixture() -> Option<(crate::MmioRegisterMap, execution::ExecutableImage)> {
+fn calibration_execution_fixture() -> Option<(crate::MmioMap, execution::ExecutableImage)> {
     let linked = std::env::var_os("OPEN_ESP_RADIO_ESP32S31_LINKED_PHY_ELF")?;
     let rom = std::env::var_os("OPEN_ESP_RADIO_ESP32S31_ROM_ELF")?;
     let linked = std::path::PathBuf::from(linked);
@@ -12,7 +12,7 @@ fn calibration_execution_fixture() -> Option<(crate::MmioRegisterMap, execution:
         .ancestors()
         .nth(4)
         .expect("ESP32-S31 semantic harness remains under tools/vendor-binary-workbench/crates");
-    let svd = crate::MmioRegisterMap::load_all(&[
+    let svd = crate::MmioMap::load_all(&[
         root.join("svd/esp32s31-radio.svd"),
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
@@ -69,6 +69,9 @@ fn execution_result_with_timeline(
         calls: std::collections::BTreeSet::new(),
         ordered_calls: Vec::new(),
         indirect_calls: std::collections::BTreeSet::new(),
+        table_lifecycle: Vec::new(),
+        table_lifecycle_complete: true,
+        device_model_coverage: Vec::new(),
         memory_changes: Vec::new(),
         initial_memory: std::collections::BTreeMap::new(),
         persistent_memory: std::collections::BTreeMap::new(),

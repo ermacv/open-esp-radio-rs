@@ -4,8 +4,10 @@ use std::collections::BTreeSet;
 
 use crate::*;
 
+mod diff;
 mod scenario;
 
+use diff::{coverage_gap, trace_difference};
 pub(crate) use scenario::*;
 
 fn artifact_report(input: ExecutionInput<'_>) -> Result<ArtifactReport> {
@@ -31,7 +33,7 @@ fn coverage_report(
     covered: &BTreeSet<(u32, bool)>,
     calls: BTreeSet<String>,
     indirect_calls: &BTreeSet<execution::IndirectCall>,
-    unmapped_mmio: BTreeSet<u32>,
+    unnamed_mmio: BTreeSet<u32>,
 ) -> CoverageReport {
     CoverageReport {
         covered_calls: calls.into_iter().collect(),
@@ -63,7 +65,177 @@ fn coverage_report(
                 }
             })
             .collect(),
-        unmapped_mmio: unmapped_mmio.into_iter().collect(),
+        unnamed_mmio: unnamed_mmio.into_iter().collect(),
+    }
+}
+
+fn coverage_is_complete(coverage: &CoverageReport) -> bool {
+    coverage.uncovered_branch_outcomes() == 0 && coverage.uncovered_control_flow() == 0
+}
+
+fn table_instance_report(instance: &execution::TableInstance) -> TableInstanceReport {
+    TableInstanceReport {
+        layout_id: instance.layout_id.clone(),
+        base_address: instance.base_address,
+        layout_size: instance.layout_size,
+        pointer_cells: instance.pointer_cells.clone(),
+        slots: instance
+            .slots
+            .iter()
+            .map(|slot| TableInstanceSlotReport {
+                offset: slot.offset,
+                target: match &slot.target {
+                    execution::TableSlotTarget::Null => TableSlotTargetReport::Null,
+                    execution::TableSlotTarget::Address(address) => {
+                        TableSlotTargetReport::Address { address: *address }
+                    }
+                    execution::TableSlotTarget::Symbol(symbol) => TableSlotTargetReport::Symbol {
+                        symbol: symbol.clone(),
+                    },
+                },
+            })
+            .collect(),
+    }
+}
+
+fn memory_instance_report(instance: &RuntimeMemoryInstance) -> RuntimeMemoryInstanceReport {
+    RuntimeMemoryInstanceReport {
+        id: instance.id.clone(),
+        base_address: instance.base_address,
+        length: instance.length,
+        bindings: instance
+            .bindings
+            .iter()
+            .map(|binding| match binding {
+                RuntimeMemoryObjectBinding::Argument { index } => {
+                    RuntimeMemoryBindingReport::Argument { index: *index }
+                }
+                RuntimeMemoryObjectBinding::Global { symbol } => {
+                    RuntimeMemoryBindingReport::Global {
+                        symbol: symbol.clone(),
+                    }
+                }
+                RuntimeMemoryObjectBinding::DereferencedGlobal {
+                    symbol,
+                    pointer_offset,
+                } => RuntimeMemoryBindingReport::DereferencedGlobal {
+                    symbol: symbol.clone(),
+                    pointer_offset: *pointer_offset,
+                },
+                RuntimeMemoryObjectBinding::Absolute {
+                    address_space,
+                    address,
+                } => RuntimeMemoryBindingReport::Absolute {
+                    address_space: address_space.clone(),
+                    address: *address,
+                },
+            })
+            .collect(),
+    }
+}
+
+fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecycleReport {
+    match event {
+        execution::TableLifecycleEvent::SlotInitialized {
+            layout_id,
+            offset,
+            target,
+        } => TableLifecycleReport::SlotInitialized {
+            layout_id: layout_id.clone(),
+            offset: *offset,
+            target: *target,
+        },
+        execution::TableLifecycleEvent::SlotWritten {
+            layout_id,
+            offset,
+            width,
+            value,
+            site,
+        } => TableLifecycleReport::SlotWritten {
+            layout_id: layout_id.clone(),
+            offset: *offset,
+            width: *width,
+            value: *value,
+            site: *site,
+        },
+        execution::TableLifecycleEvent::PointerInstalled {
+            layout_id,
+            address,
+            base_address,
+        } => TableLifecycleReport::PointerInstalled {
+            layout_id: layout_id.clone(),
+            address: *address,
+            base_address: *base_address,
+        },
+        execution::TableLifecycleEvent::IndirectCall {
+            layout_id,
+            slot_offset,
+            site,
+            target,
+            symbol,
+        } => TableLifecycleReport::IndirectCall {
+            layout_id: layout_id.clone(),
+            slot_offset: *slot_offset,
+            site: *site,
+            target: *target,
+            symbol: symbol.clone(),
+        },
+    }
+}
+
+fn device_coverage_report(outcome: &execution::DeviceModelOutcome) -> DeviceModelCoverageReport {
+    DeviceModelCoverageReport {
+        id: outcome.descriptor.id.clone(),
+        kind: outcome.descriptor.kind.clone(),
+        complete: outcome.coverage.complete,
+        reason: outcome.coverage.reason.clone(),
+    }
+}
+
+fn scenario_environment(named: &NamedScenario) -> ScenarioEnvironmentReport {
+    let common = &named.scenario.table_instances;
+    ScenarioEnvironmentReport {
+        vendor_tables: common
+            .iter()
+            .chain(&named.vendor_table_instances)
+            .map(table_instance_report)
+            .collect(),
+        rust_tables: common
+            .iter()
+            .chain(&named.rust_table_instances)
+            .map(table_instance_report)
+            .collect(),
+        vendor_memory_instances: named
+            .vendor_memory_instances
+            .iter()
+            .map(memory_instance_report)
+            .collect(),
+        rust_memory_instances: named
+            .rust_memory_instances
+            .iter()
+            .map(memory_instance_report)
+            .collect(),
+        device_models: named
+            .scenario
+            .device_models
+            .iter()
+            .map(|model| {
+                let descriptor = model.descriptor();
+                DeviceModelReport {
+                    id: descriptor.id,
+                    kind: descriptor.kind,
+                    start: descriptor.range.start,
+                    length: descriptor.range.length,
+                    configuration: descriptor.configuration,
+                }
+            })
+            .collect(),
+        vendor_device_coverage: Vec::new(),
+        rust_device_coverage: Vec::new(),
+        vendor_table_lifecycle: Vec::new(),
+        rust_table_lifecycle: Vec::new(),
+        vendor_table_lifecycle_complete: None,
+        rust_table_lifecycle_complete: None,
     }
 }
 
@@ -79,7 +251,7 @@ fn coverage_report(
     )
 )]
 pub(crate) fn compare_execution_scenarios(
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     vendor: ExecutionInput<'_>,
     rust: ExecutionInput<'_>,
     compare_return: bool,
@@ -109,11 +281,12 @@ pub(crate) fn compare_execution_scenarios(
     let mut vendor_unmapped = BTreeSet::new();
     let mut rust_unmapped = BTreeSet::new();
     let mut matched_cases = 0_usize;
-    let mut mismatched_cases = 0_usize;
+    let mut different_cases = 0_usize;
     let mut incomplete_cases = 0_usize;
     let mut case_reports = Vec::with_capacity(scenarios.len());
 
     for named in scenarios {
+        let mut environment = scenario_environment(named);
         let vendor_lengths: Vec<_> = named
             .vendor_observations
             .iter()
@@ -148,12 +321,79 @@ pub(crate) fn compare_execution_scenarios(
                 incomplete_cases += 1;
                 case_reports.push(CaseReport::Incomplete {
                     name: named.name.clone(),
+                    environment,
                     vendor_error: vendor_result.err().map(|error| error.to_string()),
                     rust_error: rust_result.err().map(|error| error.to_string()),
                 });
                 continue;
             }
         };
+        environment.vendor_table_lifecycle = vendor_result
+            .table_lifecycle
+            .iter()
+            .map(table_lifecycle_report)
+            .collect();
+        environment.rust_table_lifecycle = rust_result
+            .table_lifecycle
+            .iter()
+            .map(table_lifecycle_report)
+            .collect();
+        environment.vendor_table_lifecycle_complete = Some(vendor_result.table_lifecycle_complete);
+        environment.rust_table_lifecycle_complete = Some(rust_result.table_lifecycle_complete);
+        environment.vendor_device_coverage = vendor_result
+            .device_model_coverage
+            .iter()
+            .map(device_coverage_report)
+            .collect();
+        environment.rust_device_coverage = rust_result
+            .device_model_coverage
+            .iter()
+            .map(device_coverage_report)
+            .collect();
+        let vendor_device_incomplete = environment
+            .vendor_device_coverage
+            .iter()
+            .find(|coverage| !coverage.complete)
+            .map(|coverage| {
+                format!(
+                    "device model {} is incomplete: {}",
+                    coverage.id,
+                    coverage.reason.as_deref().unwrap_or("unspecified reason")
+                )
+            });
+        let rust_device_incomplete = environment
+            .rust_device_coverage
+            .iter()
+            .find(|coverage| !coverage.complete)
+            .map(|coverage| {
+                format!(
+                    "device model {} is incomplete: {}",
+                    coverage.id,
+                    coverage.reason.as_deref().unwrap_or("unspecified reason")
+                )
+            });
+        if !vendor_result.table_lifecycle_complete
+            || !rust_result.table_lifecycle_complete
+            || vendor_device_incomplete.is_some()
+            || rust_device_incomplete.is_some()
+        {
+            incomplete_cases += 1;
+            case_reports.push(CaseReport::Incomplete {
+                name: named.name.clone(),
+                environment,
+                vendor_error: if !vendor_result.table_lifecycle_complete {
+                    Some("runtime table call could not be linked to one slot".to_owned())
+                } else {
+                    vendor_device_incomplete
+                },
+                rust_error: if !rust_result.table_lifecycle_complete {
+                    Some("runtime table call could not be linked to one slot".to_owned())
+                } else {
+                    rust_device_incomplete
+                },
+            });
+            continue;
+        }
         vendor_covered.extend(vendor_result.branches.iter().copied());
         rust_covered.extend(rust_result.branches.iter().copied());
         vendor_calls.extend(vendor_result.calls.iter().cloned());
@@ -164,13 +404,13 @@ pub(crate) fn compare_execution_scenarios(
             vendor_result
                 .events
                 .iter()
-                .filter_map(unmapped_execution_address),
+                .filter_map(unnamed_execution_address),
         );
         rust_unmapped.extend(
             rust_result
                 .events
                 .iter()
-                .filter_map(unmapped_execution_address),
+                .filter_map(unnamed_execution_address),
         );
 
         let events_equal = vendor_result.events == rust_result.events;
@@ -181,16 +421,20 @@ pub(crate) fn compare_execution_scenarios(
             matched_cases += 1;
             case_reports.push(CaseReport::Match {
                 name: named.name.clone(),
+                environment,
                 events: vendor_result.events.len(),
                 memory_changes: vendor_result.memory_changes.len(),
                 return_compared: compare_return,
             });
         } else {
-            mismatched_cases += 1;
-            case_reports.push(CaseReport::Mismatch {
+            different_cases += 1;
+            case_reports.push(CaseReport::Diff {
                 name: named.name.clone(),
-                vendor: (&vendor_result).into(),
-                rust: (&rust_result).into(),
+                environment,
+                difference: Box::new(
+                    trace_difference(&vendor_result, &rust_result, compare_return)
+                        .expect("a different execution outcome has a first difference"),
+                ),
             });
         }
     }
@@ -218,40 +462,55 @@ pub(crate) fn compare_execution_scenarios(
     let vendor_unresolved = vendor_coverage.uncovered_control_flow();
     let rust_unresolved = rust_coverage.uncovered_control_flow();
     let cases_match = matched_cases == scenarios.len();
-    let coverage_complete = vendor_uncovered == 0
-        && rust_uncovered == 0
-        && vendor_unresolved == 0
-        && rust_unresolved == 0
-        && vendor_coverage.unmapped_mmio.is_empty()
-        && rust_coverage.unmapped_mmio.is_empty();
-    let verdict = if mismatched_cases != 0 {
-        ComparisonVerdict::Mismatch
+    let coverage_complete =
+        coverage_is_complete(&vendor_coverage) && coverage_is_complete(&rust_coverage);
+    let verdict = if different_cases != 0 {
+        EquivalenceVerdict::Diff
     } else if incomplete_cases != 0 || !coverage_complete || !cases_match {
-        ComparisonVerdict::Incomplete
+        EquivalenceVerdict::Incomplete
     } else {
-        ComparisonVerdict::Match
+        EquivalenceVerdict::Match
     };
     Ok(ExecutionComparisonReport {
-        schema_version: 1,
+        schema_version: 7,
         command: "execute compare",
+        mode: EquivalenceMode::Physical,
         vendor: vendor_report,
         rust: rust_report,
         compare_return,
         cases: case_reports,
+        coverage_gap: coverage_gap(&vendor_coverage, &rust_coverage),
         summary: ComparisonSummary {
             cases: scenarios.len(),
             matched: matched_cases,
-            mismatched: mismatched_cases,
+            different: different_cases,
             incomplete: incomplete_cases,
             vendor_uncovered_branch_outcomes: vendor_uncovered,
             rust_uncovered_branch_outcomes: rust_uncovered,
             vendor_unresolved_control_flow: vendor_unresolved,
             rust_unresolved_control_flow: rust_unresolved,
-            vendor_unmapped_mmio: vendor_coverage.unmapped_mmio.len(),
-            rust_unmapped_mmio: rust_coverage.unmapped_mmio.len(),
+            vendor_unnamed_mmio: vendor_coverage.unnamed_mmio.len(),
+            rust_unnamed_mmio: rust_coverage.unnamed_mmio.len(),
         },
         vendor_coverage,
         rust_coverage,
         verdict,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unnamed_registers_are_enrichment_not_a_coverage_gap() {
+        let coverage = CoverageReport {
+            covered_calls: Vec::new(),
+            branch_outcomes: Vec::new(),
+            unresolved_control_flow: Vec::new(),
+            unnamed_mmio: vec![0x4000_0010],
+        };
+
+        assert!(coverage_is_complete(&coverage));
+    }
 }

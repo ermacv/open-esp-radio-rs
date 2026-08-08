@@ -10,7 +10,10 @@ use super::*;
 pub(super) enum Value {
     Unknown,
     Constant(u32),
+    Argument { index: u8, offset: i32 },
+    Selector(InterfaceSlotSelector),
     Pointer(InterfacePointer),
+    IndexedPointer(InterfacePointer, InterfaceSlotSelector),
     GotAddress(InterfacePointer),
 }
 
@@ -18,9 +21,24 @@ impl Value {
     pub(super) fn add_constant(self, offset: i32) -> Self {
         match self {
             Self::Constant(value) => Self::Constant(value.wrapping_add(offset as u32)),
+            Self::Argument {
+                index,
+                offset: current,
+            } => Self::Argument {
+                index,
+                offset: current.wrapping_add(offset),
+            },
+            Self::Selector(mut selector) => {
+                selector.addend = selector.addend.wrapping_add(offset);
+                Self::Selector(selector)
+            }
             Self::Pointer(mut pointer) => {
                 pointer.post_offset = pointer.post_offset.wrapping_add(offset);
                 Self::Pointer(pointer)
+            }
+            Self::IndexedPointer(mut pointer, selector) => {
+                pointer.post_offset = pointer.post_offset.wrapping_add(offset);
+                Self::IndexedPointer(pointer, selector)
             }
             Self::GotAddress(mut pointer) => {
                 pointer.post_offset = pointer.post_offset.wrapping_add(offset);
@@ -34,8 +52,45 @@ impl Value {
         match self {
             Self::Unknown => InterfaceArgumentValue::Unknown,
             Self::Constant(value) => InterfaceArgumentValue::Constant(*value),
+            Self::Argument { index, offset } => InterfaceArgumentValue::Pointer(InterfacePointer {
+                root: InterfaceRoot::FunctionArgument { index: *index },
+                loads: Vec::new(),
+                post_offset: *offset,
+            }),
             Self::Pointer(pointer) => InterfaceArgumentValue::Pointer(pointer.clone()),
-            Self::GotAddress(_) => InterfaceArgumentValue::Unknown,
+            Self::Selector(_) | Self::IndexedPointer(_, _) | Self::GotAddress(_) => {
+                InterfaceArgumentValue::Unknown
+            }
+        }
+    }
+
+    pub(super) fn as_pointer(&self) -> Option<InterfacePointer> {
+        match self {
+            Self::Pointer(pointer) => Some(pointer.clone()),
+            Self::Argument { index, offset } => Some(InterfacePointer {
+                root: InterfaceRoot::FunctionArgument { index: *index },
+                loads: Vec::new(),
+                post_offset: *offset,
+            }),
+            _ => None,
+        }
+    }
+
+    pub(super) fn shift_left(self, amount: u32) -> Self {
+        let scale = 1_u32.wrapping_shl(amount & 31);
+        match self {
+            Self::Argument { index, offset: 0 } => Self::Selector(InterfaceSlotSelector {
+                argument: index,
+                scale,
+                addend: 0,
+            }),
+            Self::Selector(mut selector) => {
+                selector.scale = selector.scale.wrapping_mul(scale);
+                selector.addend = selector.addend.wrapping_shl(amount & 31);
+                Self::Selector(selector)
+            }
+            Self::Constant(value) => Self::Constant(value.wrapping_shl(amount & 31)),
+            _ => Self::Unknown,
         }
     }
 }
@@ -46,11 +101,10 @@ pub(super) fn initial_state() -> RegisterState {
     let mut values = core::array::from_fn(|_| Value::Unknown);
     values[0] = Value::Constant(0);
     for index in 0..RV32_REGISTER_ARGUMENT_COUNT {
-        values[10 + index] = Value::Pointer(InterfacePointer {
-            root: InterfaceRoot::FunctionArgument { index: index as u8 },
-            loads: Vec::new(),
-            post_offset: 0,
-        });
+        values[10 + index] = Value::Argument {
+            index: index as u8,
+            offset: 0,
+        };
     }
     values
 }
@@ -134,19 +188,32 @@ pub(super) fn low_relocation_value<'a>(
 }
 
 pub(super) fn append_load(value: Value, site: u32, offset: i32, width: u8) -> Value {
-    let mut pointer = match value {
-        Value::Pointer(pointer) => pointer,
-        Value::Constant(address) => InterfacePointer {
-            root: InterfaceRoot::AbsoluteAddress { address },
-            loads: Vec::new(),
-            post_offset: 0,
-        },
-        Value::GotAddress(_) | Value::Unknown => return Value::Unknown,
+    let (mut pointer, selector) = match value {
+        Value::Pointer(pointer) => (pointer, None),
+        Value::IndexedPointer(pointer, selector) => (pointer, Some(selector)),
+        Value::Argument { index, offset } => (
+            InterfacePointer {
+                root: InterfaceRoot::FunctionArgument { index },
+                loads: Vec::new(),
+                post_offset: offset,
+            },
+            None,
+        ),
+        Value::Constant(address) => (
+            InterfacePointer {
+                root: InterfaceRoot::AbsoluteAddress { address },
+                loads: Vec::new(),
+                post_offset: 0,
+            },
+            None,
+        ),
+        Value::Selector(_) | Value::GotAddress(_) | Value::Unknown => return Value::Unknown,
     };
     pointer.loads.push(InterfaceLoad {
         site,
         offset: pointer.post_offset.wrapping_add(offset),
         width,
+        selector,
     });
     pointer.post_offset = 0;
     Value::Pointer(pointer)

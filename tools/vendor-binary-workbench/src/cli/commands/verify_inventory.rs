@@ -44,7 +44,7 @@ fn set_string(slot: &mut Option<String>, value: String, option: &str) -> Result<
 
 pub(super) fn run(
     arguments: VerifyInventoryArgs,
-    svd: &MmioRegisterMap,
+    svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();

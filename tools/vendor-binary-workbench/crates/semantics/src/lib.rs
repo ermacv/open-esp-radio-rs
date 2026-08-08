@@ -6,11 +6,13 @@
 
 mod driver_plan;
 mod effect_contract;
+mod equivalence;
 
 use std::path::Path;
 
 pub use driver_plan::*;
 pub use effect_contract::*;
+pub use equivalence::*;
 pub use open_radio_vendor_analysis_model::*;
 
 #[derive(Debug, thiserror::Error)]
@@ -46,7 +48,7 @@ pub struct DriverAdapterRequest<'a> {
     pub id: &'a str,
     pub source: &'a str,
     pub vendor_symbol: &'a str,
-    pub svd: &'a MmioRegisterMap,
+    pub svd: &'a MmioMap,
     /// Caller-owned authoritative symbol inventory (for example a raw `.a`).
     pub vendor_inventory: Option<&'a Path>,
     /// Executable linked view used for concrete verification.
@@ -68,7 +70,7 @@ pub struct SemanticContractRequest<'a> {
     pub id: &'a str,
     pub source: &'a str,
     pub vendor_symbol: &'a str,
-    pub svd: &'a MmioRegisterMap,
+    pub svd: &'a MmioMap,
     pub vendor_artifact: &'a Path,
     pub vendor_companion: Option<&'a Path>,
 }

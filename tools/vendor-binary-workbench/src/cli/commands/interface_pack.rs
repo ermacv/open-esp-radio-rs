@@ -83,6 +83,11 @@ fn validate(
         pack,
         &paths.semantic_catalogs,
         target.calling_convention.label(),
+        target
+            .harness
+            .as_deref()
+            .map(crate::harnesses::contracts)
+            .transpose()?,
     )?;
     let summary = workspace.summary();
     let passed = !arguments.deny_unreviewed
@@ -109,12 +114,61 @@ fn validate(
         semantic_operations: summary.semantic_operations,
         artifact_guards: summary.artifact_guards,
         runtime_guards: summary.runtime_guards,
+        execution_contracts: summary.execution_contracts,
+        execution_models: summary.execution_models,
         facts: &paths.facts,
         pack,
+        contracts: workspace
+            .contracts()
+            .iter()
+            .map(|contract| InterfaceContractDocument {
+                id: &contract.id,
+                pack: &contract.pack,
+                anchor: &contract.anchor,
+                source: &contract.source,
+                root_kind: interface_root_kind(&contract.root),
+                container_depth: contract.container_path.len(),
+                layout_version: &contract.layout_version,
+                pointer_width: contract.pointer_width,
+                layout_size: contract.layout_size,
+                slot_stride: contract.slot_stride,
+                guards: contract.guards.len(),
+                execution_contract: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.id.as_str()),
+                execution_pointer_symbol: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.pointer_symbol.as_str()),
+                execution_backing_symbol: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.backing_symbol.as_str()),
+                execution_version: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.version),
+                execution_magic: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.magic),
+                execution_size: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.size),
+                execution_magic_offset: contract
+                    .execution_contract
+                    .as_ref()
+                    .map(|contract| contract.magic_offset),
+                slots: contract.slots.len(),
+            })
+            .collect(),
         bindings: workspace
             .bindings()
             .iter()
             .map(|binding| InterfaceBindingDocument {
+                id: &binding.id,
                 anchor: &binding.anchor,
                 source: &binding.source,
                 layout_version: &binding.layout_version,
@@ -124,7 +178,47 @@ fn validate(
                 arguments: &binding.arguments,
                 return_type: &binding.return_type,
                 variadic: binding.variadic,
-                semantic: binding.semantic.as_deref(),
+                semantic: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map(|semantic| semantic.operation.as_str()),
+                semantic_summary: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map(|semantic| semantic.summary.as_str()),
+                semantic_domain: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map(|semantic| semantic.domain.as_str()),
+                semantic_argument_roles: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map_or_else(Vec::new, |semantic| {
+                        semantic.argument_roles.iter().map(String::as_str).collect()
+                    }),
+                semantic_return_role: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map(|semantic| semantic.return_role.as_str()),
+                semantic_effects: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .map_or_else(Vec::new, |semantic| {
+                        semantic.effects.iter().map(String::as_str).collect()
+                    }),
+                replacement: binding
+                    .semantic_annotation
+                    .as_ref()
+                    .and_then(|semantic| semantic.replacement.as_deref()),
+                execution_model: binding.execution_model.as_ref().map(|model| {
+                    InterfaceExecutionModelDocument {
+                        id: &model.id,
+                        table: &model.table,
+                        function: &model.function,
+                        c_name: &model.c_name,
+                        return_model: execution_model_label(model.return_model),
+                    }
+                }),
                 functions: binding.functions.iter().map(String::as_str).collect(),
                 calls: binding
                     .calls
@@ -137,6 +231,16 @@ fn validate(
                         site: call.site,
                         kind: &call.kind,
                         jalr_offset: call.jalr_offset,
+                        slot_selector: call.slot_selector.as_deref(),
+                        slot_index: call.slot_index,
+                        slot_index_domain: call.slot_index_domain.as_ref().map(|domain| {
+                            InterfaceIndexDomainDocument {
+                                argument: domain.argument,
+                                min: domain.min,
+                                max: domain.max,
+                                evidence: &domain.evidence,
+                            }
+                        }),
                         arguments: call
                             .arguments
                             .iter()
@@ -157,4 +261,23 @@ fn validate(
         || print_workspace_tsv(&report),
     );
     Ok(passed)
+}
+
+fn execution_model_label(model: crate::ExternalReturnModel) -> String {
+    match model {
+        crate::ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
+        crate::ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
+        crate::ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
+            format!("private-stack-output-u8:a{pointer_argument}")
+        }
+        crate::ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
+    }
+}
+
+const fn interface_root_kind(root: &crate::interfaces::InterfaceRootSelector) -> &'static str {
+    match root {
+        crate::interfaces::InterfaceRootSelector::RelocatedSymbol { .. } => "relocated-symbol",
+        crate::interfaces::InterfaceRootSelector::FunctionArgument { .. } => "function-argument",
+        crate::interfaces::InterfaceRootSelector::AbsoluteAddress { .. } => "absolute-address",
+    }
 }

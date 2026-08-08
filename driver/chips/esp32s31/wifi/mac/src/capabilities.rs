@@ -34,8 +34,10 @@ pub const ESP32S31_MAC_SERVICE_CAPABILITIES: MacServiceCapabilities = MacService
         station_interfaces: 1,
         access_point_interfaces: 0,
         simultaneous_station_access_point: false,
+        standalone_monitor: true,
+        monitor_with_interfaces: false,
         raw_monitor_tap: false,
-        normalized_monitor_tap: false,
+        normalized_monitor_tap: true,
         protocol_validated_monitor_tap: false,
     },
     operations: MacOperationOwnership {
@@ -111,13 +113,15 @@ mod tests {
     }
 
     #[test]
-    fn profile_does_not_advertise_unimplemented_roles_or_taps() {
+    fn profile_advertises_only_materialized_interface_and_monitor_topologies() {
         let interfaces = ESP32S31_MAC_SERVICE_CAPABILITIES.interfaces;
         assert_eq!(interfaces.station_interfaces, 1);
         assert_eq!(interfaces.access_point_interfaces, 0);
         assert!(!interfaces.simultaneous_station_access_point);
+        assert!(interfaces.standalone_monitor);
+        assert!(!interfaces.monitor_with_interfaces);
         assert!(!interfaces.raw_monitor_tap);
-        assert!(!interfaces.normalized_monitor_tap);
+        assert!(interfaces.normalized_monitor_tap);
         assert!(!interfaces.protocol_validated_monitor_tap);
     }
 }

@@ -26,7 +26,7 @@ use open_esp_radio_ieee80211::{
     wmm::WmmAccessCategory,
 };
 use open_esp_radio_wifi_softmac::{
-    MacServiceCapabilities, MacTxPlan,
+    MacServiceCapabilities, MacTxPlan, WifiPlan,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
 };
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};

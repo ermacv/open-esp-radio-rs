@@ -192,6 +192,17 @@ pub struct PinnedTxDmaStorage<const BUFFER_SIZE: usize> {
     binding: TxDmaBinding,
 }
 
+impl<const BUFFER_SIZE: usize> Drop for PinnedTxDmaStorage<BUFFER_SIZE> {
+    fn drop(&mut self) {
+        if matches!(
+            self.state(),
+            TxDmaState::HardwareOwned | TxDmaState::Completed | TxDmaState::ResetRequired
+        ) {
+            panic!("active ESP32-S31 TX DMA storage destroyed before queue detach/reset");
+        }
+    }
+}
+
 impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
     pub fn state(&self) -> TxDmaState {
         self.storage.as_ref().get_ref().state
@@ -394,6 +405,9 @@ mod tests {
         assert!(storage.binding().admits_buffer(BUFFER_ADDRESS + 8, 16));
         assert!(!storage.binding().admits_buffer(BUFFER_ADDRESS + 63, 2));
         assert!(storage.buffer_mut().is_err());
+        storage
+            .release_aborted(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS))
+            .unwrap();
     }
 
     #[test]
@@ -457,6 +471,8 @@ mod tests {
             Err(TxDmaStorageError::State)
         );
         assert_eq!(storage.buffer_mut(), Err(TxDmaStorageError::Busy));
+        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
+        assert!(drop_result.is_err());
     }
 
     #[test]
@@ -471,6 +487,8 @@ mod tests {
             storage.release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS)),
             Err(TxDmaStorageError::State)
         );
+        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
+        assert!(drop_result.is_err());
     }
 
     #[test]

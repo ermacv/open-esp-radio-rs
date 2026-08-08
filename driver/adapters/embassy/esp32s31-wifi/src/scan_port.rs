@@ -23,9 +23,10 @@ use crate::{
     control_tx::ControlTxError,
     embassy_rx::RxReloadDelay,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    rx_ring_owner::Esp32s31RxRingOwnerError,
     scan_rx::{
         Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext,
-        Esp32s31ScanRxError, Esp32s31ScanRxProgress,
+        Esp32s31ScanRxProgress,
     },
     scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest},
 };

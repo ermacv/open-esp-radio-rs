@@ -60,11 +60,14 @@ attribute.
 ## DMA failure frontier
 
 Normal TX lease destruction releases the pool slot before publishing its
-index back to a producer queue. If an A-MPDU owner is destroyed while its
-descriptor remains `HardwareOwned` or `ResetRequired`, it instead forgets the
-retained backing and leaves the slot claimed. This is an intentional
-fail-closed quarantine: reusing that memory would be unsound while the walker
-may still hold its address.
+index back to a producer queue. An A-MPDU owner which reaches
+`HardwareOwned`, `Completed` or `ResetRequired` first forgets every retained
+backing, leaving each network slot claimed, and its lower pinned DMA owner
+then rejects destruction. Ordinary TX applies the same terminal `Drop` guard
+to its pinned descriptor/buffer owner. On the target, where panic aborts, this
+is the fail-closed platform reset boundary. A Rust scope exit can therefore
+neither return potentially DMA-visible memory nor silently discard the last
+software lifecycle owner.
 
 The current tree has no token proving that a complete platform radio reset has
 stopped every DMA actor. Consequently a quarantined slot cannot be recovered
@@ -75,10 +78,11 @@ an unforgeable reset-completion owner and test the complete MAC/DMA shutdown
 ordering before it can consume quarantined leases.
 
 On 32-bit hardware targets, initial RX-ring construction requires a
-`&'static RxDmaStorage`. Forgetting or losing a live typestate owner can still
-leak the ring and leave the walker active, but it cannot deallocate or move the
-descriptor/buffer arena underneath DMA. Native host models retain a borrowed
-constructor because they have no asynchronous hardware actor. Raw RX-DMA
+`&'static RxDmaStorage`. `RxRingLive::Drop` rejects destruction until
+`try_stop` confirms the walker disabled. Explicitly forgetting a live owner
+can still leak the ring and leave the walker active, but it cannot deallocate
+or move the descriptor/buffer arena underneath DMA. Native host models retain
+a borrowed constructor because they have no asynchronous hardware actor. Raw RX-DMA
 construction, cold-ring publication and standalone walker enable are unsafe on
 32-bit targets and remain safe only in native models with no DMA actor. The
 validation probes state their synthetic/static-address proof explicitly.
@@ -135,9 +139,11 @@ descriptor array and aligned MPDU buffers. Descriptor-only zero-copy
 aggregates use `RetainedAmpduDma<B>`, which owns every `StableDmaBacking`
 lease referenced by the published chain. Both paths distinguish completion
 from confirmed queue detach and issue separate prepare/start capabilities
-only after validating the entire chain. Dropping an external owner after the
-hardware edge deliberately forgets the leases unless detach was confirmed,
-so a Rust destructor cannot return potentially DMA-visible memory.
+only after validating the entire chain. Attempting to drop an external owner
+after the hardware edge deliberately forgets the leases and then reaches the
+lower pinned owner's terminal `Drop` guard unless detach was confirmed. Thus
+a Rust destructor cannot return potentially DMA-visible memory or continue as
+if the owner had completed normally.
 
 `HtAmpduTxStorage` now contains only protocol/lifecycle metadata and its
 bounded frame-formatting workspace. The workspace exists only in native

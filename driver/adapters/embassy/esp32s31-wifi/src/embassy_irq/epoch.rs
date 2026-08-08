@@ -68,6 +68,15 @@ where
         self.setup.is_none()
     }
 
+    /// Executor wake runtime bound to this interrupt epoch.
+    ///
+    /// The reference cannot activate or quiesce the platform route; it only
+    /// lets the finite service owning this epoch await and publish handoff
+    /// probes through the matching coalesced wake state.
+    pub const fn mac_runtime(&self) -> &'runtime EmbassyMacIrqRuntime<M> {
+        self.mac_runtime
+    }
+
     /// Borrow the task-side capability for polling-only scan/auth phases.
     pub fn setup(&self) -> Result<&R::Setup, Esp32s31MacInterruptEpochStateError> {
         self.setup
@@ -110,5 +119,17 @@ where
             mac: self.mac_runtime.drain_pending(),
             power_events: self.power_runtime.drain_pending(),
         })
+    }
+}
+
+impl<R, M> Drop for Esp32s31MacInterruptEpoch<'_, R, M>
+where
+    R: MacInterruptRoute,
+    M: RawMutex,
+{
+    fn drop(&mut self) {
+        if self.is_active() {
+            panic!("active ESP32-S31 MAC interrupt epoch destroyed before quiescence");
+        }
     }
 }

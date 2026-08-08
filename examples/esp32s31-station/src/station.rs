@@ -20,15 +20,13 @@ use open_esp_radio::esp32s31::wifi::sta::attempt::{
     Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
 };
 use open_esp_radio::esp32s31::wifi::sta::channel::Esp32s31ScanPhy;
-use open_esp_radio::esp32s31::wifi::sta::cold_start::{
-    Esp32s31ColdStartConfig, start_esp32s31_station_radio,
-};
 use open_esp_radio::esp32s31::wifi::sta::scan::{
     Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError,
 };
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
+    RadioConfig, WifiConfig, WifiMacAddress, WifiPlan, WifiStationConfig,
     adapters::esp32s31::wifi_embassy::{
         control_tx::Esp32s31ControlTx,
         phy_delay::EmbassyEsp32s31PhyDelay,
@@ -54,12 +52,14 @@ use open_esp_radio::{
         station_epoch::Esp32s31RunningScanEpochParts,
     },
     esp32s31::{
+        Esp32s31RadioStartConfig, Esp32s31WifiStartConfig,
         hal::{Radio, RadioRegisters},
         phy::{
             NoopPhyTargetObserver, PhyCalibrationIdentity, PhyTxTargetPowerProfile,
             phy_cold::PhyColdState, phy_rfpll::phy_get_rf_cal_version,
         },
         registers::MacInterruptSetup,
+        start_esp32s31_radio,
         wifi::lmac::{
             init::initialize_promiscuous_receive,
             scan::{ScanObservation, ScanRecord, ScanTable},
@@ -230,6 +230,7 @@ struct ProductionStationBackend<'control, O> {
     control: Esp32s31StationCommandReceiver<'control, CriticalSectionRawMutex>,
     spawner: Spawner,
     interrupt_epoch: MacInterruptEpoch,
+    wifi: WifiPlan,
     _owner: PhantomData<fn() -> O>,
 }
 
@@ -238,11 +239,13 @@ impl<'control, O> ProductionStationBackend<'control, O> {
         control: Esp32s31StationCommandReceiver<'control, CriticalSectionRawMutex>,
         spawner: Spawner,
         interrupt_setup: MacInterruptSetup,
+        wifi: WifiPlan,
     ) -> Self {
         Self {
             control,
             spawner,
             interrupt_epoch: mac_interrupt_epoch(interrupt_setup),
+            wifi,
             _owner: PhantomData,
         }
     }
@@ -294,6 +297,7 @@ impl<'control, 'state, 'security>
             &mut self.interrupt_epoch,
             &mut self.control,
             ConnectedStationResources {
+                wifi: self.wifi,
                 epoch,
                 network,
                 phy,
@@ -949,22 +953,44 @@ impl<'control, 'state, 'security> StaLifecycleBackend
 pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) -> ! {
     esp_println::println!("open-radio: cold PHY start");
 
+    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
+    let mut station_address = [0; 6];
+    station_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
+    let mut access_point_address = [0; 6];
+    access_point_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
+    let station_mac = WifiMacAddress::new(station_address)
+        .expect("ESP32-S31 eFuse must contain a unicast station address");
+    let topology = RadioConfig::wifi(WifiConfig::station(WifiStationConfig::new(station_mac)));
+
     let owned = Radio::claim(platform)
         .unwrap_or_else(|_| panic!("open-radio register singleton was already claimed"));
-    let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let calibration_identity = PhyCalibrationIdentity {
         rf_cal_version: phy_get_rf_cal_version(),
         mac_sys0: efuse_registers.rd_mac_sys0().read().bits(),
         mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
     };
-    let cold = start_esp32s31_station_radio::<_, EmbassyEsp32s31PhyDelay, _>(
+    let started = start_esp32s31_radio::<_, EmbassyEsp32s31PhyDelay, _>(
         owned,
-        Esp32s31ColdStartConfig::new(calibration_identity, INITIAL_CHANNEL),
+        Esp32s31RadioStartConfig::new(
+            topology,
+            Esp32s31WifiStartConfig::new(calibration_identity, INITIAL_CHANNEL),
+        ),
         None,
         NoopPhyTargetObserver,
     )
     .await
-    .unwrap_or_else(|_| panic!("cold station radio start failed"));
+    .unwrap_or_else(|_| panic!("ESP32-S31 radio start failed"));
+    let (radio_plan, cold) = started.into_parts();
+    let wifi_plan = radio_plan
+        .wifi()
+        .expect("validated station radio plan must contain Wi-Fi");
+    station_address = wifi_plan
+        .station()
+        .expect("validated station Wi-Fi plan must contain a station")
+        .interface
+        .address;
     let report = cold.report();
     let (mut powered, mut phy, tx_power, _calibration_record, _) = cold.into_parts();
     powered.parts_mut().0.install_phy_tx_power_profile(tx_power);
@@ -1001,12 +1027,6 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         },
     ));
 
-    let mut station_address = [0; 6];
-    station_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
-    let mut access_point_address = [0; 6];
-    access_point_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
     let cold_mac = initialize_promiscuous_receive(
         &mut platform,
         &mut registers,
@@ -1159,7 +1179,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         Esp32s31StationConfig::new(policy).with_initial_candidate(StaNextCandidate::Reuse),
         Esp32s31StationResources::new(owner),
         station_control,
-        move |control| ProductionStationBackend::new(control, spawner, interrupt_setup),
+        move |control| ProductionStationBackend::new(control, spawner, interrupt_setup, wifi_plan),
     );
     match station.run().await {
         Esp32s31StationExit::Stopped { .. } => panic!("station stopped unexpectedly"),

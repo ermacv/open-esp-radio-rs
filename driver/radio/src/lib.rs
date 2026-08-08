@@ -5,6 +5,21 @@
 extern crate std;
 
 #[cfg(feature = "wifi")]
+pub mod config;
+
+#[cfg(feature = "wifi")]
+pub use config::{
+    RadioCapabilities, RadioCoexistenceCapabilities, RadioConfig, RadioConfigError, RadioPlan,
+    RadioSubsystem, RadioSubsystems, WifiAccessPointConfig, WifiConfig, WifiConfigError,
+    WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan,
+    WifiStationConfig,
+};
+#[cfg(feature = "wifi")]
+pub use open_esp_radio_wifi_softmac::{
+    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink,
+};
+
+#[cfg(feature = "wifi")]
 pub mod wifi {
     pub use open_esp_radio_ieee80211 as ieee80211;
     pub use open_esp_radio_wifi_softmac as softmac;
@@ -16,11 +31,20 @@ pub mod wifi {
     pub use open_esp_radio_wifi_softmac as lmac;
 }
 
-#[cfg(any(feature = "adapter-embassy-net", feature = "esp32s31-wifi-embassy"))]
+#[cfg(any(
+    feature = "adapter-embassy-net",
+    feature = "adapter-embassy-wifi",
+    feature = "esp32s31-wifi-embassy"
+))]
 pub mod adapters {
     #[cfg(feature = "adapter-embassy-net")]
     pub mod network {
         pub use open_esp_radio_embassy_net as embassy_net;
+    }
+
+    #[cfg(feature = "adapter-embassy-wifi")]
+    pub mod wifi {
+        pub use open_esp_radio_wifi_embassy as embassy;
     }
 
     #[cfg(feature = "esp32s31-wifi-embassy")]
@@ -56,6 +80,38 @@ pub mod esp32s31 {
         #[cfg(feature = "esp32s31-wifi-embassy")]
         pub mod embassy {
             pub use open_esp_radio_esp32s31_wifi_embassy::station;
+
+            pub mod monitor {
+                pub use open_esp_radio_esp32s31_wifi_embassy::{
+                    monitor_rx::{
+                        Esp32s31MonitorConfigError, Esp32s31MonitorPrepareError,
+                        Esp32s31MonitorPrepareFailure, Esp32s31MonitorRx,
+                        Esp32s31MonitorRxProgress,
+                    },
+                    monitor_service::{
+                        ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK, Esp32s31MonitorCleanupError,
+                        Esp32s31MonitorRunError, Esp32s31MonitorRunFailure,
+                        Esp32s31MonitorRunReport, Esp32s31MonitorService,
+                    },
+                };
+                pub use open_esp_radio_wifi_embassy::{
+                    MonitorCaptureFrame, MonitorCaptureMetadata, MonitorCapturePool,
+                    MonitorCaptureReceiver, MonitorCaptureResources, MonitorCaptureSink,
+                };
+            }
         }
     }
+
+    #[cfg(feature = "esp32s31-wifi")]
+    pub const RADIO_CAPABILITIES: crate::RadioCapabilities = crate::RadioCapabilities::wifi_only(
+        open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+    );
+
+    #[cfg(all(feature = "esp32s31-wifi", target_arch = "riscv32"))]
+    mod start;
+    #[cfg(all(feature = "esp32s31-wifi", target_arch = "riscv32"))]
+    pub use start::{
+        Esp32s31RadioStartConfig, Esp32s31RadioStartFailure, Esp32s31StartedRadio,
+        Esp32s31WifiStart, Esp32s31WifiStartConfig, Esp32s31WifiStartFailure, start_esp32s31_radio,
+    };
 }

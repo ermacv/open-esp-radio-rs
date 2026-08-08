@@ -27,6 +27,8 @@ pub mod embassy_irq;
 pub mod embassy_rx;
 #[cfg(target_arch = "riscv32")]
 mod join_time;
+pub mod monitor_rx;
+pub mod monitor_service;
 pub mod network_rx;
 mod ordinary_tx;
 #[cfg(target_arch = "riscv32")]
@@ -35,6 +37,7 @@ pub mod preconnected_rx;
 pub mod rx_dma_service;
 pub mod rx_pipeline_observer;
 pub mod rx_reorder;
+pub mod rx_ring_owner;
 pub mod scan_port;
 pub mod scan_rx;
 #[cfg(target_arch = "riscv32")]

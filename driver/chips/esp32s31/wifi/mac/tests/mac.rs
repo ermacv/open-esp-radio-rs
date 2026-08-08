@@ -39,7 +39,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         RxRingStopped, RxSegment, build_cold_ring, decode_normalized_rx_metadata,
         decode_rx_he_mu_sig_b, decode_rx_phy_info, disable_receive, enable_receive,
         extract_ccmp_data, extract_control, extract_data, extract_management, first_segment_layout,
-        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor,
+        prepare_recycled_buffer, publish_cold_ring, rearm_descriptor, view_normalized_rx_frame,
     },
     rx_pool::{RxStagePool, RxStageTransactionError},
     tx::{
@@ -1481,6 +1481,7 @@ fn live_rx_ring_owns_rotated_handoff_reload_and_rom_base_repair() {
     )));
     assert_eq!(live.accepted_tail(), 3);
     assert!(live.reload_pending());
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1538,6 +1539,7 @@ fn live_rx_ring_can_replenish_one_descriptor_per_rom_append() {
         live.recycle_completed_batch::<3, _, _>(&mut mmio, |_| Ok(())),
         Err(RxRingError::Count)
     );
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1578,6 +1580,7 @@ fn live_rx_ring_snapshots_only_the_current_contiguous_frontier() {
         RxReloadObservation::Settled
     );
     assert_eq!(live.completed_frontier_len(), 1);
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1624,6 +1627,7 @@ fn live_rx_ring_transfers_and_recycles_one_chained_unit_atomically() {
     assert_eq!(live.recycle_start(), 2);
     assert_eq!(descriptors[0].word0() & BIT_30, 0);
     assert_eq!(descriptors[1].word0() & BIT_30, 0);
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1676,6 +1680,7 @@ fn live_rx_ring_replenishes_the_available_variable_prefix() {
         live.recycle_completed_prefix::<0, _, _>(&mut mmio, |_| Ok(())),
         Err(RxRingError::Count)
     );
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1714,6 +1719,7 @@ fn staged_rx_frame_remains_private_until_reload_settles() {
     assert_eq!(live.accepted_tail(), 0);
     drop(network);
     assert_eq!(pool.claimed_slots(), 0);
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -1749,6 +1755,7 @@ fn staged_rx_reload_timeout_is_exact_and_releases_the_private_copy() {
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
     assert!(live.reload_pending());
+    assert!(live.try_stop(&mut mmio).is_ok());
 }
 
 #[test]
@@ -2403,7 +2410,7 @@ fn tx_slot_cancels_only_an_unpublished_reservation() {
 
 #[test]
 fn executor_deadline_quarantines_hardware_owned_tx_storage() {
-    let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
+    let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
 
@@ -2411,6 +2418,8 @@ fn executor_deadline_quarantines_hardware_owned_tx_storage() {
     assert_eq!(slot.state(), TxSlotState::ResetRequired);
     assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
     assert_eq!(slot.as_mut().require_reset(cookie), Err(TxError::Stale));
+    let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
+    assert!(drop_result.is_err());
 }
 
 #[test]
@@ -2442,6 +2451,9 @@ fn tx_completion_decodes_the_blob_ack_snr_byte() {
         ..completion
     };
     assert_eq!(failed.ack_snr_sample(), None);
+
+    mmio.set(TX_Q0_CONTROL, TX_Q_ENABLE_VALID);
+    slot.as_mut().detach_completed(&mut mmio, cookie).unwrap();
 }
 
 #[test]
@@ -3620,6 +3632,44 @@ fn normalized_rx_metadata_separates_format_validated_ampdu_from_ht_hardware_stat
     assert_eq!(
         decode_normalized_rx_metadata(&metadata).unwrap().ampdu,
         MacRxEvidence::Unavailable
+    );
+}
+
+#[test]
+fn normalized_monitor_view_excludes_the_vendor_prefix_and_stripped_fcs() {
+    const MPDU_LENGTH: usize = 24;
+    const RECEIVED: usize = 0x40 + MPDU_LENGTH;
+    let mut storage = [0_u8; RECEIVED];
+    storage[0] = (-42_i8) as u8;
+    storage[1] = 3;
+    storage[0x1c] = 11;
+    storage[0x25] = 1 << 4;
+    let signal_length = (MPDU_LENGTH + 4) as u32;
+    storage[0x38..0x3c].copy_from_slice(&signal_length.to_le_bytes());
+    for (index, byte) in storage[0x40..].iter_mut().enumerate() {
+        *byte = index as u8;
+    }
+    let segment = RxSegment {
+        descriptor_address: 0x2f00_1000,
+        descriptor_word0: (RECEIVED as u32) | ((RECEIVED as u32) << LENGTH_SHIFT) | BIT_30 | BIT_31,
+        buffer: &storage,
+        next_descriptor_address: 0,
+    };
+
+    let frame = view_normalized_rx_frame(
+        &segment,
+        RxIngressConfig {
+            ring_entry_limit: 1,
+            csi_config: 0,
+            flags: 0,
+        },
+    )
+    .unwrap();
+    assert_eq!(frame.mpdu, &storage[0x40..]);
+    assert_eq!(frame.logical_length, MPDU_LENGTH);
+    assert_eq!(
+        frame.metadata.rssi_dbm,
+        MacRxEvidence::HardwareObserved(-42)
     );
 }
 

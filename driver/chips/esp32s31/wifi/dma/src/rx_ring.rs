@@ -196,6 +196,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     accepted_tail: usize,
     pending_tail: Option<usize>,
     binding: RxDmaBinding<'a>,
+    requires_stop: bool,
 }
 
 /// Descriptor storage authority after the hardware walker is confirmed off.
@@ -413,6 +414,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             accepted_tail: self.accepted_tail,
             pending_tail: None,
             binding: self.binding,
+            requires_stop: true,
         })
     }
 
@@ -442,17 +444,19 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
     /// prevents lifecycle code from rebuilding descriptors while DMA may
     /// still own them.
     pub fn try_stop<M: RxDma>(
-        self,
+        mut self,
         mmio: &mut M,
     ) -> Result<RxRingHalted<'a, COUNT>, (Self, RxRingError)> {
         if let Err(error) = disable_receive(mmio) {
             return Err((self, error));
         }
-        Ok(RxRingHalted {
+        let halted = RxRingHalted {
             descriptors: self.descriptors,
             descriptor_base: self.descriptor_base,
             buffer_addresses: self.buffer_addresses,
-        })
+        };
+        self.requires_stop = false;
+        Ok(halted)
     }
 
     /// Snapshot the contiguous, newly completed prefix at the current recycle
@@ -932,6 +936,14 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.accepted_tail = pending_tail;
         self.pending_tail = None;
         Ok(())
+    }
+}
+
+impl<const COUNT: usize> Drop for RxRingLive<'_, COUNT> {
+    fn drop(&mut self) {
+        if self.requires_stop {
+            panic!("live ESP32-S31 RX DMA ring destroyed before walker shutdown");
+        }
     }
 }
 

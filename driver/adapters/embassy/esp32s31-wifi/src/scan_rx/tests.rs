@@ -1,12 +1,24 @@
 use super::*;
-use crate::{connected_rx_protocol::Esp32s31StagedRxQueue, rx_dma_service::Esp32s31ConnectedRx};
+use crate::{
+    connected_rx_protocol::Esp32s31StagedRxQueue, monitor_rx::Esp32s31MonitorRx,
+    rx_dma_service::Esp32s31ConnectedRx,
+};
 use core::{
     future::{Future, ready},
     pin::pin,
     task::{Context, Poll},
 };
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::{rx::RxDmaBinding, rx_pool::RxStagePool};
+use open_esp_radio_esp32s31_wifi_mac::{
+    rx::{RxDmaBinding, RxRingStopped},
+    rx_pool::RxStagePool,
+};
+use open_esp_radio_wifi_embassy::{MonitorCapturePool, MonitorCaptureResources};
+use open_esp_radio_wifi_softmac::{
+    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiConfig,
+    WifiMonitorConfig,
+    interface::{ChannelContextId, MonitorTapPoint},
+};
 
 fn block_on<F: Future>(future: F) -> F::Output {
     let mut future = pin!(future);
@@ -97,6 +109,30 @@ impl Esp32s31ScanFrameObserver for FrameObserver {
     }
 }
 
+#[derive(Default)]
+struct MonitorObserver {
+    frames: u32,
+    first_byte: Option<u8>,
+    drop_all: bool,
+}
+
+impl MonitorSink<open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo> for MonitorObserver {
+    fn try_publish(
+        &mut self,
+        frame: MonitorFrame<'_, open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo>,
+    ) -> MonitorPublishOutcome {
+        assert_eq!(frame.tap, MonitorTapPoint::Normalized);
+        assert_eq!(frame.channel_context, ChannelContextId::PRIMARY);
+        self.frames = self.frames.saturating_add(1);
+        self.first_byte = frame.bytes.first().copied();
+        if self.drop_all {
+            MonitorPublishOutcome::Dropped(MonitorDropReason::Full)
+        } else {
+            MonitorPublishOutcome::Published
+        }
+    }
+}
+
 fn write_test_beacon(
     storage: &mut Esp32s31RxDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
 ) {
@@ -137,6 +173,14 @@ fn complete_test_beacon(
     );
 }
 
+fn monitor_plan() -> open_esp_radio_wifi_softmac::WifiStandaloneMonitorPlan {
+    WifiConfig::monitor(WifiMonitorConfig::normalized())
+        .validate(open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
+        .unwrap()
+        .standalone_monitor()
+        .unwrap()
+}
+
 #[test]
 fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
     let mut storage =
@@ -146,7 +190,7 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
     let mut rx =
         Esp32s31ScanRx::prepare_initial(&mut hardware, &storage, RX_TEST_BASE, &RX_TEST_BUFFERS)
             .unwrap();
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
 
     rx.start(&mut hardware).unwrap();
     complete_test_beacon(&storage);
@@ -174,6 +218,133 @@ fn scan_rx_hands_the_exact_halted_ring_to_the_next_phase() {
 }
 
 #[test]
+fn normalized_monitor_borrows_the_mpdu_and_recycles_after_publication() {
+    let mut storage =
+        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    write_test_beacon(&mut storage);
+    let mut hardware = MockRxDma::default();
+    let mut monitor = Esp32s31MonitorRx::prepare_initial(
+        monitor_plan(),
+        &mut hardware,
+        &storage,
+        RX_TEST_BASE,
+        &RX_TEST_BUFFERS,
+    )
+    .unwrap();
+    monitor.start(&mut hardware).unwrap();
+    complete_test_beacon(&storage);
+
+    let mut sink = MonitorObserver::default();
+    let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    assert_eq!(progress.completed_descriptors, 1);
+    assert_eq!(progress.published_frames, 1);
+    assert_eq!(progress.dropped_frames, 0);
+    assert_eq!(progress.recycled_descriptors, 1);
+    assert_eq!(sink.frames, 1);
+    assert_eq!(sink.first_byte, Some(0x80));
+    monitor.stop(&mut hardware).unwrap();
+}
+
+#[test]
+fn full_monitor_sink_drops_observation_without_backpressuring_the_ring() {
+    let mut storage =
+        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    write_test_beacon(&mut storage);
+    let mut hardware = MockRxDma::default();
+    let mut monitor = Esp32s31MonitorRx::prepare_initial(
+        monitor_plan(),
+        &mut hardware,
+        &storage,
+        RX_TEST_BASE,
+        &RX_TEST_BUFFERS,
+    )
+    .unwrap();
+    monitor.start(&mut hardware).unwrap();
+    complete_test_beacon(&storage);
+
+    let mut sink = MonitorObserver {
+        drop_all: true,
+        ..MonitorObserver::default()
+    };
+    let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    assert_eq!(progress.published_frames, 0);
+    assert_eq!(progress.dropped_frames, 1);
+    assert_eq!(progress.full_drops, 1);
+    assert_eq!(progress.oversized_drops, 0);
+    assert_eq!(progress.filtered_drops, 0);
+    assert_eq!(progress.recycled_descriptors, 1);
+    assert_eq!(hardware.reload_requests, 1);
+    monitor.stop(&mut hardware).unwrap();
+}
+
+#[test]
+fn monitor_service_recycles_dma_before_async_capture_is_consumed() {
+    let mut storage =
+        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    write_test_beacon(&mut storage);
+    let mut hardware = MockRxDma::default();
+    let mut monitor = Esp32s31MonitorRx::prepare_initial(
+        monitor_plan(),
+        &mut hardware,
+        &storage,
+        RX_TEST_BASE,
+        &RX_TEST_BUFFERS,
+    )
+    .unwrap();
+    let pool = MonitorCapturePool::<64, 2>::new();
+    let resources = MonitorCaptureResources::<
+        NoopRawMutex,
+        open_esp_radio_esp32s31_wifi_mac::rx::RxPhyInfo,
+        2,
+        64,
+        2,
+    >::new(&pool);
+    let (mut sink, receiver) = resources.split();
+
+    monitor.start(&mut hardware).unwrap();
+    complete_test_beacon(&storage);
+    let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+
+    assert_eq!(progress.published_frames, 1);
+    assert_eq!(progress.recycled_descriptors, 1);
+    assert_eq!(hardware.reload_requests, 1);
+    assert_eq!(pool.claimed_slots(), 1);
+    let captured = receiver.try_receive().expect("async capture owns its copy");
+    assert_eq!(captured.bytes().first(), Some(&0x80));
+    assert_eq!(
+        captured.metadata().channel_context,
+        ChannelContextId::PRIMARY
+    );
+    drop(captured);
+    assert_eq!(pool.claimed_slots(), 0);
+    monitor.stop(&mut hardware).unwrap();
+}
+
+#[test]
+fn monitor_only_wifi_plan_materializes_the_promiscuous_ring_owner() {
+    let mut storage =
+        Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
+    write_test_beacon(&mut storage);
+    let mut hardware = MockRxDma::default();
+    let mut monitor = Esp32s31MonitorRx::prepare_initial(
+        monitor_plan(),
+        &mut hardware,
+        &storage,
+        RX_TEST_BASE,
+        &RX_TEST_BUFFERS,
+    )
+    .unwrap();
+    assert_eq!(monitor.channel_context(), ChannelContextId::PRIMARY);
+    monitor.start(&mut hardware).unwrap();
+    complete_test_beacon(&storage);
+    let mut sink = MonitorObserver::default();
+    let progress = monitor.service(&mut hardware, &mut sink).unwrap();
+    assert_eq!(progress.published_frames, 1);
+    monitor.stop(&mut hardware).unwrap();
+    assert!(monitor.into_halted().is_ok());
+}
+
+#[test]
 fn complete_cold_scan_can_prepare_the_same_ring_for_a_retry() {
     let storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
@@ -183,13 +354,13 @@ fn complete_cold_scan_can_prepare_the_same_ring_for_a_retry() {
             .unwrap();
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
     rx.start(&mut hardware).unwrap();
     rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Halted);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Halted);
 
     rx.prepare_initial_or_retry(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
 }
 
 #[test]
@@ -204,22 +375,22 @@ fn scan_rx_retains_its_typed_phase_across_enable_and_disable_failure() {
     hardware.fail_enable = true;
     assert_eq!(
         rx.start(&mut hardware),
-        Err(Esp32s31ScanRxError::Ring(RxRingError::Busy))
+        Err(Esp32s31RxRingOwnerError::Ring(RxRingError::Busy))
     );
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Prepared);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Prepared);
 
     hardware.fail_enable = false;
     rx.start(&mut hardware).unwrap();
     hardware.fail_disable = true;
     assert_eq!(
         rx.stop(&mut hardware),
-        Err(Esp32s31ScanRxError::Ring(RxRingError::Busy))
+        Err(Esp32s31RxRingOwnerError::Ring(RxRingError::Busy))
     );
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Live);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Live);
 
     hardware.fail_disable = false;
     rx.stop(&mut hardware).unwrap();
-    assert_eq!(rx.phase(), Esp32s31ScanRxPhase::Halted);
+    assert_eq!(rx.phase(), Esp32s31RxRingPhase::Halted);
 }
 
 #[test]
@@ -258,9 +429,9 @@ fn running_scan_rx_returns_the_exact_connected_epoch_resources() {
     let pool_address = stopped.pool() as *const _;
 
     let mut running = Esp32s31RunningScanRx::from_stopped(stopped);
-    assert_eq!(running.phase(), Esp32s31ScanRxPhase::Halted);
+    assert_eq!(running.phase(), Esp32s31RxRingPhase::Halted);
     running.prepare_initial(&mut hardware).unwrap();
-    assert_eq!(running.phase(), Esp32s31ScanRxPhase::Prepared);
+    assert_eq!(running.phase(), Esp32s31RxRingPhase::Prepared);
 
     let stopped = running
         .into_stopped()

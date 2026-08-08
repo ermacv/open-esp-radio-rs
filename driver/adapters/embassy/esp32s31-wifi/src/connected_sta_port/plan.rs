@@ -36,6 +36,7 @@ pub struct Esp32s31ConnectedStaConfig {
 /// Configuration failure detected before any connected owner moves.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31ConnectedStaConfigError {
+    MissingStationInterface,
     InterfaceRole(VifRole),
     InterfaceAddress {
         interface: [u8; 6],
@@ -162,6 +163,32 @@ impl Esp32s31ConnectedStaPort {
             VirtualInterface::new(VifId::PRIMARY, VifRole::Station, peer.link.station_address),
             ChannelContextId::PRIMARY,
         );
+        Self::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
+            peer, config, interface,
+        )
+    }
+
+    /// Materialize the station interface selected by the application radio
+    /// plan into one concrete connected ESP32-S31 owner graph.
+    ///
+    /// The plan has already been checked against complete radio/MAC
+    /// capabilities. This boundary still fails closed if a caller passes a
+    /// plan without a station and returns the associated peer unchanged.
+    #[allow(clippy::result_large_err)]
+    pub fn prepare_for_wifi_plan_with_storage<
+        const AGGREGATE_SLOTS: usize,
+        const RX_REORDER_SLOTS: usize,
+    >(
+        peer: Esp32s31ConnectedStaPeer,
+        config: Esp32s31ConnectedStaConfig,
+        wifi: WifiPlan,
+    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+        let Some(interface) = wifi.station() else {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::MissingStationInterface,
+                peer,
+            });
+        };
         Self::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
             peer, config, interface,
         )

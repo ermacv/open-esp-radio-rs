@@ -96,8 +96,32 @@ metadata, queue geometry, register planning and DMA ownership adapters.
 `wifi/softmac` owns only the portable boundary: VIF/channel-context identity,
 implemented-role capabilities and normalized TX/RX plans/status. It does not
 own a scheduler, DMA buffers or an executor. The current S31 station plan is a
-real consumer of that VIF binding; unsupported AP and monitor roles remain
-explicit capabilities rather than speculative implementations.
+real consumer of that VIF binding. S31 also materializes a standalone
+normalized monitor over the promiscuous RX-ring owner. AP and concurrent
+STA+monitor remain explicit unsupported capabilities rather than speculative
+implementations. A role-neutral `rx_ring_owner` supplies the finite descriptor
+type-state used by the distinct scan and monitor wrappers. The monitor's
+chip-neutral `adapters/embassy/wifi` crate copies an accepted observation into
+a bounded capture lease, queues only that lease and metadata, and returns
+immediately; capture overflow is observation loss rather than radio
+backpressure.
+The adjacent S31 `monitor_service` combines that sink with the concrete
+RX-ring and interrupt-route epoch. It is a finite future returning the same
+hardware, RX, sink and route owners after stop; it does not spawn a hidden task
+or acquire network-stack resources. Its future borrows the service, and a
+fail-closed destructor synchronously stops IRQ then DMA on cancellation/scope
+exit. Owner extraction is unavailable until that inactive state is proven.
+
+The `radio` facade exposes a two-phase application configuration API.
+`RadioConfig` selects Wi-Fi, Bluetooth and IEEE 802.15.4 subsystems, while
+`WifiConfig` selects STA/AP owners and an optional monitor tap. Validation
+against concrete `RadioCapabilities` produces a value-only `RadioPlan` before
+peripheral or DMA ownership moves. Credentials, AP beacon/security policy,
+executor handles and storage are deliberately supplied later to the created
+subsystem services. The ESP32-S31 facade materializes that plan through
+`start_esp32s31_radio`; its public start/result/error types are Wi-Fi-level and
+do not expose the current internal location of the cold-start implementation
+under the station composition crate.
 
 The remaining `wifi/ieee80211` frame/HMAC split should change only together
 with its public contracts. A directory-only rename would hide the coupling
@@ -145,7 +169,10 @@ Embassy adapter supplies the one-millisecond timer plus concrete PHY, RX-DMA and
 probe-TX owners. Host tests of mandatory RX stop and owner return therefore no
 longer compile through the runtime adapter.
 The concrete adapter is now explicit rather than hidden behind aliases:
-`scan_rx` owns DMA-ring phases,
+`rx_ring_owner` owns the role-neutral DMA-ring phases; `scan_rx` owns scan
+observation and `monitor_rx` owns standalone normalized publication. The
+separate chip-neutral Wi-Fi/Embassy adapter owns independent capture leases
+and the async consumer edge.
 `scan_port` composes one finite channel visit and `scan_target` supplies the
 RISC-V hardware bindings. Active-probe publication and passive fallback live
 in `chips/esp32s31/wifi/sta::scan_tx` beside the ordinary/control TX owner.

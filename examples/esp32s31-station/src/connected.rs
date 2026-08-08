@@ -14,8 +14,10 @@ use embassy_net::{
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
 use embassy_time::{Duration, Timer};
 use open_esp_radio::{
+    WifiPlan,
     adapters::{
         esp32s31::wifi_embassy::{
+            aggregate_tx::AggregateTxResources,
             connected_runner::ConnectedRunner,
             connected_rx_protocol::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
@@ -178,7 +180,7 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     { RX_BUFFER_SIZE + 4 },
 >;
 type ConnectedAmpduStorage =
-    HtAmpduTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
+    AggregateTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 pub type ConnectedReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     Esp32s31PreconnectedRx<
@@ -283,6 +285,7 @@ pub struct ConnectedStationReturn {
 
 /// Exact owners transferred from a successful finite station attempt.
 pub struct ConnectedStationResources<'state, 'tx, 'security> {
+    pub wifi: WifiPlan,
     pub epoch: ConnectedStationEpoch,
     pub network: StationNetwork,
     pub phy: &'state mut PhyColdState,
@@ -420,6 +423,7 @@ pub async fn run_connected(
     resources: ConnectedStationResources<'_, '_, '_>,
 ) -> ConnectedStationReturn {
     let ConnectedStationResources {
+        wifi,
         epoch,
         network,
         phy,
@@ -436,10 +440,10 @@ pub async fn run_connected(
     } = resources;
     let _retained_radio_state = (phy, pmk);
 
-    let plan = Esp32s31ConnectedStaPort::prepare_with_storage::<
+    let plan = Esp32s31ConnectedStaPort::prepare_for_wifi_plan_with_storage::<
         TX_AMPDU_FRAME_COUNT,
         RX_REORDER_WINDOW,
-    >(peer, connected_config())
+    >(peer, connected_config(), wifi)
     .unwrap_or_else(|failure| panic!("invalid connected policy: {:?}", failure.error));
     let station_address = plan.link().station_address;
 
@@ -479,11 +483,13 @@ pub async fn run_connected(
                 EmbassyEsp32s31RxReloadDelay,
             )
             .with_live_ring(live_ring);
-            let aggregate = HtAmpduTxResources::pin_static(
-                TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
-                TX_AMPDU_DMA_STORAGE.init_with(AmpduDmaStorage::new),
-            )
-            .expect("A-MPDU metadata and descriptor storage must be valid");
+            let aggregate = AggregateTxResources::single(
+                HtAmpduTxResources::pin_static(
+                    TX_AMPDU_STORAGE.init_with(HtAmpduTxStorage::new),
+                    TX_AMPDU_DMA_STORAGE.init_with(AmpduDmaStorage::new),
+                )
+                .expect("A-MPDU metadata and descriptor storage must be valid"),
+            );
             let control_resources = CONTROL_RESOURCES.init(ConnectedControlResources::new());
             let register_cell = REGISTER_CELL.init(RefCell::new(hardware));
             (
@@ -543,10 +549,10 @@ pub async fn run_connected(
         &plan,
         Esp32s31ConnectedStaTxResources {
             control: control_tx,
-            aggregate: aggregate.into(),
+            aggregate,
             pairwise_key: pairwise,
             sequences: tx_sequences,
-            counters: None,
+            aggregate_tx_observer: None,
             network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
         },
     )

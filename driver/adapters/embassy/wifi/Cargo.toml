@@ -1,0 +1,19 @@
+[package]
+name = "open-esp-radio-wifi-embassy"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Chip-independent Embassy ownership adapters for open ESP Wi-Fi"
+
+[dependencies]
+embassy-sync = "0.8.0"
+open-esp-radio-dma = { path = "../../../common/dma" }
+open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
+
+[dev-dependencies]
+critical-section = { version = "1.2.0", features = ["std"] }
+
+[lints]
+workspace = true

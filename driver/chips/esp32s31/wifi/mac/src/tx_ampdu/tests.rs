@@ -284,7 +284,7 @@ fn rejected_referenced_commit_rolls_back_the_lower_lease() {
 }
 
 #[test]
-fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
+fn retained_dma_owner_quarantines_hardware_owned_backing_and_rejects_drop() {
     let storage = HtAmpduTxStorage::<2, 0>::new();
     let mut storage = core::pin::pin!(storage);
     let pool = PinnedDmaTxPool::<256, 0, 0, 1>::new();
@@ -294,7 +294,7 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
     });
     let backing = pool.claim_radio(index);
 
-    {
+    let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
         let cookie = owner.begin().unwrap();
         let rate = HtRate::new(
@@ -318,8 +318,10 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_on_drop() {
                 HtAmpduTxConfig::new(rate, aggregate.bytes, aggregate.subframes).unwrap(),
             )
             .unwrap();
-    }
+        drop(owner);
+    }));
 
+    assert!(drop_result.is_err());
     assert_eq!(storage.state(), TxSlotState::ResetRequired);
     assert_eq!(pool.claimed_slots(), 1);
 }

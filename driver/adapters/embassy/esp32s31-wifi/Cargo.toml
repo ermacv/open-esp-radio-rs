@@ -21,6 +21,7 @@ open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
 open-esp-radio-wifi-sta = { path = "../../../wifi/sta" }
 open-esp-radio-wpa2 = { path = "../../../wifi/wpa2" }
+open-esp-radio-wifi-embassy = { path = "../wifi" }
 
 [dev-dependencies]
 critical-section = { version = "1.2.0", features = ["std"] }

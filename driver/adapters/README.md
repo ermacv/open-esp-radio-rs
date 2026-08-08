@@ -11,6 +11,9 @@ embassy-net
 embassy/esp32s31-platform
     scheduler-free Embassy executor/time binding for ESP32-S31
 
+embassy/wifi
+    chip-independent bounded monitor capture and async ownership handoff
+
 embassy/esp32s31-wifi
     ESP32-S31 Wi-Fi DMA, IRQ and Embassy runtime composition
 

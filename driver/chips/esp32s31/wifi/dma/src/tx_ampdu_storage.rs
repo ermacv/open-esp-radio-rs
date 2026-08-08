@@ -288,6 +288,19 @@ pub struct PinnedAmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     binding: AmpduDmaBinding,
 }
 
+impl<const SLOTS: usize, const BUFFER_SIZE: usize> Drop
+    for PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>
+{
+    fn drop(&mut self) {
+        if matches!(
+            self.state(),
+            AmpduDmaState::HardwareOwned | AmpduDmaState::Completed | AmpduDmaState::ResetRequired
+        ) {
+            panic!("active ESP32-S31 A-MPDU DMA storage destroyed before queue detach/reset");
+        }
+    }
+}
+
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE> {
     pub fn state(&self) -> AmpduDmaState {
         self.storage.as_ref().get_ref().state
@@ -1053,6 +1066,10 @@ impl<B, const SLOTS: usize, const BUFFER_SIZE: usize> Drop
             self.state(),
             AmpduDmaState::HardwareOwned | AmpduDmaState::Completed | AmpduDmaState::ResetRequired
         ) {
+            // Never release a lease which the peripheral may still reference.
+            // Forget it first so the lower pinned DMA owner's fail-closed
+            // destructor cannot run a backing destructor while rejecting the
+            // still-active lifecycle state.
             self.forget_backings();
         } else {
             self.drop_backings();
@@ -1265,6 +1282,8 @@ mod tests {
         assert_eq!(storage.state(), AmpduDmaState::ResetRequired);
         assert_eq!(storage.cancel(), Err(AmpduDmaStorageError::State));
         assert_eq!(storage.begin(), Err(AmpduDmaStorageError::State));
+        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
+        assert!(drop_result.is_err());
     }
 
     #[test]
@@ -1383,7 +1402,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_hardware_owned_external_chain_forgets_backings() {
+    fn dropping_hardware_owned_external_chain_forgets_backings_and_panics() {
         let drops = Rc::new(Cell::new(0));
         let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
         owner.begin().unwrap();
@@ -1400,7 +1419,8 @@ mod tests {
             .unwrap()
             .commit(|_| {});
 
-        drop(owner);
+        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(owner)));
+        assert!(drop_result.is_err());
         assert_eq!(drops.get(), 0);
     }
 

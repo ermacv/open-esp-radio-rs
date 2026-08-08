@@ -396,6 +396,16 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
             ethernet_length: 17,
         })
     );
+    hardware.ordinary_completion = Some(aggregate_completion(0, 0).tx);
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
 }
 
 #[test]
@@ -455,6 +465,16 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         subframes: 2,
         stop: AggregateBuildStop::QueueEmpty,
     }));
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
 }
 
 #[test]

@@ -24,6 +24,23 @@ implemented without unsafe Rust. It makes those unavoidable proofs explicit
 and prevents protocol or chip policy from acquiring raw pointers, unchecked
 lifetimes or interrupt ownership.
 
+## Active-owner destruction
+
+Safe Rust cannot make a type non-droppable. The driver therefore gives every
+asynchronous hardware actor an explicit close edge and a fail-closed final
+guard:
+
+- a live RX ring must pass through `try_stop`;
+- an active interrupt epoch must pass through `quiesce`;
+- ordinary and aggregate TX storage must receive a queue-detach proof, or be
+  retained for the platform reset path.
+
+Dropping a still-active RX, IRQ or TX authority panics; target release builds
+use panic-abort. Aggregate network backings are forgotten before this guard so
+unwinding cannot return memory which hardware may still address. Explicit
+`core::mem::forget` can always leak an affine Rust value, but it neither runs a
+destructor nor releases/reuses the underlying static DMA allocation.
+
 Run the fast policy check from the repository root:
 
 ```text

@@ -133,8 +133,8 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
 
     let drained = epoch.quiesce(&platform).unwrap();
     assert_eq!(platform.get(), 2);
-    assert_eq!(drained.mac.rx, true);
-    assert_eq!(drained.mac.rx_capacity, true);
+    assert!(drained.mac.rx);
+    assert!(drained.mac.rx_capacity);
     assert_eq!(drained.mac.tx_events, MAC_INT_TX_COMPLETE);
     assert_eq!(drained.power_events, 0x55);
     assert_eq!(epoch.setup(), Ok(&7));
@@ -173,6 +173,19 @@ fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
         epoch.quiesce(&platform),
         Err(Esp32s31MacInterruptEpochQuiesceError::AlreadyQuiesced)
     );
+}
+
+#[test]
+fn active_irq_epoch_cannot_be_silently_destroyed() {
+    let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+    let platform = Cell::new(0);
+    let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
+    epoch.activate(&platform, 0x1234).unwrap();
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(epoch)));
+
+    assert!(result.is_err());
 }
 
 #[test]

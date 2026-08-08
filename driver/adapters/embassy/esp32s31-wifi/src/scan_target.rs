@@ -10,10 +10,11 @@ use crate::{
     control_tx::{ControlTxError, Esp32s31ControlTx},
     cooperative_hardware::CooperativeRadioHardware,
     ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    rx_ring_owner::Esp32s31RxRingOwnerError,
     scan_port::{Esp32s31ScanPhyPort, Esp32s31ScanReceivePort, Esp32s31ScanTransmitPort},
     scan_rx::{
         Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext, Esp32s31ScanRx,
-        Esp32s31ScanRxError, Esp32s31ScanRxProgress,
+        Esp32s31ScanRxProgress,
     },
     scan_tx::{
         Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
@@ -72,7 +73,7 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
     Esp32s31ScanReceivePort<ColdRadioRegisters>
     for Esp32s31ScanRx<'_, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 {
-    type Error = Esp32s31ScanRxError;
+    type Error = Esp32s31RxRingOwnerError;
 
     fn prepare_initial(&mut self, hardware: &mut ColdRadioRegisters) -> Result<(), Self::Error> {
         self.prepare_initial_or_retry(hardware)

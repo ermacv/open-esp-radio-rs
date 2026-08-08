@@ -308,6 +308,7 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
         "a missing ADDBA response consumes one bounded retry"
     );
     assert!(control.tx_block_ack().alarm(0).is_some());
+    finish_tx(&mut hardware, &mut tx, 0);
 }
 
 #[test]

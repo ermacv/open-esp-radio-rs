@@ -15,7 +15,15 @@
 //! policy, a chip-specific MAC state machine, or their explicit composition. It
 //! means only that a caller must not assume the operation is an offload.
 
+pub mod configuration;
 pub mod interface;
+pub mod monitor;
+
+pub use configuration::{
+    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+};
+pub use monitor::{MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink};
 
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
@@ -96,6 +104,10 @@ pub struct MacInterfaceCapabilities {
     pub station_interfaces: u8,
     pub access_point_interfaces: u8,
     pub simultaneous_station_access_point: bool,
+    /// A monitor tap can own the radio without a protocol VIF.
+    pub standalone_monitor: bool,
+    /// A monitor tap can remain active while a protocol VIF runs.
+    pub monitor_with_interfaces: bool,
     pub raw_monitor_tap: bool,
     pub normalized_monitor_tap: bool,
     pub protocol_validated_monitor_tap: bool,
@@ -374,6 +386,8 @@ mod tests {
             station_interfaces: 1,
             access_point_interfaces: 0,
             simultaneous_station_access_point: false,
+            standalone_monitor: false,
+            monitor_with_interfaces: false,
             raw_monitor_tap: false,
             normalized_monitor_tap: false,
             protocol_validated_monitor_tap: false,

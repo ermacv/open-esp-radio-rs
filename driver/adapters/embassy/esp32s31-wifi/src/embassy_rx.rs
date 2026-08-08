@@ -188,5 +188,24 @@ mod tests {
         assert_eq!(mmio.reload_reads - reload_reads_before_await, 3);
         assert_eq!(network.segment().buffer, &[1, 2, 3, 4]);
         assert_eq!(pool.network_slots(), 1);
+        drop(network);
+        ring.try_stop(&mut mmio)
+            .unwrap_or_else(|_| panic!("test RX ring must stop"));
+    }
+
+    #[test]
+    fn live_rx_ring_cannot_be_silently_destroyed() {
+        const COUNT: usize = 2;
+        let descriptors = [const { Descriptor::new() }; COUNT];
+        let buffers = [0x2f00_2000, 0x2f00_2200];
+        let mut mmio = MockRxDma::default();
+        let stopped =
+            RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, 256, |_| Ok(()))
+                .unwrap();
+        let ring = stopped.start(&mut mmio).unwrap();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(ring)));
+
+        assert!(result.is_err());
     }
 }

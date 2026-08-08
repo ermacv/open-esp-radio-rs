@@ -716,7 +716,7 @@ mod tests {
 
     #[test]
     fn missing_hardware_timeout_edge_quarantines_the_slot_at_deadline() {
-        let mut slot = core::pin::pin!(TxSlot::<256>::new_model());
+        let mut slot = std::boxed::Box::pin(TxSlot::<256>::new_model());
         let mut hardware = Hardware {
             prepare: true,
             ..Hardware::default()
@@ -739,6 +739,9 @@ mod tests {
             ))
         );
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
+        drop(tx);
+        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
+        assert!(drop_result.is_err());
     }
 
     #[test]

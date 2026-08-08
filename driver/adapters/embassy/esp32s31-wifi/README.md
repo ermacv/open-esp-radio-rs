@@ -42,9 +42,10 @@ The finite scan transaction, its failure taxonomy and primitive port are in
 PHY/RX-DMA/probe-TX composition and maps one neutral dwell tick to Embassy
 time.
 
-The concrete scan adapter has four non-overlapping modules:
+The role-neutral `rx_ring_owner` owns prepared/live/halted DMA-ring
+transitions. The concrete scan adapter then has three non-overlapping pieces:
 
-- `scan_rx` owns prepared/live/halted DMA-ring transitions and frame copying;
+- `scan_rx` owns management-frame observation over that ring owner;
 - `open_esp_radio_esp32s31_wifi_sta::scan_tx` owns active Probe Request
   publication and passive fallback;
 - `scan_port` composes PHY, RX, TX, storage and the executor dwell timer;
@@ -134,11 +135,26 @@ progress, and `arbitration` owns Embassy priority, deadlines and
 cancellation-safe stopping. `connected_services` remains the finite RX,
 control and network-TX capability graph consumed by that loop.
 
-The scan path follows the same ownership boundary. `scan_rx::ring` owns the
+The scan path follows the same ownership boundary. `rx_ring_owner` owns the
 typed DMA phase machine, while `scan_rx::running` only retains the surrounding
-connected-epoch resources across a finite rescan. `scan_port::owner` holds and
-returns the composed owners, `service` implements scan sequencing, and
-`bindings` adapts the concrete RX/TX owners to that service contract.
+connected-epoch resources across a finite rescan. The peer `monitor_rx`
+publishes normalized borrowed views without scan semantics. Independent
+capture storage and its async consumer live in the chip-neutral
+`open-esp-radio-wifi-embassy` crate. `scan_port::owner` holds and returns the
+composed owners, `service` implements scan sequencing, and `bindings` adapts
+the concrete RX/TX owners to that service contract.
+
+Standalone monitor execution is in `monitor_service`. It owns `RxDma`, the
+normalized `monitor_rx`, its non-blocking capture sink and one
+`Esp32s31MacInterruptEpoch`. The run future distinguishes synthetic handoff
+wakes from actual ISR posts, quiesces the route before stopping the DMA walker
+and returns every owner. A quiesce failure leaves the RX owner live by design,
+making the reset/recovery requirement observable instead of hiding a possible
+ISR/register race. `run_until_stopped` borrows the service rather than moving
+owners into its future. The service also owns the platform route capability;
+its fail-closed `Drop` repeats synchronous IRQ/DMA shutdown, and panics into the
+platform reset path if hardware refuses to confirm it. `try_into_parts` cannot
+extract owners from an active service.
 
 WPA2 protocol deadlines and atomic key-publication rollback live in
 `open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31

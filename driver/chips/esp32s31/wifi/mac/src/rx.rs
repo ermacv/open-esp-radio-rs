@@ -708,6 +708,53 @@ pub fn decode_normalized_rx_metadata(buffer: &[u8]) -> Option<MacRxMetadata<RxPh
     })
 }
 
+/// Borrowed ESP32-S31 MPDU at the normalized monitor boundary.
+///
+/// The vendor RX-control prefix has been decoded into portable metadata and
+/// is not included in `mpdu`. The hardware-stripped FCS is likewise absent.
+/// Hardware may also consume part of a verified cipher trailer; in that case
+/// `mpdu.len()` is smaller than `logical_length` without making the receive
+/// unit malformed.
+#[derive(Clone, Copy, Debug)]
+pub struct NormalizedRxFrame<'frame> {
+    pub mpdu: &'frame [u8],
+    pub metadata: MacRxMetadata<RxPhyInfo>,
+    pub logical_length: usize,
+}
+
+/// Validate and borrow one contiguous completed unit for passive capture.
+///
+/// This entry performs no protocol/VIF filtering and mutates no receive state.
+/// It is therefore suitable for the promiscuous queue's synchronous monitor
+/// sink before the descriptor is recycled. Split DMA chains must first be
+/// copied into the existing contiguous staging owner.
+pub fn view_normalized_rx_frame<'frame>(
+    segment: &RxSegment<'frame>,
+    config: RxIngressConfig,
+) -> Result<NormalizedRxFrame<'frame>, RxError> {
+    if !rx_done(segment.descriptor_word0) {
+        return Err(RxError::Chain);
+    }
+    let layout = first_segment_layout(segment, config)?;
+    let captured_length = layout
+        .available_frame_bytes
+        .min(layout.expected_frame_length);
+    let end = layout
+        .frame_offset
+        .checked_add(captured_length)
+        .ok_or(RxError::Bounds)?;
+    let mpdu = segment
+        .buffer
+        .get(layout.frame_offset..end)
+        .ok_or(RxError::Bounds)?;
+    let metadata = decode_normalized_rx_metadata(segment.buffer).ok_or(RxError::Metadata)?;
+    Ok(NormalizedRxFrame {
+        mpdu,
+        metadata,
+        logical_length: layout.expected_frame_length,
+    })
+}
+
 pub type RxManagementFrame = RxMpduFrame;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

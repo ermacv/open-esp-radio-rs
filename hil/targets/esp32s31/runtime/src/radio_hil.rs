@@ -47,8 +47,9 @@ use open_esp_radio::{
             rx_reorder::{
                 RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
             },
+            rx_ring_owner::Esp32s31RxRingOwnerError,
             scan_port::Esp32s31ScanPortError,
-            scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanRx, Esp32s31ScanRxError},
+            scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanRx},
             scan_target::Esp32s31ColdScanTx,
             scan_tx::Esp32s31RunningScanTx,
             station::{
@@ -932,7 +933,7 @@ type RadioHilJoinRx<'storage> = Esp32s31PreconnectedRx<
     RX_BUFFER_SIZE,
 >;
 type RadioHilRunningScanPortError =
-    Esp32s31ScanPortError<PhyTargetPortError, Esp32s31ScanRxError, ControlTxError>;
+    Esp32s31ScanPortError<PhyTargetPortError, Esp32s31RxRingOwnerError, ControlTxError>;
 type RadioHilStationController<'resources> =
     Esp32s31StationController<'resources, CriticalSectionRawMutex>;
 type RadioHilStationCommandReceiver<'resources> =

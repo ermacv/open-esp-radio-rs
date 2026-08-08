@@ -225,6 +225,9 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     embassy_futures::block_on(protocol.dispatch_next());
     assert_eq!(pool.claimed_slots(), 0);
     assert_eq!(pool.network_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -310,6 +313,9 @@ fn connected_rx_stop_confirms_walker_off_and_preserves_static_resources() {
     assert!(hardware.walker);
     assert_eq!(restarted.ring().descriptor_base(), BASE);
     assert_eq!(restarted.queued_frames(), 0);
+    restarted
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -351,6 +357,9 @@ fn finite_service_stages_a_descriptor_chain_as_one_contiguous_unit() {
     assert_eq!(service.ring().recycle_start(), 0);
     drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -460,6 +469,9 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         reorder_storage.available_slots(),
         crate::rx_reorder::RX_REORDER_BACKING_SLOT_COUNT
     );
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -518,6 +530,9 @@ fn finite_service_discards_oversize_unit_and_keeps_the_ring_live() {
     assert_eq!(next.length(), 4);
     drop(next);
     assert_eq!(pool.claimed_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -571,6 +586,9 @@ fn one_shot_admission_discards_before_staging_then_observes_same_live_ring() {
         4
     );
     assert_eq!(service.ring().recycle_start(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }
 
 #[test]
@@ -610,4 +628,7 @@ fn finite_service_accepts_a_unit_within_a_wider_negotiated_stage() {
     assert_eq!(frame.length(), WIDE_STAGE_CAPACITY);
     drop(frame);
     assert_eq!(pool.claimed_slots(), 0);
+    service
+        .try_stop(&mut hardware)
+        .unwrap_or_else(|_| panic!("test RX service must stop"));
 }

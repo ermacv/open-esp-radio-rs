@@ -95,8 +95,13 @@ exists: a future STA and AP may be distinct VIFs sharing the one S31 channel
 context. Passive monitor support is represented as raw, normalized or
 protocol-validated taps rather than a synthetic protocol role, so a slow
 observer cannot acquire the normal RX owner. The capability profile advertises
-only the owner graph implemented today: one STA, no AP/AP+STA and no monitor
-tap.
+only owner graphs implemented today: one STA, or a standalone normalized
+monitor, but no AP/AP+STA and no concurrent STA+monitor. Standalone capture
+borrows each promiscuous MPDU synchronously and recycles the descriptor even
+when the caller-owned bounded sink reports `Full`. The Embassy capture adapter
+copies accepted observations into a separate lease pool and queues only the
+owned lease plus metadata. A slow capture consumer can exhaust that pool and
+lose observations, but cannot retain the DMA ring or delay its recycle edge.
 
 Raw ESP32-S31 `TxCompletion` remains an attempt-level hardware record. The
 executor-independent ESP32-S31 STA ordinary-TX owner additionally returns portable `MacTxStatus` with
@@ -242,10 +247,32 @@ owner movement and then builds one named service graph. The adjacent
 `connected_runner::{owner,service,arbitration}` only schedules that graph and
 returns it at a bounded disconnect/stop frontier; it does not derive rates,
 VIF identity or BlockAck policy.
-The scan adapter mirrors this split: `scan_rx::ring` owns only the finite DMA
-phase machine, `scan_rx::running` preserves connected-epoch resources, and
-`scan_port::{owner,service,bindings}` separates owner composition from scan
-sequencing and concrete RX/TX adapters.
+Pre-connected RX roles share one hardware owner instead of treating scan as
+the underlying abstraction. `rx_ring_owner` owns the finite ESP32-S31 DMA-ring
+phase machine. `scan_rx` adds management-frame observation, while `monitor_rx`
+adds normalized best-effort publication; neither role can acquire the other
+role's API. `scan_rx::running` separately preserves connected-epoch resources,
+and `scan_port::{owner,service,bindings}` separates owner composition from scan
+sequencing and concrete RX/TX adapters. The chip-neutral
+`adapters/embassy/wifi` crate owns independent capture slots plus the
+non-blocking Embassy producer/async consumer edge.
+
+`esp32s31-wifi::monitor_service` is the finite standalone composition. It owns
+the concrete RX-DMA capability, normalized monitor wrapper, capture sink and
+one MAC interrupt-route epoch. Startup publishes an explicit handoff probe so
+a descriptor completed before CPU-route activation cannot be stranded; the
+report keeps this service wake distinct from actual hard-IRQ post counts.
+Shutdown quiesces the route before stopping the DMA walker. If route
+quiescence fails, the owner remains live and callers must recover or reset
+rather than constructing another radio epoch. The run future borrows the
+service, and the service's fail-closed `Drop` performs the same synchronous
+shutdown. Consequently cancellation or ordinary scope exit cannot silently
+destroy an owner while DMA/ISR is active; inability to confirm shutdown enters
+the platform panic/reset path. The underlying `RxRingLive` and active interrupt
+epoch capabilities independently reject destruction before
+`try_stop`/`quiesce`, so another role wrapper cannot silently bypass the same
+lifecycle contract. `try_into_parts` succeeds only after both actors are
+inactive.
 The application-facing `station` facade is only a stable export surface.
 `station::command` owns command publication, `station::connected_epoch` owns
 the cancellation-safe edge between application commands and peer loss, and

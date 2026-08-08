@@ -5,6 +5,9 @@ use open_esp_radio_esp32s31_wifi_mac::rate_control::{
     HeLowMetricReportFeatures, StaLinkMetric, StaRateControlAssociation,
     StaRateControlAssociationInput, StaRateControlPhy,
 };
+use open_esp_radio_wifi_softmac::{
+    WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
+};
 
 use crate::{
     connected_rx_protocol::{AlwaysReadyConnectedRxSink, Esp32s31StagedRxQueue},
@@ -206,6 +209,45 @@ fn explicit_vif_binding_rejects_unimplemented_role_before_owner_handoff() {
     assert_eq!(
         failure.error,
         Esp32s31ConnectedStaConfigError::InterfaceRole(VifRole::AccessPoint)
+    );
+    assert_eq!(failure.peer.link, link);
+}
+
+#[test]
+fn application_wifi_plan_materializes_the_selected_station_vif() {
+    let mut original = peer();
+    original.link.station_address = [2, 2, 3, 4, 5, 6];
+    let address = WifiMacAddress::new(original.link.station_address).unwrap();
+    let wifi = WifiConfig::station(WifiStationConfig::new(address))
+        .validate(Esp32s31ConnectedStaPort::capabilities())
+        .unwrap();
+    let plan = Esp32s31ConnectedStaPort::prepare_for_wifi_plan_with_storage::<32, 32>(
+        original,
+        config(),
+        wifi,
+    )
+    .unwrap();
+    assert_eq!(plan.interface(), wifi.station().unwrap());
+}
+
+#[test]
+fn wifi_plan_without_station_returns_the_exact_peer() {
+    let original = peer();
+    let link = original.link;
+    let mut capabilities = Esp32s31ConnectedStaPort::capabilities();
+    capabilities.interfaces.normalized_monitor_tap = true;
+    let wifi = WifiConfig::monitor(WifiMonitorConfig::normalized())
+        .validate(capabilities)
+        .unwrap();
+    let failure = Esp32s31ConnectedStaPort::prepare_for_wifi_plan_with_storage::<32, 32>(
+        original,
+        config(),
+        wifi,
+    )
+    .unwrap_err();
+    assert_eq!(
+        failure.error,
+        Esp32s31ConnectedStaConfigError::MissingStationInterface
     );
     assert_eq!(failure.peer.link, link);
 }

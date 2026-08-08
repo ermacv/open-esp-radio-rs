@@ -1,9 +1,7 @@
 //! Configuration and caller-owned input readiness.
 
-use super::{
-    super::ProjectContext,
-    model::{ArtifactDetail, Component, MmioRegionDetail, Phase, Readiness},
-};
+use super::model::{ArtifactDetail, Component, MmioRegionDetail, Phase, Readiness};
+use crate::application::ProjectContext;
 use crate::{artifact, memory_map::MemoryRegionKind};
 
 pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {

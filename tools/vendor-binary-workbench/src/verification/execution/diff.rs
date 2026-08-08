@@ -13,12 +13,12 @@ pub(super) fn trace_difference(
         return Some(TraceDiffReport {
             first_difference: index,
             kind: DifferenceKind::Event,
-            vendor: vendor.events.get(index).map(event_item),
-            rust: rust.events.get(index).map(event_item),
-            context_before: event_context(&vendor.events, &rust.events, context_before(index)),
+            vendor: event_item(vendor, index),
+            rust: event_item(rust, index),
+            context_before: event_context(vendor, rust, context_before(index)),
             context_after: event_context(
-                &vendor.events,
-                &rust.events,
+                vendor,
+                rust,
                 index + 1..context_end(index, vendor.events.len(), rust.events.len()),
             ),
             path: Some(execution_path(vendor, rust)),
@@ -122,10 +122,14 @@ fn context_end(index: usize, vendor_len: usize, rust_len: usize) -> usize {
     (index + 1 + CONTEXT_ITEMS).min(vendor_len.max(rust_len))
 }
 
-fn event_item(event: &execution::ExecutionEvent) -> TraceItemReport {
-    TraceItemReport::Event {
-        event: event.into(),
-    }
+fn event_item(result: &execution::ExecutionResult, index: usize) -> Option<TraceItemReport> {
+    result
+        .events
+        .get(index)
+        .map(|event| TraceItemReport::Event {
+            event: event.into(),
+            producer: result.event_producers.get(index).map(Into::into),
+        })
 }
 
 fn memory_item(change: &execution::MemoryChange) -> TraceItemReport {
@@ -135,16 +139,16 @@ fn memory_item(change: &execution::MemoryChange) -> TraceItemReport {
 }
 
 fn event_context(
-    vendor: &[execution::ExecutionEvent],
-    rust: &[execution::ExecutionEvent],
+    vendor: &execution::ExecutionResult,
+    rust: &execution::ExecutionResult,
     indices: std::ops::Range<usize>,
 ) -> Vec<AlignedTraceItemReport> {
     indices
         .map(|index| AlignedTraceItemReport {
             index,
-            vendor: vendor.get(index).map(event_item),
-            rust: rust.get(index).map(event_item),
-            equal: vendor.get(index) == rust.get(index),
+            vendor: event_item(vendor, index),
+            rust: event_item(rust, index),
+            equal: vendor.events.get(index) == rust.events.get(index),
         })
         .collect()
 }
@@ -204,6 +208,14 @@ mod tests {
 
     fn result(events: Vec<execution::ExecutionEvent>) -> execution::ExecutionResult {
         execution::ExecutionResult {
+            event_producers: vec![
+                execution::ExecutionProducer {
+                    pc: 0x1000,
+                    symbol: Some("fixture".to_owned()),
+                    symbol_offset: Some(0),
+                };
+                events.len()
+            ],
             events,
             timeline: Vec::new(),
             return_value: 0,
@@ -241,6 +253,17 @@ mod tests {
         assert_eq!(difference.context_after.len(), 2);
         assert!(difference.context_before.iter().all(|item| item.equal));
         assert_eq!(difference.path.unwrap().vendor.branches[0].site, 0x1000);
+        assert!(matches!(
+            difference.vendor,
+            Some(TraceItemReport::Event {
+                producer: Some(EventProducerReport {
+                    pc: 0x1000,
+                    symbol_offset: Some(0),
+                    ..
+                }),
+                ..
+            })
+        ));
     }
 
     #[test]

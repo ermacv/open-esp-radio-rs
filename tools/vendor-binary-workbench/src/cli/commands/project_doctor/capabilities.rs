@@ -1,8 +1,6 @@
 //! Generic target and project-analysis capability inspection.
 
-use crate::{
-    cli::commands::ProjectContext, memory_map::MemoryRegionKind, registers::RegisterModel,
-};
+use crate::{application::ProjectContext, memory_map::MemoryRegionKind, registers::RegisterModel};
 
 use super::model::{CapabilityReport, DoctorReport};
 
@@ -117,7 +115,7 @@ fn collect_symbol_inventory(context: &ProjectContext<'_>, report: &mut DoctorRep
             CapabilityReport::new("symbol-inventory", "not-generated")
                 .field("path", spec.output.display().to_string())
         }
-        Some(spec) => match super::super::symbol_inventory::inspect_report(&spec.output) {
+        Some(spec) => match crate::symbol_inventory_report::inspect(&spec.output) {
             Ok(summary) => CapabilityReport::new("symbol-inventory", "available")
                 .field("artifacts", summary.artifacts)
                 .field("symbol-facts", summary.symbol_facts)
@@ -144,7 +142,7 @@ fn collect_navigation_index(context: &ProjectContext<'_>, report: &mut DoctorRep
             CapabilityReport::new("navigation-index", "not-generated")
                 .field("path", spec.output.display().to_string())
         }
-        Some(spec) => match super::super::project_navigation::inspect_report(&spec.output) {
+        Some(spec) => match crate::navigation::inspect_report(&spec.output) {
             Ok(summary) => CapabilityReport::new("navigation-index", "available")
                 .field("artifacts", summary.artifacts)
                 .field("symbols", summary.symbols)

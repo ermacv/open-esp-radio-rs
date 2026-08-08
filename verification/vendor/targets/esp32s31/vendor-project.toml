@@ -85,6 +85,7 @@ profiles = ["rom-phy", "archive-phy"]
 output = "generated/reports/function-review.md"
 
 [verification]
+rust-prefix = "open_phy_trace_"
 profiles = [
     "profiles/compiled-equivalence.profile",
     "profiles/libpp-sta-tsf-wakeup.profile",

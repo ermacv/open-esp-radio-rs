@@ -139,7 +139,7 @@ fn print_human(report: &ProfileVerificationReport) {
 fn print_tsv(report: &ProfileVerificationReport) {
     for profile in &report.profiles {
         outputln!("PROFILE\t{}\tBEGIN", profile.name);
-        print_execution_comparison(&profile.comparison);
+        crate::cli::render::print_execution_comparison(&profile.comparison);
         outputln!(
             "PROFILE\t{}\t{}",
             profile.name,

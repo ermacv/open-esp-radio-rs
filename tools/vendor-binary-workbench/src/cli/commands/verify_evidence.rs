@@ -49,7 +49,7 @@ pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
         comparison,
     };
     if !crate::cli::output::structured(&review) {
-        print_evidence_comparison(&review.comparison);
+        crate::cli::render::evidence_comparison(&review.comparison);
         if let Some(candidate) = &review.candidate {
             outputln!(
                 "EVIDENCE-CANDIDATE\t{}\tentries={}",

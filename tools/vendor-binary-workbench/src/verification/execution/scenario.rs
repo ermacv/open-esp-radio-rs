@@ -53,7 +53,10 @@ pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord>
     })
 }
 
-pub(crate) fn parse_table_instance(value: &str, option: &str) -> Result<execution::TableInstance> {
+pub(crate) fn parse_table_instance(
+    value: &str,
+    option: &str,
+) -> Result<crate::execution_model::TableInstance> {
     let parts = value.split_whitespace().collect::<Vec<_>>();
     if !(3..=4).contains(&parts.len()) {
         return Err(crate::Error::invalid(format!(
@@ -82,7 +85,7 @@ pub(crate) fn parse_table_instance(value: &str, option: &str) -> Result<executio
         .transpose()?
         .into_iter()
         .collect();
-    Ok(execution::TableInstance {
+    Ok(crate::execution_model::TableInstance {
         layout_id: layout_id.to_owned(),
         base_address,
         layout_size,
@@ -94,7 +97,7 @@ pub(crate) fn parse_table_instance(value: &str, option: &str) -> Result<executio
 pub(crate) fn parse_table_slot(
     value: &str,
     option: &str,
-) -> Result<(String, execution::TableInstanceSlot)> {
+) -> Result<(String, crate::execution_model::TableInstanceSlot)> {
     let parts = value.split_whitespace().collect::<Vec<_>>();
     if parts.len() != 3 {
         return Err(crate::Error::invalid(format!(
@@ -111,21 +114,21 @@ pub(crate) fn parse_table_slot(
     }
     Ok((
         parts[0].to_owned(),
-        execution::TableInstanceSlot {
+        crate::execution_model::TableInstanceSlot {
             offset,
             target: if parts[2] == "null" {
-                execution::TableSlotTarget::Null
+                crate::execution_model::TableSlotTarget::Null
             } else {
-                execution::TableSlotTarget::Symbol(parts[2].to_owned())
+                crate::execution_model::TableSlotTarget::Symbol(parts[2].to_owned())
             },
         },
     ))
 }
 
 pub(crate) fn add_table_slot(
-    instances: &mut [execution::TableInstance],
+    instances: &mut [crate::execution_model::TableInstance],
     layout_id: &str,
-    slot: execution::TableInstanceSlot,
+    slot: crate::execution_model::TableInstanceSlot,
     option: &str,
 ) -> Result<()> {
     let instance = instances
@@ -169,10 +172,12 @@ pub(crate) fn parse_symbol_observation(value: &str, option: &str) -> Result<Memo
 
 pub(crate) fn seed_ram_word(scenario: &mut execution::Scenario, address: u32, value: u32) {
     write_ram_word(scenario, address, value);
-    scenario.observed_memory.push(execution::MemoryRange {
-        start: address,
-        length: 4,
-    });
+    scenario
+        .observed_memory
+        .push(crate::execution_model::MemoryRange {
+            start: address,
+            length: 4,
+        });
 }
 
 pub(crate) fn write_ram_word(scenario: &mut execution::Scenario, address: u32, value: u32) {
@@ -191,10 +196,12 @@ pub(crate) fn observe_memory(
     if length == 0 {
         return Err(crate::Error::invalid("--observe length must be non-zero"));
     }
-    scenario.observed_memory.push(execution::MemoryRange {
-        start: address,
-        length,
-    });
+    scenario
+        .observed_memory
+        .push(crate::execution_model::MemoryRange {
+            start: address,
+            length,
+        });
     Ok(())
 }
 
@@ -338,8 +345,8 @@ pub(crate) struct NamedScenario {
     pub(crate) rust_symbol_words: Vec<SymbolWord>,
     pub(crate) vendor_ram_words: Vec<(u32, u32)>,
     pub(crate) rust_ram_words: Vec<(u32, u32)>,
-    pub(crate) vendor_table_instances: Vec<execution::TableInstance>,
-    pub(crate) rust_table_instances: Vec<execution::TableInstance>,
+    pub(crate) vendor_table_instances: Vec<crate::execution_model::TableInstance>,
+    pub(crate) rust_table_instances: Vec<crate::execution_model::TableInstance>,
     pub(crate) vendor_memory_instances: Vec<RuntimeMemoryInstance>,
     pub(crate) rust_memory_instances: Vec<RuntimeMemoryInstance>,
     pub(crate) vendor_observations: Vec<MemoryObservation>,
@@ -375,32 +382,6 @@ pub(crate) fn unnamed_execution_address(event: &execution::ExecutionEvent) -> Op
         } if register.is_none() => Some(*address),
         _ => None,
     }
-}
-
-pub(crate) fn print_branch_coverage(
-    side: &str,
-    image: &execution::ExecutableImage,
-    required: &BTreeSet<(u32, bool)>,
-    covered: &BTreeSet<(u32, bool)>,
-) -> usize {
-    let mut uncovered = 0;
-    for (site, taken) in required {
-        let location = image.location(*site);
-        if covered.contains(&(*site, *taken)) {
-            outputln!("COVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
-        } else {
-            outputln!("UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
-            uncovered += 1;
-        }
-    }
-    let sites: BTreeSet<_> = required.iter().map(|(site, _)| *site).collect();
-    outputln!(
-        "SUMMARY-BRANCHES\t{side}\tsites={}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
-        sites.len(),
-        required.len(),
-        required.len() - uncovered,
-    );
-    uncovered
 }
 
 pub(crate) fn extend_dynamic_inventory(

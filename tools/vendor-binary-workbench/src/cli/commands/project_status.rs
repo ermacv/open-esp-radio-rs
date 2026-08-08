@@ -2,17 +2,14 @@
 
 use std::path::PathBuf;
 
-use super::{ProjectContext, Result};
-use crate::cli::ProjectStatusArgs;
-use model::{Readiness, StatusReport, TargetIdentity};
+use super::Result;
+use crate::{
+    application::{ProjectContext, status},
+    cli::ProjectStatusArgs,
+};
+use status::model::Readiness;
 
-mod analysis;
-mod configuration_inputs;
-pub(crate) mod model;
-mod publication;
 mod render;
-mod review;
-mod verification;
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct Options {
@@ -27,7 +24,7 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
         check: arguments.check,
         deny_incomplete: arguments.deny_incomplete,
     };
-    let report = collect(&context);
+    let report = status::collect(&context);
     let publication = options.json_report.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,
@@ -57,27 +54,6 @@ pub(super) fn run(arguments: ProjectStatusArgs, context: ProjectContext<'_>) -> 
     }
     Ok(report.overall != Readiness::Invalid
         && (!options.deny_incomplete || report.overall == Readiness::Ready))
-}
-
-pub(crate) fn collect(context: &ProjectContext<'_>) -> StatusReport {
-    StatusReport::new(
-        context.project.id.clone(),
-        context.project_path.display().to_string(),
-        TargetIdentity {
-            id: context.target.id.clone(),
-            architecture: context.target.architecture.label().to_owned(),
-            calling_convention: context.target.calling_convention.label().to_owned(),
-            harness: context.target.harness.clone(),
-        },
-        vec![
-            configuration_inputs::configuration(context),
-            configuration_inputs::inputs(context),
-            analysis::collect(context),
-            review::collect(context),
-            verification::collect(context),
-            publication::collect(context),
-        ],
-    )
 }
 
 #[cfg(test)]

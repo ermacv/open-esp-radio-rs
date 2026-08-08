@@ -1,5 +1,11 @@
 //! Command parsing and dispatch for the Vendor Binary Workbench.
 
+macro_rules! outputln {
+    ($($argument:tt)*) => {{
+        crate::cli::output_line(format_args!($($argument)*));
+    }};
+}
+
 mod args;
 mod arguments;
 pub(crate) mod commands;
@@ -7,6 +13,7 @@ mod dispatch;
 mod generated_output;
 mod output;
 mod progress;
+pub(crate) mod render;
 mod resolver;
 mod table;
 mod ui;

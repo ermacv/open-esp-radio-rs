@@ -2,10 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use super::{
-    super::ProjectContext,
-    model::{Component, Phase, Readiness},
-};
+use super::model::{Component, Phase, Readiness};
+use crate::application::ProjectContext;
 use crate::{profiles, verification::dispositions, verification::load_evidence_baseline};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {

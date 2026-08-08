@@ -1,0 +1,89 @@
+//! Source-level guards for frontend/domain dependency direction.
+
+use std::{fs, path::Path};
+
+fn rust_files(root: &Path, output: &mut Vec<std::path::PathBuf>) {
+    for entry in fs::read_dir(root).expect("read source directory") {
+        let path = entry.expect("read source entry").path();
+        if path.is_dir() {
+            rust_files(&path, output);
+        } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
+            output.push(path);
+        }
+    }
+}
+
+#[test]
+fn domain_and_application_do_not_depend_on_cli_rendering() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&root, &mut files);
+    let violations = files
+        .into_iter()
+        .filter(|path| !path.starts_with(root.join("cli")))
+        .filter_map(|path| {
+            let source = fs::read_to_string(&path).expect("read Rust source");
+            (source.contains("outputln!")
+                || source.contains("crate::cli")
+                || source.contains("cli::commands"))
+            .then_some(path)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        violations.is_empty(),
+        "non-CLI modules depend on CLI output or commands: {violations:#?}"
+    );
+}
+
+#[test]
+fn generic_cli_has_no_esp_phy_prefix_defaults() {
+    let arguments =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/arguments.rs"))
+            .expect("read typed CLI arguments");
+    for forbidden in [
+        "default_value = \"phy_\"",
+        "default_value = \"open_phy_trace_\"",
+    ] {
+        assert!(
+            !arguments.contains(forbidden),
+            "generic CLI contains target-specific default {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn execution_environment_contracts_do_not_live_in_the_riscv_backend() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/backend-riscv/src/execution");
+    let mut files = Vec::new();
+    rust_files(&root, &mut files);
+    let source = files
+        .into_iter()
+        .map(|path| fs::read_to_string(path).expect("read backend execution source"))
+        .collect::<String>();
+    for forbidden in [
+        "pub enum DeviceModelSpec",
+        "pub struct DeviceModelDescriptor",
+        "pub struct TableInstance",
+        "pub enum TableLifecycleEvent",
+        "mod device;",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "RISC-V backend still owns architecture-neutral contract {forbidden}"
+        );
+    }
+}
+
+#[test]
+fn register_catalog_uses_the_typed_model_without_an_xml_round_trip() {
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/register_catalog.rs"))
+            .expect("read register catalog adapter");
+    let production = source.split("#[cfg(test)]").next().unwrap();
+    for forbidden in ["render_svd()", "MmioMap::parse("] {
+        assert!(
+            !production.contains(forbidden),
+            "register catalog still contains model-to-SVD round trip {forbidden}"
+        );
+    }
+}

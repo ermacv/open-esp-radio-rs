@@ -148,85 +148,8 @@ pub(crate) struct VerificationCommandReport<'a> {
     pub(crate) report: Option<PublishedVerificationReport>,
 }
 
-pub(crate) fn render_verification_human(report: &VerificationCommandReport<'_>) {
-    outputln!(
-        "{}: {}",
-        report.command,
-        if report.verification.passed {
-            "passed"
-        } else {
-            "failed"
-        }
-    );
-    for source in report.sources {
-        outputln!(
-            "  {}: {} functions, {} matched, {} mismatched, {} incomplete, {} missing",
-            source.source,
-            source.summary.vendor_functions,
-            source.summary.matched,
-            source.summary.mismatched,
-            source.summary.incomplete,
-            source.summary.missing,
-        );
-        for function in &source.functions {
-            outputln!(
-                "    {}: {}",
-                function.vendor_symbol,
-                function.status.label()
-            );
-        }
-    }
-    if let Some(comparison) = report.evidence_comparison {
-        outputln!(
-            "  evidence baseline: {} ({} expected, {} actual, {} regressions)",
-            if comparison.passed {
-                "passed"
-            } else {
-                "failed"
-            },
-            comparison.expected,
-            comparison.actual,
-            comparison.regressions.len(),
-        );
-    }
-    if let Some(publication) = &report.report {
-        outputln!("  report: {} ({})", publication.path, publication.status);
-    }
-}
-
-pub(crate) fn render_verification_tsv(report: &VerificationCommandReport<'_>) {
-    outputln!(
-        "verification\t{}\t{}",
-        report.command,
-        if report.verification.passed {
-            "passed"
-        } else {
-            "failed"
-        }
-    );
-    for source in report.sources {
-        outputln!(
-            "source\t{}\tfunctions={}\tmatched={}\tmismatched={}\tincomplete={}\tmissing={}",
-            source.source,
-            source.summary.vendor_functions,
-            source.summary.matched,
-            source.summary.mismatched,
-            source.summary.incomplete,
-            source.summary.missing,
-        );
-        for function in &source.functions {
-            outputln!(
-                "function\t{}\t{}\t{}",
-                function.source,
-                function.vendor_symbol,
-                function.status.label()
-            );
-        }
-    }
-}
-
 impl FunctionVerificationStatus {
-    const fn label(self) -> &'static str {
+    pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Match => "match",
             Self::Mismatch => "mismatch",

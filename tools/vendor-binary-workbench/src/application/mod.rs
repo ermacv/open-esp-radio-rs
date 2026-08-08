@@ -5,6 +5,7 @@ mod model;
 mod operations;
 mod resolve;
 mod snapshot;
+pub(crate) mod status;
 
 use std::{
     collections::BTreeMap,
@@ -13,14 +14,14 @@ use std::{
 
 pub use error::{ApplicationError, ApplicationResult};
 pub use model::*;
-use resolve::ResolvedProject;
+pub(crate) use resolve::{ProjectContext, ProjectSession, ProjectSessionOptions};
 
 /// Resolved project state and reload-scoped analysis caches.
 ///
 /// This type never writes to CLI stdout and never parses rendered command
 /// output. Frontends receive the same typed reports used by JSON renderers.
 pub struct WorkbenchApplication {
-    resolved: ResolvedProject,
+    resolved: ProjectSession,
     generation: u64,
     analysis_cache: BTreeMap<AnalyzeRequest, AnalysisReport>,
 }
@@ -28,7 +29,7 @@ pub struct WorkbenchApplication {
 impl WorkbenchApplication {
     pub fn open(manifest: &Path) -> ApplicationResult<Self> {
         Ok(Self {
-            resolved: ResolvedProject::open(manifest)?,
+            resolved: ProjectSession::open(manifest)?,
             generation: 1,
             analysis_cache: BTreeMap::new(),
         })
@@ -36,6 +37,14 @@ impl WorkbenchApplication {
 
     pub fn snapshot(&mut self) -> ApplicationResult<WorkspaceSnapshot> {
         Ok(snapshot::collect(&self.resolved, self.generation))
+    }
+
+    /// Load the heavyweight reviewed projection for one stable function identity.
+    pub fn function_detail(
+        &self,
+        identity: &str,
+    ) -> ApplicationResult<Option<FunctionDetailSummary>> {
+        Ok(snapshot::function_detail(&self.resolved, identity)?)
     }
 
     pub fn analyze(&mut self, request: AnalyzeRequest) -> ApplicationResult<AnalysisReport> {
@@ -144,7 +153,7 @@ impl WorkbenchApplication {
     }
 
     pub fn reload(&mut self) -> ApplicationResult<WorkspaceSnapshot> {
-        let mut resolved = ResolvedProject::open(&self.resolved.manifest)?;
+        let mut resolved = ProjectSession::open(&self.resolved.manifest)?;
         std::mem::swap(&mut self.resolved, &mut resolved);
         self.generation = self.generation.saturating_add(1);
         self.analysis_cache.clear();
@@ -187,6 +196,13 @@ mod tests {
                 .any(|diagnostic| diagnostic.message.contains("not been generated"))
         );
         serde_json::to_value(&first).unwrap();
+        assert!(
+            serde_json::to_value(&first)
+                .unwrap()
+                .get("function_details")
+                .is_none(),
+            "workspace index must not eagerly contain heavyweight function details"
+        );
 
         let second = application.reload().unwrap();
         assert_eq!(second.generation, 2);

@@ -12,6 +12,7 @@ pub use open_radio_vendor_backend_riscv::{
     ReferenceResolver, RiscvHarnessSpec, RiscvSummaryHooks, Rv32CallArguments,
     StructuralPointerContext, artifact, codegen, execution,
 };
+pub use open_radio_vendor_execution_model as execution_model;
 pub use open_radio_vendor_harness_esp32s31::{CONTRACTS, entry_contract, external_abi};
 pub use open_radio_vendor_semantics::*;
 
@@ -351,7 +352,7 @@ pub fn artifact_sha256(path: &Path) -> Result<String> {
 
 pub fn seed_ram_word(scenario: &mut execution::Scenario, address: u32, value: u32) {
     write_ram_word(scenario, address, value);
-    scenario.observed_memory.push(execution::MemoryRange {
+    scenario.observed_memory.push(execution_model::MemoryRange {
         start: address,
         length: 4,
     });

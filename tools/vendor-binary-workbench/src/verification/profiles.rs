@@ -151,7 +151,7 @@ fn parse_argument_range(value: &str, line: usize) -> Result<ArgumentRange> {
     Ok(ArgumentRange { index, min, max })
 }
 
-fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModelSpec> {
+fn parse_device_model(value: &str, line: usize) -> Result<crate::execution_model::DeviceModelSpec> {
     let fields = value.split_whitespace().collect::<Vec<_>>();
     let number = |value: &str, field: &str| {
         parse_u32(value)
@@ -170,28 +170,34 @@ fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModel
         value.split(',').map(|value| number(value, field)).collect()
     };
     Ok(match fields.as_slice() {
-        ["constant-read", id, address, bits, value] => execution::DeviceModelSpec::ConstantRead {
-            id: (*id).to_owned(),
-            address: number(address, "address")?,
-            width: width(bits)?,
-            value: number(value, "value")?,
-        },
-        ["sequence-read", id, address, bits, values] => execution::DeviceModelSpec::SequenceRead {
-            id: (*id).to_owned(),
-            address: number(address, "address")?,
-            width: width(bits)?,
-            values: list(values, "sequence value")?,
-        },
-        ["w1c", id, address, bits, initial, clear, read_clear] => execution::DeviceModelSpec::W1c {
-            id: (*id).to_owned(),
-            address: number(address, "address")?,
-            width: width(bits)?,
-            initial_value: number(initial, "initial value")?,
-            clear_mask: number(clear, "clear mask")?,
-            read_clear_mask: number(read_clear, "read-clear mask")?,
-        },
+        ["constant-read", id, address, bits, value] => {
+            crate::execution_model::DeviceModelSpec::ConstantRead {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                value: number(value, "value")?,
+            }
+        }
+        ["sequence-read", id, address, bits, values] => {
+            crate::execution_model::DeviceModelSpec::SequenceRead {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                values: list(values, "sequence value")?,
+            }
+        }
+        ["w1c", id, address, bits, initial, clear, read_clear] => {
+            crate::execution_model::DeviceModelSpec::W1c {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                initial_value: number(initial, "initial value")?,
+                clear_mask: number(clear, "clear mask")?,
+                read_clear_mask: number(read_clear, "read-clear mask")?,
+            }
+        }
         ["read-to-clear", id, address, bits, initial, clear] => {
-            execution::DeviceModelSpec::ReadToClear {
+            crate::execution_model::DeviceModelSpec::ReadToClear {
                 id: (*id).to_owned(),
                 address: number(address, "address")?,
                 width: width(bits)?,
@@ -200,7 +206,7 @@ fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModel
             }
         }
         ["self-clearing", id, address, bits, initial, store, command] => {
-            execution::DeviceModelSpec::SelfClearing {
+            crate::execution_model::DeviceModelSpec::SelfClearing {
                 id: (*id).to_owned(),
                 address: number(address, "address")?,
                 width: width(bits)?,
@@ -209,13 +215,15 @@ fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModel
                 command_mask: number(command, "command mask")?,
             }
         }
-        ["fifo", id, address, bits, reads, writes] => execution::DeviceModelSpec::Fifo {
-            id: (*id).to_owned(),
-            address: number(address, "address")?,
-            width: width(bits)?,
-            read_values: list(reads, "FIFO read value")?,
-            expected_writes: list(writes, "FIFO expected write")?,
-        },
+        ["fifo", id, address, bits, reads, writes] => {
+            crate::execution_model::DeviceModelSpec::Fifo {
+                id: (*id).to_owned(),
+                address: number(address, "address")?,
+                width: width(bits)?,
+                read_values: list(reads, "FIFO read value")?,
+                expected_writes: list(writes, "FIFO expected write")?,
+            }
+        }
         [
             "indexed-bank",
             id,
@@ -223,7 +231,7 @@ fn parse_device_model(value: &str, line: usize) -> Result<execution::DeviceModel
             data_address,
             bits,
             values,
-        ] => execution::DeviceModelSpec::IndexedBank {
+        ] => crate::execution_model::DeviceModelSpec::IndexedBank {
             id: (*id).to_owned(),
             index_address: number(index_address, "index address")?,
             data_address: number(data_address, "data address")?,

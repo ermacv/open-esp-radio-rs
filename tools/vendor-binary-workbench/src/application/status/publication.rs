@@ -1,9 +1,7 @@
 //! Exact read-only comparison of configured derived register outputs.
 
-use super::{
-    super::{ProjectContext, registers},
-    model::{Component, Phase, Readiness},
-};
+use super::model::{Component, Phase, Readiness};
+use crate::{application::ProjectContext, registers};
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     let Some(paths) = &context.project.registers else {

@@ -1,10 +1,10 @@
 //! Direct typed operations used by CLI-independent frontends.
 
-use super::{ResolvedProject, model::*};
+use super::{ProjectSession, model::*};
 use crate::{ObservableEvent, analysis, interfaces::InterfaceWorkspace, verification::*};
 
 pub(super) fn analyze(
-    resolved: &ResolvedProject,
+    resolved: &ProjectSession,
     request: &AnalyzeRequest,
 ) -> crate::Result<AnalysisReport> {
     let trace = analysis::extract(
@@ -32,7 +32,7 @@ pub(super) fn analyze(
 }
 
 pub(super) fn compare(
-    resolved: &ResolvedProject,
+    resolved: &ProjectSession,
     request: CompareRequest,
 ) -> crate::Result<ExecutionComparisonReport> {
     validate_table_instances(resolved, &request.scenarios)?;
@@ -76,7 +76,7 @@ pub(super) fn compare(
 }
 
 pub(super) fn validate_table_instances(
-    resolved: &ResolvedProject,
+    resolved: &ProjectSession,
     scenarios: &[ComparisonScenario],
 ) -> crate::Result<()> {
     let instances = scenarios.iter().flat_map(|scenario| {

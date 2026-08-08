@@ -42,9 +42,9 @@ println!("{} registers", snapshot.registers.registers.len());
 `WorkspaceSnapshot` combines:
 
 - lifecycle readiness and component diagnostics;
-- recovered and reviewed function summaries, context and generalized memory
-  fields, typed replay-required scenario suggestions, pseudo-Rust, and
-  explicitly reviewed logical types;
+- recovered and reviewed function summaries and explicitly reviewed logical
+  types; heavyweight context, memory, scenario and pseudo-Rust details are
+  separate queries;
 - the resolved register catalog and register-review counts;
 - resolved interface contracts, slot ABI, semantic annotations, executable
   model links and concrete call sites;
@@ -56,6 +56,17 @@ diagnostics. They do not prevent a frontend from opening the rest of a valid
 project. Invalid project, target, memory-map, SVD, or reviewed-model inputs fail
 at `open`/`reload`, because continuing with a partially resolved project would
 mix incompatible state.
+
+Function browsing is deliberately split into a light
+`WorkspaceSnapshot::functions` index and per-function detail queries. Heavy
+function context, scenario and pseudo-code data is intentionally absent
+from `WorkspaceSnapshot`. Frontends request one stable identity with
+`WorkbenchApplication::function_detail`; the TUI loads and caches that detail
+only when its function becomes selected.
+Contexts, recovered memory fields, MMIO register links, scenario suggestions,
+an editable profile draft and reviewed-name-enriched pseudo-Rust live only in
+the detail DTO, so list rendering and filtering do not clone or scan the heavy
+representation.
 
 ## Reload and cache ownership
 

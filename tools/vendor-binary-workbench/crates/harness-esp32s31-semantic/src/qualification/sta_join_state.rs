@@ -376,6 +376,7 @@ mod tests {
         let case = CASES[0];
         let exact = execution::ExecutionResult {
             events: Vec::new(),
+            event_producers: Vec::new(),
             timeline: Vec::new(),
             return_value: case.expected_return,
             steps: 0,

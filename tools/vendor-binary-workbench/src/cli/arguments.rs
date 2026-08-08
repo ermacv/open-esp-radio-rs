@@ -354,7 +354,7 @@ pub(crate) struct InspectAnalyzeArgs {
     #[arg(long)]
     pub(crate) companion: Vec<PathBuf>,
     /// Restrict analyzed functions to this symbol prefix.
-    #[arg(long, default_value = "phy_")]
+    #[arg(long)]
     pub(crate) symbol_prefix: String,
     /// Registered entry contract used at the binary boundary.
     #[arg(long, default_value = "none")]
@@ -395,11 +395,11 @@ pub(crate) struct ReferenceBatchArgs {
     #[arg(long)]
     pub(crate) companion: Vec<PathBuf>,
     /// Restrict generated functions to this symbol prefix.
-    #[arg(long, default_value = "phy_")]
+    #[arg(long)]
     pub(crate) symbol_prefix: String,
     /// Prefix applied to generated Rust probe symbols.
-    #[arg(long, default_value = "open_phy_trace_")]
-    pub(crate) probe_prefix: String,
+    #[arg(long)]
+    pub(crate) probe_prefix: Option<String>,
     /// Stable source identifier embedded in generated metadata.
     #[arg(long)]
     pub(crate) source_name: Option<String>,
@@ -622,11 +622,11 @@ pub(crate) struct VerifySourceArgs {
     #[arg(long)]
     pub(crate) profiles: Option<PathBuf>,
     /// Vendor symbol prefix included in source coverage.
-    #[arg(long, default_value = "phy_")]
+    #[arg(long)]
     pub(crate) vendor_prefix: String,
     /// Rust symbol prefix mapped to vendor functions.
-    #[arg(long, default_value = "open_phy_trace_")]
-    pub(crate) rust_prefix: String,
+    #[arg(long)]
+    pub(crate) rust_prefix: Option<String>,
     /// Verification gate defined by the profile manifest.
     #[arg(long, default_value = "completion")]
     pub(crate) gate: String,
@@ -671,8 +671,8 @@ pub(crate) struct VerifyInventoryArgs {
     #[arg(long, conflicts_with = "dispositions")]
     pub(crate) no_dispositions: bool,
     /// Rust symbol prefix mapped to vendor functions.
-    #[arg(long, default_value = "open_phy_trace_")]
-    pub(crate) rust_prefix: String,
+    #[arg(long)]
+    pub(crate) rust_prefix: Option<String>,
     /// Verification gate defined by the profile manifest.
     #[arg(long, default_value = "completion")]
     pub(crate) gate: String,

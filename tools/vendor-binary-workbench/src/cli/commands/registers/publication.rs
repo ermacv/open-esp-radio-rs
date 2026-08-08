@@ -1,188 +1,43 @@
 //! Derived SVD, PAC and PAC-binding publication commands.
 
-use std::path::PathBuf;
-
 use super::*;
 
 mod report;
 
 use report::*;
 
-pub(crate) struct PreparedPublication {
-    output: PathBuf,
-    contents: String,
-    kind: &'static str,
-    report: PublicationReport,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PublicationReadiness {
-    Current,
-    Missing,
-    Stale,
-}
-
-impl PublicationReadiness {
-    pub(crate) const fn label(self) -> &'static str {
-        match self {
-            Self::Current => "ready",
-            Self::Missing => "missing",
-            Self::Stale => "stale",
-        }
-    }
-}
-
-enum PublicationReport {
-    Svd {
-        summary: SvdExportSummary,
-    },
-    Pac {
-        target: PacTarget,
-        edition: PacEdition,
-        summary: SvdExportSummary,
-        api_pack: Option<PathBuf>,
-    },
-    Bindings {
-        crate_name: String,
-        summary: SvdExportSummary,
-    },
-}
-
-impl PreparedPublication {
-    pub(crate) fn readiness(&self) -> Result<PublicationReadiness> {
-        match std::fs::read_to_string(&self.output) {
-            Ok(existing) if existing == self.contents => Ok(PublicationReadiness::Current),
-            Ok(_) => Ok(PublicationReadiness::Stale),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(PublicationReadiness::Missing)
-            }
-            Err(error) => Err(error.into()),
-        }
-    }
-
-    pub(crate) fn output(&self) -> &std::path::Path {
-        &self.output
-    }
-
-    pub(crate) fn write_or_check(&self, check: bool) -> Result<bool> {
-        super::super::super::generated_output::write_or_check(
-            &self.output,
-            &self.contents,
-            check,
-            self.kind,
-        )?;
-        let status = if check { "verified" } else { "written" };
-        match &self.report {
-            PublicationReport::Svd { summary } => emit_svd(status, summary, &self.output),
-            PublicationReport::Pac {
-                target,
-                edition,
-                summary,
-                api_pack,
-            } => emit_pac(
-                status,
-                *target,
-                *edition,
-                summary,
-                api_pack.as_deref(),
-                &self.output,
-            ),
-            PublicationReport::Bindings {
-                crate_name,
-                summary,
-            } => emit_bindings(status, crate_name, summary, &self.output),
-        }
-        Ok(true)
-    }
-}
-
-#[tracing::instrument(name = "prepare_project_svd", skip_all)]
-pub(crate) fn prepare_project_svd(
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<PreparedPublication> {
-    let output = paths
-        .svd_output
-        .clone()
-        .ok_or("project SVD publication is not configured")
-        .map_err(crate::Error::invalid)?;
-    let workspace = load_release_workspace(paths, "release SVD")?;
-    let (contents, summary) = workspace.render_svd()?;
-    Ok(PreparedPublication {
-        output,
-        contents,
-        kind: "SVD",
-        report: PublicationReport::Svd { summary },
-    })
-}
-
-#[tracing::instrument(name = "prepare_project_pac", skip_all)]
-pub(crate) fn prepare_project_pac(
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<PreparedPublication> {
-    let configured = paths
-        .pac
-        .as_ref()
-        .ok_or("project PAC publication is not configured")
-        .map_err(crate::Error::invalid)?;
-    let target = PacTarget::parse(&configured.target)?;
-    let edition = PacEdition::parse(&configured.edition)?;
-    let api_pack = paths
-        .api_pack
-        .as_deref()
-        .map(PacApiPack::load)
-        .transpose()?;
-    let workspace = load_release_workspace(paths, "PAC generation")?;
-    let (svd, summary) = workspace.render_svd()?;
-    let contents = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
-    Ok(PreparedPublication {
-        output: configured.output.clone(),
-        contents,
-        kind: "PAC",
-        report: PublicationReport::Pac {
+pub(crate) fn write_prepared_publication(
+    publication: &PreparedPublication,
+    check: bool,
+) -> Result<bool> {
+    super::super::super::generated_output::write_or_check(
+        publication.output(),
+        publication.contents(),
+        check,
+        publication.kind(),
+    )?;
+    let status = if check { "verified" } else { "written" };
+    match publication.metadata() {
+        PublicationMetadata::Svd { summary } => emit_svd(status, summary, publication.output()),
+        PublicationMetadata::Pac {
             target,
             edition,
             summary,
-            api_pack: paths.api_pack.clone(),
-        },
-    })
-}
-
-pub(crate) fn prepare_project_bindings(
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<PreparedPublication> {
-    let configured = paths
-        .bindings
-        .as_ref()
-        .ok_or("project PAC binding publication is not configured")
-        .map_err(crate::Error::invalid)?;
-    let workspace = load_release_workspace(paths, "PAC binding generation")?;
-    let (svd, summary) = workspace.render_svd()?;
-    let contents =
-        open_esp_radio_register_model::generate_pac_binding_index(&svd, &configured.crate_name)?;
-    Ok(PreparedPublication {
-        output: configured.output.clone(),
-        contents,
-        kind: "PAC binding index",
-        report: PublicationReport::Bindings {
-            crate_name: configured.crate_name.clone(),
+            api_pack,
+        } => emit_pac(
+            status,
+            *target,
+            *edition,
             summary,
-        },
-    })
-}
-
-fn load_release_workspace(
-    paths: &crate::project::RegisterWorkspacePaths,
-    operation: &str,
-) -> Result<ProjectRegisterWorkspace> {
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let summary = workspace.summary()?;
-    if summary.unreviewed != 0 {
-        return Err(crate::Error::invalid(format!(
-            "{operation} denied {} unreviewed MMIO observations",
-            summary.unreviewed
-        )));
+            api_pack.as_deref(),
+            publication.output(),
+        ),
+        PublicationMetadata::Bindings {
+            crate_name,
+            summary,
+        } => emit_bindings(status, crate_name, summary, publication.output()),
     }
-    Ok(workspace)
+    Ok(true)
 }
 
 #[tracing::instrument(name = "export_svd", skip_all)]

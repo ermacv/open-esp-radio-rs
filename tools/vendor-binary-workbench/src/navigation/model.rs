@@ -8,8 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::Result;
-use crate::{artifact_sha256, parse_u32};
+use crate::{Result, artifact_sha256, parse_u32};
 
 pub(super) const SCHEMA_VERSION: u32 = 1;
 pub(super) const IDENTITY_SCHEME: &str = "artifact-sha256-member-symbol-object-address-v1";
@@ -129,7 +128,7 @@ pub(super) struct SummaryDocument {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct NavigationDocument {
+pub(crate) struct NavigationDocument {
     pub(super) schema_version: u32,
     pub(super) command: String,
     pub(super) identity_scheme: String,

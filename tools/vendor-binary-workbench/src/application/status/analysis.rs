@@ -2,10 +2,8 @@
 
 use std::collections::BTreeSet;
 
-use super::{
-    super::ProjectContext,
-    model::{Component, LinkedIrProfileDetail, Phase, Readiness},
-};
+use super::model::{Component, LinkedIrProfileDetail, Phase, Readiness};
+use crate::application::ProjectContext;
 use crate::{
     harnesses, interfaces::InterfaceFacts, project_ir_report::inspect_project_ir_report,
     registers::RegisterFacts, run_spec::InputRole,
@@ -33,7 +31,7 @@ fn navigation_index(context: &ProjectContext<'_>) -> Component {
             .detail("path", spec.output.display().to_string())
             .diagnostic("navigation index has not been generated");
     }
-    match super::super::project_navigation::inspect_report(&spec.output) {
+    match crate::navigation::inspect_report(&spec.output) {
         Ok(summary) => Component::new("navigation_index", Readiness::Ready)
             .detail("path", spec.output.display().to_string())
             .detail("artifacts", summary.artifacts)
@@ -60,7 +58,7 @@ fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
             .detail("path", spec.output.display().to_string())
             .diagnostic("symbol inventory has not been generated");
     }
-    match super::super::symbol_inventory::inspect_report(&spec.output) {
+    match crate::symbol_inventory_report::inspect(&spec.output) {
         Ok(summary) => Component::new("symbol_inventory", Readiness::Ready)
             .detail("path", spec.output.display().to_string())
             .detail("artifacts", summary.artifacts)

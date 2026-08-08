@@ -76,7 +76,7 @@ pub(super) fn run(
                 StageOutcome::Blocked("publication preflight did not complete".to_owned())
             }
             Preparation::Ready(publication) => execute(stage.name, success, || {
-                publication.write_or_check(options.check)
+                registers::write_prepared_publication(&publication, options.check)
             }),
             Preparation::Failed(reason) => StageOutcome::Failed(reason),
             Preparation::NotConfigured(reason) => StageOutcome::NotConfigured(reason),

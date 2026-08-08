@@ -25,6 +25,7 @@ fn write_ir(path: &std::path::Path) {
       "symbol": "vendor_irq",
       "selection": "symbol-prefix-root",
       "complete": true,
+      "mmio_accesses": [],
       "calls": [
         {
           "kind": "internal",
@@ -79,6 +80,7 @@ fn write_ir(path: &std::path::Path) {
       "symbol": "vendor_helper",
       "selection": "reachable-internal",
       "complete": true,
+      "mmio_accesses": [],
       "calls": [
         {
           "kind": "external",

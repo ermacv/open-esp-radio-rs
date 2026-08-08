@@ -241,14 +241,14 @@ fn explicit_execution_model_resolves_without_promoting_semantic_annotation() {
         slot.execution_model.as_ref().unwrap().return_model,
         ExternalReturnModel::Constant(1)
     );
-    let instance = crate::execution::TableInstance {
+    let instance = crate::execution_model::TableInstance {
         layout_id: "fixture::wifi-osi".to_owned(),
         base_address: 0x3fff_1000,
         layout_size: 32,
         pointer_cells: vec![0x3fff_0030],
-        slots: vec![crate::execution::TableInstanceSlot {
+        slots: vec![crate::execution_model::TableInstanceSlot {
             offset: 16,
-            target: crate::execution::TableSlotTarget::Null,
+            target: crate::execution_model::TableSlotTarget::Null,
         }],
     };
     workspace.validate_table_instance(&instance).unwrap();

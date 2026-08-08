@@ -130,7 +130,7 @@ observables differ. `INCOMPLETE` means the workbench cannot make that claim
 because execution, branch/control-flow coverage, MMIO classification or a
 required model is missing.
 
-Schema 7 reports a typed `TraceDiffReport` instead of dumping both complete
+Schema 8 reports a typed `TraceDiffReport` instead of dumping both complete
 outcomes for every difference. It identifies the first differing event, RAM
 change or return value, keeps up to three aligned items before and after it,
 and records the ordered branch/call paths for both sides. Coverage gaps use the
@@ -138,6 +138,10 @@ same typed report with `kind = "coverage"` and remain an `INCOMPLETE` result.
 Every case also retains its source-specific runtime table instances and slot
 targets as typed scenario-environment provenance. This is the shared
 presentation model for JSON, human CLI and the TUI/application layer.
+Every observable event in a diff also retains its producer PC and, when the
+linked image exposes a containing symbol, the symbol plus relative offset.
+This provenance is collected by the concrete executor and is not inferred by
+a renderer. Source file/line enrichment remains a later optional DWARF layer.
 
 The static coverage pass propagates instruction-level constants through direct
 and tail calls. Consequently, a child branch made unreachable by a fixed call

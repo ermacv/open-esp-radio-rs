@@ -120,16 +120,6 @@ pub(crate) fn extract_reference(
     .trace(input.member.as_deref(), &input.symbol, svd)?)
 }
 
-pub(crate) fn print_trace(trace: &FunctionAnalysis) {
-    outputln!("TRACE\t{}\texact={}", trace.symbol, trace.is_exact());
-    for (index, event) in trace.events.iter().enumerate() {
-        outputln!("{index}\t{}", event.canonical());
-    }
-    for blocker in &trace.blockers {
-        outputln!("BLOCKER\t{blocker}");
-    }
-}
-
 pub(crate) fn returns_equal(left: &FunctionAnalysis, right: &FunctionAnalysis) -> bool {
     left.return_value.is_resolved()
         && right.return_value.is_resolved()

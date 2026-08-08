@@ -88,6 +88,7 @@ profiles = ["vendor"]
 output = "generated/reports/function-review.md"
 
 [verification]
+rust-prefix = "open_phy_trace_"
 profiles = ["profiles/compiled-equivalence.profile"]
 ```
 
@@ -194,6 +195,8 @@ names must be unique across the listed files. Artifact paths remain private:
 `rust-artifact` and `rust-companion`. This split lets the read-only browser run
 a reviewed comparison without copying local binary paths into the shareable
 manifest.
+The optional `rust-prefix` is the project-owned convention for unbound Rust
+verification probes. Generic CLI commands do not assume ESP/PHY symbol names.
 
 ## Project-wide generation
 

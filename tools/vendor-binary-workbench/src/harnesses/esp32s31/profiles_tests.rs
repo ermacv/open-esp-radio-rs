@@ -187,7 +187,7 @@ fn profile_models_runtime_tables_as_layout_instances() {
     assert_eq!(scenario.vendor_table_instances[0].slots[0].offset, 4);
     assert!(matches!(
         &scenario.vendor_table_instances[0].slots[0].target,
-        execution::TableSlotTarget::Symbol(symbol) if symbol == "vendor_callback"
+        crate::execution_model::TableSlotTarget::Symbol(symbol) if symbol == "vendor_callback"
     ));
     assert_eq!(scenario.rust_table_instances[0].base_address, 0x5000);
 

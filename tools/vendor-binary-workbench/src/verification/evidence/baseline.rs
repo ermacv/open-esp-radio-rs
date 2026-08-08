@@ -111,32 +111,6 @@ pub(crate) fn compare_evidence_baseline(
     }
 }
 
-pub(crate) fn print_evidence_comparison(comparison: &EvidenceComparison) {
-    for regression in &comparison.regressions {
-        outputln!(
-            "EVIDENCE-REGRESSION\t{}\t{}\texpected={}\tactual={}",
-            regression.source,
-            regression.symbol,
-            regression.expected,
-            regression.actual.as_deref().unwrap_or("missing")
-        );
-    }
-    for addition in &comparison.additions {
-        outputln!(
-            "EVIDENCE-ADDITION\t{}\t{}\t{}",
-            addition.source,
-            addition.symbol,
-            addition.kind
-        );
-    }
-    outputln!(
-        "EVIDENCE-BASELINE\t{}\texpected={}\tactual={}",
-        if comparison.passed { "PASS" } else { "FAIL" },
-        comparison.expected,
-        comparison.actual
-    );
-}
-
 fn evidence_path_identity(path: &Path) -> Result<PathBuf> {
     if path.exists() {
         return Ok(fs::canonicalize(path)?);

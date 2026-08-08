@@ -3,7 +3,6 @@
 use std::collections::BTreeMap;
 
 use super::{
-    Result,
     model::{
         ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
         InventoryObservation, IrObservation, NavigationDocument, SCHEMA_VERSION, SummaryDocument,
@@ -11,9 +10,9 @@ use super::{
     },
     reports::{InterfaceReport, InventoryReport, IrReport, read},
 };
-use crate::{parse_u32, project::ProjectSpec};
+use crate::{Result, parse_u32, project::ProjectSpec};
 
-pub(super) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
+pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
     let symbols_spec = project
         .symbol_inventory
         .as_ref()

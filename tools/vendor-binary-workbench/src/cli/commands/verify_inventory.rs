@@ -81,7 +81,10 @@ pub(super) fn run(
     let rust_companion = arguments.rust_companion;
     let profile_path = arguments.profiles;
     let disposition_path = arguments.dispositions;
-    let rust_prefix = arguments.rust_prefix;
+    let rust_prefix = arguments
+        .rust_prefix
+        .ok_or("verify inventory requires --rust-prefix or project verification.rust-prefix")
+        .map_err(crate::Error::invalid)?;
     let gate_name = arguments.gate;
     let match_floor = arguments.match_floor;
     let evidence_baseline = arguments.evidence_baseline;
@@ -99,13 +102,7 @@ pub(super) fn run(
                 .artifact
                 .ok_or_else(|| format!("source {id} has no artifact"))
                 .map_err(crate::Error::invalid)?;
-            let prefix = input.prefix.unwrap_or_else(|| {
-                if id == "rom" {
-                    "phy_".to_owned()
-                } else {
-                    String::new()
-                }
-            });
+            let prefix = input.prefix.unwrap_or_default();
             Ok(ResolvedSourceInput {
                 id,
                 artifact,
@@ -311,8 +308,8 @@ pub(super) fn run(
     }
     crate::cli::output::render_report(
         &report,
-        || render_verification_human(&report),
-        || render_verification_tsv(&report),
+        || crate::cli::render::verification_human(&report),
+        || crate::cli::render::verification_tsv(&report),
     );
     Ok(passed)
 }

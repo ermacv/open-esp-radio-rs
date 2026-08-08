@@ -38,18 +38,7 @@ mod verify_profiles;
 mod verify_source;
 
 use super::{Command, CommandArguments, MmioMap, Result, TargetSpec};
-
-pub(crate) struct ProjectContext<'a> {
-    pub(crate) project_path: &'a std::path::Path,
-    pub(crate) project: &'a crate::project::ProjectSpec,
-    pub(crate) target_path: &'a std::path::Path,
-    pub(crate) target: &'a TargetSpec,
-    pub(crate) run_spec_path: Option<&'a std::path::Path>,
-    pub(crate) run_spec: Option<&'a crate::run_spec::RunSpec>,
-    pub(crate) memory_map: Option<&'a crate::MemoryMap>,
-    pub(crate) svd_paths: &'a [std::path::PathBuf],
-    pub(crate) svd: &'a MmioMap,
-}
+use crate::application::ProjectContext;
 
 pub(super) fn run_tooling(command: Command, arguments: CommandArguments) -> Result<bool> {
     tooling::run(command, arguments)

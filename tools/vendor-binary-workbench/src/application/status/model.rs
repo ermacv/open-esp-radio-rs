@@ -1,4 +1,4 @@
-//! Small stable status model shared by text and JSON renderers.
+//! Stable project-status model shared by application frontends.
 
 use serde::Serialize;
 use std::collections::BTreeMap;

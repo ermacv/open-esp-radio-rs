@@ -8,7 +8,11 @@ mod tests;
 use std::{env, path::PathBuf};
 
 use super::args::{Command, CommandArguments, ParsedInvocation};
-use crate::{MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec, run_spec::RunSpec};
+use crate::{
+    MemoryMap, MmioMap, ProjectSpec, Result, TargetSpec,
+    application::{ProjectSession, ProjectSessionOptions},
+    run_spec::RunSpec,
+};
 use defaults::{apply_project_defaults, apply_run_spec_defaults, apply_target_defaults};
 
 /// The complete result of configuration resolution.
@@ -150,20 +154,74 @@ fn resolve_from(
         });
     }
 
-    let project = project_path.as_deref().map(ProjectSpec::load).transpose()?;
-    require_project(command, project.as_ref())?;
+    require_project(command, project_path.as_ref())?;
 
-    let target_path = requested_target
-        .or_else(|| project.as_ref().map(|project| project.target_spec.clone()))
-        .ok_or("missing --project or --target-spec, and no vendor-project.toml was found")
-        .map_err(crate::Error::invalid)?;
-    let mut target = TargetSpec::load(&target_path)?;
-    if let Some(pack) = project
-        .as_ref()
-        .and_then(|project| project.platform_pack.as_ref())
-    {
-        pack.apply_to_target(&mut target)?;
-    }
+    let (
+        project,
+        target_path,
+        target,
+        run_spec_path,
+        run_spec,
+        memory_map,
+        resolved_svd_paths,
+        mut svd,
+    ) = if let Some(manifest) = project_path.as_deref() {
+        let session = ProjectSession::open_with(
+            manifest,
+            ProjectSessionOptions {
+                target_spec: requested_target,
+                run_spec: requested_run_spec,
+                svd_paths,
+                load_run_spec: command.uses_run_spec(),
+                load_memory_map: command.uses_memory_map(),
+                load_register_catalog: command.uses_register_catalog(),
+            },
+        )?;
+        (
+            Some(session.project),
+            session.target_path,
+            session.target,
+            session.run_spec_path,
+            session.run_spec,
+            session.memory_map,
+            session.svd_paths,
+            session.mmio,
+        )
+    } else {
+        let target_path = requested_target
+            .ok_or("missing --project or --target-spec, and no vendor-project.toml was found")
+            .map_err(crate::Error::invalid)?;
+        let target = TargetSpec::load(&target_path)?;
+        let run_spec_path = command
+            .uses_run_spec()
+            .then_some(requested_run_spec)
+            .flatten();
+        let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
+        if svd_paths.is_empty() {
+            svd_paths.clone_from(&target.svd_paths);
+        }
+        let memory_map = if command.uses_memory_map() {
+            target
+                .memory_map
+                .as_deref()
+                .map(MemoryMap::load)
+                .transpose()?
+        } else {
+            None
+        };
+        let svd = register_catalog::load(command, &svd_paths, None)?;
+        (
+            None,
+            target_path,
+            target,
+            run_spec_path,
+            run_spec,
+            memory_map,
+            svd_paths,
+            svd,
+        )
+    };
+    let svd_paths = resolved_svd_paths;
     if command.requires_backend() {
         target.require_available_backend()?;
     }
@@ -172,42 +230,10 @@ fn resolve_from(
     }
     trace_resolved_target(command, project_path.as_deref(), project.as_ref(), &target);
 
-    let run_spec_path = if command.uses_run_spec() {
-        requested_run_spec
-            .or_else(|| {
-                project
-                    .as_ref()
-                    .and_then(|project| project.run_spec.clone())
-            })
-            .or_else(|| project_path.as_deref().and_then(discover_local_run_spec))
-    } else {
-        None
-    };
-    let run_spec = run_spec_path.as_deref().map(RunSpec::load).transpose()?;
     if let Some(run_spec) = &run_spec {
         apply_run_spec_defaults(command, &mut command_arguments, run_spec);
     }
-
-    if svd_paths.is_empty() {
-        svd_paths = project
-            .as_ref()
-            .filter(|project| project.svd_configured)
-            .map(|project| project.svd_paths.clone())
-            .unwrap_or_else(|| target.svd_paths.clone());
-    }
     apply_target_defaults(command, &mut command_arguments, &target);
-
-    let memory_map = if command.uses_memory_map() {
-        let project_memory_map = project
-            .as_ref()
-            .and_then(|project| project.memory_map.as_deref());
-        project_memory_map
-            .or(target.memory_map.as_deref())
-            .map(MemoryMap::load)
-            .transpose()?
-    } else {
-        None
-    };
     apply_project_defaults(
         command,
         &mut command_arguments,
@@ -215,7 +241,6 @@ fn resolve_from(
         memory_map.as_ref(),
     )?;
 
-    let mut svd = register_catalog::load(command, &svd_paths, project.as_ref())?;
     if let Some(memory_map) = &memory_map {
         svd.regions.extend(memory_map.resolved_mmio_regions()?);
         svd.regions
@@ -245,12 +270,7 @@ fn resolve_from(
     )))
 }
 
-fn discover_local_run_spec(project_path: &std::path::Path) -> Option<PathBuf> {
-    let path = project_path.parent()?.join("local.run");
-    path.is_file().then_some(path)
-}
-
-fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()> {
+fn require_project(command: Command, project: Option<&PathBuf>) -> Result<()> {
     if matches!(
         command,
         Command::ProjectDoctor

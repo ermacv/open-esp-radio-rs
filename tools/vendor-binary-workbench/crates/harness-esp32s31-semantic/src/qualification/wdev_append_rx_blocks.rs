@@ -589,6 +589,7 @@ mod tests {
         let exact = expected_rust_events(case);
         let result = execution::ExecutionResult {
             events: exact.clone(),
+            event_producers: Vec::new(),
             timeline: Vec::new(),
             return_value: expected_return(case),
             steps: 0,

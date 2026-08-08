@@ -1,9 +1,7 @@
 //! Reviewed register, interface, function, and context workspace readiness.
 
-use super::{
-    super::ProjectContext,
-    model::{Component, Phase, Readiness},
-};
+use super::model::{Component, Phase, Readiness};
+use crate::application::ProjectContext;
 use crate::{
     function_workspace::FunctionWorkspace,
     interfaces::InterfaceWorkspace,

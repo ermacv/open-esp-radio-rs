@@ -10,9 +10,9 @@ use rv_asm::Reg;
 
 use super::{
     DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, ExecutableImage,
-    ExecutionEvent, ExecutionResult, ExecutionTimelineEvent, IndirectCall, MemoryAlias,
-    MemoryOwnership, MemoryRange, OrderedCall, RETURN_SENTINEL, STACK_POINTER, Scenario,
-    TableLifecycleEvent,
+    ExecutionEvent, ExecutionProducer, ExecutionResult, ExecutionTimelineEvent, IndirectCall,
+    MemoryAlias, MemoryOwnership, MemoryRange, OrderedCall, RETURN_SENTINEL, STACK_POINTER,
+    Scenario, TableLifecycleEvent,
 };
 use crate::{MmioMap, Result};
 
@@ -38,6 +38,7 @@ pub(super) struct Machine<'a> {
     pub(super) mmio_reads: BTreeMap<u32, VecDeque<u32>>,
     pub(super) devices: Vec<DeviceRuntime>,
     pub(super) events: Vec<ExecutionEvent>,
+    pub(super) event_producers: Vec<ExecutionProducer>,
     pub(super) timeline: Vec<ExecutionTimelineEvent>,
     pub(super) branches: BTreeSet<(u32, bool)>,
     pub(super) ordered_branches: Vec<(u32, bool)>,
@@ -128,6 +129,7 @@ impl<'a> Machine<'a> {
             mmio_reads: scenario.mmio_reads,
             devices,
             events: Vec::new(),
+            event_producers: Vec::new(),
             timeline: Vec::new(),
             branches: BTreeSet::new(),
             ordered_branches: Vec::new(),
@@ -224,6 +226,7 @@ pub fn execute(
     let initial_memory = machine.initial_overlay.clone();
     Ok(ExecutionResult {
         events: machine.events,
+        event_producers: machine.event_producers,
         timeline: machine.timeline,
         return_value,
         steps: machine.steps,

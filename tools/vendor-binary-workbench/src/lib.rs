@@ -3,12 +3,6 @@
 //! This facade composes neutral contracts and analysis/semantics layers with
 //! the RISC-V backend, ESP32-S31 harness, CLI and verification workflows.
 
-macro_rules! outputln {
-    ($($argument:tt)*) => {{
-        crate::cli::output_line(format_args!($($argument)*));
-    }};
-}
-
 mod analysis;
 mod application;
 mod cli;
@@ -18,6 +12,7 @@ mod function_workspace;
 mod harnesses;
 mod interfaces;
 mod memory_map;
+mod navigation;
 mod orchestration;
 mod parse;
 mod platform_pack;
@@ -29,6 +24,7 @@ mod register_catalog;
 mod registers;
 mod run_spec;
 mod source_id;
+mod symbol_inventory_report;
 mod target;
 #[cfg(test)]
 mod test_support;
@@ -50,19 +46,21 @@ use open_radio_vendor_analysis_model::*;
 use open_radio_vendor_analysis_model::{MmioRegion, Register, reject_register_collisions};
 #[cfg(test)]
 pub(crate) use open_radio_vendor_backend_riscv::Rv32CallArguments;
-pub use open_radio_vendor_backend_riscv::execution::{
+pub use open_radio_vendor_backend_riscv::execution::Scenario as ExecutionScenario;
+pub(crate) use open_radio_vendor_backend_riscv::{
+    artifact, codegen, direct_target_audit, execution, interface_discovery,
+};
+pub(crate) use open_radio_vendor_execution_model as execution_model;
+pub use open_radio_vendor_execution_model::{
     DeviceModel as ExecutionDeviceModel, DeviceModelCoverage as ExecutionDeviceModelCoverage,
     DeviceModelDescriptor as ExecutionDeviceModelDescriptor,
     DeviceModelInstance as ExecutionDeviceModelInstance,
     DeviceModelOutcome as ExecutionDeviceModelOutcome,
     DeviceModelRegistry as ExecutionDeviceModelRegistry,
-    DeviceModelSpec as ExecutionDeviceModelSpec, Scenario as ExecutionScenario,
-    TableInstance as ExecutionTableInstance, TableInstanceSlot as ExecutionTableInstanceSlot,
+    DeviceModelSpec as ExecutionDeviceModelSpec, TableInstance as ExecutionTableInstance,
+    TableInstanceSlot as ExecutionTableInstanceSlot,
     TableLifecycleEvent as ExecutionTableLifecycleEvent,
     TableSlotTarget as ExecutionTableSlotTarget,
-};
-pub(crate) use open_radio_vendor_backend_riscv::{
-    artifact, codegen, direct_target_audit, execution, interface_discovery,
 };
 pub use open_radio_vendor_semantics::{EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict};
 pub(crate) use orchestration::generated_reference;
@@ -75,9 +73,9 @@ use verification::*;
 pub use verification::{
     AlignedTraceItemReport, ArtifactIdentity, ArtifactReport, BranchDecisionReport,
     BranchOutcomeReport, CaseReport, ComparisonSummary, ControlFlowReport, CoverageReport,
-    DeviceModelCoverageReport, DeviceModelReport, DifferenceKind, ExecutionComparisonReport,
-    ExecutionEventReport, ExecutionPathReport, ExecutionPathSideReport, MemoryChangeReport,
-    OrderedCallReport, RuntimeMemoryBindingReport, RuntimeMemoryInstanceReport,
+    DeviceModelCoverageReport, DeviceModelReport, DifferenceKind, EventProducerReport,
+    ExecutionComparisonReport, ExecutionEventReport, ExecutionPathReport, ExecutionPathSideReport,
+    MemoryChangeReport, OrderedCallReport, RuntimeMemoryBindingReport, RuntimeMemoryInstanceReport,
     ScenarioEnvironmentReport, TableInstanceReport, TableInstanceSlotReport, TableLifecycleReport,
     TableSlotTargetReport, TraceDiffReport, TraceItemReport,
 };

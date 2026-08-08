@@ -330,7 +330,12 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     ),
                 ));
             }
-            Ok(VerificationWorkspacePaths { profiles })
+            let rust_prefix =
+                optional_table_string(table, "rust-prefix", "project verification", source)?;
+            Ok(VerificationWorkspacePaths {
+                profiles,
+                rust_prefix,
+            })
         })
         .transpose()?;
     if let Some(symbols) = &symbol_inventory {

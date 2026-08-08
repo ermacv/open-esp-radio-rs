@@ -65,6 +65,14 @@ fn physical_mmio_without_a_register_name_is_an_observable_event() {
             value: 0x1234_5678,
         }]
     );
+    assert_eq!(
+        machine.event_producers,
+        [ExecutionProducer {
+            pc: 0x1000,
+            symbol: Some("test".to_owned()),
+            symbol_offset: Some(0),
+        }]
+    );
 }
 
 #[test]

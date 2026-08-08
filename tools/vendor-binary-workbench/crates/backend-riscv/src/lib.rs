@@ -22,6 +22,9 @@ pub enum Error {
 
     #[error(transparent)]
     Analysis(#[from] open_radio_vendor_analysis_model::Error),
+
+    #[error(transparent)]
+    ExecutionModel(#[from] open_radio_vendor_execution_model::Error),
 }
 
 impl From<String> for Error {

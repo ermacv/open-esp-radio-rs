@@ -351,6 +351,7 @@ cargo vendor-binary-workbench reference generate-batch \
   --artifact "$ESP32S31_ROM_ELF" \
   --companion verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --symbol-prefix phy_ \
+  --probe-prefix open_phy_trace_ \
   --source-name rom \
   --entry-contract esp32s31-phy-registered \
   --output-dir /tmp/esp32s31-rom-references

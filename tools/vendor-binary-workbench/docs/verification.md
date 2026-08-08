@@ -35,6 +35,13 @@ same run-spec role. Artifact revision and authenticity remain caller-owned;
 the workbench reports content hashes but never substitutes its own trust
 policy for the invoking CI job.
 
+Symbol naming conventions are project data, not generic CLI defaults.
+`verification.rust-prefix` supplies the project convention; `--rust-prefix`
+overrides it for focused runs. Per-source vendor prefixes are derived from
+unambiguous project IR profiles or supplied explicitly with `--source-prefix`.
+Standalone verification must pass `--rust-prefix`; an omitted vendor prefix
+selects all named vendor functions.
+
 Function identity is `(source, symbol)`, not the symbol spelling alone. Thus a
 ROM function and an archive function with the same name remain two independent
 rows. Binding-v1 probes are selected by their exact declared name. Unbound

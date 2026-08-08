@@ -21,6 +21,7 @@ crossterm = "=0.29.0"
 indicatif = { version = "=0.18.6", default-features = false, features = ["unicode-width"] }
 miette = { version = "=7.6.0", features = ["fancy"] }
 open-radio-vendor-backend-riscv = { path = "crates/backend-riscv" }
+open-radio-vendor-execution-model = { path = "crates/execution-model" }
 open-radio-vendor-harness-esp32s31 = { path = "crates/harness-esp32s31" }
 open-radio-vendor-harness-esp32s31-semantic = { path = "crates/harness-esp32s31-semantic" }
 open-esp-radio-register-model = { path = "../register-model" }

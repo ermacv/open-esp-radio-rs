@@ -5,17 +5,8 @@ use std::path::Path;
 use super::Result;
 use crate::project::ProjectSpec;
 
-mod build;
-mod inspect;
-mod model;
-mod reports;
-#[cfg(test)]
-mod tests;
-
-pub(super) use inspect::inspect_report;
-
 pub(super) fn run(project: &ProjectSpec, output: &Path, check: bool) -> Result<bool> {
-    let document = build::build(project)?;
+    let document = crate::navigation::build(project)?;
     let rendered = serde_json::to_string_pretty(&document)? + "\n";
     super::super::generated_output::write_or_check(output, &rendered, check, "navigation index")?;
     tracing::info!(

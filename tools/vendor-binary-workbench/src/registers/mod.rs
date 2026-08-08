@@ -6,6 +6,7 @@ mod model_import;
 mod model_tests;
 mod pac;
 mod project_validation;
+mod publication;
 mod review;
 mod review_draft;
 mod review_ir;
@@ -21,5 +22,6 @@ pub(crate) use open_esp_radio_register_model::{
 };
 pub(crate) use pac::*;
 pub(crate) use project_validation::*;
+pub(crate) use publication::*;
 pub(crate) use review::*;
 pub(crate) use workspace::*;

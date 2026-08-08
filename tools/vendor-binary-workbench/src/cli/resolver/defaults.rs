@@ -55,6 +55,79 @@ pub(super) fn apply_project_defaults(
     project: Option<&ProjectSpec>,
     memory_map: Option<&MemoryMap>,
 ) -> Result<()> {
+    if let Some(project) = project {
+        match command_arguments {
+            CommandArguments::VerifySource(arguments) => {
+                if arguments.rust_prefix.is_none() {
+                    arguments.rust_prefix = project
+                        .verification
+                        .as_ref()
+                        .and_then(|verification| verification.rust_prefix.clone());
+                }
+                if arguments.vendor_prefix.is_empty() {
+                    let prefixes = project
+                        .ir_profiles
+                        .iter()
+                        .map(|profile| profile.symbol_prefix.as_str())
+                        .collect::<std::collections::BTreeSet<_>>();
+                    if prefixes.len() == 1 {
+                        arguments.vendor_prefix = prefixes
+                            .into_iter()
+                            .next()
+                            .expect("one project symbol prefix")
+                            .to_owned();
+                    }
+                }
+            }
+            CommandArguments::VerifyInventory(arguments) => {
+                if arguments.rust_prefix.is_none() {
+                    arguments.rust_prefix = project
+                        .verification
+                        .as_ref()
+                        .and_then(|verification| verification.rust_prefix.clone());
+                }
+                let explicit = arguments
+                    .source_prefix
+                    .iter()
+                    .map(|value| value.source.clone())
+                    .collect::<std::collections::BTreeSet<_>>();
+                let configured = arguments
+                    .source_artifact
+                    .iter()
+                    .chain(&arguments.source_inventory)
+                    .chain(&arguments.source_companion)
+                    .map(|value| value.source.clone())
+                    .collect::<std::collections::BTreeSet<_>>();
+                let mut prefixes = std::collections::BTreeMap::<String, String>::new();
+                let mut conflicting = std::collections::BTreeSet::new();
+                for profile in &project.ir_profiles {
+                    for source in &profile.sources {
+                        match prefixes.get(source) {
+                            Some(prefix) if prefix != &profile.symbol_prefix => {
+                                conflicting.insert(source.clone());
+                            }
+                            None => {
+                                prefixes.insert(source.clone(), profile.symbol_prefix.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                for (source, value) in prefixes {
+                    let source = source.parse().map_err(crate::Error::invalid)?;
+                    if configured.contains(&source)
+                        && !explicit.contains(&source)
+                        && !conflicting.contains(source.as_str())
+                    {
+                        arguments
+                            .source_prefix
+                            .push(super::super::SourceValue { source, value });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     if command == Command::SymbolInventory
         && let CommandArguments::SymbolInventory(arguments) = command_arguments
         && arguments.json_report.is_none()

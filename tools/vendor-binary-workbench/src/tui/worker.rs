@@ -6,11 +6,12 @@ use std::{
     thread,
 };
 
-use crate::{WorkbenchApplication, WorkspaceSnapshot};
+use crate::{FunctionDetailSummary, WorkbenchApplication, WorkspaceSnapshot};
 
 enum Command {
     Reload,
     Compare(String),
+    FunctionDetail(String),
     Shutdown,
 }
 
@@ -19,6 +20,10 @@ pub(super) enum Event {
     Comparison {
         name: String,
         report: Box<crate::ExecutionComparisonReport>,
+    },
+    FunctionDetail {
+        identity: String,
+        detail: Option<Box<FunctionDetailSummary>>,
     },
     Error(String),
 }
@@ -59,6 +64,18 @@ impl Worker {
                                 break;
                             }
                         }
+                        Command::FunctionDetail(identity) => {
+                            let event = match application.function_detail(&identity) {
+                                Ok(detail) => Event::FunctionDetail {
+                                    identity,
+                                    detail: detail.map(Box::new),
+                                },
+                                Err(error) => Event::Error(error.to_string()),
+                            };
+                            if event_tx.send(event).is_err() {
+                                break;
+                            }
+                        }
                         Command::Shutdown => break,
                     }
                 }
@@ -82,6 +99,12 @@ impl Worker {
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
     }
 
+    pub(super) fn function_detail(&self, identity: String) -> io::Result<()> {
+        self.commands
+            .send(Command::FunctionDetail(identity))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
+    }
+
     pub(super) fn poll(&self) -> Option<Event> {
         self.events.try_recv().ok()
     }
@@ -90,8 +113,9 @@ impl Worker {
 impl Drop for Worker {
     fn drop(&mut self) {
         let _ = self.commands.send(Command::Shutdown);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        // Dropping a JoinHandle detaches the worker. A comparison may be in a
+        // long-running backend operation that cannot be cancelled safely; TUI
+        // teardown must never wait for it while the terminal is being restored.
+        let _ = self.thread.take();
     }
 }

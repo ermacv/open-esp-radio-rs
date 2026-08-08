@@ -11,6 +11,11 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         .rust_artifact
         .ok_or("missing --rust-artifact")
         .map_err(crate::Error::invalid)?;
+    let rust_prefix = arguments
+        .rust_prefix
+        .as_deref()
+        .ok_or("verify source requires --rust-prefix or project verification.rust-prefix")
+        .map_err(crate::Error::invalid)?;
     let gate = VerificationGate::parse(&arguments.gate, arguments.match_floor)?;
     if matches!(gate, VerificationGate::Regression { .. }) && arguments.evidence_baseline.is_none()
     {
@@ -41,14 +46,14 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         source,
         &rust_artifact,
         arguments.rust_companion.as_deref(),
-        &arguments.rust_prefix,
+        rust_prefix,
         &execution_profiles,
         None,
         &mut evidence,
     )?;
     let orphan_probes = orphan_probe_count(
         &rust_artifact,
-        &arguments.rust_prefix,
+        rust_prefix,
         &[(source, &symbols)],
         &BTreeSet::new(),
     )?;
@@ -108,8 +113,8 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     };
     crate::cli::output::render_report(
         &report,
-        || render_verification_human(&report),
-        || render_verification_tsv(&report),
+        || crate::cli::render::verification_human(&report),
+        || crate::cli::render::verification_tsv(&report),
     );
     Ok(passed)
 }

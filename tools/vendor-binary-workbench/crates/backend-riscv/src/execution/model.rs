@@ -5,8 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use super::{DeviceModel, ExecutableImage, execute};
+use super::{ExecutableImage, execute};
 use crate::{MmioMap, Result};
+use open_radio_vendor_execution_model::{
+    DeviceModel, MemoryRange, TableInstance, TableLifecycleEvent,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExecutionEvent {
@@ -41,10 +44,13 @@ pub enum ExecutionTimelineEvent {
     RamWrite { width: u8, address: u32, value: u32 },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
-pub struct MemoryRange {
-    pub start: u32,
-    pub length: u32,
+/// Instruction that produced one observable event, resolved against the
+/// linked image without requiring debug information.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExecutionProducer {
+    pub pc: u32,
+    pub symbol: Option<String>,
+    pub symbol_offset: Option<u32>,
 }
 
 /// Who is allowed to change a RAM range between two modeled CPU calls.
@@ -103,30 +109,6 @@ pub enum ResetPolicy {
     WarmReset,
 }
 
-impl MemoryRange {
-    pub(super) fn contains(self, address: u32) -> bool {
-        address
-            .checked_sub(self.start)
-            .is_some_and(|offset| offset < self.length)
-    }
-
-    pub(super) fn contains_access(self, address: u32, width: u8) -> bool {
-        let byte_width = u32::from(width / 8);
-        byte_width != 0
-            && address.checked_add(byte_width).is_some_and(|access_end| {
-                self.start
-                    .checked_add(self.length)
-                    .is_some_and(|range_end| address >= self.start && access_end <= range_end)
-            })
-    }
-
-    pub(super) fn overlaps(self, other: Self) -> bool {
-        let self_end = self.start.saturating_add(self.length);
-        let other_end = other.start.saturating_add(other.length);
-        self.start < other_end && other.start < self_end
-    }
-}
-
 /// One observed range whose reported addresses are normalized for comparison
 /// with a corresponding range in another ELF image.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,65 +151,6 @@ pub struct OrderedCall {
     pub arguments: [u32; 8],
 }
 
-/// Concrete target installed in one runtime function-table slot.
-///
-/// Symbol targets are resolved against the exact executable image immediately
-/// before execution. This keeps linked addresses out of checked-in scenarios.
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub enum TableSlotTarget {
-    Null,
-    Address(u32),
-    Symbol(String),
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub struct TableInstanceSlot {
-    pub offset: u32,
-    pub target: TableSlotTarget,
-}
-
-/// Execution-time contents of one reviewed function-table layout.
-///
-/// `layout_id` is provenance only at this backend boundary. The workbench
-/// layer is responsible for joining it to a reviewed layout contract. The
-/// instance owns concrete placement and contents for one scenario.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TableInstance {
-    pub layout_id: String,
-    pub base_address: u32,
-    pub layout_size: u32,
-    pub pointer_cells: Vec<u32>,
-    pub slots: Vec<TableInstanceSlot>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TableLifecycleEvent {
-    SlotInitialized {
-        layout_id: String,
-        offset: u32,
-        target: u32,
-    },
-    SlotWritten {
-        layout_id: String,
-        offset: u32,
-        width: u8,
-        value: u32,
-        site: u32,
-    },
-    PointerInstalled {
-        layout_id: String,
-        address: u32,
-        base_address: u32,
-    },
-    IndirectCall {
-        layout_id: Option<String>,
-        slot_offset: Option<u32>,
-        site: u32,
-        target: u32,
-        symbol: String,
-    },
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Scenario {
     pub arguments: Vec<u32>,
@@ -266,6 +189,7 @@ pub struct Scenario {
 #[derive(Clone, Debug)]
 pub struct ExecutionResult {
     pub events: Vec<ExecutionEvent>,
+    pub event_producers: Vec<ExecutionProducer>,
     pub timeline: Vec<ExecutionTimelineEvent>,
     pub return_value: u32,
     pub steps: u64,

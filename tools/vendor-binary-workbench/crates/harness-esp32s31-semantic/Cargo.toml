@@ -13,6 +13,7 @@ open-esp-radio-esp32s31-phy = { path = "../../../../driver/chips/esp32s31/phy" }
 open-esp-radio-esp32s31-wifi-mac = { path = "../../../../driver/chips/esp32s31/wifi/mac" }
 open-esp-radio-ieee80211 = { path = "../../../../driver/wifi/ieee80211" }
 open-radio-vendor-backend-riscv = { path = "../backend-riscv" }
+open-radio-vendor-execution-model = { path = "../execution-model" }
 open-radio-vendor-harness-esp32s31 = { path = "../harness-esp32s31" }
 open-radio-vendor-semantics = { path = "../semantics" }
 sha2 = "=0.10.9"

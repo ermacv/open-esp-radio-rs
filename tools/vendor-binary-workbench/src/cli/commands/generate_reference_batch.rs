@@ -196,6 +196,11 @@ pub(super) fn run(
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
+    let probe_prefix = arguments
+        .probe_prefix
+        .as_deref()
+        .ok_or("reference generate-batch requires --probe-prefix")
+        .map_err(crate::Error::invalid)?;
     let artifact = arguments
         .artifact
         .ok_or("missing --artifact")
@@ -262,7 +267,7 @@ pub(super) fn run(
             probe_symbol: probe_symbol(
                 &symbol.name,
                 &arguments.symbol_prefix,
-                &arguments.probe_prefix,
+                probe_prefix,
                 arguments.source_name.as_deref(),
             ),
             exit_a0_modeled: generated_reference.exit_a0_modeled,
@@ -301,7 +306,7 @@ pub(super) fn run(
         artifact: &artifact,
         companions: &arguments.companion,
         symbol_prefix: &arguments.symbol_prefix,
-        probe_prefix: &arguments.probe_prefix,
+        probe_prefix,
         source_name: arguments.source_name.as_deref(),
         entry_contract,
         inventory_count: symbols.len(),

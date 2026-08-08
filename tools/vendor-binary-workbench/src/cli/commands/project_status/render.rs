@@ -5,8 +5,10 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use tabled::{builder::Builder, settings::Style};
 
-use super::model::{DetailValue, Readiness, StatusReport, TargetIdentity};
-use crate::Result;
+use crate::{
+    Result,
+    application::status::model::{DetailValue, Readiness, StatusReport, TargetIdentity},
+};
 
 #[derive(Serialize)]
 struct ProjectIdentity<'a> {
@@ -136,7 +138,7 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::commands::project_status::model::{
+    use crate::application::status::model::{
         Component, Phase, Readiness, StatusReport, TargetIdentity,
     };
 

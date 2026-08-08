@@ -180,6 +180,7 @@ profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
                 directory.join("profiles/compiled.profile"),
                 directory.join("profiles/interrupts.profile"),
             ],
+            rust_prefix: None,
         })
     );
 }

@@ -300,7 +300,7 @@ pub(super) fn declare_state_ownership(
     scenario
         .memory_ownership
         .extend(ranges.iter().map(|range| execution::MemoryOwnership {
-            range: execution::MemoryRange {
+            range: crate::execution_model::MemoryRange {
                 start: state_base + range.offset,
                 length: range.length,
             },

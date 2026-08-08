@@ -147,6 +147,7 @@ pub(crate) struct FunctionWorkspacePaths {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationWorkspacePaths {
     pub(crate) profiles: Vec<PathBuf>,
+    pub(crate) rust_prefix: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

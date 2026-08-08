@@ -2,13 +2,10 @@
 
 use std::{collections::BTreeSet, fs, path::Path};
 
-use super::{
-    Result,
-    model::{
-        IDENTITY_SCHEME, NavigationDocument, SCHEMA_VERSION, SymbolDocument, SymbolKey, address,
-    },
+use super::model::{
+    IDENTITY_SCHEME, NavigationDocument, SCHEMA_VERSION, SymbolDocument, SymbolKey, address,
 };
-use crate::artifact_sha256;
+use crate::{Result, artifact_sha256};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StoredNavigationSummary {

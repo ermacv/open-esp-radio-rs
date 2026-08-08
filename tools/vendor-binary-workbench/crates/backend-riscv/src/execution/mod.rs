@@ -1,20 +1,24 @@
 //! Concrete RV32 execution with interceptable MMIO.
 
-mod device;
 mod image;
 mod machine;
 mod model;
 
-pub use device::{
-    DeviceModel, DeviceModelCoverage, DeviceModelDescriptor, DeviceModelInstance,
-    DeviceModelOutcome, DeviceModelRegistry, DeviceModelSpec,
-};
 pub use image::{CoverageInventory, ExecutableImage};
 pub use machine::execute;
 pub use model::{
-    ExecutionEvent, ExecutionResult, ExecutionSession, ExecutionTimelineEvent, IndirectCall,
-    MemoryAlias, MemoryChange, MemoryOwner, MemoryOwnership, MemoryRange, OrderedCall, ResetPolicy,
-    Scenario, TableInstance, TableInstanceSlot, TableLifecycleEvent, TableSlotTarget,
+    ExecutionEvent, ExecutionProducer, ExecutionResult, ExecutionSession, ExecutionTimelineEvent,
+    IndirectCall, MemoryAlias, MemoryChange, MemoryOwner, MemoryOwnership, OrderedCall,
+    ResetPolicy, Scenario,
+};
+
+use open_radio_vendor_execution_model::{
+    DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, MemoryRange,
+    TableLifecycleEvent, TableSlotTarget,
+};
+#[cfg(test)]
+use open_radio_vendor_execution_model::{
+    DeviceModelRegistry, DeviceModelSpec, TableInstance, TableInstanceSlot,
 };
 
 use image::{RETURN_SENTINEL, STACK_POINTER, execution_stack_contains};

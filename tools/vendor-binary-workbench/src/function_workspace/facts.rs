@@ -106,6 +106,7 @@ pub(crate) struct FunctionFact {
     pub(crate) context_projection_blockers: Vec<String>,
     pub(crate) reachable_functions: Vec<String>,
     pub(crate) calls: Vec<FunctionCallFact>,
+    pub(crate) mmio_addresses: Vec<u32>,
     pub(crate) context_fields: Vec<FunctionContextFieldFact>,
     pub(crate) memory_fields: Vec<FunctionMemoryFieldFact>,
     pub(crate) semantic_operations: Vec<String>,
@@ -264,6 +265,16 @@ fn parse_functions(
                 )?,
                 reachable_functions: strings(summary, "reachable_functions", &context)?,
                 calls: parse_calls(function, &context)?,
+                mmio_addresses: array(function, "mmio_accesses", &context)?
+                    .iter()
+                    .enumerate()
+                    .map(|(access_index, value)| {
+                        let access_context = format!("{context}.mmio_accesses[{access_index}]");
+                        hex_u32(object(value, &access_context)?, "address", &access_context)
+                    })
+                    .collect::<Result<BTreeSet<_>>>()?
+                    .into_iter()
+                    .collect(),
                 context_fields: parse_fields(summary, &context)?,
                 memory_fields: parse_memory_fields(summary, &context)?,
                 semantic_operations: array(summary, "semantic_operations", &context)?

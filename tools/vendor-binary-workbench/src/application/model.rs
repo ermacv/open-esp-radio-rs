@@ -47,6 +47,40 @@ pub enum DiagnosticSeverity {
     Error,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FunctionReviewState {
+    Unreviewed,
+    Reviewed,
+    Ignored,
+}
+
+impl FunctionReviewState {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Unreviewed => "unreviewed",
+            Self::Reviewed => "reviewed",
+            Self::Ignored => "ignored",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FunctionSelection {
+    SymbolPrefixRoot,
+    ReachableInternal,
+}
+
+impl FunctionSelection {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SymbolPrefixRoot => "symbol-prefix-root",
+            Self::ReachableInternal => "reachable-internal",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DiagnosticRecord {
     pub severity: DiagnosticSeverity,
@@ -82,18 +116,26 @@ pub struct FunctionSummary {
     pub identity: String,
     pub symbol: String,
     pub member: Option<String>,
-    pub selection: String,
-    pub review_status: String,
+    pub selection: FunctionSelection,
+    pub review_status: FunctionReviewState,
     pub reviewed_name: Option<String>,
     pub role: Option<String>,
     pub summary: Option<String>,
     pub complete: bool,
     pub blockers: Vec<String>,
     pub semantic_operations: Vec<String>,
+    pub registers: Vec<u32>,
     pub calls: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FunctionDetailSummary {
+    pub identity: String,
+    pub registers: Vec<u32>,
     pub contexts: Vec<FunctionContextSummary>,
     pub memory_fields: Vec<FunctionMemoryFieldSummary>,
     pub scenario_suggestions: Vec<ScenarioSuggestionSummary>,
+    pub profile_draft: Option<String>,
     pub pseudo_rust: String,
 }
 
@@ -148,7 +190,7 @@ pub struct LogicalTypeBindingSummary {
 pub struct LogicalTypeFieldSummary {
     pub offset: i64,
     pub width: u8,
-    pub status: String,
+    pub status: FunctionReviewState,
     pub name: Option<String>,
     pub display_type: Option<String>,
     pub description: Option<String>,

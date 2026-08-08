@@ -4,14 +4,19 @@ The binary entry point only translates the library result into an exit code.
 The implementation is split by responsibility:
 
 - `crates/contracts` is a zero-dependency, architecture-neutral contract model;
-- `crates/analysis-model` owns architecture-neutral symbolic/reference IR, indexed-MMIO
-  proofs and the SVD-derived register catalog;
+- `crates/analysis-model` owns architecture-neutral symbolic/reference IR,
+  indexed-MMIO proofs and the physical register-catalog model populated by SVD
+  imports or direct reviewed-model identities;
 - `tools/register-model` owns the editable schema-2 hardware model, clean SVD
   encoding, generic model invariants and reusable PAC/evidence pack schemas;
 - `crates/semantics` owns architecture-neutral effect-policy, verification
   request/result and evidence-source interfaces;
+- `crates/execution-model` owns architecture-neutral device-model contracts,
+  standard peripheral behavior, concrete function-table instances and their
+  lifecycle evidence;
 - `crates/backend-riscv` owns ELF decoding, RISC-V relocations, reference CFG
-  analysis, code generation, concrete RV32 execution and image auditing;
+  analysis, code generation, the RV32 machine and image auditing; it consumes
+  execution environments from `execution-model`;
 - `crates/harness-esp32s31` owns the external ABI versions and lifecycle
   fixture data and depends only on contracts;
 - `crates/harness-esp32s31-semantic` owns reviewed summaries, typed
@@ -24,7 +29,7 @@ The implementation is split by responsibility:
   semantics to the backend;
 - `project_analysis` owns project-level generic analysis artifacts such as the
   complete symbol inventory and their output-collision invariants;
-- `cli/commands/project_navigation` builds the optional navigation-only join
+- `navigation` builds and strictly validates the optional navigation-only join
   over symbol, linked-IR and interface reports without feeding facts or
   semantics back into those analyzers;
 - `verification` owns profiles, dispositions, evidence and comparisons;
@@ -33,9 +38,10 @@ The implementation is split by responsibility:
 - `verification/vendor/targets/esp32s31` owns the checked target/profile/disposition data;
 - `cli` parses a typed top-level command and dispatches it to those services.
 
-The backend depends only on the neutral contracts/analysis-model crates. Chip-specific
-secondary-return recognition and reviewed summaries are supplied through the
-typed `RiscvHarnessSpec`; the backend contains no platform registry. The
+The backend depends only on neutral contracts, analysis and execution-model
+crates. Chip-specific secondary-return recognition and reviewed summaries are
+supplied through the typed `RiscvHarnessSpec`; the backend contains no platform
+registry and does not own device or callback-table vocabulary. The
 facade does not depend directly on the production PHY: that dependency ends at
 the ESP32-S31 semantic harness boundary.
 
@@ -46,6 +52,11 @@ catalogs through `[registers.evidence]`; their contents remain target-owned.
 The project-owned register commands are the primitive SVD/PAC publication
 operations; `project publish` is their strict, preflighted project-level entry
 point.
+
+The in-memory catalog adapter consumes the register model's expanded typed
+identities directly. SVD is a publication/import boundary, not an internal
+transport between two Rust models; array indices and reviewed names therefore
+cannot be lost through an XML encode/parse round trip.
 
 The hierarchical workflows are `inspect`, `mmio`, `ir`, `reference`, `execute`,
 `verify`, and `image`. Removed flat command spellings are rejected. The
@@ -62,7 +73,8 @@ dispatch path:
 | --- | --- |
 | `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options, command capability policy and `ParsedInvocation` |
 | `cli/arguments.rs` | Typed leaf-command arguments, declarative conflicts and value grammar |
-| `cli/resolver.rs` | Project discovery, project/target/run-spec composition, precedence-aware defaults and owned `ResolvedInvocation` |
+| `application/resolve.rs` | Canonical project session: manifest, target/platform, run spec, memory map and register catalog |
+| `cli/resolver.rs` | Standalone-target resolution plus precedence-aware command defaults over the canonical project session |
 | `cli/resolver/defaults.rs` | Typed CLI > run-spec > project/target argument-default merge |
 | `cli/resolver/register_catalog.rs` | SVD plus reviewed register-model composition |
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
@@ -70,7 +82,8 @@ dispatch path:
 | `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
 | `cli/progress.rs` | TTY/machine-output progress policy and reusable operation/stage spans |
 | `cli/commands/tooling.rs` | Shell completions and roff manual pages generated from the canonical `clap` grammar without loading a project |
-| `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Typed reviewed-workspace DTOs plus human/TSV presentation |
+| `cli/render.rs`, `cli/render/*` | Human/TSV presentation for typed application and verification reports |
+| `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Command-local reviewed-workspace presentation |
 | `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
 | `cli/ui.rs` | miette diagnostics plus tracing/progress layer composition on stderr |
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
@@ -94,10 +107,9 @@ Configuration resolution is a distinct phase:
 
 ```text
 clap argv -> ParsedInvocation
-               + discovered/explicit project
-               + target and platform pack
-               + explicit/project/sibling-local run spec
-               + CLI/project/target SVD and memory defaults
+               + ProjectSession (project/target/platform/run/memory/catalog)
+               + standalone target context when no project is selected
+               + precedence-aware typed command defaults
              -> ResolvedInvocation -> dispatch -> domain workflow
 ```
 
@@ -139,8 +151,8 @@ semantic annotation never becomes executable behavior implicitly. Optional
 `execution-contract` and `execution-model` foreign keys must resolve against
 the selected compiled platform harness and agree on layout size, slot offset,
 ABI arity and semantic operation before the execution model is exposed to
-linked-IR/function review. Runtime table contents remain scenario state for a
-later `TableInstance` layer.
+linked-IR/function review. Runtime table contents are scenario-owned
+`TableInstance` values and never mutate the reviewed layout pack.
 
 `WorkbenchError` deliberately has no `From<String>` or `From<&str>` escape
 hatch. A facade boundary must select `InvalidInput` explicitly, while errors
@@ -344,8 +356,10 @@ that state are grouped by execution concern:
 The state owner constructs the machine and consumes its final result, while
 the dispatcher reaches memory and timeline mutation only through their
 methods. Memory policy is therefore reusable from focused execution tests and
-does not depend on individual instruction encodings. The public `execute`
-facade and scenario/result types are unchanged.
+does not depend on individual instruction encodings. Device behavior and
+runtime table-instance types live in `crates/execution-model`; the RV32 machine
+only maps those architecture-neutral effects to concrete loads, stores and
+indirect calls.
 
 ## RISC-V event-codegen layout
 
@@ -482,22 +496,18 @@ consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,
 pseudo-Rust, and terminal views consistent.
 
-## Remaining large-file review
+## Source boundary guards
 
-Line count is only a signal, but the next useful responsibility reviews are:
-
-- `backend-riscv/src/codegen/mod.rs`: separate the generated Rust runtime
-  scaffold from render state/value-address helpers while retaining the public
-  `codegen::generate` facade.
-
-These should be split only at ownership and invariant boundaries. Moving a
-contiguous block into another file without reducing shared mutable state or
-clarifying the dependency direction is not an architectural improvement.
+`tests/architecture_boundaries.rs` rejects CLI/output dependencies from
+application and domain modules and rejects target-specific PHY defaults in the
+generic grammar. Large files are split only when the move establishes an
+ownership or invariant boundary; line count alone is not a module boundary.
 
 ## Application and frontend boundary
 
 `WorkbenchApplication` is the stateful, CLI-independent project facade. It
-resolves the manifest, target, platform composition, run spec, memory map and
+uses the same canonical `ProjectSession` resolution as project-oriented CLI
+commands for the manifest, target, platform composition, run spec, memory map and
 register catalogs once, owns generation-scoped analysis caches, and exposes
 typed workspace, analysis and execution-comparison reports. The CLI and the
 read-only TUI are consumers of this application state; neither may parse the

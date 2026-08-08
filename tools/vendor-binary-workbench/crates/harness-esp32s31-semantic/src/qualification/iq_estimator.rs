@@ -280,10 +280,12 @@ fn vendor_scenario(case: &IqCase) -> execution::Scenario {
     };
     seed_ram_word(&mut scenario, PHY_PARAM_POINTER, VENDOR_PHY_PARAM);
     crate::write_ram_word(&mut scenario, VENDOR_ACTIVITY_COUNTER, u32::from(u16::MAX));
-    scenario.persistent_memory.push(execution::MemoryRange {
-        start: VENDOR_ACTIVITY_COUNTER,
-        length: 2,
-    });
+    scenario
+        .persistent_memory
+        .push(crate::execution_model::MemoryRange {
+            start: VENDOR_ACTIVITY_COUNTER,
+            length: 2,
+        });
     scenario
         .mmio_initial
         .insert(ESTIMATOR_CONFIG, case.config_initial);
@@ -306,10 +308,12 @@ fn rust_scenario(case: &IqCase) -> execution::Scenario {
         ..execution::Scenario::default()
     };
     crate::write_ram_word(&mut scenario, RUST_STATE, u32::MAX);
-    scenario.persistent_memory.push(execution::MemoryRange {
-        start: RUST_STATE,
-        length: 4,
-    });
+    scenario
+        .persistent_memory
+        .push(crate::execution_model::MemoryRange {
+            start: RUST_STATE,
+            length: 4,
+        });
     scenario
         .mmio_initial
         .insert(ESTIMATOR_CONFIG, case.config_initial);

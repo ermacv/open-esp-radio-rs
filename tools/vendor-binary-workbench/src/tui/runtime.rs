@@ -25,6 +25,7 @@ pub(crate) fn run(manifest: &Path) -> Result<bool> {
     let snapshot = application.snapshot().map_err(|error| error.into_inner())?;
     let mut state = BrowserState::new(snapshot);
     let worker = Worker::start(application)?;
+    request_function_detail(&mut state, &worker);
     ratatui::run(|terminal| event_loop(terminal, &mut state, &worker))?;
     Ok(true)
 }
@@ -41,9 +42,13 @@ fn event_loop(
                 worker::Event::Comparison { name, report } => {
                     state.comparison_finished(name, *report);
                 }
+                worker::Event::FunctionDetail { identity, detail } => {
+                    state.function_detail_finished(identity, detail.map(|detail| *detail));
+                }
                 worker::Event::Error(message) => state.operation_failed(message),
             }
         }
+        request_function_detail(state, worker);
         terminal.draw(|frame| super::view::render(frame, state))?;
         if event::poll(Duration::from_millis(75))?
             && let Event::Key(key) = event::read()?
@@ -63,7 +68,16 @@ fn event_loop(
                 }
                 Action::Quit => return Ok(()),
             }
+            request_function_detail(state, worker);
         }
+    }
+}
+
+fn request_function_detail(state: &mut BrowserState, worker: &Worker) {
+    if let Some(identity) = state.request_function_detail()
+        && let Err(error) = worker.function_detail(identity)
+    {
+        state.operation_failed(error.to_string());
     }
 }
 
@@ -71,8 +85,37 @@ fn handle_key(state: &mut BrowserState, key: KeyEvent) -> Action {
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
     }
+    if state.search_editing {
+        return match key.code {
+            KeyCode::Enter => {
+                state.finish_search();
+                Action::Continue
+            }
+            KeyCode::Esc => {
+                state.clear_search();
+                Action::Continue
+            }
+            KeyCode::Backspace => {
+                state.pop_search();
+                Action::Continue
+            }
+            KeyCode::Char(character) => {
+                state.push_search(character);
+                Action::Continue
+            }
+            _ => Action::Continue,
+        };
+    }
     match key.code {
+        KeyCode::Esc if !state.search_query.is_empty() => {
+            state.clear_search();
+            Action::Continue
+        }
         KeyCode::Esc | KeyCode::Char('q') => Action::Quit,
+        KeyCode::Char('/') => {
+            state.begin_search();
+            Action::Continue
+        }
         KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
             state.select_next_section();
             Action::Continue
@@ -97,8 +140,17 @@ fn handle_key(state: &mut BrowserState, key: KeyEvent) -> Action {
             state.select_last();
             Action::Continue
         }
+        KeyCode::PageDown | KeyCode::Char('d') => {
+            state.scroll_detail_down(8);
+            Action::Continue
+        }
+        KeyCode::PageUp | KeyCode::Char('u') => {
+            state.scroll_detail_up(8);
+            Action::Continue
+        }
         KeyCode::Char('r') => state.begin_reload(),
-        KeyCode::Enter | KeyCode::Char('c') => state.begin_compare(),
+        KeyCode::Enter => state.activate(),
+        KeyCode::Char('c') => state.begin_compare(),
         _ => Action::Continue,
     }
 }

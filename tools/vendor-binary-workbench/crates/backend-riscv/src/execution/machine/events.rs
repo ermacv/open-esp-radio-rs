@@ -2,7 +2,9 @@
 
 use rv_asm::Reg;
 
-use super::super::{ExecutionEvent, ExecutionTimelineEvent, OrderedCall, TableLifecycleEvent};
+use super::super::{
+    ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent, OrderedCall, TableLifecycleEvent,
+};
 use super::Machine;
 use crate::Result;
 
@@ -87,6 +89,12 @@ impl Machine<'_> {
     }
 
     pub(in crate::execution) fn record_event(&mut self, event: ExecutionEvent) {
+        let producer = self.image.symbol_containing(self.pc);
+        self.event_producers.push(ExecutionProducer {
+            pc: self.pc,
+            symbol: producer.map(|(_, symbol)| symbol.to_owned()),
+            symbol_offset: producer.map(|(start, _)| self.pc.wrapping_sub(start)),
+        });
         self.events.push(event.clone());
         self.timeline
             .push(ExecutionTimelineEvent::Observable(event));

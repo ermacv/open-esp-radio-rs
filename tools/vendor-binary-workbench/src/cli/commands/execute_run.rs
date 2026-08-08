@@ -428,8 +428,12 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
             }
         }
     }
-    let uncovered_branches =
-        print_branch_coverage("image", image, &inventory.branch_outcomes, &result.branches);
+    let uncovered_branches = crate::cli::render::branch_coverage(
+        "image",
+        image,
+        &inventory.branch_outcomes,
+        &result.branches,
+    );
     for (address, edge) in &inventory.unresolved_edges {
         outputln!(
             "UNCOVERED-CONTROL-FLOW\timage\t{}\t{edge}",

@@ -63,8 +63,8 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioMap) -> Result<bool> 
     let matched = report.verdict == EquivalenceVerdict::Match;
     crate::cli::output::render_report(
         &report,
-        || print_execution_comparison(&report),
-        || print_execution_comparison(&report),
+        || crate::cli::render::print_execution_comparison(&report),
+        || crate::cli::render::print_execution_comparison(&report),
     );
     Ok(matched)
 }

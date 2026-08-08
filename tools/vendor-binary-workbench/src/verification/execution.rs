@@ -73,7 +73,7 @@ fn coverage_is_complete(coverage: &CoverageReport) -> bool {
     coverage.uncovered_branch_outcomes() == 0 && coverage.uncovered_control_flow() == 0
 }
 
-fn table_instance_report(instance: &execution::TableInstance) -> TableInstanceReport {
+fn table_instance_report(instance: &crate::execution_model::TableInstance) -> TableInstanceReport {
     TableInstanceReport {
         layout_id: instance.layout_id.clone(),
         base_address: instance.base_address,
@@ -85,13 +85,15 @@ fn table_instance_report(instance: &execution::TableInstance) -> TableInstanceRe
             .map(|slot| TableInstanceSlotReport {
                 offset: slot.offset,
                 target: match &slot.target {
-                    execution::TableSlotTarget::Null => TableSlotTargetReport::Null,
-                    execution::TableSlotTarget::Address(address) => {
+                    crate::execution_model::TableSlotTarget::Null => TableSlotTargetReport::Null,
+                    crate::execution_model::TableSlotTarget::Address(address) => {
                         TableSlotTargetReport::Address { address: *address }
                     }
-                    execution::TableSlotTarget::Symbol(symbol) => TableSlotTargetReport::Symbol {
-                        symbol: symbol.clone(),
-                    },
+                    crate::execution_model::TableSlotTarget::Symbol(symbol) => {
+                        TableSlotTargetReport::Symbol {
+                            symbol: symbol.clone(),
+                        }
+                    }
                 },
             })
             .collect(),
@@ -134,9 +136,11 @@ fn memory_instance_report(instance: &RuntimeMemoryInstance) -> RuntimeMemoryInst
     }
 }
 
-fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecycleReport {
+fn table_lifecycle_report(
+    event: &crate::execution_model::TableLifecycleEvent,
+) -> TableLifecycleReport {
     match event {
-        execution::TableLifecycleEvent::SlotInitialized {
+        crate::execution_model::TableLifecycleEvent::SlotInitialized {
             layout_id,
             offset,
             target,
@@ -145,7 +149,7 @@ fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecy
             offset: *offset,
             target: *target,
         },
-        execution::TableLifecycleEvent::SlotWritten {
+        crate::execution_model::TableLifecycleEvent::SlotWritten {
             layout_id,
             offset,
             width,
@@ -158,7 +162,7 @@ fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecy
             value: *value,
             site: *site,
         },
-        execution::TableLifecycleEvent::PointerInstalled {
+        crate::execution_model::TableLifecycleEvent::PointerInstalled {
             layout_id,
             address,
             base_address,
@@ -167,7 +171,7 @@ fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecy
             address: *address,
             base_address: *base_address,
         },
-        execution::TableLifecycleEvent::IndirectCall {
+        crate::execution_model::TableLifecycleEvent::IndirectCall {
             layout_id,
             slot_offset,
             site,
@@ -183,7 +187,9 @@ fn table_lifecycle_report(event: &execution::TableLifecycleEvent) -> TableLifecy
     }
 }
 
-fn device_coverage_report(outcome: &execution::DeviceModelOutcome) -> DeviceModelCoverageReport {
+fn device_coverage_report(
+    outcome: &crate::execution_model::DeviceModelOutcome,
+) -> DeviceModelCoverageReport {
     DeviceModelCoverageReport {
         id: outcome.descriptor.id.clone(),
         kind: outcome.descriptor.kind.clone(),
@@ -472,7 +478,7 @@ pub(crate) fn compare_execution_scenarios(
         EquivalenceVerdict::Match
     };
     Ok(ExecutionComparisonReport {
-        schema_version: 7,
+        schema_version: 8,
         command: "execute compare",
         mode: EquivalenceMode::Physical,
         vendor: vendor_report,

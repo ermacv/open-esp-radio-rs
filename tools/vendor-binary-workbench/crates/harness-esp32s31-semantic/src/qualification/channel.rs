@@ -96,10 +96,12 @@ pub fn vendor_channel_scenario(
     ] {
         scenario.mmio_initial.insert(address, value);
     }
-    scenario.observed_memory.push(execution::MemoryRange {
-        start: phy_param + 0x11c,
-        length: 4,
-    });
+    scenario
+        .observed_memory
+        .push(crate::execution_model::MemoryRange {
+            start: phy_param + 0x11c,
+            length: 4,
+        });
     Ok(scenario)
 }
 

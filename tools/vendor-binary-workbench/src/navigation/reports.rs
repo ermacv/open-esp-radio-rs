@@ -4,7 +4,7 @@ use std::{fs, path::Path};
 
 use serde::Deserialize;
 
-use super::Result;
+use crate::Result;
 
 #[derive(Deserialize)]
 pub(super) struct ArtifactIdentity {

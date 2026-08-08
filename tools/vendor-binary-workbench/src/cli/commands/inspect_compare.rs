@@ -57,8 +57,8 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioMap) -> Result<bool> 
         verdict,
     };
     let render = || {
-        print_trace(&left_trace);
-        print_trace(&right_trace);
+        crate::cli::render::trace(&left_trace);
+        crate::cli::render::trace(&right_trace);
         outputln!(
             "VERDICT\t{}",
             if !complete {

@@ -61,6 +61,7 @@ fn execution_result_with_timeline(
 ) -> execution::ExecutionResult {
     execution::ExecutionResult {
         events: Vec::new(),
+        event_producers: Vec::new(),
         timeline,
         return_value: 0,
         steps: 0,
@@ -182,7 +183,7 @@ fn calibration_record_transfer_matches_independent_vendor_execution() {
     let phy_param = image
         .symbol_address("phy_param")
         .expect("linked vendor fixture must expose phy_param");
-    let record_range = execution::MemoryRange {
+    let record_range = crate::execution_model::MemoryRange {
         start: RECORD_ADDRESS,
         length: RECORD_LEN as u32,
     };

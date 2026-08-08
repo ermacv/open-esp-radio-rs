@@ -9,10 +9,10 @@ use ratatui::{
 };
 
 use super::state::{BrowserState, Section};
-use crate::{
-    CaseReport, DiagnosticSeverity, EquivalenceVerdict, ExecutionEventReport, TraceItemReport,
-    WorkspaceReadiness,
-};
+use crate::{DiagnosticSeverity, WorkspaceReadiness};
+
+mod comparisons;
+mod functions;
 
 const SELECTED: Style = Style::new()
     .fg(Color::Black)
@@ -33,259 +33,14 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
     render_tabs(frame, state, tabs);
     match state.section {
         Section::Overview => render_overview(frame, state, content),
-        Section::Functions => render_functions(frame, state, content),
+        Section::Functions => functions::render(frame, state, content),
         Section::Registers => render_registers(frame, state, content),
         Section::Interfaces => render_interfaces(frame, state, content),
-        Section::Comparisons => render_comparisons(frame, state, content),
+        Section::Comparisons => comparisons::render(frame, state, content),
         Section::Diagnostics => render_diagnostics(frame, state, content),
         Section::Types => render_types(frame, state, content),
     }
     render_footer(frame, state, footer);
-}
-
-fn render_comparisons(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
-    let [list, detail] = columns(area);
-    let rows = state
-        .snapshot
-        .comparisons
-        .iter()
-        .enumerate()
-        .map(|(index, profile)| {
-            let verdict = state
-                .comparisons
-                .get(&profile.name)
-                .map_or("not run", |report| report.verdict.label());
-            Row::new([
-                profile.name.clone(),
-                profile.vendor_source.clone(),
-                profile.scenarios.to_string(),
-                verdict.to_owned(),
-            ])
-            .style(selected_style(index, state.selected()))
-        });
-    frame.render_widget(
-        Table::new(
-            rows,
-            [
-                Constraint::Percentage(50),
-                Constraint::Length(10),
-                Constraint::Length(7),
-                Constraint::Length(12),
-            ],
-        )
-        .header(Row::new(["Profile", "Source", "Cases", "Verdict"]).style(heading()))
-        .block(
-            Block::default()
-                .title(format!(
-                    " Concrete comparisons ({}) ",
-                    state.snapshot.comparisons.len()
-                ))
-                .borders(Borders::ALL),
-        ),
-        list,
-    );
-
-    let lines = state
-        .snapshot
-        .comparisons
-        .get(state.selected())
-        .map(|profile| {
-            let mut lines = vec![
-                field("Profile", &profile.name),
-                field("Manifest", profile.path.display()),
-                field("Vendor", format!("{}::{}", profile.vendor_source, profile.vendor_symbol)),
-                field("Rust", &profile.rust_symbol),
-                field("Scenarios", profile.scenarios),
-            ];
-            let Some(report) = state.comparisons.get(&profile.name) else {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Press Enter or c to execute this reviewed profile.",
-                    Style::new().fg(Color::Cyan),
-                )));
-                return lines;
-            };
-            lines.push(Line::from(""));
-            lines.push(field("Verdict", report.verdict.label()));
-            lines.push(field("Mode", report.mode.label()));
-            lines.push(field(
-                "Summary",
-                format!(
-                    "match={} diff={} incomplete={}",
-                    report.summary.matched, report.summary.different, report.summary.incomplete
-                ),
-            ));
-            lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(
-                "Artifact provenance",
-                Style::new().add_modifier(Modifier::BOLD),
-            )));
-            lines.push(Line::from(format!(
-                "vendor {}  sha256={}", report.vendor.path, report.vendor.sha256
-            )));
-            lines.push(Line::from(format!(
-                "rust   {}  sha256={}", report.rust.path, report.rust.sha256
-            )));
-
-            let vendor_branch_gaps = report.vendor_coverage.uncovered_branch_outcomes();
-            let rust_branch_gaps = report.rust_coverage.uncovered_branch_outcomes();
-            let vendor_flow_gaps = report.vendor_coverage.uncovered_control_flow();
-            let rust_flow_gaps = report.rust_coverage.uncovered_control_flow();
-            if vendor_branch_gaps + rust_branch_gaps + vendor_flow_gaps + rust_flow_gaps != 0 {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Coverage blockers",
-                    Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                )));
-                lines.push(Line::from(format!(
-                    "branches vendor={vendor_branch_gaps} rust={rust_branch_gaps}; control-flow vendor={vendor_flow_gaps} rust={rust_flow_gaps}"
-                )));
-            }
-            for case in &report.cases {
-                lines.push(Line::from(""));
-                match case {
-                    CaseReport::Match {
-                        name,
-                        environment,
-                        events,
-                        memory_changes,
-                        ..
-                    } => {
-                        lines.push(Line::from(Span::styled(
-                            format!("{name}: MATCH"),
-                            Style::new().fg(Color::Green).add_modifier(Modifier::BOLD),
-                        )));
-                        lines.push(Line::from(format!(
-                            "events={events} memory-changes={memory_changes} tables(v/r)={}/{} devices={}",
-                            environment.vendor_tables.len(),
-                            environment.rust_tables.len(),
-                            environment.device_models.len()
-                        )));
-                    }
-                    CaseReport::Diff {
-                        name,
-                        environment,
-                        difference,
-                    } => {
-                        lines.push(Line::from(Span::styled(
-                            format!("{name}: DIFF"),
-                            Style::new().fg(Color::Red).add_modifier(Modifier::BOLD),
-                        )));
-                        lines.push(Line::from(format!(
-                            "first #{} {:?}: vendor={} | rust={}",
-                            difference.first_difference,
-                            difference.kind,
-                            trace_item(difference.vendor.as_ref()),
-                            trace_item(difference.rust.as_ref())
-                        )));
-                        for item in difference
-                            .context_before
-                            .iter()
-                            .chain(&difference.context_after)
-                        {
-                            lines.push(Line::from(format!(
-                                "  #{} {} vendor={} | rust={}",
-                                item.index,
-                                if item.equal { "=" } else { "!" },
-                                trace_item(item.vendor.as_ref()),
-                                trace_item(item.rust.as_ref())
-                            )));
-                        }
-                        lines.push(Line::from(format!(
-                            "evidence: table lifecycle vendor={} rust={}; device coverage vendor={} rust={}",
-                            environment.vendor_table_lifecycle.len(),
-                            environment.rust_table_lifecycle.len(),
-                            environment.vendor_device_coverage.len(),
-                            environment.rust_device_coverage.len()
-                        )));
-                    }
-                    CaseReport::Incomplete {
-                        name,
-                        environment,
-                        vendor_error,
-                        rust_error,
-                    } => {
-                        lines.push(Line::from(Span::styled(
-                            format!("{name}: INCOMPLETE"),
-                            Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                        )));
-                        lines.push(Line::from(format!(
-                            "vendor blocker: {}",
-                            vendor_error.as_deref().unwrap_or("none")
-                        )));
-                        lines.push(Line::from(format!(
-                            "rust blocker: {}",
-                            rust_error.as_deref().unwrap_or("none")
-                        )));
-                        for (side, coverage) in [
-                            ("vendor", &environment.vendor_device_coverage),
-                            ("rust", &environment.rust_device_coverage),
-                        ] {
-                            for model in coverage.iter().filter(|model| !model.complete) {
-                                lines.push(Line::from(format!(
-                                    "{side} device {}: {}",
-                                    model.id,
-                                    model.reason.as_deref().unwrap_or("incomplete")
-                                )));
-                            }
-                        }
-                    }
-                }
-            }
-            if report.verdict == EquivalenceVerdict::Match {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "All requested observables and completeness gates matched.",
-                    Style::new().fg(Color::Green),
-                )));
-            }
-            lines
-        })
-        .unwrap_or_else(|| vec![Line::from("No verification profiles are configured")]);
-    frame.render_widget(
-        detail_paragraph(" Trace, evidence and blockers ", lines),
-        detail,
-    );
-}
-
-fn trace_item(item: Option<&TraceItemReport>) -> String {
-    match item {
-        None => "<missing>".to_owned(),
-        Some(TraceItemReport::Event { event }) => match event {
-            ExecutionEventReport::Read {
-                width,
-                address,
-                register,
-                value,
-                ..
-            } => format!(
-                "READ/{width} {}({address:#010x}) -> {value:#010x}",
-                register.as_deref().unwrap_or("<unnamed>")
-            ),
-            ExecutionEventReport::Write {
-                width,
-                address,
-                register,
-                value,
-                ..
-            } => format!(
-                "WRITE/{width} {}({address:#010x}) <- {value:#010x}",
-                register.as_deref().unwrap_or("<unnamed>")
-            ),
-            ExecutionEventReport::DelayMicros { micros } => format!("DELAY {micros} us"),
-            ExecutionEventReport::Fence {
-                predecessor,
-                successor,
-                ..
-            } => format!("FENCE {predecessor:#x}->{successor:#x}"),
-        },
-        Some(TraceItemReport::Memory { change }) => format!(
-            "RAM {:#010x} {:02x}->{:02x}",
-            change.address, change.before, change.after
-        ),
-        Some(TraceItemReport::ReturnValue { value }) => format!("RETURN {value:#010x}"),
-        Some(TraceItemReport::Coverage { issue }) => format!("COVERAGE {issue}"),
-    }
 }
 
 fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -337,6 +92,9 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .phases
         .iter()
         .enumerate()
+        .filter(|(index, _)| state.is_visible(*index))
+        .skip(state.viewport_start(list_rows(list)))
+        .take(list_rows(list))
         .map(|(index, phase)| {
             let readiness = readiness(phase.status);
             Row::new([
@@ -391,161 +149,10 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_else(|| vec![Line::from("No lifecycle phases")]);
-    frame.render_widget(detail_paragraph(" Components ", lines), detail);
-}
-
-fn render_functions(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
-    let [list, detail] = columns(area);
-    let items = state
-        .snapshot
-        .functions
-        .iter()
-        .enumerate()
-        .map(|(index, function)| {
-            ListItem::new(Line::from(vec![
-                Span::raw(&function.symbol),
-                Span::raw("  "),
-                Span::styled(
-                    &function.review_status,
-                    Style::new().fg(if function.complete {
-                        Color::Green
-                    } else {
-                        Color::Yellow
-                    }),
-                ),
-            ]))
-            .style(selected_style(index, state.selected()))
-        });
     frame.render_widget(
-        List::new(items).block(
-            Block::default()
-                .title(format!(" Functions ({}) ", state.snapshot.functions.len()))
-                .borders(Borders::ALL),
-        ),
-        list,
+        detail_paragraph(" Components ", lines, state.detail_scroll()),
+        detail,
     );
-
-    let lines = state
-        .snapshot
-        .functions
-        .get(state.selected())
-        .map(|function| {
-            let mut lines = vec![
-                field("Identity", &function.identity),
-                field("Source", &function.source),
-                field("Profile", &function.profile),
-                field("Selection", &function.selection),
-                field("Calls", function.calls.to_string()),
-                field("Contexts", function.contexts.len().to_string()),
-                field("Memory fields", function.memory_fields.len()),
-            ];
-            if let Some(role) = &function.role {
-                lines.push(field("Role", role));
-            }
-            if let Some(summary) = &function.summary {
-                lines.push(Line::from(""));
-                lines.push(Line::from(summary.clone()));
-            }
-            if !function.blockers.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Blockers",
-                    Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
-                )));
-                lines.extend(
-                    function
-                        .blockers
-                        .iter()
-                        .map(|blocker| Line::from(format!("- {blocker}"))),
-                );
-            }
-            if !function.memory_fields.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Memory objects",
-                    Style::new().add_modifier(Modifier::BOLD),
-                )));
-                lines.extend(function.memory_fields.iter().map(|field| {
-                    Line::from(format!(
-                        "- {} {:+#x}/{} read={} write={} mask={:#010x}",
-                        field.object,
-                        field.offset,
-                        field.width,
-                        field.reads,
-                        field.writes,
-                        field.write_mask
-                    ))
-                }));
-            }
-            if !function.scenario_suggestions.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Scenario candidates (replay required)",
-                    Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD),
-                )));
-                for suggestion in &function.scenario_suggestions {
-                    lines.push(Line::from(format!(
-                        "- {} @ {}: {}",
-                        suggestion.kind,
-                        suggestion
-                            .site
-                            .map_or_else(|| "-".to_owned(), |site| format!("{site:#010x}")),
-                        suggestion.evidence
-                    )));
-                    for variant in &suggestion.variants {
-                        let arguments = variant
-                            .arguments
-                            .iter()
-                            .map(|argument| format!("a{}={:#010x}", argument.index, argument.value))
-                            .collect::<Vec<_>>()
-                            .join(", ");
-                        let reads = variant
-                            .mmio_reads
-                            .iter()
-                            .map(|read| {
-                                format!(
-                                    "read {:#010x}=[{}]",
-                                    read.address,
-                                    read.values
-                                        .iter()
-                                        .map(|value| format!("{value:#010x}"))
-                                        .collect::<Vec<_>>()
-                                        .join(", ")
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("; ");
-                        lines.push(Line::from(format!(
-                            "    {}  {}{}{}",
-                            variant.name,
-                            arguments,
-                            if arguments.is_empty() || reads.is_empty() {
-                                ""
-                            } else {
-                                "; "
-                            },
-                            reads
-                        )));
-                    }
-                }
-            }
-            if !function.pseudo_rust.is_empty() {
-                lines.push(Line::from(""));
-                lines.push(Line::from(Span::styled(
-                    "Pseudo-Rust",
-                    Style::new().add_modifier(Modifier::BOLD),
-                )));
-                lines.extend(
-                    function
-                        .pseudo_rust
-                        .lines()
-                        .map(|line| Line::from(line.to_owned())),
-                );
-            }
-            lines
-        })
-        .unwrap_or_else(|| vec![Line::from("Function IR/review facts are not available")]);
-    frame.render_widget(detail_paragraph(" Function detail ", lines), detail);
 }
 
 fn render_registers(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -556,6 +163,9 @@ fn render_registers(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .registers
         .iter()
         .enumerate()
+        .filter(|(index, _)| state.is_visible(*index))
+        .skip(state.viewport_start(list_rows(list)))
+        .take(list_rows(list))
         .map(|(index, register)| {
             Row::new([format!("0x{:08x}", register.address), register.name.clone()])
                 .style(selected_style(index, state.selected()))
@@ -566,7 +176,8 @@ fn render_registers(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             .block(
                 Block::default()
                     .title(format!(
-                        " Register catalog ({}) ",
+                        " Register catalog ({}/{}) ",
+                        state.visible_count(),
                         state.snapshot.registers.registers.len()
                     ))
                     .borders(Borders::ALL),
@@ -594,7 +205,10 @@ fn render_registers(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         ));
         lines.push(field("Selected name", &register.name));
     }
-    frame.render_widget(detail_paragraph(" Register workspace ", lines), detail);
+    frame.render_widget(
+        detail_paragraph(" Register workspace ", lines, state.detail_scroll()),
+        detail,
+    );
 }
 
 fn render_interfaces(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -605,6 +219,9 @@ fn render_interfaces(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .slots
         .iter()
         .enumerate()
+        .filter(|(index, _)| state.is_visible(*index))
+        .skip(state.viewport_start(list_rows(list)))
+        .take(list_rows(list))
         .map(|(index, slot)| {
             Row::new([
                 slot.name.clone(),
@@ -626,7 +243,8 @@ fn render_interfaces(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .block(
             Block::default()
                 .title(format!(
-                    " Resolved slots ({}) ",
+                    " Resolved slots ({}/{}) ",
+                    state.visible_count(),
                     state.snapshot.interfaces.slots.len()
                 ))
                 .borders(Borders::ALL),
@@ -663,7 +281,10 @@ fn render_interfaces(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             lines
         })
         .unwrap_or_else(|| vec![Line::from("Interface facts/review pack are not available")]);
-    frame.render_widget(detail_paragraph(" Interface detail ", lines), detail);
+    frame.render_widget(
+        detail_paragraph(" Interface detail ", lines, state.detail_scroll()),
+        detail,
+    );
 }
 
 fn render_diagnostics(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -673,6 +294,9 @@ fn render_diagnostics(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .diagnostics
         .iter()
         .enumerate()
+        .filter(|(index, _)| state.is_visible(*index))
+        .skip(state.viewport_start(list_rows(list)))
+        .take(list_rows(list))
         .map(|(index, diagnostic)| {
             let color = match diagnostic.severity {
                 DiagnosticSeverity::Warning => Color::Yellow,
@@ -689,7 +313,8 @@ fn render_diagnostics(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         List::new(items).block(
             Block::default()
                 .title(format!(
-                    " Diagnostics ({}) ",
+                    " Diagnostics ({}/{}) ",
+                    state.visible_count(),
                     state.snapshot.diagnostics.len()
                 ))
                 .borders(Borders::ALL),
@@ -714,7 +339,10 @@ fn render_diagnostics(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             lines
         })
         .unwrap_or_else(|| vec![Line::from("No diagnostics")]);
-    frame.render_widget(detail_paragraph(" Diagnostic detail ", lines), detail);
+    frame.render_widget(
+        detail_paragraph(" Diagnostic detail ", lines, state.detail_scroll()),
+        detail,
+    );
 }
 
 fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -724,6 +352,9 @@ fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .logical_types
         .iter()
         .enumerate()
+        .filter(|(index, _)| state.is_visible(*index))
+        .skip(state.viewport_start(list_rows(list)))
+        .take(list_rows(list))
         .map(|(index, logical_type)| {
             Row::new([
                 logical_type.name.clone(),
@@ -745,7 +376,8 @@ fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .block(
             Block::default()
                 .title(format!(
-                    " Reviewed types ({}) ",
+                    " Reviewed types ({}/{}) ",
+                    state.visible_count(),
                     state.snapshot.logical_types.len()
                 ))
                 .borders(Borders::ALL),
@@ -785,7 +417,7 @@ fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                     "- {:+#x}/{} {} {}: {}",
                     field.offset,
                     field.width,
-                    field.status,
+                    field.status.label(),
                     field.name.as_deref().unwrap_or("<unnamed>"),
                     field.display_type.as_deref().unwrap_or("-")
                 ))
@@ -793,15 +425,28 @@ fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             lines
         })
         .unwrap_or_else(|| vec![Line::from("No reviewed logical types")]);
-    frame.render_widget(detail_paragraph(" Type unification ", lines), detail);
+    frame.render_widget(
+        detail_paragraph(" Type unification ", lines, state.detail_scroll()),
+        detail,
+    );
 }
 
 fn render_footer(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
-    let status = state.message.as_deref().unwrap_or(if state.busy {
-        "Working..."
+    let status = if state.search_editing {
+        format!("Search: {}_", state.search_query)
+    } else if !state.search_query.is_empty() {
+        format!(
+            "Filter: {}  / edit  Esc clear  PgUp/PgDn detail",
+            state.search_query
+        )
+    } else if let Some(message) = &state.message {
+        message.clone()
+    } else if state.busy {
+        "Working...".to_owned()
     } else {
-        "Tab/←/→ section  j/k select  Enter/c compare  r reload  q quit"
-    });
+        "Tab/←/→ section  j/k select  / search  PgUp/PgDn detail  Enter/c compare  r reload  q quit"
+            .to_owned()
+    };
     frame.render_widget(
         Paragraph::new(status)
             .alignment(Alignment::Center)
@@ -814,24 +459,33 @@ fn render_footer(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     );
 }
 
-fn columns(area: Rect) -> [Rect; 2] {
+pub(super) fn columns(area: Rect) -> [Rect; 2] {
     Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(42), Constraint::Percentage(58)])
         .areas(area)
 }
 
-fn detail_paragraph<'a>(title: &'a str, lines: Vec<Line<'a>>) -> Paragraph<'a> {
+pub(super) fn detail_paragraph<'a>(
+    title: &'a str,
+    lines: Vec<Line<'a>>,
+    scroll: u16,
+) -> Paragraph<'a> {
     Paragraph::new(lines)
         .block(Block::default().title(title).borders(Borders::ALL))
         .wrap(Wrap { trim: false })
+        .scroll((scroll, 0))
 }
 
-fn heading() -> Style {
+pub(super) fn list_rows(area: Rect) -> usize {
+    usize::from(area.height.saturating_sub(2)).max(1)
+}
+
+pub(super) fn heading() -> Style {
     Style::new().add_modifier(Modifier::BOLD).fg(Color::Cyan)
 }
 
-fn selected_style(index: usize, selected: usize) -> Style {
+pub(super) fn selected_style(index: usize, selected: usize) -> Style {
     if index == selected {
         SELECTED
     } else {
@@ -848,7 +502,7 @@ fn readiness(value: WorkspaceReadiness) -> (&'static str, Color) {
     }
 }
 
-fn field<'a>(name: &'a str, value: impl ToString) -> Line<'a> {
+pub(super) fn field<'a>(name: &'a str, value: impl ToString) -> Line<'a> {
     Line::from(vec![
         Span::styled(
             format!("{name}: "),
@@ -935,35 +589,45 @@ mod tests {
         assert!(rendered.contains("analysis"));
         assert!(rendered.contains("generation=7"));
 
-        state.snapshot.functions.push(FunctionSummary {
+        let function = FunctionSummary {
             profile: "phy".to_owned(),
             source: "rom".to_owned(),
             identity: "rom::phy_init".to_owned(),
             symbol: "phy_init".to_owned(),
             member: None,
-            selection: "symbol-prefix-root".to_owned(),
-            review_status: "unreviewed".to_owned(),
+            selection: crate::FunctionSelection::SymbolPrefixRoot,
+            review_status: crate::FunctionReviewState::Unreviewed,
             reviewed_name: None,
             role: None,
             summary: None,
             complete: false,
             blockers: Vec::new(),
             semantic_operations: Vec::new(),
+            registers: Vec::new(),
             calls: 0,
-            contexts: Vec::new(),
-            memory_fields: Vec::new(),
-            scenario_suggestions: vec![ScenarioSuggestionSummary {
-                kind: "argument-branch".to_owned(),
-                site: Some(0x1010),
-                evidence: "arg0 equal 0x1".to_owned(),
-                variants: vec![ScenarioSuggestionVariantSummary {
-                    name: "branch-taken".to_owned(),
-                    arguments: vec![ScenarioArgumentSummary { index: 0, value: 1 }],
-                    mmio_reads: Vec::new(),
+        };
+        state.function_detail_finished(
+            function.identity.clone(),
+            Some(crate::FunctionDetailSummary {
+                identity: function.identity.clone(),
+                registers: Vec::new(),
+                contexts: Vec::new(),
+                memory_fields: Vec::new(),
+                scenario_suggestions: vec![ScenarioSuggestionSummary {
+                    kind: "argument-branch".to_owned(),
+                    site: Some(0x1010),
+                    evidence: "arg0 equal 0x1".to_owned(),
+                    variants: vec![ScenarioSuggestionVariantSummary {
+                        name: "branch-taken".to_owned(),
+                        arguments: vec![ScenarioArgumentSummary { index: 0, value: 1 }],
+                        mmio_reads: Vec::new(),
+                    }],
                 }],
-            }],
-            pseudo_rust: String::new(),
-        });
+                profile_draft: Some("profile draft-phy-init".to_owned()),
+                pseudo_rust: String::new(),
+            }),
+        );
+        state.snapshot.functions.push(function);
         state.section = Section::Functions;
         terminal.draw(|frame| render(frame, &state)).unwrap();
         let rendered = terminal

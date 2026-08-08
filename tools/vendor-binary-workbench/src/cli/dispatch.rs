@@ -45,7 +45,7 @@ fn run_command(invocation: ResolvedCommandInvocation) -> Result<bool> {
     } = invocation;
 
     if matches!(command, Command::ProjectDoctor | Command::ProjectStatus) {
-        let context = commands::ProjectContext {
+        let context = crate::application::ProjectContext {
             project_path: project_path
                 .as_deref()
                 .expect("project inspection requires a manifest path"),

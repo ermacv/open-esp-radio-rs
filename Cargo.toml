@@ -25,6 +25,7 @@ members = [
     "tools/vendor-binary-workbench",
     "tools/vendor-binary-workbench/crates/backend-riscv",
     "tools/vendor-binary-workbench/crates/contracts",
+    "tools/vendor-binary-workbench/crates/execution-model",
     "tools/vendor-binary-workbench/crates/harness-esp32s31",
     "tools/vendor-binary-workbench/crates/harness-esp32s31-semantic",
     "tools/vendor-binary-workbench/crates/analysis-model",

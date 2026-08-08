@@ -35,6 +35,25 @@ impl ExecutableImage {
         self.symbols_by_address.get(&address).map(String::as_str)
     }
 
+    pub(in crate::execution) fn symbol_containing(&self, address: u32) -> Option<(u32, &str)> {
+        let (start, name) = self.symbols_by_address.range(..=address).next_back()?;
+        let end = self
+            .symbol_sizes_by_address
+            .get(start)
+            .and_then(|size| start.checked_add(*size))
+            .or_else(|| {
+                self.symbols_by_address
+                    .range((
+                        std::ops::Bound::Excluded(*start),
+                        std::ops::Bound::Unbounded,
+                    ))
+                    .next()
+                    .map(|(next, _)| *next)
+            });
+        end.map_or(address == *start, |end| address < end)
+            .then_some((*start, name.as_str()))
+    }
+
     pub(in crate::execution) fn relocated_call_at(&self, address: u32) -> Option<&RelocatedCall> {
         self.relocated_calls_by_address.get(&address)
     }

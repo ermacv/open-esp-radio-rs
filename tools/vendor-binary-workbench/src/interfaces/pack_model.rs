@@ -281,7 +281,7 @@ impl InterfaceWorkspace {
 
     pub(crate) fn validate_table_instance(
         &self,
-        instance: &crate::execution::TableInstance,
+        instance: &crate::execution_model::TableInstance,
     ) -> Result<()> {
         let contract = self
             .contracts

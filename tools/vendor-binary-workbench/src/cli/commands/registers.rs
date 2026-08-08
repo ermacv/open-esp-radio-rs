@@ -6,10 +6,10 @@ use crate::{project::ProjectSpec, registers::*};
 mod publication;
 mod report;
 
-pub(super) use publication::{
-    PreparedPublication, PublicationReadiness, prepare_project_bindings, prepare_project_pac,
-    prepare_project_svd,
+pub(super) use crate::registers::{
+    PreparedPublication, prepare_project_bindings, prepare_project_pac, prepare_project_svd,
 };
+pub(super) use publication::write_prepared_publication;
 use publication::{export_svd, generate_bindings, generate_pac_source};
 use report::*;
 

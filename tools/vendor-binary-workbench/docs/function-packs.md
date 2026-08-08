@@ -111,9 +111,9 @@ is generated navigation material and must not be edited.
 `--output PATH` overrides the project destination; `--check` compares without
 writing.
 
-`project build` regenerates linked IR and this report, then validates the pack.
-`project check` reproduces and compares both outputs without mutation. Neither
-command initializes or edits the reviewed pack.
+`project analyze` regenerates linked IR and this report, then validates the
+pack. `project analyze --check` reproduces and compares both outputs without
+mutation. Neither mode initializes or edits the reviewed pack.
 
 ## Pack format
 

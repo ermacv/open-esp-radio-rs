@@ -1,29 +1,30 @@
-# Project build and check pipeline
+# Project analysis pipeline
 
-`project build` is the reproducible, project-wide entry point for generated
-reverse-engineering evidence. `project check` performs the same analyses but
-only compares their rendered results with existing files. It never updates an
-output.
+`project analyze` is the reproducible, project-wide entry point for generated
+reverse-engineering evidence. Its `--check` mode performs the same analyses
+but only compares their rendered results with existing files. It never updates
+an output.
 
 ```console
-cargo vendor-binary-workbench project build \
+cargo vendor-binary-workbench project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 
-cargo vendor-binary-workbench project check \
+cargo vendor-binary-workbench project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 ```
 
 Use `project doctor` first when diagnosing configuration, backend, catalog, or
-private-artifact readiness. Use `project build` after changing inputs or the
-analyzer, and `project check` in CI when the generated evidence is retained.
+private-artifact readiness. Use write mode after changing inputs or the
+analyzer, and `project analyze --check` in CI when generated evidence is
+retained.
 
 ## Pipeline boundary
 
 The pipeline owns only reproducible evidence and read-only validation:
 
-| Stage | Project configuration | Writes during `build` | Behavior during `check` |
+| Stage | Project configuration | Writes in default mode | Behavior with `--check` |
 | --- | --- | --- | --- |
 | `mmio-discovery` | `[registers].facts`, memory map, run spec | MMIO facts JSON | render and compare facts |
 | `interface-discovery` | `[interfaces].facts`, run spec | interface facts JSON | render and compare facts |
@@ -77,17 +78,20 @@ PROJECT-STAGE name=register-review status=blocked reason=linked-ir did not compl
 
 The actual output uses tab separators. Status values are:
 
-- `written`: the build rendered and wrote the configured generated output;
+- `written`: analysis rendered and wrote the configured generated output;
 - `verified`: check mode reproduced the exact existing output, or a read-only
   validation succeeded;
 - `failed`: the stage ran but analysis, comparison, or validation failed;
 - `blocked`: a required input or upstream stage was unavailable;
 - `not-configured`: the optional project feature is absent.
 
-The final `PROJECT-PIPELINE` line aggregates all stages. A `failed` or
-`blocked` stage produces the normal unsuccessful-result exit status. Detailed
-configuration parsing errors that prevent constructing the project at all are
-reported before the pipeline begins.
+The final `PROJECT-ANALYSIS` line aggregates all stages. In JSON and JSONL
+modes the same data is a typed `project-analysis` record with schema,
+`command`, `mode`, `status`, ordered `stages`, reasons and aggregate counts; it
+is not encoded as presentation text. A `failed` or `blocked` stage produces
+the normal unsuccessful-result exit status. Detailed configuration parsing
+errors that prevent constructing the project at all are reported before the
+analysis begins.
 
 ## Strict review coverage
 
@@ -97,7 +101,7 @@ have not yet been reviewed. Add `--deny-unreviewed` when review coverage itself
 is a gate:
 
 ```console
-cargo vendor-binary-workbench project check \
+cargo vendor-binary-workbench project analyze --check \
   --project path/to/vendor-project.toml \
   --run-spec /path/to/local.run \
   --deny-unreviewed
@@ -109,10 +113,10 @@ change discovery, IR generation, or review rendering.
 ## Private inputs
 
 A public project normally omits `run-spec`; callers supply an untracked file
-with authenticated artifact paths. In that case, running `project check`
-without `--run-spec` reports analysis roots and their dependants as `blocked`.
-That is intentionally stricter than `project doctor`, where an omitted local
-run spec is only a readiness warning.
+with authenticated artifact paths. In that case, running `project analyze
+--check` without `--run-spec` reports analysis roots and their dependants as
+`blocked`. That is intentionally stricter than `project doctor`, where an
+omitted local run spec is only a readiness warning.
 
 Both discovery commands also expose the same non-mutating primitive for narrow
 workflows:

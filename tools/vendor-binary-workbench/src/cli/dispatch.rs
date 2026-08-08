@@ -55,13 +55,12 @@ fn run_command(invocation: ResolvedCommandInvocation) -> Result<bool> {
             commands::run_project_status(arguments, context)
         };
     }
-    if matches!(command, Command::ProjectBuild | Command::ProjectCheck) {
-        return commands::run_project_pipeline(
-            command,
+    if command == Command::ProjectAnalyze {
+        return commands::run_project_analysis(
             arguments,
             project
                 .as_ref()
-                .expect("project pipeline requires a loaded project"),
+                .expect("project analysis requires a loaded project"),
             run_spec.as_ref(),
             memory_map.as_ref(),
             &svd,

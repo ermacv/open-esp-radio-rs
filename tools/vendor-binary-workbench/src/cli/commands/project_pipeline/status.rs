@@ -1,32 +1,30 @@
 //! Stage states, aggregation, and stable machine-readable reporting.
 
-use super::{Command, Result};
+use serde::Serialize;
+
+use super::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
-    Build,
+    Write,
     Check,
 }
 
 impl Mode {
-    pub(super) fn parse(command: Command) -> Self {
-        match command {
-            Command::ProjectBuild => Self::Build,
-            Command::ProjectCheck => Self::Check,
-            _ => unreachable!("project pipeline received another command"),
-        }
+    pub(super) const fn from_check(check: bool) -> Self {
+        if check { Self::Check } else { Self::Write }
     }
 
     pub(super) const fn label(self) -> &'static str {
         match self {
-            Self::Build => "build",
+            Self::Write => "write",
             Self::Check => "check",
         }
     }
 
     pub(super) const fn generated_success(self) -> StageSuccess {
         match self {
-            Self::Build => StageSuccess::Written,
+            Self::Write => StageSuccess::Written,
             Self::Check => StageSuccess::Verified,
         }
     }
@@ -65,8 +63,17 @@ impl StageOutcome {
     }
 }
 
+#[derive(Serialize)]
+struct StageReport {
+    name: String,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
 #[derive(Default)]
 pub(crate) struct PipelineSummary {
+    stages: Vec<StageReport>,
     pub(crate) written: usize,
     pub(crate) verified: usize,
     pub(crate) failed: usize,
@@ -75,7 +82,13 @@ pub(crate) struct PipelineSummary {
 }
 
 impl PipelineSummary {
-    fn record(&mut self, outcome: &StageOutcome) {
+    fn record(&mut self, name: &str, outcome: &StageOutcome) {
+        let (status, reason) = outcome_fields(outcome);
+        self.stages.push(StageReport {
+            name: name.to_owned(),
+            status,
+            reason: reason.map(str::to_owned),
+        });
         match outcome {
             StageOutcome::Complete(StageSuccess::Written) => self.written += 1,
             StageOutcome::Complete(StageSuccess::Verified) => self.verified += 1,
@@ -112,18 +125,86 @@ pub(crate) fn execute(
     outcome
 }
 
+pub(super) fn record(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
+    summary.record(name, outcome);
+}
+
 pub(crate) fn report(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
-    summary.record(outcome);
-    let (status, reason) = match outcome {
-        StageOutcome::Complete(success) => (success.label(), None),
-        StageOutcome::Failed(reason) => ("failed", Some(reason)),
-        StageOutcome::Blocked(reason) => ("blocked", Some(reason)),
-        StageOutcome::NotConfigured(reason) => ("not-configured", Some(reason)),
+    summary.record(name, outcome);
+    let stage = summary
+        .stages
+        .last()
+        .expect("the reported stage was recorded");
+    if !crate::cli::output::structured("project-stage", stage) {
+        print_stage(stage);
+    }
+}
+
+pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
+    let document = AnalysisDocument {
+        schema: 1,
+        command: "project analyze",
+        mode: mode.label(),
+        status: if summary.succeeded() { "ok" } else { "failed" },
+        stages: &summary.stages,
+        written: summary.written,
+        verified: summary.verified,
+        failed: summary.failed,
+        blocked: summary.blocked,
+        not_configured: summary.not_configured,
     };
+    if crate::cli::output::structured("project-analysis", &document) {
+        return;
+    }
+    for stage in &summary.stages {
+        print_stage(stage);
+    }
     outputln!(
-        "PROJECT-STAGE\tname={name}\tstatus={status}\treason={}",
-        reason.map_or_else(|| "-".to_owned(), |reason| sanitize(reason))
+        "PROJECT-ANALYSIS\tmode={}\tstatus={}\twritten={}\tverified={}\tfailed={}\tblocked={}\tnot-configured={}",
+        document.mode,
+        document.status,
+        document.written,
+        document.verified,
+        document.failed,
+        document.blocked,
+        document.not_configured,
     );
+}
+
+fn print_stage(stage: &StageReport) {
+    outputln!(
+        "PROJECT-STAGE\tname={}\tstatus={}\treason={}",
+        stage.name,
+        stage.status,
+        stage
+            .reason
+            .as_deref()
+            .map_or_else(|| "-".to_owned(), sanitize)
+    );
+}
+
+fn outcome_fields(outcome: &StageOutcome) -> (&'static str, Option<&str>) {
+    match outcome {
+        StageOutcome::Complete(success) => (success.label(), None),
+        StageOutcome::Failed(reason) => ("failed", Some(reason.as_str())),
+        StageOutcome::Blocked(reason) => ("blocked", Some(reason.as_str())),
+        StageOutcome::NotConfigured(reason) => ("not-configured", Some(reason.as_str())),
+    }
+}
+
+#[derive(Serialize)]
+struct AnalysisDocument<'a> {
+    schema: u32,
+    command: &'static str,
+    mode: &'static str,
+    status: &'static str,
+    stages: &'a [StageReport],
+    written: usize,
+    verified: usize,
+    failed: usize,
+    blocked: usize,
+    #[serde(rename = "not-configured")]
+    not_configured: usize,
 }
 
 fn sanitize(value: &str) -> String {
@@ -154,5 +235,39 @@ mod tests {
     #[test]
     fn diagnostic_reasons_remain_single_line_tsv() {
         assert_eq!(sanitize("first\tsecond\nthird"), "first second third");
+    }
+
+    #[test]
+    fn analysis_document_keeps_stage_states_and_counts_typed() {
+        let mut summary = PipelineSummary::default();
+        record(
+            "linked-ir",
+            &StageOutcome::Complete(StageSuccess::Written),
+            &mut summary,
+        );
+        record(
+            "function-review",
+            &StageOutcome::Blocked("linked IR unavailable".to_owned()),
+            &mut summary,
+        );
+        let document = AnalysisDocument {
+            schema: 1,
+            command: "project analyze",
+            mode: Mode::Write.label(),
+            status: "failed",
+            stages: &summary.stages,
+            written: summary.written,
+            verified: summary.verified,
+            failed: summary.failed,
+            blocked: summary.blocked,
+            not_configured: summary.not_configured,
+        };
+        let value = serde_json::to_value(document).unwrap();
+        assert_eq!(value["command"], "project analyze");
+        assert_eq!(value["mode"], "write");
+        assert_eq!(value["written"], 1);
+        assert_eq!(value["blocked"], 1);
+        assert_eq!(value["stages"][1]["status"], "blocked");
+        assert_eq!(value["stages"][1]["reason"], "linked IR unavailable");
     }
 }

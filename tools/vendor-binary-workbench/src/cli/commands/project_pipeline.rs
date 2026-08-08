@@ -4,7 +4,7 @@ use std::path::Path;
 
 use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
 use crate::cli::{
-    InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectPipelineArgs,
+    InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
     RegisterReviewArgs, ReviewArgs, SourcePath, ValidationArgs,
 };
 use crate::{
@@ -15,7 +15,9 @@ use crate::{
 
 pub(crate) mod status;
 
-use status::{Mode, PipelineSummary, StageOutcome, StageSuccess, execute, report};
+use status::{
+    Mode, PipelineSummary, StageOutcome, StageSuccess, execute, record as report, render,
+};
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct Options {
@@ -23,15 +25,14 @@ struct Options {
 }
 
 pub(super) fn run(
-    command: Command,
-    arguments: ProjectPipelineArgs,
+    arguments: ProjectAnalyzeArgs,
     project: &ProjectSpec,
     run_spec: Option<&RunSpec>,
     memory_map: Option<&MemoryMap>,
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let mode = Mode::parse(command);
+    let mode = Mode::from_check(arguments.check);
     let options = Options {
         deny_unreviewed: arguments.deny_unreviewed,
     };
@@ -211,16 +212,7 @@ pub(super) fn run(
     };
     report("interface-validation", &interface_validation, &mut summary);
 
-    outputln!(
-        "PROJECT-PIPELINE\tmode={}\tstatus={}\twritten={}\tverified={}\tfailed={}\tblocked={}\tnot-configured={}",
-        mode.label(),
-        if summary.succeeded() { "ok" } else { "failed" },
-        summary.written,
-        summary.verified,
-        summary.failed,
-        summary.blocked,
-        summary.not_configured,
-    );
+    render(mode, &summary);
     Ok(summary.succeeded())
 }
 

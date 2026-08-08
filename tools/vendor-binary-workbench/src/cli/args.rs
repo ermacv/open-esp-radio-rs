@@ -170,8 +170,7 @@ leaf_commands!(ProjectCommand {
     Configure(ProjectConfigureArgs) => Command::ProjectConfigure, ProjectConfigure,
     Doctor(EmptyArgs) => Command::ProjectDoctor, Empty,
     Status(ProjectStatusArgs) => Command::ProjectStatus, ProjectStatus,
-    Build(ProjectPipelineArgs) => Command::ProjectBuild, ProjectPipeline,
-    Check(ProjectPipelineArgs) => Command::ProjectCheck, ProjectPipeline,
+    Analyze(ProjectAnalyzeArgs) => Command::ProjectAnalyze, ProjectAnalyze,
     Publish(CheckArgs) => Command::ProjectPublish, Check,
 });
 
@@ -301,7 +300,7 @@ pub(crate) enum CommandArguments {
     ProjectInit(ProjectInitArgs),
     ProjectConfigure(ProjectConfigureArgs),
     ProjectStatus(ProjectStatusArgs),
-    ProjectPipeline(ProjectPipelineArgs),
+    ProjectAnalyze(ProjectAnalyzeArgs),
     Check(CheckArgs),
     Output(OutputArgs),
     Validation(ValidationArgs),
@@ -339,8 +338,7 @@ pub(crate) enum Command {
     ProjectConfigure,
     ProjectDoctor,
     ProjectStatus,
-    ProjectBuild,
-    ProjectCheck,
+    ProjectAnalyze,
     ProjectPublish,
     FunctionInitPack,
     FunctionValidate,
@@ -422,8 +420,7 @@ impl Command {
                 | Self::ProjectConfigure
                 | Self::ProjectDoctor
                 | Self::ProjectStatus
-                | Self::ProjectBuild
-                | Self::ProjectCheck
+                | Self::ProjectAnalyze
                 | Self::ProjectPublish
                 | Self::FunctionInitPack
                 | Self::FunctionValidate
@@ -523,8 +520,7 @@ impl Command {
             | Self::ProjectConfigure
             | Self::ProjectDoctor
             | Self::ProjectStatus
-            | Self::ProjectBuild
-            | Self::ProjectCheck
+            | Self::ProjectAnalyze
             | Self::ProjectPublish
             | Self::FunctionInitPack
             | Self::FunctionValidate
@@ -652,5 +648,28 @@ mod tests {
         let help = error.to_string();
         assert!(help.contains("--api-pack"));
         assert!(help.contains("--deny-unreviewed"));
+    }
+
+    #[test]
+    fn project_analysis_has_one_write_or_check_interface() {
+        let invocation = ParsedInvocation::parse([
+            "project".to_owned(),
+            "analyze".to_owned(),
+            "--check".to_owned(),
+            "--deny-unreviewed".to_owned(),
+        ])
+        .unwrap();
+        assert_eq!(invocation.command, Command::ProjectAnalyze);
+        let CommandArguments::ProjectAnalyze(arguments) = invocation.arguments else {
+            panic!("unexpected argument type")
+        };
+        assert!(arguments.check);
+        assert!(arguments.deny_unreviewed);
+
+        for removed in ["build", "check"] {
+            let error =
+                ParsedInvocation::parse(["project".to_owned(), removed.to_owned()]).unwrap_err();
+            assert!(error.to_string().contains("unrecognized subcommand"));
+        }
     }
 }

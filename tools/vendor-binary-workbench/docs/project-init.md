@@ -91,9 +91,10 @@ cargo vendor-binary-workbench interfaces init-pack --project PATH/vendor-project
 cargo vendor-binary-workbench functions init-pack --project PATH/vendor-project.toml
 ```
 
-After manual review, `project build` refreshes generated analysis evidence,
-`project check` verifies it without writes, and `project publish` derives the
-clean SVD, Rust PAC and binding manifest from reviewed register data.
+After manual review, `project analyze` refreshes generated analysis evidence,
+`project analyze --check` verifies it without writes, and `project publish`
+derives the clean SVD, Rust PAC and binding manifest from reviewed register
+data.
 
 ## Starting with an existing SVD
 

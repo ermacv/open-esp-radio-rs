@@ -78,7 +78,7 @@ cargo vendor-binary-workbench project status \
 `--check` requires `--json-report` and never creates or updates the file. It
 fails when the stored document differs. This detects newly discovered MMIO,
 new interface slots, stale IR, review regressions, or changed publication
-outputs without invoking `project build` or `project publish`.
+outputs without invoking `project analyze` or `project publish`.
 
 ## Status versus doctor
 
@@ -88,6 +88,6 @@ errors useful while fixing a project.
 
 `project status` is the smaller automation contract: stable phase names,
 component states, structured counts and one overall result. It does not mutate
-analysis facts, reviewed packs or publication outputs. Use `project build` to
-refresh generated evidence and `project publish` to write derived register
+analysis facts, reviewed packs or publication outputs. Use `project analyze`
+to refresh generated evidence and `project publish` to write derived register
 artifacts.

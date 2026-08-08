@@ -134,8 +134,8 @@ cargo vendor-binary-workbench interfaces init-pack --project vendor-project.toml
 cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\n\
 ```\n\n\
 Review `registers/peripherals/*.toml`, `interfaces/reviewed.toml` and\n\
-`functions/reviewed.toml`. Then use `project build` to refresh evidence,\n\
-`project check` in analysis CI, and `project publish --check` for SVD/PAC.\n",
+`functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
+`project analyze --check` in analysis CI, and `project publish --check` for SVD/PAC.\n",
         options.id
     )
 }

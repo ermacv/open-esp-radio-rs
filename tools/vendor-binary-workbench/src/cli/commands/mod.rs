@@ -86,8 +86,7 @@ pub(super) fn run_project_status(
     project_status::run(arguments, context)
 }
 
-pub(super) fn run_project_pipeline(
-    command: Command,
+pub(super) fn run_project_analysis(
     arguments: CommandArguments,
     project: &crate::project::ProjectSpec,
     run_spec: Option<&crate::run_spec::RunSpec>,
@@ -95,12 +94,10 @@ pub(super) fn run_project_pipeline(
     svd: &MmioRegisterMap,
     target: &TargetSpec,
 ) -> Result<bool> {
-    let CommandArguments::ProjectPipeline(arguments) = arguments else {
-        unreachable!("project pipeline received another argument type")
+    let CommandArguments::ProjectAnalyze(arguments) = arguments else {
+        unreachable!("project analysis received another argument type")
     };
-    project_pipeline::run(
-        command, arguments, project, run_spec, memory_map, svd, target,
-    )
+    project_pipeline::run(arguments, project, run_spec, memory_map, svd, target)
 }
 
 pub(super) fn run_project_publication(
@@ -185,8 +182,7 @@ pub(super) fn run(
         | Command::ProjectConfigure
         | Command::ProjectDoctor
         | Command::ProjectStatus
-        | Command::ProjectBuild
-        | Command::ProjectCheck
+        | Command::ProjectAnalyze
         | Command::ProjectPublish
         | Command::FunctionInitPack
         | Command::FunctionValidate

@@ -131,3 +131,49 @@ fn quiet_overrides_an_explicit_rust_log_filter() {
     serde_json::from_slice::<serde_json::Value>(&output.stdout)
         .expect("quiet stdout must remain valid JSON");
 }
+
+#[test]
+fn project_analyze_is_the_only_project_analysis_entry_point() {
+    let help = run(&["project", "analyze", "--help"]);
+    assert!(help.status.success());
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("--check"));
+    assert!(help.contains("--deny-unreviewed"));
+
+    for removed in ["build", "check"] {
+        let output = run(&["project", removed]);
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
+    }
+}
+
+#[test]
+fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
+    let output = run(&[
+        "project",
+        "analyze",
+        "--check",
+        "--project",
+        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        "--format",
+        "json",
+        "--color",
+        "never",
+    ]);
+    assert_eq!(output.status.code(), Some(2));
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
+    let report = document["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["kind"] == "project-analysis")
+        .expect("project-analysis record");
+    assert_eq!(report["data"]["schema"], 1);
+    assert_eq!(report["data"]["command"], "project analyze");
+    assert_eq!(report["data"]["mode"], "check");
+    assert_eq!(report["data"]["status"], "failed");
+    assert!(report["data"]["blocked"].as_u64().unwrap() > 0);
+    assert!(report["data"]["stages"].is_array());
+}

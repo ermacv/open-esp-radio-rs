@@ -31,8 +31,8 @@ cargo vendor-binary-workbench mmio discover \
 ```
 
 `--check` therefore requires `--json-report` or a project `[registers].facts`
-default. Use [`project check`](project-pipeline.md) to verify MMIO together
-with the other generated project evidence.
+default. Use [`project analyze --check`](project-pipeline.md) to verify MMIO
+together with the other generated project evidence.
 
 `mmio discover` is a best-effort, artifact-wide inventory for reverse
 engineering register blocks. It accepts multiple ELF/ar inputs and explicit

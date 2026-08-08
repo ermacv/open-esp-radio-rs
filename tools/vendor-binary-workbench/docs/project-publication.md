@@ -70,10 +70,11 @@ Statuses are `written`, `verified`, `failed`, `blocked`, and
 
 ## Relationship to other commands
 
-`project build` and `project check` own generated reverse-engineering evidence:
-MMIO facts, interface facts, linked IR and review reports. They intentionally
-cannot publish a public hardware API. `project publish` owns reviewed register
-outputs and intentionally cannot refresh evidence from proprietary inputs.
+`project analyze` and its `--check` mode own generated reverse-engineering
+evidence: MMIO facts, interface facts, linked IR and review reports. They
+intentionally cannot publish a public hardware API. `project publish` owns
+reviewed register outputs and intentionally cannot refresh evidence from
+proprietary inputs.
 
 The individual `registers validate`, `export-svd`, `generate-pac`, and
 `generate-bindings` commands remain useful for debugging one stage, selecting

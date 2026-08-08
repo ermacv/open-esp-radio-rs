@@ -188,8 +188,7 @@ fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()
         Command::ProjectDoctor
             | Command::ProjectStatus
             | Command::ProjectConfigure
-            | Command::ProjectBuild
-            | Command::ProjectCheck
+            | Command::ProjectAnalyze
             | Command::ProjectPublish
             | Command::FunctionInitPack
             | Command::FunctionValidate

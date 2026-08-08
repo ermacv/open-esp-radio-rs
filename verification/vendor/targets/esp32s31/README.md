@@ -33,11 +33,11 @@ run spec is supplied.
 With a private run spec, the complete generated-evidence workflow is:
 
 ```console
-cargo vendor-binary-workbench project build \
+cargo vendor-binary-workbench project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 
-cargo vendor-binary-workbench project check \
+cargo vendor-binary-workbench project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 ```

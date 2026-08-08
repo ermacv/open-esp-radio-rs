@@ -42,8 +42,8 @@ With this table, `--json-report` is optional. The report is generated facts;
 do not edit it.
 Pass `--check` to reproduce and compare the report without changing it. It
 requires either an explicit `--json-report` or the project `[interfaces].facts`
-default. [`project check`](project-pipeline.md) combines this with MMIO, linked
-IR, register review, and read-only workspace validation.
+default. [`project analyze --check`](project-pipeline.md) combines this with
+MMIO, linked IR, register review, and read-only workspace validation.
 See [reviewed interface and semantic packs](interface-packs.md) for the
 separate `init-pack` and `validate` lifecycle.
 

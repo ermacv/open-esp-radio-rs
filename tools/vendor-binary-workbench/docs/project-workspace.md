@@ -164,15 +164,15 @@ Once the manifest and local run spec are ready, all configured generated
 evidence can be refreshed with one command:
 
 ```console
-cargo vendor-binary-workbench project build \
+cargo vendor-binary-workbench project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/local.run
 ```
 
-`project check` repeats the analyses without writing and verifies byte-stable
-MMIO facts, interface facts, linked IR, pseudo-Rust, register review, and
-function review. Both commands then validate the reviewed register/interface/
-function workspaces read-only.
+`project analyze --check` repeats the analyses without writing and verifies
+byte-stable MMIO facts, interface facts, linked IR, pseudo-Rust, register
+review, and function review. Both modes then validate the reviewed
+register/interface/function workspaces read-only.
 They intentionally exclude SVD and PAC publication. Publish reviewed register
 outputs separately, without a private run spec:
 
@@ -182,7 +182,7 @@ cargo vendor-binary-workbench project publish \
   --check
 ```
 
-See the separate [project build and check pipeline](project-pipeline.md) and
+See the separate [project analysis pipeline](project-pipeline.md) and
 [project publication pipeline](project-publication.md) for their dependency
 and failure models.
 
@@ -322,7 +322,7 @@ Commands now request the knowledge they actually consume:
 | `mmio discover` | yes | explicit/project ranges | no |
 | `ir export` | yes | optional | optional enrichment |
 | `ir build` | yes | optional | optional enrichment |
-| `project build` / `check` | yes | required by MMIO stage | optional IR enrichment |
+| `project analyze [--check]` | yes | required by MMIO stage | optional IR enrichment |
 | `project publish` | no | validation only | no |
 | execute/compare | yes | yes | no |
 | reference/driver/semantic verification | yes | yes | yes |

@@ -62,7 +62,10 @@ pub(crate) struct ProjectStatusArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
-pub(crate) struct ProjectPipelineArgs {
+pub(crate) struct ProjectAnalyzeArgs {
+    /// Reproduce and compare every configured output without changing files.
+    #[arg(long)]
+    pub(crate) check: bool,
     /// Treat unreviewed generated material as a pipeline failure.
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,

@@ -306,10 +306,6 @@ pub(super) fn run(
     if let Some(path) = json_report.as_deref() {
         write_verification_json_report(path, &report)?;
     }
-    crate::cli::output::render_report(
-        &report,
-        || crate::cli::render::verification_human(&report),
-        || crate::cli::render::verification_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)
 }

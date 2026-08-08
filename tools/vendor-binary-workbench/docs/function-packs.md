@@ -94,9 +94,8 @@ implicit acceptance of incomplete evidence. It allows an incremental review.
 or observed field an unsuccessful result.
 
 Lifecycle commands use one typed result model each. The default view uses
-coverage tables for functions, contexts and fields; `--format tsv` retains `FUNCTION-PACK`, `FUNCTION-WORKSPACE`
-and `FUNCTION-REVIEW` rows, and JSON/JSONL emits the corresponding typed
-report directly. When strict coverage fails, validation reports `status =
+coverage tables for functions, contexts and fields; JSON/JSONL emits the
+corresponding typed report directly. When strict coverage fails, validation reports `status =
 "unreviewed"` together with `deny_unreviewed = true`; it never labels a failed
 policy gate as valid.
 

@@ -954,7 +954,7 @@ fn register_lifecycle_commands_emit_one_typed_report() {
 }
 
 #[test]
-fn human_tables_do_not_replace_the_stable_tsv_protocol() {
+fn human_tables_are_presentation_and_removed_tsv_is_rejected() {
     let project = "verification/vendor/targets/esp32s31/vendor-project.toml";
     let human = run(&[
         "registers",
@@ -976,7 +976,7 @@ fn human_tables_do_not_replace_the_stable_tsv_protocol() {
     assert!(human.contains("Checks:\n╭"));
     assert!(!human.contains("REGISTER-WORKSPACE\t"));
 
-    let tsv = run(&[
+    let removed = run(&[
         "registers",
         "validate",
         "--project",
@@ -986,10 +986,9 @@ fn human_tables_do_not_replace_the_stable_tsv_protocol() {
         "--color",
         "never",
     ]);
-    assert!(tsv.status.success());
-    let tsv = String::from_utf8(tsv.stdout).unwrap();
-    assert!(tsv.contains("REGISTER-WORKSPACE\tstatus=valid"));
-    assert!(!tsv.contains('╭'));
+    assert!(!removed.status.success());
+    assert!(removed.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&removed.stderr).contains("invalid value 'tsv'"));
 }
 
 #[test]

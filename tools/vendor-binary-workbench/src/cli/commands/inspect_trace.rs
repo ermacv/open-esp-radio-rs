@@ -16,10 +16,6 @@ pub(super) fn run(arguments: TraceInputArgs, svd: &MmioMap) -> Result<bool> {
     };
     let trace = extract(&input, svd)?;
     let document = trace_document(&trace);
-    crate::cli::output::render_report(
-        &document,
-        || crate::cli::render::trace(&trace),
-        || crate::cli::render::trace(&trace),
-    );
+    crate::cli::output::render_report(&document, || crate::cli::render::trace(&trace));
     Ok(trace.is_exact())
 }

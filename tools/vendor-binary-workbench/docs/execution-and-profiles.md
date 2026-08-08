@@ -286,9 +286,8 @@ selected platform harness a controlled extension point for genuine device
 state machines.
 
 The default `verify profiles` view contains a profile coverage table and a
-scenario table with match, diff or incomplete details. `--format tsv`
-retains the stable trace-oriented rows for scripts; JSON and JSONL serialize
-the same typed aggregate report directly.
+scenario table with match, diff or incomplete details. JSON and JSONL
+serialize the same typed aggregate report directly for automation.
 
 `arg-range` is a closed ABI precondition, not a hint inferred from the listed
 cases. The loader requires an executed case for every value combination in

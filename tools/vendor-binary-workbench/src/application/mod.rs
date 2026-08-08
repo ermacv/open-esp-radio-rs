@@ -3,6 +3,9 @@
 mod error;
 mod model;
 mod operations;
+pub(crate) mod pipeline;
+pub(crate) mod project_analysis;
+pub(crate) mod project_publication;
 mod resolve;
 mod snapshot;
 pub(crate) mod status;

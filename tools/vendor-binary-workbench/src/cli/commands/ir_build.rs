@@ -9,7 +9,7 @@ use std::{
 use serde::Serialize;
 
 use super::{MmioMap, Result, TargetSpec, export_ir};
-use crate::cli::{IrBuildArgs, args::OutputFormat};
+use crate::cli::IrBuildArgs;
 use crate::{
     project::ProjectSpec,
     project_ir::ProjectIrProfile,
@@ -111,13 +111,7 @@ pub(super) fn run(
         documents: document_count,
     };
     if !crate::cli::output::structured(&document) {
-        match crate::cli::output::format() {
-            OutputFormat::Human => print_human(&document),
-            OutputFormat::Tsv => print_tsv(&document),
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                unreachable!("structured IR build output was already emitted")
-            }
-        }
+        print_human(&document);
     }
     Ok(true)
 }
@@ -148,30 +142,6 @@ fn print_human(document: &BuildDocument<'_>) {
             outputln!("  {:<20} pseudo={}", "", pseudo.display());
         }
     }
-}
-
-fn print_tsv(document: &BuildDocument<'_>) {
-    for profile in &document.profiles {
-        outputln!(
-            "IR-PROFILE\tstatus={}\tid={}\tsources={}\tfunctions={}\tregisters={}\tfield-candidates={}\tjson={}\tpseudo={}",
-            profile.status,
-            profile.id,
-            profile.sources,
-            profile.functions,
-            profile.registers,
-            profile.field_candidates,
-            profile.json.display(),
-            profile
-                .pseudo
-                .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
-        );
-    }
-    outputln!(
-        "IR-BUILD\tstatus={}\tprofiles={}\tdocuments={}",
-        document.status,
-        document.profiles.len(),
-        document.documents
-    );
 }
 
 fn select_profiles<'a>(

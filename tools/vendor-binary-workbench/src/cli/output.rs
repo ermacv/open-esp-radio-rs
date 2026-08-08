@@ -85,7 +85,7 @@ pub(super) fn structured(value: &impl Serialize) -> bool {
     }
     if matches!(
         FORMAT.get().copied().unwrap_or_default(),
-        OutputFormat::Human | OutputFormat::Tsv
+        OutputFormat::Human
     ) {
         return false;
     }
@@ -94,15 +94,13 @@ pub(super) fn structured(value: &impl Serialize) -> bool {
     true
 }
 
-/// Emits one typed command result and selects exactly one presentation
-/// renderer when stdout is intended for humans or TSV automation.
-pub(super) fn render_report(value: &impl Serialize, human: impl FnOnce(), tsv: impl FnOnce()) {
+/// Emits one typed command result or selects its human presentation.
+pub(super) fn render_report(value: &impl Serialize, human: impl FnOnce()) {
     if structured(value) {
         return;
     }
     match format() {
         OutputFormat::Human => with_progress_suspended(human),
-        OutputFormat::Tsv => with_progress_suspended(tsv),
         OutputFormat::Json | OutputFormat::Jsonl => {
             unreachable!("structured command output was already emitted")
         }
@@ -114,7 +112,7 @@ fn emit_text(text: String, newline: bool) {
         return;
     }
     match FORMAT.get().copied().unwrap_or_default() {
-        OutputFormat::Human | OutputFormat::Tsv => {
+        OutputFormat::Human => {
             with_progress_suspended(|| {
                 let mut stdout = io::stdout().lock();
                 if newline {
@@ -151,7 +149,7 @@ fn emit_report(report: Box<RawValue>) {
                 writeln!(stdout).expect("writing command output to stdout");
             });
         }
-        OutputFormat::Human | OutputFormat::Tsv => {
+        OutputFormat::Human => {
             unreachable!("typed reports are emitted only for machine output")
         }
     }

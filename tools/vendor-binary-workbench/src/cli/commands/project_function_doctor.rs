@@ -50,78 +50,6 @@ impl FunctionDoctorReport {
             outputln!("  pack: {}", pack.display());
         }
     }
-
-    pub(super) fn render_tsv(&self) {
-        let pack = display_optional(self.pack.as_deref());
-        let review_output = display_optional(self.review_output.as_deref());
-        match self.status {
-            "not-configured" => {
-                outputln!("CAPABILITY\tfunction-workspace\tnot-configured");
-            }
-            "invalid-config" => outputln!(
-                "CAPABILITY\tfunction-workspace\tinvalid-config\terror={}",
-                self.error
-                    .as_deref()
-                    .unwrap_or("unknown configuration error")
-            ),
-            "not-generated" => outputln!(
-                "CAPABILITY\tfunction-workspace\tnot-generated\tprofiles={}\tmissing={}\tpack={}\treview-output={}",
-                self.profiles,
-                self.missing,
-                pack,
-                review_output
-            ),
-            "invalid-facts" => outputln!(
-                "CAPABILITY\tfunction-workspace\tinvalid-facts\tprofiles={}\terror={}",
-                self.profiles,
-                self.error.as_deref().unwrap_or("unknown facts error")
-            ),
-            "pack-not-initialized" => outputln!(
-                "CAPABILITY\tfunction-workspace\tpack-not-initialized\tprofiles={}\tfunctions={}\troot-functions={}\tcontext-fields={}\tpack={}\treview-output={}",
-                self.profiles,
-                self.functions,
-                self.root_functions,
-                self.context_fields,
-                pack,
-                review_output
-            ),
-            "available" => {
-                let review = self
-                    .review
-                    .as_ref()
-                    .expect("available function report has review counts");
-                outputln!(
-                    "CAPABILITY\tfunction-workspace\tavailable\tprofiles={}\troot-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\tlogical-types={}\ttype-bindings={}\treviewed-type-fields={}\tignored-type-fields={}\tunreviewed-type-fields={}\taccepted-incomplete={}\tpack={}\treview-output={}",
-                    self.profiles,
-                    self.root_functions,
-                    review.reviewed_functions,
-                    review.ignored_functions,
-                    review.unreviewed_functions,
-                    review.reviewed_contexts,
-                    review.ignored_contexts,
-                    review.unreviewed_contexts,
-                    review.reviewed_fields,
-                    review.ignored_fields,
-                    review.unreviewed_fields,
-                    review.logical_types,
-                    review.type_bindings,
-                    review.reviewed_type_fields,
-                    review.ignored_type_fields,
-                    review.unreviewed_type_fields,
-                    review.accepted_incomplete,
-                    pack,
-                    review_output
-                );
-            }
-            "invalid" => outputln!(
-                "CAPABILITY\tfunction-workspace\tinvalid\tprofiles={}\tpack={}\terror={}",
-                self.profiles,
-                pack,
-                self.error.as_deref().unwrap_or("unknown workspace error")
-            ),
-            status => unreachable!("unknown function doctor status {status}"),
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -250,8 +178,4 @@ pub(super) fn inspect(project: &ProjectSpec) -> FunctionDoctorReport {
             report
         }
     }
-}
-
-fn display_optional(path: Option<&std::path::Path>) -> String {
-    path.map_or_else(|| "-".to_owned(), |path| path.display().to_string())
 }

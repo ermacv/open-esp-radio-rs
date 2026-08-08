@@ -57,11 +57,7 @@ fn init_pack(
         observed_calls: facts.observed_calls(),
         path: output,
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_pack_human(&report),
-        || print_pack_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_pack_human(&report));
     Ok(true)
 }
 
@@ -252,11 +248,7 @@ fn validate(
             })
             .collect(),
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_workspace_human(&report),
-        || print_workspace_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_workspace_human(&report));
     Ok(passed)
 }
 

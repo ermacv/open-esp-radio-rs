@@ -74,15 +74,18 @@ dispatch path:
 | `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options and typed `Command`/`ParsedInvocation` values |
 | `cli/arguments.rs` | Typed leaf-command arguments, declarative conflicts and value grammar |
 | `application/resolve.rs` | Canonical project session: manifest, target/platform, run spec, memory map and register catalog |
+| `application/pipeline.rs` | Frontend-neutral stage outcomes, dependency state and aggregate workflow counts |
+| `application/project_analysis.rs` | Ordering, dependency policy and typed report for project analysis/review stages |
+| `application/project_publication.rs` | Preflight, all-or-nothing preparation policy and typed report for reviewed register publications |
 | `cli/resolver.rs` | Positive, exhaustive resource planning plus standalone-target resolution and typed `ResolvedInvocation` construction |
 | `cli/resolver/defaults.rs` | Typed CLI > run-spec > project/target argument-default merge |
 | `cli/resolver/register_catalog.rs` | SVD plus reviewed register-model composition |
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
 | `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
-| `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
+| `cli/output.rs` | Single stdout boundary and `human`, `json`, and `jsonl` result rendering |
 | `cli/progress.rs` | TTY/machine-output progress policy and reusable operation/stage spans |
 | `cli/commands/tooling.rs` | Shell completions and roff manual pages generated from the canonical `clap` grammar without loading a project |
-| `cli/render.rs`, `cli/render/*` | Human/TSV presentation for typed application and verification reports |
+| `cli/render.rs`, `cli/render/*` | Human presentation for typed application and verification reports |
 | `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Command-local reviewed-workspace presentation |
 | `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
 | `cli/ui.rs` | miette diagnostics plus tracing/progress layer composition on stderr |
@@ -220,12 +223,11 @@ own project-analysis stage and tracing span.
 
 `project doctor` is split into generic capability, register, interface and
 caller-input collectors. They populate one top-level report together with the
-IR-profile and function-workspace reports. Human and TSV rendering are separate
-from collection, while JSON and JSONL serialize the same `project-doctor`
+IR-profile and function-workspace reports. Human rendering is separate from
+collection, while JSON and JSONL serialize the same `project-doctor`
 model directly. Human status/capability, symbol inventory, profile verification
 and register/function/interface review summaries use tables only as a
-presentation layer; TSV and structured output continue to serialize the
-underlying typed reports.
+presentation layer; structured output serializes the underlying typed reports.
 
 ## Shared trace and effect-contract layout
 
@@ -247,7 +249,7 @@ aggregate gates, protocol inventory and probe accounting. `evidence.rs` owns pro
 `evidence/report.rs` owns the persistent core; `execution.rs` owns comparison
 and `execution/scenario.rs` owns scenario normalization and coverage inputs.
 `execution_report.rs` owns concrete comparison DTOs, while `report.rs` owns
-the single schema-v4 command/file report plus human/TSV renderers.
+the single schema-v4 command/file report plus its human renderer.
 `dispositions.rs` owns its strict parser and inventory validation;
 `dispositions/model.rs` owns entry, binding and effect-policy invariants.
 

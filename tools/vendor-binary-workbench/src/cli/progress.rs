@@ -63,16 +63,6 @@ fn operation_span(message: &str) -> Span {
     span
 }
 
-pub(super) fn stage_span(name: &str) -> Span {
-    let span = tracing::info_span!(
-        "project_stage",
-        indicatif.pb_show = tracing::field::Empty,
-        stage = name
-    );
-    span.pb_set_message(&format!("Project stage: {name}"));
-    span
-}
-
 pub(super) fn enabled_for(arguments: &UiArgs, stderr_is_terminal: bool) -> bool {
     if arguments.quiet {
         return false;

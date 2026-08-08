@@ -86,11 +86,7 @@ fn review(
         ir_field_candidates: summary.ir_field_candidates,
         path: output,
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_review_human(&report),
-        || print_review_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_review_human(&report));
     Ok(true)
 }
 
@@ -122,11 +118,7 @@ fn init_model(
         input: None,
         model: output,
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_model_human(&report),
-        || print_model_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_model_human(&report));
     Ok(true)
 }
 
@@ -158,11 +150,7 @@ fn import_svd(
         input: Some(&input),
         model: output,
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_model_human(&report),
-        || print_model_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_model_human(&report));
     Ok(true)
 }
 
@@ -227,10 +215,6 @@ fn validate(
             ranges: evidence.ranges.len(),
         }),
     };
-    crate::cli::output::render_report(
-        &report,
-        || print_workspace_human(&report),
-        || print_workspace_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || print_workspace_human(&report));
     Ok(passed)
 }

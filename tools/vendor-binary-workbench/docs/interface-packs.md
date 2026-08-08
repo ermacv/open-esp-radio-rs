@@ -64,9 +64,8 @@ cargo vendor-binary-workbench interfaces validate \
 The command reports every resolved reviewed binding with its layout version,
 ABI, semantic operation, vendor functions, concrete call-site addresses, call
 kind, and recovered argument expressions. The default view uses separate
-coverage, binding and resolved-call tables;
-`--format tsv` uses `INTERFACE-BINDING` plus following `INTERFACE-CALL` rows,
-while JSON/JSONL emits the `interface-workspace` report with nested bindings,
+coverage, binding and resolved-call tables, while JSON/JSONL emits the
+`interface-workspace` report with nested bindings,
 calls and typed arguments. `interfaces init-pack` similarly emits one
 `interface-pack` result.
 Use `--deny-unreviewed` in CI to return a non-success status while any observed
@@ -148,7 +147,7 @@ evidence = "caller rejects service_id > 7 before the dispatch"
 During validation the reviewed domain is projected through the recovered
 selector and checked against `layout-size`, pointer width and stride. A dynamic
 call is linked only to reviewed slots reached by those concrete domain values.
-The resolved index and its domain remain visible in JSON, human, TSV and
+The resolved index and its domain remain visible in JSON, human and
 function-review output. Missing or invalid domain evidence leaves the call
 unbound and strict review unreviewed; layout size alone is never treated as
 proof of the runtime argument domain.

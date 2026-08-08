@@ -21,7 +21,6 @@ pub(crate) enum OutputFormat {
     Human,
     Json,
     Jsonl,
-    Tsv,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]

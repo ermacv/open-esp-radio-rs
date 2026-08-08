@@ -111,10 +111,6 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         evidence_comparison: evidence_comparison.as_ref(),
         report: None,
     };
-    crate::cli::output::render_report(
-        &report,
-        || crate::cli::render::verification_human(&report),
-        || crate::cli::render::verification_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)
 }

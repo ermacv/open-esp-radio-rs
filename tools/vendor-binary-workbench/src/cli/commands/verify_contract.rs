@@ -25,7 +25,7 @@ pub(super) fn run(
         &vendor_companion,
     )?;
     let matched = report.matched;
-    crate::cli::output::render_report(&report, || render_human(&report), || render_tsv(&report));
+    crate::cli::output::render_report(&report, || render_human(&report));
     Ok(matched)
 }
 
@@ -91,40 +91,6 @@ fn render_difference_human(difference: &QualificationDifference) {
     for (index, event) in difference.rust_events.iter().enumerate() {
         outputln!("    rust[{index}]: {event}");
     }
-}
-
-fn render_tsv(report: &QualificationReport) {
-    for artifact in &report.artifacts {
-        outputln!(
-            "ORACLE\t{}\t{}\tsha256={}",
-            artifact.role,
-            artifact.path.display(),
-            artifact.sha256
-        );
-    }
-    for case in &report.cases {
-        outputln!(
-            "VERIFICATION-CASE\t{}\t{}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}",
-            case.name,
-            case.verdict.label(),
-            case.events.unwrap_or_default(),
-            case.steps.unwrap_or_default(),
-            case.branch_outcomes.unwrap_or_default(),
-            case.calls.unwrap_or_default(),
-        );
-    }
-    outputln!(
-        "VERIFICATION-SUMMARY\t{}\t{}\tscenarios={}\tmatched={}\tmismatched={}\tincomplete={}\tsteps={}\tbranch-outcomes={}\tcalls={}",
-        report.vendor_symbol,
-        report.verdict.label(),
-        report.summary.scenarios,
-        report.summary.matched,
-        report.summary.mismatched,
-        report.summary.incomplete,
-        report.summary.steps,
-        report.summary.branch_outcomes,
-        report.summary.calls,
-    );
 }
 
 #[cfg(test)]

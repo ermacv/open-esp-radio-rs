@@ -62,37 +62,6 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
     }
 }
 
-pub(crate) fn verification_tsv(report: &VerificationCommandReport<'_>) {
-    outputln!(
-        "verification\t{}\t{}",
-        report.command,
-        if report.verification.passed {
-            "passed"
-        } else {
-            "failed"
-        }
-    );
-    for source in report.sources {
-        outputln!(
-            "source\t{}\tfunctions={}\tmatched={}\tmismatched={}\tincomplete={}\tmissing={}",
-            source.source,
-            source.summary.vendor_functions,
-            source.summary.matched,
-            source.summary.mismatched,
-            source.summary.incomplete,
-            source.summary.missing,
-        );
-        for function in &source.functions {
-            outputln!(
-                "function\t{}\t{}\t{}",
-                function.source,
-                function.vendor_symbol,
-                function.status.label()
-            );
-        }
-    }
-}
-
 pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
     for regression in &comparison.regressions {
         outputln!(

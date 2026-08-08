@@ -70,6 +70,6 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioMap) -> Result<bool> 
             }
         );
     };
-    crate::cli::output::render_report(&document, render, render);
+    crate::cli::output::render_report(&document, render);
     Ok(equal)
 }

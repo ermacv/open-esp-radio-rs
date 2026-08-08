@@ -491,7 +491,7 @@ pub(super) fn run(
             );
         }
     };
-    crate::cli::output::render_report(&document, render, render);
+    crate::cli::output::render_report(&document, render);
     Ok(incomplete == 0)
 }
 

@@ -62,7 +62,7 @@ pub(super) fn run(arguments: ImageAuditArgs) -> Result<bool> {
             })
             .collect(),
     };
-    crate::cli::output::render_report(&report, || render_human(&report), || render_tsv(&report));
+    crate::cli::output::render_report(&report, || render_human(&report));
     Ok(passed)
 }
 
@@ -83,28 +83,6 @@ fn render_human(report: &DirectTargetAuditReport) {
     for finding in &report.forbidden_targets {
         outputln!(
             "  {}: {} {:#010x} -> {:#010x}",
-            finding.range,
-            finding.section,
-            finding.site,
-            finding.target,
-        );
-    }
-}
-
-fn render_tsv(report: &DirectTargetAuditReport) {
-    outputln!(
-        "audit\tdirect-targets\t{}\tartifact={}\tsections={}\tbytes={}\tinstructions={}\tunsupported={}\tforbidden={}",
-        if report.passed { "passed" } else { "failed" },
-        report.artifact,
-        report.executable_sections,
-        report.executable_bytes,
-        report.decoded_instructions,
-        report.unsupported_instructions,
-        report.forbidden_targets.len(),
-    );
-    for finding in &report.forbidden_targets {
-        outputln!(
-            "finding\tdirect-target\t{}\t{}\t{:#010x}\t{:#010x}",
             finding.range,
             finding.section,
             finding.site,

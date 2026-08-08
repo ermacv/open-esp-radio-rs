@@ -77,15 +77,8 @@ the pipeline fail.
 The navigation index never feeds analysis or validation back into those
 roots. Its dependency arrows mean only that it must not join stale reports.
 
-The default human view renders one compact project summary. For scripts,
-`--format tsv` emits a stable line for each stage:
-
-```text
-PROJECT-STAGE name=mmio-discovery status=verified reason=-
-PROJECT-STAGE name=register-review status=blocked reason=linked-ir did not complete
-```
-
-The actual output uses tab separators. Status values are:
+The default human view renders one compact project summary. JSON and JSONL
+serialize the typed report for scripts. Stage status values are:
 
 - `written`: analysis rendered and wrote the configured generated output;
 - `verified`: check mode reproduced the exact existing output, or a read-only
@@ -94,8 +87,7 @@ The actual output uses tab separators. Status values are:
 - `blocked`: a required input or upstream stage was unavailable;
 - `not-configured`: the optional project feature is absent.
 
-The final TSV `PROJECT-ANALYSIS` line aggregates all stages. In JSON and JSONL
-modes the same data is the typed `project-analysis` report with schema,
+In JSON and JSONL modes the data is the typed `project-analysis` report with schema,
 `command`, `mode`, `status`, ordered `stages`, reasons and aggregate counts; it
 is not encoded as presentation text. Nested command presentation is suppressed
 so the project report is the sole stdout result; diagnostics and tracing remain
@@ -105,7 +97,7 @@ errors that prevent constructing the project at all are reported before the
 analysis begins.
 
 In an interactive terminal the active workflow and stage are shown on stderr.
-`--progress auto` is the default and is disabled automatically for TSV, JSON,
+`--progress auto` is the default and is disabled automatically for JSON,
 JSONL, redirected stderr, and `--quiet`. Use `--progress always` only when a
 caller explicitly wants terminal progress despite those defaults, or
 `--progress never` for deterministic silent stderr apart from diagnostics.

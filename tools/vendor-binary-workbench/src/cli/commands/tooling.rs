@@ -57,28 +57,16 @@ pub(super) fn run_manpage(arguments: ManpageArgs) -> Result<bool> {
 
 fn render(contents: Vec<u8>, report: ToolingAssetReport) -> Result<bool> {
     debug_assert!(!contents.is_empty());
-    crate::cli::output::render_report(
-        &report,
-        || {
-            outputln!(
-                "Generated {}{}: {}",
-                report.kind,
-                report
-                    .variant
-                    .map_or_else(String::new, |variant| format!(" ({variant})")),
-                report.path.display()
-            );
-        },
-        || {
-            outputln!(
-                "TOOLING-ASSET\tkind={}\tvariant={}\tstatus={}\tpath={}",
-                report.kind,
-                report.variant.unwrap_or("-"),
-                report.status,
-                report.path.display()
-            );
-        },
-    );
+    crate::cli::output::render_report(&report, || {
+        outputln!(
+            "Generated {}{}: {}",
+            report.kind,
+            report
+                .variant
+                .map_or_else(String::new, |variant| format!(" ({variant})")),
+            report.path.display()
+        );
+    });
     Ok(true)
 }
 

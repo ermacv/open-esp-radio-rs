@@ -4,8 +4,6 @@ use super::super::*;
 
 use serde::Serialize;
 
-use crate::cli::args::OutputFormat;
-
 #[derive(Serialize)]
 struct ProfileComparisonReport {
     name: String,
@@ -136,25 +134,6 @@ fn print_human(report: &ProfileVerificationReport) {
     );
 }
 
-fn print_tsv(report: &ProfileVerificationReport) {
-    for profile in &report.profiles {
-        outputln!("PROFILE\t{}\tBEGIN", profile.name);
-        crate::cli::render::print_execution_comparison(&profile.comparison);
-        outputln!(
-            "PROFILE\t{}\t{}",
-            profile.name,
-            profile.comparison.verdict.label()
-        );
-    }
-    outputln!(
-        "PROFILE-SUMMARY\tprofiles={}\tmatch={}\tdiff={}\tincomplete={}",
-        report.summary.profiles,
-        report.summary.matched,
-        report.summary.different,
-        report.summary.incomplete,
-    );
-}
-
 pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> {
     let profile_path = arguments
         .profiles
@@ -212,13 +191,7 @@ pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioMap) -> Result<bool> 
         profiles: reports,
     };
     if !crate::cli::output::structured(&report) {
-        match crate::cli::output::format() {
-            OutputFormat::Human => print_human(&report),
-            OutputFormat::Tsv => print_tsv(&report),
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                unreachable!("typed profile verification was already emitted")
-            }
-        }
+        print_human(&report);
     }
     Ok(matched == loaded_profiles.len())
 }

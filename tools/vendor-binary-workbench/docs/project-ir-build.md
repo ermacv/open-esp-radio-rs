@@ -99,9 +99,8 @@ successful check also binds the generated view to the supplied local inputs.
 ## Command result formats
 
 The default human view summarizes each selected profile, its function,
-register and field-candidate counts, and the generated paths. `--format tsv`
-retains the stable `IR-PROFILE` and aggregate `IR-BUILD` records for shell
-automation. `--format json` and `--format jsonl` emit the typed `ir-build`
+register and field-candidate counts, and the generated paths. `--format json`
+and `--format jsonl` emit the typed `ir-build`
 report directly, with schema, mode, status, ordered profiles and document count. The
 generated linked-IR JSON remains a separate schema-v35 project artifact; the
 command result only describes the build operation.

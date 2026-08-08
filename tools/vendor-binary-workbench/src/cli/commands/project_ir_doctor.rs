@@ -48,52 +48,6 @@ impl IrDoctorReport {
             }
         }
     }
-
-    pub(super) fn render_tsv(&self) {
-        for profile in &self.profiles {
-            for diagnostic in &profile.diagnostics {
-                outputln!(
-                    "IR-PROFILE-DIAGNOSTIC\tid={}\tkind={}\terror={}",
-                    profile.id,
-                    diagnostic.kind,
-                    diagnostic.error
-                );
-            }
-            outputln!(
-                "IR-PROFILE\tid={}\tinputs={}\tsources={}\tmissing={}\tprefix={}\treachable={}\tcontract={}\tcontract-status={}\toutput-status={}\tfunctions={}\tregisters={}\tfield-candidates={}\treview-linked={}\toutput={}\tpseudo-status={}\tpseudo={}",
-                profile.id,
-                profile.input_status,
-                display_values(profile.sources.iter().map(String::as_str)),
-                display_values(profile.missing.iter().map(String::as_str)),
-                if profile.symbol_prefix.is_empty() {
-                    "<all>"
-                } else {
-                    &profile.symbol_prefix
-                },
-                profile.include_reachable,
-                profile.entry_contract,
-                profile.contract_status,
-                profile.output_status,
-                profile.functions,
-                profile.registers,
-                profile.field_candidates,
-                if profile.review_linked { "yes" } else { "no" },
-                profile.output.display(),
-                profile.pseudo_status,
-                profile
-                    .pseudo
-                    .as_deref()
-                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
-            );
-        }
-        outputln!(
-            "CAPABILITY\tir-build\t{}\tprofiles={}\terrors={}\twarnings={}",
-            self.status,
-            self.profiles.len(),
-            self.errors,
-            self.warnings
-        );
-    }
 }
 
 #[derive(Serialize)]
@@ -249,14 +203,5 @@ pub(super) fn inspect(
         profiles,
         errors,
         warnings,
-    }
-}
-
-fn display_values<'a>(values: impl IntoIterator<Item = &'a str>) -> String {
-    let values = values.into_iter().collect::<Vec<_>>();
-    if values.is_empty() {
-        "-".to_owned()
-    } else {
-        values.join(",")
     }
 }

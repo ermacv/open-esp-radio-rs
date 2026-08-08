@@ -93,7 +93,7 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
             manifest.display()
         ),
     };
-    crate::cli::output::render_report(&report, || print_human(&report), || print_tsv(&report));
+    crate::cli::output::render_report(&report, || print_human(&report));
     Ok(succeeded)
 }
 
@@ -265,21 +265,4 @@ fn print_human(report: &ProjectInputsReport) {
         );
     }
     outputln!("Next: {}", report.next_command);
-}
-
-fn print_tsv(report: &ProjectInputsReport) {
-    for binding in &report.bindings {
-        outputln!(
-            "PROJECT-INPUT\trole={}\tcontainer={}\tpath={}",
-            binding.role,
-            binding.container,
-            binding.path
-        );
-    }
-    outputln!(
-        "PROJECT-INPUTS\tstatus={}\tproject={}\toutput={}",
-        report.status,
-        report.project,
-        report.output
-    );
 }

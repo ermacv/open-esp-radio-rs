@@ -3,8 +3,8 @@
 ## One typed result
 
 `verify source` and `verify inventory` each emit one typed command result.
-Human and TSV views are renderers over that model; JSON and JSONL serialize the
-same data. Diagnostics and tracing use stderr and cannot corrupt stdout.
+The human view is a renderer over that model; JSON and JSONL serialize the same
+data. Diagnostics and tracing use stderr and cannot corrupt stdout.
 
 `verify inventory --json-report PATH` persists the complete schema-v4 command
 report, including:

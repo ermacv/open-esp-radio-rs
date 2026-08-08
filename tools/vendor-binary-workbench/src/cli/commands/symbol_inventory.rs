@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::super::*;
-use crate::{cli::args::OutputFormat, run_spec::RunSpec};
+use crate::run_spec::RunSpec;
 
 type Options = SymbolInventoryArgs;
 
@@ -19,86 +19,6 @@ impl Options {
 
 fn optional_human(value: Option<&str>) -> &str {
     value.unwrap_or("-")
-}
-
-fn print_report_tsv(inventory: &ProjectLinkageInventory, options: &Options) {
-    for (index, artifact) in inventory.artifacts.iter().enumerate() {
-        outputln!(
-            "ARTIFACT\tindex={}\tcontainer={}\tobjects={}\tskipped-members={}\troles={}\tsources={}\tpath={}",
-            index,
-            artifact.container.label(),
-            artifact.objects,
-            artifact.skipped_members,
-            artifact.roles.join(","),
-            artifact.sources.join(","),
-            artifact.path.display()
-        );
-    }
-    for symbol in inventory
-        .symbols
-        .iter()
-        .filter(|symbol| options.includes(symbol))
-    {
-        outputln!(
-            "SYMBOL\tartifact={}\tmember={}\tobject={}\ttable={}\tname={}\tbinding={}\tvisibility={}\tkind={}\tdefinition={}\tsection={}\taddress={:#x}\tsize={}\tscope={}\tresolution={}\tcandidates={}",
-            symbol.artifact,
-            optional_human(symbol.member.as_deref()),
-            symbol.object_kind.label(),
-            symbol.fact.table.label(),
-            symbol.fact.name,
-            symbol.fact.binding.label(),
-            symbol.fact.visibility.label(),
-            symbol.fact.kind.label(),
-            symbol.fact.definition.label(),
-            optional_human(symbol.fact.section.as_deref()),
-            symbol.fact.address,
-            symbol.fact.size,
-            symbol.fact.scope.label(),
-            symbol.resolution.label(),
-            symbol.candidates.len(),
-        );
-        for candidate in &symbol.candidates {
-            outputln!(
-                "CANDIDATE\tname={}\tartifact={}\tmember={}\taddress={:#x}\tkind={}",
-                symbol.fact.name,
-                candidate.artifact,
-                optional_human(candidate.member.as_deref()),
-                candidate.address,
-                candidate.kind.label(),
-            );
-        }
-    }
-    let emitted = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| options.includes(symbol))
-        .count();
-    let undefined = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| {
-            symbol.fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined
-        })
-        .count();
-    let exported = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| symbol.fact.is_exported_definition())
-        .count();
-    let unresolved = inventory
-        .symbols
-        .iter()
-        .filter(|symbol| symbol.resolution.is_unresolved())
-        .count();
-    outputln!(
-        "SUMMARY\tartifacts={}\tsymbol-facts={}\temitted={}\texported-definitions={}\tundefined={}\tunresolved-or-associated={}",
-        inventory.artifacts.len(),
-        inventory.symbols.len(),
-        emitted,
-        exported,
-        undefined,
-        unresolved,
-    );
 }
 
 fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
@@ -409,25 +329,9 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
     }
     let document = document(&inventory, &options, publication.clone())?;
     if !crate::cli::output::structured(&document) {
-        match crate::cli::output::format() {
-            OutputFormat::Human => print_report_human(&inventory, &options),
-            OutputFormat::Tsv => print_report_tsv(&inventory, &options),
-            OutputFormat::Json | OutputFormat::Jsonl => {
-                unreachable!("typed symbol inventory was already emitted")
-            }
-        }
+        print_report_human(&inventory, &options);
         if let Some(publication) = publication {
-            match crate::cli::output::format() {
-                OutputFormat::Human => {
-                    outputln!("Publication: {} — {}", publication.status, publication.path)
-                }
-                OutputFormat::Tsv => outputln!(
-                    "PUBLICATION\tstatus={}\tpath={}",
-                    publication.status,
-                    publication.path
-                ),
-                OutputFormat::Json | OutputFormat::Jsonl => unreachable!(),
-            }
+            outputln!("Publication: {} — {}", publication.status, publication.path);
         }
     }
     Ok(true)

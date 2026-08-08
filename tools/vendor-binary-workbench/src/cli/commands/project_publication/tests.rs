@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use super::*;
-use crate::project::{PacBindingsOutputSpec, PacOutputSpec};
+use crate::project::{PacBindingsOutputSpec, PacOutputSpec, RegisterWorkspacePaths};
 
 #[test]
 fn publishes_and_checks_a_complete_register_project() {

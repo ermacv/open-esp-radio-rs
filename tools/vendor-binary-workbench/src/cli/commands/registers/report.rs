@@ -130,23 +130,6 @@ pub(super) fn print_review_human(report: &RegisterReviewDocument<'_>) {
     );
 }
 
-pub(super) fn print_review_tsv(report: &RegisterReviewDocument<'_>) {
-    outputln!(
-        "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tdraft-field-partitions={}\tir-reports={}\tir-registers={}\tir-only-registers={}\tir-field-candidates={}\tpath={}",
-        report.status,
-        report.observed,
-        report.reviewed,
-        report.unreviewed,
-        report.model_only,
-        report.draft_field_partitions,
-        report.ir_reports,
-        report.ir_registers,
-        report.ir_only_registers,
-        report.ir_field_candidates,
-        report.path.display()
-    );
-}
-
 pub(super) fn print_model_human(report: &RegisterModelDocument<'_>) {
     outputln!(
         "Register model: {} — {}",
@@ -172,33 +155,6 @@ pub(super) fn print_model_human(report: &RegisterModelDocument<'_>) {
             ]],
         )
     );
-}
-
-pub(super) fn print_model_tsv(report: &RegisterModelDocument<'_>) {
-    if let Some(input) = report.input {
-        outputln!(
-            "REGISTER-MODEL\tstatus={}\tschema={}\tperipherals={}\tfragments={}\tannotations={}\taddress-space={}\tinput={}\tmodel={}",
-            report.status,
-            report.model_schema,
-            report.peripherals,
-            report.fragments,
-            report.annotations.unwrap_or(0),
-            report.address_space,
-            input.display(),
-            report.model.display()
-        );
-    } else {
-        outputln!(
-            "REGISTER-MODEL\tstatus={}\tschema={}\tperipherals={}\tfragments={}\tobserved-registers={}\taddress-space={}\tmodel={}",
-            report.status,
-            report.model_schema,
-            report.peripherals,
-            report.fragments,
-            report.observed_registers,
-            report.address_space,
-            report.model.display()
-        );
-    }
 }
 
 pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
@@ -273,57 +229,6 @@ pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
         outputln!(
             "Checks:\n{}",
             crate::cli::table::render(["Check", "Status", "Details"], checks)
-        );
-    }
-}
-
-pub(super) fn print_workspace_tsv(report: &RegisterWorkspaceDocument<'_>) {
-    outputln!(
-        "REGISTER-WORKSPACE\tstatus={}\tdeny-unreviewed={}\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}",
-        report.status,
-        report.deny_unreviewed,
-        report.format,
-        report.ranges,
-        report.observed,
-        report.reviewed,
-        report.ignored,
-        report.manual,
-        report.unreviewed,
-        report.fields,
-        report.facts.display(),
-        report.model.display()
-    );
-    if let Some(pack) = &report.pac_api {
-        outputln!(
-            "PAC-API\tstatus=valid\tschema={}\toperations={}\tsources={}\tpack={}",
-            pack.schema,
-            pack.operations,
-            pack.sources,
-            pack.pack.display()
-        );
-    }
-    if let Some(lints) = &report.lints {
-        outputln!(
-            "REGISTER-LINTS\tstatus=valid\tschema={}\tforbidden-field-name-substrings={}\tpack={}",
-            lints.schema,
-            lints.forbidden_field_name_substrings,
-            lints.pack.display()
-        );
-    }
-    if let Some(memory) = &report.memory {
-        outputln!(
-            "REGISTER-MEMORY\tstatus=valid\tregisters={}\tmmio-regions={}",
-            memory.registers,
-            memory.mmio_regions
-        );
-    }
-    if let Some(evidence) = &report.evidence {
-        outputln!(
-            "REGISTER-EVIDENCE\tstatus=valid\tcatalogs={}\tconfidence-levels={}\tsources={}\tranges={}",
-            evidence.catalogs,
-            evidence.confidence_levels,
-            evidence.sources,
-            evidence.ranges
         );
     }
 }

@@ -168,17 +168,6 @@ pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
     );
 }
 
-pub(super) fn print_pack_tsv(report: &InterfacePackDocument<'_>) {
-    outputln!(
-        "INTERFACE-PACK\tstatus={}\ttables={}\tobserved-slots={}\tobserved-calls={}\tpath={}",
-        report.status,
-        report.tables,
-        report.observed_slots,
-        report.observed_calls,
-        report.path.display()
-    );
-}
-
 pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
     outputln!(
         "Interface workspace: {} — {}",
@@ -347,104 +336,5 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
         report.execution_models,
         report.artifact_guards,
         report.runtime_guards,
-    );
-}
-
-pub(super) fn print_workspace_tsv(report: &InterfaceWorkspaceDocument<'_>) {
-    for contract in &report.contracts {
-        outputln!(
-            "INTERFACE-CONTRACT\tid={}\tanchor={}\tsource={}\troot={}\tcontainer-depth={}\tlayout-version={}\tpointer-width={}\tlayout-size={:#x}\tslot-stride={}\tguards={}\texecution-contract={}\tslots={}",
-            contract.id,
-            contract.anchor,
-            contract.source,
-            contract.root_kind,
-            contract.container_depth,
-            contract.layout_version,
-            contract.pointer_width,
-            contract.layout_size,
-            contract.slot_stride,
-            contract.guards,
-            contract.execution_contract.unwrap_or("-"),
-            contract.slots,
-        );
-    }
-    for binding in &report.bindings {
-        outputln!(
-            "INTERFACE-BINDING\tid={}\tanchor={}\tsource={}\tlayout-version={}\toffset={:+#x}\twidth={}\tname={}\tabi={}({})->{}{}\tsemantic={}\texecution-model={}\tfunctions={}\tcall-sites={}",
-            binding.id,
-            binding.anchor,
-            binding.source,
-            binding.layout_version,
-            binding.offset,
-            binding.width,
-            binding.name,
-            report.calling_convention,
-            binding.arguments.join(","),
-            binding.return_type,
-            if binding.variadic { ",..." } else { "" },
-            binding.semantic.unwrap_or("-"),
-            binding
-                .execution_model
-                .as_ref()
-                .map_or("-", |model| model.id),
-            binding.functions.join(","),
-            binding.calls.len()
-        );
-        for call in &binding.calls {
-            outputln!(
-                "INTERFACE-CALL\tanchor={}\tsource={}\toffset={:+#x}\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#010x}\tsite={:#010x}\tkind={}\tjalr-offset={:+#x}\tslot-selector={}\tslot-index={}\tslot-index-domain={}\targuments={}",
-                binding.anchor,
-                binding.source,
-                binding.offset,
-                call.artifact,
-                call.member.unwrap_or("-"),
-                call.function,
-                call.function_address,
-                call.site,
-                call.kind,
-                call.jalr_offset,
-                call.slot_selector.unwrap_or("-"),
-                call.slot_index
-                    .map_or_else(|| "-".to_owned(), |index| index.to_string()),
-                call.slot_index_domain.as_ref().map_or_else(
-                    || "-".to_owned(),
-                    |domain| format!(
-                        "arg{}:{}..={}:{}",
-                        domain.argument, domain.min, domain.max, domain.evidence
-                    ),
-                ),
-                call.arguments
-                    .iter()
-                    .map(|argument| format!(
-                        "a{}:{}={}",
-                        argument.index, argument.kind, argument.expression
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            );
-        }
-    }
-    outputln!(
-        "INTERFACE-WORKSPACE\tstatus={}\tdeny-unreviewed={}\tfact-tables={}\tobserved-slots={}\tobserved-calls={}\tresolved-calls={}\treviewed-anchors={}\tignored-anchors={}\tunreviewed-anchors={}\tmanual-anchors={}\treviewed-slots={}\tignored-slots={}\tunreviewed-slots={}\tmanual-slots={}\tsemantic-links={}\tsemantic-operations={}\tartifact-guards={}\truntime-guards={}\tfacts={}\tpack={}",
-        report.status,
-        report.deny_unreviewed,
-        report.fact_tables,
-        report.observed_slots,
-        report.observed_calls,
-        report.resolved_calls,
-        report.reviewed_anchors,
-        report.ignored_anchors,
-        report.unreviewed_anchors,
-        report.manual_anchors,
-        report.reviewed_slots,
-        report.ignored_slots,
-        report.unreviewed_slots,
-        report.manual_slots,
-        report.semantic_links,
-        report.semantic_operations,
-        report.artifact_guards,
-        report.runtime_guards,
-        report.facts.display(),
-        report.pack.display()
     );
 }

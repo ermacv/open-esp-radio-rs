@@ -52,28 +52,15 @@ pub(super) fn emit_svd(status: &'static str, summary: &SvdExportSummary, path: &
         fields: summary.fields,
         path,
     };
-    crate::cli::output::render_report(
-        &report,
-        || {
-            outputln!("SVD: {} — {}", report.status, report.path.display());
-            outputln!(
-                "  peripherals={} registers={} fields={}",
-                report.peripherals,
-                report.registers,
-                report.fields
-            );
-        },
-        || {
-            outputln!(
-                "SVD\tstatus={}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
-                report.status,
-                report.peripherals,
-                report.registers,
-                report.fields,
-                report.path.display()
-            );
-        },
-    );
+    crate::cli::output::render_report(&report, || {
+        outputln!("SVD: {} — {}", report.status, report.path.display());
+        outputln!(
+            "  peripherals={} registers={} fields={}",
+            report.peripherals,
+            report.registers,
+            report.fields
+        );
+    });
 }
 
 pub(super) fn emit_pac(
@@ -95,36 +82,19 @@ pub(super) fn emit_pac(
         api_pack,
         path,
     };
-    crate::cli::output::render_report(
-        &report,
-        || {
-            outputln!("PAC: {} — {}", report.status, report.path.display());
-            outputln!(
-                "  target={} edition={} peripherals={} registers={} api-pack={}",
-                report.target,
-                report.edition,
-                report.peripherals,
-                report.registers,
-                report
-                    .api_pack
-                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
-            );
-        },
-        || {
-            outputln!(
-                "PAC\tstatus={}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tapi-pack={}\tpath={}",
-                report.status,
-                report.target,
-                report.edition,
-                report.peripherals,
-                report.registers,
-                report
-                    .api_pack
-                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
-                report.path.display()
-            );
-        },
-    );
+    crate::cli::output::render_report(&report, || {
+        outputln!("PAC: {} — {}", report.status, report.path.display());
+        outputln!(
+            "  target={} edition={} peripherals={} registers={} api-pack={}",
+            report.target,
+            report.edition,
+            report.peripherals,
+            report.registers,
+            report
+                .api_pack
+                .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
+        );
+    });
 }
 
 pub(super) fn emit_bindings(
@@ -142,30 +112,17 @@ pub(super) fn emit_bindings(
         registers: summary.registers,
         path,
     };
-    crate::cli::output::render_report(
-        &report,
-        || {
-            outputln!(
-                "PAC bindings: {} — {}",
-                report.status,
-                report.path.display()
-            );
-            outputln!(
-                "  crate={} peripherals={} registers={}",
-                report.crate_name,
-                report.peripherals,
-                report.registers
-            );
-        },
-        || {
-            outputln!(
-                "PAC-BINDINGS\tstatus={}\tcrate={}\tperipherals={}\tregisters={}\tpath={}",
-                report.status,
-                report.crate_name,
-                report.peripherals,
-                report.registers,
-                report.path.display()
-            );
-        },
-    );
+    crate::cli::output::render_report(&report, || {
+        outputln!(
+            "PAC bindings: {} — {}",
+            report.status,
+            report.path.display()
+        );
+        outputln!(
+            "  crate={} peripherals={} registers={}",
+            report.crate_name,
+            report.peripherals,
+            report.registers
+        );
+    });
 }

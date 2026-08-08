@@ -48,11 +48,10 @@ pub(crate) fn init_register_model(
     project_id: &str,
 ) -> Result<RegisterModelImportSummary> {
     if output_path.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite existing register model {}",
             output_path.display()
-        )
-        .into());
+        )));
     }
     let output_base = output_path.parent().unwrap_or_else(|| Path::new("."));
     let mut used_files = BTreeSet::new();
@@ -62,10 +61,9 @@ pub(crate) fn init_register_model(
     for range in &facts.ranges {
         let peripheral_name = identifier_from(&range.name).to_ascii_uppercase();
         if !used_peripherals.insert(peripheral_name.clone()) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "MMIO ranges produce duplicate peripheral name {peripheral_name:?}; rename the ranges before initializing the model"
-            )
-            .into());
+            )));
         }
         let peripheral = svd_rs::PeripheralInfo::builder()
             .name(peripheral_name)
@@ -77,11 +75,10 @@ pub(crate) fn init_register_model(
         let relative = PathBuf::from("peripherals").join(&file_name);
         let absolute = output_base.join(&relative);
         if absolute.exists() {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "refusing to overwrite existing register fragment {}",
                 absolute.display()
-            )
-            .into());
+            )));
         }
         let fragment = RegisterModelFragment {
             schema: 2,
@@ -130,15 +127,15 @@ pub(crate) fn import_svd_model(
     address_space: &str,
 ) -> Result<RegisterModelImportSummary> {
     if output_path.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite existing register model {}",
             output_path.display()
-        )
-        .into());
+        )));
     }
     let input = fs::read_to_string(input_path)?;
     let mut device = svd_parser::parse(&input)
-        .map_err(|error| format!("cannot import SVD {}: {error}", input_path.display()))?;
+        .map_err(|error| format!("cannot import SVD {}: {error}", input_path.display()))
+        .map_err(crate::Error::invalid)?;
     let output_base = output_path.parent().unwrap_or_else(|| Path::new("."));
     let mut used_files = BTreeSet::new();
     let mut fragment_paths = Vec::with_capacity(device.peripherals.len());
@@ -151,11 +148,10 @@ pub(crate) fn import_svd_model(
         let relative = PathBuf::from("peripherals").join(&file_name);
         let absolute = output_base.join(&relative);
         if absolute.exists() {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "refusing to overwrite existing register fragment {}",
                 absolute.display()
-            )
-            .into());
+            )));
         }
         let mut review = Vec::new();
         clean_peripheral(&mut peripheral, &mut review);
@@ -253,7 +249,12 @@ fn write_new(path: &Path, contents: &str) -> Result<()> {
 fn path_text(path: &Path) -> Result<String> {
     path.to_str()
         .map(|value| value.replace('\\', "/"))
-        .ok_or_else(|| format!("register model path is not UTF-8: {}", path.display()).into())
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "register model path is not UTF-8: {}",
+                path.display()
+            ))
+        })
 }
 
 fn unique_file_name(name: &str, used: &mut BTreeSet<String>) -> String {

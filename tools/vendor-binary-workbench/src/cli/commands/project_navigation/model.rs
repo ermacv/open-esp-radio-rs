@@ -151,7 +151,8 @@ pub(super) fn input(kind: &'static str, id: String, path: &Path) -> Result<Input
 }
 
 pub(super) fn address(value: &str, context: &str) -> Result<u32> {
-    parse_u32(value).ok_or_else(|| format!("invalid {context} address {value:?}").into())
+    parse_u32(value)
+        .ok_or_else(|| crate::Error::invalid(format!("invalid {context} address {value:?}")))
 }
 
 pub(super) fn artifact<'a>(

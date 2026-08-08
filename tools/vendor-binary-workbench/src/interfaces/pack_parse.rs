@@ -79,7 +79,11 @@ fn parse_root(table: &Table, context: &str) -> Result<InterfaceRootSelector> {
             "absolute-address" => InterfaceRootSelector::AbsoluteAddress {
                 address: required_u32(table, "address", context)?,
             },
-            kind => return Err(format!("invalid root-kind {kind:?} in {context}").into()),
+            kind => {
+                return Err(crate::Error::invalid(format!(
+                    "invalid root-kind {kind:?} in {context}"
+                )));
+            }
         },
     )
 }
@@ -102,7 +106,11 @@ fn parse_guards(tables: &ArrayOfTables, anchor: &str) -> Result<Vec<InterfaceGua
                         mask: required_u64(table, "mask", &context)?,
                         value: required_u64(table, "value", &context)?,
                     },
-                    kind => return Err(format!("invalid guard kind {kind:?} in {context}").into()),
+                    kind => {
+                        return Err(crate::Error::invalid(format!(
+                            "invalid guard kind {kind:?} in {context}"
+                        )));
+                    }
                 },
             )
         })
@@ -130,8 +138,9 @@ fn parse_slots(tables: &ArrayOfTables, anchor: &str) -> Result<Vec<InterfaceSlot
                 variadic: table
                     .get("variadic")
                     .map(|item| -> Result<bool> {
-                        item.as_bool()
-                            .ok_or_else(|| format!("{context}.variadic must be a boolean").into())
+                        item.as_bool().ok_or_else(|| {
+                            crate::Error::invalid(format!("{context}.variadic must be a boolean"))
+                        })
                     })
                     .transpose()?
                     .unwrap_or(false),
@@ -149,14 +158,17 @@ fn parse_steps(array: &Array, context: &str) -> Result<Vec<InterfaceFactStep>> {
             let context = format!("{context}[{index}]");
             let table = value
                 .as_inline_table()
-                .ok_or_else(|| format!("{context} must be an inline table"))?;
+                .ok_or_else(|| format!("{context} must be an inline table"))
+                .map_err(crate::Error::invalid)?;
             Ok(InterfaceFactStep {
                 offset: inline_i64(table, "offset", &context)?
                     .try_into()
-                    .map_err(|_| format!("{context}.offset must fit i32"))?,
+                    .map_err(|_| format!("{context}.offset must fit i32"))
+                    .map_err(crate::Error::invalid)?,
                 width: inline_i64(table, "width", &context)?
                     .try_into()
-                    .map_err(|_| format!("{context}.width must fit u8"))?,
+                    .map_err(|_| format!("{context}.width must fit u8"))
+                    .map_err(crate::Error::invalid)?,
             })
         })
         .collect()
@@ -167,7 +179,11 @@ fn parse_status(table: &Table, context: &str) -> Result<ReviewStatus> {
         None | Some("unreviewed") => ReviewStatus::Unreviewed,
         Some("reviewed") => ReviewStatus::Reviewed,
         Some("ignored") => ReviewStatus::Ignored,
-        Some(value) => return Err(format!("invalid review status {value:?} in {context}").into()),
+        Some(value) => {
+            return Err(crate::Error::invalid(format!(
+                "invalid review status {value:?} in {context}"
+            )));
+        }
     })
 }
 
@@ -175,7 +191,11 @@ fn parse_origin(table: &Table, context: &str) -> Result<PackOrigin> {
     Ok(match optional_table_string(table, "origin").as_deref() {
         None | Some("observed") => PackOrigin::Observed,
         Some("manual") => PackOrigin::Manual,
-        Some(value) => return Err(format!("invalid origin {value:?} in {context}").into()),
+        Some(value) => {
+            return Err(crate::Error::invalid(format!(
+                "invalid origin {value:?} in {context}"
+            )));
+        }
     })
 }
 
@@ -183,12 +203,12 @@ fn required_string(item: &Item, key: &str, context: &str) -> Result<String> {
     item.get(key)
         .and_then(Item::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn required_table_string(table: &Table, key: &str, context: &str) -> Result<String> {
     optional_table_string(table, key)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn optional_table_string(table: &Table, key: &str) -> Option<String> {
@@ -200,10 +220,9 @@ fn parse_string_array(array: &Array, key: &str, context: &str) -> Result<Vec<Str
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| format!("{context}.{key}[{index}] must be a string").into())
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key}[{index}] must be a string"))
+            })
         })
         .collect()
 }
@@ -211,24 +230,24 @@ fn parse_string_array(array: &Array, key: &str, context: &str) -> Result<Vec<Str
 fn required_u8(table: &Table, key: &str, context: &str) -> Result<u8> {
     required_i64(table, key, context)?
         .try_into()
-        .map_err(|_| format!("{context}.{key} must fit u8").into())
+        .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u8")))
 }
 
 fn required_u32(table: &Table, key: &str, context: &str) -> Result<u32> {
     required_i64(table, key, context)?
         .try_into()
-        .map_err(|_| format!("{context}.{key} must fit u32").into())
+        .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u32")))
 }
 
 fn required_i32(table: &Table, key: &str, context: &str) -> Result<i32> {
     required_i64(table, key, context)?
         .try_into()
-        .map_err(|_| format!("{context}.{key} must fit i32").into())
+        .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit i32")))
 }
 
 fn required_i64(table: &Table, key: &str, context: &str) -> Result<i64> {
     optional_i64(table, key, context)?
-        .ok_or_else(|| format!("{context} requires integer {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
 }
 
 fn optional_i64(table: &Table, key: &str, context: &str) -> Result<Option<i64>> {
@@ -236,7 +255,7 @@ fn optional_i64(table: &Table, key: &str, context: &str) -> Result<Option<i64>> 
         .get(key)
         .map(|item| {
             item.as_integer()
-                .ok_or_else(|| format!("{context}.{key} must be an integer").into())
+                .ok_or_else(|| crate::Error::invalid(format!("{context}.{key} must be an integer")))
         })
         .transpose()
 }
@@ -246,7 +265,7 @@ fn optional_u8(table: &Table, key: &str, context: &str) -> Result<Option<u8>> {
         .map(|value| {
             value
                 .try_into()
-                .map_err(|_| format!("{context}.{key} must fit u8").into())
+                .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u8")))
         })
         .transpose()
 }
@@ -256,7 +275,7 @@ fn optional_u32(table: &Table, key: &str, context: &str) -> Result<Option<u32>> 
         .map(|value| {
             value
                 .try_into()
-                .map_err(|_| format!("{context}.{key} must fit u32").into())
+                .map_err(|_| crate::Error::invalid(format!("{context}.{key} must fit u32")))
         })
         .transpose()
 }
@@ -265,17 +284,23 @@ fn required_u64(table: &Table, key: &str, context: &str) -> Result<u64> {
     let value = table
         .get(key)
         .and_then(Item::as_value)
-        .ok_or_else(|| format!("{context} requires integer or string {key:?}"))?;
+        .ok_or_else(|| format!("{context} requires integer or string {key:?}"))
+        .map_err(crate::Error::invalid)?;
     match value {
         Value::Integer(value) => value
             .value()
             .to_owned()
             .try_into()
-            .map_err(|_| format!("{context}.{key} must be non-negative").into()),
+            .map_err(|_| crate::Error::invalid(format!("{context}.{key} must be non-negative"))),
         Value::String(value) => parse_u64(value.value()).ok_or_else(|| {
-            format!("invalid u64 literal {:?} in {context}.{key}", value.value()).into()
+            crate::Error::invalid(format!(
+                "invalid u64 literal {:?} in {context}.{key}",
+                value.value()
+            ))
         }),
-        _ => Err(format!("{context}.{key} must be an integer or string").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "{context}.{key} must be an integer or string"
+        ))),
     }
 }
 
@@ -283,7 +308,7 @@ fn inline_i64(table: &InlineTable, key: &str, context: &str) -> Result<i64> {
     table
         .get(key)
         .and_then(Value::as_integer)
-        .ok_or_else(|| format!("{context} requires integer {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
 }
 
 fn parse_u64(value: &str) -> Option<u64> {

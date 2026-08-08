@@ -23,7 +23,9 @@ impl PacTarget {
         match value {
             "none" => Ok(Self::None),
             "riscv" => Ok(Self::Riscv),
-            _ => Err(format!("PAC target must be \"none\" or \"riscv\", got {value:?}").into()),
+            _ => Err(crate::Error::invalid(format!(
+                "PAC target must be \"none\" or \"riscv\", got {value:?}"
+            ))),
         }
     }
 
@@ -46,7 +48,9 @@ impl PacEdition {
         match value {
             "2021" => Ok(Self::E2021),
             "2024" => Ok(Self::E2024),
-            _ => Err(format!("PAC edition must be \"2021\" or \"2024\", got {value:?}").into()),
+            _ => Err(crate::Error::invalid(format!(
+                "PAC edition must be \"2021\" or \"2024\", got {value:?}"
+            ))),
         }
     }
 
@@ -80,7 +84,8 @@ pub(crate) fn generate_pac_with_api(
     };
     config.strict = true;
     let mut source = svd2rust::generate(svd, &config)
-        .map_err(|error| format!("svd2rust generation failed: {error}"))?
+        .map_err(|error| format!("svd2rust generation failed: {error}"))
+        .map_err(crate::Error::invalid)?
         .lib_rs;
     if api.is_some_and(|api| api.options.allow_clippy_empty_docs) {
         source.insert_str(0, "#![allow(clippy::empty_docs)]\n");
@@ -103,7 +108,8 @@ fn format_generated(source: &str, edition: PacEdition) -> Result<String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("failed to start rustfmt for generated PAC: {error}"))?;
+        .map_err(|error| format!("failed to start rustfmt for generated PAC: {error}"))
+        .map_err(crate::Error::invalid)?;
     child
         .stdin
         .take()
@@ -111,11 +117,10 @@ fn format_generated(source: &str, edition: PacEdition) -> Result<String> {
         .write_all(source.as_bytes())?;
     let output = child.wait_with_output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "rustfmt failed for generated PAC: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
+        )));
     }
     Ok(String::from_utf8(output.stdout)?)
 }

@@ -70,10 +70,9 @@ fn resolve_from(
             || requested_run_spec.is_some()
             || !svd_paths.is_empty()
         {
-            return Err(
-                "tooling commands do not accept --project, --target-spec, --run-spec or --svd"
-                    .into(),
-            );
+            return Err(crate::Error::invalid(
+                "tooling commands do not accept --project, --target-spec, --run-spec or --svd",
+            ));
         }
         return Ok(ResolvedInvocation::Tooling {
             command,
@@ -87,9 +86,9 @@ fn resolve_from(
             || requested_run_spec.is_some()
             || !svd_paths.is_empty()
         {
-            return Err(
-                "project init does not accept --project, --target-spec, --run-spec or --svd".into(),
-            );
+            return Err(crate::Error::invalid(
+                "project init does not accept --project, --target-spec, --run-spec or --svd",
+            ));
         }
         return Ok(ResolvedInvocation::ProjectInit {
             arguments: command_arguments,
@@ -105,14 +104,15 @@ fn resolve_from(
     };
     if command == Command::ProjectConfigure {
         if requested_target.is_some() || requested_run_spec.is_some() || !svd_paths.is_empty() {
-            return Err(
-                "project configure does not accept --target-spec, --run-spec or --svd".into(),
-            );
+            return Err(crate::Error::invalid(
+                "project configure does not accept --target-spec, --run-spec or --svd",
+            ));
         }
         return Ok(ResolvedInvocation::ProjectConfigure {
             arguments: command_arguments,
             project_path: project_path
-                .ok_or("project configure requires --project or a discovered manifest")?,
+                .ok_or("project configure requires --project or a discovered manifest")
+                .map_err(crate::Error::invalid)?,
         });
     }
 
@@ -121,7 +121,8 @@ fn resolve_from(
 
     let target_path = requested_target
         .or_else(|| project.as_ref().map(|project| project.target_spec.clone()))
-        .ok_or("missing --project or --target-spec, and no vendor-project.toml was found")?;
+        .ok_or("missing --project or --target-spec, and no vendor-project.toml was found")
+        .map_err(crate::Error::invalid)?;
     let mut target = TargetSpec::load(&target_path)?;
     if let Some(pack) = project
         .as_ref()
@@ -185,7 +186,9 @@ fn resolve_from(
         svd.windows.dedup();
     }
     if command.requires_mmio_map() && svd.windows.is_empty() {
-        return Err("command requires an MMIO region; add memory-map to the project".into());
+        return Err(crate::Error::invalid(
+            "command requires an MMIO region; add memory-map to the project",
+        ));
     }
 
     Ok(ResolvedInvocation::Command(Box::new(
@@ -228,12 +231,14 @@ fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()
             | Command::BuildIr
     ) && project.is_none()
     {
-        return Err("project/workspace commands require a project manifest".into());
+        return Err(crate::Error::invalid(
+            "project/workspace commands require a project manifest",
+        ));
     }
     if command.requires_harness() && project.is_none() {
-        return Err(
-            "platform-harness commands require a project manifest and platform pack".into(),
-        );
+        return Err(crate::Error::invalid(
+            "platform-harness commands require a project manifest and platform pack",
+        ));
     }
     Ok(())
 }

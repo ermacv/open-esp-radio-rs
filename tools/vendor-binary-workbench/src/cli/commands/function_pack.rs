@@ -25,7 +25,8 @@ pub(super) fn run(
     let paths = project
         .functions
         .as_ref()
-        .ok_or("project has no [functions] table; configure a reviewed pack first")?;
+        .ok_or("project has no [functions] table; configure a reviewed pack first")
+        .map_err(crate::Error::invalid)?;
     match (command, arguments) {
         (Command::FunctionInitPack, CommandArguments::Output(arguments)) => {
             init_pack(arguments, project, &paths.pack)
@@ -111,7 +112,8 @@ fn review(
         .output
         .as_deref()
         .or(paths.review_output.as_deref())
-        .ok_or("functions review requires --output or [functions.review].output")?;
+        .ok_or("functions review requires --output or [functions.review].output")
+        .map_err(crate::Error::invalid)?;
     let reports = project.function_ir_reports()?;
     let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
     let interface_links = reviewed_interface_links(project, target, &workspace)?;

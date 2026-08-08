@@ -217,11 +217,15 @@ fn print_report(discovery: &Discovery) {
 pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Result<bool> {
     let options = resolve_options(arguments);
     if options.check && options.json_report.is_none() {
-        return Err("interfaces discover --check requires --json-report PATH".into());
+        return Err(crate::Error::invalid(
+            "interfaces discover --check requires --json-report PATH",
+        ));
     }
     let inputs = selected_inputs(run_spec, &options)?;
     if inputs.is_empty() {
-        return Err("run spec has no artifact or inventory inputs for interface discovery".into());
+        return Err(crate::Error::invalid(
+            "run spec has no artifact or inventory inputs for interface discovery",
+        ));
     }
     tracing::debug!(inputs = inputs.len(), "resolved interface discovery inputs");
     let discovery = discover(&inputs, &options)?;

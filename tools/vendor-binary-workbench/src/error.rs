@@ -84,6 +84,12 @@ pub(crate) enum WorkbenchError {
 }
 
 impl WorkbenchError {
+    pub(crate) fn invalid(message: impl Into<String>) -> Self {
+        Self::InvalidInput {
+            message: message.into(),
+        }
+    }
+
     pub(crate) fn manifest(
         kind: &'static str,
         path: impl Into<PathBuf>,
@@ -161,20 +167,6 @@ fn source_line_span(input: &str, line: usize) -> Option<std::ops::Range<usize>> 
         return Some(input.len().saturating_sub(1)..input.len());
     }
     None
-}
-
-impl From<String> for WorkbenchError {
-    fn from(value: String) -> Self {
-        Self::InvalidInput { message: value }
-    }
-}
-
-impl From<&str> for WorkbenchError {
-    fn from(value: &str) -> Self {
-        Self::InvalidInput {
-            message: value.to_owned(),
-        }
-    }
 }
 
 pub(crate) type Result<T> = std::result::Result<T, WorkbenchError>;

@@ -23,14 +23,26 @@ struct TraceComparisonDocument<'a> {
 
 pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Result<bool> {
     let left = ArtifactSymbolSelector {
-        artifact: arguments.artifact.ok_or("missing --artifact")?,
+        artifact: arguments
+            .artifact
+            .ok_or("missing --artifact")
+            .map_err(crate::Error::invalid)?,
         member: arguments.member,
-        symbol: arguments.symbol.ok_or("missing --symbol")?,
+        symbol: arguments
+            .symbol
+            .ok_or("missing --symbol")
+            .map_err(crate::Error::invalid)?,
     };
     let right = ArtifactSymbolSelector {
-        artifact: arguments.right_artifact.ok_or("missing --right-artifact")?,
+        artifact: arguments
+            .right_artifact
+            .ok_or("missing --right-artifact")
+            .map_err(crate::Error::invalid)?,
         member: arguments.right_member,
-        symbol: arguments.right_symbol.ok_or("missing --right-symbol")?,
+        symbol: arguments
+            .right_symbol
+            .ok_or("missing --right-symbol")
+            .map_err(crate::Error::invalid)?,
     };
     let left_trace = extract(&left, svd)?;
     let right_trace = extract(&right, svd)?;

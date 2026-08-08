@@ -22,12 +22,17 @@ fn directive_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
     line.split_once(char::is_whitespace)
         .map(|(directive, value)| (directive, value.trim()))
         .filter(|(_, value)| !value.is_empty())
-        .ok_or_else(|| format!("disposition directive needs a value at line {line_number}").into())
+        .ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "disposition directive needs a value at line {line_number}"
+            ))
+        })
 }
 
 pub(crate) fn validate_source_id(value: &str, line: usize) -> Result<&str> {
-    crate::source_id::validate_source_id(value)
-        .map_err(|_| format!("invalid vendor source id {value:?} at line {line}").into())
+    crate::source_id::validate_source_id(value).map_err(|_| {
+        crate::Error::invalid(format!("invalid vendor source id {value:?} at line {line}"))
+    })
 }
 
 impl Manifest {
@@ -57,7 +62,9 @@ impl Manifest {
             let entry = builder.finish()?;
             let key = (entry.source.clone(), entry.symbol.clone());
             if entries.insert(key, entry).is_some() {
-                return Err("duplicate disposition function entry".into());
+                return Err(crate::Error::invalid(
+                    "duplicate disposition function entry",
+                ));
             }
             Ok(())
         };
@@ -75,11 +82,11 @@ impl Manifest {
                         finish_entry(builder, &mut entries)?;
                     }
                     let mut words = value.split_whitespace();
-                    let source = words.next().ok_or("function has no source")?;
-                    let symbol = words.next().ok_or("function has no symbol")?;
+                    let source = words.next().ok_or("function has no source").map_err(crate::Error::invalid)?;
+                    let symbol = words.next().ok_or("function has no symbol").map_err(crate::Error::invalid)?;
                     if words.next().is_some() {
                         return Err(
-                            format!("function has extra fields at line {line_number}").into()
+                            crate::Error::invalid(format!("function has extra fields at line {line_number}"))
                         );
                     }
                     validate_source_id(source, line_number)?;
@@ -106,48 +113,48 @@ impl Manifest {
                 match directive {
                     "default-disposition" => {
                         if current.is_some() {
-                            return Err(format!(
+                            return Err(crate::Error::invalid(format!(
                                 "default-disposition inside function at line {line_number}"
                             )
-                            .into());
+                            ));
                         }
                         if default_disposition
                             .replace(Disposition::parse(value, line_number)?)
                             .is_some()
                         {
-                            return Err("duplicate default-disposition".into());
+                            return Err(crate::Error::invalid("duplicate default-disposition"));
                         }
                     }
                     "default-protocol" => {
                         if current.is_some() {
-                            return Err(format!(
+                            return Err(crate::Error::invalid(format!(
                                 "default-protocol inside function at line {line_number}"
                             )
-                            .into());
+                            ));
                         }
                         if default_protocol
                             .replace(Protocol::parse(value, line_number)?)
                             .is_some()
                         {
-                            return Err("duplicate default-protocol".into());
+                            return Err(crate::Error::invalid("duplicate default-protocol"));
                         }
                     }
                     "protocol-prefix" => {
                         if current.is_some() {
-                            return Err(format!(
+                            return Err(crate::Error::invalid(format!(
                                 "protocol-prefix inside function at line {line_number}"
                             )
-                            .into());
+                            ));
                         }
                         let mut words = value.split_whitespace();
-                        let source = words.next().ok_or("protocol-prefix has no source")?;
-                        let prefix = words.next().ok_or("protocol-prefix has no prefix")?;
-                        let protocol = words.next().ok_or("protocol-prefix has no protocol")?;
+                        let source = words.next().ok_or("protocol-prefix has no source").map_err(crate::Error::invalid)?;
+                        let prefix = words.next().ok_or("protocol-prefix has no prefix").map_err(crate::Error::invalid)?;
+                        let protocol = words.next().ok_or("protocol-prefix has no protocol").map_err(crate::Error::invalid)?;
                         if words.next().is_some() {
-                            return Err(format!(
+                            return Err(crate::Error::invalid(format!(
                                 "protocol-prefix has extra fields at line {line_number}"
                             )
-                            .into());
+                            ));
                         }
                         validate_source_id(source, line_number)?;
                         protocol_prefixes.push(ProtocolPrefix {
@@ -161,7 +168,7 @@ impl Manifest {
                     | "rust-probe" | "compare-return" | "driver-adapter" | "blocked-by" => {
                         let builder = current.as_mut().ok_or_else(|| {
                             format!("{directive} outside function at line {line_number}")
-                        })?;
+                        }).map_err(crate::Error::invalid)?;
                         match directive {
                             "disposition" => {
                                 if builder
@@ -169,10 +176,10 @@ impl Manifest {
                                     .replace(Disposition::parse(value, line_number)?)
                                     .is_some()
                                 {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate disposition at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "protocol" => {
@@ -181,26 +188,26 @@ impl Manifest {
                                     .replace(Protocol::parse(value, line_number)?)
                                     .is_some()
                                 {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate protocol at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "rust-component" => {
                                 if builder.rust_component.replace(value.to_owned()).is_some() {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate rust-component at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "hil-evidence" => {
                                 if builder.hil_evidence.replace(value.to_owned()).is_some() {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate hil-evidence at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "semantic-contract" => {
@@ -209,10 +216,10 @@ impl Manifest {
                                     .replace(SemanticContract::parse(value, line_number)?)
                                     .is_some()
                                 {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate semantic-contract at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "effect-contract" => {
@@ -221,10 +228,10 @@ impl Manifest {
                                     .replace(EffectComparison::parse(value, line_number)?)
                                     .is_some()
                                 {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate effect-contract at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "effect" => builder
@@ -237,30 +244,30 @@ impl Manifest {
                                     .is_some()
                                 {
                                     return Err(
-                                        format!("duplicate binding at line {line_number}").into()
+                                        crate::Error::invalid(format!("duplicate binding at line {line_number}"))
                                     );
                                 }
                             }
                             "rust-probe" => {
                                 if builder.rust_probe.replace(value.to_owned()).is_some() {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate rust-probe at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "compare-return" => {
                                 if value != "true" {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "compare-return must be true at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                                 if builder.compare_return.replace(true).is_some() {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate compare-return at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "driver-adapter" => {
@@ -269,33 +276,33 @@ impl Manifest {
                                     .replace(DriverAdapter::parse(value, line_number)?)
                                     .is_some()
                                 {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "duplicate driver-adapter at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                             }
                             "blocked-by" => {
                                 let mut words = value.split_whitespace();
                                 let source = words.next().ok_or_else(|| {
                                     format!("blocked-by has no source at line {line_number}")
-                                })?;
+                                }).map_err(crate::Error::invalid)?;
                                 let symbol = words.next().ok_or_else(|| {
                                     format!("blocked-by has no symbol at line {line_number}")
-                                })?;
+                                }).map_err(crate::Error::invalid)?;
                                 if words.next().is_some() {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                         "blocked-by has extra fields at line {line_number}"
                                     )
-                                    .into());
+                                    ));
                                 }
                                 validate_source_id(source, line_number)?;
                                 let blocker = (source.to_owned(), symbol.to_owned());
                                 if builder.qualification_blockers.contains(&blocker) {
-                                    return Err(format!(
+                                    return Err(crate::Error::invalid(format!(
                                     "duplicate blocked-by {source} {symbol} at line {line_number}"
                                 )
-                                .into());
+                                ));
                                 }
                                 builder.qualification_blockers.push(blocker);
                             }
@@ -303,10 +310,10 @@ impl Manifest {
                         }
                     }
                     _ => {
-                        return Err(format!(
+                        return Err(crate::Error::invalid(format!(
                             "unknown disposition directive {directive:?} at line {line_number}"
                         )
-                        .into());
+                        ));
                     }
                 }
                 Ok(())
@@ -317,18 +324,19 @@ impl Manifest {
             finish_entry(builder, &mut entries)?;
         }
 
-        let default_disposition =
-            default_disposition.ok_or("disposition manifest has no default-disposition")?;
-        let default_protocol =
-            default_protocol.ok_or("disposition manifest has no default-protocol")?;
+        let default_disposition = default_disposition
+            .ok_or("disposition manifest has no default-disposition")
+            .map_err(crate::Error::invalid)?;
+        let default_protocol = default_protocol
+            .ok_or("disposition manifest has no default-protocol")
+            .map_err(crate::Error::invalid)?;
         let mut prefix_identities = BTreeSet::new();
         for prefix in &protocol_prefixes {
             if !prefix_identities.insert((prefix.source.as_str(), prefix.prefix.as_str())) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "duplicate protocol-prefix {} {}",
                     prefix.source, prefix.prefix
-                )
-                .into());
+                )));
             }
         }
 
@@ -369,21 +377,19 @@ impl Manifest {
             .collect::<BTreeSet<_>>();
         for key in self.entries.keys() {
             if !inventory.contains(key) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "disposition refers to missing {} vendor symbol {}",
                     key.0, key.1
-                )
-                .into());
+                )));
             }
         }
         for entry in self.entries.values() {
             for blocker in &entry.qualification_blockers {
                 if !inventory.contains(blocker) {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "qualification blocker for {} {} refers to missing {} vendor symbol {}",
                         entry.source, entry.symbol, blocker.0, blocker.1
-                    )
-                    .into());
+                    )));
                 }
             }
         }

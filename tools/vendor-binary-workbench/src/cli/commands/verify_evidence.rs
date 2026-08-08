@@ -18,10 +18,12 @@ struct EvidenceReviewReport {
 pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
     let report = arguments
         .report
-        .ok_or("verify evidence requires --report")?;
+        .ok_or("verify evidence requires --report")
+        .map_err(crate::Error::invalid)?;
     let baseline = arguments
         .evidence_baseline
-        .ok_or("verify evidence requires --evidence-baseline")?;
+        .ok_or("verify evidence requires --evidence-baseline")
+        .map_err(crate::Error::invalid)?;
     let evidence = load_evidence_report(&report)?;
     let report_sha256 = artifact_sha256(&report)?;
     let expected = load_evidence_baseline(&baseline)?;

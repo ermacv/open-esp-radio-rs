@@ -37,7 +37,9 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
     validate_directory(&directory)?;
     validate_stable_id(&id, "project")?;
     if ranges.is_empty() {
-        return Err("project init requires at least one --mmio NAME=START..END".into());
+        return Err(crate::Error::invalid(
+            "project init requires at least one --mmio NAME=START..END",
+        ));
     }
     validate_ranges(&ranges)?;
     if sources.is_empty() {
@@ -45,18 +47,19 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
     }
     let unique_sources = sources.iter().collect::<BTreeSet<_>>();
     if unique_sources.len() != sources.len() {
-        return Err("project init source IDs must be unique".into());
+        return Err(crate::Error::invalid(
+            "project init source IDs must be unique",
+        ));
     }
     let rust_target = rust_target.unwrap_or_else(|| DEFAULT_RUST_TARGET.to_owned());
     validate_token(&rust_target, "Rust target")?;
     let pac_crate_name = pac_crate_name.unwrap_or_else(|| default_pac_crate_name(&id));
     open_esp_radio_register_model::validate_pac_crate_name(&pac_crate_name)?;
     if import_svd.as_ref().is_some_and(|path| !path.is_file()) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project init SVD input does not exist: {}",
             import_svd.as_ref().unwrap().display()
-        )
-        .into());
+        )));
     }
 
     Ok(Options {
@@ -74,18 +77,20 @@ fn validate_ranges(ranges: &[NamedAddressRange]) -> Result<()> {
     let mut names = BTreeSet::new();
     for range in ranges {
         if !names.insert(&range.name) {
-            return Err(format!("duplicate MMIO range name {:?}", range.name).into());
+            return Err(crate::Error::invalid(format!(
+                "duplicate MMIO range name {:?}",
+                range.name
+            )));
         }
     }
     let mut sorted = ranges.iter().collect::<Vec<_>>();
     sorted.sort_by_key(|range| (range.start, range.end));
     for pair in sorted.windows(2) {
         if pair[1].start < pair[0].end {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "MMIO ranges {:?} and {:?} overlap",
                 pair[0].name, pair[1].name
-            )
-            .into());
+            )));
         }
     }
     Ok(())
@@ -97,7 +102,9 @@ fn validate_directory(path: &Path) -> Result<()> {
             .components()
             .any(|component| matches!(component, Component::ParentDir))
     {
-        return Err("project directory must be a non-empty path without '..'".into());
+        return Err(crate::Error::invalid(
+            "project directory must be a non-empty path without '..'",
+        ));
     }
     Ok(())
 }
@@ -108,14 +115,18 @@ fn validate_stable_id(value: &str, kind: &str) -> Result<()> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
-        return Err(format!("invalid {kind} id {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid {kind} id {value:?}"
+        )));
     }
     Ok(())
 }
 
 fn validate_token(value: &str, kind: &str) -> Result<()> {
     if value.is_empty() || value.chars().any(char::is_whitespace) {
-        return Err(format!("{kind} must be one non-empty token").into());
+        return Err(crate::Error::invalid(format!(
+            "{kind} must be one non-empty token"
+        )));
     }
     Ok(())
 }

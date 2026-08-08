@@ -6,15 +6,14 @@ use crate::Result;
 
 pub(super) fn write_or_check(path: &Path, contents: &str, check: bool, kind: &str) -> Result<()> {
     if check {
-        let existing = fs::read_to_string(path).map_err(|error| {
-            format!("cannot check generated {kind} {}: {error}", path.display())
-        })?;
+        let existing = fs::read_to_string(path)
+            .map_err(|error| format!("cannot check generated {kind} {}: {error}", path.display()))
+            .map_err(crate::Error::invalid)?;
         if existing != contents {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "generated {kind} differs from {}; rerun without --check",
                 path.display()
-            )
-            .into());
+            )));
         }
         return Ok(());
     }

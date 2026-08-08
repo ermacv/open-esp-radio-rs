@@ -69,9 +69,9 @@ pub(super) static RISCV_HARNESS: RiscvHarnessSpec = RiscvHarnessSpec {
 };
 
 pub(super) fn entry_contract(id: &str) -> crate::Result<EntryContractRef> {
-    CONTRACTS
-        .entry_contract(id)
-        .ok_or_else(|| format!("generic analysis has no entry contract {id:?}").into())
+    CONTRACTS.entry_contract(id).ok_or_else(|| {
+        crate::Error::invalid(format!("generic analysis has no entry contract {id:?}"))
+    })
 }
 
 #[cfg(test)]

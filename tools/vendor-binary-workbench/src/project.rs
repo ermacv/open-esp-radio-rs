@@ -133,7 +133,11 @@ impl ProjectSpec {
                     .iter()
                     .find(|profile| profile.id == *id)
                     .map(|profile| (id.clone(), profile.output.clone()))
-                    .ok_or_else(|| format!("unknown function workspace IR profile {id:?}").into())
+                    .ok_or_else(|| {
+                        crate::Error::invalid(format!(
+                            "unknown function workspace IR profile {id:?}"
+                        ))
+                    })
             })
             .collect()
     }

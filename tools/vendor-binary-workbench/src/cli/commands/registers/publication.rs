@@ -103,7 +103,8 @@ pub(crate) fn prepare_project_svd(
     let output = paths
         .svd_output
         .clone()
-        .ok_or("project SVD publication is not configured")?;
+        .ok_or("project SVD publication is not configured")
+        .map_err(crate::Error::invalid)?;
     let workspace = load_release_workspace(paths, "release SVD")?;
     let (contents, summary) = workspace.render_svd()?;
     Ok(PreparedPublication {
@@ -121,7 +122,8 @@ pub(crate) fn prepare_project_pac(
     let configured = paths
         .pac
         .as_ref()
-        .ok_or("project PAC publication is not configured")?;
+        .ok_or("project PAC publication is not configured")
+        .map_err(crate::Error::invalid)?;
     let target = PacTarget::parse(&configured.target)?;
     let edition = PacEdition::parse(&configured.edition)?;
     let api_pack = paths
@@ -151,7 +153,8 @@ pub(crate) fn prepare_project_bindings(
     let configured = paths
         .bindings
         .as_ref()
-        .ok_or("project PAC binding publication is not configured")?;
+        .ok_or("project PAC binding publication is not configured")
+        .map_err(crate::Error::invalid)?;
     let workspace = load_release_workspace(paths, "PAC binding generation")?;
     let (svd, summary) = workspace.render_svd()?;
     let contents =
@@ -174,11 +177,10 @@ fn load_release_workspace(
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let summary = workspace.summary()?;
     if summary.unreviewed != 0 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "{operation} denied {} unreviewed MMIO observations",
             summary.unreviewed
-        )
-        .into());
+        )));
     }
     Ok(workspace)
 }
@@ -192,15 +194,15 @@ pub(super) fn export_svd(
         .output
         .as_deref()
         .or(paths.svd_output.as_deref())
-        .ok_or("registers export-svd requires --output PATH or [registers.svd] output")?;
+        .ok_or("registers export-svd requires --output PATH or [registers.svd] output")
+        .map_err(crate::Error::invalid)?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "release SVD denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
-        )
-        .into());
+        )));
     }
     let (contents, summary) = workspace.render_svd()?;
     super::super::super::generated_output::write_or_check(
@@ -231,7 +233,8 @@ pub(super) fn generate_pac_source(
         .output
         .as_deref()
         .or_else(|| configured.map(|pac| pac.output.as_path()))
-        .ok_or("registers generate-pac requires --output PATH or [registers.pac] output")?;
+        .ok_or("registers generate-pac requires --output PATH or [registers.pac] output")
+        .map_err(crate::Error::invalid)?;
     let target = arguments
         .target
         .as_deref()
@@ -251,11 +254,10 @@ pub(super) fn generate_pac_source(
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "PAC generation denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
-        )
-        .into());
+        )));
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let source = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
@@ -284,23 +286,21 @@ pub(super) fn generate_bindings(
         .output
         .as_deref()
         .or_else(|| configured.map(|bindings| bindings.output.as_path()))
-        .ok_or(
-            "registers generate-bindings requires --output PATH or [registers.bindings] output",
-        )?;
+        .ok_or("registers generate-bindings requires --output PATH or [registers.bindings] output")
+        .map_err(crate::Error::invalid)?;
     let crate_name = arguments.crate_name
         .as_deref()
         .or_else(|| configured.map(|bindings| bindings.crate_name.as_str()))
         .ok_or(
             "registers generate-bindings requires --crate-name NAME or [registers.bindings] crate-name",
-        )?;
+        ).map_err(crate::Error::invalid)?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "PAC binding generation denied {} unreviewed MMIO observations",
             workspace_summary.unreviewed
-        )
-        .into());
+        )));
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let contents = open_esp_radio_register_model::generate_pac_binding_index(&svd, crate_name)?;

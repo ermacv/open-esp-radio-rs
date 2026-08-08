@@ -7,30 +7,45 @@ use crate::*;
 pub(crate) fn parse_assignment(value: &str, option: &str) -> Result<(u32, u32)> {
     let (address, value) = value
         .split_once('=')
-        .ok_or_else(|| format!("{option} requires ADDRESS=VALUE"))?;
-    let address = parse_u32(address).ok_or_else(|| format!("invalid {option} address"))?;
-    let value = parse_u32(value).ok_or_else(|| format!("invalid {option} value"))?;
+        .ok_or_else(|| format!("{option} requires ADDRESS=VALUE"))
+        .map_err(crate::Error::invalid)?;
+    let address = parse_u32(address)
+        .ok_or_else(|| format!("invalid {option} address"))
+        .map_err(crate::Error::invalid)?;
+    let value = parse_u32(value)
+        .ok_or_else(|| format!("invalid {option} value"))
+        .map_err(crate::Error::invalid)?;
     Ok((address, value))
 }
 
 pub(crate) fn parse_call_return(value: &str, option: &str) -> Result<(String, u32)> {
     let (symbol, value) = value
         .split_once('=')
-        .ok_or_else(|| format!("{option} requires SYMBOL=VALUE"))?;
+        .ok_or_else(|| format!("{option} requires SYMBOL=VALUE"))
+        .map_err(crate::Error::invalid)?;
     if symbol.is_empty() || symbol.chars().any(char::is_whitespace) {
-        return Err(format!("{option} requires one non-empty symbol").into());
+        return Err(crate::Error::invalid(format!(
+            "{option} requires one non-empty symbol"
+        )));
     }
-    let value = parse_u32(value).ok_or_else(|| format!("invalid {option} value"))?;
+    let value = parse_u32(value)
+        .ok_or_else(|| format!("invalid {option} value"))
+        .map_err(crate::Error::invalid)?;
     Ok((symbol.to_owned(), value))
 }
 
 pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord> {
     let (address, symbol) = value
         .split_once('=')
-        .ok_or_else(|| format!("{option} requires ADDRESS=SYMBOL"))?;
-    let address = parse_u32(address).ok_or_else(|| format!("invalid {option} address"))?;
+        .ok_or_else(|| format!("{option} requires ADDRESS=SYMBOL"))
+        .map_err(crate::Error::invalid)?;
+    let address = parse_u32(address)
+        .ok_or_else(|| format!("invalid {option} address"))
+        .map_err(crate::Error::invalid)?;
     if symbol.is_empty() {
-        return Err(format!("{option} requires a non-empty symbol").into());
+        return Err(crate::Error::invalid(format!(
+            "{option} requires a non-empty symbol"
+        )));
     }
     Ok(SymbolWord {
         address,
@@ -41,10 +56,15 @@ pub(crate) fn parse_symbol_word(value: &str, option: &str) -> Result<SymbolWord>
 pub(crate) fn parse_symbol_observation(value: &str, option: &str) -> Result<MemoryObservation> {
     let (target, length) = value
         .split_once('=')
-        .ok_or_else(|| format!("{option} requires SYMBOL[+OFFSET]=LENGTH"))?;
-    let length = parse_u32(length).ok_or_else(|| format!("invalid {option} length"))?;
+        .ok_or_else(|| format!("{option} requires SYMBOL[+OFFSET]=LENGTH"))
+        .map_err(crate::Error::invalid)?;
+    let length = parse_u32(length)
+        .ok_or_else(|| format!("invalid {option} length"))
+        .map_err(crate::Error::invalid)?;
     if length == 0 {
-        return Err(format!("{option} length must be non-zero").into());
+        return Err(crate::Error::invalid(format!(
+            "{option} length must be non-zero"
+        )));
     }
     let (symbol, offset) = target
         .split_once('+')
@@ -52,7 +72,9 @@ pub(crate) fn parse_symbol_observation(value: &str, option: &str) -> Result<Memo
             (symbol, parse_u32(offset).unwrap_or(u32::MAX))
         });
     if symbol.is_empty() || offset == u32::MAX {
-        return Err(format!("invalid {option} symbol or offset").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid {option} symbol or offset"
+        )));
     }
     Ok(MemoryObservation::Symbol {
         symbol: symbol.to_owned(),
@@ -83,7 +105,7 @@ pub(crate) fn observe_memory(
     length: u32,
 ) -> Result<()> {
     if length == 0 {
-        return Err("--observe length must be non-zero".into());
+        return Err(crate::Error::invalid("--observe length must be non-zero"));
     }
     scenario.observed_memory.push(execution::MemoryRange {
         start: address,
@@ -205,7 +227,9 @@ pub(crate) fn static_inventory_for_argument_domain(
     argument_domain: &[[Option<u32>; 8]],
 ) -> Result<execution::CoverageInventory> {
     if argument_domain.is_empty() {
-        return Err("static argument domain must not be empty".into());
+        return Err(crate::Error::invalid(
+            "static argument domain must not be empty",
+        ));
     }
     let mut aggregate = execution::CoverageInventory::default();
     for constraints in argument_domain {
@@ -246,14 +270,17 @@ pub(crate) fn resolved_scenario(
         write_ram_word(&mut scenario, *address, *value);
     }
     for word in words {
-        let value = image.symbol_address(&word.symbol).ok_or_else(|| {
-            format!(
-                "scenario {} refers to missing {} symbol {}",
-                named.name,
-                if vendor { "vendor" } else { "Rust" },
-                word.symbol
-            )
-        })?;
+        let value = image
+            .symbol_address(&word.symbol)
+            .ok_or_else(|| {
+                format!(
+                    "scenario {} refers to missing {} symbol {}",
+                    named.name,
+                    if vendor { "vendor" } else { "Rust" },
+                    word.symbol
+                )
+            })
+            .map_err(crate::Error::invalid)?;
         seed_ram_word(&mut scenario, word.address, value);
     }
     let observations = if vendor {
@@ -270,14 +297,17 @@ pub(crate) fn resolved_scenario(
                 offset,
                 length,
             } => {
-                let address = image.symbol_address(symbol).ok_or_else(|| {
-                    format!(
-                        "scenario {} refers to missing {} observation symbol {}",
-                        named.name,
-                        if vendor { "vendor" } else { "Rust" },
-                        symbol
-                    )
-                })?;
+                let address = image
+                    .symbol_address(symbol)
+                    .ok_or_else(|| {
+                        format!(
+                            "scenario {} refers to missing {} observation symbol {}",
+                            named.name,
+                            if vendor { "vendor" } else { "Rust" },
+                            symbol
+                        )
+                    })
+                    .map_err(crate::Error::invalid)?;
                 (address.wrapping_add(*offset), *length)
             }
         };
@@ -288,7 +318,8 @@ pub(crate) fn resolved_scenario(
         });
         comparison_start = comparison_start
             .checked_add(length)
-            .ok_or("normalized observation length overflow")?;
+            .ok_or("normalized observation length overflow")
+            .map_err(crate::Error::invalid)?;
     }
     Ok(scenario)
 }

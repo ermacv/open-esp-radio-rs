@@ -125,11 +125,10 @@ pub(crate) fn compare_execution_scenarios(
             .map(MemoryObservation::length)
             .collect();
         if vendor_lengths != rust_lengths {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "scenario {} has different vendor/Rust observation layouts",
                 named.name
-            )
-            .into());
+            )));
         }
         let vendor_result = execution::execute(
             &vendor_image,

@@ -30,16 +30,19 @@ fn parse_evidence_baseline(path: &Path, text: &str) -> Result<EvidenceSet> {
         (|| {
             let fields = line.split_whitespace().collect::<Vec<_>>();
             let ["evidence", source, symbol, kind] = fields.as_slice() else {
-                return Err(
-                    "expected evidence baseline directive: evidence SOURCE SYMBOL KIND".into(),
-                );
+                return Err(crate::Error::invalid(
+                    "expected evidence baseline directive: evidence SOURCE SYMBOL KIND",
+                ));
             };
             record_evidence(&mut evidence, source, symbol, *kind)
         })()
         .map_err(|error: WorkbenchError| error.at_line(line_number))?;
     }
     if evidence.is_empty() {
-        return Err(format!("evidence baseline {} is empty", path.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "evidence baseline {} is empty",
+            path.display()
+        )));
     }
     Ok(evidence)
 }
@@ -143,18 +146,24 @@ fn evidence_path_identity(path: &Path) -> Result<PathBuf> {
     } else {
         env::current_dir()?.join(path)
     };
-    let parent = absolute.parent().ok_or_else(|| {
-        format!(
-            "evidence candidate path {} has no parent directory",
-            path.display()
-        )
-    })?;
-    let file_name = absolute.file_name().ok_or_else(|| {
-        format!(
-            "evidence candidate path {} has no file name",
-            path.display()
-        )
-    })?;
+    let parent = absolute
+        .parent()
+        .ok_or_else(|| {
+            format!(
+                "evidence candidate path {} has no parent directory",
+                path.display()
+            )
+        })
+        .map_err(crate::Error::invalid)?;
+    let file_name = absolute
+        .file_name()
+        .ok_or_else(|| {
+            format!(
+                "evidence candidate path {} has no file name",
+                path.display()
+            )
+        })
+        .map_err(crate::Error::invalid)?;
     Ok(fs::canonicalize(parent)?.join(file_name))
 }
 
@@ -164,16 +173,17 @@ pub(crate) fn write_evidence_candidate(
     evidence: &EvidenceSet,
 ) -> Result<()> {
     if evidence.is_empty() {
-        return Err("refusing to write an empty evidence candidate".into());
+        return Err(crate::Error::invalid(
+            "refusing to write an empty evidence candidate",
+        ));
     }
     let candidate_identity = evidence_path_identity(path)?;
     for (role, protected) in protected_inputs {
         if evidence_path_identity(protected)? == candidate_identity {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "evidence candidate must not overwrite {role} {}; choose a separate candidate path",
                 protected.display()
-            )
-            .into());
+            )));
         }
     }
     let mut output = String::new();
@@ -203,21 +213,25 @@ pub(crate) fn load_evidence_report(path: &Path) -> Result<EvidenceSet> {
 fn parse_evidence_report(path: &Path, text: &str) -> Result<EvidenceSet> {
     let report: StoredVerificationReport = serde_json::from_str(text)?;
     if report.schema_version != super::super::VERIFICATION_REPORT_SCHEMA {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "verification report schema_version must be {}",
             super::super::VERIFICATION_REPORT_SCHEMA
-        )
-        .into());
+        )));
     }
     if report.command != "verify inventory" {
-        return Err("evidence review requires a verify inventory JSON report".into());
+        return Err(crate::Error::invalid(
+            "evidence review requires a verify inventory JSON report",
+        ));
     }
     let mut evidence = EvidenceSet::new();
     for entry in report.evidence {
         record_evidence(&mut evidence, &entry.source, &entry.symbol, entry.kind)?;
     }
     if evidence.is_empty() {
-        return Err(format!("verification report {} has no evidence", path.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "verification report {} has no evidence",
+            path.display()
+        )));
     }
     Ok(evidence)
 }

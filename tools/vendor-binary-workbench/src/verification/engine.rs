@@ -53,38 +53,34 @@ pub(crate) fn verify_source(
     let mut profiled_vendor_symbols = BTreeSet::new();
     for profile in execution_profiles {
         if profile.vendor_source != source.name && source.name != "vendor" {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "profile {} targets {}, but was routed to {}",
                 profile.name, profile.vendor_source, source.name
-            )
-            .into());
+            )));
         }
         if !profiled_vendor_symbols.insert(profile.vendor_symbol.as_str()) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "multiple execution profiles target {} in {}",
                 profile.vendor_symbol, source.name
-            )
-            .into());
+            )));
         }
         if !vendor_symbols
             .iter()
             .any(|symbol| symbol.name == profile.vendor_symbol)
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "profile {} refers to missing {} vendor symbol {}",
                 profile.name, source.name, profile.vendor_symbol
-            )
-            .into());
+            )));
         }
         if !rust_symbols
             .iter()
             .any(|symbol| symbol.name == profile.rust_symbol)
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "profile {} refers to missing Rust symbol {}",
                 profile.name, profile.rust_symbol
-            )
-            .into());
+            )));
         }
     }
     let mut rust_by_suffix = HashMap::new();
@@ -96,11 +92,10 @@ pub(crate) fn verify_source(
             .strip_prefix("ret_")
             .map_or((suffix, false), |suffix| (suffix, true));
         if let Some((previous, _)) = rust_by_suffix.insert(suffix, (symbol, compare_return)) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "Rust probe suffix {suffix:?} is ambiguous between {} and {}",
                 previous.name, symbol.name
-            )
-            .into());
+            )));
         }
     }
 
@@ -145,7 +140,8 @@ pub(crate) fn verify_source(
                     policy,
                 },
             )?
-            .ok_or_else(|| format!("no harness registered driver adapter {}", adapter.label()))?;
+            .ok_or_else(|| format!("no harness registered driver adapter {}", adapter.label()))
+            .map_err(crate::Error::invalid)?;
             if proof.matched {
                 summary.matched += 1;
                 summary.effect_contract_matches += 1;
@@ -210,7 +206,8 @@ pub(crate) fn verify_source(
                                 "no harness registered semantic contract {}",
                                 contract.label()
                             )
-                        })?;
+                        })
+                        .map_err(crate::Error::invalid)?;
                         if matched {
                             summary.matched += 1;
                             summary.composition_matches += 1;

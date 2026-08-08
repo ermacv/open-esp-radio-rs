@@ -155,11 +155,18 @@ fn print_tsv(report: &ProfileVerificationReport) {
 }
 
 pub(super) fn run(arguments: VerifyProfilesArgs, svd: &MmioRegisterMap) -> Result<bool> {
-    let profile_path = arguments.profiles.ok_or("missing --profiles")?;
+    let profile_path = arguments
+        .profiles
+        .ok_or("missing --profiles")
+        .map_err(crate::Error::invalid)?;
     let vendor_artifact = arguments
         .vendor_artifact
-        .ok_or("missing --vendor-artifact")?;
-    let rust_artifact = arguments.rust_artifact.ok_or("missing --rust-artifact")?;
+        .ok_or("missing --vendor-artifact")
+        .map_err(crate::Error::invalid)?;
+    let rust_artifact = arguments
+        .rust_artifact
+        .ok_or("missing --rust-artifact")
+        .map_err(crate::Error::invalid)?;
     let loaded_profiles = profiles::load(&profile_path)?;
     let mut matched = 0_usize;
     let mut mismatched = 0_usize;

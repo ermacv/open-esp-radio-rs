@@ -26,16 +26,20 @@ pub(crate) fn load_symbol_inventory(
     };
     let analysis = analysis
         .as_table()
-        .ok_or("project manifest analysis must be a table")?;
+        .ok_or("project manifest analysis must be a table")
+        .map_err(crate::Error::invalid)?;
     let Some(symbols) = analysis.get("symbols") else {
         return Ok(None);
     };
     let symbols = symbols
         .as_table()
-        .ok_or("project analysis.symbols must be a table")?;
+        .ok_or("project analysis.symbols must be a table")
+        .map_err(crate::Error::invalid)?;
     for (key, _) in symbols.iter() {
         if key != "output" {
-            return Err(format!("unknown project analysis.symbols key {key:?}").into());
+            return Err(crate::Error::invalid(format!(
+                "unknown project analysis.symbols key {key:?}"
+            )));
         }
     }
     let output = symbols
@@ -43,16 +47,16 @@ pub(crate) fn load_symbol_inventory(
         .and_then(Item::as_str)
         .filter(|value| !value.is_empty())
         .map(|value| resolve_path(base, value))
-        .ok_or("project analysis.symbols requires non-empty string \"output\"")?;
+        .ok_or("project analysis.symbols requires non-empty string \"output\"")
+        .map_err(crate::Error::invalid)?;
     if ir_profiles
         .iter()
         .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project symbol inventory reuses linked-IR output path {}",
             output.display()
-        )
-        .into());
+        )));
     }
     Ok(Some(SymbolInventorySpec { output }))
 }
@@ -68,16 +72,20 @@ pub(crate) fn load_navigation_index(
     };
     let analysis = analysis
         .as_table()
-        .ok_or("project manifest analysis must be a table")?;
+        .ok_or("project manifest analysis must be a table")
+        .map_err(crate::Error::invalid)?;
     let Some(navigation) = analysis.get("navigation") else {
         return Ok(None);
     };
     let navigation = navigation
         .as_table()
-        .ok_or("project analysis.navigation must be a table")?;
+        .ok_or("project analysis.navigation must be a table")
+        .map_err(crate::Error::invalid)?;
     for (key, _) in navigation.iter() {
         if key != "output" {
-            return Err(format!("unknown project analysis.navigation key {key:?}").into());
+            return Err(crate::Error::invalid(format!(
+                "unknown project analysis.navigation key {key:?}"
+            )));
         }
     }
     let output = navigation
@@ -85,20 +93,24 @@ pub(crate) fn load_navigation_index(
         .and_then(Item::as_str)
         .filter(|value| !value.is_empty())
         .map(|value| resolve_path(base, value))
-        .ok_or("project analysis.navigation requires non-empty string \"output\"")?;
-    let symbols = symbols.ok_or("project analysis.navigation requires [analysis.symbols]")?;
+        .ok_or("project analysis.navigation requires non-empty string \"output\"")
+        .map_err(crate::Error::invalid)?;
+    let symbols = symbols
+        .ok_or("project analysis.navigation requires [analysis.symbols]")
+        .map_err(crate::Error::invalid)?;
     if output == symbols.output {
-        return Err("project navigation index reuses symbol inventory output path".into());
+        return Err(crate::Error::invalid(
+            "project navigation index reuses symbol inventory output path",
+        ));
     }
     if ir_profiles
         .iter()
         .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project navigation index reuses linked-IR output path {}",
             output.display()
-        )
-        .into());
+        )));
     }
     Ok(Some(NavigationIndexSpec { output }))
 }

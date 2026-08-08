@@ -9,12 +9,18 @@ pub(super) fn run(
 ) -> Result<bool> {
     let vendor_artifact = arguments
         .vendor_artifact
-        .ok_or("missing --vendor-artifact")?;
-    let rust_artifact = arguments.rust_artifact.ok_or("missing --rust-artifact")?;
+        .ok_or("missing --vendor-artifact")
+        .map_err(crate::Error::invalid)?;
+    let rust_artifact = arguments
+        .rust_artifact
+        .ok_or("missing --rust-artifact")
+        .map_err(crate::Error::invalid)?;
     let gate = VerificationGate::parse(&arguments.gate, arguments.match_floor)?;
     if matches!(gate, VerificationGate::Regression { .. }) && arguments.evidence_baseline.is_none()
     {
-        return Err("--gate regression requires --evidence-baseline".into());
+        return Err(crate::Error::invalid(
+            "--gate regression requires --evidence-baseline",
+        ));
     }
     let execution_profiles = arguments
         .profiles

@@ -70,7 +70,10 @@ impl RegisterReviewIr {
         let mut output = Self::default();
         for path in paths {
             if !unique.insert(path) {
-                return Err(format!("duplicate linked-IR review report {}", path.display()).into());
+                return Err(crate::Error::invalid(format!(
+                    "duplicate linked-IR review report {}",
+                    path.display()
+                )));
             }
             output.merge_file(path)?;
             output.reports.push(path.clone());
@@ -118,15 +121,18 @@ fn merge_register(target: &mut ReviewIrRegister, source: ReviewIrRegister) -> Re
         target.write_shapes = target
             .write_shapes
             .checked_add(source.write_shapes)
-            .ok_or("linked-IR write shape count overflow")?;
+            .ok_or("linked-IR write shape count overflow")
+            .map_err(crate::Error::invalid)?;
         target.predicate_shapes = target
             .predicate_shapes
             .checked_add(source.predicate_shapes)
-            .ok_or("linked-IR predicate shape count overflow")?;
+            .ok_or("linked-IR predicate shape count overflow")
+            .map_err(crate::Error::invalid)?;
         target.poll_shapes = target
             .poll_shapes
             .checked_add(source.poll_shapes)
-            .ok_or("linked-IR poll shape count overflow")?;
+            .ok_or("linked-IR poll shape count overflow")
+            .map_err(crate::Error::invalid)?;
         target.functions.extend(source.functions);
         target.access_functions.extend(source.access_functions);
         target

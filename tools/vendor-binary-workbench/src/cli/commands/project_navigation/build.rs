@@ -17,10 +17,13 @@ pub(super) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
     let symbols_spec = project
         .symbol_inventory
         .as_ref()
-        .ok_or("project navigation requires [analysis.symbols]")?;
+        .ok_or("project navigation requires [analysis.symbols]")
+        .map_err(crate::Error::invalid)?;
     let inventory: InventoryReport = read(&symbols_spec.output, "symbol inventory")?;
     if inventory.schema_version != 2 || inventory.command != "symbols inventory" {
-        return Err("project navigation requires symbols inventory schema_version 2".into());
+        return Err(crate::Error::invalid(
+            "project navigation requires symbols inventory schema_version 2",
+        ));
     }
 
     let mut inputs = vec![input(
@@ -39,12 +42,15 @@ pub(super) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
 
     let mut symbols = BTreeMap::<SymbolKey, SymbolDocument>::new();
     for fact in inventory.symbols {
-        let (sha256, sources) = inventory_artifacts.get(&fact.artifact).ok_or_else(|| {
-            format!(
-                "symbol refers to unknown inventory artifact {}",
-                fact.artifact
-            )
-        })?;
+        let (sha256, sources) = inventory_artifacts
+            .get(&fact.artifact)
+            .ok_or_else(|| {
+                format!(
+                    "symbol refers to unknown inventory artifact {}",
+                    fact.artifact
+                )
+            })
+            .map_err(crate::Error::invalid)?;
         let key = SymbolKey {
             artifact_sha256: sha256.clone(),
             member: fact.member,
@@ -111,11 +117,10 @@ fn add_linked_ir(
     for profile in &project.ir_profiles {
         let report: IrReport = read(&profile.output, "linked-IR report")?;
         if report.schema_version != 32 || report.command != "ir export" {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "project navigation requires linked-IR schema_version 32 for profile {:?}",
                 profile.id
-            )
-            .into());
+            )));
         }
         inputs.push(input("linked-ir", profile.id.clone(), &profile.output)?);
         let mut source_artifacts = BTreeMap::new();
@@ -126,12 +131,15 @@ fn add_linked_ir(
             source_artifacts.insert(item.source, item.artifact.sha256);
         }
         for function in report.functions {
-            let sha256 = source_artifacts.get(&function.source).ok_or_else(|| {
-                format!(
-                    "linked-IR function {:?} refers to unknown source {:?}",
-                    function.identity, function.source
-                )
-            })?;
+            let sha256 = source_artifacts
+                .get(&function.source)
+                .ok_or_else(|| {
+                    format!(
+                        "linked-IR function {:?} refers to unknown source {:?}",
+                        function.identity, function.source
+                    )
+                })
+                .map_err(crate::Error::invalid)?;
             let key = SymbolKey {
                 artifact_sha256: sha256.clone(),
                 member: function.member,
@@ -161,7 +169,9 @@ fn add_interfaces(
     };
     let report: InterfaceReport = read(&paths.facts, "interface facts")?;
     if report.schema_version != 2 || report.command != "interfaces discover" {
-        return Err("project navigation requires interface facts schema_version 2".into());
+        return Err(crate::Error::invalid(
+            "project navigation requires interface facts schema_version 2",
+        ));
     }
     inputs.push(input(
         "interface-facts",
@@ -177,12 +187,15 @@ fn add_interfaces(
     }
     let mut unmatched_roots = 0;
     for call in report.calls {
-        let (sha256, sources) = interface_artifacts.get(&call.artifact).ok_or_else(|| {
-            format!(
-                "interface call refers to unknown artifact {}",
-                call.artifact
-            )
-        })?;
+        let (sha256, sources) = interface_artifacts
+            .get(&call.artifact)
+            .ok_or_else(|| {
+                format!(
+                    "interface call refers to unknown artifact {}",
+                    call.artifact
+                )
+            })
+            .map_err(crate::Error::invalid)?;
         let caller_key = SymbolKey {
             artifact_sha256: sha256.clone(),
             member: call.member.clone(),

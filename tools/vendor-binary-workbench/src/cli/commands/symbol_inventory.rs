@@ -383,9 +383,9 @@ fn render_json_report(document: &InventoryDocument<'_>) -> Result<String> {
 
 pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bool> {
     if options.check && options.json_report.is_none() {
-        return Err(
-            "symbols inventory --check requires --json-report or project [analysis.symbols]".into(),
-        );
+        return Err(crate::Error::invalid(
+            "symbols inventory --check requires --json-report or project [analysis.symbols]",
+        ));
     }
     let inputs = run_spec
         .inputs()
@@ -464,11 +464,10 @@ pub(super) fn inspect_report(path: &Path) -> Result<StoredInventorySummary> {
     let input = fs::read_to_string(path)?;
     let document = serde_json::from_str::<StoredInventoryDocument>(&input)?;
     if document.schema_version != 2 || document.command != "symbols inventory" {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "unsupported symbol inventory in {}: expected schema_version 2 and command \"symbols inventory\"",
             path.display()
-        )
-        .into());
+        )));
     }
     Ok(StoredInventorySummary {
         artifacts: document.summary.artifacts,

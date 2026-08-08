@@ -65,6 +65,21 @@ fn production_modules_cannot_bypass_the_command_output_boundary() {
 }
 
 #[test]
+fn facade_errors_cannot_implicitly_absorb_strings() {
+    let source =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/error.rs")).unwrap();
+    for forbidden in [
+        "impl From<String> for WorkbenchError",
+        "impl From<&str> for WorkbenchError",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "implicit string error conversion survived: {forbidden}"
+        );
+    }
+}
+
+#[test]
 fn workbench_source_contains_no_private_paths_or_embedded_digests() {
     let source_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let private_path_marker = ["_oracles", "/"].concat();

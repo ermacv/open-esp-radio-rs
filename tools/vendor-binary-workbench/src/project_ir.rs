@@ -29,13 +29,15 @@ pub(crate) fn load_ir_profiles(
     };
     let analysis = analysis
         .as_table()
-        .ok_or("project manifest analysis must be a table")?;
+        .ok_or("project manifest analysis must be a table")
+        .map_err(crate::Error::invalid)?;
     let Some(ir) = analysis.get("ir") else {
         return Ok(Vec::new());
     };
     let profiles = ir
         .as_array_of_tables()
-        .ok_or("project analysis.ir must be an array of tables")?;
+        .ok_or("project analysis.ir must be an array of tables")
+        .map_err(crate::Error::invalid)?;
     let mut ids = BTreeSet::new();
     let mut outputs = BTreeSet::new();
     profiles
@@ -46,7 +48,9 @@ pub(crate) fn load_ir_profiles(
             let id = required_string(table, "id", &context)?;
             validate_profile_id(&id, &context)?;
             if !ids.insert(id.clone()) {
-                return Err(format!("duplicate project IR profile id {id:?}").into());
+                return Err(crate::Error::invalid(format!(
+                    "duplicate project IR profile id {id:?}"
+                )));
             }
             let sources = sources(table, &context)?;
             let symbol_prefix =
@@ -81,9 +85,12 @@ fn sources(table: &Table, context: &str) -> Result<Vec<String>> {
     };
     let values = item
         .as_array()
-        .ok_or_else(|| format!("{context}.sources must be an array"))?;
+        .ok_or_else(|| format!("{context}.sources must be an array"))
+        .map_err(crate::Error::invalid)?;
     if values.is_empty() {
-        return Err(format!("{context}.sources must not be empty").into());
+        return Err(crate::Error::invalid(format!(
+            "{context}.sources must not be empty"
+        )));
     }
     let mut seen = BTreeSet::new();
     values
@@ -93,12 +100,15 @@ fn sources(table: &Table, context: &str) -> Result<Vec<String>> {
             let source = value
                 .as_str()
                 .filter(|value| !value.is_empty())
-                .ok_or_else(|| format!("{context}.sources[{index}] must be a non-empty string"))?;
-            validate_source_id(source).map_err(|_| {
-                format!("invalid source id {source:?} in {context}.sources[{index}]")
-            })?;
+                .ok_or_else(|| format!("{context}.sources[{index}] must be a non-empty string"))
+                .map_err(crate::Error::invalid)?;
+            validate_source_id(source)
+                .map_err(|_| format!("invalid source id {source:?} in {context}.sources[{index}]"))
+                .map_err(crate::Error::invalid)?;
             if !seen.insert(source.to_owned()) {
-                return Err(format!("duplicate source {source:?} in {context}").into());
+                return Err(crate::Error::invalid(format!(
+                    "duplicate source {source:?} in {context}"
+                )));
             }
             Ok(source.to_owned())
         })
@@ -107,18 +117,17 @@ fn sources(table: &Table, context: &str) -> Result<Vec<String>> {
 
 fn reserve_output(outputs: &mut BTreeSet<PathBuf>, path: &Path, id: &str) -> Result<()> {
     if !outputs.insert(path.to_owned()) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project IR profile {id:?} reuses output path {}",
             path.display()
-        )
-        .into());
+        )));
     }
     Ok(())
 }
 
 fn required_string(table: &Table, key: &str, context: &str) -> Result<String> {
     optional_string(table, key, context)?
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn optional_string(table: &Table, key: &str, context: &str) -> Result<Option<String>> {
@@ -128,7 +137,9 @@ fn optional_string(table: &Table, key: &str, context: &str) -> Result<Option<Str
             .as_str()
             .filter(|value| !value.is_empty())
             .map(|value| Some(value.to_owned()))
-            .ok_or_else(|| format!("{context}.{key} must be a non-empty string").into()),
+            .ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key} must be a non-empty string"))
+            }),
     }
 }
 
@@ -138,8 +149,10 @@ fn optional_boolean(table: &Table, key: &str, context: &str) -> Result<Option<bo
         Some(Item::Value(value)) => value
             .as_bool()
             .map(Some)
-            .ok_or_else(|| format!("{context}.{key} must be a boolean").into()),
-        Some(_) => Err(format!("{context}.{key} must be a boolean").into()),
+            .ok_or_else(|| crate::Error::invalid(format!("{context}.{key} must be a boolean"))),
+        Some(_) => Err(crate::Error::invalid(format!(
+            "{context}.{key} must be a boolean"
+        ))),
     }
 }
 
@@ -150,7 +163,9 @@ fn validate_profile_id(id: &str, context: &str) -> Result<()> {
     {
         Ok(())
     } else {
-        Err(format!("invalid IR profile id {id:?} in {context}").into())
+        Err(crate::Error::invalid(format!(
+            "invalid IR profile id {id:?} in {context}"
+        )))
     }
 }
 

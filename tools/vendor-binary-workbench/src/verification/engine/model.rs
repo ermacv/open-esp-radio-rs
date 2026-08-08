@@ -41,10 +41,16 @@ impl VerificationGate {
     pub(crate) fn parse(name: &str, match_floor: Option<usize>) -> Result<Self> {
         match (name, match_floor) {
             ("completion", None) => Ok(Self::Completion),
-            ("completion", Some(_)) => Err("--match-floor requires --gate regression".into()),
+            ("completion", Some(_)) => Err(crate::Error::invalid(
+                "--match-floor requires --gate regression",
+            )),
             ("regression", Some(match_floor)) => Ok(Self::Regression { match_floor }),
-            ("regression", None) => Err("--gate regression requires --match-floor".into()),
-            _ => Err(format!("unsupported verification gate {name:?}").into()),
+            ("regression", None) => Err(crate::Error::invalid(
+                "--gate regression requires --match-floor",
+            )),
+            _ => Err(crate::Error::invalid(format!(
+                "unsupported verification gate {name:?}"
+            ))),
         }
     }
 

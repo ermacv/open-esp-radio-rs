@@ -264,7 +264,7 @@ fn mmio_arguments(
         };
         artifacts.push(
             SourcePath::new(source.clone(), input.path.clone())
-                .map_err(|message| -> crate::Error { message.into() })?,
+                .map_err(|message| -> crate::Error { crate::Error::invalid(message) })?,
         );
     }
     let mut ranges = Vec::new();

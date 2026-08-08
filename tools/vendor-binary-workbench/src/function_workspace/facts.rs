@@ -122,16 +122,14 @@ fn parse_report(profile: &str, input: &str) -> Result<(Vec<FunctionInputFact>, V
     if integer(root, "schema_version", &context)? != 32
         || string(root, "command", &context)? != "ir export"
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "function workspace requires a schema-v32 ir export report for profile {profile:?}"
-        )
-        .into());
+        )));
     }
     if boolean(root, "completeness_claim", &context)? {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "linked-IR profile {profile:?} makes an unsupported completeness claim"
-        )
-        .into());
+        )));
     }
     Ok((
         parse_inputs(profile, root, &context)?,
@@ -153,7 +151,8 @@ fn parse_inputs(
             let evidence = object(
                 artifact
                     .get("artifact")
-                    .ok_or_else(|| format!("{context} requires artifact evidence"))?,
+                    .ok_or_else(|| format!("{context} requires artifact evidence"))
+                    .map_err(crate::Error::invalid)?,
                 &format!("{context}.artifact"),
             )?;
             Ok(FunctionInputFact {
@@ -179,7 +178,8 @@ fn parse_functions(
             let summary = object(
                 function
                     .get("effect_summary")
-                    .ok_or_else(|| format!("{context} requires effect_summary"))?,
+                    .ok_or_else(|| format!("{context} requires effect_summary"))
+                    .map_err(crate::Error::invalid)?,
                 &format!("{context}.effect_summary"),
             )?;
             Ok(FunctionFact {
@@ -247,14 +247,17 @@ fn parse_calls(function: &Map<String, Value>, context: &str) -> Result<Vec<Funct
 
 fn optional_guard_paths(call: &Map<String, Value>, context: &str) -> Result<Option<Vec<String>>> {
     let Some(paths) = call.get("cfg_guard_paths") else {
-        return Err(format!("{context} requires cfg_guard_paths").into());
+        return Err(crate::Error::invalid(format!(
+            "{context} requires cfg_guard_paths"
+        )));
     };
     if paths.is_null() {
         return Ok(None);
     }
     let paths = paths
         .as_array()
-        .ok_or_else(|| format!("{context}.cfg_guard_paths must be an array or null"))?;
+        .ok_or_else(|| format!("{context}.cfg_guard_paths must be an array or null"))
+        .map_err(crate::Error::invalid)?;
     paths
         .iter()
         .enumerate()
@@ -299,13 +302,16 @@ fn parse_fields(
             Ok(FunctionContextFieldFact {
                 argument: integer(field, "argument", &context)?
                     .try_into()
-                    .map_err(|_| format!("invalid argument in {context}"))?,
+                    .map_err(|_| format!("invalid argument in {context}"))
+                    .map_err(crate::Error::invalid)?,
                 offset: signed(field, "offset", &context)?
                     .try_into()
-                    .map_err(|_| format!("invalid offset in {context}"))?,
+                    .map_err(|_| format!("invalid offset in {context}"))
+                    .map_err(crate::Error::invalid)?,
                 width: integer(field, "width", &context)?
                     .try_into()
-                    .map_err(|_| format!("invalid width in {context}"))?,
+                    .map_err(|_| format!("invalid width in {context}"))
+                    .map_err(crate::Error::invalid)?,
                 reads: count(field, "reads", &context)?,
                 writes: count(field, "writes", &context)?,
                 write_mask: hex_u32(field, "write_mask", &context)?,
@@ -318,61 +324,54 @@ fn validate(inputs: &[FunctionInputFact], functions: &[FunctionFact]) -> Result<
     let mut input_keys = BTreeSet::new();
     for input in inputs {
         if !input_keys.insert((&input.profile, &input.source)) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "duplicate function fact input {}:{}",
                 input.profile, input.source
-            )
-            .into());
+            )));
         }
     }
     let mut function_keys = BTreeSet::new();
     for function in functions {
         if !input_keys.contains(&(&function.profile, &function.source)) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "function {}:{} refers to an unknown source",
                 function.profile, function.identity
-            )
-            .into());
+            )));
         }
         if !function_keys.insert((&function.profile, &function.identity)) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "duplicate function identity {}:{}",
                 function.profile, function.identity
-            )
-            .into());
+            )));
         }
         if !matches!(
             function.selection.as_str(),
             "symbol-prefix-root" | "reachable-internal"
         ) {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "function {}:{} has unsupported selection {:?}",
                 function.profile, function.identity, function.selection
-            )
-            .into());
+            )));
         }
         let mut fields = BTreeSet::new();
         for field in &function.context_fields {
             if field.argument >= 8 || !matches!(field.width, 8 | 16 | 32 | 64) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "function {}:{} has an invalid context field",
                     function.profile, function.identity
-                )
-                .into());
+                )));
             }
             if field.reads == 0 && field.writes == 0 {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "function {}:{} has a context field without observed accesses",
                     function.profile, function.identity
-                )
-                .into());
+                )));
             }
             if !fields.insert((field.argument, field.offset, field.width)) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "function {}:{} has a duplicate context field",
                     function.profile, function.identity
-                )
-                .into());
+                )));
             }
         }
     }
@@ -382,14 +381,14 @@ fn validate(inputs: &[FunctionInputFact], functions: &[FunctionFact]) -> Result<
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
     value
         .as_object()
-        .ok_or_else(|| format!("{context} must be an object").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
 }
 
 fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a Vec<Value>> {
     object
         .get(key)
         .and_then(Value::as_array)
-        .ok_or_else(|| format!("{context} requires array {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))
 }
 
 fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
@@ -397,7 +396,9 @@ fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Resul
         .get(key)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("{context} requires non-empty string {key:?}").into())
+        .ok_or_else(|| {
+            crate::Error::invalid(format!("{context} requires non-empty string {key:?}"))
+        })
 }
 
 fn optional_string(
@@ -413,7 +414,11 @@ fn optional_string(
                 .as_str()
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
-                .ok_or_else(|| format!("{context}.{key} must be a non-empty string or null").into())
+                .ok_or_else(|| {
+                    crate::Error::invalid(format!(
+                        "{context}.{key} must be a non-empty string or null"
+                    ))
+                })
         })
         .transpose()
 }
@@ -423,10 +428,9 @@ fn strings(object: &Map<String, Value>, key: &str, context: &str) -> Result<Vec<
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| format!("{context}.{key}[{index}] must be a string").into())
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key}[{index}] must be a string"))
+            })
         })
         .collect()
 }
@@ -435,27 +439,26 @@ fn boolean(object: &Map<String, Value>, key: &str, context: &str) -> Result<bool
     object
         .get(key)
         .and_then(Value::as_bool)
-        .ok_or_else(|| format!("{context} requires boolean {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires boolean {key:?}")))
 }
 
 fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| format!("{context} requires non-negative integer {key:?}").into())
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
+    })
 }
 
 fn signed(object: &Map<String, Value>, key: &str, context: &str) -> Result<i64> {
     object
         .get(key)
         .and_then(Value::as_i64)
-        .ok_or_else(|| format!("{context} requires integer {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
 }
 
 fn count(object: &Map<String, Value>, key: &str, context: &str) -> Result<usize> {
     integer(object, key, context)?
         .try_into()
-        .map_err(|_| format!("invalid count {key:?} in {context}").into())
+        .map_err(|_| crate::Error::invalid(format!("invalid count {key:?} in {context}")))
 }
 
 fn sha256<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
@@ -465,7 +468,9 @@ fn sha256<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Resul
             .bytes()
             .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
     {
-        return Err(format!("{context} has invalid lowercase SHA-256").into());
+        return Err(crate::Error::invalid(format!(
+            "{context} has invalid lowercase SHA-256"
+        )));
     }
     Ok(value)
 }
@@ -475,12 +480,16 @@ fn hex_u32(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32>
         Some(Value::Number(value)) => value
             .as_u64()
             .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| format!("{context}.{key} must be a u32").into()),
+            .ok_or_else(|| crate::Error::invalid(format!("{context}.{key} must be a u32"))),
         Some(Value::String(value)) => value
             .strip_prefix("0x")
             .and_then(|value| u32::from_str_radix(value, 16).ok())
-            .ok_or_else(|| format!("{context}.{key} must be a hexadecimal u32 string").into()),
-        _ => Err(format!("{context}.{key} must be a u32").into()),
+            .ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key} must be a hexadecimal u32 string"))
+            }),
+        _ => Err(crate::Error::invalid(format!(
+            "{context}.{key} must be a u32"
+        ))),
     }
 }
 

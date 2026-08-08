@@ -17,10 +17,12 @@ pub(super) fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput
 
 pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtifactInput> {
     if !is_source_id(source) {
-        return Err(format!("invalid artifact source id {source:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid artifact source id {source:?}"
+        )));
     }
     if path.as_os_str().is_empty() {
-        return Err("artifact path must not be empty".into());
+        return Err(crate::Error::invalid("artifact path must not be empty"));
     }
     Ok(IrArtifactInput {
         source: source.to_owned(),
@@ -42,15 +44,22 @@ pub(super) fn validate_artifact_inputs(
     companions: &[PathBuf],
 ) -> Result<()> {
     if artifacts.is_empty() {
-        return Err("ir export requires at least one --artifact SOURCE=PATH".into());
+        return Err(crate::Error::invalid(
+            "ir export requires at least one --artifact SOURCE=PATH",
+        ));
     }
     if artifacts.len() > 1 && !companions.is_empty() {
-        return Err("--companion is only supported with one primary IR artifact".into());
+        return Err(crate::Error::invalid(
+            "--companion is only supported with one primary IR artifact",
+        ));
     }
     let mut sources = BTreeSet::new();
     for artifact in artifacts {
         if !sources.insert(artifact.source.clone()) {
-            return Err(format!("duplicate artifact source {:?}", artifact.source).into());
+            return Err(crate::Error::invalid(format!(
+                "duplicate artifact source {:?}",
+                artifact.source
+            )));
         }
     }
     Ok(())

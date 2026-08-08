@@ -40,16 +40,17 @@ struct ProjectConfigureReport {
 pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bool> {
     let options = resolve_options(arguments);
     if options.selection.is_none() && !options.check {
-        return Err(
-            "project configure requires --platform-pack PATH, --no-platform-pack, or --check"
-                .into(),
-        );
+        return Err(crate::Error::invalid(
+            "project configure requires --platform-pack PATH, --no-platform-pack, or --check",
+        ));
     }
 
     let input = fs::read_to_string(manifest)?;
     let mut document = input.parse::<DocumentMut>()?;
     if document.get("schema").and_then(Item::as_integer) != Some(1) {
-        return Err("project manifest requires schema = 1".into());
+        return Err(crate::Error::invalid(
+            "project manifest requires schema = 1",
+        ));
     }
     match options.selection {
         Some(Selection::Set(input_path)) => {
@@ -65,11 +66,10 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
     let changed = rendered != input;
     let temporary = temporary_manifest_path(manifest)?;
     if temporary.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project configure staging path exists: {}",
             temporary.display()
-        )
-        .into());
+        )));
     }
 
     if changed {
@@ -91,11 +91,10 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
     if options.check {
         if changed {
             let _ = fs::remove_file(&temporary);
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "project platform configuration differs from {}; rerun without --check",
                 manifest.display()
-            )
-            .into());
+            )));
         }
     } else if changed {
         fs::rename(&temporary, manifest).inspect_err(|_| {
@@ -185,7 +184,8 @@ fn project_relative_pack_path(manifest: &Path, input: &Path) -> Result<String> {
     };
     let input = input
         .canonicalize()
-        .map_err(|error| format!("cannot resolve platform pack {}: {error}", input.display()))?;
+        .map_err(|error| format!("cannot resolve platform pack {}: {error}", input.display()))
+        .map_err(crate::Error::invalid)?;
     let _ = PlatformPack::load(&input)?;
     let base = manifest
         .parent()
@@ -194,7 +194,7 @@ fn project_relative_pack_path(manifest: &Path, input: &Path) -> Result<String> {
     relative_path(&base, &input)?
         .to_str()
         .map(str::to_owned)
-        .ok_or_else(|| "platform pack path cannot be represented as UTF-8".into())
+        .ok_or_else(|| crate::Error::invalid("platform pack path cannot be represented as UTF-8"))
 }
 
 fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
@@ -206,7 +206,9 @@ fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
         .take_while(|(left, right)| left == right)
         .count();
     if common == 0 {
-        return Err("project and platform pack do not share a filesystem root".into());
+        return Err(crate::Error::invalid(
+            "project and platform pack do not share a filesystem root",
+        ));
     }
     let mut output = PathBuf::new();
     for _ in &base[common..] {
@@ -216,7 +218,9 @@ fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
         output.push(component.as_os_str());
     }
     if output.as_os_str().is_empty() {
-        return Err("platform pack path resolves to the project directory".into());
+        return Err(crate::Error::invalid(
+            "platform pack path resolves to the project directory",
+        ));
     }
     Ok(output)
 }
@@ -225,7 +229,8 @@ fn temporary_manifest_path(manifest: &Path) -> Result<PathBuf> {
     let name = manifest
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or("project manifest must have a UTF-8 file name")?;
+        .ok_or("project manifest must have a UTF-8 file name")
+        .map_err(crate::Error::invalid)?;
     Ok(manifest.with_file_name(format!(".{name}.configure-{}", std::process::id())))
 }
 

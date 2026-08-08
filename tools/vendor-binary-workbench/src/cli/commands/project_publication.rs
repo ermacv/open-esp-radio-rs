@@ -38,7 +38,8 @@ pub(super) fn run(
     let paths = project
         .registers
         .as_ref()
-        .ok_or("project publish requires a [registers] workspace")?;
+        .ok_or("project publish requires a [registers] workspace")
+        .map_err(crate::Error::invalid)?;
     validate_output_paths(paths)?;
     let mut summary = PipelineSummary::default();
 
@@ -123,11 +124,10 @@ fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
     for (index, (left_name, left_path)) in outputs.iter().enumerate() {
         for (right_name, right_path) in outputs.iter().skip(index + 1) {
             if left_path == right_path {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "project publication outputs {left_name} and {right_name} share {}",
                     left_path.display()
-                )
-                .into());
+                )));
             }
         }
     }
@@ -166,11 +166,10 @@ fn validate_output_paths(paths: &RegisterWorkspacePaths) -> Result<()> {
             .iter()
             .find(|(_, input_path)| *input_path == output_path)
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "project publication output {output_name} conflicts with {input_name} {}",
                 output_path.display()
-            )
-            .into());
+            )));
         }
     }
     Ok(())

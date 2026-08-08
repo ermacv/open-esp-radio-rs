@@ -43,7 +43,9 @@ pub(crate) fn validate_source_id(value: &str) -> Result<&str> {
         })
         || !value.as_bytes().first().is_some_and(u8::is_ascii_lowercase)
     {
-        return Err(format!("invalid source id {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid source id {value:?}"
+        )));
     }
     Ok(value)
 }

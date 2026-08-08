@@ -98,7 +98,8 @@ pub(crate) fn extract(
                 "symbol {} in member {:?} was not found",
                 input.symbol, input.member
             )
-        })?;
+        })
+        .map_err(crate::Error::invalid)?;
     Ok(trace_binary_symbol(
         symbol,
         svd,

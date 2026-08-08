@@ -18,11 +18,10 @@ impl InterfacePack {
     ) -> Result<(InterfaceWorkspaceSummary, Vec<ResolvedInterfaceSlot>)> {
         validate_dotted_id(&self.id, "interface pack id")?;
         if self.calling_convention != calling_convention {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "interface pack calling convention {:?} does not match project target {:?}",
                 self.calling_convention, calling_convention
-            )
-            .into());
+            )));
         }
         let mut anchor_ids = BTreeSet::new();
         let mut matched_by = vec![None::<&str>; facts.tables.len()];
@@ -30,7 +29,10 @@ impl InterfacePack {
         for anchor in &self.anchors {
             validate_anchor_shape(anchor, catalogs)?;
             if !anchor_ids.insert(anchor.id.as_str()) {
-                return Err(format!("duplicate interface anchor id {:?}", anchor.id).into());
+                return Err(crate::Error::invalid(format!(
+                    "duplicate interface anchor id {:?}",
+                    anchor.id
+                )));
             }
             let base_matches = facts
                 .tables
@@ -49,11 +51,10 @@ impl InterfacePack {
                         .is_some_and(|artifact| artifact.sha256.is_none())
                 })
             {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "anchor {:?} requires artifact SHA-256 but matching facts predate digest evidence; regenerate interfaces discover",
                     anchor.id
-                )
-                .into());
+                )));
             }
             let matches = base_matches
                 .into_iter()
@@ -61,28 +62,25 @@ impl InterfacePack {
                 .collect::<Vec<_>>();
             match anchor.origin {
                 PackOrigin::Observed if matches.is_empty() => {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "observed interface anchor {:?} is stale or has no matching fact",
                         anchor.id
-                    )
-                    .into());
+                    )));
                 }
                 PackOrigin::Manual if !matches.is_empty() => {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "manual interface anchor {:?} matches generated facts; use origin = \"observed\"",
                         anchor.id
-                    )
-                    .into());
+                    )));
                 }
                 _ => {}
             }
             for index in &matches {
                 if let Some(other) = matched_by[*index].replace(&anchor.id) {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "interface fact matches both anchors {other:?} and {:?}; make selectors disjoint",
                         anchor.id
-                    )
-                    .into());
+                    )));
                 }
             }
             validate_anchor_evidence(anchor, facts, &matches)?;
@@ -113,18 +111,16 @@ fn validate_anchor_evidence(
         let key = (slot.offset, slot.width);
         match slot.origin {
             PackOrigin::Observed if !observed.contains(&key) => {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "observed slot at {:+#x}/{} in anchor {:?} is stale",
                     slot.offset, slot.width, anchor.id
-                )
-                .into());
+                )));
             }
             PackOrigin::Manual if observed.contains(&key) => {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "manual slot at {:+#x}/{} in anchor {:?} is now observed; change its origin",
                     slot.offset, slot.width, anchor.id
-                )
-                .into());
+                )));
             }
             _ => {}
         }

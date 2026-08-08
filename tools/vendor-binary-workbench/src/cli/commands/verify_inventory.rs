@@ -30,14 +30,14 @@ fn source_mut<'a>(
 
 fn set_path(slot: &mut Option<PathBuf>, value: PathBuf, option: &str) -> Result<()> {
     if slot.replace(value).is_some() {
-        return Err(format!("duplicate {option}").into());
+        return Err(crate::Error::invalid(format!("duplicate {option}")));
     }
     Ok(())
 }
 
 fn set_string(slot: &mut Option<String>, value: String, option: &str) -> Result<()> {
     if slot.replace(value).is_some() {
-        return Err(format!("duplicate {option}").into());
+        return Err(crate::Error::invalid(format!("duplicate {option}")));
     }
     Ok(())
 }
@@ -88,14 +88,17 @@ pub(super) fn run(
     let json_report = arguments.json_report;
 
     if source_inputs.is_empty() {
-        return Err("verify inventory requires at least one --source-artifact SOURCE=PATH".into());
+        return Err(crate::Error::invalid(
+            "verify inventory requires at least one --source-artifact SOURCE=PATH",
+        ));
     }
     let sources = source_inputs
         .into_iter()
         .map(|(id, input)| {
             let artifact = input
                 .artifact
-                .ok_or_else(|| format!("source {id} has no artifact"))?;
+                .ok_or_else(|| format!("source {id} has no artifact"))
+                .map_err(crate::Error::invalid)?;
             let prefix = input.prefix.unwrap_or_else(|| {
                 if id == "rom" {
                     "phy_".to_owned()
@@ -112,10 +115,14 @@ pub(super) fn run(
             })
         })
         .collect::<Result<Vec<_>>>()?;
-    let rust_artifact = rust_artifact.ok_or("missing --rust-artifact")?;
+    let rust_artifact = rust_artifact
+        .ok_or("missing --rust-artifact")
+        .map_err(crate::Error::invalid)?;
     let gate = VerificationGate::parse(&gate_name, match_floor)?;
     if matches!(gate, VerificationGate::Regression { .. }) && evidence_baseline.is_none() {
-        return Err("--gate regression requires --evidence-baseline".into());
+        return Err(crate::Error::invalid(
+            "--gate regression requires --evidence-baseline",
+        ));
     }
     let execution_profiles = profile_path
         .as_deref()
@@ -164,16 +171,16 @@ pub(super) fn run(
                     "profile {} refers to unconfigured vendor source {}",
                     profile.name, profile.vendor_source
                 )
-            })?;
+            })
+            .map_err(crate::Error::invalid)?;
         if !symbol_sets[source_index]
             .iter()
             .any(|symbol| symbol.name == profile.vendor_symbol)
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "profile {} refers to {} symbol {} which does not exist",
                 profile.name, profile.vendor_source, profile.vendor_symbol
-            )
-            .into());
+            )));
         }
         profiles_by_source
             .entry(profile.vendor_source.clone())

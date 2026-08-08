@@ -348,14 +348,16 @@ pub(super) fn run(
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
     let symbols = list_code_symbols(&artifact, &arguments.symbol_prefix)?;
     if symbols.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "no external code symbols start with {:?}",
             arguments.symbol_prefix
-        )
-        .into());
+        )));
     }
     let reference_catalog = ReferenceResolver::load_with_entry_contract(
         &artifact,

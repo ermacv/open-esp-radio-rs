@@ -64,10 +64,12 @@ impl RegisterFacts {
         let root: Value = serde_json::from_str(input)?;
         let root = object(&root, "MMIO facts root")?;
         if integer(root, "schema_version", "MMIO facts")? != 2 {
-            return Err("MMIO facts require schema_version 2".into());
+            return Err(crate::Error::invalid("MMIO facts require schema_version 2"));
         }
         if string(root, "command", "MMIO facts")? != "mmio discover" {
-            return Err("register workspace requires an mmio discover JSON report".into());
+            return Err(crate::Error::invalid(
+                "register workspace requires an mmio discover JSON report",
+            ));
         }
         let ranges = array(root, "ranges", "MMIO facts")?
             .iter()
@@ -78,7 +80,9 @@ impl RegisterFacts {
                 let start = address(value, "start", &context)?;
                 let end = address(value, "end_exclusive", &context)?;
                 if start >= end {
-                    return Err(format!("{context} is empty or reversed").into());
+                    return Err(crate::Error::invalid(format!(
+                        "{context} is empty or reversed"
+                    )));
                 }
                 Ok(FactRange {
                     name: string(value, "name", &context)?.to_owned(),
@@ -99,42 +103,42 @@ impl RegisterFacts {
 
     fn validate(&self) -> Result<()> {
         if self.ranges.is_empty() {
-            return Err("MMIO facts contain no discovery ranges".into());
+            return Err(crate::Error::invalid(
+                "MMIO facts contain no discovery ranges",
+            ));
         }
         let mut range_names = BTreeSet::new();
         for range in &self.ranges {
             if range.name.is_empty() || !range_names.insert(range.name.as_str()) {
-                return Err(
-                    format!("invalid or duplicate MMIO fact range {:?}", range.name).into(),
-                );
+                return Err(crate::Error::invalid(format!(
+                    "invalid or duplicate MMIO fact range {:?}",
+                    range.name
+                )));
             }
         }
         for (index, left) in self.ranges.iter().enumerate() {
             for right in self.ranges.iter().skip(index + 1) {
                 if left.end > right.start && right.end > left.start {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "MMIO fact ranges {:?} and {:?} overlap",
                         left.name, right.name
-                    )
-                    .into());
+                    )));
                 }
             }
         }
         let mut keys = BTreeSet::new();
         for register in &self.registers {
             if !matches!(register.width, 8 | 16 | 32) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "MMIO fact at {:#010x} has unsupported width {}",
                     register.address, register.width
-                )
-                .into());
+                )));
             }
             if !keys.insert((register.address, register.width)) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "duplicate MMIO fact at {:#010x}/{}",
                     register.address, register.width
-                )
-                .into());
+                )));
             }
             let width_mask = if register.width == 32 {
                 u32::MAX
@@ -146,11 +150,10 @@ impl RegisterFacts {
                 .iter()
                 .any(|mask| mask & !width_mask != 0)
             {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "MMIO fact candidate mask at {:#010x}/{} exceeds its width",
                     register.address, register.width
-                )
-                .into());
+                )));
             }
             let owners = self
                 .ranges
@@ -158,11 +161,10 @@ impl RegisterFacts {
                 .filter(|range| range.contains(register.address))
                 .count();
             if owners != 1 {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "MMIO fact at {:#010x}/{} belongs to {owners} ranges",
                     register.address, register.width
-                )
-                .into());
+                )));
             }
         }
         Ok(())
@@ -174,7 +176,8 @@ fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
     let value = object(value, &context)?;
     let width = integer(value, "width", &context)?
         .try_into()
-        .map_err(|_| format!("invalid width in {context}"))?;
+        .map_err(|_| format!("invalid width in {context}"))
+        .map_err(crate::Error::invalid)?;
     let mut write_patterns = Vec::new();
     for (pattern_index, pattern) in array(value, "write_patterns", &context)?.iter().enumerate() {
         let pattern_context = format!("{context}.write_patterns[{pattern_index}]");
@@ -182,7 +185,8 @@ fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
         write_patterns.push(RegisterWritePatternFact {
             occurrences: integer(pattern, "occurrences", &pattern_context)?
                 .try_into()
-                .map_err(|_| format!("invalid occurrence count in {pattern_context}"))?,
+                .map_err(|_| format!("invalid occurrence count in {pattern_context}"))
+                .map_err(crate::Error::invalid)?,
             modified_mask: address(pattern, "modified_mask", &pattern_context)?,
             preserved_mask: address(pattern, "preserved_mask", &pattern_context)?,
             inverted_mask: address(pattern, "inverted_mask", &pattern_context)?,
@@ -205,10 +209,12 @@ fn parse_register(value: &Value, index: usize) -> Result<RegisterFact> {
         catalog_name: string(value, "name", &context)?.to_owned(),
         reads: integer(value, "reads", &context)?
             .try_into()
-            .map_err(|_| format!("invalid read count in {context}"))?,
+            .map_err(|_| format!("invalid read count in {context}"))
+            .map_err(crate::Error::invalid)?,
         writes: integer(value, "writes", &context)?
             .try_into()
-            .map_err(|_| format!("invalid write count in {context}"))?,
+            .map_err(|_| format!("invalid write count in {context}"))
+            .map_err(crate::Error::invalid)?,
         read_functions: string_set(value, "read_functions", &context)?,
         write_functions: string_set(value, "write_functions", &context)?,
         write_patterns,
@@ -226,7 +232,9 @@ fn string_set(object: &Map<String, Value>, key: &str, context: &str) -> Result<B
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .ok_or_else(|| {
-                    format!("{context}.{key}[{index}] must be a non-empty string").into()
+                    crate::Error::invalid(format!(
+                        "{context}.{key}[{index}] must be a non-empty string"
+                    ))
                 })
         })
         .collect()
@@ -235,7 +243,7 @@ fn string_set(object: &Map<String, Value>, key: &str, context: &str) -> Result<B
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
     value
         .as_object()
-        .ok_or_else(|| format!("{context} must be an object").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
 }
 
 fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a [Value]> {
@@ -243,26 +251,26 @@ fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result
         .get(key)
         .and_then(Value::as_array)
         .map(Vec::as_slice)
-        .ok_or_else(|| format!("{context} requires array {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))
 }
 
 fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
     object
         .get(key)
         .and_then(Value::as_str)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| format!("{context} requires non-negative integer {key:?}").into())
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
+    })
 }
 
 fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
     let value = string(object, key, context)?;
-    parse_u32(value).ok_or_else(|| format!("invalid address {value:?} in {context}").into())
+    parse_u32(value)
+        .ok_or_else(|| crate::Error::invalid(format!("invalid address {value:?} in {context}")))
 }
 
 #[cfg(test)]

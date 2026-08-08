@@ -116,7 +116,10 @@ impl FunctionPack {
             )
         })?;
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
-            return Err(format!("{} requires schema = 1", path.display()).into());
+            return Err(crate::Error::invalid(format!(
+                "{} requires schema = 1",
+                path.display()
+            )));
         }
         super::pack_parse::parse(&document)
             .map_err(|error| crate::error::WorkbenchError::manifest("function pack", path, error))

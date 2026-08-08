@@ -196,19 +196,24 @@ pub(super) fn run(
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
     tracing::Span::current().record("artifact", tracing::field::display(artifact.display()));
-    let output_dir = arguments.output_dir.ok_or("missing --output-dir")?;
+    let output_dir = arguments
+        .output_dir
+        .ok_or("missing --output-dir")
+        .map_err(crate::Error::invalid)?;
     let manifest = arguments
         .manifest
         .unwrap_or_else(|| output_dir.join("manifest.json"));
     let symbols = list_code_symbols(&artifact, &arguments.symbol_prefix)?;
     if symbols.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "no external code symbols start with {:?}",
             arguments.symbol_prefix
-        )
-        .into());
+        )));
     }
 
     let resolver = ReferenceResolver::load_with_entry_contract(
@@ -239,7 +244,7 @@ pub(super) fn run(
             continue;
         }
         let resolved = ResolvedReferenceProgram::try_from(&trace)
-            .map_err(|error| -> Error { error.into() })?;
+            .map_err(|error| -> Error { crate::Error::invalid(error) })?;
         let reference_file =
             candidate_file_name(symbol.member.as_deref(), &symbol.name, &mut used_names);
         let generated_reference = codegen::generate(
@@ -249,7 +254,7 @@ pub(super) fn run(
             symbol.member.as_deref(),
             &companion_provenance,
         )
-        .map_err(|error| -> Error { error.into() })?;
+        .map_err(|error| -> Error { crate::Error::invalid(error) })?;
         generated.push(GeneratedCandidate {
             symbol: symbol.name.clone(),
             owner: symbol.member.clone(),
@@ -274,11 +279,10 @@ pub(super) fn run(
     if !arguments.force
         && let Some(existing) = destinations.iter().find(|path| path.exists())
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite {}; pass --force to replace generated output",
             existing.display()
-        )
-        .into());
+        )));
     }
     fs::create_dir_all(&output_dir)?;
     if let Some(parent) = manifest

@@ -24,7 +24,9 @@ pub(crate) struct DriverAdapter(String);
 impl DriverAdapter {
     pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
         if !valid_registry_id(value) {
-            return Err(format!("invalid driver adapter id {value:?} at line {line}").into());
+            return Err(crate::Error::invalid(format!(
+                "invalid driver adapter id {value:?} at line {line}"
+            )));
         }
         Ok(Self(value.to_owned()))
     }
@@ -45,7 +47,9 @@ impl BindingVersion {
     pub(crate) fn parse(value: &str, line: usize) -> Result<Self> {
         match value {
             "v1" => Ok(Self::V1),
-            _ => Err(format!("unknown binding version {value:?} at line {line}").into()),
+            _ => Err(crate::Error::invalid(format!(
+                "unknown binding version {value:?} at line {line}"
+            ))),
         }
     }
 
@@ -72,7 +76,9 @@ impl Binding {
         driver_adapter: Option<DriverAdapter>,
     ) -> Result<Self> {
         if rust_probe.is_empty() || rust_probe.chars().any(char::is_whitespace) {
-            return Err("binding rust-probe must be one non-empty symbol".into());
+            return Err(crate::Error::invalid(
+                "binding rust-probe must be one non-empty symbol",
+            ));
         }
         Ok(Self {
             version,
@@ -87,7 +93,10 @@ impl Binding {
             .iter()
             .any(|symbol| symbol.name == self.rust_probe)
         {
-            return Err(format!("binding refers to missing Rust probe {}", self.rust_probe).into());
+            return Err(crate::Error::invalid(format!(
+                "binding refers to missing Rust probe {}",
+                self.rust_probe
+            )));
         }
         Ok(())
     }

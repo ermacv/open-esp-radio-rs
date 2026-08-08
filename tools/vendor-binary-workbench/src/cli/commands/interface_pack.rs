@@ -19,7 +19,8 @@ pub(super) fn run(
     let paths = project
         .interfaces
         .as_ref()
-        .ok_or("project has no [interfaces] table; configure facts and pack paths first")?;
+        .ok_or("project has no [interfaces] table; configure facts and pack paths first")
+        .map_err(crate::Error::invalid)?;
     match (command, arguments) {
         (Command::InterfaceInitPack, CommandArguments::Output(arguments)) => {
             init_pack(arguments, project, target, paths)
@@ -42,7 +43,8 @@ fn init_pack(
         .output
         .as_deref()
         .or(paths.pack.as_deref())
-        .ok_or("interfaces init-pack requires [interfaces].pack or an explicit --output PATH")?;
+        .ok_or("interfaces init-pack requires [interfaces].pack or an explicit --output PATH")
+        .map_err(crate::Error::invalid)?;
     write_pack_template(
         output,
         &facts,
@@ -74,7 +76,8 @@ fn validate(
     let pack = paths
         .pack
         .as_deref()
-        .ok_or("interfaces validate requires [interfaces].pack")?;
+        .ok_or("interfaces validate requires [interfaces].pack")
+        .map_err(crate::Error::invalid)?;
     let workspace = InterfaceWorkspace::load(
         &paths.facts,
         pack,

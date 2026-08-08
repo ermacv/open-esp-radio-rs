@@ -40,26 +40,32 @@ impl SemanticCatalogs {
                 )
             })?;
             if document.get("schema").and_then(Item::as_integer) != Some(1) {
-                return Err(format!("{} requires schema = 1", path.display()).into());
+                return Err(crate::Error::invalid(format!(
+                    "{} requires schema = 1",
+                    path.display()
+                )));
             }
             let catalog_id = required_string(document.as_item(), "id", "semantic catalog")?;
             validate_dotted_id(&catalog_id, "semantic catalog id")?;
             let tables = document
                 .get("operations")
                 .and_then(Item::as_array_of_tables)
-                .ok_or_else(|| format!("{} requires [[operations]]", path.display()))?;
+                .ok_or_else(|| format!("{} requires [[operations]]", path.display()))
+                .map_err(crate::Error::invalid)?;
             if tables.is_empty() {
-                return Err(format!("{} has no semantic operations", path.display()).into());
+                return Err(crate::Error::invalid(format!(
+                    "{} has no semantic operations",
+                    path.display()
+                )));
             }
             for (index, table) in tables.iter().enumerate() {
                 let context = format!("{} operations[{index}]", path.display());
                 let operation = parse_operation(table, &context)?;
                 if operations.insert(operation.id.clone(), operation).is_some() {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "duplicate semantic operation {:?} across configured catalogs",
                         required_table_string(table, "id", &context)?
-                    )
-                    .into());
+                    )));
                 }
             }
         }
@@ -88,7 +94,9 @@ pub(super) fn validate_dotted_id(value: &str, context: &str) -> Result<()> {
                     .is_some_and(u8::is_ascii_lowercase)
         })
     {
-        return Err(format!("invalid {context} {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid {context} {value:?}"
+        )));
     }
     Ok(())
 }
@@ -106,8 +114,9 @@ fn parse_operation(table: &Table, context: &str) -> Result<SemanticOperation> {
         variadic: table
             .get("variadic")
             .map(|item| -> Result<bool> {
-                item.as_bool()
-                    .ok_or_else(|| format!("{context}.variadic must be a boolean").into())
+                item.as_bool().ok_or_else(|| {
+                    crate::Error::invalid(format!("{context}.variadic must be a boolean"))
+                })
             })
             .transpose()?
             .unwrap_or(false),
@@ -117,14 +126,15 @@ fn parse_operation(table: &Table, context: &str) -> Result<SemanticOperation> {
     if operation.id != operation.domain
         && !operation.id.starts_with(&format!("{}.", operation.domain))
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "semantic operation {:?} is outside domain {:?}",
             operation.id, operation.domain
-        )
-        .into());
+        )));
     }
     if operation.summary.trim().is_empty() {
-        return Err(format!("{context}.summary must not be empty").into());
+        return Err(crate::Error::invalid(format!(
+            "{context}.summary must not be empty"
+        )));
     }
     for role in operation
         .argument_roles
@@ -134,7 +144,9 @@ fn parse_operation(table: &Table, context: &str) -> Result<SemanticOperation> {
         validate_dotted_id(role, "semantic value role")?;
     }
     if operation.effects.is_empty() {
-        return Err(format!("{context}.effects must not be empty").into());
+        return Err(crate::Error::invalid(format!(
+            "{context}.effects must not be empty"
+        )));
     }
     for effect in &operation.effects {
         validate_dotted_id(effect, "semantic effect")?;
@@ -149,12 +161,12 @@ fn required_string(item: &Item, key: &str, context: &str) -> Result<String> {
     item.get(key)
         .and_then(Item::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn required_table_string(table: &Table, key: &str, context: &str) -> Result<String> {
     optional_table_string(table, key)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn optional_table_string(table: &Table, key: &str) -> Option<String> {
@@ -165,7 +177,8 @@ fn required_string_array(table: &Table, key: &str, context: &str) -> Result<Vec<
     let array = table
         .get(key)
         .and_then(Item::as_array)
-        .ok_or_else(|| format!("{context} requires array {key:?}"))?;
+        .ok_or_else(|| format!("{context} requires array {key:?}"))
+        .map_err(crate::Error::invalid)?;
     parse_string_array(array, key, context)
 }
 
@@ -174,10 +187,9 @@ fn parse_string_array(array: &Array, key: &str, context: &str) -> Result<Vec<Str
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| format!("{context}.{key}[{index}] must be a string").into())
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                crate::Error::invalid(format!("{context}.{key}[{index}] must be a string"))
+            })
         })
         .collect()
 }

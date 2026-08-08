@@ -38,10 +38,9 @@ pub(crate) fn validate_register_model_memory_map(
             u64::from(*start) <= *address && end <= u64::from(*range_end)
         })
     }) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "register {identity:?} at {address:#010x}/{width} lies outside project MMIO regions"
-        )
-        .into());
+        )));
     }
     Ok(RegisterMemoryMapSummary {
         registers: identities.len(),
@@ -100,19 +99,19 @@ pub(crate) fn validate_register_evidence(
         evidence.validate_references("PAC API pack", api.source_ids())?;
     }
 
-    let memory =
-        memory_map.ok_or("register evidence ranges require a project or target memory-map")?;
+    let memory = memory_map
+        .ok_or("register evidence ranges require a project or target memory-map")
+        .map_err(crate::Error::invalid)?;
     let mmio = memory.mmio_ranges()?;
     if let Some(range) = evidence.ranges.iter().find(|range| {
         !mmio.iter().any(|(_, start, end)| {
             u64::from(*start) <= range.start && range.end_exclusive <= u64::from(*end)
         })
     }) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "register evidence range {:?} lies outside project MMIO regions",
             range.name
-        )
-        .into());
+        )));
     }
     Ok(Some(evidence))
 }

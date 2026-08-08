@@ -11,10 +11,12 @@ pub(super) fn run(
 ) -> Result<bool> {
     let vendor_artifact = arguments
         .vendor_artifact
-        .ok_or("missing --vendor-artifact")?;
+        .ok_or("missing --vendor-artifact")
+        .map_err(crate::Error::invalid)?;
     let vendor_companion = arguments
         .vendor_companion
-        .ok_or("missing --vendor-companion")?;
+        .ok_or("missing --vendor-companion")
+        .map_err(crate::Error::invalid)?;
     let report = crate::harnesses::verify_named_contract(
         harness,
         contract,

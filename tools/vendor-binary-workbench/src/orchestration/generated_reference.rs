@@ -68,7 +68,9 @@ impl TemporaryBuildDirectory {
                 Err(error) => return Err(error.into()),
             }
         }
-        Err("could not allocate a unique generated-reference build directory".into())
+        Err(crate::Error::invalid(
+            "could not allocate a unique generated-reference build directory",
+        ))
     }
 
     fn path(&self) -> &Path {
@@ -231,11 +233,10 @@ fn compiler_identity() -> Result<(std::ffi::OsString, String)> {
     let executable = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let output = Command::new(&executable).arg("-vV").output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "failed to query generated-reference compiler: {}",
             String::from_utf8_lossy(&output.stderr).trim()
-        )
-        .into());
+        )));
     }
     let identity = String::from_utf8(output.stdout)?
         .lines()
@@ -243,7 +244,9 @@ fn compiler_identity() -> Result<(std::ffi::OsString, String)> {
         .collect::<Vec<_>>()
         .join(";");
     if identity.is_empty() {
-        return Err("generated-reference compiler did not report a release and commit hash".into());
+        return Err(crate::Error::invalid(
+            "generated-reference compiler did not report a release and commit hash",
+        ));
     }
     Ok((executable, identity))
 }
@@ -260,16 +263,14 @@ fn prove_exact_mmio_leaf(
         .iter()
         .any(|event| !matches!(event, ObservableEvent::Memory { .. }))
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "generated harness {HARNESS_VERSION} only supports MMIO events for {vendor_symbol}"
-        )
-        .into());
+        )));
     }
     if !vendor_trace.is_exact() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "generated harness {HARNESS_VERSION} requires an exact vendor trace for {vendor_symbol}"
-        )
-        .into());
+        )));
     }
 
     let build = TemporaryBuildDirectory::create()?;
@@ -307,11 +308,10 @@ fn prove_exact_mmio_leaf(
         .arg(&harness_path)
         .output()?;
     if !output.status.success() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "generated reference for {vendor_symbol} did not compile for {target}:\n{}",
             String::from_utf8_lossy(&output.stderr)
-        )
-        .into());
+        )));
     }
 
     let generated_trace = extract(
@@ -323,26 +323,23 @@ fn prove_exact_mmio_leaf(
         svd,
     )?;
     if !generated_trace.is_exact() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "compiled generated reference for {vendor_symbol} is incomplete: {}",
             generated_trace.blockers.join("; ")
-        )
-        .into());
+        )));
     }
     if !traces_equal(vendor_trace, &generated_trace) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "compiled generated reference for {vendor_symbol} does not reproduce the vendor MMIO trace"
-        )
-        .into());
+        )));
     }
     if vendor_trace.return_value.is_resolved()
         && generated_trace.return_value.is_resolved()
         && !returns_equal(vendor_trace, &generated_trace)
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "compiled generated reference for {vendor_symbol} does not reproduce the vendor return value"
-        )
-        .into());
+        )));
     }
 
     Ok(GeneratedReferenceProof {
@@ -367,7 +364,7 @@ pub(crate) fn generate_compile_and_prove_exact_mmio_leaf(
     let reference_trace =
         extract_reference(vendor_input, companions, riscv_harness, entry_contract, svd)?;
     let resolved = ResolvedReferenceProgram::try_from(&reference_trace)
-        .map_err(|error| -> crate::Error { error.into() })?;
+        .map_err(|error| -> crate::Error { crate::Error::invalid(error) })?;
     let artifact_digest = artifact_sha256(&vendor_input.artifact)?;
     let companion_provenance = companions
         .iter()
@@ -380,7 +377,7 @@ pub(crate) fn generate_compile_and_prove_exact_mmio_leaf(
         vendor_input.member.as_deref(),
         &companion_provenance,
     )
-    .map_err(|error| -> crate::Error { error.into() })?;
+    .map_err(|error| -> crate::Error { crate::Error::invalid(error) })?;
     prove_exact_mmio_leaf(
         svd,
         target,

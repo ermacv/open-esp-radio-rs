@@ -174,10 +174,9 @@ fn analyze(
     }
     let report = merge_linked_ir(reports);
     if report.functions.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "no named code symbols start with {symbol_prefix:?} in any IR artifact"
-        )
-        .into());
+        )));
     }
 
     Ok((entry_contract, report))

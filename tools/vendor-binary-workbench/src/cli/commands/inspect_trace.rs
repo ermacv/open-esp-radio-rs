@@ -4,9 +4,15 @@ use super::super::*;
 
 pub(super) fn run(arguments: TraceInputArgs, svd: &MmioRegisterMap) -> Result<bool> {
     let input = ArtifactSymbolSelector {
-        artifact: arguments.artifact.ok_or("missing --artifact")?,
+        artifact: arguments
+            .artifact
+            .ok_or("missing --artifact")
+            .map_err(crate::Error::invalid)?,
         member: arguments.member,
-        symbol: arguments.symbol.ok_or("missing --symbol")?,
+        symbol: arguments
+            .symbol
+            .ok_or("missing --symbol")
+            .map_err(crate::Error::invalid)?,
     };
     let trace = extract(&input, svd)?;
     let document = trace_document(&trace);

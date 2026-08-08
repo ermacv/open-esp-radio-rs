@@ -18,11 +18,10 @@ pub(crate) fn write_pack_template(
     calling_convention: &str,
 ) -> Result<()> {
     if path.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite existing interface pack {}",
             path.display()
-        )
-        .into());
+        )));
     }
     if let Some(parent) = path
         .parent()
@@ -52,12 +51,11 @@ pub(crate) fn write_pack_template(
             .artifact(table.artifact)
             .expect("validated interface facts reference an artifact");
         if artifact.sources.len() != 1 {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "artifact {} has {} source identities; generate a filtered facts report before initializing a pack",
                 artifact.index,
                 artifact.sources.len()
-            )
-            .into());
+            )));
         }
         let source = artifact.sources.iter().next().expect("one source");
         let root_name = match &table.root {

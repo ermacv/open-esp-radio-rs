@@ -29,10 +29,9 @@ impl OutputKind {
             "pac-leaf" => Ok(Self::PacLeaf),
             "transition" => Ok(Self::Transition),
             "plan" => Ok(Self::Plan),
-            _ => Err(format!(
+            _ => Err(crate::Error::invalid(format!(
                 "unknown driver output kind {value:?}; expected pac-leaf, transition, or plan"
-            )
-            .into()),
+            ))),
         }
     }
 
@@ -53,28 +52,52 @@ pub(super) fn run(
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
-    let symbol = arguments.symbol.ok_or("missing --symbol")?;
-    let source = arguments.source.ok_or("missing --source")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
+    let symbol = arguments
+        .symbol
+        .ok_or("missing --symbol")
+        .map_err(crate::Error::invalid)?;
+    let source = arguments
+        .source
+        .ok_or("missing --source")
+        .map_err(crate::Error::invalid)?;
     dispositions::validate_source_id(&source, 0)?;
     let dispositions = arguments
         .dispositions
         .or_else(|| target.dispositions.clone())
-        .ok_or("driver generation requires --dispositions or target dispositions")?;
+        .ok_or("driver generation requires --dispositions or target dispositions")
+        .map_err(crate::Error::invalid)?;
     let pac_bindings = arguments
         .pac_bindings
         .or_else(|| target.pac_bindings.clone())
-        .ok_or("driver generation requires --pac-bindings or target pac-bindings")?;
-    let output_kind = OutputKind::parse(arguments.kind.as_deref().ok_or("missing --kind")?)?;
+        .ok_or("driver generation requires --pac-bindings or target pac-bindings")
+        .map_err(crate::Error::invalid)?;
+    let output_kind = OutputKind::parse(
+        arguments
+            .kind
+            .as_deref()
+            .ok_or("missing --kind")
+            .map_err(crate::Error::invalid)?,
+    )?;
 
     let manifest = dispositions::Manifest::load(&dispositions)?;
     let resolved_disposition = manifest.resolve(&source, &symbol);
-    let entry = resolved_disposition.entry.ok_or_else(|| {
-        format!("driver generation requires an explicit disposition for {source} {symbol}")
-    })?;
-    let policy = entry.effect_contract.as_ref().ok_or_else(|| {
-        format!("driver generation requires an effect-contract for {source} {symbol}")
-    })?;
+    let entry = resolved_disposition
+        .entry
+        .ok_or_else(|| {
+            format!("driver generation requires an explicit disposition for {source} {symbol}")
+        })
+        .map_err(crate::Error::invalid)?;
+    let policy = entry
+        .effect_contract
+        .as_ref()
+        .ok_or_else(|| {
+            format!("driver generation requires an effect-contract for {source} {symbol}")
+        })
+        .map_err(crate::Error::invalid)?;
 
     let selector = ArtifactSymbolSelector {
         artifact,
@@ -88,8 +111,8 @@ pub(super) fn run(
         entry_contract,
         svd,
     )?;
-    let resolved =
-        ResolvedReferenceProgram::try_from(&trace).map_err(|error| -> Error { error.into() })?;
+    let resolved = ResolvedReferenceProgram::try_from(&trace)
+        .map_err(|error| -> Error { crate::Error::invalid(error) })?;
     let bindings = effect_contract::PacBindingIndex::load(&pac_bindings)?;
     let plan = effect_contract::DriverPlan::from_resolved(&resolved, policy, &bindings)?;
     let plan_source = plan.canonical();

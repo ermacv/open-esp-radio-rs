@@ -179,7 +179,9 @@ fn select_profiles<'a>(
     selected: &BTreeSet<String>,
 ) -> Result<Vec<&'a ProjectIrProfile>> {
     if profiles.is_empty() {
-        return Err("project has no [[analysis.ir]] profiles".into());
+        return Err(crate::Error::invalid(
+            "project has no [[analysis.ir]] profiles",
+        ));
     }
     if selected.is_empty() {
         return Ok(profiles.iter().collect());
@@ -192,7 +194,9 @@ fn select_profiles<'a>(
         .iter()
         .find(|profile| !available.contains(profile.as_str()))
     {
-        return Err(format!("unknown project IR profile {unknown:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "unknown project IR profile {unknown:?}"
+        )));
     }
     Ok(profiles
         .iter()
@@ -231,21 +235,20 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
                     .get(source.as_str())
                     .map(|path| (source.clone(), (*path).clone()))
                     .ok_or_else(|| {
-                        format!(
+                        crate::Error::invalid(format!(
                             "IR profile {:?} requests missing run-spec role source-artifact:{source}",
                             profile.id
                         )
-                        .into()
+                        )
                     })
             })
             .collect::<Result<Vec<_>>>()?
     };
     if artifacts.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "IR profile {:?} has no source-artifact bindings in the run spec",
             profile.id
-        )
-        .into());
+        )));
     }
 
     let mut companions = BTreeSet::new();
@@ -265,11 +268,10 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
         .iter()
         .any(|input| input.role == InputRole::Companion)
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "IR profile {:?} selects multiple sources but the run spec has a global companion",
             profile.id
-        )
-        .into());
+        )));
     }
     Ok(ResolvedInputs {
         artifacts,
@@ -291,15 +293,14 @@ fn check_all(profiles: &[BuiltProfile<'_>]) -> Result<()> {
     if stale.is_empty() {
         Ok(())
     } else {
-        Err(format!(
+        Err(crate::Error::invalid(format!(
             "generated project IR differs or is missing: {}; rerun ir build without --check",
             stale
                 .iter()
                 .map(|path| path.display().to_string())
                 .collect::<Vec<_>>()
                 .join(", ")
-        )
-        .into())
+        )))
     }
 }
 

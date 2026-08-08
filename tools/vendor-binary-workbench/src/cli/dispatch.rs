@@ -95,13 +95,15 @@ fn run_command(invocation: ResolvedCommandInvocation) -> Result<bool> {
     if command == Command::SymbolInventory {
         let run_spec = run_spec
             .as_ref()
-            .ok_or("symbols inventory requires a run spec with artifact bindings")?;
+            .ok_or("symbols inventory requires a run spec with artifact bindings")
+            .map_err(crate::Error::invalid)?;
         return commands::run_symbol_inventory(arguments, run_spec);
     }
     if command == Command::InterfaceDiscover {
         let run_spec = run_spec
             .as_ref()
-            .ok_or("interfaces discover requires a run spec with artifact bindings")?;
+            .ok_or("interfaces discover requires a run spec with artifact bindings")
+            .map_err(crate::Error::invalid)?;
         return commands::run_interface_discovery(arguments, run_spec);
     }
     if matches!(
@@ -144,7 +146,8 @@ fn run_command(invocation: ResolvedCommandInvocation) -> Result<bool> {
                 .expect("project IR build requires a loaded project"),
             run_spec
                 .as_ref()
-                .ok_or("ir build requires a run spec with source artifact bindings")?,
+                .ok_or("ir build requires a run spec with source artifact bindings")
+                .map_err(crate::Error::invalid)?,
             &svd,
             &target,
         );

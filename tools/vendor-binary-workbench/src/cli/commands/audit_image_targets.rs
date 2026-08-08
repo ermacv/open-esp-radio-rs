@@ -27,7 +27,10 @@ struct DirectTargetAuditReport {
 }
 
 pub(super) fn run(arguments: ImageAuditArgs) -> Result<bool> {
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
     let ranges = arguments
         .forbid
         .into_iter()

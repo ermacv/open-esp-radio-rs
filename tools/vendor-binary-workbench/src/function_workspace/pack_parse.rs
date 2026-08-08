@@ -77,7 +77,8 @@ fn parse_contexts(tables: &ArrayOfTables, function: &str) -> Result<Vec<Reviewed
             Ok(ReviewedContext {
                 argument: required_integer(table, "argument", &context)?
                     .try_into()
-                    .map_err(|_| format!("{context}.argument must fit u8"))?,
+                    .map_err(|_| format!("{context}.argument must fit u8"))
+                    .map_err(crate::Error::invalid)?,
                 status: parse_status(table, &context)?,
                 name: optional_string(table, "name"),
                 type_name: optional_string(table, "type-name"),
@@ -101,10 +102,12 @@ fn parse_fields(tables: &ArrayOfTables, context: &str) -> Result<Vec<ReviewedCon
             Ok(ReviewedContextField {
                 offset: required_integer(table, "offset", &context)?
                     .try_into()
-                    .map_err(|_| format!("{context}.offset must fit i32"))?,
+                    .map_err(|_| format!("{context}.offset must fit i32"))
+                    .map_err(crate::Error::invalid)?,
                 width: required_integer(table, "width", &context)?
                     .try_into()
-                    .map_err(|_| format!("{context}.width must fit u8"))?,
+                    .map_err(|_| format!("{context}.width must fit u8"))
+                    .map_err(crate::Error::invalid)?,
                 status: parse_status(table, &context)?,
                 name: optional_string(table, "name"),
                 display_type: optional_string(table, "display-type"),
@@ -119,7 +122,11 @@ fn parse_status(table: &Table, context: &str) -> Result<FunctionReviewStatus> {
         None | Some("unreviewed") => FunctionReviewStatus::Unreviewed,
         Some("reviewed") => FunctionReviewStatus::Reviewed,
         Some("ignored") => FunctionReviewStatus::Ignored,
-        Some(status) => return Err(format!("invalid review status {status:?} in {context}").into()),
+        Some(status) => {
+            return Err(crate::Error::invalid(format!(
+                "invalid review status {status:?} in {context}"
+            )));
+        }
     })
 }
 
@@ -127,11 +134,12 @@ fn required_string(item: &Item, key: &str, context: &str) -> Result<String> {
     item.get(key)
         .and_then(Item::as_str)
         .map(str::to_owned)
-        .ok_or_else(|| format!("{context} requires string {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn required_table_string(table: &Table, key: &str, context: &str) -> Result<String> {
-    optional_string(table, key).ok_or_else(|| format!("{context} requires string {key:?}").into())
+    optional_string(table, key)
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires string {key:?}")))
 }
 
 fn optional_string(table: &Table, key: &str) -> Option<String> {
@@ -142,7 +150,7 @@ fn required_integer(table: &Table, key: &str, context: &str) -> Result<i64> {
     table
         .get(key)
         .and_then(Item::as_integer)
-        .ok_or_else(|| format!("{context} requires integer {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires integer {key:?}")))
 }
 
 fn optional_bool(table: &Table, key: &str, context: &str) -> Result<Option<bool>> {
@@ -150,7 +158,7 @@ fn optional_bool(table: &Table, key: &str, context: &str) -> Result<Option<bool>
         .get(key)
         .map(|item| {
             item.as_bool()
-                .ok_or_else(|| format!("{context}.{key} must be a boolean").into())
+                .ok_or_else(|| crate::Error::invalid(format!("{context}.{key} must be a boolean")))
         })
         .transpose()
 }

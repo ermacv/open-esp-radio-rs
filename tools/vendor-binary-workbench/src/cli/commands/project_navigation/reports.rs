@@ -105,7 +105,9 @@ pub(super) struct InterfaceReport {
 
 pub(super) fn read<T: for<'de> Deserialize<'de>>(path: &Path, kind: &str) -> Result<T> {
     let input = fs::read_to_string(path)
-        .map_err(|error| format!("cannot read {kind} {}: {error}", path.display()))?;
-    serde_json::from_str(&input)
-        .map_err(|error| format!("cannot parse {kind} {}: {error}", path.display()).into())
+        .map_err(|error| format!("cannot read {kind} {}: {error}", path.display()))
+        .map_err(crate::Error::invalid)?;
+    serde_json::from_str(&input).map_err(|error| {
+        crate::Error::invalid(format!("cannot parse {kind} {}: {error}", path.display()))
+    })
 }

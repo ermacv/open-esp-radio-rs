@@ -22,7 +22,8 @@ pub(super) fn run(
     let paths = project
         .registers
         .as_ref()
-        .ok_or("project has no [registers] table; configure facts and model paths first")?;
+        .ok_or("project has no [registers] table; configure facts and model paths first")
+        .map_err(crate::Error::invalid)?;
     match (command, arguments) {
         (Command::RegisterInitModel, CommandArguments::RegisterModel(arguments)) => {
             init_model(arguments, project, memory_map, paths)
@@ -57,9 +58,12 @@ fn review(
         .output
         .as_deref()
         .or(paths.review_output.as_deref())
-        .ok_or("registers review requires --output PATH or [registers.review] output")?;
+        .ok_or("registers review requires --output PATH or [registers.review] output")
+        .map_err(crate::Error::invalid)?;
     if !RegisterModel::is_model_file(&paths.model)? {
-        return Err("registers review requires a register-model-v2 manifest".into());
+        return Err(crate::Error::invalid(
+            "registers review requires a register-model-v2 manifest",
+        ));
     }
     let facts = RegisterFacts::load(&paths.facts)?;
     let model = RegisterModel::load(&paths.model)?;

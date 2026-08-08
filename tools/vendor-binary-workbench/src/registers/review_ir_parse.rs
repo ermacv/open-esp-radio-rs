@@ -25,23 +25,24 @@ fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> 
     let root: Value = serde_json::from_str(input)?;
     let root = object(&root, "linked-IR root")?;
     if integer(root, "schema_version", "linked-IR report")? != 32 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "register review requires linked-IR schema 32 in {}",
             path.display()
-        )
-        .into());
+        )));
     }
     if string(root, "command", "linked-IR report")? != "ir export" {
-        return Err(format!("{} is not an ir export report", path.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "{} is not an ir export report",
+            path.display()
+        )));
     }
     if boolean(root, "completeness_claim", "linked-IR report")?
         || boolean(root, "mmio_field_semantics_claim", "linked-IR report")?
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "linked-IR review input {} makes an unsupported completeness or field-semantics claim",
             path.display()
-        )
-        .into());
+        )));
     }
     let mut seen = BTreeSet::new();
     array(root, "mmio_registers", "linked-IR report")?
@@ -52,13 +53,12 @@ fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> 
             let register = parse_register(register, &context)?;
             let key = (register.address, register.width);
             if !seen.insert(key) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "duplicate linked-IR register at {:#010x}/{} in {}",
                     key.0,
                     key.1,
                     path.display()
-                )
-                .into());
+                )));
             }
             Ok(register)
         })
@@ -70,9 +70,12 @@ fn parse_register(value: &Value, context: &str) -> Result<ReviewIrRegister> {
     let address = address(value, "address", context)?;
     let width = integer(value, "width", context)?
         .try_into()
-        .map_err(|_| format!("invalid register width in {context}"))?;
+        .map_err(|_| format!("invalid register width in {context}"))
+        .map_err(crate::Error::invalid)?;
     if !matches!(width, 8 | 16 | 32) {
-        return Err(format!("unsupported register width {width} in {context}").into());
+        return Err(crate::Error::invalid(format!(
+            "unsupported register width {width} in {context}"
+        )));
     }
     let mut fields = BTreeMap::new();
     for (index, field) in array(value, "field_candidates", context)?
@@ -87,7 +90,9 @@ fn parse_register(value: &Value, context: &str) -> Result<ReviewIrRegister> {
             field.mask,
         );
         if fields.insert(key, field).is_some() {
-            return Err(format!("duplicate field candidate in {field_context}").into());
+            return Err(crate::Error::invalid(format!(
+                "duplicate field candidate in {field_context}"
+            )));
         }
     }
     Ok(ReviewIrRegister {
@@ -103,13 +108,17 @@ fn parse_field(value: &Value, width: u8, context: &str) -> Result<ReviewFieldEvi
     let value = object(value, context)?;
     let lsb = integer(value, "least_significant_bit", context)?
         .try_into()
-        .map_err(|_| format!("invalid least-significant bit in {context}"))?;
+        .map_err(|_| format!("invalid least-significant bit in {context}"))
+        .map_err(crate::Error::invalid)?;
     let msb = integer(value, "most_significant_bit", context)?
         .try_into()
-        .map_err(|_| format!("invalid most-significant bit in {context}"))?;
+        .map_err(|_| format!("invalid most-significant bit in {context}"))
+        .map_err(crate::Error::invalid)?;
     let mask = address(value, "mask", context)?;
     if lsb > msb || msb >= width || contiguous_mask(lsb, msb) != mask {
-        return Err(format!("invalid field bit range or mask in {context}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid field bit range or mask in {context}"
+        )));
     }
     Ok(ReviewFieldEvidence {
         least_significant_bit: lsb,
@@ -183,7 +192,7 @@ fn contiguous_mask(lsb: u8, msb: u8) -> u32 {
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
     value
         .as_object()
-        .ok_or_else(|| format!("{context} must be an object").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
 }
 
 fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a [Value]> {
@@ -191,7 +200,7 @@ fn array<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result
         .get(key)
         .and_then(Value::as_array)
         .map(Vec::as_slice)
-        .ok_or_else(|| format!("{context} requires array {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires array {key:?}")))
 }
 
 fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
@@ -199,7 +208,9 @@ fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Resul
         .get(key)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("{context} requires non-empty string {key:?}").into())
+        .ok_or_else(|| {
+            crate::Error::invalid(format!("{context} requires non-empty string {key:?}"))
+        })
 }
 
 fn optional_string(
@@ -210,28 +221,29 @@ fn optional_string(
     match object.get(key) {
         Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if !value.is_empty() => Ok(Some(value.clone())),
-        _ => Err(format!("{context} requires string or null {key:?}").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} requires string or null {key:?}"
+        ))),
     }
 }
 
 fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| format!("{context} requires non-negative integer {key:?}").into())
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
+    })
 }
 
 fn count(object: &Map<String, Value>, key: &str, context: &str) -> Result<usize> {
     integer(object, key, context)?
         .try_into()
-        .map_err(|_| format!("invalid count {key:?} in {context}").into())
+        .map_err(|_| crate::Error::invalid(format!("invalid count {key:?} in {context}")))
 }
 
 fn boolean(object: &Map<String, Value>, key: &str, context: &str) -> Result<bool> {
     object
         .get(key)
         .and_then(Value::as_bool)
-        .ok_or_else(|| format!("{context} requires boolean {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires boolean {key:?}")))
 }
 
 fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32> {
@@ -239,11 +251,15 @@ fn address(object: &Map<String, Value>, key: &str, context: &str) -> Result<u32>
         Some(Value::Number(value)) => value
             .as_u64()
             .and_then(|value| value.try_into().ok())
-            .ok_or_else(|| format!("invalid numeric address {value} in {context}").into()),
-        Some(Value::String(value)) => {
-            parse_u32(value).ok_or_else(|| format!("invalid address {value:?} in {context}").into())
-        }
-        _ => Err(format!("{context} requires u32 address {key:?}").into()),
+            .ok_or_else(|| {
+                crate::Error::invalid(format!("invalid numeric address {value} in {context}"))
+            }),
+        Some(Value::String(value)) => parse_u32(value).ok_or_else(|| {
+            crate::Error::invalid(format!("invalid address {value:?} in {context}"))
+        }),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} requires u32 address {key:?}"
+        ))),
     }
 }
 
@@ -254,11 +270,15 @@ fn optional_address(object: &Map<String, Value>, key: &str, context: &str) -> Re
             .as_u64()
             .and_then(|value| value.try_into().ok())
             .map(Some)
-            .ok_or_else(|| format!("invalid numeric address {value} in {context}").into()),
-        Some(Value::String(value)) => parse_u32(value)
-            .map(Some)
-            .ok_or_else(|| format!("invalid address {value:?} in {context}").into()),
-        _ => Err(format!("{context} requires u32 address or null {key:?}").into()),
+            .ok_or_else(|| {
+                crate::Error::invalid(format!("invalid numeric address {value} in {context}"))
+            }),
+        Some(Value::String(value)) => parse_u32(value).map(Some).ok_or_else(|| {
+            crate::Error::invalid(format!("invalid address {value:?} in {context}"))
+        }),
+        _ => Err(crate::Error::invalid(format!(
+            "{context} requires u32 address or null {key:?}"
+        ))),
     }
 }
 
@@ -272,7 +292,9 @@ fn string_list(object: &Map<String, Value>, key: &str, context: &str) -> Result<
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
                 .ok_or_else(|| {
-                    format!("{context}.{key}[{index}] must be a non-empty string").into()
+                    crate::Error::invalid(format!(
+                        "{context}.{key}[{index}] must be a non-empty string"
+                    ))
                 })
         })
         .collect()

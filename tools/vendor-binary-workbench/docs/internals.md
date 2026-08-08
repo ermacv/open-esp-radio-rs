@@ -108,6 +108,9 @@ typed at every workbench crate boundary; there is no boxed external-error
 escape hatch in the facade. The facade error itself implements `miette::Diagnostic`;
 project, run-spec and target parse failures retain their named source and
 labelled span through the common renderer.
+`WorkbenchError` deliberately has no `From<String>` or `From<&str>` escape
+hatch. A facade boundary must select `InvalidInput` explicitly, while errors
+from domain crates retain their dedicated transparent variants.
 
 Without `RUST_LOG`, the default tracing filter shows workbench warnings while
 keeping dependency diagnostics below `error`; `-v`, `-vv` and `-vvv` raise

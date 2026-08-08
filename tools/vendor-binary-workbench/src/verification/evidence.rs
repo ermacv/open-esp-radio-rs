@@ -36,9 +36,9 @@ pub(crate) fn record_evidence(
     if let Some(previous) = evidence.insert(key, kind.clone())
         && previous != kind
     {
-        return Err(
-            format!("conflicting evidence for {source} {symbol}: {previous} and {kind}").into(),
-        );
+        return Err(crate::Error::invalid(format!(
+            "conflicting evidence for {source} {symbol}: {previous} and {kind}"
+        )));
     }
     Ok(())
 }

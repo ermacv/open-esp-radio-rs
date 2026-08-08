@@ -25,11 +25,10 @@ pub(crate) struct ProjectRegisterWorkspace {
 impl ProjectRegisterWorkspace {
     pub(crate) fn load(facts_path: &Path, model_path: &Path) -> Result<Self> {
         if !RegisterModel::is_model_file(model_path)? {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "register workspace {} is not a register-model-v2 manifest",
                 model_path.display()
-            )
-            .into());
+            )));
         }
         let facts = facts_path
             .is_file()

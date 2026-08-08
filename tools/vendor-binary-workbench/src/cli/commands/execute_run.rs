@@ -98,12 +98,23 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioRegisterMap) -> Result<bo
             .push_back(value);
     }
     if let Some(value) = arguments.stack_fill {
-        let value = parse_u32(&value).ok_or("invalid --stack-fill value")?;
-        scenario.private_stack_fill =
-            Some(u8::try_from(value).map_err(|_| "--stack-fill value exceeds one byte")?);
+        let value = parse_u32(&value)
+            .ok_or("invalid --stack-fill value")
+            .map_err(crate::Error::invalid)?;
+        scenario.private_stack_fill = Some(
+            u8::try_from(value)
+                .map_err(|_| "--stack-fill value exceeds one byte")
+                .map_err(crate::Error::invalid)?,
+        );
     }
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
-    let symbol = arguments.symbol.ok_or("missing --symbol")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
+    let symbol = arguments
+        .symbol
+        .ok_or("missing --symbol")
+        .map_err(crate::Error::invalid)?;
     let concrete_only = arguments.concrete_only;
     let print_timeline = arguments.timeline;
     let companion = arguments.companion;
@@ -282,9 +293,11 @@ fn execution_document(input: &ExecutionRenderInput<'_>) -> Result<ExecutionDocum
 pub(super) fn resolve_scenario(arguments: ScenarioArgs) -> Result<execution::Scenario> {
     let mut scenario = execution::Scenario::default();
     for value in arguments.arg {
-        scenario
-            .arguments
-            .push(parse_u32(&value).ok_or("invalid --arg value")?);
+        scenario.arguments.push(
+            parse_u32(&value)
+                .ok_or("invalid --arg value")
+                .map_err(crate::Error::invalid)?,
+        );
     }
     for assignment in arguments.mmio {
         let (address, value) = parse_assignment(&assignment, "--mmio")?;

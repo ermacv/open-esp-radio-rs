@@ -39,7 +39,10 @@ impl PlatformPack {
     fn parse(path: PathBuf, document: DocumentMut) -> Result<Self> {
         reject_unknown_keys(&document, &path)?;
         if document.get("schema").and_then(Item::as_integer) != Some(1) {
-            return Err(format!("{} requires platform pack schema = 1", path.display()).into());
+            return Err(crate::Error::invalid(format!(
+                "{} requires platform pack schema = 1",
+                path.display()
+            )));
         }
         let id = required_string(&document, "id", &path)?;
         validate_id(&id, "platform pack")?;
@@ -50,7 +53,10 @@ impl PlatformPack {
             .as_ref()
             .is_some_and(|value| value.chars().any(char::is_whitespace))
         {
-            return Err(format!("{} harness must be one token", path.display()).into());
+            return Err(crate::Error::invalid(format!(
+                "{} harness must be one token",
+                path.display()
+            )));
         }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
         let semantic_catalogs = string_array(&document, "semantic-catalogs", &path)?
@@ -58,30 +64,27 @@ impl PlatformPack {
             .map(|value| {
                 let relative = Path::new(&value);
                 if relative.is_absolute() {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "{} semantic catalog paths must be relative to the platform pack",
                         path.display()
-                    )
-                    .into());
+                    )));
                 }
                 let resolved = base.join(relative);
                 resolved.canonicalize().map_err(|error| {
-                    format!(
+                    crate::Error::invalid(format!(
                         "cannot resolve semantic catalog {} from {}: {error}",
                         relative.display(),
                         path.display()
-                    )
-                    .into()
+                    ))
                 })
             })
             .collect::<Result<Vec<_>>>()?;
         let unique = semantic_catalogs.iter().collect::<BTreeSet<_>>();
         if unique.len() != semantic_catalogs.len() {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "{} contains duplicate semantic catalog paths",
                 path.display()
-            )
-            .into());
+            )));
         }
         let semantic_operations = SemanticCatalogs::load(&semantic_catalogs)?.len();
         Ok(Self {
@@ -99,7 +102,7 @@ impl PlatformPack {
         if self.architecture != target.architecture.label()
             || self.calling_convention != target.calling_convention.label()
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "platform pack {:?} requires {}/{}, but target {} uses {}/{}",
                 self.id,
                 self.architecture,
@@ -107,16 +110,14 @@ impl PlatformPack {
                 target.id,
                 target.architecture.label(),
                 target.calling_convention.label(),
-            )
-            .into());
+            )));
         }
         if let Some(harness) = &self.harness {
             if target.harness.is_some() {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "target {} already has a platform harness before applying pack {:?}",
                     target.id, self.id
-                )
-                .into());
+                )));
             }
             target.harness = Some(harness.clone());
         }
@@ -135,7 +136,10 @@ fn reject_unknown_keys(document: &DocumentMut, path: &Path) -> Result<()> {
                 | "harness"
                 | "semantic-catalogs"
         ) {
-            return Err(format!("{} has unknown platform pack key {key:?}", path.display()).into());
+            return Err(crate::Error::invalid(format!(
+                "{} has unknown platform pack key {key:?}",
+                path.display()
+            )));
         }
     }
     Ok(())
@@ -143,7 +147,7 @@ fn reject_unknown_keys(document: &DocumentMut, path: &Path) -> Result<()> {
 
 fn required_string(document: &DocumentMut, key: &str, path: &Path) -> Result<String> {
     optional_string(document, key)
-        .ok_or_else(|| format!("{} requires string {key:?}", path.display()).into())
+        .ok_or_else(|| crate::Error::invalid(format!("{} requires string {key:?}", path.display())))
 }
 
 fn optional_string(document: &DocumentMut, key: &str) -> Option<String> {
@@ -156,15 +160,18 @@ fn string_array(document: &DocumentMut, key: &str, path: &Path) -> Result<Vec<St
     };
     let values = item
         .as_array()
-        .ok_or_else(|| format!("{} {key:?} must be an array", path.display()))?;
+        .ok_or_else(|| format!("{} {key:?} must be an array", path.display()))
+        .map_err(crate::Error::invalid)?;
     values
         .iter()
         .enumerate()
         .map(|(index, value)| {
-            value
-                .as_str()
-                .map(str::to_owned)
-                .ok_or_else(|| format!("{} {key}[{index}] must be a string", path.display()).into())
+            value.as_str().map(str::to_owned).ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "{} {key}[{index}] must be a string",
+                    path.display()
+                ))
+            })
         })
         .collect()
 }
@@ -175,7 +182,9 @@ fn validate_id(value: &str, kind: &str) -> Result<()> {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
     {
-        return Err(format!("invalid {kind} id {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid {kind} id {value:?}"
+        )));
     }
     Ok(())
 }

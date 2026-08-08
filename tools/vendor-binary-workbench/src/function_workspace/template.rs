@@ -17,11 +17,10 @@ pub(crate) fn write_function_pack_template(
     project_id: &str,
 ) -> Result<()> {
     if path.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite existing function pack {}",
             path.display()
-        )
-        .into());
+        )));
     }
     if let Some(parent) = path
         .parent()

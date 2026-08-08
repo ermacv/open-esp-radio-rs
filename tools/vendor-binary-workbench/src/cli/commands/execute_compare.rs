@@ -29,10 +29,20 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioRegisterMap) -> Resul
 
     let vendor_artifact = arguments
         .vendor_artifact
-        .ok_or("missing --vendor-artifact")?;
-    let vendor_symbol = arguments.vendor_symbol.ok_or("missing --vendor-symbol")?;
-    let rust_artifact = arguments.rust_artifact.ok_or("missing --rust-artifact")?;
-    let rust_symbol = arguments.rust_symbol.ok_or("missing --rust-symbol")?;
+        .ok_or("missing --vendor-artifact")
+        .map_err(crate::Error::invalid)?;
+    let vendor_symbol = arguments
+        .vendor_symbol
+        .ok_or("missing --vendor-symbol")
+        .map_err(crate::Error::invalid)?;
+    let rust_artifact = arguments
+        .rust_artifact
+        .ok_or("missing --rust-artifact")
+        .map_err(crate::Error::invalid)?;
+    let rust_symbol = arguments
+        .rust_symbol
+        .ok_or("missing --rust-symbol")
+        .map_err(crate::Error::invalid)?;
     let unconstrained_arguments = [[None; 8]];
     let report = compare_execution_scenarios(
         svd,

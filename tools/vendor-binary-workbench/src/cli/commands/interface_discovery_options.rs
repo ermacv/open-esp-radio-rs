@@ -40,12 +40,11 @@ pub(super) fn selected_inputs(
         .cloned()
         .collect::<Vec<_>>();
     if !unknown.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "unknown interface source(s): {}; available: {}",
             unknown.join(", "),
             all_sources.into_iter().collect::<Vec<_>>().join(", ")
-        )
-        .into());
+        )));
     }
     Ok(run_spec
         .inputs()

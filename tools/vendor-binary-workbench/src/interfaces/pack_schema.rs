@@ -15,11 +15,10 @@ pub(super) fn validate_anchor_shape(
     validate_dotted_id(&anchor.id, "interface anchor id")?;
     validate_source_id(&anchor.source)?;
     if anchor.origin == PackOrigin::Manual && anchor.status != ReviewStatus::Reviewed {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "manual interface anchor {:?} must have status = \"reviewed\"",
             anchor.id
-        )
-        .into());
+        )));
     }
     validate_selector(&anchor.root, &anchor.id)?;
     validate_steps(
@@ -32,7 +31,10 @@ pub(super) fn validate_anchor_shape(
         .filter(|guard| matches!(guard, InterfaceGuard::ArtifactSha256 { .. }))
         .count();
     if artifact_guards > 1 {
-        return Err(format!("anchor {:?} has multiple artifact digest guards", anchor.id).into());
+        return Err(crate::Error::invalid(format!(
+            "anchor {:?} has multiple artifact digest guards",
+            anchor.id
+        )));
     }
     for guard in &anchor.guards {
         validate_guard(guard, anchor)?;
@@ -40,7 +42,10 @@ pub(super) fn validate_anchor_shape(
     match anchor.status {
         ReviewStatus::Reviewed => validate_reviewed_layout(anchor)?,
         ReviewStatus::Ignored if !anchor.slots.is_empty() => {
-            return Err(format!("ignored anchor {:?} cannot define slots", anchor.id).into());
+            return Err(crate::Error::invalid(format!(
+                "ignored anchor {:?} cannot define slots",
+                anchor.id
+            )));
         }
         ReviewStatus::Unreviewed => {
             if anchor.slots.iter().any(|slot| {
@@ -48,11 +53,10 @@ pub(super) fn validate_anchor_shape(
                     || slot.name.is_some()
                     || slot.semantic.is_some()
             }) {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "unreviewed anchor {:?} cannot contain reviewed slot claims",
                     anchor.id
-                )
-                .into());
+                )));
             }
         }
         ReviewStatus::Ignored => {}
@@ -61,17 +65,19 @@ pub(super) fn validate_anchor_shape(
     let mut slot_names = BTreeSet::new();
     for slot in &anchor.slots {
         if !slot_keys.insert((slot.offset, slot.width)) {
-            return Err(format!("anchor {:?} has a duplicate slot", anchor.id).into());
+            return Err(crate::Error::invalid(format!(
+                "anchor {:?} has a duplicate slot",
+                anchor.id
+            )));
         }
         validate_slot(slot, anchor, catalogs)?;
         if let Some(name) = &slot.name
             && !slot_names.insert(name.as_str())
         {
-            return Err(format!(
+            return Err(crate::Error::invalid(format!(
                 "anchor {:?} has duplicate reviewed slot name {name:?}",
                 anchor.id
-            )
-            .into());
+            )));
         }
     }
     Ok(())
@@ -86,22 +92,25 @@ fn validate_selector(selector: &InterfaceRootSelector, anchor: &str) -> Result<(
             ..
         } => {
             if symbol.is_empty() {
-                return Err(format!("anchor {anchor:?} has an empty symbol selector").into());
+                return Err(crate::Error::invalid(format!(
+                    "anchor {anchor:?} has an empty symbol selector"
+                )));
             }
             if member.as_deref() == Some("") {
-                return Err(format!("anchor {anchor:?} has an empty member selector").into());
+                return Err(crate::Error::invalid(format!(
+                    "anchor {anchor:?} has an empty member selector"
+                )));
             }
             if !matches!(addressing.as_str(), "absolute" | "pc-relative" | "got") {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "anchor {anchor:?} has unsupported symbol addressing {addressing:?}"
-                )
-                .into());
+                )));
             }
         }
         InterfaceRootSelector::FunctionArgument { argument } if *argument >= 8 => {
-            return Err(
-                format!("anchor {anchor:?} argument root exceeds RV32 ILP32 a0..a7").into(),
-            );
+            return Err(crate::Error::invalid(format!(
+                "anchor {anchor:?} argument root exceeds RV32 ILP32 a0..a7"
+            )));
         }
         InterfaceRootSelector::FunctionArgument { .. }
         | InterfaceRootSelector::AbsoluteAddress { .. } => {}
@@ -113,42 +122,49 @@ fn validate_reviewed_layout(anchor: &InterfaceAnchor) -> Result<()> {
     let version = anchor
         .layout_version
         .as_deref()
-        .ok_or_else(|| format!("reviewed anchor {:?} requires layout-version", anchor.id))?;
+        .ok_or_else(|| format!("reviewed anchor {:?} requires layout-version", anchor.id))
+        .map_err(crate::Error::invalid)?;
     if version.trim().is_empty() || version == "unreviewed" {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed anchor {:?} requires a non-placeholder layout-version",
             anchor.id
-        )
-        .into());
+        )));
     }
     let pointer_width = anchor
         .pointer_width
-        .ok_or_else(|| format!("reviewed anchor {:?} requires pointer-width", anchor.id))?;
+        .ok_or_else(|| format!("reviewed anchor {:?} requires pointer-width", anchor.id))
+        .map_err(crate::Error::invalid)?;
     if !matches!(pointer_width, 16 | 32 | 64) {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed anchor {:?} has unsupported pointer width {pointer_width}",
             anchor.id
-        )
-        .into());
+        )));
     }
     let size = anchor
         .layout_size
-        .ok_or_else(|| format!("reviewed anchor {:?} requires layout-size", anchor.id))?;
+        .ok_or_else(|| format!("reviewed anchor {:?} requires layout-size", anchor.id))
+        .map_err(crate::Error::invalid)?;
     if size == 0 {
-        return Err(format!("reviewed anchor {:?} has an empty layout", anchor.id).into());
+        return Err(crate::Error::invalid(format!(
+            "reviewed anchor {:?} has an empty layout",
+            anchor.id
+        )));
     }
     let stride = anchor
         .slot_stride
-        .ok_or_else(|| format!("reviewed anchor {:?} requires slot-stride", anchor.id))?;
+        .ok_or_else(|| format!("reviewed anchor {:?} requires slot-stride", anchor.id))
+        .map_err(crate::Error::invalid)?;
     if stride == 0 {
-        return Err(format!("reviewed anchor {:?} has zero slot stride", anchor.id).into());
+        return Err(crate::Error::invalid(format!(
+            "reviewed anchor {:?} has zero slot stride",
+            anchor.id
+        )));
     }
     if anchor.guards.is_empty() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed anchor {:?} requires an artifact-sha256 or runtime-value guard",
             anchor.id
-        )
-        .into());
+        )));
     }
     Ok(())
 }
@@ -167,26 +183,27 @@ fn validate_guard(guard: &InterfaceGuard, anchor: &InterfaceAnchor) -> Result<()
         } => {
             validate_dotted_id(purpose, "runtime guard purpose")?;
             if *offset < 0 || !matches!(width, 8 | 16 | 32 | 64) {
-                return Err(format!("anchor {:?} has an invalid runtime guard", anchor.id).into());
+                return Err(crate::Error::invalid(format!(
+                    "anchor {:?} has an invalid runtime guard",
+                    anchor.id
+                )));
             }
             let width_mask = width_mask(*width);
             if *mask == 0 || mask & !width_mask != 0 || value & !mask != 0 {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "anchor {:?} runtime guard mask/value exceeds width or value has unmasked bits",
                     anchor.id
-                )
-                .into());
+                )));
             }
             if let Some(size) = anchor.layout_size {
                 let end = u32::try_from(*offset)
                     .ok()
                     .and_then(|offset| offset.checked_add(u32::from(*width) / 8));
                 if end.is_none_or(|end| end > size) {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "anchor {:?} runtime guard lies outside layout-size",
                         anchor.id
-                    )
-                    .into());
+                    )));
                 }
             }
             Ok(())
@@ -200,64 +217,74 @@ fn validate_slot(
     catalogs: &SemanticCatalogs,
 ) -> Result<()> {
     if !matches!(slot.width, 16 | 32 | 64) {
-        return Err(format!("anchor {:?} has unsupported slot width", anchor.id).into());
+        return Err(crate::Error::invalid(format!(
+            "anchor {:?} has unsupported slot width",
+            anchor.id
+        )));
     }
     if slot.origin == PackOrigin::Manual && slot.status != ReviewStatus::Reviewed {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "manual slot at {:+#x} in anchor {:?} must be reviewed",
             slot.offset, anchor.id
-        )
-        .into());
+        )));
     }
     match slot.status {
         ReviewStatus::Reviewed => {
             if anchor.status != ReviewStatus::Reviewed {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "reviewed slot at {:+#x} requires reviewed anchor {:?}",
                     slot.offset, anchor.id
-                )
-                .into());
+                )));
             }
             let name = slot
                 .name
                 .as_deref()
-                .ok_or_else(|| format!("reviewed slot at {:+#x} requires a name", slot.offset))?;
+                .ok_or_else(|| format!("reviewed slot at {:+#x} requires a name", slot.offset))
+                .map_err(crate::Error::invalid)?;
             validate_c_identifier(name, "interface slot name")?;
-            let arguments = slot.arguments.as_ref().ok_or_else(|| {
-                format!("reviewed slot {name:?} requires an explicit arguments array")
-            })?;
+            let arguments = slot
+                .arguments
+                .as_ref()
+                .ok_or_else(|| {
+                    format!("reviewed slot {name:?} requires an explicit arguments array")
+                })
+                .map_err(crate::Error::invalid)?;
             for argument in arguments {
                 validate_abi_type(argument, false, &format!("slot {name:?} argument"))?;
             }
-            let return_type = slot.return_type.as_deref().ok_or_else(|| {
-                format!("reviewed slot {name:?} requires an explicit return type")
-            })?;
+            let return_type = slot
+                .return_type
+                .as_deref()
+                .ok_or_else(|| format!("reviewed slot {name:?} requires an explicit return type"))
+                .map_err(crate::Error::invalid)?;
             validate_abi_type(return_type, true, &format!("slot {name:?} return"))?;
             if let Some(semantic_id) = &slot.semantic {
                 validate_dotted_id(semantic_id, "slot semantic operation")?;
-                let operation = catalogs.get(semantic_id).ok_or_else(|| {
-                    format!("slot {name:?} refers to unknown semantic operation {semantic_id:?}")
-                })?;
+                let operation = catalogs
+                    .get(semantic_id)
+                    .ok_or_else(|| {
+                        format!(
+                            "slot {name:?} refers to unknown semantic operation {semantic_id:?}"
+                        )
+                    })
+                    .map_err(crate::Error::invalid)?;
                 if operation.argument_roles.len() != arguments.len() {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "slot {name:?} has {} ABI arguments but semantic operation {semantic_id:?} has {} roles",
                         arguments.len(),
                         operation.argument_roles.len()
-                    )
-                    .into());
+                    )));
                 }
                 if operation.variadic != slot.variadic {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "slot {name:?} variadic ABI does not match semantic operation {semantic_id:?}"
-                    )
-                    .into());
+                    )));
                 }
                 if (operation.return_role == "none") != (return_type == "void") {
-                    return Err(format!(
+                    return Err(crate::Error::invalid(format!(
                         "slot {name:?} return type does not match semantic return role {:?}",
                         operation.return_role
-                    )
-                    .into());
+                    )));
                 }
             }
             validate_slot_layout(slot, anchor)
@@ -268,11 +295,10 @@ fn validate_slot(
                 || slot.return_type.is_some()
                 || slot.semantic.is_some()
             {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "ignored slot at {:+#x} in anchor {:?} cannot claim a name, ABI, or semantic operation",
                     slot.offset, anchor.id
-                )
-                .into());
+                )));
             }
             Ok(())
         }
@@ -282,11 +308,10 @@ fn validate_slot(
                 || slot.return_type.is_some()
                 || slot.semantic.is_some()
             {
-                return Err(format!(
+                return Err(crate::Error::invalid(format!(
                     "unreviewed slot at {:+#x} in anchor {:?} cannot claim reviewed metadata",
                     slot.offset, anchor.id
-                )
-                .into());
+                )));
             }
             Ok(())
         }
@@ -298,43 +323,43 @@ fn validate_slot_layout(slot: &InterfaceSlot, anchor: &InterfaceAnchor) -> Resul
         .pointer_width
         .expect("reviewed slots require a validated reviewed layout");
     if slot.width != pointer_width {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed slot at {:+#x} in anchor {:?} has width {}, expected pointer-width {pointer_width}",
             slot.offset, anchor.id, slot.width
-        )
-        .into());
+        )));
     }
-    let offset = u32::try_from(slot.offset).map_err(|_| {
-        format!(
-            "reviewed slot at {:+#x} in anchor {:?} has a negative layout offset",
-            slot.offset, anchor.id
-        )
-    })?;
+    let offset = u32::try_from(slot.offset)
+        .map_err(|_| {
+            format!(
+                "reviewed slot at {:+#x} in anchor {:?} has a negative layout offset",
+                slot.offset, anchor.id
+            )
+        })
+        .map_err(crate::Error::invalid)?;
     let stride = u32::from(
         anchor
             .slot_stride
             .expect("reviewed slots require a validated reviewed layout"),
     );
     if offset % stride != 0 {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed slot at {offset:#x} in anchor {:?} is not aligned to slot-stride {stride}",
             anchor.id
-        )
-        .into());
+        )));
     }
     let end = offset
         .checked_add(u32::from(slot.width) / 8)
-        .ok_or("interface slot range overflows")?;
+        .ok_or("interface slot range overflows")
+        .map_err(crate::Error::invalid)?;
     if end
         > anchor
             .layout_size
             .expect("reviewed slots require a validated reviewed layout")
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "reviewed slot at {offset:#x} in anchor {:?} exceeds layout-size",
             anchor.id
-        )
-        .into());
+        )));
     }
     Ok(())
 }
@@ -342,7 +367,10 @@ fn validate_slot_layout(slot: &InterfaceSlot, anchor: &InterfaceAnchor) -> Resul
 fn validate_steps(steps: &[InterfaceFactStep], context: &str) -> Result<()> {
     for step in steps {
         if !matches!(step.width, 8 | 16 | 32 | 64) {
-            return Err(format!("{context} has unsupported width {}", step.width).into());
+            return Err(crate::Error::invalid(format!(
+                "{context} has unsupported width {}",
+                step.width
+            )));
         }
     }
     Ok(())
@@ -355,7 +383,9 @@ fn validate_c_identifier(value: &str, context: &str) -> Result<()> {
         .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
         || !bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
     {
-        return Err(format!("invalid {context} {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid {context} {value:?}"
+        )));
     }
     Ok(())
 }
@@ -370,7 +400,9 @@ fn validate_source_id(value: &str) -> Result<()> {
             .first()
             .is_some_and(u8::is_ascii_alphanumeric)
     {
-        return Err(format!("invalid interface source id {value:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "invalid interface source id {value:?}"
+        )));
     }
     Ok(())
 }
@@ -398,7 +430,9 @@ fn validate_abi_type(value: &str, allow_void: bool, context: &str) -> Result<()>
     {
         Ok(())
     } else {
-        Err(format!("unsupported ABI type {value:?} in {context}").into())
+        Err(crate::Error::invalid(format!(
+            "unsupported ABI type {value:?} in {context}"
+        )))
     }
 }
 

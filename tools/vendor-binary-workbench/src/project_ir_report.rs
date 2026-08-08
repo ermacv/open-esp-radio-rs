@@ -18,23 +18,29 @@ pub(crate) fn inspect_project_ir_report(path: &Path) -> Result<ProjectIrReportSu
     let root: Value = serde_json::from_str(&input)?;
     let root = object(&root, "linked-IR root")?;
     if integer(root, "schema_version", "linked-IR report")? != 32 {
-        return Err(format!("project IR output requires schema 32 in {}", path.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "project IR output requires schema 32 in {}",
+            path.display()
+        )));
     }
     if string(root, "command", "linked-IR report")? != "ir export" {
-        return Err(format!("{} is not an ir export report", path.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "{} is not an ir export report",
+            path.display()
+        )));
     }
     if boolean(root, "completeness_claim", "linked-IR report")?
         || boolean(root, "mmio_field_semantics_claim", "linked-IR report")?
     {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "project IR output {} makes an unsupported completeness or field-semantics claim",
             path.display()
-        )
-        .into());
+        )));
     }
     let summary = root
         .get("summary")
-        .ok_or("linked-IR report requires summary")?;
+        .ok_or("linked-IR report requires summary")
+        .map_err(crate::Error::invalid)?;
     let summary = object(summary, "linked-IR summary")?;
     Ok(ProjectIrReportSummary {
         functions: count(summary, "functions", "linked-IR summary")?,
@@ -46,7 +52,7 @@ pub(crate) fn inspect_project_ir_report(path: &Path) -> Result<ProjectIrReportSu
 fn object<'a>(value: &'a Value, context: &str) -> Result<&'a Map<String, Value>> {
     value
         .as_object()
-        .ok_or_else(|| format!("{context} must be an object").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} must be an object")))
 }
 
 fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Result<&'a str> {
@@ -54,27 +60,28 @@ fn string<'a>(object: &'a Map<String, Value>, key: &str, context: &str) -> Resul
         .get(key)
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("{context} requires non-empty string {key:?}").into())
+        .ok_or_else(|| {
+            crate::Error::invalid(format!("{context} requires non-empty string {key:?}"))
+        })
 }
 
 fn integer(object: &Map<String, Value>, key: &str, context: &str) -> Result<u64> {
-    object
-        .get(key)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| format!("{context} requires non-negative integer {key:?}").into())
+    object.get(key).and_then(Value::as_u64).ok_or_else(|| {
+        crate::Error::invalid(format!("{context} requires non-negative integer {key:?}"))
+    })
 }
 
 fn count(object: &Map<String, Value>, key: &str, context: &str) -> Result<usize> {
     integer(object, key, context)?
         .try_into()
-        .map_err(|_| format!("invalid count {key:?} in {context}").into())
+        .map_err(|_| crate::Error::invalid(format!("invalid count {key:?} in {context}")))
 }
 
 fn boolean(object: &Map<String, Value>, key: &str, context: &str) -> Result<bool> {
     object
         .get(key)
         .and_then(Value::as_bool)
-        .ok_or_else(|| format!("{context} requires boolean {key:?}").into())
+        .ok_or_else(|| crate::Error::invalid(format!("{context} requires boolean {key:?}")))
 }
 
 #[cfg(test)]

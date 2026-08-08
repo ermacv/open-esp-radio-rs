@@ -118,7 +118,9 @@ fn print_report(report: &MmioDiscoveryReport) {
 
 pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<bool> {
     if arguments.check && arguments.json_report.is_none() {
-        return Err("mmio discover --check requires --json-report PATH".into());
+        return Err(crate::Error::invalid(
+            "mmio discover --check requires --json-report PATH",
+        ));
     }
     let artifacts = arguments
         .artifact
@@ -135,21 +137,30 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<
         })
         .collect::<Vec<_>>();
     if artifacts.is_empty() {
-        return Err("mmio discover requires at least one --artifact SOURCE=PATH".into());
+        return Err(crate::Error::invalid(
+            "mmio discover requires at least one --artifact SOURCE=PATH",
+        ));
     }
     if ranges.is_empty() {
-        return Err("mmio discover requires at least one --range NAME=START..END".into());
+        return Err(crate::Error::invalid(
+            "mmio discover requires at least one --range NAME=START..END",
+        ));
     }
     let mut sources = BTreeSet::new();
     for (source, _) in &artifacts {
         if !sources.insert(source.clone()) {
-            return Err(format!("duplicate artifact source {source:?}").into());
+            return Err(crate::Error::invalid(format!(
+                "duplicate artifact source {source:?}"
+            )));
         }
     }
     let mut range_names = BTreeSet::new();
     for range in &ranges {
         if !range_names.insert(range.name.clone()) {
-            return Err(format!("duplicate MMIO range name {:?}", range.name).into());
+            return Err(crate::Error::invalid(format!(
+                "duplicate MMIO range name {:?}",
+                range.name
+            )));
         }
     }
 

@@ -85,15 +85,14 @@ pub(crate) fn link_reviewed_interfaces(
                             (&binding.semantic, &candidate.semantic_operation)
                             && interface_semantic != ir_semantic
                         {
-                            return Err(format!(
+                            return Err(crate::Error::invalid(format!(
                                 "interface semantic mismatch at {}:{:#010x}: reviewed slot {:?} uses {:?}, linked IR uses {:?}",
                                 function.identity,
                                 call.site,
                                 binding.name,
                                 interface_semantic,
                                 ir_semantic
-                            )
-                            .into());
+                            )));
                         }
                         Some(FunctionInterfaceIrCall {
                             kind: candidate.kind.clone(),

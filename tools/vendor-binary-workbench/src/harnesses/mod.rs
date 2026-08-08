@@ -18,14 +18,18 @@ pub(crate) fn is_available(harness: &str) -> bool {
 pub(crate) fn contracts(harness: &str) -> crate::Result<&'static crate::HarnessContractSpec> {
     match harness {
         "esp32s31-radio-v1" => Ok(&esp32s31::CONTRACTS),
-        _ => Err(format!("unavailable platform harness {harness:?}").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "unavailable platform harness {harness:?}"
+        ))),
     }
 }
 
 pub(crate) fn riscv(harness: &str) -> crate::Result<&'static crate::RiscvHarnessSpec> {
     match harness {
         "esp32s31-radio-v1" => Ok(&esp32s31::RISCV_HARNESS),
-        _ => Err(format!("harness {harness:?} has no RISC-V adapter").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "harness {harness:?} has no RISC-V adapter"
+        ))),
     }
 }
 
@@ -36,9 +40,9 @@ pub(crate) fn riscv_or_neutral(
 }
 
 pub(crate) fn entry_contract(harness: &str, id: &str) -> crate::Result<crate::EntryContractRef> {
-    contracts(harness)?
-        .entry_contract(id)
-        .ok_or_else(|| format!("harness {harness:?} has no entry contract {id:?}").into())
+    contracts(harness)?.entry_contract(id).ok_or_else(|| {
+        crate::Error::invalid(format!("harness {harness:?} has no entry contract {id:?}"))
+    })
 }
 
 pub(crate) fn entry_contract_or_neutral(
@@ -57,7 +61,9 @@ pub(crate) fn verify_driver_adapter(
 ) -> crate::Result<Option<DriverAdapterVerification>> {
     match harness {
         "esp32s31-radio-v1" => Ok(esp32s31::verify_driver_adapter(request)?),
-        _ => Err(format!("unavailable platform harness {harness:?}").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "unavailable platform harness {harness:?}"
+        ))),
     }
 }
 
@@ -67,7 +73,9 @@ pub(crate) fn verify_semantic_contract(
 ) -> crate::Result<Option<bool>> {
     match harness {
         "esp32s31-radio-v1" => Ok(esp32s31::verify_semantic_contract(request)?),
-        _ => Err(format!("unavailable platform harness {harness:?}").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "unavailable platform harness {harness:?}"
+        ))),
     }
 }
 
@@ -99,7 +107,9 @@ pub(crate) fn verify_named_contract(
     vendor_companion: &std::path::Path,
 ) -> crate::Result<QualificationReport> {
     if harness != "esp32s31-radio-v1" {
-        return Err(format!("unavailable platform harness {harness:?}").into());
+        return Err(crate::Error::invalid(format!(
+            "unavailable platform harness {harness:?}"
+        )));
     }
     match name {
         "channel" => Ok(esp32s31::verification::verify_esp32s31_channel(
@@ -112,6 +122,8 @@ pub(crate) fn verify_named_contract(
             vendor_artifact,
             vendor_companion,
         )?),
-        _ => Err(format!("selected harness has no contract {name:?}").into()),
+        _ => Err(crate::Error::invalid(format!(
+            "selected harness has no contract {name:?}"
+        ))),
     }
 }

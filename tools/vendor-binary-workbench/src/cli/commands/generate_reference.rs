@@ -35,8 +35,14 @@ pub(super) fn run(
     let harness = target.require_available_harness()?;
     let riscv_harness = harnesses::riscv(harness)?;
     let entry_contract = harnesses::entry_contract(harness, &arguments.entry_contract)?;
-    let artifact = arguments.artifact.ok_or("missing --artifact")?;
-    let symbol = arguments.symbol.ok_or("missing --symbol")?;
+    let artifact = arguments
+        .artifact
+        .ok_or("missing --artifact")
+        .map_err(crate::Error::invalid)?;
+    let symbol = arguments
+        .symbol
+        .ok_or("missing --symbol")
+        .map_err(crate::Error::invalid)?;
     let span = tracing::Span::current();
     span.record("artifact", tracing::field::display(artifact.display()));
     span.record("symbol", symbol.as_str());
@@ -55,8 +61,8 @@ pub(super) fn run(
         entry_contract,
         svd,
     )?;
-    let resolved =
-        ResolvedReferenceProgram::try_from(&trace).map_err(|error| -> Error { error.into() })?;
+    let resolved = ResolvedReferenceProgram::try_from(&trace)
+        .map_err(|error| -> Error { crate::Error::invalid(error) })?;
     let digest = artifact_sha256(&artifact)?;
     let companion_provenance = arguments
         .companion
@@ -70,7 +76,7 @@ pub(super) fn run(
         arguments.member.as_deref(),
         &companion_provenance,
     )
-    .map_err(|error| -> Error { error.into() })?;
+    .map_err(|error| -> Error { crate::Error::invalid(error) })?;
     if let Some(output) = arguments.output.as_deref() {
         fs::write(output, &generated.source)?;
     }

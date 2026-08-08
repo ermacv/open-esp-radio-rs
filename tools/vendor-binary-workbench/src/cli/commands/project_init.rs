@@ -74,11 +74,10 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
 
 fn create_project(options: &Options) -> Result<()> {
     if options.directory.exists() {
-        return Err(format!(
+        return Err(crate::Error::invalid(format!(
             "refusing to overwrite existing project path {}",
             options.directory.display()
-        )
-        .into());
+        )));
     }
     let parent = options
         .directory
@@ -90,13 +89,17 @@ fn create_project(options: &Options) -> Result<()> {
         .directory
         .file_name()
         .and_then(|name| name.to_str())
-        .ok_or("project directory must have a UTF-8 final component")?;
+        .ok_or("project directory must have a UTF-8 final component")
+        .map_err(crate::Error::invalid)?;
     let staging = parent.join(format!(
         ".{name}.vendor-project-init-{}",
         std::process::id()
     ));
     if staging.exists() {
-        return Err(format!("project init staging path exists: {}", staging.display()).into());
+        return Err(crate::Error::invalid(format!(
+            "project init staging path exists: {}",
+            staging.display()
+        )));
     }
     fs::create_dir(&staging)?;
     if let Err(error) = write_project(&staging, options) {

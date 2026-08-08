@@ -10,6 +10,7 @@ use std::{
 
 mod bidirectional;
 mod controlled_ap;
+mod icmp_latency;
 mod paced_tcp;
 mod paced_udp;
 mod packet_socket;
@@ -110,6 +111,7 @@ fn run() -> Result<()> {
         }
         Some("traffic") => match arguments.next().as_deref() {
             Some("bidirectional") => bidirectional::run(arguments.collect(), &root),
+            Some("icmp") => icmp_latency::run(arguments.collect(), &root),
             Some("rx") => rx_traffic::run(arguments.collect(), &root),
             Some("tcp-rx") => tcp_traffic::run_rx(arguments.collect(), &root),
             Some("tcp-tx") => tcp_traffic::run_tx(arguments.collect(), &root),
@@ -120,7 +122,7 @@ fn run() -> Result<()> {
             Some("trigger") => trigger::run(&arguments.collect::<Vec<_>>()),
             Some("trigger-hil") => trigger::run_hil(&arguments.collect::<Vec<_>>(), &root),
             _ => Err(
-                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|trigger|trigger-hil> ..."
+                "usage: cargo hil traffic <rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp|trigger|trigger-hil> ..."
                     .into(),
             ),
         },
@@ -187,6 +189,7 @@ fn print_help() {
          cargo hil traffic tcp-rx <device-ipv4> [options]\n\
          cargo hil traffic tcp-tx <device-ipv4> [options]\n\
          cargo hil traffic tcp-bidirectional <device-ipv4> [options]\n\
+         cargo hil traffic icmp <device-ipv4> [options]\n\
          cargo hil traffic trigger <monitor-interface> [options]\n\
          cargo hil traffic trigger-hil <monitor-interface> [options]\n\
          cargo hil station ap-absence [options]\n\
@@ -458,7 +461,7 @@ impl Scenario {
             Self::BootSmoke | Self::Radio | Self::RadioPollProfile | Self::RadioRxOrderProfile => {
                 &[]
             }
-            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
+            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1")],
             Self::StationTxFault => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_PERF_AP", "1"),
@@ -467,8 +470,9 @@ impl Scenario {
             Self::Bidirectional => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
+                ("OPEN_RADIO_HT_SGI", "1"),
             ],
-            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1")],
+            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1")],
         }
     }
 
@@ -1172,7 +1176,7 @@ mod tests {
         assert!(Scenario::RadioRxOrderProfile.environment().is_empty());
         assert_eq!(
             Scenario::UdpTx.environment(),
-            &[("OPEN_RADIO_TX_BENCH", "1")]
+            &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1"),]
         );
         assert_eq!(
             Scenario::StationTxFault.environment(),
@@ -1187,11 +1191,12 @@ mod tests {
             &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
+                ("OPEN_RADIO_HT_SGI", "1"),
             ]
         );
         assert_eq!(
             Scenario::Tcp.environment(),
-            &[("OPEN_RADIO_TCP_BENCH", "1")]
+            &[("OPEN_RADIO_TCP_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1"),]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {

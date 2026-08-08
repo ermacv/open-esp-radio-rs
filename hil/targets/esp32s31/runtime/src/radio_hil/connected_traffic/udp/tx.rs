@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use embassy_futures::yield_now;
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio::{
@@ -39,6 +40,11 @@ pub(in crate::radio_hil) struct UdpTxBenchmarkConfig {
     pub default_port: u16,
     pub default_duration: Duration,
     pub default_offered_rate_bps: Option<u64>,
+    /// Maximum application datagrams admitted before enforcing the next
+    /// absolute offered-rate deadline. The composition root derives this from
+    /// the active plus prepared-ahead A-MPDU arenas, not an arbitrary poll
+    /// batch.
+    pub pacing_group_datagrams: u8,
     pub drain: Duration,
     pub code_address: usize,
     pub session_source: UdpTxSessionSource,
@@ -120,6 +126,14 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             UdpTxSessionSource::Console => Some(receive_session_start().await),
             UdpTxSessionSource::Bidirectional { sessions, .. } => Some(sessions.receive().await),
         };
+        if let Some(session) = session {
+            publish_event_reliably(
+                session.session_id,
+                0,
+                HilEvent::SessionReady(HilDirection::Tx),
+            )
+            .await;
+        }
         let (server, server_port, payload_bytes, duration, offered_rate_bps) =
             if let Some(session) = session {
                 let peer = session
@@ -162,15 +176,26 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
             ));
         }
         let started = Instant::now();
-        let aggregate_start = (!matches!(
-            config.session_source,
-            UdpTxSessionSource::Bidirectional { .. }
-        ))
-        .then(|| aggregate_counters.snapshot());
+        // Full-duplex keeps one combined interval owned by the RX worker.
+        // A TX-only session routed through the universal bidirectional image
+        // has no RX worker, so TX must retain its own A-MPDU evidence owner.
+        let aggregate_start = match (config.session_source, session) {
+            (UdpTxSessionSource::Bidirectional { .. }, Some(session))
+                if session.config.direction == HilDirection::Tx =>
+            {
+                Some(aggregate_counters.snapshot())
+            }
+            (UdpTxSessionSource::Bidirectional { .. }, _) => None,
+            (UdpTxSessionSource::Standalone | UdpTxSessionSource::Console, _) => {
+                Some(aggregate_counters.snapshot())
+            }
+        };
         let mut next_send = started;
         let mut bytes = 0_u64;
         let mut datagrams = 0_u64;
         let mut send_errors = 0_u32;
+        let cooperative_bidirectional =
+            session.is_some_and(|session| session.config.direction == HilDirection::Bidirectional);
         while started.elapsed() < duration {
             packet[..4].copy_from_slice(&(datagrams as u32).to_be_bytes());
             match socket
@@ -183,15 +208,27 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
                 }
                 Err(_) => send_errors = send_errors.saturating_add(1),
             }
-            if let Some(rate_bps) = offered_rate_bps {
-                // Pace absolute microsecond deadlines so a temporarily
-                // blocking network queue does not produce a compensating
-                // burst after it becomes writable.
-                let interval_us = (payload_bytes as u64)
-                    .saturating_mul(8_000_000)
+            if cooperative_bidirectional {
+                // TX and RX are sibling futures in the same HIL task. Once
+                // the socket owns this datagram, yield one poll edge so a
+                // continuously writable TX socket cannot starve RX dequeue.
+                yield_now().await;
+            }
+            if let Some(rate_bps) = offered_rate_bps
+                && datagrams.is_multiple_of(u64::from(config.pacing_group_datagrams))
+            {
+                // Enforce one byte-budget deadline per active+standby A-MPDU
+                // pipeline capacity. Sleeping after every datagram prevented
+                // the network queue from ever presenting an aggregate-sized
+                // workload and halved throughput. A missed deadline is reset
+                // after this bounded physical credit, so a scheduler stall
+                // cannot trigger unbounded catch-up bursts.
+                let group_nanos = u64::from(config.pacing_group_datagrams)
+                    .saturating_mul(u64::try_from(payload_bytes).unwrap_or(u64::MAX))
+                    .saturating_mul(8_000_000_000)
                     .saturating_add(rate_bps - 1)
                     / rate_bps;
-                next_send += Duration::from_micros(interval_us);
+                next_send += Duration::from_nanos(group_nanos);
                 let now = Instant::now();
                 if now < next_send {
                     Timer::at(next_send).await;
@@ -214,8 +251,9 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         }
         emergency_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
-             e={send_errors} p={} w={} r={} g={} x={} l={} a={}",
+             e={send_errors} p={} pg={} w={} r={} g={} x={} l={} a={}",
             offered_rate_bps.unwrap_or(0) / 1_000,
+            config.pacing_group_datagrams,
             association_phy.bandwidth_mhz(),
             data_tx_rate.nominal_kbps(),
             match data_tx_rate {

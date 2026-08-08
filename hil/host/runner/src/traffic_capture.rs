@@ -398,10 +398,10 @@ impl SerialCapture {
     }
 
     fn expect_accepted(&self, session_id: u64, command: Command, operation: &str) -> Result<()> {
-        match self
-            .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)?
-            .body
-        {
+        let response = self
+            .send_command(session_id, command, PROTOCOL_READY_TIMEOUT)
+            .map_err(|error| format!("session {operation} command failed: {error}"))?;
+        match response.body {
             Event::Accepted => Ok(()),
             Event::Rejected(reason) => {
                 Err(format!("device rejected session {operation}: {reason:?}").into())
@@ -413,9 +413,26 @@ impl SerialCapture {
     pub(crate) fn start_session(&self, config: SessionConfig) -> Result<SessionHandle> {
         let session_id = self.next_session_id.fetch_add(1, Ordering::Relaxed);
         let first_event = self.protocol_event_count();
+        let direction = config.direction;
         self.expect_accepted(session_id, Command::Configure(config), "configuration")?;
         self.expect_accepted(session_id, Command::Arm, "arm")?;
         self.expect_accepted(session_id, Command::Start, "start")?;
+        let expected_directions: &[Direction] = match direction {
+            Direction::Rx => &[Direction::Rx],
+            Direction::Tx => &[Direction::Tx],
+            Direction::Bidirectional => &[Direction::Rx, Direction::Tx],
+        };
+        for expected in expected_directions {
+            self.wait_for_protocol_after(first_event, PROTOCOL_READY_TIMEOUT, |message| {
+                message.session_id == session_id
+                    && matches!(message.body, Event::SessionReady(direction) if direction == *expected)
+            })
+            .ok_or_else(|| {
+                format!(
+                    "device did not publish {expected:?} data-plane readiness for session {session_id}"
+                )
+            })?;
+        }
         Ok(SessionHandle {
             session_id,
             first_event,

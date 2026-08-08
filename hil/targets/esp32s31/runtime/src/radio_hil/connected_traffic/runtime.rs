@@ -36,7 +36,7 @@ use crate::radio_hil::{
     OPEN_RADIO_TX_BENCH_RATE_KBPS, OPEN_RADIO_TX_BENCH_TARGET_IPV4,
     OPEN_RADIO_UDP_PAYLOAD_CAPACITY, OPEN_RADIO_UDP_RX_IDLE, OPEN_RADIO_UDP_RX_PORT,
     OPEN_RADIO_UDP_TX_BENCH_DURATION, OPEN_RADIO_UDP_TX_BENCH_PORT, OPEN_RADIO_UDP_TX_DRAIN,
-    OPEN_RADIO_UDP_TX_QUEUE_DEPTH,
+    OPEN_RADIO_UDP_TX_QUEUE_DEPTH, TX_AMPDU_FRAME_COUNT,
 };
 
 static OPEN_RADIO_UDP_RX_METADATA: StaticCell<[PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]> =
@@ -85,6 +85,7 @@ fn open_radio_udp_tx_benchmark_config(session_source: UdpTxSessionSource) -> Udp
         default_duration: OPEN_RADIO_UDP_TX_BENCH_DURATION,
         default_offered_rate_bps: OPEN_RADIO_TX_BENCH_RATE_KBPS
             .map(|rate| rate.saturating_mul(1_000)),
+        pacing_group_datagrams: TX_AMPDU_FRAME_COUNT.saturating_mul(2) as u8,
         drain: OPEN_RADIO_UDP_TX_DRAIN,
         code_address: open_radio_runtime_code_marker as *const () as usize,
         session_source,
@@ -221,23 +222,11 @@ async fn run_connected_traffic_workload(
                 &OPEN_RADIO_BIDIRECTIONAL_RESULTS,
             ),
             select(
-                run_open_radio_udp_tx_benchmark(
-                    stack,
-                    association_phy,
-                    data_tx_rate,
-                    UdpSocketBuffers::new(
-                        &mut **tx_rx_metadata,
-                        &mut **tx_rx,
-                        &mut **tx_tx_metadata,
-                        &mut **tx_tx,
-                    ),
-                    &mut **packet,
-                    open_radio_udp_tx_benchmark_config(UdpTxSessionSource::Bidirectional {
-                        sessions: &OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS,
-                        results: &OPEN_RADIO_BIDIRECTIONAL_RESULTS,
-                    }),
-                    &OPEN_RADIO_TX_AGGREGATE_COUNTERS,
-                ),
+                // Poll RX first: a full UDP receive socket has already lost
+                // application data, while a full TX socket naturally applies
+                // backpressure to its producer. The TX worker also yields
+                // after each bidirectional enqueue, so this ordering cannot
+                // monopolize the shared benchmark task in the other direction.
                 run_open_radio_udp_rx_benchmark(
                     stack,
                     association_phy,
@@ -257,6 +246,23 @@ async fn run_connected_traffic_workload(
                         },
                     ),
                     open_radio_udp_rx_telemetry(),
+                ),
+                run_open_radio_udp_tx_benchmark(
+                    stack,
+                    association_phy,
+                    data_tx_rate,
+                    UdpSocketBuffers::new(
+                        &mut **tx_rx_metadata,
+                        &mut **tx_rx,
+                        &mut **tx_tx_metadata,
+                        &mut **tx_tx,
+                    ),
+                    &mut **packet,
+                    open_radio_udp_tx_benchmark_config(UdpTxSessionSource::Bidirectional {
+                        sessions: &OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS,
+                        results: &OPEN_RADIO_BIDIRECTIONAL_RESULTS,
+                    }),
+                    &OPEN_RADIO_TX_AGGREGATE_COUNTERS,
                 ),
             ),
         )

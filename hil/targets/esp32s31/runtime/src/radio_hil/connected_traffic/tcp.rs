@@ -85,6 +85,12 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
 
     loop {
         let session = receive_session_start().await;
+        publish_event_reliably(
+            session.session_id,
+            0,
+            HilEvent::SessionReady(session.config.direction),
+        )
+        .await;
         let duration_millis = match session.config.completion {
             HilCompletion::DurationMillis(duration) => duration,
             HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {

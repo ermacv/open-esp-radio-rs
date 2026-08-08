@@ -70,6 +70,15 @@ requires a complete station-epoch cycle and exact UDP RX delivery. This
 recoverable variant has no task-stop, DMA-stop or reset-required fields, so it
 cannot be confused with the terminal TX quarantine variant.
 
+Protocol version 10 moves the IPv4 policy into `ProvisionNetwork`. The host
+selects DHCP or a static address/prefix/gateway for each boot, so an isolated
+qualification topology no longer changes firmware identity.
+
+Protocol version 11 adds directional `SessionReady` evidence. `Start`
+acceptance proves that the console admitted a session; traffic begins only
+after the selected RX/TX workers have consumed it. Full duplex requires both
+directional readiness events.
+
 The protocol contains no expected firmware hashes, ELF paths, vendor ABI
 versions or target-specific register layouts. The firmware publishes actual
 capabilities; the calling qualification manifest decides whether that image is
@@ -77,7 +86,7 @@ acceptable.
 
 ## Boot and network provisioning
 
-The current compatibility lifecycle is:
+The startup lifecycle is:
 
 ```text
 reset
@@ -210,7 +219,9 @@ Idle
   <- Arm
   -> Accepted -> Armed
   <- Start
-  -> Accepted -> Running
+  -> Accepted
+  -> SessionReady(RX)
+  -> Running
   -> Draining
   -> Evidence(Transport)
   -> Finished(summary, evidence CRC32C)
@@ -231,9 +242,9 @@ datagram exactly; the throughput floor cannot hide loss or reordering.
 The TX-only image uses the same lifecycle. Its `Configure` command carries the
 host IPv4 endpoint, payload length, interval and optional offered-rate bound,
 so changing the HIL host or traffic shape does not rebuild the firmware. The
-target begins only after `Start`, snapshots socket and A-MPDU evidence after
-the interval, and allows a bounded post-measurement drain before publishing
-`Finished`.
+target publishes `SessionReady(TX)` after consuming the accepted session,
+snapshots socket and A-MPDU evidence after the interval, and allows a bounded
+post-measurement drain before publishing `Finished`.
 
 The host binds its sink before reset and compares target-enqueued bytes and
 datagrams with the packets actually received. This detects both internal send
@@ -244,10 +255,11 @@ gap check has no later sequence number from which to infer the missing tail.
 
 The bidirectional image also uses the same lifecycle. One `Configure` command
 carries both flow descriptions and the host endpoint for target TX. After
-`Start`, a target coordinator fans the accepted immutable session out to the
-RX and TX workers. It remains the sole session owner, waits for both workers,
-and publishes one combined `TransportEvidence` followed by one `Finished`
-event.
+`Start`, a target coordinator routes RX-only and TX-only sessions to one
+worker, and fans a bidirectional session out to both. Each selected worker
+publishes directional readiness. The coordinator remains the sole completion
+owner, waits for exactly the selected workers, and publishes one combined
+`TransportEvidence` followed by one `Finished` event.
 
 The host binds the target-TX sink before reset, then receives target traffic in
 parallel with its paced target-RX producer. Qualification requires the typed
@@ -259,13 +271,9 @@ folded into either loss or reordering.
 
 ## Migration boundary
 
-UDP RX, TX and bidirectional qualification now share runtime network
-provisioning, configuration, lifecycle and structured evidence. TCP RX is the
-first stream-oriented vertical slice: the target begins listening after
-`Start`, the host half-closes after its bounded interval, and target EOF closes
-the evidence interval. For TCP, one `rx_unit` is one EOF-completed stream;
-exact byte equality replaces UDP datagram/sequence accounting.
-
-TCP TX and bidirectional remain the next migrations. They must retain TCP
-connection and half-close semantics rather than reusing UDP terminal datagrams
-or treating application write sizes as packet boundaries.
+UDP and TCP RX, TX and bidirectional qualification share runtime network
+provisioning, configuration, directional readiness, lifecycle and structured
+evidence. TCP begins listening after `SessionReady`; the host half-closes after
+its bounded interval, and target EOF closes the evidence interval. One TCP
+`rx_unit` is one EOF-completed stream; exact byte equality replaces UDP
+datagram/sequence accounting.

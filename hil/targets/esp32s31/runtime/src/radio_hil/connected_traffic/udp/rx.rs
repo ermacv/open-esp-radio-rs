@@ -144,6 +144,14 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             UdpRxSessionSource::Console => Some(receive_session_start().await),
             UdpRxSessionSource::Bidirectional { sessions, .. } => Some(sessions.receive().await),
         };
+        if let Some(session) = session {
+            publish_event_reliably(
+                session.session_id,
+                0,
+                HilEvent::SessionReady(HilDirection::Rx),
+            )
+            .await;
+        }
         yield_now().await;
         telemetry.last_format.store(u32::MAX, Ordering::Relaxed);
         telemetry.last_phy.store(u32::MAX, Ordering::Relaxed);

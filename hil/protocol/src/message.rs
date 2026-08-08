@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 10;
+pub const PROTOCOL_VERSION: u16 = 11;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -714,6 +714,9 @@ pub enum Event {
     StationFault(StationFaultEvidence),
     NetworkReady(NetworkInfo),
     ServiceReady(ServiceInfo),
+    /// The selected data-plane worker has consumed the session configuration
+    /// and is ready for host traffic in this direction.
+    SessionReady(Direction),
     Evidence(EvidenceRecord),
     Finished(Finished),
     Failed(FailureCode),

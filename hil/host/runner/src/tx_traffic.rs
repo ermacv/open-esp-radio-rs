@@ -193,7 +193,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     socket.send_to(&[0], SocketAddrV4::new(options.device, DEVICE_SOURCE_PORT))?;
 
     let session = if discovered_address.runtime_session {
-        Some(capture.start_session(SessionConfig {
+        let session = capture.start_session(SessionConfig {
             transport: Transport::Udp,
             direction: Direction::Tx,
             completion: Completion::DurationMillis(u32::try_from(options.duration.as_millis())?),
@@ -206,7 +206,15 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
                 payload_bytes: u16::try_from(options.payload)?,
                 offered_rate_bps: options.offered_rate_bps,
             }),
-        })?)
+        });
+        match session {
+            Ok(session) => Some(session),
+            Err(error) => {
+                let log = capture.finish();
+                fs::write(output.join("uart.log"), &log)?;
+                return Err(error);
+            }
+        }
     } else {
         None
     };

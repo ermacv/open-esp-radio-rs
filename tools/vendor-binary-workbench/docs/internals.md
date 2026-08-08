@@ -470,7 +470,10 @@ claims, validation, and presentation separate:
 
 | Module | Responsibility |
 | --- | --- |
-| `facts.rs` | Strict minimal projection of schema-v35 linked IR, including site-bearing calls and guard expressions |
+| `facts.rs` | Stable generated-fact model, multi-report loading and queries |
+| `facts/parse.rs` | Strict schema-v35 linked-IR projection, including site-bearing calls and guard expressions |
+| `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
+| `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
 | `pack.rs` | Editable pack and resolved workspace models |
 | `pack_parse.rs` | TOML syntax parsing without evidence interpretation |

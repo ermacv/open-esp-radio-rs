@@ -142,7 +142,7 @@ fn persistent_artifact_identities_have_one_owner() {
         ),
         ("registers/facts.rs", "artifacts::MMIO_FACTS"),
         ("interfaces/facts/parse.rs", "artifacts::INTERFACE_FACTS"),
-        ("function_workspace/facts.rs", "artifacts::LINKED_IR"),
+        ("function_workspace/facts/parse.rs", "artifacts::LINKED_IR"),
         ("registers/review_ir_parse.rs", "artifacts::LINKED_IR"),
     ];
     for (relative, identity) in required_uses {

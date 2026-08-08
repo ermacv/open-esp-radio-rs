@@ -56,6 +56,17 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
         Some(directory.join("generated/findings/symbols.json").as_path())
     );
     assert_eq!(
+        project
+            .navigation_index
+            .as_ref()
+            .map(|navigation| navigation.output.as_path()),
+        Some(
+            directory
+                .join("generated/findings/navigation.json")
+                .as_path()
+        )
+    );
+    assert_eq!(
         project.platform_pack.as_ref().map(|pack| pack.id.as_str()),
         Some("radio-platform")
     );

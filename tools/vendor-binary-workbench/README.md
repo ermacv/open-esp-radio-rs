@@ -52,7 +52,7 @@ pass them directly or through a local `--run-spec`.
 | Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
 | `project status` | Emit phase-based lifecycle and publication readiness as text or stable JSON | [Project status](docs/project-status.md) |
-| `project analyze [--check]` | Generate or non-mutatingly verify project-owned MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
+| `project analyze [--check]` | Generate or non-mutatingly verify project-owned symbol/navigation, MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
 | `project publish` | Strictly validate reviewed registers and write or check configured SVD/PAC/bindings | [Project publication](docs/project-publication.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |

@@ -39,6 +39,9 @@ svd = ["registers/vendor.svd", "registers/reviewed.svd"]
 [analysis.symbols]
 output = "generated/findings/symbols.json"
 
+[analysis.navigation]
+output = "generated/findings/navigation.json"
+
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
@@ -127,6 +130,13 @@ by default, and `project analyze` writes or checks it before the other
 analysis roots. Project inventories are intentionally unfiltered; focused
 prefix or undefined-only views remain ad-hoc CLI investigations.
 
+Optional `[analysis.navigation]` names a generated cross-report index. It
+joins symbol inventory locations to linked-IR functions and interface call or
+root evidence using artifact digest, archive member, symbol name and object
+address. It adds navigation only: none of the source reports depends on it,
+and no RTOS, NVS, logging, delay, register, or linker semantic claim is made.
+See [project navigation](project-navigation.md).
+
 If the project omits the top-level `svd` key, target-spec SVD catalogs remain
 the fallback. An explicit `svd = []` disables that fallback. This is useful
 when the schema-2 register model is the complete catalog; non-empty entries
@@ -179,7 +189,7 @@ cargo vendor-binary-workbench project analyze \
 ```
 
 `project analyze --check` repeats the analyses without writing and verifies
-byte-stable MMIO facts, interface facts, linked IR, pseudo-Rust, register
+byte-stable symbol/navigation/MMIO facts, interface facts, linked IR, pseudo-Rust, register
 review, and function review. Both modes then validate the reviewed
 register/interface/function workspaces read-only.
 They intentionally exclude SVD and PAC publication. Publish reviewed register

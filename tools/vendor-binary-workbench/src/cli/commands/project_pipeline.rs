@@ -114,6 +114,23 @@ pub(super) fn run(
     };
     report("linked-ir", &ir, &mut summary);
 
+    let navigation = match project.navigation_index.as_ref() {
+        None => StageOutcome::NotConfigured("[analysis.navigation] is absent".to_owned()),
+        Some(_) if symbols.blocks_dependants() => {
+            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+        }
+        Some(_) if !project.ir_profiles.is_empty() && ir.blocks_dependants() => {
+            StageOutcome::Blocked("linked-ir did not complete".to_owned())
+        }
+        Some(_) if project.interfaces.is_some() && interfaces.blocks_dependants() => {
+            StageOutcome::Blocked("interface-discovery did not complete".to_owned())
+        }
+        Some(spec) => execute("navigation-index", mode.generated_success(), || {
+            super::project_navigation::run(project, &spec.output, mode.is_check())
+        }),
+    };
+    report("navigation-index", &navigation, &mut summary);
+
     let register_validation = match project.registers.as_ref() {
         None => StageOutcome::NotConfigured("[registers] is absent".to_owned()),
         Some(_) if mmio.blocks_dependants() => {

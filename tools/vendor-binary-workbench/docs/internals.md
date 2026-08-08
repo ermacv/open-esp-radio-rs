@@ -24,6 +24,9 @@ The implementation is split by responsibility:
   semantics to the backend;
 - `project_analysis` owns project-level generic analysis artifacts such as the
   complete symbol inventory and their output-collision invariants;
+- `cli/commands/project_navigation` builds the optional navigation-only join
+  over symbol, linked-IR and interface reports without feeding facts or
+  semantics back into those analyzers;
 - `verification` owns profiles, dispositions, evidence and comparisons;
 - `harnesses::esp32s31` is a thin registry facade over the two ESP32-S31
   harness crates;

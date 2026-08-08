@@ -23,6 +23,7 @@ mod project_doctor;
 mod project_function_doctor;
 mod project_init;
 mod project_ir_doctor;
+mod project_navigation;
 mod project_pipeline;
 mod project_publication;
 mod project_status;

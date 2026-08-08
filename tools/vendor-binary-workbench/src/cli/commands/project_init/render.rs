@@ -15,7 +15,10 @@ svd = []\n",
     );
     output.push_str(
         "\n[analysis.symbols]\n\
-output = \"generated/findings/symbols.json\"\n",
+output = \"generated/findings/symbols.json\"\n\
+\n\
+[analysis.navigation]\n\
+output = \"generated/findings/navigation.json\"\n",
     );
     for source in &options.sources {
         output.push_str(&format!(

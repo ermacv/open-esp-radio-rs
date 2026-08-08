@@ -19,8 +19,36 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             linked_ir(context),
             mmio_facts(context),
             interface_facts(context),
+            navigation_index(context),
         ],
     )
+}
+
+fn navigation_index(context: &ProjectContext<'_>) -> Component {
+    let Some(spec) = &context.project.navigation_index else {
+        return Component::new("navigation_index", Readiness::NotConfigured);
+    };
+    if !spec.output.is_file() {
+        return Component::new("navigation_index", Readiness::Incomplete)
+            .detail("path", spec.output.display().to_string())
+            .diagnostic("navigation index has not been generated");
+    }
+    match super::super::project_navigation::inspect_report(&spec.output) {
+        Ok(summary) => Component::new("navigation_index", Readiness::Ready)
+            .detail("path", spec.output.display().to_string())
+            .detail("artifacts", summary.artifacts)
+            .detail("symbols", summary.symbols)
+            .detail("linked_ir_functions", summary.linked_ir_functions)
+            .detail("interface_callers", summary.interface_callers)
+            .detail("interface_roots", summary.interface_roots)
+            .detail(
+                "unmatched_interface_roots",
+                summary.unmatched_interface_roots,
+            ),
+        Err(error) => Component::new("navigation_index", Readiness::Invalid)
+            .detail("path", spec.output.display().to_string())
+            .diagnostic(error),
+    }
 }
 
 fn symbol_inventory(context: &ProjectContext<'_>) -> Component {

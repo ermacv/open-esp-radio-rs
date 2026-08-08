@@ -10,6 +10,9 @@ svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
 [analysis.symbols]
 output = "generated/findings/symbols.json"
 
+[analysis.navigation]
+output = "generated/findings/navigation.json"
+
 [[analysis.ir]]
 id = "rom-phy"
 sources = ["rom"]

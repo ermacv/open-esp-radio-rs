@@ -12,7 +12,9 @@ use toml_edit::{DocumentMut, Item};
 use crate::{
     Result,
     platform_pack::PlatformPack,
-    project_analysis::{SymbolInventorySpec, load_symbol_inventory},
+    project_analysis::{
+        NavigationIndexSpec, SymbolInventorySpec, load_navigation_index, load_symbol_inventory,
+    },
     project_ir::{ProjectIrProfile, load_ir_profiles},
 };
 
@@ -98,6 +100,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) svd_configured: bool,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
+    pub(crate) navigation_index: Option<NavigationIndexSpec>,
     pub(crate) ir_profiles: Vec<ProjectIrProfile>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
@@ -193,6 +196,8 @@ impl ProjectSpec {
             .unwrap_or_default();
         let ir_profiles = load_ir_profiles(&document, base)?;
         let symbol_inventory = load_symbol_inventory(&document, base, &ir_profiles)?;
+        let navigation_index =
+            load_navigation_index(&document, base, symbol_inventory.as_ref(), &ir_profiles)?;
         let registers = document
             .get("registers")
             .map(|item| -> Result<RegisterWorkspacePaths> {
@@ -444,6 +449,21 @@ impl ProjectSpec {
                 .into());
             }
         }
+        if let Some(navigation) = &navigation_index {
+            let conflicting_fact = registers
+                .as_ref()
+                .map(|paths| &paths.facts)
+                .into_iter()
+                .chain(interfaces.as_ref().map(|paths| &paths.facts))
+                .find(|path| **path == navigation.output);
+            if let Some(path) = conflicting_fact {
+                return Err(format!(
+                    "project navigation index reuses another analysis facts path {}",
+                    path.display()
+                )
+                .into());
+            }
+        }
         Ok(Self {
             id,
             target_spec,
@@ -453,6 +473,7 @@ impl ProjectSpec {
             svd_configured,
             svd_paths,
             symbol_inventory,
+            navigation_index,
             ir_profiles,
             registers,
             interfaces,
@@ -602,6 +623,9 @@ svd = ["registers/base.svd"]
 [analysis.symbols]
 output = "generated/symbols.json"
 
+[analysis.navigation]
+output = "generated/navigation.json"
+
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
@@ -665,6 +689,12 @@ output = "generated/function-review.md"
             project.symbol_inventory,
             Some(SymbolInventorySpec {
                 output: directory.join("generated/symbols.json"),
+            })
+        );
+        assert_eq!(
+            project.navigation_index,
+            Some(NavigationIndexSpec {
+                output: directory.join("generated/navigation.json"),
             })
         );
         assert_eq!(
@@ -779,7 +809,7 @@ output = "generated/function-review.md"
     }
 
     #[test]
-    fn rejects_symbol_inventory_collisions_with_other_analysis_facts() {
+    fn rejects_generic_analysis_output_collisions() {
         let directory = std::env::temp_dir().join(format!(
             "open-radio-workbench-project-analysis-collision-{}",
             std::process::id()
@@ -807,6 +837,30 @@ model = "registers/device.toml"
                 .unwrap_err()
                 .to_string()
                 .contains("reuses another analysis facts path")
+        );
+        std::fs::write(
+            &manifest,
+            r#"
+schema = 1
+id = "fixture"
+target-spec = "target.spec"
+
+[analysis.symbols]
+output = "generated/symbols.json"
+
+[analysis.navigation]
+output = "generated/facts.json"
+
+[interfaces]
+facts = "generated/facts.json"
+"#,
+        )
+        .unwrap();
+        assert!(
+            ProjectSpec::load(&manifest)
+                .unwrap_err()
+                .to_string()
+                .contains("navigation index reuses another analysis facts path")
         );
         std::fs::remove_dir_all(directory).unwrap();
     }

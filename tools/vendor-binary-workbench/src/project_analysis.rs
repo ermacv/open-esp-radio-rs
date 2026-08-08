@@ -11,6 +11,11 @@ pub(crate) struct SymbolInventorySpec {
     pub(crate) output: PathBuf,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NavigationIndexSpec {
+    pub(crate) output: PathBuf,
+}
+
 pub(crate) fn load_symbol_inventory(
     document: &DocumentMut,
     base: &Path,
@@ -50,6 +55,52 @@ pub(crate) fn load_symbol_inventory(
         .into());
     }
     Ok(Some(SymbolInventorySpec { output }))
+}
+
+pub(crate) fn load_navigation_index(
+    document: &DocumentMut,
+    base: &Path,
+    symbols: Option<&SymbolInventorySpec>,
+    ir_profiles: &[ProjectIrProfile],
+) -> Result<Option<NavigationIndexSpec>> {
+    let Some(analysis) = document.get("analysis") else {
+        return Ok(None);
+    };
+    let analysis = analysis
+        .as_table()
+        .ok_or("project manifest analysis must be a table")?;
+    let Some(navigation) = analysis.get("navigation") else {
+        return Ok(None);
+    };
+    let navigation = navigation
+        .as_table()
+        .ok_or("project analysis.navigation must be a table")?;
+    for (key, _) in navigation.iter() {
+        if key != "output" {
+            return Err(format!("unknown project analysis.navigation key {key:?}").into());
+        }
+    }
+    let output = navigation
+        .get("output")
+        .and_then(Item::as_str)
+        .filter(|value| !value.is_empty())
+        .map(|value| resolve_path(base, value))
+        .ok_or("project analysis.navigation requires non-empty string \"output\"")?;
+    let symbols = symbols.ok_or("project analysis.navigation requires [analysis.symbols]")?;
+    if output == symbols.output {
+        return Err("project navigation index reuses symbol inventory output path".into());
+    }
+    if ir_profiles
+        .iter()
+        .any(|profile| profile.output == output || profile.pseudo_rust.as_ref() == Some(&output))
+    {
+        return Err(format!(
+            "project navigation index reuses linked-IR output path {}",
+            output.display()
+        )
+        .into());
+    }
+    Ok(Some(NavigationIndexSpec { output }))
 }
 
 fn resolve_path(base: &Path, value: &str) -> PathBuf {
@@ -92,6 +143,36 @@ output = "generated/symbols.json"
                 .unwrap_err()
                 .to_string()
                 .contains("reuses linked-IR output")
+        );
+    }
+
+    #[test]
+    fn navigation_requires_symbols_and_owns_a_distinct_output() {
+        let document = r#"
+[analysis.symbols]
+output = "generated/symbols.json"
+
+[analysis.navigation]
+output = "generated/navigation.json"
+"#
+        .parse::<DocumentMut>()
+        .unwrap();
+        let symbols = load_symbol_inventory(&document, Path::new("project"), &[])
+            .unwrap()
+            .unwrap();
+        let navigation =
+            load_navigation_index(&document, Path::new("project"), Some(&symbols), &[])
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            navigation.output,
+            PathBuf::from("project/generated/navigation.json")
+        );
+        assert!(
+            load_navigation_index(&document, Path::new("project"), None, &[])
+                .unwrap_err()
+                .to_string()
+                .contains("requires [analysis.symbols]")
         );
     }
 }

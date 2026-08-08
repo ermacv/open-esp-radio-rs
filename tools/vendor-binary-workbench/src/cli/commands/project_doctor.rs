@@ -138,6 +138,37 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
         },
     }
 
+    match &context.project.navigation_index {
+        None => outputln!("CAPABILITY\tnavigation-index\tnot-configured"),
+        Some(spec) if !spec.output.is_file() => {
+            warnings += 1;
+            outputln!(
+                "CAPABILITY\tnavigation-index\tnot-generated\tpath={}",
+                spec.output.display()
+            );
+        }
+        Some(spec) => match super::project_navigation::inspect_report(&spec.output) {
+            Ok(summary) => outputln!(
+                "CAPABILITY\tnavigation-index\tavailable\tartifacts={}\tsymbols={}\tlinked-ir-functions={}\tinterface-callers={}\tinterface-roots={}\tunmatched-interface-roots={}\tpath={}",
+                summary.artifacts,
+                summary.symbols,
+                summary.linked_ir_functions,
+                summary.interface_callers,
+                summary.interface_roots,
+                summary.unmatched_interface_roots,
+                spec.output.display(),
+            ),
+            Err(error) => {
+                errors += 1;
+                outputln!(
+                    "CAPABILITY\tnavigation-index\tinvalid\tpath={}\terror={}",
+                    spec.output.display(),
+                    error
+                );
+            }
+        },
+    }
+
     let (function_errors, function_warnings) =
         super::project_function_doctor::inspect(context.project);
     errors += function_errors;

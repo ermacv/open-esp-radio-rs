@@ -20,6 +20,9 @@ A project can own the complete, unfiltered inventory destination:
 ```toml
 [analysis.symbols]
 output = "generated/findings/symbols.json"
+
+[analysis.navigation]
+output = "generated/findings/navigation.json"
 ```
 
 With that table, `--json-report` is optional. `symbols inventory --check`
@@ -27,6 +30,10 @@ recreates and compares the report without modifying it. `project analyze`
 includes the same operation as its first independent evidence stage. Filters
 remain CLI-only so a project artifact cannot silently omit symbols needed by
 later manual analysis.
+
+The optional navigation index associates these complete facts with linked-IR
+functions and interface call/root sites without changing the inventory or
+claiming linker/semantic resolution. See [project navigation](project-navigation.md).
 
 ## What is an artifact fact
 

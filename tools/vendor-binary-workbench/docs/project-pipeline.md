@@ -30,6 +30,7 @@ The pipeline owns only reproducible evidence and read-only validation:
 | `mmio-discovery` | `[registers].facts`, memory map, run spec | MMIO facts JSON | render and compare facts |
 | `interface-discovery` | `[interfaces].facts`, run spec | interface facts JSON | render and compare facts |
 | `linked-ir` | `[[analysis.ir]]`, run spec | linked-IR JSON and optional pseudo-Rust | render and compare every profile output |
+| `navigation-index` | `[analysis.navigation]` | cross-report symbol navigation JSON | render and compare the index |
 | `register-validation` | `[registers].model` | nothing | load and validate facts plus model |
 | `register-review` | `[registers.review]` | generated Markdown review | render and compare the review |
 | `function-validation` | `[functions].pack` | nothing | load and validate selected IR facts plus pack |
@@ -52,10 +53,13 @@ turning inferred names, field partitions, or semantics into a public API.
 
 ## Dependencies and failure behavior
 
-The four analysis roots run independently:
+The four analysis roots run independently. The optional navigation index is a
+derived reading view over the configured symbol, IR, and interface roots:
 
 ```text
-symbol inventory ─────────> immutable navigation/linkage facts
+symbol inventory ───────┐
+interface discovery ────┼─> navigation index
+linked IR ──────────────┘
 
 MMIO discovery ─────┬─> register validation
                     └─> register review <── linked IR (when linked by the project)
@@ -71,6 +75,9 @@ A failure in one root does not hide results from another root. Dependent stages
 are not run against stale evidence and are reported as `blocked`. Optional
 features that are absent from the manifest are `not-configured` and do not make
 the pipeline fail.
+
+The navigation index never feeds analysis or validation back into those
+roots. Its dependency arrows mean only that it must not join stale reports.
 
 Each stage emits a stable, single-line status:
 

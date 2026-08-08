@@ -1,4 +1,5 @@
 use std::{
+    io::Write,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -208,7 +209,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir.json\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             target.display().to_string()
         ),
     )
@@ -218,7 +219,10 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let run_spec = directory.join("local.run");
     std::fs::write(
         &run_spec,
-        format!("schema 1\ninput artifact {}\n", artifact.display()),
+        format!(
+            "schema 1\ninput source-artifact:fixture {}\n",
+            artifact.display()
+        ),
     )
     .unwrap();
 
@@ -256,6 +260,13 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
             .find(|stage| stage["name"] == "symbol-inventory")
             .expect("symbol-inventory stage");
         assert_eq!(symbol_stage["status"], expected_stage_status);
+        let navigation_stage = analysis["data"]["stages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|stage| stage["name"] == "navigation-index")
+            .expect("navigation-index stage");
+        assert_eq!(navigation_stage["status"], expected_stage_status);
     }
 
     let report = directory.join("generated/symbols.json");
@@ -264,6 +275,21 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     assert_eq!(document["schema_version"], 2);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
+    let navigation: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(navigation["schema_version"], 1);
+    assert_eq!(navigation["summary"]["linked_ir_functions"], 1);
+    let fixture = navigation["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|symbol| symbol["name"] == "fixture_entry")
+        .expect("fixture_entry navigation symbol");
+    assert_eq!(fixture["inventory"].as_array().unwrap().len(), 1);
+    assert_eq!(fixture["linked_ir"].as_array().unwrap().len(), 1);
+    assert!(fixture["id"].as_str().unwrap().starts_with("symbol-v1:"));
 
     let status = workbench()
         .current_dir(repository_root())
@@ -289,5 +315,42 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     assert_eq!(symbol_component["status"], "ready");
     assert_eq!(symbol_component["exported_definitions"], 1);
     assert_eq!(symbol_component["undefined"], 1);
+    let navigation_component = status["data"]["phases"]["analysis"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|component| component["name"] == "navigation_index")
+        .expect("navigation_index component");
+    assert_eq!(navigation_component["status"], "ready");
+    assert_eq!(navigation_component["linked_ir_functions"], 1);
+
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(directory.join("generated/fixture.ir.json"))
+        .unwrap()
+        .write_all(b" ")
+        .unwrap();
+    let stale = workbench()
+        .current_dir(repository_root())
+        .args(["project", "status", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run project status with stale navigation");
+    assert!(!stale.status.success());
+    let stale: serde_json::Value = serde_json::from_slice(&stale.stdout).unwrap();
+    let navigation_component = stale["records"][0]["data"]["phases"]["analysis"]["components"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|component| component["name"] == "navigation_index")
+        .expect("stale navigation_index component");
+    assert_eq!(navigation_component["status"], "invalid");
+    assert!(
+        navigation_component["diagnostic"]
+            .as_str()
+            .unwrap()
+            .contains("changed since indexing")
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }

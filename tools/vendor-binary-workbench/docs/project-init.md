@@ -50,6 +50,8 @@ The files have deliberately different owners:
   untracked.
 - `generated/` contains reproducible findings, reading views, SVD, PAC and
   bindings. It is never the review database.
+- `generated/findings/navigation.json` associates the generated symbol, IR and
+  interface facts for manual browsing; it is regenerated, not edited.
 - interface and function packs are initialized after their first discovery
   pass. They hold reviewed table ABI, reusable semantic bindings, function
   roles and context layouts.

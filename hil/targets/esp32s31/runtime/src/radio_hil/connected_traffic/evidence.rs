@@ -7,7 +7,7 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio::{
-    esp32s31::wifi::lmac::rx::PUBLIC_HEADER_SIZE, wifi::ieee80211::data::EthernetFrameParts,
+    esp32s31::wifi::mac::rx::PUBLIC_HEADER_SIZE, wifi::ieee80211::data::EthernetFrameParts,
 };
 
 pub(in crate::radio_hil) fn ipv4_udp_destination_port(

@@ -16,7 +16,8 @@ pub use config::{
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
-    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink,
+    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
+    MonitorPublishOutcome, MonitorSink,
 };
 
 #[cfg(feature = "wifi")]
@@ -25,17 +26,9 @@ pub mod wifi {
     pub use open_esp_radio_wifi_softmac as softmac;
     pub use open_esp_radio_wifi_sta as sta;
     pub use open_esp_radio_wpa2 as wpa2;
-
-    /// Compatibility alias for the former ambiguous layer name.
-    #[doc(hidden)]
-    pub use open_esp_radio_wifi_softmac as lmac;
 }
 
-#[cfg(any(
-    feature = "adapter-embassy-net",
-    feature = "adapter-embassy-wifi",
-    feature = "esp32s31-wifi-embassy"
-))]
+#[cfg(any(feature = "adapter-embassy-net", feature = "adapter-embassy-wifi"))]
 pub mod adapters {
     #[cfg(feature = "adapter-embassy-net")]
     pub mod network {
@@ -46,18 +39,6 @@ pub mod adapters {
     pub mod wifi {
         pub use open_esp_radio_wifi_embassy as embassy;
     }
-
-    #[cfg(feature = "esp32s31-wifi-embassy")]
-    pub mod esp32s31 {
-        pub use open_esp_radio_esp32s31_wifi_embassy as wifi_embassy;
-    }
-}
-
-/// Compatibility exports for the former adapter namespace.
-#[cfg(any(feature = "adapter-embassy-net", feature = "esp32s31-wifi-embassy"))]
-#[doc(hidden)]
-pub mod integration {
-    pub use crate::adapters::*;
 }
 
 #[cfg(feature = "esp32s31")]
@@ -69,30 +50,36 @@ pub mod esp32s31 {
 
     #[cfg(feature = "esp32s31-wifi")]
     pub mod wifi {
+        pub use open_esp_radio_esp32s31_wifi as device;
         pub use open_esp_radio_esp32s31_wifi_dma as dma;
         pub use open_esp_radio_esp32s31_wifi_mac as mac;
         pub use open_esp_radio_esp32s31_wifi_sta as sta;
 
-        /// Compatibility alias for the former chip-backend name.
-        #[doc(hidden)]
-        pub use open_esp_radio_esp32s31_wifi_mac as lmac;
-
         #[cfg(feature = "esp32s31-wifi-embassy")]
         pub mod embassy {
-            pub use open_esp_radio_esp32s31_wifi_embassy::station;
-
             pub mod monitor {
+                pub use open_esp_radio_esp32s31_wifi_embassy::monitor::{
+                    Esp32s31MonitorCompletion, Esp32s31MonitorConfigError,
+                    Esp32s31MonitorControlError, Esp32s31MonitorControlResources,
+                    Esp32s31MonitorController, Esp32s31MonitorPrepareError,
+                    Esp32s31MonitorRunError, Esp32s31MonitorRunFailure, Esp32s31MonitorRunReport,
+                    Esp32s31MonitorRxProgress, Esp32s31MonitorStopError,
+                };
                 pub use open_esp_radio_esp32s31_wifi_embassy::{
-                    monitor_rx::{
-                        Esp32s31MonitorConfigError, Esp32s31MonitorPrepareError,
-                        Esp32s31MonitorPrepareFailure, Esp32s31MonitorRx,
-                        Esp32s31MonitorRxProgress,
+                    embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime},
+                    rx_dma_service::Esp32s31RxDmaStorage,
+                };
+                #[cfg(target_arch = "riscv32")]
+                pub use open_esp_radio_esp32s31_wifi_embassy::{
+                    monitor::{
+                        Esp32s31MonitorBuildError, Esp32s31MonitorBuildReport,
+                        Esp32s31MonitorChannelSwitchError, Esp32s31MonitorInterrupts,
+                        Esp32s31MonitorMemory, Esp32s31MonitorStopped,
+                        Esp32s31MonitorStoppedResources, Esp32s31MonitorTask,
+                        Esp32s31MonitorTaskBuildFailure, Esp32s31MonitorTaskResources,
+                        prepare_esp32s31_monitor_task,
                     },
-                    monitor_service::{
-                        ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK, Esp32s31MonitorCleanupError,
-                        Esp32s31MonitorRunError, Esp32s31MonitorRunFailure,
-                        Esp32s31MonitorRunReport, Esp32s31MonitorService,
-                    },
+                    phy_delay::EmbassyEsp32s31PhyDelay,
                 };
                 pub use open_esp_radio_wifi_embassy::{
                     MonitorCaptureFrame, MonitorCaptureMetadata, MonitorCapturePool,
@@ -111,7 +98,14 @@ pub mod esp32s31 {
     mod start;
     #[cfg(all(feature = "esp32s31-wifi", target_arch = "riscv32"))]
     pub use start::{
-        Esp32s31RadioStartConfig, Esp32s31RadioStartFailure, Esp32s31StartedRadio,
-        Esp32s31WifiStart, Esp32s31WifiStartConfig, Esp32s31WifiStartFailure, start_esp32s31_radio,
+        Esp32s31MonitorMacStartFailure, Esp32s31MonitorReady, Esp32s31PreparedMonitor,
+        Esp32s31PreparedStation, Esp32s31RadioStartConfig, Esp32s31RadioStartFailure,
+        Esp32s31RoleMaterializationFailure, Esp32s31RoleMaterializationReason,
+        Esp32s31StartedRadio, Esp32s31StationMacReady, Esp32s31StationMacStartFailure,
+        Esp32s31WifiMacPlatform, Esp32s31WifiMacReady, Esp32s31WifiMacStartConfig,
+        Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport,
+        Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStart, Esp32s31WifiStartConfig,
+        Esp32s31WifiStartFailure, Esp32s31WifiStopped, enter_esp32s31_wifi_runtime,
+        start_esp32s31_radio,
     };
 }

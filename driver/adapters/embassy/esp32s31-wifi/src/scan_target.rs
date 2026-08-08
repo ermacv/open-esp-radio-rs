@@ -7,18 +7,11 @@
 //! HIL code.
 
 use crate::{
-    control_tx::{ControlTxError, Esp32s31ControlTx},
-    cooperative_hardware::CooperativeRadioHardware,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_ring_owner::Esp32s31RxRingOwnerError,
     scan_port::{Esp32s31ScanPhyPort, Esp32s31ScanReceivePort, Esp32s31ScanTransmitPort},
     scan_rx::{
         Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext, Esp32s31ScanRx,
         Esp32s31ScanRxProgress,
-    },
-    scan_tx::{
-        Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
-        Esp32s31ScanTxSummary,
     },
 };
 use open_esp_radio_esp32s31_hal::{
@@ -26,11 +19,19 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
-use open_esp_radio_esp32s31_wifi_sta::channel::Esp32s31ScanPhy;
+use open_esp_radio_esp32s31_wifi_sta::{
+    channel::Esp32s31ScanPhy,
+    control_tx::{ControlTxError, Esp32s31ControlTx},
+    cooperative_hardware::CooperativeRadioHardware,
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    scan_tx::{
+        Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest, Esp32s31ScanTxState,
+        Esp32s31ScanTxSummary,
+    },
+};
 use open_esp_radio_ieee80211::management::ProbeRequest;
 
-impl<'state, 'cell, 'registers, P, O, D>
-    Esp32s31ScanPhyPort<CooperativeRadioHardware<'cell, 'registers>>
+impl<'state, 'arena, P, O, D> Esp32s31ScanPhyPort<CooperativeRadioHardware<'arena>>
     for Esp32s31ScanPhy<'state, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
@@ -41,11 +42,12 @@ where
 
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut CooperativeRadioHardware<'cell, 'registers>,
+        hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel: u8,
     ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
         async move {
-            let mut registers = hardware.register_cell().borrow_mut();
+            let access = hardware.register_access();
+            let mut registers = access.borrow_mut();
             self.switch_channel(u16::from(channel), 0, &mut registers)
                 .await
         }

@@ -7,6 +7,7 @@ use open_esp_radio_esp32s31_wifi_mac::rate_control::{
 };
 use open_esp_radio_wifi_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
+    interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
 };
 
 use crate::{
@@ -49,34 +50,57 @@ fn peer() -> Esp32s31ConnectedStaPeer {
 
 fn config() -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
-        rate: Esp32s31ConnectedStaRateConfig {
-            high_throughput_enabled: true,
-            fallback_legacy_rate: LegacyRate::Ofdm24M,
-            fallback_ht_mcs: HtMcs::Mcs7,
-            fallback_ht_guard_interval: HtGuardInterval::Long800Ns,
-            ht_mcs_override: None,
-            ht_guard_interval_override: None,
-            he_mcs_override: None,
-            he_guard_interval_and_ltf_override: None,
-            he_dcm_override: None,
+        tx: Esp32s31ConnectedStaTxPolicy {
+            rate: Esp32s31ConnectedStaRateConfig {
+                high_throughput_enabled: true,
+                fallback_legacy_rate: LegacyRate::Ofdm24M,
+                fallback_ht_mcs: HtMcs::Mcs7,
+                fallback_ht_guard_interval: HtGuardInterval::Long800Ns,
+                ht_mcs_override: None,
+                ht_guard_interval_override: None,
+                he_mcs_override: None,
+                he_guard_interval_and_ltf_override: None,
+                he_dcm_override: None,
+            },
+            unicast_attempt_limit: 4,
+            completion_timeout_us: 250_000,
+            aggregate_frame_limit: 32,
+            aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
-        rx_ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
+        block_ack: Esp32s31ConnectedStaBlockAckPolicy {
+            tx_block_ack_window: 32,
+            tx_block_ack_negotiation_timeout_us: 500_000,
+            tx_block_ack_negotiation_attempt_limit: 3,
+            tid0_amsdu: false,
+            rx_block_ack_maximum_window: 32,
+            request_initial_tx_block_ack: true,
         },
-        unicast_attempt_limit: 4,
-        completion_timeout_us: 250_000,
-        aggregate_frame_limit: 32,
-        aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
-        tx_block_ack_window: 32,
-        tx_block_ack_negotiation_timeout_us: 500_000,
-        tx_block_ack_negotiation_attempt_limit: 3,
-        tid0_amsdu: false,
-        rx_block_ack_maximum_window: 32,
-        beacon_miss_limit: 10,
-        request_initial_tx_block_ack: true,
+        receive: Esp32s31ConnectedStaRxPolicy {
+            ingress: RxIngressConfig {
+                ring_entry_limit: 1,
+                csi_config: 0,
+                flags: 0,
+            },
+            beacon_miss_limit: 10,
+        },
     }
+}
+
+fn station_interface(peer: &Esp32s31ConnectedStaPeer) -> BoundVirtualInterface {
+    BoundVirtualInterface::new(
+        VirtualInterface::new(VifId::PRIMARY, VifRole::Station, peer.link.station_address),
+        ChannelContextId::PRIMARY,
+    )
+}
+
+fn prepare<const AGGREGATE_SLOTS: usize, const RX_REORDER_SLOTS: usize>(
+    peer: Esp32s31ConnectedStaPeer,
+    config: Esp32s31ConnectedStaConfig,
+) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
+    let interface = station_interface(&peer);
+    Esp32s31ConnectedStaPort::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
+        peer, config, interface,
+    )
 }
 
 #[test]
@@ -86,7 +110,7 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
     assert!(capabilities.supports_rx_block_ack_window(32));
     assert!(capabilities.supports_tx_block_ack_window(32));
 
-    let plan = Esp32s31ConnectedStaPort::prepare::<32>(peer(), config()).unwrap();
+    let plan = prepare::<32, 32>(peer(), config()).unwrap();
     assert_eq!(plan.interface().interface.id, VifId::PRIMARY);
     assert_eq!(plan.interface().interface.role, VifRole::Station);
     assert_eq!(plan.interface().channel_context, ChannelContextId::PRIMARY);
@@ -101,7 +125,7 @@ fn plan_owns_rate_rx_tx_block_ack_and_beacon_policy() {
 
 #[test]
 fn port_binds_rx_and_control_to_one_validated_peer_plan() {
-    let plan = Esp32s31ConnectedStaPort::prepare::<32>(peer(), config()).unwrap();
+    let plan = prepare::<32, 32>(peer(), config()).unwrap();
     let reorder_storage = RxReorderFrameStorage::<128>::new();
     let queue: Esp32s31StagedRxQueue<'_, NoopRawMutex, 2, 128, 2> = Esp32s31StagedRxQueue::new();
     let (_, frames) = queue.split();
@@ -150,8 +174,8 @@ fn invalid_config_returns_the_exact_peer_before_owner_handoff() {
     let original = peer();
     let link = original.link;
     let mut invalid = config();
-    invalid.aggregate_frame_limit = 33;
-    let failure = Esp32s31ConnectedStaPort::prepare::<32>(original, invalid).unwrap_err();
+    invalid.tx.aggregate_frame_limit = 33;
+    let failure = prepare::<32, 32>(original, invalid).unwrap_err();
     assert_eq!(
         failure.error,
         Esp32s31ConnectedStaConfigError::AggregateFrameLimit {
@@ -167,8 +191,8 @@ fn zero_tx_block_ack_attempt_limit_is_rejected_before_owner_handoff() {
     let original = peer();
     let link = original.link;
     let mut invalid = config();
-    invalid.tx_block_ack_negotiation_attempt_limit = 0;
-    let failure = Esp32s31ConnectedStaPort::prepare::<32>(original, invalid).unwrap_err();
+    invalid.block_ack.tx_block_ack_negotiation_attempt_limit = 0;
+    let failure = prepare::<32, 32>(original, invalid).unwrap_err();
     assert_eq!(
         failure.error,
         Esp32s31ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit
@@ -180,8 +204,7 @@ fn zero_tx_block_ack_attempt_limit_is_rejected_before_owner_handoff() {
 fn compact_profile_rejects_rx_window_larger_than_reorder_storage() {
     let original = peer();
     let link = original.link;
-    let failure =
-        Esp32s31ConnectedStaPort::prepare_with_storage::<32, 8>(original, config()).unwrap_err();
+    let failure = prepare::<32, 8>(original, config()).unwrap_err();
     assert_eq!(
         failure.error,
         Esp32s31ConnectedStaConfigError::RxBlockAckWindowExceedsStorage {

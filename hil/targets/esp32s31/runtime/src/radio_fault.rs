@@ -8,16 +8,16 @@
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
-use open_esp_radio::adapters::esp32s31::wifi_embassy::connected_runner::{
+use open_esp_radio::adapters::network::embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
+use open_esp_radio::esp32s31::wifi::mac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT};
+use open_esp_radio_esp32s31_wifi_embassy::connected_runner::{
     ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
     WifiTxProgress, WifiTxWake,
 };
-use open_esp_radio::adapters::esp32s31::wifi_embassy::rx_dma_service::{
+use open_esp_radio_esp32s31_wifi_embassy::rx_dma_service::{
     Esp32s31RxCompletedUnit, Esp32s31RxIngressObservation, Esp32s31RxStageAdmissionPolicy,
 };
-use open_esp_radio::adapters::esp32s31::wifi_embassy::rx_pipeline_observer::RxStageDiscard;
-use open_esp_radio::adapters::network::embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
-use open_esp_radio::esp32s31::wifi::lmac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT};
+use open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxStageDiscard;
 use open_esp_radio_hil_protocol::{
     StationFaultClassification, StationFaultEvidence, StationFaultInjection,
 };

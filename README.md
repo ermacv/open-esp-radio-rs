@@ -30,6 +30,7 @@ only opt-in exception.
 | `driver/chips/esp32s31/phy` | PHY initialization and calibration state machines |
 | `driver/chips/esp32s31/wifi/dma` | Audited ESP32-S31 descriptor, ring and DMA-storage leaf |
 | `driver/chips/esp32s31/wifi/mac` | Safe ESP32-S31 Wi-Fi MAC backend, IRQ, RX/TX policy and rate control |
+| `driver/chips/esp32s31/wifi` | Role-neutral ESP32-S31 Wi-Fi cold start and device composition |
 | `driver/chips/esp32s31/wifi/sta` | Executor-independent ESP32-S31 station composition |
 | [`hil/`](hil/README.md) | Hardware target/host infrastructure and typed HIL protocol |
 | `hil/targets/esp32s31` | Test-only board, bootstrap, memory placement and end-to-end scenarios |
@@ -55,7 +56,8 @@ PAC, radio PHY and protocol backends evolve together. A cross-chip PHY core
 will be extracted only after another backend establishes a concrete shared API.
 
 See [the architecture guide](docs/ARCHITECTURE.md) for dependency direction
-and ownership boundaries, [the naming and layout contract](docs/NAMING_AND_LAYOUT.md)
+and crate boundaries, [the radio lifecycle and ownership model](docs/RADIO_LIFECYCLE_AND_OWNERSHIP.md)
+for physical/subsystem/role transitions, [the naming and layout contract](docs/NAMING_AND_LAYOUT.md)
 for canonical terminology and the target tree, and [the documentation index](docs/README.md)
 for current status, reference material and archived migration reports.
 

@@ -11,7 +11,11 @@ use open_esp_radio_esp32s31_registers::{
 /// handlers for one finite connected epoch.
 ///
 /// Implementations own CPU routing and stable ISR storage. They must disable
-/// the routes and recover both PAC values before `quiesce` returns.
+/// the routes and recover both PAC values before `quiesce` returns. Their
+/// active representation must also be safe to retain indefinitely: a lost
+/// higher-level epoch forgets the installed route rather than dropping ISR
+/// storage which hardware can still reach, and role control then requires
+/// reset before another epoch can be constructed.
 pub trait MacInterruptRoute {
     type Platform: ?Sized;
     type Setup;

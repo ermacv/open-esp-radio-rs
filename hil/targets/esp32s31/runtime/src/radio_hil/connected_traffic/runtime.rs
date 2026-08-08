@@ -1,12 +1,10 @@
 #![forbid(unsafe_code)]
 
-use core::cell::RefCell;
-
 use embassy_futures::select::select;
 use embassy_net::{Stack, udp::PacketMetadata};
 use embassy_time::Timer;
 use open_esp_radio::{
-    esp32s31::{hal::RadioRegisters, wifi::lmac::tx::TxPhyRate},
+    esp32s31::wifi::{device::register_arena::Esp32s31RadioRegistersAccess, mac::tx::TxPhyRate},
     wifi::ieee80211::station::StaAssociationPhy,
 };
 use static_cell::StaticCell;
@@ -130,7 +128,7 @@ async fn run_connected_traffic_workload(
     stack: Stack<'static>,
     association_phy: StaAssociationPhy,
     data_tx_rate: TxPhyRate,
-    registers: &RefCell<&mut RadioRegisters>,
+    registers: Esp32s31RadioRegistersAccess<'static>,
     buffers: &mut RadioHilConnectedTrafficBuffers,
 ) -> ! {
     match buffers {
@@ -382,7 +380,7 @@ impl RadioHilConnectedTrafficBuffers {
 #[embassy_executor::task]
 pub(in crate::radio_hil) async fn connected_traffic_task(
     stack: Stack<'static>,
-    registers: &'static RefCell<&'static mut RadioRegisters>,
+    registers: Esp32s31RadioRegistersAccess<'static>,
 ) {
     let mut buffers = RadioHilConnectedTrafficBuffers::init();
     loop {

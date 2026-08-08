@@ -12,7 +12,12 @@ use core::future::Future;
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use embassy_time::Timer;
 use open_esp_radio_esp32s31_wifi_mac::{rx::RxDma, tx::TxHardware};
-use open_esp_radio_esp32s31_wifi_sta::scan::{Esp32s31ActiveProbeOutcome, Esp32s31StaScanPort};
+use open_esp_radio_esp32s31_wifi_sta::{
+    control_tx::ControlTxError,
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    scan::{Esp32s31ActiveProbeOutcome, Esp32s31StaScanPort},
+    scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest},
+};
 use open_esp_radio_ieee80211::{
     scan::{ScanRecord, ScanTable, best_matching_ssid},
     station::StaSequenceCounter,
@@ -20,15 +25,12 @@ use open_esp_radio_ieee80211::{
 use open_esp_radio_wifi_sta::scan::StaScanChannelContext;
 
 use crate::{
-    control_tx::ControlTxError,
     embassy_rx::RxReloadDelay,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_ring_owner::Esp32s31RxRingOwnerError,
     scan_rx::{
         Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanObservationContext,
         Esp32s31ScanRxProgress,
     },
-    scan_tx::{Esp32s31RunningScanTx, Esp32s31ScanProbeReport, Esp32s31ScanProbeRequest},
 };
 
 /// PHY channel-switch capability required by a running scan.

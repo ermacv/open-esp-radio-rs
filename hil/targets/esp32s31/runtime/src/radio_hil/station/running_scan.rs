@@ -2,29 +2,29 @@
 
 use embassy_time::{Instant, Timer};
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-        scan_port::{
-            EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts, Esp32s31ScanRadio,
-            Esp32s31ScanStation, Esp32s31ScanStorage,
-        },
-        scan_rx::Esp32s31ScanFrameObserver,
-    },
     esp32s31::{
         phy::phy_cold::PhyColdState,
         registers::MacInterruptSetup,
-        wifi::{
-            lmac::scan::{ScanObservation, ScanRecord, ScanTable},
-            sta::{
-                channel::Esp32s31ScanPhy,
-                scan::{Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError},
-            },
+        wifi::sta::{
+            channel::Esp32s31ScanPhy,
+            scan::{Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError},
         },
     },
     wifi::{
-        ieee80211::station::StaSequenceCounter,
+        ieee80211::{
+            scan::{ScanObservation, ScanRecord, ScanTable},
+            station::StaSequenceCounter,
+        },
         sta::scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError},
     },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
+    scan_port::{
+        EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts, Esp32s31ScanRadio,
+        Esp32s31ScanStation, Esp32s31ScanStorage,
+    },
+    scan_rx::Esp32s31ScanFrameObserver,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
@@ -115,7 +115,7 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
         target_ssid,
         sequence,
     } = context;
-    let open_esp_radio::adapters::esp32s31::wifi_embassy::station_epoch::Esp32s31RunningScanEpochParts {
+    let open_esp_radio_esp32s31_wifi_embassy::station_epoch::Esp32s31RunningScanEpochParts {
         retained,
         hardware,
         rx,

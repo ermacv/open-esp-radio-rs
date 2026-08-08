@@ -14,6 +14,7 @@ mod icmp_latency;
 mod paced_tcp;
 mod paced_udp;
 mod packet_socket;
+mod pcapng;
 mod rx_traffic;
 mod startup_artifact;
 mod station_ap_absence;

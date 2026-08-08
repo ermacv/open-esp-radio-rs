@@ -217,6 +217,13 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         }
     }
 
+    /// Poison a live arena before retaining this owner for board reset.
+    pub(crate) fn require_reset(&mut self) {
+        if let Esp32s31RxRingState::Live(ring) = &mut self.state {
+            ring.require_reset();
+        }
+    }
+
     pub fn prepare_next<H: RxDma>(
         &mut self,
         hardware: &mut H,

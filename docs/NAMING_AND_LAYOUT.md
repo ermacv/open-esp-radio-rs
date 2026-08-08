@@ -36,6 +36,9 @@ Production code never depends on `verification/`, `qualification/`, `hil/` or
 | `phy` | RF/baseband/channel/calibration state machines |
 | `radio` | Chip-wide RF power, clocks, calibration and shared hardware ownership |
 | `coex` | Arbitration of shared radio resources between protocols |
+| `bluetooth` | Bluetooth subsystem family and shared controller policy |
+| `le` | Bluetooth Low Energy controller/protocol code below `bluetooth` |
+| `br-edr` | Bluetooth Basic Rate/Enhanced Data Rate code below `bluetooth` |
 | `adapter` | A narrow binding to an external ecosystem or network API |
 | `runtime` | Executor, time, interrupt wake and task composition |
 
@@ -60,7 +63,9 @@ driver/
 │   ├── sta/
 │   ├── ap/                 # add with the first real AP owner
 │   └── security/
-├── ble/                    # add with an implementation
+├── bluetooth/              # add with an implementation
+│   ├── le/                 # Bluetooth Low Energy
+│   └── br-edr/             # add only for a backend which supports Classic
 ├── ieee802154/             # add with an implementation
 ├── chips/
 │   ├── esp32s31/
@@ -84,9 +89,14 @@ driver/
         └── esp32s31-wifi/
 ```
 
-Chip-wide PHY and radio code stays outside `wifi/` because BLE and IEEE
+Chip-wide PHY and radio code stays outside `wifi/` because Bluetooth and IEEE
 802.15.4 may consume common RF calibration, clocks and power ownership.
 Protocol-specific MAC semantics remain separate.
+
+`bluetooth`, `le` and `br-edr` are not three peer physical subsystems. LE and
+BR/EDR are members of the Bluetooth family and may become distinct coex
+clients only where a concrete controller requires it. Do not create parallel
+top-level `bt` and `ble` roots.
 
 ESP32-C5 is introduced as a peer concrete backend. Code is promoted into a
 cross-chip crate only after both backends demonstrate the same semantic
@@ -143,8 +153,8 @@ The terms have separate evidence strength:
 ## Migration rules
 
 1. Do not combine a path rename with behavioural changes.
-2. Preserve a compatibility re-export for one migration step when a public
-   Rust path changes.
+2. Update workspace consumers atomically when a public Rust path changes. Do
+   not retain compatibility-only re-export modules in this pre-release tree.
 3. Move existing components before creating empty AP, BLE, IEEE 802.15.4 or
    coexistence crates.
 4. A facade is introduced only when it owns a stable high-level API. A crate
@@ -154,4 +164,4 @@ The terms have separate evidence strength:
 6. Wire/image CRCs protect transport integrity. Private vendor artifact
    identities belong to caller-owned verification configuration.
 7. New facade code uses `adapters` and `adapter-*`. The former `integration`
-   namespace and `integration-*` feature names are compatibility aliases only.
+   namespace and `integration-*` feature names must not be reintroduced.

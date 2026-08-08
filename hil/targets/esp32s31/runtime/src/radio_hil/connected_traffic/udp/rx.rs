@@ -1,19 +1,16 @@
 #![forbid(unsafe_code)]
 
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicU32, Ordering};
 
 use embassy_futures::yield_now;
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::embassy_irq::EmbassyMacIrqRuntime,
-    esp32s31::{hal::RadioRegisters, wifi::lmac::tx::TxPhyRate},
+    esp32s31::wifi::{device::register_arena::Esp32s31RadioRegistersAccess, mac::tx::TxPhyRate},
     wifi::ieee80211::station::StaAssociationPhy,
 };
+use open_esp_radio_esp32s31_wifi_embassy::embassy_irq::EmbassyMacIrqRuntime;
 use open_esp_radio_hil_esp32s31_telemetry::{
     mac_irq::MacIrqClassificationCounters,
     rx_evidence::{RX_HE_MCS_BUCKETS, RxAmpduCounters, RxPhyCounters, RxSmpduCounters},
@@ -85,7 +82,7 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     stack: Stack<'a>,
     association_phy: StaAssociationPhy,
     data_tx_rate: TxPhyRate,
-    registers: &RefCell<&mut RadioRegisters>,
+    registers: Esp32s31RadioRegistersAccess<'a>,
     buffers: UdpSocketBuffers<'a>,
     config: UdpRxBenchmarkConfig,
     telemetry: UdpRxTelemetry,
@@ -155,7 +152,8 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
         yield_now().await;
         telemetry.last_format.store(u32::MAX, Ordering::Relaxed);
         telemetry.last_phy.store(u32::MAX, Ordering::Relaxed);
-        let hardware_start = registers.borrow().rx_statistics_snapshot().primary;
+        let hardware_start =
+            registers.with_ref(|registers| registers.rx_statistics_snapshot().primary);
         let phy_start = telemetry.phy.snapshot();
         let s_mpdu_start = telemetry.s_mpdu.snapshot();
         let beacon_s_mpdu_start = telemetry.beacon_s_mpdu.snapshot();

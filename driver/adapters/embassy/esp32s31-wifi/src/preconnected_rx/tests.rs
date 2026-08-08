@@ -1,9 +1,7 @@
 use core::future::{Future, ready};
 
-use open_esp_radio_esp32s31_wifi_mac::{
-    descriptor::{BIT_30, DESCRIPTOR_BYTES},
-    rx::{RxDma, RxDmaBinding, RxRingHalted, RxRingStopped},
-};
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, DESCRIPTOR_BYTES};
+use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxDmaBinding, RxRingHalted, RxRingStopped};
 
 use super::*;
 use crate::rx_dma_service::Esp32s31RxDmaStorage;

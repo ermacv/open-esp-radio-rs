@@ -16,9 +16,10 @@
 
 use core::marker::PhantomData;
 
-use crate::{
+use crate::rx::{RxPhyInfo, decode_normalized_rx_metadata};
+use open_esp_radio_dma::{RxHandoffPool, RxNetworkLease, RxRadioLease};
+use open_esp_radio_esp32s31_wifi_dma::{
     descriptor::length as descriptor_length,
-    rx::{RxPhyInfo, decode_normalized_rx_metadata},
     rx_dma::RxDma,
     rx_ring::{
         RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor, RxCompletedUnit,
@@ -26,7 +27,6 @@ use crate::{
     },
     rx_storage::RxDmaCompletedUnit,
 };
-use open_esp_radio_dma::{RxHandoffPool, RxNetworkLease, RxRadioLease};
 use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 pub const VENDOR_LARGE_RX_SLOT_COUNT: usize = 32;

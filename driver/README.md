@@ -47,6 +47,8 @@ The hardware directory names now follow their responsibilities:
   and the target linker-placement primitive needed by the qualified hot path;
 - `chips/esp32s31/wifi/mac` is the safe chip-specific MAC backend above
   that leaf;
+- `chips/esp32s31/wifi` owns the role-neutral S31 Wi-Fi cold start and device
+  ownership before STA, AP or monitor materialization;
 - `chips/esp32s31/wifi/sta` owns S31 station composition that has no executor or
   network-stack dependency, including Association PHY/power selection,
   associated-peer WMM/HT/HE/rate-control programming and the platform ports
@@ -89,7 +91,7 @@ The S31 TX A-MPDU path is split by execution phase under
 - `model` remains host-only qualification code and is absent from 32-bit
   production builds.
 
-`tx_ampdu.rs` is the compatibility facade and storage declaration. New chip
+`tx_ampdu.rs` is the module root and storage declaration. New chip
 backends may reuse portable BlockAck semantics, but must supply their own
 metadata, queue geometry, register planning and DMA ownership adapters.
 
@@ -106,11 +108,22 @@ a bounded capture lease, queues only that lease and metadata, and returns
 immediately; capture overflow is observation loss rather than radio
 backpressure.
 The adjacent S31 `monitor_service` combines that sink with the concrete
-RX-ring and interrupt-route epoch. It is a finite future returning the same
-hardware, RX, sink and route owners after stop; it does not spawn a hidden task
-or acquire network-stack resources. Its future borrows the service, and a
-fail-closed destructor synchronously stops IRQ then DMA on cancellation/scope
-exit. Owner extraction is unavailable until that inactive state is proven.
+RX-ring and interrupt-route epoch. A long-lived role task owns the service; the
+application-facing controller contains no PAC, DMA or IRQ capability. Its
+`stop().await` returns only after the task has disabled the IRQ route, waited
+through transient DMA `Busy` and acknowledged the stopped edge. Dropping the
+controller never stops or destroys hardware. A private fail-closed destructor
+is reserved for abnormal task destruction and never spins or panics; it retains
+owners for reset whenever synchronous quiescence cannot be proved. Cancellation
+also poisons the static RX arena and role-control mailbox, so neither can be
+silently reused before reset.
+
+The station actor follows the same request/acknowledgement rule. Its task
+publishes `Stopped` only after the outer lifecycle returns the exact owner. If
+the station run future itself is cancelled, the controller receives `Faulted`
+instead of waiting forever or receiving a false stopped claim; active lower
+owners retain/quarantine their hardware-visible state until reset, and the
+same control storage refuses to construct a replacement task.
 
 The `radio` facade exposes a two-phase application configuration API.
 `RadioConfig` selects Wi-Fi, Bluetooth and IEEE 802.15.4 subsystems, while
@@ -120,8 +133,18 @@ peripheral or DMA ownership moves. Credentials, AP beacon/security policy,
 executor handles and storage are deliberately supplied later to the created
 subsystem services. The ESP32-S31 facade materializes that plan through
 `start_esp32s31_radio`; its public start/result/error types are Wi-Fi-level and
-do not expose the current internal location of the cold-start implementation
-under the station composition crate.
+do not expose the cold-start implementation in the role-neutral
+`chips/esp32s31/wifi` crate.
+
+The normative lifecycle above these crate boundaries is documented in
+[`RADIO_LIFECYCLE_AND_OWNERSHIP.md`](../docs/RADIO_LIFECYCLE_AND_OWNERSHIP.md).
+It distinguishes the unique physical owner, protocol subsystem owners, the
+future coex scheduler and Wi-Fi role topologies. The current S31 station and
+standalone-monitor graphs are not yet symmetric: a clean monitor task can now
+return the common stopped Wi-Fi owner and its separate role resources, while
+station teardown still returns its application-specific owner. Cross-role
+switching therefore remains intentionally unavailable until station consumes
+and returns the same common owner.
 
 The remaining `wifi/ieee80211` frame/HMAC split should change only together
 with its public contracts. A directory-only rename would hide the coupling
@@ -130,10 +153,11 @@ inside the station owner.
 
 The intended multi-chip, multi-protocol shape is chip-first for hardware and
 protocol-first for portable logic. A future ESP32-C5 backend is therefore a
-peer of `chips/esp32s31`, while portable BLE and IEEE 802.15.4 implementations are
-peers of `wifi`. Shared RF power, clocks, calibration and radio arbitration
-may be extracted only from concrete common behaviour. Wi-Fi, BLE and
-IEEE 802.15.4 timing/MAC semantics remain separate.
+peer of `chips/esp32s31`, while portable Bluetooth (LE and, where supported,
+BR/EDR) and IEEE 802.15.4 implementations are peers of `wifi`. Shared RF
+power, clocks, calibration and radio arbitration may be extracted only from
+concrete common behaviour. Wi-Fi, Bluetooth and IEEE 802.15.4 timing/MAC
+semantics remain separate.
 
 `hil/`, `verification/` and `tools/` may depend on this tree. The driver must not
 depend on them. In particular, HIL UART commands, raw telemetry strings,
@@ -180,17 +204,16 @@ in `chips/esp32s31/wifi/sta::scan_tx` beside the ordinary/control TX owner.
 Ordinary descriptor retry/deadline ownership, single-MPDU encoding, the
 pre-connected control transmitter and active-scan TX now live together in
 `chips/esp32s31/wifi/sta::{ordinary_tx,single_mpdu_tx,control_tx,scan_tx}`.
-The former Embassy modules are compatibility re-exports; their host tests no
-longer compile through Embassy.
+Consumers import these owners directly from the chip STA crate; Embassy does
+not mirror them through compatibility modules.
 
 The cooperative register facade, connected-control hardware contract and
 complete finite control state machine now live in
 `chips/esp32s31/wifi/sta::{cooperative_hardware,connected_control_hardware,
 connected_control}`. BlockAck, beacon-loss and power-save transitions accept
 one explicitly delivered event and a bounded reorder-command sink; they do not
-depend on an executor. The Embassy crate retains mailbox/deadline scheduling
-and compatibility exports, but no longer defines this protocol or PAC
-behaviour.
+depend on an executor. The Embassy crate retains mailbox/deadline scheduling,
+but no longer defines this protocol or PAC behaviour.
 
 The executor-independent Authentication/Association RX, control-TX,
 observation and error contracts likewise live in `chips/esp32s31/wifi/sta::join`.

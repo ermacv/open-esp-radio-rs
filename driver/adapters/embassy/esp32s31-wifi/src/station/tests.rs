@@ -1,10 +1,13 @@
-use core::future::{Future, ready};
+use core::{
+    future::{Future, pending, ready},
+    task::{Context, Poll, Waker},
+};
 
-use embassy_futures::block_on;
+use embassy_futures::{block_on, join::join};
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use open_esp_radio_wifi_sta::station::{
-    StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome, StaBackoffReason,
-    StaFailureDisposition, StaLifecycleBackend, StaLifecycleStage, StaReconnectPolicy,
+    StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
+    StaLifecycleStage, StaReconnectPolicy,
 };
 
 use super::connected_epoch::{
@@ -12,24 +15,40 @@ use super::connected_epoch::{
 };
 use super::*;
 
-struct Backend<'control> {
-    control: Esp32s31StationCommandReceiver<'control, NoopRawMutex>,
+struct Backend {
     fail: bool,
 }
 
-impl StaLifecycleBackend for Backend<'_> {
+struct PendingBackend;
+
+impl Esp32s31StationAttemptRunner<NoopRawMutex> for PendingBackend {
     type Owner = u32;
     type Error = u8;
 
-    fn run_attempt(
-        &mut self,
+    fn run_attempt<'a>(
+        &'a mut self,
         owner: Self::Owner,
         _context: StaAttemptContext,
-    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
-        let outcome = if let Some(command) = self.control.try_take() {
-            self.control.record_terminal(command);
+        _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + 'a {
+        async move {
+            pending::<()>().await;
             StaAttemptOutcome::Stopped { owner }
-        } else if self.fail {
+        }
+    }
+}
+
+impl Esp32s31StationAttemptRunner<NoopRawMutex> for Backend {
+    type Owner = u32;
+    type Error = u8;
+
+    fn run_attempt<'a>(
+        &'a mut self,
+        owner: Self::Owner,
+        _context: StaAttemptContext,
+        _control: &'a mut Esp32s31StationCommandReceiver<'_, NoopRawMutex>,
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + 'a {
+        let outcome = if self.fail {
             StaAttemptOutcome::Failed {
                 owner,
                 failure: StaAttemptFailure::new(
@@ -43,15 +62,6 @@ impl StaLifecycleBackend for Backend<'_> {
         };
         ready(outcome)
     }
-
-    fn wait_backoff(
-        &mut self,
-        owner: Self::Owner,
-        _delay_millis: u32,
-        _reason: StaBackoffReason,
-    ) -> impl Future<Output = StaBackoffOutcome<Self::Owner>> + '_ {
-        ready(StaBackoffOutcome::Elapsed { owner })
-    }
 }
 
 fn policy(attempt_limit: u16) -> StaReconnectPolicy {
@@ -61,7 +71,7 @@ fn policy(attempt_limit: u16) -> StaReconnectPolicy {
 #[test]
 fn command_priority_never_downgrades_a_pending_stop() {
     let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (controller, mut receiver) = resources.split();
+    let (controller, mut receiver) = resources.split().unwrap();
     assert!(controller.request_reconnect());
     assert!(controller.request_disconnect());
     assert!(!controller.request_reconnect());
@@ -73,7 +83,7 @@ fn command_priority_never_downgrades_a_pending_stop() {
 #[test]
 fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
     let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (controller, mut receiver) = resources.split();
+    let (controller, mut receiver) = resources.split().unwrap();
     assert!(controller.request_reconnect());
     assert!(matches!(
         coalesce_disconnected_station_command::<(), _>(&mut receiver),
@@ -87,7 +97,7 @@ fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
 #[test]
 fn terminal_connected_command_records_the_public_stop_reason() {
     let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (_controller, mut receiver) = resources.split();
+    let (_controller, mut receiver) = resources.split().unwrap();
     assert!(matches!(
         complete_connected_station_command::<(), _>(Esp32s31StationCommand::Stop, &mut receiver,),
         Esp32s31ConnectedStationExit::StationStopped(Esp32s31StationCommand::Stop)
@@ -98,25 +108,26 @@ fn terminal_connected_command_records_the_public_stop_reason() {
 #[test]
 fn controller_stop_returns_the_exact_owner_and_reason() {
     let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (controller, runner) = Esp32s31Station::new(
+    let (mut controller, runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(2)),
-        Esp32s31StationResources::new(41),
+        Esp32s31StationStartResources::new(41),
         &mut control,
-        |control| Backend {
-            control,
-            fail: false,
-        },
-    );
-    assert!(controller.request_stop());
+        Backend { fail: false },
+    )
+    .unwrap();
+    let (completion, exit) = block_on(join(controller.stop(), runner.run()));
     let Esp32s31StationExit::Stopped {
         resources,
         progress,
         reason,
-    } = block_on(runner.run())
+    } = exit
     else {
         panic!("station did not stop");
     };
-    assert_eq!(resources.into_owner(), 41);
+    assert_eq!(completion, Esp32s31StationCompletion::Stopped);
+    let (owner, runner) = resources.into_parts();
+    assert_eq!(owner, 41);
+    assert!(!runner.fail);
     assert_eq!(progress.attempts_started, 1);
     assert_eq!(
         reason,
@@ -127,25 +138,73 @@ fn controller_stop_returns_the_exact_owner_and_reason() {
 #[test]
 fn retry_exhaustion_preserves_failure_and_owner() {
     let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
-    let (_controller, runner) = Esp32s31Station::new(
+    let (mut controller, runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
-        Esp32s31StationResources::new(77),
+        Esp32s31StationStartResources::new(77),
         &mut control,
-        |control| Backend {
-            control,
-            fail: true,
-        },
+        Backend { fail: true },
+    )
+    .unwrap();
+    let exit = block_on(runner.run());
+    assert_eq!(
+        block_on(controller.wait_completion()),
+        Esp32s31StationCompletion::Ended
     );
     let Esp32s31StationExit::RetryExhausted {
         resources,
         progress,
         failure,
-    } = block_on(runner.run())
+    } = exit
     else {
         panic!("station did not exhaust its bounded retry policy");
     };
-    assert_eq!(resources.into_owner(), 77);
+    let (owner, runner) = resources.into_parts();
+    assert_eq!(owner, 77);
+    assert!(runner.fail);
     assert_eq!(progress.attempts_started, 1);
     assert_eq!(failure.stage, StaLifecycleStage::Authentication);
     assert_eq!(failure.error, 9);
+}
+
+#[test]
+fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
+    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (mut controller, task) = prepare_esp32s31_station_task(
+        Esp32s31StationConfig::new(policy(1)),
+        Esp32s31StationStartResources::new(99),
+        &mut control,
+        PendingBackend,
+    )
+    .unwrap();
+    let mut run = std::boxed::Box::pin(task.run());
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
+    drop(run);
+
+    assert_eq!(
+        block_on(controller.wait_completion()),
+        Esp32s31StationCompletion::Faulted
+    );
+    drop(controller);
+    assert!(matches!(
+        control.split(),
+        Err(Esp32s31StationControlError::ResetRequired)
+    ));
+}
+
+#[test]
+fn clean_station_completion_allows_a_later_epoch() {
+    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (mut controller, task) = prepare_esp32s31_station_task(
+        Esp32s31StationConfig::new(policy(1)),
+        Esp32s31StationStartResources::new(17),
+        &mut control,
+        Backend { fail: false },
+    )
+    .unwrap();
+    let (completion, _) = block_on(join(controller.stop(), task.run()));
+    assert_eq!(completion, Esp32s31StationCompletion::Stopped);
+    drop(controller);
+
+    assert!(control.split().is_ok());
 }

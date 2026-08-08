@@ -1,7 +1,4 @@
-use core::{
-    cell::RefCell,
-    sync::atomic::{AtomicBool, AtomicU32, Ordering},
-};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::console::emergency_log;
 use embassy_executor::{SendSpawner, Spawner};
@@ -10,84 +7,89 @@ use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
 };
 use embassy_time::{Duration, Instant, Timer};
-use esp_hal::rng::{Rng, Trng};
+use esp_hal::{
+    efuse::{self, InterfaceMacAddress},
+    rng::{Rng, Trng},
+};
 use open_esp_radio::esp32s31::phy::PhyTxTargetPowerProfile;
+use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
 use open_esp_radio::esp32s31::wifi::dma::{
     tx_ampdu_storage::AmpduDmaStorage, tx_storage::TxDmaStorage,
 };
-use open_esp_radio::esp32s31::wifi::sta::cold_start::{
-    Esp32s31ColdStartConfig, Esp32s31ColdStartFailure, start_esp32s31_station_radio,
-};
+use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::{
     tx_epoch::Esp32s31StaTxEpoch, wpa2::Esp32s31Wpa2Message4Protection,
 };
 use open_esp_radio::{
-    adapters::{
-        esp32s31::wifi_embassy::{
-            aggregate_tx::AggregateTxResources,
-            connected_rx_protocol::{
-                ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
-            },
-            connected_sta_port::{Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaRateConfig},
-            control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
-            control_tx::{ControlTxError, Esp32s31ControlTx},
-            cooperative_hardware::CooperativeRadioHardware,
-            embassy_irq::{
-                EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch,
-            },
-            embassy_rx::RxReloadDelay,
-            network_rx::EmbassyNetConnectedRxSink,
-            phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-            preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-            rx_dma_service::{
-                ESP32S31_RX_BUFFER_SIZE, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
-                Esp32s31StoppedRx,
-            },
-            rx_reorder::{
-                RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage,
-            },
-            rx_ring_owner::Esp32s31RxRingOwnerError,
-            scan_port::Esp32s31ScanPortError,
-            scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanRx},
-            scan_target::Esp32s31ColdScanTx,
-            scan_tx::Esp32s31RunningScanTx,
-            station::{
-                Esp32s31StationCommandReceiver, Esp32s31StationControlResources,
-                Esp32s31StationController,
-            },
-            station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
-            tx_time::EmbassyWifiTxTimer,
-        },
-        network::embassy_net::{
-            PinnedTxPool as OpenRadioNetworkTxPool, SplitPinnedDevice as OpenRadioNetworkDevice,
-            SplitPinnedRadioRunner as OpenRadioNetworkRunner,
-            SplitPinnedResources as OpenRadioNetworkResources,
-        },
+    RadioConfig, WifiConfig, WifiMacAddress, WifiStationConfig,
+    adapters::network::embassy_net::{
+        PinnedTxPool as OpenRadioNetworkTxPool, SplitPinnedDevice as OpenRadioNetworkDevice,
+        SplitPinnedRadioRunner as OpenRadioNetworkRunner,
+        SplitPinnedResources as OpenRadioNetworkResources,
     },
     esp32s31::{
-        hal::{Radio, RadioRegisters},
+        Esp32s31RadioStartConfig, Esp32s31RadioStartFailure, Esp32s31WifiStartConfig,
+        Esp32s31WifiStartFailure,
+        hal::Radio,
         phy::{
             PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterRunError,
             phy_cold::PhyCalibrationRecord, phy_rfpll::phy_get_rf_cal_version,
             target_executor::PhyTargetPortError,
         },
-        wifi::lmac::{
+        start_esp32s31_radio,
+        wifi::mac::{
             irq::{
                 IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE,
                 MAC_INT_TX_TIMEOUT,
             },
             rx::{HeGuardIntervalAndLtf, RxIngressConfig},
             rx_pool::RxStagePool,
-            scan::ScanTable,
             tx::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
                 HtMcs, LegacyRate, TxSlot,
             },
             tx_ampdu::HtAmpduTxStorage,
         },
+        wifi::sta::{
+            control_tx::{ControlTxError, Esp32s31ControlTx},
+            scan_tx::Esp32s31RunningScanTx,
+        },
     },
-    wifi::ieee80211::station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPreference},
+    wifi::ieee80211::{
+        channel::WifiChannel,
+        scan::ScanTable,
+        station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPreference},
+    },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    aggregate_tx::AggregateTxResources,
+    connected_rx_protocol::{
+        ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
+    },
+    connected_sta_port::{
+        Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
+        Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
+    },
+    control_mailbox::{ConnectedControlPublisher, ConnectedControlResources},
+    embassy_irq::{EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime, Esp32s31MacInterruptEpoch},
+    embassy_rx::RxReloadDelay,
+    network_rx::EmbassyNetConnectedRxSink,
+    phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
+    preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
+    rx_dma_service::{
+        ESP32S31_RX_BUFFER_SIZE, Esp32s31RxDmaStorage, Esp32s31RxEpochResources,
+        Esp32s31RxRingOwnerError, Esp32s31StoppedRx,
+    },
+    rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
+    scan_port::Esp32s31ScanPortError,
+    scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanRx},
+    scan_target::Esp32s31ColdScanTx,
+    station::{
+        Esp32s31StationCommandReceiver, Esp32s31StationControlResources, Esp32s31StationController,
+    },
+    station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
+    tx_time::EmbassyWifiTxTimer,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::{
     EspHalRadioPeripheral,
@@ -126,10 +128,9 @@ use station::{
     RadioHilRunningScanReady, RadioHilStaJoinObserver, RadioHilStaLifecycleFailure,
     RadioHilStaLifecycleOwner, RadioHilStaNetwork, RadioHilStationEpochCoordinator,
     RadioHilStationEpochProgress, RadioHilStationEpochProgressChannel,
-    RadioHilStationEpochReporter, StaAssociationSecurity, StaConnectedSession, StaJoinTarget,
-    connected_network_report_task, connected_network_stack_task, connected_rx_protocol_task,
-    injected_tx_source_requires_reset, qualify_disconnected_running_scan, run_connected_network,
-    run_full_station_hil,
+    RadioHilStationEpochReporter, StaConnectedSession, connected_network_report_task,
+    connected_network_stack_task, connected_rx_protocol_task, injected_tx_source_requires_reset,
+    qualify_disconnected_running_scan, run_connected_network, run_full_station_hil,
 };
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
@@ -776,13 +777,9 @@ static OPEN_RADIO_RX_DMA_STORAGE: StaticCell<RxStorage> = StaticCell::new();
 static OPEN_RADIO_TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
 static OPEN_RADIO_TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static OPEN_RADIO_TX_STATE: StaticCell<TxStorage> = StaticCell::new();
-// The cold owner is moved here only after scan/authentication has consumed
-// every polling-only MAC transition. Connected Embassy tasks may then borrow
-// one permanently located running owner without manufacturing another PAC
-// singleton or tying their lifetime to the parent HIL future's stack.
-static OPEN_RADIO_RUNNING_REGISTERS: StaticCell<RadioRegisters> = StaticCell::new();
-static OPEN_RADIO_REGISTER_CELL: StaticCell<RefCell<&'static mut RadioRegisters>> =
-    StaticCell::new();
+// A connected epoch publishes the unique register owner here for stable task
+// placement and must reclaim it before returning to a role-neutral owner.
+static OPEN_RADIO_REGISTER_ARENA: StaticCell<Esp32s31RadioRegistersArena> = StaticCell::new();
 static OPEN_RADIO_RX_BUFFER_ADDRESSES: StaticCell<[u32; RX_DESCRIPTOR_COUNT]> = StaticCell::new();
 #[used]
 #[unsafe(no_mangle)]
@@ -890,7 +887,7 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_SLOT_COUNT,
 >;
 type ConnectedNetworkStackRunner = embassy_net::Runner<'static, NetworkDevice>;
-type ConnectedHardware = CooperativeRadioHardware<'static, 'static>;
+type ConnectedHardware = CooperativeRadioHardware<'static>;
 
 type ConnectedStoppedRx = Esp32s31StoppedRx<
     'static,
@@ -1156,7 +1153,7 @@ fn connected_epoch_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilConnected
             ampdu_standby_metadata: &OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE,
             ampdu_standby_dma: &OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE,
             control: &OPEN_RADIO_CONTROL_RESOURCES,
-            registers: &OPEN_RADIO_REGISTER_CELL,
+            registers: &OPEN_RADIO_REGISTER_ARENA,
         },
         services: RadioHilConnectedEpochServices {
             staged_rx: &OPEN_RADIO_STAGED_RX_QUEUE,
@@ -1244,49 +1241,56 @@ const STA_ASSOCIATION_PREFERENCE: StaAssociationPreference =
 
 const fn radio_hil_connected_sta_config() -> Esp32s31ConnectedStaConfig {
     Esp32s31ConnectedStaConfig {
-        rate: Esp32s31ConnectedStaRateConfig {
-            high_throughput_enabled: option_env!("OPEN_RADIO_FORCE_LEGACY_TX").is_none(),
-            fallback_legacy_rate: OPEN_RADIO_DATA_RATE,
-            fallback_ht_mcs: OPEN_RADIO_HT_MCS,
-            fallback_ht_guard_interval: OPEN_RADIO_HT_GI,
-            ht_mcs_override: if option_env!("OPEN_RADIO_HT_MCS").is_some() {
-                Some(OPEN_RADIO_HT_MCS)
-            } else {
-                None
+        tx: Esp32s31ConnectedStaTxPolicy {
+            rate: Esp32s31ConnectedStaRateConfig {
+                high_throughput_enabled: option_env!("OPEN_RADIO_FORCE_LEGACY_TX").is_none(),
+                fallback_legacy_rate: OPEN_RADIO_DATA_RATE,
+                fallback_ht_mcs: OPEN_RADIO_HT_MCS,
+                fallback_ht_guard_interval: OPEN_RADIO_HT_GI,
+                ht_mcs_override: if option_env!("OPEN_RADIO_HT_MCS").is_some() {
+                    Some(OPEN_RADIO_HT_MCS)
+                } else {
+                    None
+                },
+                ht_guard_interval_override: if option_env!("OPEN_RADIO_HT_SGI").is_some() {
+                    Some(HtGuardInterval::Short400Ns)
+                } else {
+                    None
+                },
+                he_mcs_override: if option_env!("OPEN_RADIO_HE_MCS").is_some() {
+                    Some(OPEN_RADIO_HE_MCS)
+                } else {
+                    None
+                },
+                he_guard_interval_and_ltf_override: if option_env!("OPEN_RADIO_HE_GI_LTF").is_some()
+                {
+                    Some(OPEN_RADIO_HE_GI_LTF)
+                } else {
+                    None
+                },
+                he_dcm_override: OPEN_RADIO_HE_DCM_RATE,
             },
-            ht_guard_interval_override: if option_env!("OPEN_RADIO_HT_SGI").is_some() {
-                Some(HtGuardInterval::Short400Ns)
-            } else {
-                None
-            },
-            he_mcs_override: if option_env!("OPEN_RADIO_HE_MCS").is_some() {
-                Some(OPEN_RADIO_HE_MCS)
-            } else {
-                None
-            },
-            he_guard_interval_and_ltf_override: if option_env!("OPEN_RADIO_HE_GI_LTF").is_some() {
-                Some(OPEN_RADIO_HE_GI_LTF)
-            } else {
-                None
-            },
-            he_dcm_override: OPEN_RADIO_HE_DCM_RATE,
+            unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
+            completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
+            aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
+            aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         },
-        rx_ingress: RxIngressConfig {
-            ring_entry_limit: 1,
-            csi_config: 0,
-            flags: 0,
+        block_ack: Esp32s31ConnectedStaBlockAckPolicy {
+            tx_block_ack_window: TX_BLOCK_ACK_WINDOW as u16,
+            tx_block_ack_negotiation_timeout_us: 500_000,
+            tx_block_ack_negotiation_attempt_limit: 3,
+            tid0_amsdu: OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
+            rx_block_ack_maximum_window: RX_BLOCK_ACK_SOFTWARE_WINDOW as u16,
+            request_initial_tx_block_ack: true,
         },
-        unicast_attempt_limit: UNICAST_TX_ATTEMPT_LIMIT,
-        completion_timeout_us: TX_COMPLETION_DEADLINE_MS * 1_000,
-        aggregate_frame_limit: TX_AMPDU_FRAME_COUNT as u8,
-        aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
-        tx_block_ack_window: TX_BLOCK_ACK_WINDOW as u16,
-        tx_block_ack_negotiation_timeout_us: 500_000,
-        tx_block_ack_negotiation_attempt_limit: 3,
-        tid0_amsdu: OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
-        rx_block_ack_maximum_window: RX_BLOCK_ACK_SOFTWARE_WINDOW as u16,
-        beacon_miss_limit: CONNECTED_BEACON_MISS_LIMIT,
-        request_initial_tx_block_ack: true,
+        receive: Esp32s31ConnectedStaRxPolicy {
+            ingress: RxIngressConfig {
+                ring_entry_limit: 1,
+                csi_config: 0,
+                flags: 0,
+            },
+            beacon_miss_limit: CONNECTED_BEACON_MISS_LIMIT,
+        },
     }
 }
 
@@ -1368,20 +1372,44 @@ pub async fn run(
         mac_sys0: efuse.rd_mac_sys0().read().bits(),
         mac_sys1: efuse.rd_mac_sys1().read().bits(),
     };
+    let mut station_address = [0_u8; 6];
+    station_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
+    let station_address = WifiMacAddress::new(station_address)
+        .expect("the station eFuse must contain a unicast MAC address");
+    let mut access_point_address = [0_u8; 6];
+    access_point_address
+        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
+    let access_point_address = WifiMacAddress::new(access_point_address)
+        .expect("the access-point eFuse must contain a unicast MAC address");
+    let topology = RadioConfig::wifi(WifiConfig::station(WifiStationConfig::new(station_address)));
     let phy_started = Instant::now();
     set_diagnostic_stage(30);
     set_diagnostic_stage(100);
-    let cold = match start_esp32s31_station_radio::<_, EmbassyPhyDelay, _>(
+    let started = match start_esp32s31_radio::<_, EmbassyPhyDelay, _>(
         owned,
-        Esp32s31ColdStartConfig::new(calibration_identity, LISTEN_CHANNEL)
+        Esp32s31RadioStartConfig::new(
+            topology,
+            Esp32s31WifiStartConfig::new(
+                calibration_identity,
+                WifiChannel::mhz20(LISTEN_CHANNEL as u8)
+                    .expect("the fixed HIL listen channel is valid"),
+            )
             .with_maximum_tx_power_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM),
+        ),
         calibration_record,
         HilPhyObserver,
     )
     .await
     {
-        Ok(cold) => cold,
-        Err(Esp32s31ColdStartFailure::Power(failure)) => {
+        Ok(started) => started,
+        Err(Esp32s31RadioStartFailure::Configuration { error, .. }) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=radio-configuration error={error:?}"
+            ));
+            halt();
+        }
+        Err(Esp32s31RadioStartFailure::Wifi(Esp32s31WifiStartFailure::Power(failure))) => {
             let error = failure.error();
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_PRELUDE_HIL result=FAIL stage=power \
@@ -1390,11 +1418,11 @@ pub async fn run(
             ));
             halt();
         }
-        Err(Esp32s31ColdStartFailure::Registration {
+        Err(Esp32s31RadioStartFailure::Wifi(Esp32s31WifiStartFailure::Registration {
             error,
             port_counters,
             ..
-        }) => {
+        })) => {
             match error {
                 PhyRegisterRunError::Lowering(error) => emergency_log(format_args!(
                     "OPEN_RADIO_PHY_HIL result=FAIL stage=lowering error={error:?}"
@@ -1413,25 +1441,57 @@ pub async fn run(
             }
             halt();
         }
-        Err(Esp32s31ColdStartFailure::MissingPhyOwner { .. }) => {
+        Err(Esp32s31RadioStartFailure::Wifi(Esp32s31WifiStartFailure::MissingPhyOwner {
+            ..
+        })) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=take-state"
             ));
             halt();
         }
-        Err(Esp32s31ColdStartFailure::InitialChannel { error, .. }) => {
+        Err(Esp32s31RadioStartFailure::Wifi(Esp32s31WifiStartFailure::InitialChannel {
+            error,
+            ..
+        })) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=post-init-channel error={error:?}"
             ));
             halt();
         }
     };
+    let station = match started.try_into_station() {
+        Ok(station) => station,
+        Err(failure) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=station-materialization error={:?}",
+                failure.reason,
+            ));
+            halt();
+        }
+    };
+    let station = match station.start_mac(MAC_HANDSHAKE_SAMPLE_LIMIT, access_point_address) {
+        Ok(station) => station,
+        Err(failure) => {
+            let (_, failure) = failure.into_parts();
+            let (_, _, _, _, error) = failure.into_parts();
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-cold-start error={error:?}"
+            ));
+            halt();
+        }
+    };
+    let station_interface = station.interface();
+    let (_wifi_plan, mac) = station.into_parts();
     set_diagnostic_stage(200);
     let phy_elapsed = phy_started.elapsed();
-    let report = cold.report();
-    let outcome = report.registration;
-    let counters = report.port_counters;
-    let (mut powered, mut state, tx_power_profile, calibration_record, _) = cold.into_parts();
+    let report = mac.report();
+    let outcome = report.wifi.registration;
+    let counters = report.wifi.port_counters;
+    let mac_outcome = report.mac;
+    let (powered, mut state, calibration_record, _) = mac.into_parts();
+    let tx_power_profile = state
+        .tx_target_power_profile()
+        .with_maximum_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=phy-complete full_calibration={} calibration_path={:?} \
                  mmio={} delays={} reset_samples={} rf_operations={} \
@@ -1466,10 +1526,10 @@ pub async fn run(
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL probe=open-tx-power rates0_3={legacy_power:?}"
     ));
-    powered
-        .parts_mut()
-        .0
-        .install_phy_tx_power_profile(tx_power_profile);
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL stage=mac-cold-complete handshake_samples={} handshake_value={:#010x}",
+        mac_outcome.handshake_samples, mac_outcome.handshake_value,
+    ));
     set_diagnostic_stage(230);
     let (platform, registers) = powered.into_parts();
     let _ = run_full_station_hil(
@@ -1481,6 +1541,7 @@ pub async fn run(
         &trng,
         &mut network_credentials,
         network_ipv4,
+        station_interface,
     )
     .await;
     set_diagnostic_stage(250);

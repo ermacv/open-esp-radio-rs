@@ -1,12 +1,12 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::preconnected_rx::EmbassyEsp32s31PreconnectedRxDelay,
-    esp32s31::wifi::sta::scan::Esp32s31StaScanError,
+    esp32s31::wifi::sta::{attempt::Esp32s31StaAttemptStation, scan::Esp32s31StaScanError},
     wifi::sta::station::{
         StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaLifecycleStage,
     },
 };
+use open_esp_radio_esp32s31_wifi_embassy::preconnected_rx::EmbassyEsp32s31PreconnectedRxDelay;
 
 use crate::{
     console::emergency_log,
@@ -14,8 +14,7 @@ use crate::{
         RadioHilConnectedEpochResources, RadioHilReconnectReady, RadioHilRunningScanContext,
         RadioHilRunningScanFailure, RadioHilRunningScanPortError, RadioHilRunningScanReady,
         RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner, RadioHilStaNetwork,
-        RadioHilStationCommandReceiver, StaJoinTarget, qualify_disconnected_running_scan,
-        station_epoch_reporter,
+        RadioHilStationCommandReceiver, qualify_disconnected_running_scan, station_epoch_reporter,
     },
 };
 
@@ -100,9 +99,10 @@ pub(in crate::radio_hil) async fn run_running_scan_attempt<'fixture, 'security>(
             };
         }
     };
-    let target = StaJoinTarget {
+    let target = Esp32s31StaAttemptStation {
         station_address: previous_target.station_address,
         access_point: scan_return.candidate,
+        association_preference: previous_target.association_preference,
     };
     assert_join_hardware_capabilities(scan_return.disconnected.hardware());
     let (network, epoch) = scan_return

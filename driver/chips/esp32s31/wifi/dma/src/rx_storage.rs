@@ -4,15 +4,15 @@
 //! payload capacity and placement policy are selected by the board or runtime
 //! composition and remain const-generic here.
 
-use core::cell::UnsafeCell;
+use core::{cell::UnsafeCell, sync::atomic::AtomicU8};
 
 use crate::{
     descriptor::Descriptor,
     rx_dma::RxDma,
     rx_ring::{
         RX_BUFFER_SENTINEL, RxCompletedDescriptor, RxCompletedUnit, RxCompletedUnitFrontier,
-        RxLiveAppend, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
-        prepare_recycled_buffer,
+        RxDmaArenaState, RxLiveAppend, RxRingError, RxRingHalted, RxRingLive, RxRingStopped,
+        RxSegment, prepare_recycled_buffer,
     },
 };
 
@@ -202,6 +202,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
 pub struct RxDmaStorage<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize> {
     descriptors: [Descriptor; COUNT],
     buffers: [RxDmaBuffer<BUFFER_SIZE, STORAGE_SIZE>; COUNT],
+    lifecycle: AtomicU8,
 }
 
 impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
@@ -211,7 +212,14 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         Self {
             descriptors: [const { Descriptor::new() }; COUNT],
             buffers: [const { RxDmaBuffer::new() }; COUNT],
+            lifecycle: AtomicU8::new(RxDmaArenaState::Reusable as u8),
         }
+    }
+
+    /// Sticky lifecycle state stored with the static arena rather than in its
+    /// movable ring token.
+    pub fn lifecycle_state(&self) -> RxDmaArenaState {
+        RxDmaArenaState::load(&self.lifecycle)
     }
 
     pub const fn descriptors(&self) -> &[Descriptor; COUNT] {
@@ -288,6 +296,11 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<RxRingStopped<'storage, COUNT>, RxRingError> {
+        match self.lifecycle_state() {
+            RxDmaArenaState::Reusable => {}
+            RxDmaArenaState::Live => return Err(RxRingError::Busy),
+            RxDmaArenaState::ResetRequired => return Err(RxRingError::ResetRequired),
+        }
         self.validate_descriptor_base(descriptor_base)?;
         self.validate_buffer_addresses(buffer_addresses)?;
         let buffer_size = u32::try_from(BUFFER_SIZE).map_err(|_| RxRingError::Size)?;
@@ -302,6 +315,7 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
                 // the validated address table binds `index` to this arena.
                 unsafe { self.buffers[index].prepare_for_recycle() }
             },
+            Some(&self.lifecycle),
         )
     }
 
@@ -312,6 +326,9 @@ impl<const COUNT: usize, const BUFFER_SIZE: usize, const STORAGE_SIZE: usize>
         ring: RxRingHalted<'storage, COUNT>,
         mmio: &mut M,
     ) -> Result<RxRingStopped<'storage, COUNT>, (RxRingHalted<'storage, COUNT>, RxRingError)> {
+        if self.lifecycle_state() == RxDmaArenaState::ResetRequired {
+            return Err((ring, RxRingError::ResetRequired));
+        }
         if let Err(error) = self.validate_ring_layout(
             ring.descriptor_base(),
             ring.descriptors(),

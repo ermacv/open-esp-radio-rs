@@ -178,9 +178,9 @@ impl Esp32s31ConnectedStaPort {
         resources: Esp32s31ConnectedStaControlResources<'resources, M, CAPACITY>,
     ) -> Esp32s31ConnectedControl<'resources, M, CAPACITY> {
         let tx_block_ack = StaTxBlockAckSessions::new(
-            plan.config.tx_block_ack_window,
-            plan.config.tx_block_ack_negotiation_timeout_us,
-            plan.config.tid0_amsdu,
+            plan.config.block_ack.tx_block_ack_window,
+            plan.config.block_ack.tx_block_ack_negotiation_timeout_us,
+            plan.config.block_ack.tid0_amsdu,
         )
         .expect("connected STA plan validated TX BlockAck policy");
         let mut control = Esp32s31ConnectedControl::new(
@@ -189,14 +189,16 @@ impl Esp32s31ConnectedStaPort {
             plan.link.association_phy == StaAssociationPhy::He20,
             tx_block_ack,
         )
-        .with_rx_block_ack_maximum_window(plan.config.rx_block_ack_maximum_window)
+        .with_rx_block_ack_maximum_window(plan.config.block_ack.rx_block_ack_maximum_window)
         .expect("connected STA plan validated RX BlockAck policy")
         .with_rx_reorder_commands(resources.reorder_commands);
         control.enable_beacon_loss(plan.beacon_loss);
-        if plan.config.request_initial_tx_block_ack
+        if plan.config.block_ack.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {
-            control.queue_initial_tx_block_ack(plan.config.tx_block_ack_negotiation_attempt_limit);
+            control.queue_initial_tx_block_ack(
+                plan.config.block_ack.tx_block_ack_negotiation_attempt_limit,
+            );
         }
         control
     }

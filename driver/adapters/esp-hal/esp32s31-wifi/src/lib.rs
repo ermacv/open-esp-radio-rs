@@ -27,6 +27,7 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::PhyTxTargetPowerProfile;
+use open_esp_radio_esp32s31_wifi::mac_start::Esp32s31WifiMacPlatform;
 use open_esp_radio_esp32s31_wifi_mac::init::{
     MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacDelayEntropy,
     MacSlowClockCalibrationSource, MacTxPowerPair, MacTxPowerSource,
@@ -102,6 +103,12 @@ impl EspHalRadioPeripheral {
         let cpu = Cpu::current();
         interrupt::disable(cpu, Interrupt::WIFI_MAC);
         interrupt::disable(cpu, Interrupt::WIFI_PWR);
+    }
+}
+
+impl Esp32s31WifiMacPlatform for EspHalRadioPeripheral {
+    fn install_phy_tx_power_profile(&mut self, profile: PhyTxTargetPowerProfile) {
+        EspHalRadioPeripheral::install_phy_tx_power_profile(self, profile);
     }
 }
 

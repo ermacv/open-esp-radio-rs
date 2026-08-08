@@ -4,6 +4,8 @@
 //! decoding remains in the MAC crate, while the semantic MMIO operations are
 //! defined by [`crate::rx_dma::RxDma`].
 
+use core::sync::atomic::{AtomicU8, Ordering};
+
 use crate::{
     descriptor::{
         BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_MASK, LENGTH_SHIFT, SIZE_MASK,
@@ -47,6 +49,31 @@ pub enum RxRingError {
     Overflow,
     Busy,
     Corrupt,
+    ResetRequired,
+}
+
+/// Persistent state of the static RX arena, independent of a movable ring
+/// capability.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum RxDmaArenaState {
+    Reusable = 0,
+    Live = 1,
+    ResetRequired = 2,
+}
+
+impl RxDmaArenaState {
+    pub(crate) fn load(state: &AtomicU8) -> Self {
+        match state.load(Ordering::Acquire) {
+            0 => Self::Reusable,
+            1 => Self::Live,
+            _ => Self::ResetRequired,
+        }
+    }
+
+    pub(crate) fn store(self, state: &AtomicU8) {
+        state.store(self as u8, Ordering::Release);
+    }
 }
 
 /// One descriptor whose completion ownership has moved from the MAC to Rust.
@@ -179,6 +206,7 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
     accepted_tail: usize,
     retained_last_low: u32,
     binding: RxDmaBinding<'a>,
+    lifecycle: Option<&'a AtomicU8>,
 }
 
 /// Sole software owner of one running S31 RX descriptor frontier.
@@ -187,6 +215,11 @@ pub struct RxRingStopped<'a, const COUNT: usize> {
 /// `wDev_AppendRxBlocks`: descriptors observed as CPU-owned, the last tail
 /// accepted by hardware, and a future tail whose reload doorbell is still in
 /// flight. No allocator, global `wDevCtrl`, C ABI or vendor callback is needed.
+///
+/// Production backing is static. Dropping or forgetting this movable token
+/// therefore never releases memory still visible to DMA, but it also does not
+/// stop the walker. Normal role owners must consume it through [`Self::try_stop`];
+/// an abandoned token poisons the arena until radio reset.
 pub struct RxRingLive<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
@@ -196,6 +229,7 @@ pub struct RxRingLive<'a, const COUNT: usize> {
     accepted_tail: usize,
     pending_tail: Option<usize>,
     binding: RxDmaBinding<'a>,
+    lifecycle: Option<&'a AtomicU8>,
     requires_stop: bool,
 }
 
@@ -209,6 +243,7 @@ pub struct RxRingHalted<'a, const COUNT: usize> {
     descriptors: &'a [Descriptor; COUNT],
     descriptor_base: u32,
     buffer_addresses: &'a [u32; COUNT],
+    lifecycle: Option<&'a AtomicU8>,
 }
 
 impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
@@ -246,6 +281,7 @@ impl<'a, const COUNT: usize> RxRingHalted<'a, COUNT> {
             self.buffer_addresses,
             buffer_size,
             prepare_buffer,
+            self.lifecycle,
         ) {
             Ok(stopped) => Ok(stopped),
             Err(error) => Err((self, error)),
@@ -266,6 +302,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             descriptors: self.descriptors,
             descriptor_base: self.descriptor_base,
             buffer_addresses: self.buffer_addresses,
+            lifecycle: self.lifecycle,
         }
     }
 
@@ -299,6 +336,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             buffer_addresses,
             buffer_size,
             prepare_buffer,
+            None,
         )
     }
 
@@ -334,6 +372,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             buffer_addresses,
             buffer_size,
             prepare_buffer,
+            None,
         )
     }
 
@@ -344,6 +383,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         buffer_addresses: &'a [u32; COUNT],
         buffer_size: u32,
         mut prepare_buffer: F,
+        lifecycle: Option<&'a AtomicU8>,
     ) -> Result<Self, RxRingError>
     where
         M: RxDma,
@@ -379,6 +419,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             accepted_tail: wrap_sub_one::<COUNT>(initial_start),
             retained_last_low,
             binding,
+            lifecycle,
         })
     }
 
@@ -405,6 +446,9 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
         if let Err(error) = enable_receive_inner(mmio, &self.binding) {
             return Err((self, error));
         }
+        if let Some(lifecycle) = self.lifecycle {
+            RxDmaArenaState::Live.store(lifecycle);
+        }
         Ok(RxRingLive {
             descriptors: self.descriptors,
             descriptor_base: self.descriptor_base,
@@ -414,6 +458,7 @@ impl<'a, const COUNT: usize> RxRingStopped<'a, COUNT> {
             accepted_tail: self.accepted_tail,
             pending_tail: None,
             binding: self.binding,
+            lifecycle: self.lifecycle,
             requires_stop: true,
         })
     }
@@ -438,6 +483,15 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
         self.buffer_addresses
     }
 
+    /// Irreversibly poison the static arena after an ownership invariant can
+    /// no longer be proven. The live token may still be retained for reset
+    /// diagnostics, but no later stop observation can make this arena reusable.
+    pub fn require_reset(&mut self) {
+        if let Some(lifecycle) = self.lifecycle {
+            RxDmaArenaState::ResetRequired.store(lifecycle);
+        }
+    }
+
     /// Stop the DMA walker and consume the live frontier authority.
     ///
     /// A failed hardware confirmation returns the complete live owner. This
@@ -454,7 +508,13 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
             descriptors: self.descriptors,
             descriptor_base: self.descriptor_base,
             buffer_addresses: self.buffer_addresses,
+            lifecycle: self.lifecycle,
         };
+        if let Some(lifecycle) = self.lifecycle
+            && RxDmaArenaState::load(lifecycle) != RxDmaArenaState::ResetRequired
+        {
+            RxDmaArenaState::Reusable.store(lifecycle);
+        }
         self.requires_stop = false;
         Ok(halted)
     }
@@ -941,8 +1001,10 @@ impl<'a, const COUNT: usize> RxRingLive<'a, COUNT> {
 
 impl<const COUNT: usize> Drop for RxRingLive<'_, COUNT> {
     fn drop(&mut self) {
-        if self.requires_stop {
-            panic!("live ESP32-S31 RX DMA ring destroyed before walker shutdown");
+        if self.requires_stop
+            && let Some(lifecycle) = self.lifecycle
+        {
+            RxDmaArenaState::ResetRequired.store(lifecycle);
         }
     }
 }

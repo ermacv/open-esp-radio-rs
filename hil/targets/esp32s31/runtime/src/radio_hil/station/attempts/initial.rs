@@ -1,24 +1,21 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-        sta_attempt_target::{
-            Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
-            Esp32s31StaAttemptTargetPort,
-        },
-    },
     esp32s31::{
         hal::RadioRegisters,
         wifi::sta::{
-            attempt::{
-                Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptSecurity,
-                Esp32s31StaAttemptStage, Esp32s31StaAttemptStation,
-            },
+            attempt::{Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptStage},
             channel::Esp32s31ScanPhy,
         },
     },
     wifi::sta::station::{StaAttemptFailure, StaAttemptOutcome},
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
+    sta_attempt_target::{
+        Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
+        Esp32s31StaAttemptTargetPort,
+    },
 };
 
 use crate::{
@@ -26,8 +23,7 @@ use crate::{
     radio_hil::{
         HilPhyObserver, RadioHilAuthenticationReady, RadioHilConnectedEpochResources,
         RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner, RadioHilStationCommandReceiver,
-        STA_ASSOCIATION_PREFERENCE, StaAssociationSecurity, StaConnectedSession,
-        WPA2_MESSAGE_4_HARDWARE_PROTECTED, radio_hil_message4_protection, run_connected_network,
+        StaConnectedSession, WPA2_MESSAGE_4_HARDWARE_PROTECTED, run_connected_network,
     },
 };
 
@@ -40,17 +36,12 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
 ) -> StaAttemptOutcome<RadioHilStaLifecycleOwner<'fixture, 'security>, RadioHilStaLifecycleFailure>
 {
     let RadioHilAuthenticationReady {
-        fixture,
+        mut fixture,
         target,
         rx,
         network,
         security,
     } = ready;
-    let StaAssociationSecurity {
-        pmk,
-        supplicant_nonce,
-        sequences,
-    } = security;
     let channel = Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(
         &mut *fixture.state,
         &mut *fixture.platform,
@@ -59,7 +50,7 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
     let owner: RadioHilStaAttemptOwner<'_, '_, '_, '_, '_, RadioRegisters> =
         Esp32s31StaAttemptTargetOwner::new(
             Esp32s31StaAttemptRadio::new(
-                &mut *fixture.mmio,
+                &mut fixture.mmio,
                 channel,
                 rx,
                 fixture.rx_storage,
@@ -69,17 +60,8 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                     .expect("initial station attempt owns control TX"),
             ),
             Esp32s31StaAttemptStorage::new(&mut *fixture.frame),
-            Esp32s31StaAttemptStation {
-                station_address: target.station_address,
-                access_point: target.access_point,
-                association_preference: STA_ASSOCIATION_PREFERENCE,
-            },
-            Esp32s31StaAttemptSecurity {
-                pmk,
-                supplicant_nonce,
-                sequences,
-                message4_protection: radio_hil_message4_protection(),
-            },
+            target,
+            security,
         );
     let mut attempt = Esp32s31StaAttempt::new(Esp32s31StaAttemptTargetPort::new());
     match attempt.run(owner).await {
@@ -90,7 +72,7 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-sta-attempt \
                  phase={stage:?} disposition={disposition:?} error={error:?}"
             ));
-            let (radio, _storage, _station, security) = owner.into_parts();
+            let (radio, _storage, target, security) = owner.into_parts();
             let Esp32s31StaAttemptRadio {
                 hardware: _,
                 channel,
@@ -99,11 +81,6 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                 transmit: _,
             } = radio;
             let _ = channel.into_parts();
-            let security = StaAssociationSecurity {
-                pmk: security.pmk,
-                supplicant_nonce: security.supplicant_nonce,
-                sequences: security.sequences,
-            };
             let associated = progress.completed(Esp32s31StaAttemptStage::Association);
             let message1 = report
                 .wpa2_handshake
@@ -145,7 +122,7 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
             let (pairwise, group) = owner
                 .take_installed_keys()
                 .expect("successful station attempt owns both CCMP slots");
-            let (radio, _storage, _station, security) = owner.into_parts();
+            let (radio, _storage, target, security) = owner.into_parts();
             let Esp32s31StaAttemptRadio {
                 hardware: _,
                 channel,
@@ -200,9 +177,7 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                     generation,
                     peer,
                     network,
-                    pmk: security.pmk,
-                    supplicant_nonce: security.supplicant_nonce,
-                    sequences: security.sequences,
+                    security,
                 },
                 pairwise,
                 group,

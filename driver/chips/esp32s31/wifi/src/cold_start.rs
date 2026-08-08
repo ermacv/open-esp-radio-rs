@@ -1,4 +1,4 @@
-//! Reusable cold PHY composition for ESP32-S31 station applications.
+//! Reusable role-neutral cold PHY/Wi-Fi composition for ESP32-S31.
 //!
 //! This boundary owns the production ordering shared by standalone firmware
 //! and HIL: power, finite PHY registration, Wi-Fi RX enable and initial
@@ -19,32 +19,28 @@ use open_esp_radio_esp32s31_phy::{
     phy_cold::{PhyCalibrationRecord, PhyColdState},
     run_phy_register, select_phy_channel,
 };
+use open_esp_radio_ieee80211::channel::WifiChannel;
+
+use crate::channel::lower_wifi_channel;
 
 /// Application-selected inputs for one cold radio start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Esp32s31ColdStartConfig {
+pub struct Esp32s31WifiColdStartConfig {
     pub calibration_identity: PhyCalibrationIdentity,
-    pub initial_channel_or_frequency: u16,
-    pub channel_width: u8,
+    pub initial_channel: WifiChannel,
     pub maximum_tx_power_quarter_dbm: i8,
 }
 
-impl Esp32s31ColdStartConfig {
+impl Esp32s31WifiColdStartConfig {
     pub const fn new(
         calibration_identity: PhyCalibrationIdentity,
-        initial_channel_or_frequency: u16,
+        initial_channel: WifiChannel,
     ) -> Self {
         Self {
             calibration_identity,
-            initial_channel_or_frequency,
-            channel_width: 0,
+            initial_channel,
             maximum_tx_power_quarter_dbm: i8::MAX,
         }
-    }
-
-    pub const fn with_channel_width(mut self, channel_width: u8) -> Self {
-        self.channel_width = channel_width;
-        self
     }
 
     pub const fn with_maximum_tx_power_quarter_dbm(mut self, maximum: i8) -> Self {
@@ -55,22 +51,23 @@ impl Esp32s31ColdStartConfig {
 
 /// Observable result of the finite cold start without HIL telemetry policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Esp32s31ColdStartReport {
+pub struct Esp32s31WifiColdStartReport {
     pub registration: PhyRegisterOutcome,
     pub port_counters: PhyTargetPortCounters,
+    pub initial_channel: WifiChannel,
 }
 
 /// Complete owner set returned at the cold-MAC boundary.
-pub struct Esp32s31ColdStart<P> {
+pub struct Esp32s31WifiColdStart<P> {
     radio: Radio<P, Powered>,
     phy: PhyColdState,
     tx_power: PhyTxTargetPowerProfile,
     calibration_record: Option<PhyCalibrationRecord>,
-    report: Esp32s31ColdStartReport,
+    report: Esp32s31WifiColdStartReport,
 }
 
-impl<P> Esp32s31ColdStart<P> {
-    pub const fn report(&self) -> Esp32s31ColdStartReport {
+impl<P> Esp32s31WifiColdStart<P> {
+    pub const fn report(&self) -> Esp32s31WifiColdStartReport {
         self.report
     }
 
@@ -85,7 +82,7 @@ impl<P> Esp32s31ColdStart<P> {
         PhyColdState,
         PhyTxTargetPowerProfile,
         Option<PhyCalibrationRecord>,
-        Esp32s31ColdStartReport,
+        Esp32s31WifiColdStartReport,
     ) {
         (
             self.radio,
@@ -98,7 +95,7 @@ impl<P> Esp32s31ColdStart<P> {
 }
 
 /// Failure which always returns the unique radio owner at its exact phase.
-pub enum Esp32s31ColdStartFailure<P> {
+pub enum Esp32s31WifiColdStartFailure<P> {
     Power(PowerUpFailure<P>),
     Registration {
         radio: Radio<P, Powered>,
@@ -114,19 +111,19 @@ pub enum Esp32s31ColdStartFailure<P> {
         radio: Radio<P, Powered>,
         phy: PhyColdState,
         calibration_record: Option<PhyCalibrationRecord>,
-        report: Esp32s31ColdStartReport,
+        report: Esp32s31WifiColdStartReport,
         error: PhyTargetPortError,
     },
 }
 
 /// Run the common production cold-start sequence without diagnostics or board
 /// allocation policy.
-pub async fn start_esp32s31_station_radio<P, D, O>(
+pub async fn start_esp32s31_wifi<P, D, O>(
     radio: Radio<P>,
-    config: Esp32s31ColdStartConfig,
+    config: Esp32s31WifiColdStartConfig,
     calibration_record: Option<PhyCalibrationRecord>,
     observer: O,
-) -> Result<Esp32s31ColdStart<P>, Esp32s31ColdStartFailure<P>>
+) -> Result<Esp32s31WifiColdStart<P>, Esp32s31WifiColdStartFailure<P>>
 where
     P: PowerClockControl
         + PhyPreludePlatformControl
@@ -138,7 +135,9 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let mut powered = radio.power_up().map_err(Esp32s31ColdStartFailure::Power)?;
+    let mut powered = radio
+        .power_up()
+        .map_err(Esp32s31WifiColdStartFailure::Power)?;
     let mut transition = PhyRegisterTransition::with_default_profile_and_calibration(
         config.calibration_identity,
         calibration_record,
@@ -149,7 +148,7 @@ where
         Err(error) => {
             let port_counters = port.counters();
             drop(port);
-            return Err(Esp32s31ColdStartFailure::Registration {
+            return Err(Esp32s31WifiColdStartFailure::Registration {
                 radio: powered,
                 transition,
                 port_counters,
@@ -163,31 +162,33 @@ where
     let mut phy = match transition.into_state() {
         Ok(state) => state,
         Err(transition) => {
-            return Err(Esp32s31ColdStartFailure::MissingPhyOwner {
+            return Err(Esp32s31WifiColdStartFailure::MissingPhyOwner {
                 radio: powered,
                 transition,
             });
         }
     };
-    let report = Esp32s31ColdStartReport {
+    let report = Esp32s31WifiColdStartReport {
         registration,
         port_counters,
+        initial_channel: config.initial_channel,
     };
 
     powered.enable_wifi_rx();
     let (platform, registers) = powered.parts_mut();
     let mut channel_observer = observer;
+    let initial_channel = lower_wifi_channel(config.initial_channel);
     if let Err(error) = select_phy_channel::<D, _, _>(
         &mut phy,
-        config.initial_channel_or_frequency,
-        config.channel_width,
+        initial_channel.channel_or_frequency,
+        initial_channel.cbw,
         platform,
         registers,
         &mut channel_observer,
     )
     .await
     {
-        return Err(Esp32s31ColdStartFailure::InitialChannel {
+        return Err(Esp32s31WifiColdStartFailure::InitialChannel {
             radio: powered,
             phy,
             calibration_record,
@@ -199,7 +200,7 @@ where
     let tx_power = phy
         .tx_target_power_profile()
         .with_maximum_quarter_dbm(config.maximum_tx_power_quarter_dbm);
-    Ok(Esp32s31ColdStart {
+    Ok(Esp32s31WifiColdStart {
         radio: powered,
         phy,
         tx_power,

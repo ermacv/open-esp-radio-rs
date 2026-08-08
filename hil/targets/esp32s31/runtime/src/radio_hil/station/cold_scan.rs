@@ -3,26 +3,12 @@
 use core::pin::Pin;
 
 use embassy_time::Instant;
-use esp_hal::efuse::{self, InterfaceMacAddress};
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-        scan_port::{
-            EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts, Esp32s31ScanRadio,
-            Esp32s31ScanStation, Esp32s31ScanStorage,
-        },
-        scan_rx::Esp32s31ScanFrameObserver,
-        sta_tx_epoch::Esp32s31StaTxEpochExt,
-    },
     esp32s31::{
         hal::ColdRadioRegisters,
         wifi::{
             dma::tx_storage::TxDmaStorage,
-            lmac::{
-                init::initialize_promiscuous_receive,
-                scan::{ScanObservation, ScanRecord, ScanTable},
-                tx::TxSlot,
-            },
+            mac::{init::activate_promiscuous_receive, tx::TxSlot},
             sta::{
                 channel::Esp32s31ScanPhy,
                 scan::{Esp32s31StaScanBackend, Esp32s31StaScanConfig},
@@ -30,9 +16,22 @@ use open_esp_radio::{
         },
     },
     wifi::{
-        ieee80211::{scan::best_matching_ssid, station::StaSequenceCounter},
+        ieee80211::{
+            scan::{ScanObservation, ScanRecord, ScanTable, best_matching_ssid},
+            station::StaSequenceCounter,
+        },
+        softmac::interface::{BoundVirtualInterface, VifRole},
         sta::scan::{StaCandidateScanExit, StaCandidateScanService},
     },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
+    scan_port::{
+        EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts, Esp32s31ScanRadio,
+        Esp32s31ScanStation, Esp32s31ScanStorage,
+    },
+    scan_rx::Esp32s31ScanFrameObserver,
+    sta_tx_epoch::Esp32s31StaTxEpochExt,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_protocol::NetworkCredentials;
@@ -41,13 +40,12 @@ use crate::{
     console::emergency_log,
     radio_hil::{
         ControlTxConfig, ETHERNET_FRAME, EmbassyWifiTxTimer, HilPhyObserver,
-        MAC_HANDSHAKE_SAMPLE_LIMIT, OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM,
-        OPEN_RADIO_RX_BUFFER_ADDRESSES, OPEN_RADIO_RX_DMA_STORAGE, OPEN_RADIO_TX_DMA_STORAGE,
-        OPEN_RADIO_TX_SLOT_STORAGE, OPEN_RADIO_TX_STATE, PROBE_REQUEST_RATES,
-        PROBE_TX_DESCRIPTOR_CAPACITY, RX_DESCRIPTOR_COUNT, RX_STAGE_CAPACITY, RadioHilJoinRx,
-        RxStorage, SCAN_DWELL_MS, SCAN_FRAME, SCAN_TABLE, STA_SCAN_CHANNEL_COUNT,
-        STA_SCAN_CHANNELS, ScanRx, ScanTx, TX_COMPLETION_DEADLINE_MS, TxStorage,
-        UNICAST_TX_ATTEMPT_LIMIT, open_radio_tx_entropy,
+        OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM, OPEN_RADIO_RX_BUFFER_ADDRESSES,
+        OPEN_RADIO_RX_DMA_STORAGE, OPEN_RADIO_TX_DMA_STORAGE, OPEN_RADIO_TX_SLOT_STORAGE,
+        OPEN_RADIO_TX_STATE, PROBE_REQUEST_RATES, PROBE_TX_DESCRIPTOR_CAPACITY,
+        RX_DESCRIPTOR_COUNT, RX_STAGE_CAPACITY, RadioHilJoinRx, RxStorage, SCAN_DWELL_MS,
+        SCAN_FRAME, SCAN_TABLE, STA_SCAN_CHANNEL_COUNT, STA_SCAN_CHANNELS, ScanRx, ScanTx,
+        TX_COMPLETION_DEADLINE_MS, TxStorage, UNICAST_TX_ATTEMPT_LIMIT, open_radio_tx_entropy,
     },
 };
 
@@ -93,6 +91,7 @@ pub(in crate::radio_hil) async fn run_cold_station_scan(
     platform: &mut EspHalRadioPeripheral,
     mut cold_mmio: ColdRadioRegisters,
     network_credentials: &NetworkCredentials,
+    station_interface: BoundVirtualInterface,
 ) -> Option<RadioHilColdScanHandoff> {
     let storage = OPEN_RADIO_RX_DMA_STORAGE.init_with(RxStorage::new);
     let tx_dma = TxDmaStorage::pin_static(OPEN_RADIO_TX_DMA_STORAGE.init_with(TxDmaStorage::new))
@@ -117,27 +116,15 @@ pub(in crate::radio_hil) async fn run_cold_station_scan(
         .expect("RX DMA storage must be addressable by ESP32-S31");
     let buffer_addresses: &'static [u32; RX_DESCRIPTOR_COUNT] = buffer_addresses;
 
-    let mut station_address = [0_u8; 6];
-    station_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::Station).as_bytes());
-    let mut access_point_address = [0_u8; 6];
-    access_point_address
-        .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
-    let cold = match initialize_promiscuous_receive(
-        platform,
-        &mut cold_mmio,
-        MAC_HANDSHAKE_SAMPLE_LIMIT,
-        station_address,
-        access_point_address,
-    ) {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL stage=mac-cold-start error={error:?}"
-            ));
-            return None;
-        }
-    };
+    if station_interface.interface.role != VifRole::Station {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=station-binding role={:?}",
+            station_interface.interface.role,
+        ));
+        return None;
+    }
+    let station_address = station_interface.interface.address;
+    activate_promiscuous_receive(&mut cold_mmio);
     let cold_interrupt_mask = cold_mmio.mac_interrupt_enable();
     cold_mmio.mask_and_clear_mac_interrupts(u32::MAX);
     let scan_rx =
@@ -156,9 +143,8 @@ pub(in crate::radio_hil) async fn run_cold_station_scan(
     let ethernet_frame = ETHERNET_FRAME.init([0; RX_STAGE_CAPACITY]);
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL stage=rx-active descriptor_base={descriptor_base:#010x} \
-         buffer0={:#010x} handshake_samples={} handshake_value={:#010x} \
-         cold_int_mask={cold_interrupt_mask:#010x}",
-        buffer_addresses[0], cold.handshake_samples, cold.handshake_value,
+         buffer0={:#010x} cold_int_mask={cold_interrupt_mask:#010x}",
+        buffer_addresses[0],
     ));
 
     let scan_started = Instant::now();

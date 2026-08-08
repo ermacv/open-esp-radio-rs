@@ -6,6 +6,44 @@ const NO_COMMAND: u8 = 0;
 const RECONNECT_COMMAND: u8 = 1;
 const DISCONNECT_COMMAND: u8 = 2;
 const STOP_COMMAND: u8 = 3;
+const NO_COMPLETION: u8 = 0;
+const STOPPED_COMPLETION: u8 = 1;
+const ENDED_COMPLETION: u8 = 2;
+const FAULTED_COMPLETION: u8 = 3;
+
+/// Terminal acknowledgement published by the task which owns station
+/// hardware.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum Esp32s31StationCompletion {
+    /// The requested finite stop returned the exact quiescent owner.
+    Stopped = STOPPED_COMPLETION,
+    /// The runner returned its owner through another terminal edge.
+    Ended = ENDED_COMPLETION,
+    /// The task future was destroyed before it returned a quiescent owner.
+    /// Lower hardware owners remain fail-closed and board reset is required.
+    Faulted = FAULTED_COMPLETION,
+}
+
+/// A new station epoch cannot be materialized after the preceding task lost
+/// its hardware owner without proving quiescence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31StationControlError {
+    /// The previous task was cancelled or destroyed. A board/radio reset is
+    /// required before any of its static DMA or ISR resources may be reused.
+    ResetRequired,
+}
+
+impl Esp32s31StationCompletion {
+    const fn decode(value: u8) -> Option<Self> {
+        match value {
+            STOPPED_COMPLETION => Some(Self::Stopped),
+            ENDED_COMPLETION => Some(Self::Ended),
+            FAULTED_COMPLETION => Some(Self::Faulted),
+            _ => None,
+        }
+    }
+}
 
 /// Cooperative command accepted by a running station service.
 ///
@@ -41,7 +79,9 @@ impl Esp32s31StationCommand {
 pub struct Esp32s31StationControlResources<M: RawMutex> {
     pending: AtomicU8,
     terminal: AtomicU8,
+    completion: AtomicU8,
     wake: Signal<M, ()>,
+    completion_wake: Signal<M, ()>,
 }
 
 impl<M: RawMutex> Esp32s31StationControlResources<M> {
@@ -49,28 +89,40 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
         Self {
             pending: AtomicU8::new(NO_COMMAND),
             terminal: AtomicU8::new(NO_COMMAND),
+            completion: AtomicU8::new(NO_COMPLETION),
             wake: Signal::new(),
+            completion_wake: Signal::new(),
         }
     }
 
     /// Start one station session and create its single command consumer.
     ///
     /// The mutable borrow prevents two runners from being constructed from the
-    /// same command slot. The returned controller may be copied freely.
+    /// same command slot or terminal-completion waiter.
     pub fn split(
         &mut self,
-    ) -> (
-        Esp32s31StationController<'_, M>,
-        Esp32s31StationCommandReceiver<'_, M>,
-    ) {
+    ) -> Result<
+        (
+            Esp32s31StationController<'_, M>,
+            Esp32s31StationCommandReceiver<'_, M>,
+        ),
+        Esp32s31StationControlError,
+    > {
+        if Esp32s31StationCompletion::decode(self.completion.load(Ordering::Acquire))
+            == Some(Esp32s31StationCompletion::Faulted)
+        {
+            return Err(Esp32s31StationControlError::ResetRequired);
+        }
         self.pending.store(NO_COMMAND, Ordering::Release);
         self.terminal.store(NO_COMMAND, Ordering::Release);
+        self.completion.store(NO_COMPLETION, Ordering::Release);
         self.wake.reset();
+        self.completion_wake.reset();
         let shared = &*self;
-        (
+        Ok((
             Esp32s31StationController { resources: shared },
             Esp32s31StationCommandReceiver { resources: shared },
-        )
+        ))
     }
 
     fn request(&self, command: Esp32s31StationCommand) -> bool {
@@ -106,6 +158,14 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
     pub(super) fn take_terminal(&self) -> Option<Esp32s31StationCommand> {
         Esp32s31StationCommand::decode(self.terminal.swap(NO_COMMAND, Ordering::AcqRel))
     }
+
+    pub(super) fn publish_completion(&self, completion: Esp32s31StationCompletion) {
+        if self.completion.load(Ordering::Acquire) == FAULTED_COMPLETION {
+            return;
+        }
+        self.completion.store(completion as u8, Ordering::Release);
+        self.completion_wake.signal(());
+    }
 }
 
 impl<M: RawMutex> Default for Esp32s31StationControlResources<M> {
@@ -114,18 +174,14 @@ impl<M: RawMutex> Default for Esp32s31StationControlResources<M> {
     }
 }
 
-/// Copyable application handle for cooperative station control.
+/// Unique application handle for cooperative station control.
+///
+/// Command publication uses a shared borrow, but waiting for terminal
+/// completion requires a mutable borrow so the single-waiter Embassy signal
+/// cannot accidentally be observed by concurrent stop futures.
 pub struct Esp32s31StationController<'resources, M: RawMutex> {
     resources: &'resources Esp32s31StationControlResources<M>,
 }
-
-impl<M: RawMutex> Clone for Esp32s31StationController<'_, M> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<M: RawMutex> Copy for Esp32s31StationController<'_, M> {}
 
 impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
     /// Request a fresh scan and association without destroying the service.
@@ -143,6 +199,30 @@ impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
         self.resources.request(Esp32s31StationCommand::Stop)
     }
 
+    /// Wait for a terminal task acknowledgement.
+    ///
+    /// [`Esp32s31StationCompletion::Stopped`] proves the owner returned
+    /// through the controlled lifecycle edge. `Faulted` reports cancellation
+    /// or destruction of the task future and requires reset; it deliberately
+    /// does not claim that ISR, DMA or protocol tasks are stopped. Merely
+    /// publishing [`request_stop`](Self::request_stop) proves neither outcome.
+    pub async fn wait_completion(&mut self) -> Esp32s31StationCompletion {
+        loop {
+            if let Some(completion) =
+                Esp32s31StationCompletion::decode(self.resources.completion.load(Ordering::Acquire))
+            {
+                return completion;
+            }
+            self.resources.completion_wake.wait().await;
+        }
+    }
+
+    /// Request complete shutdown and wait for task acknowledgement.
+    pub async fn stop(&mut self) -> Esp32s31StationCompletion {
+        self.request_stop();
+        self.wait_completion().await
+    }
+
     pub(super) const fn resources(&self) -> &'resources Esp32s31StationControlResources<M> {
         self.resources
     }
@@ -156,6 +236,15 @@ impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
 /// `Reconnect` normally becomes a disconnected epoch instead.
 pub struct Esp32s31StationCommandReceiver<'resources, M: RawMutex> {
     resources: &'resources Esp32s31StationControlResources<M>,
+}
+
+impl<M: RawMutex> Drop for Esp32s31StationCommandReceiver<'_, M> {
+    fn drop(&mut self) {
+        if self.resources.completion.load(Ordering::Acquire) == NO_COMPLETION {
+            self.resources
+                .publish_completion(Esp32s31StationCompletion::Faulted);
+        }
+    }
 }
 
 impl<M: RawMutex> Esp32s31StationCommandReceiver<'_, M> {

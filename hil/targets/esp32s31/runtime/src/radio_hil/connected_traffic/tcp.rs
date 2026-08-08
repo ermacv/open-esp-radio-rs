@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-use core::cell::RefCell;
-
 use embassy_futures::join::join;
 use embassy_net::{
     Stack,
@@ -9,7 +7,7 @@ use embassy_net::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio::esp32s31::hal::RadioRegisters;
+use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersAccess;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
@@ -93,7 +91,7 @@ pub(in crate::radio_hil) async fn tcp_tx_pattern_worker_task() {
 
 pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
     stack: Stack<'a>,
-    registers: &RefCell<&mut RadioRegisters>,
+    registers: Esp32s31RadioRegistersAccess<'a>,
     rx_buffer: &'a mut [u8],
     tx_buffer: &'a mut [u8],
     config: TcpBenchmarkConfig,
@@ -157,7 +155,8 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.session_id, session.config.direction, duration_millis,
         ));
 
-        let hardware_start = registers.borrow().rx_statistics_snapshot().primary;
+        let hardware_start =
+            registers.with_ref(|registers| registers.rx_statistics_snapshot().primary);
         let pipeline_start = pipeline_counters.snapshot();
         let aggregate_start = aggregate_counters.snapshot();
         let connection_timeout = duration + Duration::from_secs(5);

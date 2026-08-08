@@ -23,16 +23,15 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::HtAmpduTxStorage,
     tx_runtime::StaTxRuntimePolicy,
 };
+use open_esp_radio_esp32s31_wifi_sta::{
+    ordinary_tx::{WifiTxPowerPair, WifiTxResources},
+    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
+};
 use open_esp_radio_ieee80211::station::{
     STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters,
 };
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 use open_esp_radio_wifi_softmac::MacTxPlan;
-
-use crate::{
-    ordinary_tx::{WifiTxPowerPair, WifiTxResources},
-    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
-};
 
 use super::*;
 

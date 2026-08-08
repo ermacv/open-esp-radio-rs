@@ -18,19 +18,34 @@ pub struct Esp32s31ConnectedStaRateConfig {
 /// Complete value policy for one connected driver epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31ConnectedStaConfig {
+    pub tx: Esp32s31ConnectedStaTxPolicy,
+    pub block_ack: Esp32s31ConnectedStaBlockAckPolicy,
+    pub receive: Esp32s31ConnectedStaRxPolicy,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaTxPolicy {
     pub rate: Esp32s31ConnectedStaRateConfig,
-    pub rx_ingress: RxIngressConfig,
     pub unicast_attempt_limit: u8,
     pub completion_timeout_us: u64,
     pub aggregate_frame_limit: u8,
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaBlockAckPolicy {
     pub tx_block_ack_window: u16,
     pub tx_block_ack_negotiation_timeout_us: u32,
     pub tx_block_ack_negotiation_attempt_limit: u8,
     pub tid0_amsdu: bool,
     pub rx_block_ack_maximum_window: u16,
-    pub beacon_miss_limit: u8,
     pub request_initial_tx_block_ack: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31ConnectedStaRxPolicy {
+    pub ingress: RxIngressConfig,
+    pub beacon_miss_limit: u8,
 }
 
 /// Configuration failure detected before any connected owner moves.
@@ -102,7 +117,7 @@ impl Esp32s31ConnectedStaPlan {
             station_address: self.link.station_address,
             bssid: self.link.bssid,
             association_id: self.link.association_id,
-            ingress: self.config.rx_ingress,
+            ingress: self.config.receive.ingress,
         }
     }
 
@@ -114,8 +129,8 @@ impl Esp32s31ConnectedStaPlan {
             exchange: MacTxPlan {
                 access_category: WmmAccessCategory::BestEffort,
                 initial_rate: self.data_tx_rate,
-                publication_limit: self.config.unicast_attempt_limit,
-                publication_timeout_micros: self.config.completion_timeout_us,
+                publication_limit: self.config.tx.unicast_attempt_limit,
+                publication_timeout_micros: self.config.tx.completion_timeout_us,
             },
         }
     }
@@ -123,10 +138,10 @@ impl Esp32s31ConnectedStaPlan {
     pub const fn aggregate_tx_config(&self) -> AggregateTxConfig {
         AggregateTxConfig {
             rate: self.aggregate_tx_rate,
-            frame_limit: self.config.aggregate_frame_limit,
-            attempt_limit: self.config.unicast_attempt_limit,
-            completion_timeout_us: self.config.completion_timeout_us,
-            he_txop_limit: self.config.aggregate_he_txop_limit,
+            frame_limit: self.config.tx.aggregate_frame_limit,
+            attempt_limit: self.config.tx.unicast_attempt_limit,
+            completion_timeout_us: self.config.tx.completion_timeout_us,
+            he_txop_limit: self.config.tx.aggregate_he_txop_limit,
         }
     }
 }
@@ -136,36 +151,6 @@ impl Esp32s31ConnectedStaPort {
     /// PAC, DMA, interrupt or executor types.
     pub const fn capabilities() -> MacServiceCapabilities {
         ESP32S31_MAC_SERVICE_CAPABILITIES
-    }
-
-    /// Validate all value policy before consuming the peer's rate-control
-    /// owner, pairwise key, sequences or pinned descriptor storage.
-    #[allow(clippy::result_large_err)]
-    pub fn prepare<const AGGREGATE_SLOTS: usize>(
-        peer: Esp32s31ConnectedStaPeer,
-        config: Esp32s31ConnectedStaConfig,
-    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
-        Self::prepare_with_storage::<AGGREGATE_SLOTS, RX_REORDER_BACKING_SLOT_COUNT>(peer, config)
-    }
-
-    /// Validate connected policy against the concrete TX aggregate and RX
-    /// reorder storage selected by the board composition.
-    ///
-    /// Compact SRAM profiles must use this entry point. It prevents a runtime
-    /// Block Ack window from retaining more MPDUs than the statically allocated
-    /// reorder backing can own.
-    #[allow(clippy::result_large_err)]
-    pub fn prepare_with_storage<const AGGREGATE_SLOTS: usize, const RX_REORDER_SLOTS: usize>(
-        peer: Esp32s31ConnectedStaPeer,
-        config: Esp32s31ConnectedStaConfig,
-    ) -> Result<Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure> {
-        let interface = BoundVirtualInterface::new(
-            VirtualInterface::new(VifId::PRIMARY, VifRole::Station, peer.link.station_address),
-            ChannelContextId::PRIMARY,
-        );
-        Self::prepare_for_interface_with_storage::<AGGREGATE_SLOTS, RX_REORDER_SLOTS>(
-            peer, config, interface,
-        )
     }
 
     /// Materialize the station interface selected by the application radio
@@ -195,8 +180,7 @@ impl Esp32s31ConnectedStaPort {
     }
 
     /// Prepare one explicitly identified STA VIF on a hardware channel
-    /// context. This is the multi-interface entry point; the compatibility
-    /// `prepare*` methods bind the existing station to primary VIF/context.
+    /// context.
     #[allow(clippy::result_large_err)]
     pub fn prepare_for_interface_with_storage<
         const AGGREGATE_SLOTS: usize,
@@ -221,33 +205,33 @@ impl Esp32s31ConnectedStaPort {
                 peer,
             });
         }
-        if config.aggregate_frame_limit == 0
-            || usize::from(config.aggregate_frame_limit) > AGGREGATE_SLOTS
+        if config.tx.aggregate_frame_limit == 0
+            || usize::from(config.tx.aggregate_frame_limit) > AGGREGATE_SLOTS
         {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::AggregateFrameLimit {
-                    limit: config.aggregate_frame_limit,
+                    limit: config.tx.aggregate_frame_limit,
                     capacity: AGGREGATE_SLOTS,
                 },
                 peer,
             });
         }
-        if usize::from(config.rx_block_ack_maximum_window) > RX_REORDER_SLOTS {
+        if usize::from(config.block_ack.rx_block_ack_maximum_window) > RX_REORDER_SLOTS {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::RxBlockAckWindowExceedsStorage {
-                    window: config.rx_block_ack_maximum_window,
+                    window: config.block_ack.rx_block_ack_maximum_window,
                     capacity: RX_REORDER_SLOTS,
                 },
                 peer,
             });
         }
-        if config.unicast_attempt_limit == 0 {
+        if config.tx.unicast_attempt_limit == 0 {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::ZeroUnicastAttemptLimit,
                 peer,
             });
         }
-        if config.tx_block_ack_negotiation_attempt_limit == 0 {
+        if config.block_ack.tx_block_ack_negotiation_attempt_limit == 0 {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit,
                 peer,
@@ -260,9 +244,9 @@ impl Esp32s31ConnectedStaPort {
             });
         }
         if let Err(error) = StaTxBlockAckSessions::new(
-            config.tx_block_ack_window,
-            config.tx_block_ack_negotiation_timeout_us,
-            config.tid0_amsdu,
+            config.block_ack.tx_block_ack_window,
+            config.block_ack.tx_block_ack_negotiation_timeout_us,
+            config.block_ack.tid0_amsdu,
         ) {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::TxBlockAck(error),
@@ -270,7 +254,7 @@ impl Esp32s31ConnectedStaPort {
             });
         }
         if let Err(error) =
-            StaRxBlockAckSessions::with_maximum_window(config.rx_block_ack_maximum_window)
+            StaRxBlockAckSessions::with_maximum_window(config.block_ack.rx_block_ack_maximum_window)
         {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::RxBlockAck(error),
@@ -279,7 +263,7 @@ impl Esp32s31ConnectedStaPort {
         }
         let beacon_loss = match StaBeaconLossConfig::new(
             peer.link.beacon_interval_tu,
-            config.beacon_miss_limit,
+            config.receive.beacon_miss_limit,
         ) {
             Ok(beacon_loss) => beacon_loss,
             Err(error) => {
@@ -290,8 +274,8 @@ impl Esp32s31ConnectedStaPort {
             }
         };
 
-        let data_policy = sta_tx_rate_policy(peer.link, config.rate, false);
-        let aggregate_policy = sta_tx_rate_policy(peer.link, config.rate, true);
+        let data_policy = sta_tx_rate_policy(peer.link, config.tx.rate, false);
+        let aggregate_policy = sta_tx_rate_policy(peer.link, config.tx.rate, true);
         Ok(Esp32s31ConnectedStaPlan {
             interface,
             link: peer.link,

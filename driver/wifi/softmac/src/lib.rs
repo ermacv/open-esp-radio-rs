@@ -23,7 +23,10 @@ pub use configuration::{
     WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
     WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
 };
-pub use monitor::{MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink};
+pub use monitor::{
+    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
+    MonitorPublishOutcome, MonitorSink,
+};
 
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 

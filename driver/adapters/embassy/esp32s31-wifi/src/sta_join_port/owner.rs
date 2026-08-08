@@ -11,6 +11,7 @@ pub struct Esp32s31StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, O> {
     pub(super) station: Esp32s31StaJoinStation,
 }
 
+#[cfg_attr(test, allow(dead_code))]
 impl<'hardware, 'transmit, 'scratch, H, R, T, O>
     Esp32s31StaJoinPort<'hardware, 'transmit, 'scratch, H, R, T, O>
 {
@@ -31,18 +32,10 @@ impl<'hardware, 'transmit, 'scratch, H, R, T, O>
     }
 
     /// Install the selected peer address into the pre-connected RX filter.
-    ///
-    /// The operation is explicit because callers may need to switch the PHY
-    /// channel first, but its register sequence remains production driver
-    /// logic rather than a board/HIL fixture responsibility.
     pub fn prepare_authentication(&mut self)
     where
         H: StaLinkRxPolicyHardware,
     {
         configure_sta_link_receive_policy(self.radio.hardware, self.station.access_point.bssid);
-    }
-
-    pub fn hardware_mut(&mut self) -> &mut H {
-        self.radio.hardware
     }
 }

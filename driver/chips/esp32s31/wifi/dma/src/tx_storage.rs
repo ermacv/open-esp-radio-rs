@@ -187,20 +187,14 @@ unsafe impl HardwareOwnedTxDma for TxDmaStart<'_> {
 }
 
 /// Unique movable owner of one permanently located TX DMA allocation.
+///
+/// The allocation, descriptor state and quarantine marker outlive this
+/// movable capability. Dropping a hardware-owned capability performs no
+/// implicit detach and never unwinds; the backing remains unavailable until
+/// the queue is explicitly detached or the radio is reset.
 pub struct PinnedTxDmaStorage<const BUFFER_SIZE: usize> {
     storage: Pin<&'static mut TxDmaStorage<BUFFER_SIZE>>,
     binding: TxDmaBinding,
-}
-
-impl<const BUFFER_SIZE: usize> Drop for PinnedTxDmaStorage<BUFFER_SIZE> {
-    fn drop(&mut self) {
-        if matches!(
-            self.state(),
-            TxDmaState::HardwareOwned | TxDmaState::Completed | TxDmaState::ResetRequired
-        ) {
-            panic!("active ESP32-S31 TX DMA storage destroyed before queue detach/reset");
-        }
-    }
 }
 
 impl<const BUFFER_SIZE: usize> PinnedTxDmaStorage<BUFFER_SIZE> {
@@ -471,8 +465,9 @@ mod tests {
             Err(TxDmaStorageError::State)
         );
         assert_eq!(storage.buffer_mut(), Err(TxDmaStorageError::Busy));
-        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
-        assert!(drop_result.is_err());
+        // Dropping the movable capability must not unwind. The permanently
+        // located backing remains quarantined in `ResetRequired` until reset.
+        drop(storage);
     }
 
     #[test]
@@ -487,8 +482,7 @@ mod tests {
             storage.release_completed(MacTxQueueDetached::new_model(DESCRIPTOR_ADDRESS)),
             Err(TxDmaStorageError::State)
         );
-        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
-        assert!(drop_result.is_err());
+        drop(storage);
     }
 
     #[test]

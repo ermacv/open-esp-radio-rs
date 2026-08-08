@@ -168,6 +168,18 @@ impl<P> Radio<P, state::Powered> {
         (&mut self.peripheral, &mut self.registers)
     }
 
+    /// Borrow the pre-runtime register owner while cold MAC setup still needs
+    /// access to the disjoint interrupt configuration bank.
+    ///
+    /// Role-neutral PHY operations should use [`Self::parts_mut`]. This
+    /// narrower lifecycle method exists for the single common-MAC transition
+    /// and prevents that transition from splitting the recoverable `Radio`
+    /// owner merely to reach its cold-only PAC capabilities.
+    #[doc(hidden)]
+    pub fn cold_parts_mut(&mut self) -> (&mut P, &mut ColdRadioRegisters) {
+        (&mut self.peripheral, &mut self.registers)
+    }
+
     /// Consume the powered owner at the cold-MAC/runtime boundary.
     ///
     /// The returned [`ColdRadioRegisters`] must complete cold MAC setup and

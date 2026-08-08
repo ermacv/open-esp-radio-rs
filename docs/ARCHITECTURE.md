@@ -43,7 +43,8 @@ Test harness (HIL)
 | `hal` | Typed power/clock/I2C/PBus operations and hardware boundaries | Board startup or an executor |
 | `phy` | Shared RF/baseband calibration plus the currently qualified Wi-Fi profile | Protocol MAC state or raw peripheral ownership |
 | `chips/esp32s31/wifi/mac` | 802.11 DMA descriptors, RX/TX state, interrupts, EDCA, BlockAck and rates | PHY calibration or non-Wi-Fi MAC policy |
-| `chips/esp32s31/wifi/sta` | S31 station startup, persistent channel authority, Association/peer policy, connected-control hardware contract and executor-independent STA TX/radio ownership | Embassy, a network stack, board allocation or HIL policy |
+| `chips/esp32s31/wifi` | Role-neutral S31 Wi-Fi cold start and device ownership before a role is materialized | STA/AP MLME, executor policy or network integration |
+| `chips/esp32s31/wifi/sta` | S31 persistent channel authority, Association/peer policy, connected-control hardware contract and executor-independent STA TX/radio ownership | Embassy, a network stack, board allocation or HIL policy |
 | `ieee80211` | Portable frame formats and protocol state | Chip registers |
 | `wifi/softmac` | Portable VIF/channel-context identity, capability profile and normalized TX/RX contracts | DMA, IRQ, chip registers or executor scheduling |
 | `wifi/sta` | Portable STA MLME, scan/reconnect, beacon-loss and power-save decisions | Chip registers, DMA, executor timers or AP policy |
@@ -139,6 +140,12 @@ child transitions and recover it at terminal states. Hardware operations use
 non-cloneable capability values; there is no implicit C callback table or
 C-owned parameter block in the source-only profile.
 
+The complete normative state model, including physical-radio, subsystem,
+coexistence and Wi-Fi-role transitions, is defined in
+[Radio lifecycle and ownership](RADIO_LIFECYCLE_AND_OWNERSHIP.md). In
+particular, a future protocol selector is not an implemented subsystem, and a
+stop request is not proof that DMA or interrupt ownership returned.
+
 The generated register singleton is acquired in the PAC and exposed upward as
 narrow semantic operations. MAC descriptor memory is a distinct ownership
 domain: its volatile cells are shared memory, not peripheral registers.
@@ -150,8 +157,8 @@ under `driver/chips/<chip>/`; portable protocol logic belongs under
 `driver/<protocol>/`. A chip/protocol-specific implementation belongs under
 `driver/chips/<chip>/<protocol>/`, as the current Wi-Fi MAC backend does.
 
-Bluetooth/BLE, IEEE 802.15.4 and coexistence must not be added to the Wi-Fi MAC
-crate. They will have their own protocol and chip-specific layers. `pac`, `hal`
+Bluetooth (LE and, where supported, BR/EDR), IEEE 802.15.4 and coexistence
+must not be added to the Wi-Fi MAC crate. They will have their own protocol and chip-specific layers. `pac`, `hal`
 and `phy` remain at chip scope because the current evidence already includes
 shared RF calibration and separate Wi-Fi/BT gain banks. This is a reuse
 candidate, not a promise of a universal PHY API: shared pieces should be
@@ -257,33 +264,42 @@ sequencing and concrete RX/TX adapters. The chip-neutral
 `adapters/embassy/wifi` crate owns independent capture slots plus the
 non-blocking Embassy producer/async consumer edge.
 
-`esp32s31-wifi::monitor_service` is the finite standalone composition. It owns
-the concrete RX-DMA capability, normalized monitor wrapper, capture sink and
+`esp32s31-wifi::monitor` is the finite standalone public composition. Its
+private service owns the concrete RX-DMA capability, normalized monitor wrapper, capture sink and
 one MAC interrupt-route epoch. Startup publishes an explicit handoff probe so
 a descriptor completed before CPU-route activation cannot be stranded; the
 report keeps this service wake distinct from actual hard-IRQ post counts.
 Shutdown quiesces the route before stopping the DMA walker. If route
 quiescence fails, the owner remains live and callers must recover or reset
-rather than constructing another radio epoch. The run future borrows the
-service, and the service's fail-closed `Drop` performs the same synchronous
-shutdown. Consequently cancellation or ordinary scope exit cannot silently
-destroy an owner while DMA/ISR is active; inability to confirm shutdown enters
-the platform panic/reset path. The underlying `RxRingLive` and active interrupt
-epoch capabilities independently reject destruction before
-`try_stop`/`quiesce`, so another role wrapper cannot silently bypass the same
-lifecycle contract. `try_into_parts` succeeds only after both actors are
-inactive.
+rather than constructing another radio epoch. A long-lived role task owns that
+service; the application receives a hardware-free controller. Its asynchronous
+`stop` is a request/acknowledgement protocol and reports `Stopped` only after
+both hardware actors have crossed their quiescent edge. Transient DMA `Busy`
+is awaited cooperatively. If an invariant prevents proof of quiescence, the
+task reports `Faulted` and retains the exact owner frontier for explicit reset.
+Dropping the controller has no hardware effect. The private destructor is only
+a non-blocking fail-closed fallback: it attempts synchronous shutdown once and
+retains any still-visible owners without spinning or panicking. `Faulted` is a
+sticky role-domain poison, and a lost live RX token independently poisons its
+static arena; neither boundary can be re-materialized as a fresh epoch until
+reset reinitializes its storage.
 The application-facing `station` facade is only a stable export surface.
 `station::command` owns command publication, `station::connected_epoch` owns
-the cancellation-safe edge between application commands and peer loss, and
+the cancellation-safe edge between application commands and peer loss,
+`station::backend` owns command priority plus reconnect backoff, and
 `station::lifecycle` owns the outer reconnect service and terminal owner
-return.
+return. Production firmware and HIL supply only a finite
+`Esp32s31StationAttemptRunner`; this runner must return its exact owner and may
+report `Stopped` only after IRQ, DMA and child-task quiescence. Station control
+uses the same two-edge protocol as monitor control:
+`request_stop` only publishes intent, while `controller.stop().await` waits for
+the runner to return its exact owner and publish `StationCompletion`.
 Interrupt delivery is similarly layered. Chip MAC code reads, acknowledges
 and classifies interrupt snapshots; `embassy_irq::mac_runtime` and
 `power_runtime` only publish executor wakes, while `embassy_irq::epoch` owns
 the recoverable platform-route capability across connected epochs.
-Pre-connected Authentication/Association follows the same rule. The
-`sta_join_port` facade exports stable names while `rx` adapts the retained DMA
+Pre-connected Authentication/Association follows the same rule. The private
+`sta_join_port` binds the join contracts while `rx` adapts the retained DMA
 owner, `resources` names borrowed inputs, `owner` exposes the return boundary,
 and `service` alone implements join sequencing.
 The adjacent `sta_attempt_target` composes those joins without becoming a

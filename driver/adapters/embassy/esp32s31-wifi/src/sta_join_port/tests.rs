@@ -14,10 +14,10 @@ use open_esp_radio_wifi_sta::join::{StaJoinBackend, StaJoinRxDirective, StaJoinR
 
 use std::vec::Vec;
 
-use crate::ordinary_tx::WifiTxPowerPair;
 use open_esp_radio_esp32s31_wifi_mac::tx::{TxCompletion, TxCookie};
 use open_esp_radio_esp32s31_wifi_sta::{
-    association::Esp32s31StaAssociationProfile, tx::WifiTxPowerProfile,
+    association::Esp32s31StaAssociationProfile, ordinary_tx::WifiTxPowerPair,
+    tx::WifiTxPowerProfile,
 };
 
 use super::*;

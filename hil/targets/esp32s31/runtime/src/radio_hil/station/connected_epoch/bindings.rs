@@ -1,14 +1,10 @@
 #![forbid(unsafe_code)]
 
-use core::cell::RefCell;
-
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::Duration;
-use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        connected_sta_port::Esp32s31ConnectedStaConfig, embassy_irq::EmbassyMacIrqRuntime,
-    },
-    esp32s31::hal::RadioRegisters,
+use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
+use open_esp_radio_esp32s31_wifi_embassy::{
+    connected_sta_port::Esp32s31ConnectedStaConfig, embassy_irq::EmbassyMacIrqRuntime,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, rx_pipeline::RxPipelineCounters,
@@ -37,7 +33,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedEpochStorage {
         &'static StaticCell<ConnectedAmpduMetadataBacking>,
     pub(in crate::radio_hil) ampdu_standby_dma: &'static StaticCell<ConnectedAmpduDmaBacking>,
     pub(in crate::radio_hil) control: &'static StaticCell<ControlResources>,
-    pub(in crate::radio_hil) registers: &'static StaticCell<RefCell<&'static mut RadioRegisters>>,
+    pub(in crate::radio_hil) registers: &'static StaticCell<Esp32s31RadioRegistersArena>,
 }
 
 /// Persistent queues, observers and fault controls borrowed by every epoch.

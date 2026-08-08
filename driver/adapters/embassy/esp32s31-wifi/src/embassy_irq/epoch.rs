@@ -39,7 +39,10 @@ pub struct Esp32s31MacInterruptEpoch<'runtime, R, M: RawMutex>
 where
     R: MacInterruptRoute,
 {
-    route: R,
+    // `Option` is not lifecycle state: `setup` remains the active/inactive
+    // discriminator. It only lets `Drop` retain an accidentally-live route
+    // without running `R::drop` while hardware can still observe it.
+    route: Option<R>,
     setup: Option<R::Setup>,
     mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
     power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
@@ -57,7 +60,7 @@ where
         power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
     ) -> Self {
         Self {
-            route,
+            route: Some(route),
             setup: Some(setup),
             mac_runtime,
             power_runtime,
@@ -93,7 +96,11 @@ where
             .setup
             .take()
             .ok_or(Esp32s31MacInterruptEpochActivateError::AlreadyActive)?;
-        match self.route.activate(platform, setup, event_mask) {
+        let route = self
+            .route
+            .as_mut()
+            .expect("interrupt epoch always retains its route");
+        match route.activate(platform, setup, event_mask) {
             Ok(()) => Ok(()),
             Err((error, setup)) => {
                 self.setup = Some(setup);
@@ -112,6 +119,8 @@ where
         }
         let setup = self
             .route
+            .as_mut()
+            .expect("interrupt epoch always retains its route")
             .quiesce(platform)
             .map_err(Esp32s31MacInterruptEpochQuiesceError::Route)?;
         self.setup = Some(setup);
@@ -119,6 +128,33 @@ where
             mac: self.mac_runtime.drain_pending(),
             power_events: self.power_runtime.drain_pending(),
         })
+    }
+
+    /// Recover every interrupt resource after the route returned its setup
+    /// token and the executor publications were drained.
+    ///
+    /// An active epoch is returned unchanged. Consequently no caller can
+    /// extract or drop an installed route through this API.
+    pub fn try_into_inactive_parts(
+        mut self,
+    ) -> Result<
+        (
+            R,
+            R::Setup,
+            &'runtime EmbassyMacIrqRuntime<M>,
+            &'runtime EmbassyPowerIrqRuntime<M>,
+        ),
+        Self,
+    > {
+        if self.is_active() {
+            return Err(self);
+        }
+        let route = self.route.take().expect("inactive epoch retains its route");
+        let setup = self
+            .setup
+            .take()
+            .expect("inactive epoch retains its setup token");
+        Ok((route, setup, self.mac_runtime, self.power_runtime))
     }
 }
 
@@ -129,7 +165,12 @@ where
 {
     fn drop(&mut self) {
         if self.is_active() {
-            panic!("active ESP32-S31 MAC interrupt epoch destroyed before quiescence");
+            // `Drop` cannot perform the async owner protocol used by the
+            // surrounding radio service. Most importantly, it must not drop
+            // a route which is still installed in the interrupt controller.
+            // Retain that finite capability until board reset. Normal code
+            // closes the epoch explicitly and therefore drops `R` normally.
+            core::mem::forget(self.route.take());
         }
     }
 }

@@ -6,25 +6,25 @@ use open_esp_radio_esp32s31_registers::{
     MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, Register32,
     mac::{self, init as mac_init},
 };
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
+    dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{
         CcmpKeyHardware, CryptoKeyError, clear_sta_ccmp_slots, install_sta_group_ccmp,
         install_sta_pairwise_ccmp,
-    },
-    descriptor::{
-        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT, descriptor_address_valid,
-        dma_range_valid, length, rx_armed_word, rx_rearm_word, size, tx_owned_word,
     },
     init::{
         MacClockControl, MacCoexEvent, MacCoexPti, MacCoexPtiSource, MacColdAntennaHardware,
         MacColdCoexHardware, MacColdCoexPti, MacColdCryptoHardware, MacColdEnableHardware,
         MacColdHalTailHardware, MacColdHandshakeHardware, MacColdHeHardware,
         MacColdLastRxBufferHardware, MacColdRxBufferHardware, MacColdRxPolicyHardware,
-        MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware, MacDelayEntropy, MacDelaySlot,
-        MacInterfaceAddressHardware, MacLowRateHardware, MacSlowClockCalibration,
-        MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair, MacTxPowerSource,
-        MacTxPowerTable, StaLinkRxPolicyHardware, configure_sta_link_receive_policy,
-        initialize_promiscuous_receive,
+        MacColdStartConfig, MacColdStartError, MacColdStartOutcome, MacColdTxRxHardware,
+        MacDelayEntropy, MacDelaySlot, MacInterfaceAddressHardware, MacLowRateHardware,
+        MacSlowClockCalibration, MacSlowClockCalibrationSource, MacSnifferHardware, MacTxPowerPair,
+        MacTxPowerSource, MacTxPowerTable, StaLinkRxPolicyHardware, activate_promiscuous_receive,
+        configure_sta_link_receive_policy, initialize_wifi_mac,
     },
     irq::{
         IrqDisposition, IrqState, IrqWork, MAC_INT_COLLISION, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
@@ -988,8 +988,21 @@ fn cold_mac_init_uses_only_pac_registers_and_publishes_both_interfaces() {
 
     let station = [0x02, 0x11, 0x22, 0x33, 0x44, 0x55];
     let access_point = [0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee];
-    let outcome =
-        initialize_promiscuous_receive(&mut platform, &mut mmio, 4, station, access_point).unwrap();
+    let outcome = initialize_wifi_mac(
+        &mut platform,
+        &mut mmio,
+        MacColdStartConfig {
+            handshake_sample_limit: 4,
+            station_address: station,
+            access_point_address: access_point,
+        },
+    )
+    .unwrap();
+    assert_ne!(
+        mmio.operations().last(),
+        Some(&Operation::ConfigureOpenPromiscuousReceive)
+    );
+    activate_promiscuous_receive(&mut mmio);
 
     assert_eq!(outcome.handshake_samples, 0);
     assert_eq!(outcome.handshake_value, 3);
@@ -1279,7 +1292,15 @@ fn cold_mac_handshake_timeout_does_not_touch_interrupt_state() {
     let mut mmio = MockMmio::default();
 
     assert_eq!(
-        initialize_promiscuous_receive(&mut platform, &mut mmio, 2, [0; 6], [0; 6]),
+        initialize_wifi_mac(
+            &mut platform,
+            &mut mmio,
+            MacColdStartConfig {
+                handshake_sample_limit: 2,
+                station_address: [0; 6],
+                access_point_address: [0; 6],
+            },
+        ),
         Err(MacColdStartError::HandshakeTimedOut {
             samples: 2,
             observed: 2,
@@ -2409,7 +2430,7 @@ fn tx_slot_cancels_only_an_unpublished_reservation() {
 }
 
 #[test]
-fn executor_deadline_quarantines_hardware_owned_tx_storage() {
+fn executor_deadline_quarantines_hardware_owned_tx_storage_without_drop_panic() {
     let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model());
     let cookie = slot.as_mut().reserve(512, 100).unwrap();
     slot.as_mut().mark_hardware_owned(cookie).unwrap();
@@ -2418,8 +2439,7 @@ fn executor_deadline_quarantines_hardware_owned_tx_storage() {
     assert_eq!(slot.state(), TxSlotState::ResetRequired);
     assert!(matches!(slot.as_mut().buffer_mut(), Err(TxError::Busy)));
     assert_eq!(slot.as_mut().require_reset(cookie), Err(TxError::Stale));
-    let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
-    assert!(drop_result.is_err());
+    drop(slot);
 }
 
 #[test]

@@ -21,6 +21,9 @@ const IEEE802154_BIT: u8 = 1 << 2;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RadioSubsystem {
     Wifi,
+    /// Bluetooth subsystem family. Concrete capabilities later distinguish
+    /// Low Energy from BR/EDR controller support; they are not separate
+    /// physical-radio roots at this layer.
     Bluetooth,
     Ieee802154,
 }

@@ -7,14 +7,17 @@ use core::{
 
 use embassy_futures::block_on;
 use open_esp_radio_embassy_net::NoopRawMutex;
-use open_esp_radio_esp32s31_wifi_mac::{
+use open_esp_radio_esp32s31_wifi_dma::{
     descriptor::{BIT_30, BIT_31, LENGTH_SHIFT},
+    rx_ring::RxDmaArenaState,
+};
+use open_esp_radio_esp32s31_wifi_mac::{
     irq::{MAC_INT_RX_SUCCESS, MacInterruptRoute},
     rx::{RxDma, RxDmaBinding, RxPhyInfo},
 };
 use open_esp_radio_wifi_softmac::{
-    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiConfig,
-    WifiMonitorConfig,
+    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameTypeMask, MonitorPublishOutcome,
+    MonitorSink, WifiConfig, WifiMonitorConfig,
 };
 
 use crate::{
@@ -36,6 +39,7 @@ const RX_BUFFERS: [u32; RX_COUNT] = [0x2f00_2000, 0x2f00_2080];
 struct Hardware {
     walker: bool,
     reloads: u32,
+    disable_busy_count: u8,
     walker_when_dropped: Option<Rc<Cell<Option<bool>>>>,
 }
 
@@ -82,6 +86,10 @@ impl RxDma for Hardware {
     }
 
     fn try_disable_walker(&mut self) -> bool {
+        if self.disable_busy_count != 0 {
+            self.disable_busy_count -= 1;
+            return false;
+        }
         self.walker = false;
         true
     }
@@ -100,6 +108,7 @@ struct Route<'state> {
     event_mask: &'state Cell<u32>,
     fail_activate: bool,
     fail_quiesce: bool,
+    fail_quiesce_permanently: bool,
 }
 
 struct RuntimeFixture {
@@ -128,6 +137,7 @@ impl RuntimeFixture {
 struct RouteBehavior {
     fail_activate: bool,
     fail_quiesce: bool,
+    fail_quiesce_permanently: bool,
 }
 
 impl MacInterruptRoute for Route<'_> {
@@ -150,6 +160,9 @@ impl MacInterruptRoute for Route<'_> {
     }
 
     fn quiesce(&mut self, _: &Self::Platform) -> Result<Self::Setup, Self::Error> {
+        if self.fail_quiesce_permanently {
+            return Err(RouteError::Quiesce);
+        }
         if self.fail_quiesce {
             self.fail_quiesce = false;
             return Err(RouteError::Quiesce);
@@ -177,7 +190,13 @@ impl MonitorSink<RxPhyInfo> for Sink {
 }
 
 fn monitor_plan() -> open_esp_radio_wifi_softmac::WifiStandaloneMonitorPlan {
-    WifiConfig::monitor(WifiMonitorConfig::normalized())
+    monitor_plan_with(WifiMonitorConfig::normalized())
+}
+
+fn monitor_plan_with(
+    monitor: WifiMonitorConfig,
+) -> open_esp_radio_wifi_softmac::WifiStandaloneMonitorPlan {
+    WifiConfig::monitor(monitor)
         .validate(open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
         .unwrap()
         .standalone_monitor()
@@ -224,6 +243,25 @@ fn service<'storage, 'runtime>(
 ) -> Esp32s31MonitorService<
     'storage,
     'runtime,
+    Hardware,
+    Route<'runtime>,
+    NoopRawMutex,
+    Sink,
+    RX_COUNT,
+    RX_BUFFER_SIZE,
+    RX_STORAGE_SIZE,
+> {
+    service_with_plan(storage, runtime, sink, behavior, monitor_plan())
+}
+
+fn service_with_plan<'storage, 'runtime>(
+    storage: &'storage Esp32s31RxDmaStorage<RX_COUNT, RX_BUFFER_SIZE, RX_STORAGE_SIZE>,
+    runtime: &'runtime RuntimeFixture,
+    sink: Sink,
+    behavior: RouteBehavior,
+    plan: open_esp_radio_wifi_softmac::WifiStandaloneMonitorPlan,
+) -> Esp32s31MonitorService<
+    'storage,
     'runtime,
     Hardware,
     Route<'runtime>,
@@ -237,26 +275,22 @@ fn service<'storage, 'runtime>(
         walker_when_dropped: Some(runtime.walker_when_dropped.clone()),
         ..Hardware::default()
     };
-    let receive = Esp32s31MonitorRx::prepare_initial(
-        monitor_plan(),
-        &mut hardware,
-        storage,
-        RX_BASE,
-        &RX_BUFFERS,
-    )
-    .unwrap();
+    let receive =
+        Esp32s31MonitorRx::prepare_initial(plan, &mut hardware, storage, RX_BASE, &RX_BUFFERS)
+            .unwrap();
     let interrupts = Esp32s31MacInterruptEpoch::new(
         Route {
             active: &runtime.active,
             event_mask: &runtime.event_mask,
             fail_activate: behavior.fail_activate,
             fail_quiesce: behavior.fail_quiesce,
+            fail_quiesce_permanently: behavior.fail_quiesce_permanently,
         },
         7,
         &runtime.irq,
         &runtime.power,
     );
-    Esp32s31MonitorService::new(hardware, receive, sink, interrupts, &runtime.platform)
+    Esp32s31MonitorService::new(hardware, receive, sink, interrupts, runtime.platform)
 }
 
 #[test]
@@ -296,7 +330,7 @@ fn one_irq_epoch_services_durable_rx_then_returns_every_owner() {
     assert!(!runtime.active.get());
     assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
     assert!(!owner.interrupt_active());
-    let (hardware, _, sink, _) = match owner.try_into_parts() {
+    let (hardware, _, sink, _, _) = match owner.try_into_parts() {
         Ok(parts) => parts,
         Err(_) => panic!("stopped monitor owners must be extractable"),
     };
@@ -339,11 +373,53 @@ fn saturation_is_counted_without_preventing_dma_recycle() {
     assert_eq!(report.receive.published_frames, 1);
     assert_eq!(report.receive.full_drops, 1);
     assert_eq!(report.receive.recycled_descriptors, 2);
-    let (hardware, _, _, _) = match owner.try_into_parts() {
+    let (hardware, _, _, _, _) = match owner.try_into_parts() {
         Ok(parts) => parts,
         Err(_) => panic!("stopped monitor owners must be extractable"),
     };
     assert_eq!(hardware.reloads, 1);
+}
+
+#[test]
+fn bounded_filter_runs_before_the_sink_and_still_recycles_dma() {
+    let mut storage = Esp32s31RxDmaStorage::new();
+    write_beacon(&mut storage, 0);
+    let runtime = RuntimeFixture::new();
+    let plan = monitor_plan_with(
+        WifiMonitorConfig::normalized()
+            .with_filter(MonitorFilter::all().frame_types(MonitorFrameTypeMask::DATA)),
+    );
+    let mut owner = service_with_plan(
+        &storage,
+        &runtime,
+        Sink::default(),
+        RouteBehavior::default(),
+        plan,
+    );
+    let first_poll = Cell::new(true);
+    let stop = poll_fn(|context| {
+        if first_poll.replace(false) {
+            complete_beacon(&storage, 0);
+            runtime.irq.publish(MAC_INT_RX_SUCCESS);
+            context.waker().wake_by_ref();
+            Poll::Pending
+        } else {
+            Poll::Ready(())
+        }
+    });
+
+    let report = block_on(owner.run_until_stopped(stop))
+        .unwrap_or_else(|_| panic!("filtered monitor run must stop cleanly"));
+
+    assert_eq!(report.receive.completed_descriptors, 1);
+    assert_eq!(report.receive.published_frames, 0);
+    assert_eq!(report.receive.dropped_frames, 1);
+    assert_eq!(report.receive.filtered_drops, 1);
+    assert_eq!(report.receive.recycled_descriptors, 1);
+    let (_, _, sink, _, _) = owner
+        .try_into_parts()
+        .unwrap_or_else(|_| panic!("stopped monitor owners must be extractable"));
+    assert_eq!(sink.frames, 0);
 }
 
 #[test]
@@ -372,8 +448,7 @@ fn activation_failure_rolls_the_started_ring_back_to_halted() {
             RouteError::Activate
         ))
     ));
-    owner
-        .try_shutdown()
+    block_on(owner.stop())
         .unwrap_or_else(|_| panic!("caller can retry a transient quiesce failure"));
     assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
     assert!(!owner.interrupt_active());
@@ -401,7 +476,7 @@ fn failed_irq_quiesce_keeps_the_rx_owner_live() {
     assert!(owner.interrupt_active());
     assert!(matches!(
         failure.error,
-        Esp32s31MonitorRunError::Shutdown(Esp32s31MonitorCleanupError::Interrupt(
+        Esp32s31MonitorRunError::Stop(Esp32s31MonitorStopError::Interrupt(
             Esp32s31MacInterruptEpochQuiesceError::Route(RouteError::Quiesce)
         ))
     ));
@@ -426,9 +501,39 @@ fn cancelled_run_keeps_owner_available_for_explicit_shutdown() {
 
     assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Live);
     assert!(owner.interrupt_active());
+    assert_eq!(
+        owner.stopped_radio_mut().map(|_| ()),
+        Err(Esp32s31MonitorStoppedAccessError::InterruptActive)
+    );
+    block_on(owner.stop()).unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
+    assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
+    assert!(!owner.interrupt_active());
+    assert!(owner.stopped_radio_mut().is_ok());
+}
+
+#[test]
+fn stop_waits_for_a_transient_dma_busy_edge() {
+    let storage = Esp32s31RxDmaStorage::new();
+    let runtime = RuntimeFixture::new();
+    let mut owner = service(
+        &storage,
+        &runtime,
+        Sink::default(),
+        RouteBehavior::default(),
+    );
+    {
+        let mut run = pin!(owner.run_until_stopped(pending()));
+        let mut context = Context::from_waker(Waker::noop());
+        assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
+    }
     owner
-        .try_shutdown()
-        .unwrap_or_else(|_| panic!("cancelled monitor must remain recoverable"));
+        .hardware
+        .as_mut()
+        .expect("monitor hardware owner exists")
+        .disable_busy_count = 1;
+
+    block_on(owner.stop()).unwrap_or_else(|_| panic!("transient DMA busy is not a failure"));
+
     assert_eq!(owner.receive_phase(), Esp32s31RxRingPhase::Halted);
     assert!(!owner.interrupt_active());
 }
@@ -454,4 +559,60 @@ fn dropping_a_cancelled_live_service_stops_the_interrupt_route() {
     }
     assert!(!runtime.active.get());
     assert_eq!(runtime.walker_when_dropped.get(), Some(false));
+}
+
+#[test]
+fn failed_drop_quiescence_retains_every_hardware_visible_owner_for_reset() {
+    let storage = Esp32s31RxDmaStorage::new();
+    let runtime = RuntimeFixture::new();
+    {
+        let mut owner = service(
+            &storage,
+            &runtime,
+            Sink::default(),
+            RouteBehavior {
+                fail_quiesce_permanently: true,
+                ..RouteBehavior::default()
+            },
+        );
+        {
+            let mut run = pin!(owner.run_until_stopped(pending()));
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
+        }
+        drop(owner);
+    }
+
+    assert!(runtime.active.get());
+    assert_eq!(runtime.walker_when_dropped.get(), None);
+    assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+}
+
+#[test]
+fn busy_drop_does_not_spin_or_release_hardware_visible_owners() {
+    let storage = Esp32s31RxDmaStorage::new();
+    let runtime = RuntimeFixture::new();
+    {
+        let mut owner = service(
+            &storage,
+            &runtime,
+            Sink::default(),
+            RouteBehavior::default(),
+        );
+        {
+            let mut run = pin!(owner.run_until_stopped(pending()));
+            let mut context = Context::from_waker(Waker::noop());
+            assert!(matches!(run.as_mut().poll(&mut context), Poll::Pending));
+        }
+        owner
+            .hardware
+            .as_mut()
+            .expect("monitor hardware owner exists")
+            .disable_busy_count = 1;
+        drop(owner);
+    }
+
+    assert!(!runtime.active.get());
+    assert_eq!(runtime.walker_when_dropped.get(), None);
+    assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
 }

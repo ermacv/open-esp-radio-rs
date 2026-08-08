@@ -1,19 +1,19 @@
 //! RX descriptor metadata decoding and bounded raw MPDU extraction.
 
-use crate::descriptor::{
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{
     BIT_31, descriptor_address_valid, length as descriptor_length, rx_done, size as descriptor_size,
 };
 #[cfg(all(target_pointer_width = "32", feature = "validation-raw-dma"))]
-pub use crate::rx_ring::publish_cold_ring;
+pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::publish_cold_ring;
 #[cfg(not(target_pointer_width = "32"))]
-pub use crate::rx_ring::{enable_receive, publish_cold_ring};
-pub use crate::{
+pub use open_esp_radio_esp32s31_wifi_dma::rx_ring::{enable_receive, publish_cold_ring};
+pub use open_esp_radio_esp32s31_wifi_dma::{
     rx_dma::{RxDma, RxDmaBinding},
     rx_ring::{
         RX_BUFFER_SENTINEL, RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT, RxCompletedDescriptor,
-        RxCompletedUnit, RxCompletedUnitFrontier, RxLiveAppend, RxReloadObservation, RxRingError,
-        RxRingHalted, RxRingLive, RxRingStopped, RxSegment, build_cold_ring, disable_receive,
-        prepare_recycled_buffer, rearm_descriptor,
+        RxCompletedUnit, RxCompletedUnitFrontier, RxDmaArenaState, RxLiveAppend,
+        RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped, RxSegment,
+        build_cold_ring, disable_receive, prepare_recycled_buffer, rearm_descriptor,
     },
 };
 

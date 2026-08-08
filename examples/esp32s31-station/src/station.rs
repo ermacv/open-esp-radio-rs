@@ -7,7 +7,6 @@
 use core::{future::Future, marker::PhantomData, pin::Pin};
 
 use embassy_executor::Spawner;
-use embassy_futures::select::{Either, select};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_time::{Instant, Timer};
 use esp_hal::{
@@ -27,30 +26,6 @@ use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
     RadioConfig, WifiConfig, WifiMacAddress, WifiPlan, WifiStationConfig,
-    adapters::esp32s31::wifi_embassy::{
-        control_tx::Esp32s31ControlTx,
-        phy_delay::EmbassyEsp32s31PhyDelay,
-        preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
-        rx_dma_service::Esp32s31RxDmaStorage,
-        scan_port::{
-            EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError,
-            Esp32s31ScanPortParts, Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
-        },
-        scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
-        scan_target::Esp32s31ColdScanTx,
-        scan_tx::Esp32s31RunningScanTx,
-        sta_attempt_target::{
-            Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
-            Esp32s31StaAttemptTargetPort,
-        },
-        sta_tx_epoch::Esp32s31StaTxEpochExt,
-        station::{
-            Esp32s31Station, Esp32s31StationCommand, Esp32s31StationCommandReceiver,
-            Esp32s31StationConfig, Esp32s31StationControlResources, Esp32s31StationExit,
-            Esp32s31StationResources,
-        },
-        station_epoch::Esp32s31RunningScanEpochParts,
-    },
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31WifiStartConfig,
         hal::{Radio, RadioRegisters},
@@ -60,24 +35,46 @@ use open_esp_radio::{
         },
         registers::MacInterruptSetup,
         start_esp32s31_radio,
-        wifi::lmac::{
-            init::initialize_promiscuous_receive,
-            scan::{ScanObservation, ScanRecord, ScanTable},
-            tx::TxSlot,
-        },
+        wifi::mac::{init::activate_promiscuous_receive, tx::TxSlot},
+        wifi::sta::{control_tx::Esp32s31ControlTx, scan_tx::Esp32s31RunningScanTx},
     },
     wifi::{
-        ieee80211::station::{StaAssociationPreference, StaSequenceCounter, StaTxSequenceCounters},
+        ieee80211::{
+            channel::WifiChannel,
+            scan::{ScanObservation, ScanTable},
+            station::{StaAssociationPreference, StaSequenceCounter, StaTxSequenceCounters},
+        },
         sta::{
             scan::{StaCandidateScanExit, StaCandidateScanService},
             station::{
-                StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaBackoffOutcome,
-                StaBackoffReason, StaFailureDisposition, StaLifecycleBackend, StaLifecycleStage,
-                StaNextCandidate, StaReconnectPolicy,
+                StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
+                StaLifecycleStage, StaNextCandidate, StaReconnectPolicy,
             },
         },
         wpa2::Pmk,
     },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    phy_delay::EmbassyEsp32s31PhyDelay,
+    preconnected_rx::{EmbassyEsp32s31PreconnectedRxDelay, Esp32s31PreconnectedRx},
+    rx_dma_service::Esp32s31RxDmaStorage,
+    scan_port::{
+        EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortError, Esp32s31ScanPortParts,
+        Esp32s31ScanRadio, Esp32s31ScanStation, Esp32s31ScanStorage,
+    },
+    scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanFrameObserver, Esp32s31ScanRx},
+    scan_target::Esp32s31ColdScanTx,
+    sta_attempt_target::{
+        Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
+        Esp32s31StaAttemptTargetPort,
+    },
+    sta_tx_epoch::Esp32s31StaTxEpochExt,
+    station::{
+        Esp32s31StationAttemptRunner, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
+        Esp32s31StationControlResources, Esp32s31StationExit, Esp32s31StationStartResources,
+        prepare_esp32s31_station_task,
+    },
+    station_epoch::Esp32s31RunningScanEpochParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use static_cell::StaticCell;
@@ -118,7 +115,7 @@ type ControlTx = Esp32s31ControlTx<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
-    open_esp_radio::adapters::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
+    open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
     TX_BUFFER_SIZE,
 >;
 pub(super) type TxStorage = Esp32s31StaTxEpoch<ControlTx>;
@@ -164,7 +161,6 @@ static TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static TX_STATE: StaticCell<TxStorage> = StaticCell::new();
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
 static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
-static RUNNING_REGISTERS: StaticCell<RadioRegisters> = StaticCell::new();
 static STATION_CONTROL: StaticCell<Esp32s31StationControlResources<CriticalSectionRawMutex>> =
     StaticCell::new();
 
@@ -194,7 +190,7 @@ fn tx_entropy() -> u32 {
 
 enum ProductionStationPhase {
     Initial {
-        hardware: &'static mut RadioRegisters,
+        hardware: RadioRegisters,
         receive: Esp32s31PreconnectedRx<
             'static,
             EmbassyEsp32s31PreconnectedRxDelay,
@@ -218,31 +214,21 @@ struct ProductionStationOwner<'state, 'security> {
     tx_storage: &'static mut TxStorage,
     scan_table: &'static mut ScanTable,
     frame: &'static mut [u8],
-    station_address: [u8; 6],
-    access_point: ScanRecord,
-    pmk: &'security Pmk,
-    supplicant_nonce: [u8; 32],
-    sequences: &'security mut StaTxSequenceCounters,
+    station: Esp32s31StaAttemptStation,
+    security: Esp32s31StaAttemptSecurity<'security>,
     ethernet: Option<&'static mut [u8]>,
 }
 
-struct ProductionStationBackend<'control, O> {
-    control: Esp32s31StationCommandReceiver<'control, CriticalSectionRawMutex>,
+struct ProductionStationRunner<O> {
     spawner: Spawner,
     interrupt_epoch: MacInterruptEpoch,
     wifi: WifiPlan,
     _owner: PhantomData<fn() -> O>,
 }
 
-impl<'control, O> ProductionStationBackend<'control, O> {
-    fn new(
-        control: Esp32s31StationCommandReceiver<'control, CriticalSectionRawMutex>,
-        spawner: Spawner,
-        interrupt_setup: MacInterruptSetup,
-        wifi: WifiPlan,
-    ) -> Self {
+impl<O> ProductionStationRunner<O> {
+    fn new(spawner: Spawner, interrupt_setup: MacInterruptSetup, wifi: WifiPlan) -> Self {
         Self {
-            control,
             spawner,
             interrupt_epoch: mac_interrupt_epoch(interrupt_setup),
             wifi,
@@ -251,15 +237,14 @@ impl<'control, O> ProductionStationBackend<'control, O> {
     }
 }
 
-impl<'control, 'state, 'security>
-    ProductionStationBackend<'control, ProductionStationOwner<'state, 'security>>
-{
+impl<'state, 'security> ProductionStationRunner<ProductionStationOwner<'state, 'security>> {
     async fn run_connected_epoch(
         &mut self,
         owner: ProductionStationOwner<'state, 'security>,
         peer: open_esp_radio::esp32s31::wifi::sta::peer::Esp32s31ConnectedStaPeer,
-        pairwise: open_esp_radio::esp32s31::wifi::lmac::crypto::StaPairwiseCcmpSlot,
-        group: open_esp_radio::esp32s31::wifi::lmac::crypto::StaGroupCcmpSlot,
+        pairwise: open_esp_radio::esp32s31::wifi::mac::crypto::StaPairwiseCcmpSlot,
+        group: open_esp_radio::esp32s31::wifi::mac::crypto::StaGroupCcmpSlot,
+        control: &mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
     ) -> StaAttemptOutcome<ProductionStationOwner<'state, 'security>, Esp32s31StaAttemptStage> {
         let ProductionStationOwner {
             phase,
@@ -269,11 +254,8 @@ impl<'control, 'state, 'security>
             tx_storage,
             scan_table,
             frame,
-            station_address,
-            access_point,
-            pmk,
-            supplicant_nonce,
-            sequences,
+            station,
+            security,
             ethernet,
         } = owner;
         let (epoch, network) = match phase {
@@ -295,7 +277,7 @@ impl<'control, 'state, 'security>
         let returned = run_connected(
             self.spawner,
             &mut self.interrupt_epoch,
-            &mut self.control,
+            control,
             ConnectedStationResources {
                 wifi: self.wifi,
                 epoch,
@@ -308,8 +290,8 @@ impl<'control, 'state, 'security>
                 peer,
                 pairwise,
                 group,
-                pmk,
-                sequences,
+                pmk: security.pmk,
+                sequences: &mut *security.sequences,
                 ethernet,
             },
         )
@@ -322,11 +304,8 @@ impl<'control, 'state, 'security>
             tx_storage,
             scan_table,
             frame: returned.frame,
-            station_address,
-            access_point,
-            pmk,
-            supplicant_nonce,
-            sequences,
+            station,
+            security,
             ethernet: Some(returned.ethernet),
         };
         match returned.outcome {
@@ -341,30 +320,19 @@ impl<'control, 'state, 'security>
     }
 }
 
-impl<'control, 'state, 'security> StaLifecycleBackend
-    for ProductionStationBackend<'control, ProductionStationOwner<'state, 'security>>
+impl<'state, 'security> Esp32s31StationAttemptRunner<CriticalSectionRawMutex>
+    for ProductionStationRunner<ProductionStationOwner<'state, 'security>>
 {
     type Owner = ProductionStationOwner<'state, 'security>;
     type Error = open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptStage;
 
-    fn run_attempt(
-        &mut self,
+    fn run_attempt<'a>(
+        &'a mut self,
         owner: Self::Owner,
         context: StaAttemptContext,
-    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
+        control: &'a mut Esp32s31StationCommandReceiver<'_, CriticalSectionRawMutex>,
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + 'a {
         async move {
-            if let Some(command) = self.control.try_take() {
-                match command {
-                    Esp32s31StationCommand::Reconnect => {
-                        let _ = self.control.defer(command);
-                    }
-                    Esp32s31StationCommand::Disconnect | Esp32s31StationCommand::Stop => {
-                        self.control.record_terminal(command);
-                        return StaAttemptOutcome::Stopped { owner };
-                    }
-                }
-            }
-
             esp_println::println!(
                 "open-radio: station lifecycle attempt generation={} attempt={}",
                 context.generation,
@@ -380,47 +348,35 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                     tx_storage,
                     scan_table,
                     frame,
-                    station_address,
-                    access_point,
-                    pmk,
-                    supplicant_nonce,
-                    sequences,
+                    station,
+                    security,
                     ethernet,
                 } = owner;
                 let outcome = match phase {
                     ProductionStationPhase::Initial {
-                        hardware,
+                        mut hardware,
                         receive,
                         network,
                     } => {
                         let attempt_owner: StationAttemptOwner<'_, '_, '_, '_, '_> =
-                        Esp32s31StaAttemptTargetOwner::new(
-                            Esp32s31StaAttemptRadio::new(
-                                hardware,
-                                Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
-                                    phy,
-                                    platform,
-                                    NoopPhyTargetObserver,
+                            Esp32s31StaAttemptTargetOwner::new(
+                                Esp32s31StaAttemptRadio::new(
+                                    &mut hardware,
+                                    Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
+                                        phy,
+                                        platform,
+                                        NoopPhyTargetObserver,
+                                    ),
+                                    receive,
+                                    rx_storage,
+                                    tx_storage
+                                        .control_mut()
+                                        .expect("station attempt owns ordinary TX"),
                                 ),
-                                receive,
-                                rx_storage,
-                                tx_storage
-                                    .control_mut()
-                                    .expect("station attempt owns ordinary TX"),
-                            ),
-                            Esp32s31StaAttemptStorage::new(frame),
-                            Esp32s31StaAttemptStation {
-                                station_address,
-                                access_point,
-                                association_preference: StaAssociationPreference::PreferHe20,
-                            },
-                            Esp32s31StaAttemptSecurity {
-                                pmk,
-                                supplicant_nonce,
-                                sequences,
-                                message4_protection: open_esp_radio::esp32s31::wifi::sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
-                            },
-                        );
+                                Esp32s31StaAttemptStorage::new(frame),
+                                station,
+                                security,
+                            );
                         let mut attempt =
                             Esp32s31StaAttempt::with_observer(
                                 Esp32s31StaAttemptTargetPort::<
@@ -439,7 +395,7 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                 );
                                 let (radio, storage, station, security) = owner.into_parts();
                                 let Esp32s31StaAttemptRadio {
-                                    hardware,
+                                    hardware: _returned_hardware,
                                     channel,
                                     receive,
                                     rx_storage,
@@ -459,11 +415,8 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                         tx_storage,
                                         scan_table,
                                         frame: storage.frame,
-                                        station_address: station.station_address,
-                                        access_point: station.access_point,
-                                        pmk: security.pmk,
-                                        supplicant_nonce: security.supplicant_nonce,
-                                        sequences: security.sequences,
+                                        station,
+                                        security,
                                         ethernet,
                                     },
                                     failure: StaAttemptFailure::new(
@@ -497,7 +450,7 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                 let (radio, storage, station, security) =
                                     connected_owner.into_parts();
                                 let Esp32s31StaAttemptRadio {
-                                    hardware,
+                                    hardware: _returned_hardware,
                                     channel,
                                     receive,
                                     rx_storage,
@@ -517,16 +470,14 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                         tx_storage,
                                         scan_table,
                                         frame: storage.frame,
-                                        station_address: station.station_address,
-                                        access_point: station.access_point,
-                                        pmk: security.pmk,
-                                        supplicant_nonce: security.supplicant_nonce,
-                                        sequences: security.sequences,
+                                        station,
+                                        security,
                                         ethernet,
                                     },
                                     peer,
                                     pairwise,
                                     group,
+                                    control,
                                 )
                                 .await
                             }
@@ -552,11 +503,8 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                     tx_storage,
                                     scan_table,
                                     frame,
-                                    station_address,
-                                    access_point,
-                                    pmk,
-                                    supplicant_nonce,
-                                    sequences,
+                                    station,
+                                    security,
                                     ethernet,
                                 },
                                 failure: StaAttemptFailure::new(
@@ -568,33 +516,24 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                             }
                         };
                         let attempt_owner: ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_> =
-                        Esp32s31StaAttemptTargetOwner::new(
-                        Esp32s31StaAttemptRadio::new(
-                            hardware,
-                        Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
-                            phy,
-                            platform,
-                            NoopPhyTargetObserver,
-                        ),
-                        receive,
-                        rx_storage,
-                        tx_storage
-                            .control_mut()
-                            .expect("station attempt owns ordinary TX"),
-                    ),
-                    Esp32s31StaAttemptStorage::new(frame),
-                    Esp32s31StaAttemptStation {
-                        station_address,
-                        access_point,
-                        association_preference: StaAssociationPreference::PreferHe20,
-                    },
-                    Esp32s31StaAttemptSecurity {
-                        pmk,
-                        supplicant_nonce,
-                        sequences,
-                        message4_protection: open_esp_radio::esp32s31::wifi::sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
-                        },
-                    );
+                            Esp32s31StaAttemptTargetOwner::new(
+                                Esp32s31StaAttemptRadio::new(
+                                    hardware,
+                                    Esp32s31ScanPhy::<_, _, EmbassyEsp32s31PhyDelay>::new(
+                                        phy,
+                                        platform,
+                                        NoopPhyTargetObserver,
+                                    ),
+                                    receive,
+                                    rx_storage,
+                                    tx_storage
+                                        .control_mut()
+                                        .expect("station attempt owns ordinary TX"),
+                                ),
+                                Esp32s31StaAttemptStorage::new(frame),
+                                station,
+                                security,
+                            );
                         let mut attempt = Esp32s31StaAttempt::with_observer(
                             Esp32s31StaAttemptTargetPort::<
                                 ReconnectedStationAttemptOwner<'_, '_, '_, '_, '_>,
@@ -633,11 +572,8 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                         tx_storage,
                                         scan_table,
                                         frame: storage.frame,
-                                        station_address: station.station_address,
-                                        access_point: station.access_point,
-                                        pmk: security.pmk,
-                                        supplicant_nonce: security.supplicant_nonce,
-                                        sequences: security.sequences,
+                                        station,
+                                        security,
                                         ethernet,
                                     },
                                     failure: StaAttemptFailure::new(
@@ -692,16 +628,14 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                         tx_storage,
                                         scan_table,
                                         frame: storage.frame,
-                                        station_address: station.station_address,
-                                        access_point: station.access_point,
-                                        pmk: security.pmk,
-                                        supplicant_nonce: security.supplicant_nonce,
-                                        sequences: security.sequences,
+                                        station,
+                                        security,
                                         ethernet,
                                     },
                                     peer,
                                     pairwise,
                                     group,
+                                    control,
                                 )
                                 .await
                             }
@@ -718,11 +652,8 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                     tx_storage,
                                     scan_table,
                                     frame,
-                                    station_address,
-                                    access_point,
-                                    pmk,
-                                    supplicant_nonce,
-                                    sequences,
+                                    station,
+                                    security,
                                     ethernet,
                                 },
                                 failure: StaAttemptFailure::new(
@@ -760,10 +691,10 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                                 scan_table,
                                 frame,
                                 ProductionScanObserver,
-                                sequences.non_qos_mut(),
+                                security.sequences.non_qos_mut(),
                             ),
                             Esp32s31ScanStation::new(
-                                station_address,
+                                station.station_address,
                                 STA_SSID.as_bytes(),
                                 &PROBE_REQUEST_RATES,
                             )
@@ -867,20 +798,21 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                             tx_summary.failures,
                         );
                         let disconnected = retained.restore(hardware, rx);
-                        let returned_owner = |phase, access_point| ProductionStationOwner {
-                            phase,
-                            phy,
-                            platform,
-                            rx_storage,
-                            tx_storage,
-                            scan_table,
-                            frame,
-                            station_address,
-                            access_point,
-                            pmk,
-                            supplicant_nonce,
-                            sequences,
-                            ethernet,
+                        let returned_owner = |phase, access_point| {
+                            let mut station = station;
+                            station.access_point = access_point;
+                            ProductionStationOwner {
+                                phase,
+                                phy,
+                                platform,
+                                rx_storage,
+                                tx_storage,
+                                scan_table,
+                                frame,
+                                station,
+                                security,
+                                ethernet,
+                            }
                         };
                         match scan_result {
                             Ok(candidate) => {
@@ -899,13 +831,13 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                             Err(None) => StaAttemptOutcome::Stopped {
                                 owner: returned_owner(
                                     ProductionStationPhase::RunningScan(disconnected),
-                                    access_point,
+                                    station.access_point,
                                 ),
                             },
                             Err(Some(disposition)) => StaAttemptOutcome::Failed {
                                 owner: returned_owner(
                                     ProductionStationPhase::RunningScan(disconnected),
-                                    access_point,
+                                    station.access_point,
                                 ),
                                 failure: StaAttemptFailure::new(
                                     StaLifecycleStage::CandidateSelection,
@@ -917,34 +849,6 @@ impl<'control, 'state, 'security> StaLifecycleBackend
                     }
                 };
                 return outcome;
-            }
-        }
-    }
-
-    fn wait_backoff(
-        &mut self,
-        owner: Self::Owner,
-        delay_millis: u32,
-        _reason: StaBackoffReason,
-    ) -> impl Future<Output = StaBackoffOutcome<Self::Owner>> + '_ {
-        async move {
-            match select(
-                Timer::after_millis(u64::from(delay_millis)),
-                self.control.wait(),
-            )
-            .await
-            {
-                Either::First(()) => StaBackoffOutcome::Elapsed { owner },
-                Either::Second(command @ Esp32s31StationCommand::Reconnect) => {
-                    let _ = self.control.defer(command);
-                    StaBackoffOutcome::Elapsed { owner }
-                }
-                Either::Second(
-                    command @ (Esp32s31StationCommand::Disconnect | Esp32s31StationCommand::Stop),
-                ) => {
-                    self.control.record_terminal(command);
-                    StaBackoffOutcome::Stopped { owner }
-                }
             }
         }
     }
@@ -962,6 +866,8 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
     let station_mac = WifiMacAddress::new(station_address)
         .expect("ESP32-S31 eFuse must contain a unicast station address");
+    let access_point_mac = WifiMacAddress::new(access_point_address)
+        .expect("ESP32-S31 eFuse must contain a unicast access-point address");
     let topology = RadioConfig::wifi(WifiConfig::station(WifiStationConfig::new(station_mac)));
 
     let owned = Radio::claim(platform)
@@ -975,29 +881,31 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         owned,
         Esp32s31RadioStartConfig::new(
             topology,
-            Esp32s31WifiStartConfig::new(calibration_identity, INITIAL_CHANNEL),
+            Esp32s31WifiStartConfig::new(
+                calibration_identity,
+                WifiChannel::mhz20(INITIAL_CHANNEL as u8)
+                    .expect("the fixed initial station channel is valid"),
+            ),
         ),
         None,
         NoopPhyTargetObserver,
     )
     .await
     .unwrap_or_else(|_| panic!("ESP32-S31 radio start failed"));
-    let (radio_plan, cold) = started.into_parts();
-    let wifi_plan = radio_plan
-        .wifi()
-        .expect("validated station radio plan must contain Wi-Fi");
-    station_address = wifi_plan
-        .station()
-        .expect("validated station Wi-Fi plan must contain a station")
-        .interface
-        .address;
-    let report = cold.report();
-    let (mut powered, mut phy, tx_power, _calibration_record, _) = cold.into_parts();
-    powered.parts_mut().0.install_phy_tx_power_profile(tx_power);
+    let station = started
+        .try_into_station()
+        .unwrap_or_else(|_| panic!("validated radio topology did not materialize a station"));
+    let station = station
+        .start_mac(MAC_HANDSHAKE_SAMPLE_LIMIT, access_point_mac)
+        .unwrap_or_else(|_| panic!("cold MAC initialization failed"));
+    station_address = station.interface().interface.address;
+    let (wifi_plan, mac) = station.into_parts();
+    let report = mac.report();
+    let (powered, mut phy, _calibration_record, _) = mac.into_parts();
     let (mut platform, mut registers) = powered.into_parts();
     esp_println::println!(
         "open-radio: cold PHY ready, full_calibration={}",
-        report.registration.full_calibration_performed
+        report.wifi.registration.full_calibration_performed
     );
 
     if STA_SSID.is_empty() || STA_PASSPHRASE.is_empty() {
@@ -1019,7 +927,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         tx_slot,
         phy.tx_target_power_profile(),
         tx_entropy as fn() -> u32,
-        open_esp_radio::adapters::esp32s31::wifi_embassy::tx_time::EmbassyWifiTxTimer,
+        open_esp_radio_esp32s31_wifi_embassy::tx_time::EmbassyWifiTxTimer,
         ControlTxConfig {
             unicast_attempt_limit: 4,
             completion_timeout_us: TX_COMPLETION_TIMEOUT_US,
@@ -1027,14 +935,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         },
     ));
 
-    let cold_mac = initialize_promiscuous_receive(
-        &mut platform,
-        &mut registers,
-        MAC_HANDSHAKE_SAMPLE_LIMIT,
-        station_address,
-        access_point_address,
-    )
-    .unwrap_or_else(|error| panic!("cold MAC initialization failed: {error:?}"));
+    activate_promiscuous_receive(&mut registers);
     let cold_interrupt_mask = registers.mac_interrupt_enable();
     registers.mask_and_clear_mac_interrupts(u32::MAX);
     let scan_rx = Esp32s31ScanRx::prepare_initial(
@@ -1046,7 +947,7 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
     .unwrap_or_else(|error| panic!("initial RX DMA ring failed: {error:?}"));
     esp_println::println!(
         "open-radio: MAC ready handshake_samples={} interrupt_mask={:#010x}",
-        cold_mac.handshake_samples,
+        report.mac.handshake_samples,
         cold_interrupt_mask
     );
 
@@ -1148,7 +1049,6 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
     let mut sequences = StaTxSequenceCounters::new((trng.random() & 0x0fff) as u16);
 
     let (running_registers, interrupt_setup) = registers.into_running();
-    let running_registers = RUNNING_REGISTERS.init(running_registers);
     let owner = ProductionStationOwner {
         phase: ProductionStationPhase::Initial {
             hardware: running_registers,
@@ -1165,22 +1065,29 @@ pub async fn run(spawner: Spawner, platform: EspHalRadioPeripheral, trng: Trng) 
         tx_storage,
         scan_table: table,
         frame: scan_frame,
-        station_address,
-        access_point: candidate,
-        pmk: &pmk,
-        supplicant_nonce,
-        sequences: &mut sequences,
+        station: Esp32s31StaAttemptStation {
+            station_address,
+            access_point: candidate,
+            association_preference: StaAssociationPreference::PreferHe20,
+        },
+        security: Esp32s31StaAttemptSecurity {
+            pmk: &pmk,
+            supplicant_nonce,
+            sequences: &mut sequences,
+            message4_protection: open_esp_radio::esp32s31::wifi::sta::wpa2::Esp32s31Wpa2Message4Protection::Unprotected,
+        },
         ethernet: None,
     };
     let policy = StaReconnectPolicy::new(3, 100, 1_000, 100)
         .expect("production reconnect policy must be valid");
     let station_control = STATION_CONTROL.init(Esp32s31StationControlResources::new());
-    let (_controller, station) = Esp32s31Station::new(
+    let (_controller, station) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy).with_initial_candidate(StaNextCandidate::Reuse),
-        Esp32s31StationResources::new(owner),
+        Esp32s31StationStartResources::new(owner),
         station_control,
-        move |control| ProductionStationBackend::new(control, spawner, interrupt_setup, wifi_plan),
-    );
+        ProductionStationRunner::new(spawner, interrupt_setup, wifi_plan),
+    )
+    .unwrap_or_else(|_| panic!("station control requires radio reset"));
     match station.run().await {
         Esp32s31StationExit::Stopped { .. } => panic!("station stopped unexpectedly"),
         Esp32s31StationExit::RetryExhausted {

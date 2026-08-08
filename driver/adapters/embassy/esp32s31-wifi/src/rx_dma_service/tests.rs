@@ -5,9 +5,11 @@ use core::{
 
 use embassy_sync::channel::TryReceiveError;
 use open_esp_radio_embassy_net::NoopRawMutex;
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
-    descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, LENGTH_SHIFT},
     rx::{PUBLIC_HEADER_SIZE, RxDmaBinding, RxIngressConfig, RxRingStopped},
 };
 

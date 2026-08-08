@@ -997,7 +997,7 @@ mod tests {
     }
 
     #[test]
-    fn executor_deadline_without_hardware_state_requires_radio_reset() {
+    fn executor_deadline_quarantines_without_drop_panic() {
         let mut slot = std::boxed::Box::pin(TxSlot::<512>::new_model());
         let mut hardware = Hardware {
             prepare: true,
@@ -1014,9 +1014,10 @@ mod tests {
         );
         assert_eq!(tx.ordinary.slot.state(), TxSlotState::ResetRequired);
         assert_eq!(tx.queue_state(), MacTxQueueState::ResetRequired);
+        assert!(tx.ordinary.slot.as_mut().reserve(64, 32).is_err());
         drop(tx);
         let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(slot)));
-        assert!(drop_result.is_err());
+        assert!(drop_result.is_ok());
     }
 
     #[test]

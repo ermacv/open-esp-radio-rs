@@ -5,8 +5,6 @@
 //! TX-complete, so a single-task Rust runtime needs to let its RX bottom half
 //! borrow the same register owner between finite TX hardware transactions.
 
-use core::cell::RefCell;
-
 use open_esp_radio_esp32s31_hal::RadioRegisters;
 use open_esp_radio_esp32s31_registers::{
     MacHe20PeerConfig, MacHe20PeerError, MacHeBeamformingReportProfile, MacHeErSuAckRateProfile,
@@ -14,6 +12,9 @@ use open_esp_radio_esp32s31_registers::{
     MacHeTriggerTxQueueSnapshot, MacHeTxProgram, MacHeTxVectorSnapshot,
     MacHtAmpduCompletionRegisters, MacHtTxProgram, MacKeyInstallOutcome, MacLegacyTxProgram,
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
+};
+use open_esp_radio_esp32s31_wifi::register_arena::{
+    Esp32s31PublishedRadioRegisters, Esp32s31RadioRegistersAccess, Esp32s31RadioRegistersArenaError,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
@@ -42,13 +43,13 @@ use crate::connected_control_hardware::ConnectedControlHardware;
 ///
 /// SOURCE: complete `libpp.a[wdev.o]::wDev_ProcessFiq` handles
 /// RX-success bit `0x4000` before TX-complete bit `0x80`.
-pub struct CooperativeRadioHardware<'cell, 'registers> {
-    registers: &'cell RefCell<&'registers mut RadioRegisters>,
+pub struct CooperativeRadioHardware<'arena> {
+    registers: Esp32s31PublishedRadioRegisters<'arena>,
 }
 
-impl<'cell, 'registers> CooperativeRadioHardware<'cell, 'registers> {
+impl<'arena> CooperativeRadioHardware<'arena> {
     /// Borrow the one task-owned register cell for cooperative radio access.
-    pub const fn new(registers: &'cell RefCell<&'registers mut RadioRegisters>) -> Self {
+    pub const fn new(registers: Esp32s31PublishedRadioRegisters<'arena>) -> Self {
         Self { registers }
     }
 
@@ -58,37 +59,44 @@ impl<'cell, 'registers> CooperativeRadioHardware<'cell, 'registers> {
     /// Returning the cell does not expose a second PAC owner: every access is
     /// still dynamically serialized by the same `RefCell`, and lifecycle code
     /// must stop those tasks before consuming this hardware facade.
-    pub const fn register_cell(&self) -> &'cell RefCell<&'registers mut RadioRegisters> {
-        self.registers
+    pub const fn register_access(&self) -> Esp32s31RadioRegistersAccess<'arena> {
+        self.registers.access()
+    }
+
+    /// Recover the exact PAC owner after every child task and synchronous
+    /// register transaction has returned.
+    pub fn try_into_registers(
+        self,
+    ) -> Result<RadioRegisters, (Self, Esp32s31RadioRegistersArenaError)> {
+        match self.registers.try_reclaim() {
+            Ok(registers) => Ok(registers),
+            Err((registers, error)) => Err((Self { registers }, error)),
+        }
     }
 }
 
-/// Former TX-only name retained while downstream users migrate.
-#[doc(hidden)]
-pub type CooperativeTxHardware<'cell, 'registers> = CooperativeRadioHardware<'cell, 'registers>;
-
-impl CcmpKeyHardware for CooperativeRadioHardware<'_, '_> {
+impl CcmpKeyHardware for CooperativeRadioHardware<'_> {
     fn install_sta_ccmp_entry(&mut self, index: u8, words: [u32; 6]) -> MacKeyInstallOutcome {
-        CcmpKeyHardware::install_sta_ccmp_entry(&mut **self.registers.borrow_mut(), index, words)
+        CcmpKeyHardware::install_sta_ccmp_entry(&mut *self.registers.borrow_mut(), index, words)
     }
 
     fn clear_ccmp_entry(&mut self, index: u8) {
-        CcmpKeyHardware::clear_ccmp_entry(&mut **self.registers.borrow_mut(), index);
+        CcmpKeyHardware::clear_ccmp_entry(&mut *self.registers.borrow_mut(), index);
     }
 
     fn ccmp_entry_is_valid(&self, index: u8) -> Option<bool> {
-        CcmpKeyHardware::ccmp_entry_is_valid(&**self.registers.borrow(), index)
+        CcmpKeyHardware::ccmp_entry_is_valid(&*self.registers.borrow(), index)
     }
 }
 
-impl He20PeerHardware for CooperativeRadioHardware<'_, '_> {
+impl He20PeerHardware for CooperativeRadioHardware<'_> {
     fn program_he20_peer(
         &mut self,
         config: MacHe20PeerConfig,
         rts_threshold: Option<u16>,
     ) -> Result<(), MacHe20PeerError> {
         He20PeerHardware::program_he20_peer(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             config,
             rts_threshold,
         )
@@ -101,7 +109,7 @@ impl He20PeerHardware for CooperativeRadioHardware<'_, '_> {
         bssid_index: u8,
     ) -> Result<(), MacHe20PeerError> {
         He20PeerHardware::program_he20_association(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             association_id,
             minimum_mpdu_start_spacing,
             bssid_index,
@@ -109,50 +117,50 @@ impl He20PeerHardware for CooperativeRadioHardware<'_, '_> {
     }
 
     fn initialize_he_buffer_status_report(&mut self) {
-        He20PeerHardware::initialize_he_buffer_status_report(&mut **self.registers.borrow_mut());
+        He20PeerHardware::initialize_he_buffer_status_report(&mut *self.registers.borrow_mut());
     }
 }
 
-impl BeamformingReportHardware for CooperativeRadioHardware<'_, '_> {
+impl BeamformingReportHardware for CooperativeRadioHardware<'_> {
     fn set_he_beamforming_report_profile(&mut self, profile: MacHeBeamformingReportProfile) {
         BeamformingReportHardware::set_he_beamforming_report_profile(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             profile,
         );
     }
 
     fn set_he_ersu_ack_rate_profile(&mut self, profile: MacHeErSuAckRateProfile) {
         BeamformingReportHardware::set_he_ersu_ack_rate_profile(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             profile,
         );
     }
 }
 
-impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_, '_> {
+impl StaLinkRxPolicyHardware for CooperativeRadioHardware<'_> {
     fn apply_sta_link_policy(&mut self, bssid: [u8; 6]) {
-        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut **self.registers.borrow_mut(), bssid);
+        StaLinkRxPolicyHardware::apply_sta_link_policy(&mut *self.registers.borrow_mut(), bssid);
     }
 }
 
-impl StaNoiseFloorHardware for CooperativeRadioHardware<'_, '_> {
+impl StaNoiseFloorHardware for CooperativeRadioHardware<'_> {
     fn read_noise_floor_dbm(&self) -> i8 {
-        StaNoiseFloorHardware::read_noise_floor_dbm(&**self.registers.borrow())
+        StaNoiseFloorHardware::read_noise_floor_dbm(&*self.registers.borrow())
     }
 }
 
-impl TxHardware for CooperativeRadioHardware<'_, '_> {
+impl TxHardware for CooperativeRadioHardware<'_> {
     fn prepare_bound_legacy_tx(
         &mut self,
         dma: &dyn PreparedTxDma,
         queue: u8,
         program: MacLegacyTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_legacy_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_legacy_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
     }
 
     fn start_bound_legacy_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_legacy_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_legacy_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
     fn prepare_bound_ht_tx(
@@ -161,11 +169,11 @@ impl TxHardware for CooperativeRadioHardware<'_, '_> {
         queue: u8,
         program: MacHtTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_ht_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_ht_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
     }
 
     fn start_bound_ht_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_ht_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_ht_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
     fn prepare_bound_he_tx(
@@ -174,23 +182,23 @@ impl TxHardware for CooperativeRadioHardware<'_, '_> {
         queue: u8,
         program: MacHeTxProgram,
     ) -> bool {
-        TxHardware::prepare_bound_he_tx(&mut **self.registers.borrow_mut(), dma, queue, program)
+        TxHardware::prepare_bound_he_tx(&mut *self.registers.borrow_mut(), dma, queue, program)
     }
 
     fn start_bound_he_tx(&mut self, dma: &dyn HardwareOwnedTxDma, queue: u8, plcp0: u32) {
-        TxHardware::start_bound_he_tx(&mut **self.registers.borrow_mut(), dma, queue, plcp0);
+        TxHardware::start_bound_he_tx(&mut *self.registers.borrow_mut(), dma, queue, plcp0);
     }
 
     fn he_tx_vector_snapshot(&self, queue: u8) -> Option<MacHeTxVectorSnapshot> {
-        TxHardware::he_tx_vector_snapshot(&**self.registers.borrow(), queue)
+        TxHardware::he_tx_vector_snapshot(&*self.registers.borrow(), queue)
     }
 
     fn take_tx_completion(&mut self, queue: u8) -> Option<MacTxCompletionRegisters> {
-        TxHardware::take_tx_completion(&mut **self.registers.borrow_mut(), queue)
+        TxHardware::take_tx_completion(&mut *self.registers.borrow_mut(), queue)
     }
 
     fn begin_tx_timeout_abort(&mut self, queue: u8) -> bool {
-        TxHardware::begin_tx_timeout_abort(&mut **self.registers.borrow_mut(), queue)
+        TxHardware::begin_tx_timeout_abort(&mut *self.registers.borrow_mut(), queue)
     }
 
     fn with_tx_queue_detached<R>(
@@ -201,7 +209,7 @@ impl TxHardware for CooperativeRadioHardware<'_, '_> {
         detached: impl for<'detached> FnOnce(MacTxQueueDetached<'detached>) -> R,
     ) -> MacTxDetachOutcome<R> {
         TxHardware::with_tx_queue_detached(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             queue,
             expected_descriptor_head,
             reason,
@@ -210,9 +218,9 @@ impl TxHardware for CooperativeRadioHardware<'_, '_> {
     }
 }
 
-impl HtAmpduHardware for CooperativeRadioHardware<'_, '_> {
+impl HtAmpduHardware for CooperativeRadioHardware<'_> {
     fn take_ht_ampdu_completion(&mut self, queue: u8) -> Option<MacHtAmpduCompletionRegisters> {
-        HtAmpduHardware::take_ht_ampdu_completion(&mut **self.registers.borrow_mut(), queue)
+        HtAmpduHardware::take_ht_ampdu_completion(&mut *self.registers.borrow_mut(), queue)
     }
 
     fn prepare_he_trigger_based_queue(
@@ -224,7 +232,7 @@ impl HtAmpduHardware for CooperativeRadioHardware<'_, '_> {
         queued_msdu_bytes: u32,
     ) -> Result<MacHeTriggerTxQueueSnapshot, MacHeTbProgramError> {
         HtAmpduHardware::prepare_he_trigger_based_queue(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             policy,
             reservation,
             tid,
@@ -235,7 +243,7 @@ impl HtAmpduHardware for CooperativeRadioHardware<'_, '_> {
 
     fn clear_he_trigger_based_queue(&mut self, reservation: MacHeTbLinkReservation) {
         HtAmpduHardware::clear_he_trigger_based_queue(
-            &mut **self.registers.borrow_mut(),
+            &mut *self.registers.borrow_mut(),
             reservation,
         );
     }
@@ -244,65 +252,61 @@ impl HtAmpduHardware for CooperativeRadioHardware<'_, '_> {
         &self,
         reservation: MacHeTbLinkReservation,
     ) -> Option<MacHeTriggerTxQueueSnapshot> {
-        HtAmpduHardware::he_trigger_based_queue_snapshot(&**self.registers.borrow(), reservation)
+        HtAmpduHardware::he_trigger_based_queue_snapshot(&*self.registers.borrow(), reservation)
     }
 }
 
-impl RxDma for CooperativeRadioHardware<'_, '_> {
+impl RxDma for CooperativeRadioHardware<'_> {
     fn buffer_full_count(&mut self) -> Option<u16> {
-        RxDma::buffer_full_count(&mut **self.registers.borrow_mut())
+        RxDma::buffer_full_count(&mut *self.registers.borrow_mut())
     }
 
     fn last_descriptor_low(&mut self) -> u32 {
-        RxDma::last_descriptor_low(&mut **self.registers.borrow_mut())
+        RxDma::last_descriptor_low(&mut *self.registers.borrow_mut())
     }
 
     fn next_descriptor_low(&mut self) -> u32 {
-        RxDma::next_descriptor_low(&mut **self.registers.borrow_mut())
+        RxDma::next_descriptor_low(&mut *self.registers.borrow_mut())
     }
 
     fn walker_enabled(&mut self) -> bool {
-        RxDma::walker_enabled(&mut **self.registers.borrow_mut())
+        RxDma::walker_enabled(&mut *self.registers.borrow_mut())
     }
 
     fn reload_pending(&mut self) -> bool {
-        RxDma::reload_pending(&mut **self.registers.borrow_mut())
+        RxDma::reload_pending(&mut *self.registers.borrow_mut())
     }
 
     fn set_descriptor_high_window(&mut self, binding: &RxDmaBinding, address_high: u16) {
-        RxDma::set_descriptor_high_window(
-            &mut **self.registers.borrow_mut(),
-            binding,
-            address_high,
-        );
+        RxDma::set_descriptor_high_window(&mut *self.registers.borrow_mut(), binding, address_high);
     }
 
     fn write_descriptor_base(&mut self, binding: &RxDmaBinding, address: u32) {
-        RxDma::write_descriptor_base(&mut **self.registers.borrow_mut(), binding, address);
+        RxDma::write_descriptor_base(&mut *self.registers.borrow_mut(), binding, address);
     }
 
     fn publish_walker_enable(&mut self, binding: &RxDmaBinding) {
-        RxDma::publish_walker_enable(&mut **self.registers.borrow_mut(), binding);
+        RxDma::publish_walker_enable(&mut *self.registers.borrow_mut(), binding);
     }
 
     fn request_reload(&mut self, binding: &RxDmaBinding) {
-        RxDma::request_reload(&mut **self.registers.borrow_mut(), binding);
+        RxDma::request_reload(&mut *self.registers.borrow_mut(), binding);
     }
 
     fn try_enable_walker(&mut self, binding: &RxDmaBinding) -> bool {
-        RxDma::try_enable_walker(&mut **self.registers.borrow_mut(), binding)
+        RxDma::try_enable_walker(&mut *self.registers.borrow_mut(), binding)
     }
 
     fn try_disable_walker(&mut self) -> bool {
-        RxDma::try_disable_walker(&mut **self.registers.borrow_mut())
+        RxDma::try_disable_walker(&mut *self.registers.borrow_mut())
     }
 
     fn fence(&mut self) {
-        RxDma::fence(&mut **self.registers.borrow_mut());
+        RxDma::fence(&mut *self.registers.borrow_mut());
     }
 }
 
-impl ConnectedControlHardware for CooperativeRadioHardware<'_, '_> {
+impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
     fn station_tsf(&mut self) -> u64 {
         self.registers.borrow_mut().station_tsf()
     }

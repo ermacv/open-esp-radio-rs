@@ -12,6 +12,11 @@ use open_esp_radio_esp32s31_wifi_mac::{
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
+use open_esp_radio_esp32s31_wifi_sta::{
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    single_mpdu_tx::WifiTxResources,
+};
+
 use crate::{
     aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
     connected_control::{
@@ -19,9 +24,7 @@ use crate::{
         ConnectedControlTx, Esp32s31ConnectedControl,
     },
     connected_services::Esp32s31ConnectedServices,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_dma_service::{Esp32s31ConnectedRx, Esp32s31StoppedRx},
-    single_mpdu_tx::WifiTxResources,
 };
 
 /// Control-plane shutdown capability used by the connected teardown port.

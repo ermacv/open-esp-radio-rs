@@ -1,22 +1,19 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-        sta_attempt_target::{
-            Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
-            Esp32s31StaAttemptTargetPort,
-        },
-    },
     esp32s31::wifi::sta::{
-        attempt::{
-            Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptSecurity,
-            Esp32s31StaAttemptStation,
-        },
+        attempt::{Esp32s31StaAttempt, Esp32s31StaAttemptOutcome},
         channel::Esp32s31ScanPhy,
     },
     wifi::sta::station::{
         StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition, StaLifecycleStage,
+    },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
+    sta_attempt_target::{
+        Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
+        Esp32s31StaAttemptTargetPort,
     },
 };
 
@@ -25,8 +22,7 @@ use crate::{
     radio_hil::{
         ConnectedHardware, HilPhyObserver, RadioHilConnectedEpochResources, RadioHilReconnectReady,
         RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner, RadioHilStationCommandReceiver,
-        RadioHilStationEpochProgress, STA_ASSOCIATION_PREFERENCE, StaAssociationSecurity,
-        StaConnectedSession, radio_hil_message4_protection, run_connected_network,
+        RadioHilStationEpochProgress, StaConnectedSession, run_connected_network,
         station_epoch_reporter,
     },
 };
@@ -62,11 +58,6 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
             ),
         };
     };
-    let StaAssociationSecurity {
-        pmk,
-        supplicant_nonce,
-        sequences,
-    } = security;
     let (hardware, rx_slot) = epoch.hardware_and_rx_mut();
     let receive = match rx_slot.take() {
         Ok(receive) => receive,
@@ -81,11 +72,7 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
                     target,
                     network,
                     epoch: RadioHilConnectedEpochResources::Reconnected(epoch),
-                    security: StaAssociationSecurity {
-                        pmk,
-                        supplicant_nonce,
-                        sequences,
-                    },
+                    security,
                 }),
                 failure: StaAttemptFailure::new(
                     StaLifecycleStage::Hardware,
@@ -113,17 +100,8 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
                     .expect("reconnected station attempt owns control TX"),
             ),
             Esp32s31StaAttemptStorage::new(&mut *fixture.frame),
-            Esp32s31StaAttemptStation {
-                station_address: target.station_address,
-                access_point: target.access_point,
-                association_preference: STA_ASSOCIATION_PREFERENCE,
-            },
-            Esp32s31StaAttemptSecurity {
-                pmk,
-                supplicant_nonce,
-                sequences,
-                message4_protection: radio_hil_message4_protection(),
-            },
+            target,
+            security,
         );
     let mut attempt = Esp32s31StaAttempt::new(Esp32s31StaAttemptTargetPort::new());
     match attempt.run(owner).await {
@@ -134,7 +112,7 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
                  stage=production-reconnect-attempt phase={stage:?} \
                  disposition={disposition:?} error={error:?}"
             ));
-            let (radio, _storage, _station, security) = owner.into_parts();
+            let (radio, _storage, target, security) = owner.into_parts();
             let Esp32s31StaAttemptRadio {
                 hardware: _,
                 channel,
@@ -151,11 +129,7 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
                     target,
                     network,
                     epoch: RadioHilConnectedEpochResources::Reconnected(epoch),
-                    security: StaAssociationSecurity {
-                        pmk: security.pmk,
-                        supplicant_nonce: security.supplicant_nonce,
-                        sequences: security.sequences,
-                    },
+                    security,
                 }),
                 failure: StaAttemptFailure::new(
                     stage.lifecycle_stage(),
@@ -176,7 +150,7 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
             let (pairwise, group) = owner
                 .take_installed_keys()
                 .expect("successful reconnect owns both CCMP slots");
-            let (radio, _storage, _station, security) = owner.into_parts();
+            let (radio, _storage, target, security) = owner.into_parts();
             let Esp32s31StaAttemptRadio {
                 hardware: _,
                 channel,
@@ -236,9 +210,7 @@ pub(in crate::radio_hil) async fn run_reconnected_station_attempt<'fixture, 'sec
                     generation,
                     peer,
                     network,
-                    pmk: security.pmk,
-                    supplicant_nonce: security.supplicant_nonce,
-                    sequences: security.sequences,
+                    security,
                 },
                 pairwise,
                 group,

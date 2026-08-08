@@ -9,15 +9,16 @@
 
 use core::future::Future;
 
+pub use crate::rx_ring_owner::Esp32s31RxRingOwnerError;
 use embassy_sync::channel::{Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_esp32s31_wifi_dma::rx_storage::{RxDmaBuffer, RxDmaStorage};
 use open_esp_radio_esp32s31_wifi_mac::{
     rx::{RxDma, RxReloadObservation, RxRingError, RxRingHalted, RxRingLive, RxRingStopped},
     rx_pool::{
         RxDmaStageUnitOutcome, RxStageError, RxStagePool, RxStageTransactionError,
         VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT,
     },
-    rx_storage::{RxDmaBuffer, RxDmaStorage},
 };
 
 use crate::{

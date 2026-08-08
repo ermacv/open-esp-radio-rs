@@ -13,8 +13,10 @@ use core::{
 };
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
+use open_esp_radio_esp32s31_wifi_dma::descriptor::{
+    BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT,
+};
 use open_esp_radio_esp32s31_wifi_mac::{
-    descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT},
     irq::{
         HANDLED_MAC_MASK, IrqDisposition, IrqSink, IrqWork, MAC_INT_RX_ASSOCIATED_AUXILIARY_MASK,
         handle_mac_irq, next_irq_work,

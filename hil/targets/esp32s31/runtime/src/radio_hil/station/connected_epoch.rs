@@ -6,7 +6,7 @@ mod run;
 use core::future::Future;
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use open_esp_radio::adapters::esp32s31::wifi_embassy::{
+use open_esp_radio_esp32s31_wifi_embassy::{
     connected_rx_protocol::ConnectedRxProtocolStopped, station::Esp32s31ConnectedTaskGroup,
 };
 use open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSet;

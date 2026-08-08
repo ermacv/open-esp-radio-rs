@@ -33,8 +33,6 @@ pub mod association;
 pub mod attempt;
 #[cfg(target_arch = "riscv32")]
 pub mod channel;
-#[cfg(target_arch = "riscv32")]
-pub mod cold_start;
 pub mod connected_control;
 pub mod connected_control_hardware;
 pub mod control_tx;

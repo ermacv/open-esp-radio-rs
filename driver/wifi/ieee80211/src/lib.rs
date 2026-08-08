@@ -12,6 +12,7 @@ pub mod ap;
 pub mod beacon;
 pub mod block_ack;
 pub mod ccmp;
+pub mod channel;
 pub mod classification;
 pub mod data;
 pub mod he;

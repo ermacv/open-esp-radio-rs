@@ -6,6 +6,7 @@
 //! network stack or await an executor primitive. Those effects are published
 //! through [`ConnectedRxSink`] and belong to the integration runner.
 
+use open_esp_radio_esp32s31_wifi_dma::rx_ring::RxSegment;
 use open_esp_radio_ieee80211::{
     data::{
         DataDecapError, DataInterfaceRole, EthernetFrameParts, amsdu_subframes,
@@ -23,7 +24,6 @@ use crate::{
         PUBLIC_HEADER_SIZE, RxError, RxIngressConfig, RxPhyInfo, decode_normalized_rx_metadata,
         extract_control, extract_management, view_ccmp_data,
     },
-    rx_ring::RxSegment,
     tx::{HeTriggerScheduledRate, HeTriggerScheduledRateError},
     tx_ampdu::{BlockAckAction, parse_block_ack_action},
 };
@@ -554,7 +554,7 @@ fn public_protection(
 mod tests {
     use std::vec::Vec;
 
-    use crate::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+    use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
     use super::*;
 

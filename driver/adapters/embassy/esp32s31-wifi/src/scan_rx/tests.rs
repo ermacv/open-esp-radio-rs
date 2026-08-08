@@ -161,7 +161,7 @@ fn write_test_beacon(
 fn complete_test_beacon(
     storage: &Esp32s31RxDmaStorage<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>,
 ) {
-    use open_esp_radio_esp32s31_wifi_mac::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
+    use open_esp_radio_esp32s31_wifi_dma::descriptor::{BIT_30, BIT_31, LENGTH_SHIFT};
 
     const FRAME_LENGTH: usize = 43;
     const SIGNAL_LENGTH: usize = FRAME_LENGTH + 4;

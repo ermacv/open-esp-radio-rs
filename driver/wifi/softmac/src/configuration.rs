@@ -9,7 +9,7 @@
 use core::fmt;
 
 use crate::{
-    MacServiceCapabilities,
+    MacServiceCapabilities, MonitorFilter,
     interface::{
         BoundVirtualInterface, ChannelContextId, MonitorTapPoint, VifId, VifRole, VirtualInterface,
     },
@@ -102,29 +102,42 @@ impl WifiAccessPointConfig {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WifiMonitorConfig {
     tap: MonitorTapPoint,
+    filter: MonitorFilter,
 }
 
 impl WifiMonitorConfig {
     pub const fn raw() -> Self {
         Self {
             tap: MonitorTapPoint::Raw,
+            filter: MonitorFilter::all(),
         }
     }
 
     pub const fn normalized() -> Self {
         Self {
             tap: MonitorTapPoint::Normalized,
+            filter: MonitorFilter::all(),
         }
     }
 
     pub const fn protocol_validated() -> Self {
         Self {
             tap: MonitorTapPoint::ProtocolValidated,
+            filter: MonitorFilter::all(),
         }
+    }
+
+    pub const fn with_filter(mut self, filter: MonitorFilter) -> Self {
+        self.filter = filter;
+        self
     }
 
     pub const fn tap(self) -> MonitorTapPoint {
         self.tap
+    }
+
+    pub const fn filter(self) -> MonitorFilter {
+        self.filter
     }
 }
 

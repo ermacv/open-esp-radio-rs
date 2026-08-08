@@ -1,4 +1,5 @@
 use core::cell::Cell;
+use std::rc::Rc;
 
 use open_esp_radio_embassy_net::NoopRawMutex;
 use open_esp_radio_esp32s31_wifi_mac::irq::{
@@ -48,6 +49,37 @@ impl MacInterruptRoute for Route {
         }
         assert!(self.active);
         self.active = false;
+        platform.set(2);
+        Ok(7)
+    }
+}
+
+struct DropObservedRoute {
+    dropped: Rc<Cell<bool>>,
+}
+
+impl Drop for DropObservedRoute {
+    fn drop(&mut self) {
+        self.dropped.set(true);
+    }
+}
+
+impl MacInterruptRoute for DropObservedRoute {
+    type Platform = Cell<u8>;
+    type Setup = u8;
+    type Error = RouteError;
+
+    fn activate(
+        &mut self,
+        platform: &Self::Platform,
+        _setup: Self::Setup,
+        _event_mask: u32,
+    ) -> Result<(), (Self::Error, Self::Setup)> {
+        platform.set(1);
+        Ok(())
+    }
+
+    fn quiesce(&mut self, platform: &Self::Platform) -> Result<Self::Setup, Self::Error> {
         platform.set(2);
         Ok(7)
     }
@@ -143,6 +175,45 @@ fn irq_epoch_recovers_setup_before_draining_every_executor_wake() {
 }
 
 #[test]
+fn inactive_irq_epoch_returns_the_exact_route_setup_and_runtimes() {
+    let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+    let epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 9, &mac, &power);
+
+    let (route, setup, returned_mac, returned_power) = epoch
+        .try_into_inactive_parts()
+        .unwrap_or_else(|_| panic!("an inactive epoch must be decomposable"));
+
+    assert!(!route.active);
+    assert_eq!(setup, 9);
+    assert!(core::ptr::eq(returned_mac, &mac));
+    assert!(core::ptr::eq(returned_power, &power));
+}
+
+#[test]
+fn active_irq_epoch_cannot_release_its_route_or_setup() {
+    let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+    let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
+    let platform = Cell::new(0);
+    let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 9, &mac, &power);
+    epoch.activate(&platform, 0x1234).unwrap();
+
+    let mut epoch = match epoch.try_into_inactive_parts() {
+        Ok(_) => panic!("an active route must not be extractable"),
+        Err(epoch) => epoch,
+    };
+    assert!(epoch.is_active());
+    assert_eq!(platform.get(), 1);
+
+    epoch.quiesce(&platform).unwrap();
+    let (route, setup, _, _) = epoch
+        .try_into_inactive_parts()
+        .unwrap_or_else(|_| panic!("the quiesced epoch must become extractable"));
+    assert!(!route.active);
+    assert_eq!(setup, 7);
+}
+
+#[test]
 fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
     let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
@@ -176,16 +247,25 @@ fn irq_epoch_retains_the_exact_frontier_on_each_route_failure() {
 }
 
 #[test]
-fn active_irq_epoch_cannot_be_silently_destroyed() {
+fn active_irq_epoch_drop_retains_the_installed_route_without_panicking() {
     let mac = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let power = EmbassyPowerIrqRuntime::<NoopRawMutex>::new();
     let platform = Cell::new(0);
-    let mut epoch = Esp32s31MacInterruptEpoch::new(Route { active: false }, 7, &mac, &power);
+    let dropped = Rc::new(Cell::new(false));
+    let mut epoch = Esp32s31MacInterruptEpoch::new(
+        DropObservedRoute {
+            dropped: dropped.clone(),
+        },
+        7,
+        &mac,
+        &power,
+    );
     epoch.activate(&platform, 0x1234).unwrap();
 
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(epoch)));
+    drop(epoch);
 
-    assert!(result.is_err());
+    assert_eq!(platform.get(), 1);
+    assert!(!dropped.get());
 }
 
 #[test]

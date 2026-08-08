@@ -60,8 +60,14 @@ mod tests {
     use core::future::{Future, ready};
     use std::task::{Context, Poll, Waker};
 
+    use open_esp_radio_esp32s31_wifi_dma::descriptor::{
+        BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT,
+    };
+    use open_esp_radio_esp32s31_wifi_dma::{
+        rx_ring::{RxDmaArenaState, RxRingError},
+        rx_storage::RxDmaStorage,
+    };
     use open_esp_radio_esp32s31_wifi_mac::{
-        descriptor::{BIT_30, BIT_31, DESCRIPTOR_BYTES, Descriptor, LENGTH_SHIFT},
         rx::{RxDma, RxDmaBinding, RxRingStopped},
         rx_pool::RxStagePool,
     };
@@ -194,18 +200,22 @@ mod tests {
     }
 
     #[test]
-    fn live_rx_ring_cannot_be_silently_destroyed() {
+    fn dropped_live_ring_poison_is_sticky_in_the_static_dma_arena() {
         const COUNT: usize = 2;
-        let descriptors = [const { Descriptor::new() }; COUNT];
         let buffers = [0x2f00_2000, 0x2f00_2200];
+        let storage = RxDmaStorage::<COUNT, 256, 260>::new();
         let mut mmio = MockRxDma::default();
-        let stopped =
-            RxRingStopped::prepare(&mut mmio, &descriptors, BASE, &buffers, 256, |_| Ok(()))
-                .unwrap();
+        let stopped = storage.prepare_ring(&mut mmio, BASE, &buffers).unwrap();
         let ring = stopped.start(&mut mmio).unwrap();
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::Live);
 
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(ring)));
+        drop(ring);
 
-        assert!(result.is_err());
+        assert!(mmio.walker_enabled);
+        assert_eq!(storage.lifecycle_state(), RxDmaArenaState::ResetRequired);
+        assert!(matches!(
+            storage.prepare_ring(&mut mmio, BASE, &buffers),
+            Err(RxRingError::ResetRequired)
+        ));
     }
 }

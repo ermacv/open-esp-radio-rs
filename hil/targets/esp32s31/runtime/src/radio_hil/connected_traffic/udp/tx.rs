@@ -4,7 +4,7 @@ use embassy_futures::yield_now;
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
 use open_esp_radio::{
-    esp32s31::wifi::lmac::tx::TxPhyRate, wifi::ieee80211::station::StaAssociationPhy,
+    esp32s31::wifi::mac::tx::TxPhyRate, wifi::ieee80211::station::StaAssociationPhy,
 };
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{

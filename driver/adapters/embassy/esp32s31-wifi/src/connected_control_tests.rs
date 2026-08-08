@@ -16,6 +16,10 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::{BlockAckAction, STA_TX_BLOCK_ACK_TIDS, StaTxBlockAckSessions},
     tx_runtime::StaTxRuntimePolicy,
 };
+use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
+    Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
+    WifiTxPowerProfile, WifiTxTimer,
+};
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 use open_esp_radio_ieee80211::station_beacon::{StaBeaconObservation, StaTimObservation};
 use open_esp_radio_ieee80211::station_power_save::StaPowerManagement;
@@ -27,10 +31,6 @@ use crate::{
     connected_runner::{WifiControlProgress, WifiTxProgress, WifiTxWake},
     control_mailbox::ConnectedControlResources,
     rx_reorder::{RxReorderCommand, RxReorderCommandResources, try_receive_rx_reorder_command},
-    single_mpdu_tx::{
-        Esp32s31SingleMpduTx, SingleMpduTxConfig, SingleMpduTxOutcome, WifiTxPowerPair,
-        WifiTxPowerProfile, WifiTxTimer,
-    },
 };
 
 use super::*;
@@ -189,14 +189,14 @@ fn make_tx<'a>(
 
     let key = install_sta_pairwise_ccmp(hardware, BSSID, &[0x5a; 16]).unwrap();
     Esp32s31SingleMpduTx::new(
-        crate::single_mpdu_tx::WifiTxResources {
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::WifiTxResources {
             slot,
             policy: StaTxRuntimePolicy::vendor_defaults(),
             power: Power,
             entropy,
             timer: Timer::default(),
         },
-        crate::single_mpdu_tx::ConnectedTxHandoff {
+        open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::ConnectedTxHandoff {
             key,
             sequences: StaTxSequenceCounters::new(7),
             config: SingleMpduTxConfig {

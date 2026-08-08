@@ -21,7 +21,7 @@ pub(in crate::radio_hil) use connected_rx_observer::{
     HilConnectedRxObserver, RadioHilConnectedRxBindings,
 };
 pub(in crate::radio_hil) use lifecycle::{
-    RadioHilStaLifecycleBackend, RadioHilStaLifecycleFailure, protocol_station_failure_reason,
+    RadioHilStaAttemptRunner, RadioHilStaLifecycleFailure, protocol_station_failure_reason,
     protocol_station_failure_stage,
 };
 pub(in crate::radio_hil) use network_reporting::{
@@ -31,8 +31,8 @@ pub(in crate::radio_hil) use owners::{
     RadioHilAuthenticationReady, RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn,
     RadioHilConnectedExit, RadioHilConnectedFixture, RadioHilConnectedTaskFixture,
     RadioHilReconnectReady, RadioHilRunningNetwork, RadioHilRunningScanReady,
-    RadioHilStaLifecycleOwner, RadioHilStaNetwork, StaAssociationSecurity, StaConnectedSession,
-    StaJoinTarget, injected_tx_source_requires_reset,
+    RadioHilStaLifecycleOwner, RadioHilStaNetwork, StaConnectedSession,
+    injected_tx_source_requires_reset,
 };
 pub(in crate::radio_hil) use reporting::{
     RadioHilStaJoinObserver, RadioHilStationEpochCoordinator, RadioHilStationEpochProgress,

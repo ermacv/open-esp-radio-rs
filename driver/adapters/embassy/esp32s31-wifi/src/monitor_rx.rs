@@ -2,11 +2,13 @@
 
 #![forbid(unsafe_code)]
 
+use open_esp_radio_esp32s31_wifi_mac::rx::RxRingHalted;
 use open_esp_radio_esp32s31_wifi_mac::rx::{
-    RxDma, RxIngressConfig, RxPhyInfo, RxRingError, RxRingHalted, view_normalized_rx_frame,
+    RxDma, RxIngressConfig, RxPhyInfo, RxRingError, view_normalized_rx_frame,
 };
 use open_esp_radio_wifi_softmac::{
-    MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink, WifiStandaloneMonitorPlan,
+    MonitorDropReason, MonitorFilter, MonitorFrame, MonitorPublishOutcome, MonitorSink,
+    WifiStandaloneMonitorPlan,
     interface::{ChannelContextId, MonitorTapPoint},
 };
 
@@ -24,11 +26,6 @@ pub enum Esp32s31MonitorConfigError {
 pub enum Esp32s31MonitorPrepareError {
     Configuration(Esp32s31MonitorConfigError),
     Ring(RxRingError),
-}
-
-pub struct Esp32s31MonitorPrepareFailure<R> {
-    pub error: Esp32s31MonitorConfigError,
-    pub receive: R,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -52,6 +49,7 @@ pub struct Esp32s31MonitorRx<
 > {
     receive: Esp32s31RxRingOwner<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     channel_context: ChannelContextId,
+    filter: MonitorFilter,
 }
 
 impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: usize>
@@ -65,8 +63,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<Self, Esp32s31MonitorPrepareError> {
-        let channel_context =
-            monitor_channel_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;
+        let (channel_context, filter) =
+            monitor_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;
         let receive = Esp32s31RxRingOwner::prepare_initial(
             hardware,
             storage,
@@ -77,6 +75,7 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         Ok(Self {
             receive,
             channel_context,
+            filter,
         })
     }
 
@@ -88,8 +87,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         descriptor_base: u32,
         buffer_addresses: &'storage [u32; COUNT],
     ) -> Result<Self, Esp32s31MonitorPrepareError> {
-        let channel_context =
-            monitor_channel_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;
+        let (channel_context, filter) =
+            monitor_context(plan).map_err(Esp32s31MonitorPrepareError::Configuration)?;
         let receive = Esp32s31RxRingOwner::prepare_initial(
             hardware,
             storage,
@@ -100,31 +99,15 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         Ok(Self {
             receive,
             channel_context,
+            filter,
         })
-    }
-
-    pub fn from_plan(
-        receive: Esp32s31RxRingOwner<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        plan: WifiStandaloneMonitorPlan,
-    ) -> Result<
-        Self,
-        Esp32s31MonitorPrepareFailure<
-            Esp32s31RxRingOwner<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-        >,
-    > {
-        match monitor_channel_context(plan) {
-            Ok(channel_context) => Ok(Self {
-                receive,
-                channel_context,
-            }),
-            Err(error) => Err(Esp32s31MonitorPrepareFailure { error, receive }),
-        }
     }
 
     pub const fn phase(&self) -> Esp32s31RxRingPhase {
         self.receive.phase()
     }
 
+    #[cfg(test)]
     pub const fn channel_context(&self) -> ChannelContextId {
         self.channel_context
     }
@@ -139,6 +122,8 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         sink: &mut S,
     ) -> Result<Esp32s31MonitorRxProgress, Esp32s31RxRingOwnerError> {
         let mut progress = Esp32s31MonitorRxProgress::default();
+        let channel_context = self.channel_context;
+        let filter = self.filter;
         let ring = self.receive.service_completed(hardware, |segment| {
             match view_normalized_rx_frame(
                 &segment,
@@ -148,26 +133,35 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
                     flags: 0,
                 },
             ) {
-                Ok(frame) => match sink.try_publish(MonitorFrame {
-                    tap: MonitorTapPoint::Normalized,
-                    channel_context: self.channel_context,
-                    bytes: frame.mpdu,
-                    metadata: frame.metadata,
-                    logical_length: frame.logical_length,
-                }) {
-                    MonitorPublishOutcome::Published => {
-                        progress.published_frames = progress.published_frames.saturating_add(1)
-                    }
-                    MonitorPublishOutcome::Dropped(reason) => {
+                Ok(frame) => {
+                    let observation = MonitorFrame {
+                        tap: MonitorTapPoint::Normalized,
+                        channel_context,
+                        bytes: frame.mpdu,
+                        metadata: frame.metadata,
+                        logical_length: frame.logical_length,
+                    };
+                    if !filter.accepts(&observation) {
                         progress.dropped_frames = progress.dropped_frames.saturating_add(1);
-                        let reason_count = match reason {
-                            MonitorDropReason::Full => &mut progress.full_drops,
-                            MonitorDropReason::TooLong => &mut progress.oversized_drops,
-                            MonitorDropReason::Filtered => &mut progress.filtered_drops,
-                        };
-                        *reason_count = reason_count.saturating_add(1);
+                        progress.filtered_drops = progress.filtered_drops.saturating_add(1);
+                    } else {
+                        match sink.try_publish(observation) {
+                            MonitorPublishOutcome::Published => {
+                                progress.published_frames =
+                                    progress.published_frames.saturating_add(1)
+                            }
+                            MonitorPublishOutcome::Dropped(reason) => {
+                                progress.dropped_frames = progress.dropped_frames.saturating_add(1);
+                                let reason_count = match reason {
+                                    MonitorDropReason::Full => &mut progress.full_drops,
+                                    MonitorDropReason::TooLong => &mut progress.oversized_drops,
+                                    MonitorDropReason::Filtered => &mut progress.filtered_drops,
+                                };
+                                *reason_count = reason_count.saturating_add(1);
+                            }
+                        }
                     }
-                },
+                }
                 Err(_) => {
                     progress.malformed_frames = progress.malformed_frames.saturating_add(1);
                 }
@@ -183,24 +177,30 @@ impl<'storage, const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORA
         self.receive.stop(hardware)
     }
 
+    pub(crate) fn require_reset(&mut self) {
+        self.receive.require_reset();
+    }
+
     pub fn into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
         let Self {
             receive,
             channel_context,
+            filter,
         } = self;
         receive.into_halted().map_err(|receive| Self {
             receive,
             channel_context,
+            filter,
         })
     }
 }
 
-fn monitor_channel_context(
+fn monitor_context(
     plan: WifiStandaloneMonitorPlan,
-) -> Result<ChannelContextId, Esp32s31MonitorConfigError> {
+) -> Result<(ChannelContextId, MonitorFilter), Esp32s31MonitorConfigError> {
     let monitor = plan.monitor();
     if monitor.tap() != MonitorTapPoint::Normalized {
         return Err(Esp32s31MonitorConfigError::UnsupportedTap(monitor.tap()));
     }
-    Ok(plan.channel_context())
+    Ok((plan.channel_context(), monitor.filter()))
 }

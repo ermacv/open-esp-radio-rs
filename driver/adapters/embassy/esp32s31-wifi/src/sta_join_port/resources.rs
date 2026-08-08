@@ -52,17 +52,4 @@ impl Esp32s31StaJoinStation {
             listen_interval: ESP32S31_STA_LISTEN_INTERVAL,
         }
     }
-
-    pub const fn with_listen_interval(mut self, listen_interval: u16) -> Self {
-        self.listen_interval = listen_interval;
-        self
-    }
-
-    pub const fn station_address(&self) -> [u8; 6] {
-        self.station_address
-    }
-
-    pub const fn access_point(&self) -> &ScanRecord {
-        &self.access_point
-    }
 }

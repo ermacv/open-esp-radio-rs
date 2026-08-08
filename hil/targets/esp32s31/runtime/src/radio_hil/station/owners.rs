@@ -3,21 +3,20 @@
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_net::Stack;
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        aggregate_tx::{AggregateTxError, AggregateTxResetReason},
-        connected_services::Esp32s31ConnectedServicesError,
-        single_mpdu_tx::{SingleMpduTxError, TxResetReason},
-        station::Esp32s31StationCommand,
-    },
     esp32s31::{
         hal::RadioRegisters,
         phy::phy_cold::PhyColdState,
-        wifi::lmac::{
-            irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
-            scan::{ScanRecord, ScanTable},
-        },
+        wifi::device::register_arena::Esp32s31RadioRegistersArenaError,
+        wifi::mac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT},
+        wifi::sta::attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation},
+        wifi::sta::single_mpdu_tx::{SingleMpduTxError, TxResetReason},
     },
-    wifi::{ieee80211::station::StaTxSequenceCounters, wpa2::Pmk},
+    wifi::ieee80211::scan::ScanTable,
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    aggregate_tx::{AggregateTxError, AggregateTxResetReason},
+    connected_services::Esp32s31ConnectedServicesError,
+    station::Esp32s31StationCommand,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
@@ -41,7 +40,7 @@ use super::{
 /// second `StaticCell::init` structurally impossible.
 pub(in crate::radio_hil) enum RadioHilConnectedEpochResources {
     Initial {
-        registers: &'static mut RadioRegisters,
+        registers: RadioRegisters,
         rx: RadioHilJoinRx<'static>,
     },
     Reconnected(RadioHilReconnectedEpoch),
@@ -51,7 +50,7 @@ pub(in crate::radio_hil) enum RadioHilConnectedEpochResources {
 pub(in crate::radio_hil) struct RadioHilConnectedEpochReturn<'fixture, 'security> {
     pub fixture: RadioHilConnectedTaskFixture<'fixture>,
     pub disconnected: RadioHilDisconnectedEpoch,
-    pub security: StaAssociationSecurity<'security>,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
     pub exit: RadioHilConnectedExit,
 }
 
@@ -90,26 +89,24 @@ pub(in crate::radio_hil) fn injected_tx_source_requires_reset<R, C>(
 
 pub(in crate::radio_hil) struct RadioHilReconnectReady<'fixture, 'security> {
     pub fixture: RadioHilConnectedTaskFixture<'fixture>,
-    pub target: StaJoinTarget,
+    pub target: Esp32s31StaAttemptStation,
     pub network: RadioHilStaNetwork,
     pub epoch: RadioHilConnectedEpochResources,
-    pub security: StaAssociationSecurity<'security>,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 
 pub(in crate::radio_hil) struct RadioHilRunningScanReady<'fixture, 'security> {
     pub fixture: RadioHilConnectedTaskFixture<'fixture>,
-    pub previous_target: StaJoinTarget,
+    pub previous_target: Esp32s31StaAttemptStation,
     pub disconnected: RadioHilDisconnectedEpoch,
-    pub security: StaAssociationSecurity<'security>,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 
 pub(in crate::radio_hil) struct StaConnectedSession<'security> {
     pub generation: u32,
     pub peer: Esp32s31ConnectedStaPeer,
     pub network: RadioHilStaNetwork,
-    pub pmk: &'security Pmk,
-    pub supplicant_nonce: [u8; 32],
-    pub sequences: &'security mut StaTxSequenceCounters,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
 }
 
 pub(in crate::radio_hil) enum RadioHilStaNetwork {
@@ -125,22 +122,59 @@ pub(in crate::radio_hil) struct RadioHilRunningNetwork {
     pub runner: NetworkRunner,
 }
 
-#[derive(Clone, Copy)]
-pub(in crate::radio_hil) struct StaJoinTarget {
-    pub station_address: [u8; 6],
-    pub access_point: ScanRecord,
-}
-
-pub(in crate::radio_hil) struct StaAssociationSecurity<'a> {
-    pub pmk: &'a Pmk,
-    pub supplicant_nonce: [u8; 32],
-    pub sequences: &'a mut StaTxSequenceCounters,
-}
-
 pub(in crate::radio_hil) enum RadioHilStaLifecycleOwner<'fixture, 'security> {
     Authenticate(RadioHilAuthenticationReady<'fixture, 'security>),
     RunningScan(RadioHilRunningScanReady<'fixture, 'security>),
     Reconnect(RadioHilReconnectReady<'fixture, 'security>),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::radio_hil) enum RadioHilStationReclaimError {
+    InterruptActive,
+    Registers(Esp32s31RadioRegistersArenaError),
+}
+
+impl RadioHilStaLifecycleOwner<'_, '_> {
+    /// Consume a clean finite STA frontier and recover the exact PAC owner.
+    ///
+    /// This is intentionally unavailable as a fallback for cancellation or a
+    /// live interrupt epoch. A published register lease which cannot be
+    /// reclaimed is dropped fail-closed and poisons its arena for reset.
+    pub(in crate::radio_hil) fn try_reclaim_registers(
+        self,
+    ) -> Result<RadioRegisters, RadioHilStationReclaimError> {
+        match self {
+            Self::Authenticate(ready) => {
+                if ready.fixture.interrupt_epoch.is_active() {
+                    return Err(RadioHilStationReclaimError::InterruptActive);
+                }
+                Ok(ready.fixture.mmio)
+            }
+            Self::RunningScan(ready) => {
+                if ready.fixture.interrupt_epoch.is_active() {
+                    return Err(RadioHilStationReclaimError::InterruptActive);
+                }
+                let parts = ready.disconnected.into_parts();
+                parts
+                    .hardware
+                    .try_into_registers()
+                    .map_err(|(_, error)| RadioHilStationReclaimError::Registers(error))
+            }
+            Self::Reconnect(ready) => {
+                if ready.fixture.interrupt_epoch.is_active() {
+                    return Err(RadioHilStationReclaimError::InterruptActive);
+                }
+                match ready.epoch {
+                    RadioHilConnectedEpochResources::Initial { registers, .. } => Ok(registers),
+                    RadioHilConnectedEpochResources::Reconnected(epoch) => epoch
+                        .into_parts()
+                        .hardware
+                        .try_into_registers()
+                        .map_err(|(_, error)| RadioHilStationReclaimError::Registers(error)),
+                }
+            }
+        }
+    }
 }
 
 pub(in crate::radio_hil) struct RadioHilConnectedFixture<'a> {
@@ -148,7 +182,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedFixture<'a> {
     pub protocol_spawner: SendSpawner,
     pub state: &'a mut PhyColdState,
     pub platform: &'a mut EspHalRadioPeripheral,
-    pub mmio: &'static mut RadioRegisters,
+    pub mmio: RadioRegisters,
     pub interrupt_epoch: &'a mut RadioHilMacInterruptEpoch,
     pub rx_storage: &'static RxStorage,
     pub tx_storage: &'static mut TxStorage,
@@ -185,10 +219,7 @@ pub(in crate::radio_hil) struct RadioHilConnectedTaskFixture<'a> {
 impl<'a> RadioHilConnectedFixture<'a> {
     pub(in crate::radio_hil) fn into_task_fixture(
         self,
-    ) -> (
-        RadioHilConnectedTaskFixture<'a>,
-        &'static mut RadioRegisters,
-    ) {
+    ) -> (RadioHilConnectedTaskFixture<'a>, RadioRegisters) {
         (
             RadioHilConnectedTaskFixture {
                 spawner: self.spawner,
@@ -215,8 +246,8 @@ impl<'a> RadioHilConnectedFixture<'a> {
 
 pub(in crate::radio_hil) struct RadioHilAuthenticationReady<'fixture, 'security> {
     pub fixture: RadioHilConnectedFixture<'fixture>,
-    pub target: StaJoinTarget,
+    pub target: Esp32s31StaAttemptStation,
     pub rx: RadioHilJoinRx<'static>,
     pub network: RadioHilStaNetwork,
-    pub security: StaAssociationSecurity<'security>,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
 }

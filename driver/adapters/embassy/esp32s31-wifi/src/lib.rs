@@ -12,46 +12,46 @@ extern crate std;
 
 pub mod aggregate_tx;
 pub mod aggregate_tx_observer;
-pub mod connected_control;
+mod connected_control;
 pub mod connected_runner;
 pub mod connected_rx_protocol;
 pub mod connected_services;
 pub mod connected_sta_port;
 pub mod connected_sta_teardown;
 pub mod control_mailbox;
-pub mod control_tx;
-pub mod cooperative_hardware;
-#[doc(hidden)]
-pub mod cooperative_tx;
 pub mod embassy_irq;
 pub mod embassy_rx;
 #[cfg(target_arch = "riscv32")]
 mod join_time;
-pub mod monitor_rx;
-pub mod monitor_service;
+pub mod monitor;
+#[cfg(target_arch = "riscv32")]
+mod monitor_builder;
+#[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+mod monitor_rx;
+#[cfg_attr(not(target_arch = "riscv32"), allow(dead_code))]
+mod monitor_service;
 pub mod network_rx;
-mod ordinary_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod phy_delay;
 pub mod preconnected_rx;
 pub mod rx_dma_service;
 pub mod rx_pipeline_observer;
 pub mod rx_reorder;
-pub mod rx_ring_owner;
+mod rx_ring_owner;
 pub mod scan_port;
 pub mod scan_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod scan_target;
-pub mod scan_tx;
-pub mod single_mpdu_tx;
 #[cfg(target_arch = "riscv32")]
 pub mod sta_attempt_target;
-pub mod sta_join_port;
+#[cfg(any(target_arch = "riscv32", test))]
+mod sta_join_port;
 pub mod sta_tx_epoch;
 pub mod station;
 pub mod station_epoch;
 mod station_tasks;
 pub mod tx_time;
-pub mod wpa2_port;
+#[cfg(target_arch = "riscv32")]
+mod wpa2_port;
 #[cfg(target_arch = "riscv32")]
 mod wpa2_time;

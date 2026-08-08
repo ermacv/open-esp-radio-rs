@@ -283,22 +283,15 @@ unsafe impl HardwareOwnedTxDma for AmpduDmaStart<'_> {
     }
 }
 
+/// Movable capability for one permanently located aggregate DMA arena.
+///
+/// Drop is intentionally not a queue operation. Hardware-owned or quarantined
+/// backing remains in its static state until explicit detach/reset, and any
+/// external leases retained by [`RetainedAmpduDma`] are forgotten rather than
+/// returned while the peripheral may still reference them.
 pub struct PinnedAmpduDmaStorage<const SLOTS: usize, const BUFFER_SIZE: usize> {
     storage: Pin<&'static mut AmpduDmaStorage<SLOTS, BUFFER_SIZE>>,
     binding: AmpduDmaBinding,
-}
-
-impl<const SLOTS: usize, const BUFFER_SIZE: usize> Drop
-    for PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE>
-{
-    fn drop(&mut self) {
-        if matches!(
-            self.state(),
-            AmpduDmaState::HardwareOwned | AmpduDmaState::Completed | AmpduDmaState::ResetRequired
-        ) {
-            panic!("active ESP32-S31 A-MPDU DMA storage destroyed before queue detach/reset");
-        }
-    }
 }
 
 impl<const SLOTS: usize, const BUFFER_SIZE: usize> PinnedAmpduDmaStorage<SLOTS, BUFFER_SIZE> {
@@ -1282,8 +1275,7 @@ mod tests {
         assert_eq!(storage.state(), AmpduDmaState::ResetRequired);
         assert_eq!(storage.cancel(), Err(AmpduDmaStorageError::State));
         assert_eq!(storage.begin(), Err(AmpduDmaStorageError::State));
-        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(storage)));
-        assert!(drop_result.is_err());
+        drop(storage);
     }
 
     #[test]
@@ -1402,7 +1394,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_hardware_owned_external_chain_forgets_backings_and_panics() {
+    fn dropping_hardware_owned_external_chain_forgets_backings_without_unwinding() {
         let drops = Rc::new(Cell::new(0));
         let mut owner = RetainedAmpduDma::new(descriptor_only_storage());
         owner.begin().unwrap();
@@ -1419,8 +1411,7 @@ mod tests {
             .unwrap()
             .commit(|_| {});
 
-        let drop_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| drop(owner)));
-        assert!(drop_result.is_err());
+        drop(owner);
         assert_eq!(drops.get(), 0);
     }
 

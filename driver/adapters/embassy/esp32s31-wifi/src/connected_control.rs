@@ -10,10 +10,9 @@ use embassy_futures::select::{Either, select};
 use open_esp_radio_embassy_net::RawMutex;
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
-        ConnectedControlContext, ConnectedControlError, ConnectedControlProgress,
-        ConnectedControlReorder, ConnectedControlTx, ConnectedControlTxFailure,
-        ConnectedControlTxKind, Esp32s31ConnectedControlCore, RxReorderCommand,
-        RxReorderCommandError,
+        ConnectedControlError, ConnectedControlReorder, ConnectedControlTx,
+        ConnectedControlTxFailure, ConnectedControlTxKind, Esp32s31ConnectedControlCore,
+        RxReorderCommand, RxReorderCommandError,
     },
     connected_control_hardware::ConnectedControlHardware,
 };

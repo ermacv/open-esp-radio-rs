@@ -7,15 +7,13 @@ use core::{
 
 use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
+use open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::{
+    Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
+};
 
-use crate::{
-    connected_runner::{
-        ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
-        WifiTxProgress, WifiTxWake,
-    },
-    single_mpdu_tx::{
-        Esp32s31SingleMpduTx, SingleMpduTxError, WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer,
-    },
+use crate::connected_runner::{
+    ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
+    WifiTxProgress, WifiTxWake,
 };
 
 /// One RX owner that copies a finite descriptor frontier into independent

@@ -3,11 +3,11 @@
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use open_esp_radio::{
-    esp32s31::wifi::lmac::{
+    esp32s31::wifi::mac::{
         connected_rx::{ConnectedRxEvent, ConnectedRxSink},
         rx::decode_rx_phy_info,
     },
-    wifi::lmac::MacRxEvidence,
+    wifi::softmac::MacRxEvidence,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     rx_evidence::{RxAmpduCounters, RxPhyCounters, RxSmpduCounters},

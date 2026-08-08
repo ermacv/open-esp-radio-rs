@@ -127,7 +127,8 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
-        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length =
+            open_esp_radio_esp32s31_wifi_sta::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         let maximum_aggregate_bytes = self.ordinary.policy().ht_ampdu().maximum_aggregate_bytes();
         match self.config.rate {
@@ -358,7 +359,8 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
-        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length =
+            open_esp_radio_esp32s31_wifi_sta::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(ampdu.can_commit_referenced_ht_frame(
                 cookie,
@@ -470,7 +472,8 @@ where
             .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
             .ok_or(AggregateTxError::BufferSizeOverflow)?;
         let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
-        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length =
+            open_esp_radio_esp32s31_wifi_sta::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(frame_length, hardware_mic_length);
         match self.config.rate {
             TxPhyRate::Ht(rate) => Ok(self.ampdu.can_commit_referenced_ht_frame(
@@ -528,7 +531,8 @@ where
             },
         )?;
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
-        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        let hardware_mic_length =
+            open_esp_radio_esp32s31_wifi_sta::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
         let frame_size = AmpduFrameSize::new(encoded.length, hardware_mic_length);
         let layout = AmpduFrameLayout::new(dma_offset, frame_size).ok_or(
             AggregateTxError::DmaPrefixGeometry {

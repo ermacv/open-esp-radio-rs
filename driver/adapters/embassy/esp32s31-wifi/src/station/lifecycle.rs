@@ -2,13 +2,14 @@ use core::marker::PhantomData;
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_wifi_sta::station::{
-    StaAttemptFailure, StaLifecycleBackend, StaLifecycleExit, StaLifecycleProgress,
-    StaLifecycleService, StaNextCandidate, StaReconnectPolicy,
+    StaAttemptFailure, StaLifecycleExit, StaLifecycleProgress, StaLifecycleService,
+    StaNextCandidate, StaReconnectPolicy,
 };
 
 use super::{
-    Esp32s31StationCommand, Esp32s31StationCommandReceiver, Esp32s31StationControlResources,
-    Esp32s31StationController,
+    Esp32s31StationAttemptRunner, Esp32s31StationCommand, Esp32s31StationCompletion,
+    Esp32s31StationControlError, Esp32s31StationControlResources, Esp32s31StationController,
+    backend::Esp32s31StationLifecycleBackend,
 };
 
 /// Stable application policy for one station service.
@@ -42,18 +43,40 @@ impl Esp32s31StationConfig {
     }
 }
 
-/// Exact initial owner consumed by a station runner.
-pub struct Esp32s31StationResources<O> {
+/// Exact role owner consumed when one station task is materialized.
+pub struct Esp32s31StationStartResources<O> {
     owner: O,
 }
 
-impl<O> Esp32s31StationResources<O> {
+impl<O> Esp32s31StationStartResources<O> {
     pub const fn new(owner: O) -> Self {
         Self { owner }
     }
 
     pub fn into_owner(self) -> O {
         self.owner
+    }
+}
+
+/// Complete ownership frontier returned by a finite station task.
+///
+/// `owner` contains the exact phase/DMA/network resources returned by the
+/// attempt. `runner` contains the platform integration resources which lived
+/// beside that owner for the whole service, including an interrupt epoch when
+/// the concrete composition owns one. Both are required before the physical
+/// Wi-Fi owner can be reconstructed.
+pub struct Esp32s31StationReturnedResources<O, R> {
+    owner: O,
+    runner: R,
+}
+
+impl<O, R> Esp32s31StationReturnedResources<O, R> {
+    const fn new(owner: O, runner: R) -> Self {
+        Self { owner, runner }
+    }
+
+    pub fn into_parts(self) -> (O, R) {
+        (self.owner, self.runner)
     }
 }
 
@@ -67,105 +90,154 @@ pub enum Esp32s31StationStopReason {
 }
 
 /// Complete application-visible result with the exact lifecycle owner.
-pub enum Esp32s31StationExit<O, E> {
+pub enum Esp32s31StationExit<O, R, E> {
     Stopped {
-        resources: Esp32s31StationResources<O>,
+        resources: Esp32s31StationReturnedResources<O, R>,
         progress: StaLifecycleProgress,
         reason: Esp32s31StationStopReason,
     },
     RetryExhausted {
-        resources: Esp32s31StationResources<O>,
+        resources: Esp32s31StationReturnedResources<O, R>,
         progress: StaLifecycleProgress,
         failure: StaAttemptFailure<E>,
     },
     Terminal {
-        resources: Esp32s31StationResources<O>,
+        resources: Esp32s31StationReturnedResources<O, R>,
         progress: StaLifecycleProgress,
         failure: StaAttemptFailure<E>,
     },
 }
 
-/// Namespace used to construct a controller/runner pair without exposing the
-/// chip-independent lifecycle service to application code.
-pub struct Esp32s31Station;
-
-impl Esp32s31Station {
-    pub fn new<'control, M, O, B, F>(
-        config: Esp32s31StationConfig,
-        resources: Esp32s31StationResources<O>,
-        control: &'control mut Esp32s31StationControlResources<M>,
-        backend: F,
-    ) -> (
+/// Materialize one task-owned station lifecycle and its hardware-free
+/// application controller in a single transaction.
+pub fn prepare_esp32s31_station_task<'control, M, R>(
+    config: Esp32s31StationConfig,
+    resources: Esp32s31StationStartResources<R::Owner>,
+    control: &'control mut Esp32s31StationControlResources<M>,
+    runner: R,
+) -> Result<
+    (
         Esp32s31StationController<'control, M>,
-        Esp32s31StationRunner<'control, M, B>,
-    )
-    where
-        M: RawMutex,
-        B: StaLifecycleBackend<Owner = O>,
-        F: FnOnce(Esp32s31StationCommandReceiver<'control, M>) -> B,
-    {
-        let (controller, receiver) = control.split();
-        let runner = Esp32s31StationRunner {
-            lifecycle: StaLifecycleService::new(backend(receiver), config.reconnect),
-            resources,
-            initial_candidate: config.initial_candidate,
-            control: controller.resources(),
-            _mutex: PhantomData,
-        };
-        (controller, runner)
-    }
+        Esp32s31StationTask<'control, M, R>,
+    ),
+    Esp32s31StationControlError,
+>
+where
+    M: RawMutex,
+    R: Esp32s31StationAttemptRunner<M>,
+{
+    let (controller, receiver) = control.split()?;
+    let backend = Esp32s31StationLifecycleBackend::new(receiver, runner);
+    let task = Esp32s31StationTask {
+        lifecycle: Some(StaLifecycleService::new(backend, config.reconnect)),
+        resources: Some(resources),
+        initial_candidate: config.initial_candidate,
+        control: controller.resources(),
+        completion_pending: true,
+        _mutex: PhantomData,
+    };
+    Ok((controller, task))
 }
 
 /// Owned station service. Running it consumes the initial owner and always
-/// returns the lifecycle's exact final owner in [`Esp32s31StationExit`].
-pub struct Esp32s31StationRunner<'control, M: RawMutex, B: StaLifecycleBackend> {
-    lifecycle: StaLifecycleService<B>,
-    resources: Esp32s31StationResources<B::Owner>,
+/// returns both the lifecycle's exact final owner and its platform runner in
+/// [`Esp32s31StationExit`].
+///
+/// Dropping this task or its in-flight [`run`](Self::run) future is not a
+/// shutdown operation. It publishes [`Esp32s31StationCompletion::Faulted`]
+/// and permanently prevents another task from splitting the same control
+/// resources. Live lower-level owners independently retain or poison their
+/// DMA/IRQ resources, so cancellation cannot be mistaken for quiescence.
+pub struct Esp32s31StationTask<'control, M: RawMutex, R: Esp32s31StationAttemptRunner<M>> {
+    lifecycle: Option<StaLifecycleService<Esp32s31StationLifecycleBackend<'control, M, R>>>,
+    resources: Option<Esp32s31StationStartResources<R::Owner>>,
     initial_candidate: StaNextCandidate,
     control: &'control Esp32s31StationControlResources<M>,
+    completion_pending: bool,
     _mutex: PhantomData<M>,
 }
 
-impl<M, B> Esp32s31StationRunner<'_, M, B>
+impl<M, R> Esp32s31StationTask<'_, M, R>
 where
     M: RawMutex,
-    B: StaLifecycleBackend,
+    R: Esp32s31StationAttemptRunner<M>,
 {
-    pub async fn run(mut self) -> Esp32s31StationExit<B::Owner, B::Error> {
-        let owner = self.resources.into_owner();
-        match self
+    pub async fn run(mut self) -> Esp32s31StationExit<R::Owner, R, R::Error> {
+        let owner = self
+            .resources
+            .take()
+            .expect("station task starts with exactly one owner")
+            .into_owner();
+        let mut lifecycle = self
             .lifecycle
+            .take()
+            .expect("station task starts with exactly one lifecycle");
+        let outcome = lifecycle
             .run_with_candidate(owner, self.initial_candidate)
-            .await
-        {
-            StaLifecycleExit::Stopped { owner, progress } => Esp32s31StationExit::Stopped {
-                resources: Esp32s31StationResources::new(owner),
-                progress,
-                reason: self
-                    .control
-                    .take_terminal()
-                    .map_or(Esp32s31StationStopReason::Backend, |command| {
-                        Esp32s31StationStopReason::Requested(command)
-                    }),
-            },
+            .await;
+        let (receiver, runner) = lifecycle.into_backend().into_parts();
+        let (exit, completion) = match outcome {
+            StaLifecycleExit::Stopped { owner, progress } => (
+                Esp32s31StationExit::Stopped {
+                    resources: Esp32s31StationReturnedResources::new(owner, runner),
+                    progress,
+                    reason: self
+                        .control
+                        .take_terminal()
+                        .map_or(Esp32s31StationStopReason::Backend, |command| {
+                            Esp32s31StationStopReason::Requested(command)
+                        }),
+                },
+                Esp32s31StationCompletion::Stopped,
+            ),
             StaLifecycleExit::Exhausted {
                 owner,
                 progress,
                 failure,
-            } => Esp32s31StationExit::RetryExhausted {
-                resources: Esp32s31StationResources::new(owner),
-                progress,
-                failure,
-            },
+            } => (
+                Esp32s31StationExit::RetryExhausted {
+                    resources: Esp32s31StationReturnedResources::new(owner, runner),
+                    progress,
+                    failure,
+                },
+                Esp32s31StationCompletion::Ended,
+            ),
             StaLifecycleExit::Terminal {
                 owner,
                 progress,
                 failure,
-            } => Esp32s31StationExit::Terminal {
-                resources: Esp32s31StationResources::new(owner),
-                progress,
-                failure,
-            },
+            } => (
+                Esp32s31StationExit::Terminal {
+                    resources: Esp32s31StationReturnedResources::new(owner, runner),
+                    progress,
+                    failure,
+                },
+                Esp32s31StationCompletion::Ended,
+            ),
+        };
+        self.control.publish_completion(completion);
+        self.completion_pending = false;
+        // The receiver's fail-closed Drop observes the completion published
+        // above. Keep it alive until this edge so extracting the runner cannot
+        // transiently classify a clean stop as cancellation.
+        drop(receiver);
+        exit
+    }
+}
+
+impl<M, R> Drop for Esp32s31StationTask<'_, M, R>
+where
+    M: RawMutex,
+    R: Esp32s31StationAttemptRunner<M>,
+{
+    fn drop(&mut self) {
+        if self.completion_pending {
+            // Active phase owners have their own fail-closed Drop contracts.
+            // This acknowledgement never claims that IRQ or DMA stopped; it
+            // only prevents the application from waiting forever and makes
+            // the required reset explicit.
+            self.control
+                .publish_completion(Esp32s31StationCompletion::Faulted);
         }
     }
 }

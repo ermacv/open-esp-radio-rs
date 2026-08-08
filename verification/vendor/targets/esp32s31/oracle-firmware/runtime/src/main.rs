@@ -56,11 +56,18 @@ use open_esp_radio::esp32s31::{
             RX_NEXT_DESCRIPTOR,
         },
     },
-    wifi::lmac::{
-        descriptor::{Descriptor, rx_done},
-        init::{configure_sta_link_receive_policy, initialize_promiscuous_receive},
-        rx::{RxIngressConfig, RxSegment, build_cold_ring, extract_management, publish_cold_ring},
-        tx::{LegacyTxConfig, TxSlot},
+    wifi::{
+        dma::descriptor::{Descriptor, rx_done},
+        mac::{
+            init::{
+                MacColdStartConfig, activate_promiscuous_receive,
+                configure_sta_link_receive_policy, initialize_wifi_mac,
+            },
+            rx::{
+                RxIngressConfig, RxSegment, build_cold_ring, extract_management, publish_cold_ring,
+            },
+            tx::{LegacyTxConfig, TxSlot},
+        },
     },
 };
 use open_esp_radio::wifi::ieee80211::station::{
@@ -954,12 +961,14 @@ async fn run_open_mac_rx(
     let mut access_point_address = [0_u8; 6];
     access_point_address
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
-    let cold = match initialize_promiscuous_receive(
+    let cold = match initialize_wifi_mac(
         platform,
         mmio,
-        MAC_HANDSHAKE_SAMPLE_LIMIT,
-        station_address,
-        access_point_address,
+        MacColdStartConfig {
+            handshake_sample_limit: MAC_HANDSHAKE_SAMPLE_LIMIT,
+            station_address,
+            access_point_address,
+        },
     ) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -969,6 +978,7 @@ async fn run_open_mac_rx(
             return false;
         }
     };
+    activate_promiscuous_receive(mmio);
     // SAFETY: `RX_STORAGE` is a `StaticCell`; its descriptors and buffers
     // remain allocated for the complete oracle image and this function owns
     // the only RX walker until shutdown/reboot.

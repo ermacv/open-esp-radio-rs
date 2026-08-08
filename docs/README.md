@@ -9,6 +9,8 @@ provenance, not instructions.
 
 - [Architecture](ARCHITECTURE.md) — crate boundaries, protocol/chip scope,
   dependency direction and the separate test-harness layer.
+- [Radio lifecycle and ownership](RADIO_LIFECYCLE_AND_OWNERSHIP.md) — normative
+  physical-radio, subsystem, coexistence and Wi-Fi role state/owner model.
 - [Naming and repository layout](NAMING_AND_LAYOUT.md) — canonical layer
   vocabulary, target directory tree and migration rules.
 - [Public source policy](SOURCE_POLICY.md) — allowed and excluded inputs.

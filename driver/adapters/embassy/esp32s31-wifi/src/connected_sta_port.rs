@@ -20,6 +20,11 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
+use open_esp_radio_esp32s31_wifi_sta::{
+    control_tx::Esp32s31ControlTx,
+    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
+    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
+};
 use open_esp_radio_ieee80211::{
     he::HeDcmConstellation,
     station::{StaAssociationPhy, StaTxSequenceCounters},
@@ -27,7 +32,7 @@ use open_esp_radio_ieee80211::{
 };
 use open_esp_radio_wifi_softmac::{
     MacServiceCapabilities, MacTxPlan, WifiPlan,
-    interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
+    interface::{BoundVirtualInterface, VifRole},
 };
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
@@ -40,15 +45,12 @@ use crate::{
     },
     connected_services::Esp32s31ConnectedServices,
     control_mailbox::ConnectedControlReceiver,
-    control_tx::Esp32s31ControlTx,
     embassy_irq::EmbassyMacIrqRuntime,
-    ordinary_tx::{WifiTxEntropy, WifiTxPowerProfile, WifiTxTimer},
     rx_pipeline_observer::RxPipelineObserver,
     rx_reorder::{
         RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandReceiver, RxReorderCommandSender,
         RxReorderFrameStorage,
     },
-    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
 };
 /// Stateless namespace for preparing and composing a connected owner graph.
 pub struct Esp32s31ConnectedStaPort;
@@ -58,8 +60,9 @@ mod plan;
 mod resources;
 
 pub use plan::{
-    Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaPlan,
-    Esp32s31ConnectedStaPrepareFailure, Esp32s31ConnectedStaRateConfig,
+    Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
+    Esp32s31ConnectedStaConfigError, Esp32s31ConnectedStaPlan, Esp32s31ConnectedStaPrepareFailure,
+    Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
 };
 pub use resources::{
     Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,

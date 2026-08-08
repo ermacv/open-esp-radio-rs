@@ -57,9 +57,16 @@ readability.
 
 With `esp32s31-wifi-embassy`, the complete public vocabulary is under
 `open_esp_radio::esp32s31::wifi::embassy::monitor`: the S31 RX and interrupt
-service plus the chip-neutral capture pool/sink/receiver. The service consumes
-the checked standalone plan, starts the DMA walker, activates the qualified
-interrupt epoch and permits owner extraction only after a cooperative stop.
+task materialization plus the chip-neutral capture pool/sink/receiver. Raw
+scan, DMA-service and interrupt-epoch phases remain implementation APIs of the
+direct integration crate rather than application-façade aliases. The task
+consumes the checked standalone plan, starts the DMA walker and activates the
+qualified interrupt epoch. Its public completion reports a clean cooperative
+stop. Consuming `Esp32s31MonitorTask::try_into_stopped` after that edge returns
+the common `Esp32s31WifiStopped` owner plus the independent monitor DMA, sink,
+route and executor resources. The same builder consumes that stopped owner,
+so a monitor can be materialized again without reconstructing hardware
+capabilities from statics.
 Its borrowed run future and fail-closed destructor prevent cancellation or
 scope exit from silently destroying an active DMA/ISR owner. Failure to
 confirm shutdown enters the platform reset boundary.
@@ -76,3 +83,9 @@ Bluetooth and IEEE 802.15.4 can already be selected as distinct subsystem
 requests so that unsupported combinations fail before initialization. Their
 protocol-specific configuration and handles will be introduced only with real
 owner graphs rather than speculative placeholder APIs.
+
+The target physical-radio, subsystem, coexistence and Wi-Fi role transitions
+are defined in
+[`RADIO_LIFECYCLE_AND_OWNERSHIP.md`](../../docs/RADIO_LIFECYCLE_AND_OWNERSHIP.md).
+In particular, Bluetooth LE and BR/EDR belong to one Bluetooth subsystem
+family, and a future configuration selector is not an implemented capability.

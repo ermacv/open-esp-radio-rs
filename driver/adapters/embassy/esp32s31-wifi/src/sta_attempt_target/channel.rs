@@ -26,8 +26,7 @@ where
     }
 }
 
-impl<'cell, 'registers, P, O, D>
-    Esp32s31StaAttemptChannel<CooperativeRadioHardware<'cell, 'registers>>
+impl<'arena, P, O, D> Esp32s31StaAttemptChannel<CooperativeRadioHardware<'arena>>
     for Esp32s31ScanPhy<'_, P, O, D>
 where
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
@@ -36,12 +35,13 @@ where
 {
     fn switch_channel<'a>(
         &'a mut self,
-        hardware: &'a mut CooperativeRadioHardware<'cell, 'registers>,
+        hardware: &'a mut CooperativeRadioHardware<'arena>,
         channel_or_frequency: u16,
         cbw: u8,
     ) -> impl Future<Output = Result<(), PhyTargetPortError>> + 'a {
         async move {
-            let mut registers = hardware.register_cell().borrow_mut();
+            let access = hardware.register_access();
+            let mut registers = access.borrow_mut();
             Esp32s31ScanPhy::switch_channel(self, channel_or_frequency, cbw, &mut registers).await
         }
     }

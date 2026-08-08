@@ -26,6 +26,7 @@ use open_esp_radio_esp32s31_wifi_sta::{
         Esp32s31StaAttemptStepError, Esp32s31StaConnectedEntryFailure,
     },
     channel::Esp32s31ScanPhy,
+    cooperative_hardware::CooperativeRadioHardware,
     join::{Esp32s31StaJoinObserver, Esp32s31StaJoinPortError, Esp32s31StaJoinTransmit},
     peer::{
         Esp32s31ConnectedStaPeer, Esp32s31PreparedStaPeer, Esp32s31ProgrammedStaPeer,
@@ -55,7 +56,6 @@ use open_esp_radio_wpa2::{
 };
 
 use crate::{
-    cooperative_hardware::CooperativeRadioHardware,
     join_time::EmbassyStaJoinTimer,
     preconnected_rx::{
         Esp32s31PreconnectedRx, Esp32s31PreconnectedRxDelay, Esp32s31PreconnectedRxError,

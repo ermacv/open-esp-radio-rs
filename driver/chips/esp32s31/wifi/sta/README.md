@@ -7,7 +7,6 @@ executor mechanisms used to wait for them.
 
 Module map:
 
-- `cold_start`: finite power, PHY registration and initial MAC/RX startup;
 - `channel`: persistent PHY/channel owner retained across scan and reconnect;
 - `association`: PHY/rate/power plan derived from a selected candidate;
 - `peer`: associated-peer WMM/HT/HE/rate-control programming;

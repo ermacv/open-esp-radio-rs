@@ -25,7 +25,6 @@ mod cold_rx_policy;
 mod cold_txrx;
 pub mod connected_rx;
 pub mod crypto;
-pub mod descriptor;
 pub mod edca;
 pub mod he;
 pub mod init;
@@ -38,10 +37,7 @@ pub mod rate_schedule;
 pub mod rx;
 pub mod rx_ampdu;
 pub mod rx_ampdu_hw;
-pub mod rx_dma;
 pub mod rx_pool;
-pub mod rx_ring;
-pub mod rx_storage;
 mod sniffer;
 mod sta_link_policy;
 pub mod tx;
@@ -49,7 +45,3 @@ pub mod tx_ampdu;
 pub mod tx_plcp;
 pub mod tx_policy;
 pub mod tx_runtime;
-
-// Preserve the qualified `mac::scan` path while the protocol owner moves to
-// its hardware-independent crate.
-pub use open_esp_radio_ieee80211::scan;

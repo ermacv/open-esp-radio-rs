@@ -4,11 +4,10 @@ use core::pin::Pin;
 
 use open_esp_radio_esp32s31_wifi_mac::{tx::TxSlot, tx_runtime::StaTxRuntimePolicy};
 use open_esp_radio_esp32s31_wifi_sta::{
+    control_tx::Esp32s31ControlTx,
     tx::{ControlTxConfig, WifiTxEntropy, WifiTxPowerProfile, WifiTxResources, WifiTxTimer},
     tx_epoch::{Esp32s31StaTxEpoch, Esp32s31StaTxEpochError},
 };
-
-use crate::control_tx::Esp32s31ControlTx;
 
 /// Runtime construction methods for a STA epoch whose control owner is the
 /// Embassy-composed ordinary transmitter.

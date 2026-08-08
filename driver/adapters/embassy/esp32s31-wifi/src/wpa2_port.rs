@@ -7,9 +7,10 @@
 use core::future::Future;
 
 use open_esp_radio_esp32s31_wifi_mac::rx::{RxDma, RxIngressConfig, extract_data};
+use open_esp_radio_esp32s31_wifi_sta::wpa2::{
+    Esp32s31Wpa2Receive, Esp32s31Wpa2Station, copy_station_eapol,
+};
 use open_esp_radio_wpa2::runner::Wpa2RxProgress;
-
-pub use open_esp_radio_esp32s31_wifi_sta::wpa2::*;
 
 use crate::{
     preconnected_rx::{

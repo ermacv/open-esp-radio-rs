@@ -1,36 +1,15 @@
 #![forbid(unsafe_code)]
 
-use core::{cell::RefCell, sync::atomic::Ordering};
+use core::sync::atomic::Ordering;
 
 use embassy_net::{Config as NetworkConfig, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
 use embassy_net_driver::LinkState;
 use embassy_time::Timer;
+use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        aggregate_tx::AggregateTxResources,
-        connected_runner::ConnectedRunner,
-        connected_sta_port::{
-            Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
-            Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
-            Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxResources,
-        },
-        connected_sta_teardown::{
-            Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
-        },
-        cooperative_hardware::CooperativeRadioHardware,
-        network_rx::EmbassyNetConnectedRxSink,
-        rx_dma_service::Esp32s31RxEpochResources,
-        sta_tx_epoch::Esp32s31StaTxEpochExt,
-        station::{
-            Esp32s31ConnectedStationExit, Esp32s31ConnectedTaskStopOutcome,
-            Esp32s31StationReconnectSource, run_esp32s31_connected_station_epoch,
-            stop_esp32s31_connected_task_group,
-        },
-        station_epoch::Esp32s31ReconnectedStaEpochParts,
-    },
     esp32s31::wifi::{
         dma::tx_ampdu_storage::AmpduDmaStorage,
-        lmac::{
+        mac::{
             crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
             init::MAC_COLD_RX_INTERRUPT_MASK,
             tx::{HeEdcaTxopLimit, TxPhyRate},
@@ -38,7 +17,33 @@ use open_esp_radio::{
         },
         sta::peer::Esp32s31StaConnectedLink,
     },
-    wifi::ieee80211::station::StaTxSequenceCounters,
+    wifi::{
+        ieee80211::station::StaTxSequenceCounters,
+        softmac::interface::{
+            BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface,
+        },
+    },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    aggregate_tx::AggregateTxResources,
+    connected_runner::ConnectedRunner,
+    connected_sta_port::{
+        Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
+        Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
+        Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxResources,
+    },
+    connected_sta_teardown::{
+        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
+    },
+    network_rx::EmbassyNetConnectedRxSink,
+    rx_dma_service::Esp32s31RxEpochResources,
+    sta_tx_epoch::Esp32s31StaTxEpochExt,
+    station::{
+        Esp32s31ConnectedStationExit, Esp32s31ConnectedTaskStopOutcome,
+        Esp32s31StationReconnectSource, run_esp32s31_connected_station_epoch,
+        stop_esp32s31_connected_task_group,
+    },
+    station_epoch::Esp32s31ReconnectedStaEpochParts,
 };
 use open_esp_radio_hil_protocol::{
     NetworkIpv4Configuration, StationDisconnectReason, StationFaultClassification,
@@ -57,10 +62,10 @@ use crate::{
         RadioHilConnectedEpochReturn, RadioHilConnectedExit, RadioHilConnectedTaskFixture,
         RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig, RadioHilDisconnectedEpoch,
         RadioHilRunningNetwork, RadioHilStaNetwork, RadioHilStationCommandReceiver,
-        RadioHilStationEpochProgress, StaAssociationSecurity, StaConnectedSession,
-        TX_AMPDU_FRAME_COUNT, connected_network_report_task, connected_network_stack_task,
-        connected_rx_protocol_task, connected_traffic::observe_open_radio_task_polls,
-        connected_traffic_task, injected_tx_source_requires_reset,
+        RadioHilStationEpochProgress, StaConnectedSession, TX_AMPDU_FRAME_COUNT,
+        connected_network_report_task, connected_network_stack_task, connected_rx_protocol_task,
+        connected_traffic::observe_open_radio_task_polls, connected_traffic_task,
+        injected_tx_source_requires_reset,
     },
 };
 
@@ -103,13 +108,23 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         generation,
         peer,
         network,
+        security,
+    } = session;
+    let open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity {
         pmk,
         supplicant_nonce,
         sequences,
-    } = session;
-    let connected_plan =
-        Esp32s31ConnectedStaPort::prepare::<TX_AMPDU_FRAME_COUNT>(peer, policy.station)
-            .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
+        message4_protection,
+    } = security;
+    let interface = BoundVirtualInterface::new(
+        VirtualInterface::new(VifId::PRIMARY, VifRole::Station, peer.link.station_address),
+        ChannelContextId::PRIMARY,
+    );
+    let connected_plan = Esp32s31ConnectedStaPort::prepare_for_interface_with_storage::<
+        TX_AMPDU_FRAME_COUNT,
+        RX_BLOCK_ACK_SOFTWARE_WINDOW,
+    >(peer, policy.station, interface)
+    .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
     let connected_rx_irq_start = epoch_services.irq.rx_post_count();
     let connected_mac_irq_start = OPEN_RADIO_MAC_IRQ_ENTRIES.load(Ordering::Relaxed);
     let connected_irq_classification_start = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.snapshot();
@@ -125,9 +140,17 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // connected path enables the ISR-owned RX/TX Signal sink.
     // After `activate`, ordinary `RadioRegisters` cannot touch those
     // registers.
-    interrupt_epoch
-        .activate(platform, MAC_COLD_RX_INTERRUPT_MASK)
-        .unwrap_or_else(|error| panic!("MAC interrupt epoch activation failed: {error:?}"));
+    if let Err(error) = interrupt_epoch.activate(platform, MAC_COLD_RX_INTERRUPT_MASK) {
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=FAIL stage=production-interrupt-start \
+             error={error:?} reset_required=1"
+        ));
+        // The host resets the board after observing the typed failure line.
+        // Retain the complete function frame until then.
+        loop {
+            Timer::after_secs(60).await;
+        }
+    }
 
     let (stack, network_runner, stack_runner) = match network {
         RadioHilStaNetwork::Unstarted { device, runner } => {
@@ -193,8 +216,11 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
 
     let (staged_rx_sender, staged_rx_receiver) = epoch_services.staged_rx.split();
     let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
-        RadioHilConnectedEpochResources::Initial { registers, rx } => {
-            let rx_ring = match rx.try_into_live_with_storage(registers, rx_storage).await {
+        RadioHilConnectedEpochResources::Initial { mut registers, rx } => {
+            let rx_ring = match rx
+                .try_into_live_with_storage(&mut registers, rx_storage)
+                .await
+            {
                 Ok(ring) => ring,
                 Err(failure) => {
                     emergency_log(format_args!(
@@ -234,7 +260,12 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             .expect("standby A-MPDU metadata and descriptor storage must be valid");
             let ampdu = AggregateTxResources::pipelined(ampdu, standby_ampdu);
             let control_resources = storage.control.init(ControlResources::new());
-            let registers = storage.registers.init(RefCell::new(registers));
+            let register_arena = storage
+                .registers
+                .init_with(open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena::new);
+            let registers = register_arena
+                .publish(registers)
+                .unwrap_or_else(|_| panic!("connected register arena requires radio reset"));
             (
                 CooperativeRadioHardware::new(registers),
                 rx,
@@ -330,7 +361,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         },
     );
 
-    let registers = hardware.register_cell();
+    let registers = hardware.register_access();
     let drivers = Esp32s31ConnectedStaPort::assemble(
         connected_plan,
         Esp32s31ConnectedStaDriverParts {
@@ -506,9 +537,20 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // radio runner no longer schedules RX/control; masking both CPU and
     // peripheral routes now makes the command/frame drain finite and prevents
     // a stale wake from leaking into the next connected epoch.
-    let interrupt_drain = interrupt_epoch
-        .quiesce(platform)
-        .unwrap_or_else(|error| panic!("MAC interrupt epoch quiescence failed: {error:?}"));
+    let interrupt_drain = match interrupt_epoch.quiesce(platform) {
+        Ok(drain) => drain,
+        Err(error) => {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=FAIL stage=production-interrupt-stop \
+                 error={error:?} reset_required=1"
+            ));
+            // The host owns board reset after a failed HIL transaction. Keep
+            // this stack frame and every role owner alive until that reset.
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-interrupt-stop \
          rx_wake={} rx_capacity_wake={} tx_events={:#010x} power_events={:#010x}",
@@ -735,10 +777,11 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             connected_epoch,
         },
         disconnected,
-        security: StaAssociationSecurity {
+        security: open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity {
             pmk,
             supplicant_nonce,
             sequences,
+            message4_protection,
         },
         exit: runner_exit,
     }

@@ -113,6 +113,18 @@ impl<N, H, R, A, C> Esp32s31DisconnectedStaEpoch<N, H, R, A, C> {
         &self.rx
     }
 
+    /// Consume the peer-independent stopped frontier for role
+    /// dematerialization or board-level resource regrouping.
+    pub fn into_parts(self) -> Esp32s31DisconnectedStaEpochParts<N, H, R, A, C> {
+        Esp32s31DisconnectedStaEpochParts {
+            network: self.network,
+            hardware: self.hardware,
+            rx: self.rx,
+            aggregate_tx: self.aggregate_tx,
+            control: self.control,
+        }
+    }
+
     /// Split out only the capabilities used by a finite running scan.
     pub fn into_running_scan_parts(self) -> Esp32s31RunningScanEpochParts<N, H, R, A, C> {
         Esp32s31RunningScanEpochParts {
@@ -126,6 +138,17 @@ impl<N, H, R, A, C> Esp32s31DisconnectedStaEpoch<N, H, R, A, C> {
             rx: self.rx,
         }
     }
+}
+
+/// Complete value returned when the disconnected station epoch is
+/// dematerialized. No field is optional because connected teardown has
+/// already returned every child owner.
+pub struct Esp32s31DisconnectedStaEpochParts<N, H, R, A, C> {
+    pub network: N,
+    pub hardware: H,
+    pub rx: R,
+    pub aggregate_tx: A,
+    pub control: C,
 }
 
 impl<N, H, R, A, C> Esp32s31DisconnectedStaEpoch<N, H, R, A, C>

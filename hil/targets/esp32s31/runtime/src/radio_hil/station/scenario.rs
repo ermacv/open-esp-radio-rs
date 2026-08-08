@@ -4,21 +4,23 @@ use embassy_executor::{SendSpawner, Spawner};
 use embassy_time::Instant;
 use esp_hal::rng::Trng;
 use open_esp_radio::{
-    adapters::esp32s31::wifi_embassy::{
-        embassy_irq::Esp32s31MacInterruptEpoch,
-        station::{
-            Esp32s31Station, Esp32s31StationConfig, Esp32s31StationControlResources,
-            Esp32s31StationExit, Esp32s31StationResources,
-        },
-    },
     esp32s31::{
-        hal::{ColdRadioRegisters, RadioRegisters},
+        hal::ColdRadioRegisters,
         phy::phy_cold::PhyColdState,
+        wifi::sta::attempt::{Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation},
     },
     wifi::{
         ieee80211::station::StaTxSequenceCounters,
+        softmac::interface::BoundVirtualInterface,
         sta::station::{StaNextCandidate, StaReconnectPolicy},
         wpa2::Pmk,
+    },
+};
+use open_esp_radio_esp32s31_wifi_embassy::{
+    embassy_irq::Esp32s31MacInterruptEpoch,
+    station::{
+        Esp32s31StationConfig, Esp32s31StationControlResources, Esp32s31StationExit,
+        Esp32s31StationStartResources, prepare_esp32s31_station_task,
     },
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::{
@@ -32,18 +34,19 @@ use crate::{
     console::emergency_log,
     radio_hil::{
         NetworkResources, NetworkTxPool, OPEN_RADIO_IRQ_RUNTIME, OPEN_RADIO_NETWORK_RESOURCES,
-        OPEN_RADIO_NETWORK_TX_POOL, OPEN_RADIO_POWER_IRQ_RUNTIME, OPEN_RADIO_RUNNING_REGISTERS,
-        OPEN_RADIO_STATION_CONTROL_RESOURCES, connected_epoch_bindings, connected_rx_bindings,
-        connected_task_bindings, network_report_bindings, open_radio_mac_interrupt,
-        open_radio_power_interrupt, station_epoch_coordinator,
+        OPEN_RADIO_NETWORK_TX_POOL, OPEN_RADIO_POWER_IRQ_RUNTIME,
+        OPEN_RADIO_STATION_CONTROL_RESOURCES, STA_ASSOCIATION_PREFERENCE, connected_epoch_bindings,
+        connected_rx_bindings, connected_task_bindings, network_report_bindings,
+        open_radio_mac_interrupt, open_radio_power_interrupt, radio_hil_message4_protection,
+        station_epoch_coordinator,
     },
 };
 
 use super::{
     RadioHilAuthenticationReady, RadioHilColdScanHandoff, RadioHilConnectedFixture,
-    RadioHilStaLifecycleBackend, RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner,
-    RadioHilStaNetwork, StaAssociationSecurity, StaJoinTarget, protocol_station_failure_reason,
-    protocol_station_failure_stage, run_cold_station_scan, station_control_task,
+    RadioHilStaAttemptRunner, RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner,
+    RadioHilStaNetwork, protocol_station_failure_reason, protocol_station_failure_stage,
+    run_cold_station_scan, station_control_task,
 };
 
 /// Allocate the station/network ownership graph exactly once.
@@ -72,10 +75,17 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
     trng: &Trng,
     network_credentials: &mut NetworkCredentials,
     network_ipv4: NetworkIpv4Configuration,
+    station_interface: BoundVirtualInterface,
 ) -> bool {
     let platform = &mut platform;
-    let Some(handoff) =
-        run_cold_station_scan(state, platform, cold_mmio, network_credentials).await
+    let Some(handoff) = run_cold_station_scan(
+        state,
+        platform,
+        cold_mmio,
+        network_credentials,
+        station_interface,
+    )
+    .await
     else {
         return false;
     };
@@ -98,7 +108,7 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
     // owner before authentication and retain the inactive interrupt setup
     // token until WPA2 has opened the controlled port.
     let (running_mmio, interrupt_setup) = cold_mmio.into_running();
-    let mmio: &'static mut RadioRegisters = OPEN_RADIO_RUNNING_REGISTERS.init(running_mmio);
+    let mmio = running_mmio;
     let mut interrupt_epoch = Esp32s31MacInterruptEpoch::new(
         EspHalMacInterruptRoute::new(open_radio_mac_interrupt, open_radio_power_interrupt),
         interrupt_setup,
@@ -148,9 +158,10 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                 "OPEN_RADIO_PHY_HIL stage=sta-sequence-session seed={sequence_seed}"
             ));
             let mut sequences = StaTxSequenceCounters::new(sequence_seed);
-            let target = StaJoinTarget {
+            let target = Esp32s31StaAttemptStation {
                 station_address,
                 access_point,
+                association_preference: STA_ASSOCIATION_PREFERENCE,
             };
             let fixture = RadioHilConnectedFixture {
                 state,
@@ -176,22 +187,24 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                 target,
                 rx: scan_rx,
                 network: initialize_sta_network(station_address),
-                security: StaAssociationSecurity {
+                security: Esp32s31StaAttemptSecurity {
                     pmk: &pmk,
                     supplicant_nonce,
                     sequences: &mut sequences,
+                    message4_protection: radio_hil_message4_protection(),
                 },
             });
             let policy = StaReconnectPolicy::new(3, 100, 1_000, 100)
                 .expect("fixed HIL station reconnect policy is valid");
             let station_control =
                 OPEN_RADIO_STATION_CONTROL_RESOURCES.init(Esp32s31StationControlResources::new());
-            let (controller, station) = Esp32s31Station::new(
+            let (controller, station) = prepare_esp32s31_station_task(
                 Esp32s31StationConfig::new(policy).with_initial_candidate(StaNextCandidate::Reuse),
-                Esp32s31StationResources::new(owner),
+                Esp32s31StationStartResources::new(owner),
                 station_control,
-                RadioHilStaLifecycleBackend::new,
-            );
+                RadioHilStaAttemptRunner::new(),
+            )
+            .unwrap_or_else(|_| panic!("HIL station control requires radio reset"));
             spawner.spawn(
                 station_control_task(controller, station_epoch_coordinator())
                     .unwrap_or_else(|_| panic!("station controller task allocation failed")),
@@ -208,11 +221,20 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                          connected_epochs={} attempts={} reason={reason:?}",
                         progress.connected_epochs, progress.attempts_started,
                     ));
-                    let owner = resources.into_owner();
+                    let (owner, _runner) = resources.into_parts();
                     let completed_join = progress.connected_epochs != 0;
-                    let _owner = owner;
+                    let registers_reclaimed = match owner.try_reclaim_registers() {
+                        Ok(_registers) => true,
+                        Err(error) => {
+                            emergency_log(format_args!(
+                                "OPEN_RADIO_PHY_HIL result=FAIL \
+                                 stage=production-sta-lifecycle-reclaim error={error:?}"
+                            ));
+                            false
+                        }
+                    };
                     (
-                        completed_join,
+                        completed_join && registers_reclaimed,
                         completed_join,
                         completed_join,
                         completed_join,
@@ -247,7 +269,7 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                         } => (true, associated, message1, message3),
                         _ => (true, true, true, true),
                     };
-                    let owner = resources.into_owner();
+                    let (owner, _runner) = resources.into_parts();
                     let _owner = owner;
                     result
                 }
@@ -262,7 +284,7 @@ pub(in crate::radio_hil) async fn run_full_station_hil(
                          connected_epochs={} attempts={} failure={failure:?}",
                         progress.connected_epochs, progress.attempts_started,
                     ));
-                    let owner = resources.into_owner();
+                    let (owner, _runner) = resources.into_parts();
                     let completed_join = progress.connected_epochs != 0;
                     let _owner = owner;
                     (

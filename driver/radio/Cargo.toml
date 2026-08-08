@@ -18,8 +18,6 @@ wifi = [
 ]
 adapter-embassy-net = ["dep:open-esp-radio-embassy-net"]
 adapter-embassy-wifi = ["wifi", "dep:open-esp-radio-wifi-embassy"]
-# Compatibility alias for the pre-adapters public vocabulary.
-integration-embassy-net = ["adapter-embassy-net"]
 esp32s31 = [
     "dep:open-esp-radio-esp32s31-hal",
     "dep:open-esp-radio-esp32s31-pac",
@@ -29,6 +27,7 @@ esp32s31 = [
 esp32s31-wifi = [
     "esp32s31",
     "wifi",
+    "dep:open-esp-radio-esp32s31-wifi",
     "dep:open-esp-radio-esp32s31-wifi-dma",
     "dep:open-esp-radio-esp32s31-wifi-mac",
     "dep:open-esp-radio-esp32s31-wifi-sta",
@@ -48,6 +47,7 @@ validation-raw-dma = [
 open-esp-radio-embassy-net = { path = "../adapters/embassy-net", optional = true }
 open-esp-radio-esp32s31-hal = { path = "../chips/esp32s31/hal", optional = true }
 open-esp-radio-esp32s31-pac = { path = "../chips/esp32s31/pac", optional = true }
+open-esp-radio-esp32s31-wifi = { path = "../chips/esp32s31/wifi", optional = true }
 open-esp-radio-esp32s31-wifi-dma = { path = "../chips/esp32s31/wifi/dma", optional = true }
 open-esp-radio-esp32s31-wifi-mac = { path = "../chips/esp32s31/wifi/mac", optional = true }
 open-esp-radio-esp32s31-wifi-sta = { path = "../chips/esp32s31/wifi/sta", optional = true }

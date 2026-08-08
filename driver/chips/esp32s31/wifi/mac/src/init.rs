@@ -67,17 +67,25 @@ pub trait MacSlowClockCalibrationSource {
     fn mac_slow_clock_calibration(&mut self) -> u32;
 }
 
-/// Establish the reset-state MAC register configuration and accept all RX
-/// frame classes.
+/// Inputs for the role-neutral Wi-Fi MAC cold transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct MacColdStartConfig {
+    pub handshake_sample_limit: u32,
+    pub station_address: [u8; 6],
+    pub access_point_address: [u8; 6],
+}
+
+/// Establish the role-neutral reset-state MAC register configuration.
 ///
 /// The modem clock fields come from the pinned S31 register descriptions and
 /// reproduce `esp-radio`'s S31 `enable_wifi(true)` operation. The remaining
 /// ordered MAC writes come from the complete pinned `libpp.a` bodies named in
 /// this module's documentation.
 ///
-/// This function owns no descriptor storage and enables neither the RX walker
-/// nor MAC interrupts. The caller must publish its ring after this returns.
-pub fn initialize_promiscuous_receive<
+/// This function owns no descriptor storage, enables neither the RX walker nor
+/// a CPU interrupt route, and does not select a station/AP/monitor receive
+/// policy. A role builder must apply that policy before publishing its ring.
+pub fn initialize_wifi_mac<
     M: MacColdAntennaHardware
         + MacColdCoexHardware
         + MacColdCryptoHardware
@@ -90,8 +98,7 @@ pub fn initialize_promiscuous_receive<
         + MacColdRxPolicyHardware
         + MacColdTxRxHardware
         + MacInterfaceAddressHardware
-        + MacLowRateHardware
-        + MacSnifferHardware,
+        + MacLowRateHardware,
     P: MacClockControl
         + MacCoexPtiSource
         + MacDelayEntropy
@@ -100,9 +107,7 @@ pub fn initialize_promiscuous_receive<
 >(
     platform: &mut P,
     mmio: &mut M,
-    handshake_sample_limit: u32,
-    station_address: [u8; 6],
-    access_point_address: [u8; 6],
+    config: MacColdStartConfig,
 ) -> Result<MacColdStartOutcome, MacColdStartError> {
     // Match the vendor lifecycle's `wifi_clock_enable()` followed by
     // `wifi_reset_mac()`. The earlier PHY-owner reset can occur while the MAC
@@ -115,7 +120,7 @@ pub fn initialize_promiscuous_receive<
     platform.set_wifi_mac_reset(true);
     platform.set_wifi_mac_reset(false);
 
-    let outcome = mmio.begin_cold_handshake(handshake_sample_limit)?;
+    let outcome = mmio.begin_cold_handshake(config.handshake_sample_limit)?;
 
     // Direct prefix, all three exact on-chip HE callback paths, then suffix.
     mmio.initialize_txrx_prefix();
@@ -173,12 +178,16 @@ pub fn initialize_promiscuous_receive<
     // `wifi_set_rx_policy(0)` publishes both valid interface addresses after
     // `hal_init`; the address-valid bits are part of the S31 RX start gate even
     // when the sniffer subsequently disables address filtering.
-    program_cold_receive_addresses(mmio, station_address, access_point_address);
-
-    // The ownership-bound PAC transaction keeps the HIL-qualified open
-    // policy, complete vendor sniffer leaf, misc-class update and device fence
-    // together. It deliberately leaves queue 0..2 defaults intact.
-    mmio.configure_open_promiscuous_receive();
+    program_cold_receive_addresses(mmio, config.station_address, config.access_point_address);
 
     Ok(outcome)
+}
+
+/// Select the standalone/scan promiscuous receive policy after common init.
+///
+/// The ownership-bound transaction keeps the HIL-qualified open policy,
+/// complete vendor sniffer leaf, misc-class update and device fence together.
+/// It deliberately leaves queue 0..2 defaults intact.
+pub fn activate_promiscuous_receive<M: MacSnifferHardware>(mmio: &mut M) {
+    mmio.configure_open_promiscuous_receive();
 }

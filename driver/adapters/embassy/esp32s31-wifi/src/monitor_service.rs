@@ -4,7 +4,10 @@
 
 use core::{future::Future, pin::pin};
 
-use embassy_futures::select::{Either, select};
+use embassy_futures::{
+    select::{Either, select},
+    yield_now,
+};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     init::MAC_COLD_RX_INTERRUPT_MASK,
@@ -81,7 +84,7 @@ impl Esp32s31MonitorRunReport {
 
 /// Failure while closing an interrupt/RX ownership epoch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31MonitorCleanupError<E> {
+pub enum Esp32s31MonitorStopError<E> {
     /// CPU/peripheral routing could not be quiesced. RX remains live because
     /// stopping it while a handler may still own the register bank is unsafe.
     Interrupt(Esp32s31MacInterruptEpochQuiesceError<E>),
@@ -98,15 +101,23 @@ pub enum Esp32s31MonitorCleanupError<E> {
 pub enum Esp32s31MonitorRunError<E> {
     Start(Esp32s31RxRingOwnerError),
     Activate(Esp32s31MacInterruptEpochActivateError<E>),
-    ActivateCleanup {
+    ActivateStop {
         activation: Esp32s31MacInterruptEpochActivateError<E>,
-        cleanup: Esp32s31MonitorCleanupError<E>,
+        stop: Esp32s31MonitorStopError<E>,
     },
     Service {
         error: Esp32s31RxRingOwnerError,
-        cleanup: Option<Esp32s31MonitorCleanupError<E>>,
+        stop: Option<Esp32s31MonitorStopError<E>>,
     },
-    Shutdown(Esp32s31MonitorCleanupError<E>),
+    Stop(Esp32s31MonitorStopError<E>),
+}
+
+/// Why role-level hardware cannot currently be borrowed for a stopped-only
+/// operation such as channel switching.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31MonitorStoppedAccessError {
+    InterruptActive,
+    ReceiveLive,
 }
 
 /// Failed run report. The borrowed service retains every unique owner at its
@@ -123,7 +134,6 @@ pub struct Esp32s31MonitorRunFailure<E> {
 pub struct Esp32s31MonitorService<
     'storage,
     'runtime,
-    'platform,
     H,
     R,
     M: RawMutex,
@@ -134,19 +144,19 @@ pub struct Esp32s31MonitorService<
 > where
     H: RxDma,
     R: MacInterruptRoute,
+    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     hardware: Option<H>,
     receive: Option<Esp32s31MonitorRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>>,
     sink: Option<S>,
     interrupts: Option<Esp32s31MacInterruptEpoch<'runtime, R, M>>,
-    platform: &'platform R::Platform,
+    platform: Option<R::Platform>,
 }
 
 impl<
     'storage,
     'runtime,
-    'platform,
     H,
     R,
     M: RawMutex,
@@ -154,22 +164,11 @@ impl<
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
->
-    Esp32s31MonitorService<
-        'storage,
-        'runtime,
-        'platform,
-        H,
-        R,
-        M,
-        S,
-        COUNT,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >
+> Esp32s31MonitorService<'storage, 'runtime, H, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     H: RxDma,
     R: MacInterruptRoute,
+    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     pub const fn new(
@@ -177,14 +176,14 @@ where
         receive: Esp32s31MonitorRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         sink: S,
         interrupts: Esp32s31MacInterruptEpoch<'runtime, R, M>,
-        platform: &'platform R::Platform,
+        platform: R::Platform,
     ) -> Self {
         Self {
             hardware: Some(hardware),
             receive: Some(receive),
             sink: Some(sink),
             interrupts: Some(interrupts),
-            platform,
+            platform: Some(platform),
         }
     }
 
@@ -202,10 +201,38 @@ where
             .is_active()
     }
 
-    /// Extract owners only after both asynchronous hardware actors are known
-    /// inactive. Failure returns this complete service unchanged.
+    /// Whether every hardware actor owned by this role has acknowledged its
+    /// stopped edge.
+    pub(crate) fn is_quiescent(&self) -> bool {
+        !self.interrupt_active() && self.receive_phase() != Esp32s31RxRingPhase::Live
+    }
+
+    /// Borrow the radio registers and platform only after both asynchronous
+    /// actors have released them.
+    pub fn stopped_radio_mut(
+        &mut self,
+    ) -> Result<(&mut H, &mut R::Platform), Esp32s31MonitorStoppedAccessError> {
+        if self.interrupt_active() {
+            return Err(Esp32s31MonitorStoppedAccessError::InterruptActive);
+        }
+        if self.receive_phase() == Esp32s31RxRingPhase::Live {
+            return Err(Esp32s31MonitorStoppedAccessError::ReceiveLive);
+        }
+        Ok((
+            self.hardware
+                .as_mut()
+                .expect("monitor hardware owner exists"),
+            self.platform
+                .as_mut()
+                .expect("monitor platform owner exists"),
+        ))
+    }
+
+    /// Decompose the service only after every hardware actor acknowledged its
+    /// stopped edge. Role composition uses this to return the common Wi-Fi
+    /// owner; active and faulted services remain intact.
     #[allow(clippy::type_complexity)]
-    pub fn try_into_parts(
+    pub(crate) fn try_into_parts(
         mut self,
     ) -> Result<
         (
@@ -213,10 +240,11 @@ where
             Esp32s31MonitorRx<'storage, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
             S,
             Esp32s31MacInterruptEpoch<'runtime, R, M>,
+            R::Platform,
         ),
         Self,
     > {
-        if self.interrupt_active() || self.receive_phase() == Esp32s31RxRingPhase::Live {
+        if !self.is_quiescent() {
             return Err(self);
         }
         Ok((
@@ -228,6 +256,9 @@ where
             self.interrupts
                 .take()
                 .expect("checked monitor interrupt owner"),
+            self.platform
+                .take()
+                .expect("checked monitor platform owner"),
         ))
     }
 }
@@ -235,7 +266,6 @@ where
 impl<
     'storage,
     'runtime,
-    'platform,
     H,
     R,
     M: RawMutex,
@@ -243,22 +273,11 @@ impl<
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
->
-    Esp32s31MonitorService<
-        'storage,
-        'runtime,
-        'platform,
-        H,
-        R,
-        M,
-        S,
-        COUNT,
-        DMA_BUFFER_SIZE,
-        DMA_STORAGE_SIZE,
-    >
+> Esp32s31MonitorService<'storage, 'runtime, H, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     H: RxDma,
     R: MacInterruptRoute,
+    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     /// Run until `stop` resolves, leaving this owner in halted state.
@@ -293,20 +312,24 @@ where
                 report,
             });
         }
-        let platform = self.platform;
-        if let Err(activation) = self
-            .interrupts_mut()
-            .activate(platform, ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK)
-        {
-            let error = match self.shutdown() {
+        let activation = {
+            let platform = self
+                .platform
+                .as_ref()
+                .expect("monitor platform owner exists");
+            let interrupts = self
+                .interrupts
+                .as_mut()
+                .expect("monitor interrupt owner exists");
+            interrupts.activate(platform, ESP32S31_STANDALONE_MONITOR_INTERRUPT_MASK)
+        };
+        if let Err(activation) = activation {
+            let error = match self.stop().await {
                 Ok(drain) => {
                     report.interrupt_drain = drain;
                     Esp32s31MonitorRunError::Activate(activation)
                 }
-                Err(cleanup) => Esp32s31MonitorRunError::ActivateCleanup {
-                    activation,
-                    cleanup,
-                },
+                Err(stop) => Esp32s31MonitorRunError::ActivateStop { activation, stop },
             };
             report.record_interrupt_posts(
                 interrupt_posts_at_start,
@@ -336,13 +359,13 @@ where
                     match service {
                         Ok(progress) => report.record(progress),
                         Err(error) => {
-                            let cleanup = self.shutdown().err();
+                            let stop = self.stop().await.err();
                             report.record_interrupt_posts(
                                 interrupt_posts_at_start,
                                 self.interrupts().mac_runtime().rx_post_count(),
                             );
                             return Err(Esp32s31MonitorRunFailure {
-                                error: Esp32s31MonitorRunError::Service { error, cleanup },
+                                error: Esp32s31MonitorRunError::Service { error, stop },
                                 report,
                             });
                         }
@@ -351,7 +374,7 @@ where
             }
         }
 
-        match self.shutdown() {
+        match self.stop().await {
             Ok(drain) => {
                 report.interrupt_drain = drain;
                 report.record_interrupt_posts(
@@ -366,7 +389,7 @@ where
                     self.interrupts().mac_runtime().rx_post_count(),
                 );
                 Err(Esp32s31MonitorRunFailure {
-                    error: Esp32s31MonitorRunError::Shutdown(error),
+                    error: Esp32s31MonitorRunError::Stop(error),
                     report,
                 })
             }
@@ -375,37 +398,52 @@ where
 
     /// Close a live or partially started epoch after normal completion,
     /// failure, or cancellation of [`Self::run_until_stopped`].
-    pub fn try_shutdown(
+    ///
+    /// RX walker `Busy` is a transient ownership state, not a terminal
+    /// failure. Keep the complete service borrowed and cooperatively wait
+    /// until hardware confirms the bit-clear edge. A returned error therefore
+    /// represents a broken route/ring invariant, while all owners remain in
+    /// this service for explicit reset policy.
+    pub async fn stop(
         &mut self,
-    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MonitorCleanupError<R::Error>> {
-        let platform = self.platform;
+    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MonitorStopError<R::Error>> {
         let interrupt_drain = if self.interrupt_active() {
-            self.interrupts_mut()
+            let platform = self
+                .platform
+                .as_ref()
+                .expect("monitor platform owner exists");
+            let interrupts = self
+                .interrupts
+                .as_mut()
+                .expect("monitor interrupt owner exists");
+            interrupts
                 .quiesce(platform)
-                .map_err(Esp32s31MonitorCleanupError::Interrupt)?
+                .map_err(Esp32s31MonitorStopError::Interrupt)?
         } else {
             Esp32s31MacInterruptEpochDrain::default()
         };
-        if self.receive_phase() == Esp32s31RxRingPhase::Live {
+        while self.receive_phase() == Esp32s31RxRingPhase::Live {
             let receive = self.receive.as_mut().expect("monitor RX owner exists");
             let hardware = self
                 .hardware
                 .as_mut()
                 .expect("monitor hardware owner exists");
-            receive
-                .stop(hardware)
-                .map_err(|error| Esp32s31MonitorCleanupError::Receive {
-                    error,
-                    interrupt_drain,
-                })?;
+            match receive.stop(hardware) {
+                Ok(()) => {}
+                Err(Esp32s31RxRingOwnerError::Ring(
+                    open_esp_radio_esp32s31_wifi_mac::rx::RxRingError::Busy,
+                )) => {
+                    yield_now().await;
+                }
+                Err(error) => {
+                    return Err(Esp32s31MonitorStopError::Receive {
+                        error,
+                        interrupt_drain,
+                    });
+                }
+            }
         }
         Ok(interrupt_drain)
-    }
-
-    fn shutdown(
-        &mut self,
-    ) -> Result<Esp32s31MacInterruptEpochDrain, Esp32s31MonitorCleanupError<R::Error>> {
-        self.try_shutdown()
     }
 
     fn interrupts(&self) -> &Esp32s31MacInterruptEpoch<'runtime, R, M> {
@@ -414,10 +452,64 @@ where
             .expect("monitor interrupt owner exists")
     }
 
-    fn interrupts_mut(&mut self) -> &mut Esp32s31MacInterruptEpoch<'runtime, R, M> {
-        self.interrupts
-            .as_mut()
-            .expect("monitor interrupt owner exists")
+    /// Preserve every owner which may still be observed by hardware.
+    ///
+    /// This path is used only when the platform could not prove IRQ/DMA
+    /// quiescence. Intentionally retaining this finite owner set keeps the
+    /// process fail-closed until board reset, which is the only valid recovery
+    /// after the ownership edge could not be closed.
+    fn retain_active_owners_for_reset(&mut self) {
+        if let Some(receive) = self.receive.as_mut() {
+            receive.require_reset();
+        }
+        core::mem::forget(self.hardware.take());
+        core::mem::forget(self.receive.take());
+        core::mem::forget(self.sink.take());
+        core::mem::forget(self.interrupts.take());
+        core::mem::forget(self.platform.take());
+    }
+
+    /// Cancellation fallback for Rust's synchronous `Drop` boundary.
+    ///
+    /// Ordinary callers use [`Self::stop`] and cooperatively yield while a
+    /// walker clear is pending. `Drop` cannot await and must not block an
+    /// executor, so it makes only one stop observation. A transient `Busy` or
+    /// structural failure retains every hardware-visible owner for board reset
+    /// instead of unwinding or releasing aliased resources.
+    fn stop_on_drop(&mut self) {
+        if self.interrupt_active() {
+            let quiesced = {
+                let platform = self
+                    .platform
+                    .as_ref()
+                    .expect("monitor platform owner exists");
+                let interrupts = self
+                    .interrupts
+                    .as_mut()
+                    .expect("monitor interrupt owner exists");
+                interrupts.quiesce(platform)
+            };
+            if quiesced.is_err() {
+                self.retain_active_owners_for_reset();
+                return;
+            }
+        }
+        if self.receive_phase() == Esp32s31RxRingPhase::Live {
+            let stopped = {
+                let receive = self.receive.as_mut().expect("monitor RX owner exists");
+                let hardware = self
+                    .hardware
+                    .as_mut()
+                    .expect("monitor hardware owner exists");
+                receive.stop(hardware)
+            };
+            match stopped {
+                Ok(()) => {}
+                Err(_) => {
+                    self.retain_active_owners_for_reset();
+                }
+            }
+        }
     }
 }
 
@@ -429,20 +521,19 @@ impl<
     const COUNT: usize,
     const DMA_BUFFER_SIZE: usize,
     const DMA_STORAGE_SIZE: usize,
-> Drop for Esp32s31MonitorService<'_, '_, '_, H, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
+> Drop for Esp32s31MonitorService<'_, '_, H, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
 where
     H: RxDma,
     R: MacInterruptRoute,
+    R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
     fn drop(&mut self) {
         if self.hardware.is_none() {
             return;
         }
-        if (self.interrupt_active() || self.receive_phase() == Esp32s31RxRingPhase::Live)
-            && self.try_shutdown().is_err()
-        {
-            panic!("live ESP32-S31 monitor owner could not stop; platform reset required");
+        if self.interrupt_active() || self.receive_phase() == Esp32s31RxRingPhase::Live {
+            self.stop_on_drop();
         }
     }
 }

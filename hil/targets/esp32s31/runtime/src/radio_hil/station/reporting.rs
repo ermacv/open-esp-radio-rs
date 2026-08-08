@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use open_esp_radio::{
-    esp32s31::wifi::lmac::tx::TxCompletion,
+    esp32s31::wifi::mac::tx::TxCompletion,
     esp32s31::wifi::sta::{
         association::Esp32s31StaAssociationProfile, join::Esp32s31StaJoinObserver,
     },

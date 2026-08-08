@@ -12,6 +12,7 @@ members = [
     "driver/wifi/softmac",
     "driver/wifi/wpa2",
     "driver/chips/esp32s31/hal",
+    "driver/chips/esp32s31/wifi",
     "driver/chips/esp32s31/wifi/dma",
     "driver/chips/esp32s31/wifi/mac",
     "driver/chips/esp32s31/wifi/sta",

@@ -15,6 +15,7 @@ use open_esp_radio_esp32s31_registers::{
     MacHtTxProgram, MacLegacyTxProgram, MacPartialRuPowerSelector, MacTxCompletionRegisters,
     MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached, RadioRegisters,
 };
+use open_esp_radio_esp32s31_wifi_dma::descriptor::descriptor_address_valid;
 pub use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaState as TxSlotState;
 #[cfg(not(target_pointer_width = "32"))]
 use open_esp_radio_esp32s31_wifi_dma::tx_storage::TxDmaStorage;
@@ -28,7 +29,6 @@ use open_esp_radio_ieee80211::trigger::{
 use open_esp_radio_ieee80211::wmm::WmmAccessCategory;
 
 use crate::{
-    descriptor::descriptor_address_valid,
     rate_control::dot11g_schedule_for_legacy_rate,
     rate_schedule::{RateScheduleKind, RateScheduleRef, schedule_rate_after_failures},
     tx_plcp::{

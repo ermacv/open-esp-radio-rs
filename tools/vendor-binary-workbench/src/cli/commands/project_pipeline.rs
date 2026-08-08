@@ -1,19 +1,14 @@
 //! CLI adapter for project-owned analysis and review orchestration.
 
-use std::path::Path;
-
 use super::{MmioMap, Result, TargetSpec};
-use crate::cli::{
-    InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
-    SourcePath,
-};
+use crate::cli::{InterfaceDiscoverArgs, IrBuildArgs, ProjectAnalyzeArgs};
 use crate::{
     MemoryMap,
     application::project_analysis::{
         ProjectAnalysisInputs, ProjectAnalysisOperations, ProjectAnalysisRequest,
     },
     project::ProjectSpec,
-    run_spec::{InputRole, RunSpec},
+    run_spec::RunSpec,
 };
 
 pub(crate) mod status;
@@ -78,16 +73,13 @@ impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
     }
 
     fn discover_mmio(&mut self, check: bool) -> Result<bool> {
-        let output = self
-            .project
-            .registers
-            .as_ref()
-            .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?
-            .facts
-            .clone();
-        let mut arguments = mmio_arguments(self.run_spec()?, self.memory_map()?, &output)?;
-        arguments.check = check;
-        super::discover_mmio::run(arguments, self.svd)
+        crate::application::project_analysis::discover_project_mmio(
+            self.project,
+            self.run_spec()?,
+            self.memory_map()?,
+            self.svd,
+            check,
+        )
     }
 
     fn discover_interfaces(&mut self, check: bool) -> Result<bool> {
@@ -152,31 +144,4 @@ impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
             deny_unreviewed,
         )
     }
-}
-
-fn mmio_arguments(
-    run_spec: &RunSpec,
-    memory_map: &MemoryMap,
-    output: &Path,
-) -> Result<MmioDiscoverArgs> {
-    let mut artifacts = Vec::new();
-    for input in run_spec.inputs() {
-        let InputRole::SourceArtifact(source) = &input.role else {
-            continue;
-        };
-        artifacts.push(
-            SourcePath::new(source.clone(), input.path.clone()).map_err(crate::Error::invalid)?,
-        );
-    }
-    let ranges = memory_map
-        .mmio_ranges()?
-        .into_iter()
-        .map(|(name, start, end)| NamedAddressRange { name, start, end })
-        .collect();
-    Ok(MmioDiscoverArgs {
-        artifact: artifacts,
-        range: ranges,
-        json_report: Some(output.to_owned()),
-        ..Default::default()
-    })
 }

@@ -5,9 +5,11 @@
 //! reusable project artifact.
 
 mod linked_ir;
+mod mmio_facts;
 mod symbol_inventory;
 
 pub(crate) use linked_ir::inspect_linked_ir;
+pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
 pub(crate) use symbol_inventory::{
     SymbolInventoryDocument, build_symbol_inventory_document, inspect_symbol_inventory,
     render_symbol_inventory,

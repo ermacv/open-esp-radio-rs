@@ -2,7 +2,6 @@
 
 mod audit_image_targets;
 mod discover_mmio;
-mod discover_mmio_json;
 mod execute_compare;
 mod execute_run;
 mod export_ir;

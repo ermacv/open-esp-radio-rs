@@ -1,29 +1,26 @@
-//! Stable JSON projection of artifact-wide MMIO evidence.
+//! Stored schema-v2 projection of artifact-wide MMIO evidence.
 
 use serde::Serialize;
 
-use super::{
-    super::Result,
-    discover_mmio::{function_names, mask_ranges},
-};
+use super::MMIO_FACTS;
 use crate::{analysis::MmioDiscoveryReport, artifact_sha256};
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct ArtifactIdentity {
     path: String,
     sha256: String,
 }
 
-#[derive(Serialize)]
-struct RangeDocument<'a> {
-    name: &'a str,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RangeDocument {
+    name: String,
     start: String,
     end_exclusive: String,
 }
 
-#[derive(Serialize)]
-struct ArtifactDocument<'a> {
-    source: &'a str,
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct ArtifactDocument {
+    source: String,
     artifact: ArtifactIdentity,
     functions: usize,
     functions_with_mmio: usize,
@@ -33,7 +30,7 @@ struct ArtifactDocument<'a> {
     branch_sites: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct WritePatternDocument {
     occurrences: usize,
     modified_mask: String,
@@ -47,11 +44,11 @@ struct WritePatternDocument {
     functions: Vec<String>,
 }
 
-#[derive(Serialize)]
-struct RegisterDocument<'a> {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RegisterDocument {
     address: String,
     width: u8,
-    name: &'a str,
+    name: String,
     reads: usize,
     writes: usize,
     read_functions: Vec<String>,
@@ -59,35 +56,30 @@ struct RegisterDocument<'a> {
     write_patterns: Vec<WritePatternDocument>,
 }
 
-#[derive(Serialize)]
-struct DiagnosticDocument<'a> {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct DiagnosticDocument {
     function: String,
-    scope: &'a str,
-    message: &'a str,
+    scope: &'static str,
+    message: String,
 }
 
-#[derive(Serialize)]
-pub(super) struct DiscoveryDocument<'a> {
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct MmioFactsDocument {
     schema_version: u32,
     command: &'static str,
     analysis_mode: &'static str,
     access_count_mode: &'static str,
     completeness_claim: bool,
-    ranges: Vec<RangeDocument<'a>>,
-    artifacts: Vec<ArtifactDocument<'a>>,
-    registers: Vec<RegisterDocument<'a>>,
-    diagnostics: Vec<DiagnosticDocument<'a>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    publication: Option<crate::cli::output::Publication>,
+    ranges: Vec<RangeDocument>,
+    artifacts: Vec<ArtifactDocument>,
+    registers: Vec<RegisterDocument>,
+    diagnostics: Vec<DiagnosticDocument>,
 }
 
-pub(super) fn document(
-    report: &MmioDiscoveryReport,
-    publication: Option<crate::cli::output::Publication>,
-) -> Result<DiscoveryDocument<'_>> {
-    Ok(DiscoveryDocument {
-        schema_version: crate::artifacts::MMIO_FACTS.version,
-        command: crate::artifacts::MMIO_FACTS.command,
+pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<MmioFactsDocument> {
+    Ok(MmioFactsDocument {
+        schema_version: MMIO_FACTS.version,
+        command: MMIO_FACTS.command,
         analysis_mode: "best-effort",
         access_count_mode: "maximum-per-path",
         completeness_claim: false,
@@ -95,7 +87,7 @@ pub(super) fn document(
             .ranges
             .iter()
             .map(|range| RangeDocument {
-                name: &range.name,
+                name: range.name.clone(),
                 start: format!("{:#010x}", range.start),
                 end_exclusive: format!("{:#010x}", range.end),
             })
@@ -105,7 +97,7 @@ pub(super) fn document(
             .iter()
             .map(|artifact| {
                 Ok(ArtifactDocument {
-                    source: &artifact.source,
+                    source: artifact.source.clone(),
                     artifact: ArtifactIdentity {
                         path: artifact.path.display().to_string(),
                         sha256: artifact_sha256(&artifact.path)?,
@@ -118,14 +110,14 @@ pub(super) fn document(
                     branch_sites: artifact.branch_sites,
                 })
             })
-            .collect::<Result<Vec<_>>>()?,
+            .collect::<crate::Result<Vec<_>>>()?,
         registers: report
             .registers
             .iter()
             .map(|register| RegisterDocument {
                 address: format!("{:#010x}", register.address),
                 width: register.width,
-                name: &register.name,
+                name: register.name.clone(),
                 reads: register.read_count,
                 writes: register.write_count,
                 read_functions: function_names(&register.read_functions),
@@ -158,17 +150,51 @@ pub(super) fn document(
             .map(|diagnostic| DiagnosticDocument {
                 function: diagnostic.function.canonical(),
                 scope: diagnostic.scope,
-                message: &diagnostic.message,
+                message: diagnostic.message.clone(),
             })
             .collect(),
-        publication,
     })
 }
 
-pub(super) fn render_document(document: &DiscoveryDocument<'_>) -> Result<String> {
-    let mut output = serde_json::to_string_pretty(&document)?;
+pub(crate) fn render_mmio_facts(document: &MmioFactsDocument) -> crate::Result<String> {
+    let mut output = serde_json::to_string_pretty(document)?;
     output.push('\n');
     Ok(output)
+}
+
+fn function_names(
+    functions: &std::collections::BTreeSet<crate::analysis::DiscoveryFunction>,
+) -> Vec<String> {
+    functions
+        .iter()
+        .map(|function| function.canonical())
+        .collect()
+}
+
+fn mask_ranges(mask: u32) -> String {
+    let mut ranges = Vec::new();
+    let mut bit = 0_u8;
+    while bit < 32 {
+        if mask & (1_u32 << bit) == 0 {
+            bit += 1;
+            continue;
+        }
+        let start = bit;
+        while bit < 31 && mask & (1_u32 << (bit + 1)) != 0 {
+            bit += 1;
+        }
+        ranges.push(if start == bit {
+            start.to_string()
+        } else {
+            format!("{start}-{bit}")
+        });
+        bit += 1;
+    }
+    if ranges.is_empty() {
+        "-".to_owned()
+    } else {
+        ranges.join(",")
+    }
 }
 
 #[cfg(test)]
@@ -176,14 +202,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rendered_report_is_stable_json() {
+    fn rendered_report_has_the_canonical_identity() {
         let report = MmioDiscoveryReport {
             artifacts: Vec::new(),
             ranges: Vec::new(),
             registers: Vec::new(),
             diagnostics: Vec::new(),
         };
-        let rendered = render_document(&document(&report, None).unwrap()).unwrap();
+        let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
         assert_eq!(parsed["schema_version"], 2);
         assert_eq!(parsed["command"], "mmio discover");

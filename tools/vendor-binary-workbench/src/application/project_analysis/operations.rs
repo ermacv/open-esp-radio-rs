@@ -1,9 +1,12 @@
 //! Frontend-neutral project analysis/review operations over domain workspaces.
 
 use crate::{
-    MemoryMap, Result, TargetSpec,
-    analysis::build_project_linkage_inventory,
-    artifacts::{build_symbol_inventory_document, render_symbol_inventory},
+    MemoryMap, MmioMap, Result, TargetSpec,
+    analysis::{DiscoveryRange, build_project_linkage_inventory, discover_mmio},
+    artifacts::{
+        build_mmio_facts as mmio_document, build_symbol_inventory_document, render_mmio_facts,
+        render_symbol_inventory,
+    },
     function_workspace::{FunctionWorkspace, link_reviewed_interfaces, render_function_review},
     interfaces::InterfaceWorkspace,
     project::ProjectSpec,
@@ -12,7 +15,7 @@ use crate::{
         validate_pac_api, validate_register_evidence, validate_register_lints,
         validate_register_memory_map,
     },
-    run_spec::RunSpec,
+    run_spec::{InputRole, RunSpec},
 };
 
 pub(crate) fn build_symbol_inventory(
@@ -37,6 +40,42 @@ pub(crate) fn build_symbol_inventory(
         &render_symbol_inventory(&document)?,
         check,
         "symbol inventory",
+    )?;
+    Ok(true)
+}
+
+pub(crate) fn discover_project_mmio(
+    project: &ProjectSpec,
+    run_spec: &RunSpec,
+    memory_map: &MemoryMap,
+    svd: &MmioMap,
+    check: bool,
+) -> Result<bool> {
+    let output = &project
+        .registers
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?
+        .facts;
+    let artifacts = run_spec
+        .inputs()
+        .iter()
+        .filter_map(|input| match &input.role {
+            InputRole::SourceArtifact(source) => Some((source.to_string(), input.path.clone())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let ranges = memory_map
+        .mmio_ranges()?
+        .into_iter()
+        .map(|(name, start, end)| DiscoveryRange { name, start, end })
+        .collect::<Vec<_>>();
+    let report = discover_mmio(&artifacts, &ranges, "", svd)?;
+    let document = mmio_document(&report)?;
+    super::super::generated_file::write_or_check(
+        output,
+        &render_mmio_facts(&document)?,
+        check,
+        "MMIO discovery report",
     )?;
     Ok(true)
 }

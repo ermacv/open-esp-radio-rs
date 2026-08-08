@@ -1,6 +1,16 @@
 //! Artifact-wide best-effort MMIO register discovery.
 
+use serde::Serialize;
+
 use super::super::*;
+
+#[derive(Serialize)]
+struct CommandDocument<'a> {
+    #[serde(flatten)]
+    artifact: &'a crate::artifacts::MmioFactsDocument,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    publication: Option<crate::cli::output::Publication>,
+}
 
 pub(super) fn function_names(functions: &BTreeSet<DiscoveryFunction>) -> Vec<String> {
     functions.iter().map(DiscoveryFunction::canonical).collect()
@@ -175,9 +185,9 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
             },
         )
     });
+    let artifact = crate::artifacts::build_mmio_facts(&report)?;
     if let Some(path) = arguments.json_report.as_deref() {
-        let stored_document = super::discover_mmio_json::document(&report, None)?;
-        let output = super::discover_mmio_json::render_document(&stored_document)?;
+        let output = crate::artifacts::render_mmio_facts(&artifact)?;
         crate::application::generated_file::write_or_check(
             path,
             &output,
@@ -185,7 +195,10 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
             "MMIO discovery report",
         )?;
     }
-    let document = super::discover_mmio_json::document(&report, publication.clone())?;
+    let document = CommandDocument {
+        artifact: &artifact,
+        publication: publication.clone(),
+    };
     if !crate::cli::output::structured(&document) {
         print_report(&report);
         if let Some(publication) = publication {

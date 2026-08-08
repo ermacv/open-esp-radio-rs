@@ -42,6 +42,7 @@ pub(super) use reporting::{
 };
 pub(in crate::radio_hil) use runtime::{RadioHilConnectedTrafficConfig, connected_traffic_task};
 pub(super) use tcp::{TcpBenchmarkConfig, run_open_radio_tcp_benchmark};
+pub(in crate::radio_hil) use tcp::{tcp_rx_pattern_worker_task, tcp_tx_pattern_worker_task};
 pub(super) use udp::{
     UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
     UdpTxBenchmarkConfig, UdpTxSessionSource, run_open_radio_udp_rx_benchmark,

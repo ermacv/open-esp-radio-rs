@@ -7,6 +7,7 @@ use embassy_net::{
     Stack,
     tcp::{TcpReader, TcpSocket, TcpWriter},
 };
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio::esp32s31::hal::RadioRegisters;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
@@ -20,6 +21,7 @@ use open_esp_radio_hil_protocol::{
 use crate::console::{
     complete_session, emergency_log, publish_event_reliably, receive_session_start,
 };
+use crate::radio_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
 
 use super::{log_open_radio_ampdu_interval, wait_session_link_requirements};
 
@@ -42,12 +44,58 @@ struct StreamResult {
     pattern_ok: bool,
 }
 
+#[derive(Clone, Copy)]
+struct RxPatternJob {
+    length: usize,
+    offset: u64,
+}
+
+#[derive(Clone, Copy)]
+struct TxPatternJob {
+    length: usize,
+    offset: u64,
+}
+
+static TCP_RX_PATTERN_BUFFER: Mutex<CriticalSectionRawMutex, [u8; OPEN_RADIO_TCP_CHUNK_CAPACITY]> =
+    Mutex::new([0; OPEN_RADIO_TCP_CHUNK_CAPACITY]);
+static TCP_TX_PATTERN_BUFFER: Mutex<CriticalSectionRawMutex, [u8; OPEN_RADIO_TCP_CHUNK_CAPACITY]> =
+    Mutex::new([0; OPEN_RADIO_TCP_CHUNK_CAPACITY]);
+static TCP_RX_PATTERN_JOB: Signal<CriticalSectionRawMutex, RxPatternJob> = Signal::new();
+static TCP_RX_PATTERN_RESULT: Signal<CriticalSectionRawMutex, bool> = Signal::new();
+static TCP_TX_PATTERN_JOB: Signal<CriticalSectionRawMutex, TxPatternJob> = Signal::new();
+static TCP_TX_PATTERN_RESULT: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+
+/// Validate received stream bytes on Core 1 while Core 0 keeps servicing the
+/// radio, embassy-net and the TCP socket owner.
+#[embassy_executor::task]
+pub(in crate::radio_hil) async fn tcp_rx_pattern_worker_task() {
+    loop {
+        let job = TCP_RX_PATTERN_JOB.wait().await;
+        let buffer = TCP_RX_PATTERN_BUFFER.lock().await;
+        let matches = stream_pattern_matches(&buffer[..job.length], job.offset);
+        drop(buffer);
+        TCP_RX_PATTERN_RESULT.signal(matches);
+    }
+}
+
+/// Prepare transmitted stream bytes on Core 1 while Core 0 keeps servicing
+/// the radio, embassy-net and the TCP socket owner.
+#[embassy_executor::task]
+pub(in crate::radio_hil) async fn tcp_tx_pattern_worker_task() {
+    loop {
+        let job = TCP_TX_PATTERN_JOB.wait().await;
+        let mut buffer = TCP_TX_PATTERN_BUFFER.lock().await;
+        fill_stream_pattern(&mut buffer[..job.length], job.offset);
+        drop(buffer);
+        TCP_TX_PATTERN_RESULT.signal(());
+    }
+}
+
 pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
     stack: Stack<'a>,
     registers: &RefCell<&mut RadioRegisters>,
     rx_buffer: &'a mut [u8],
     tx_buffer: &'a mut [u8],
-    io_buffer: &mut [u8],
     config: TcpBenchmarkConfig,
     pipeline_counters: &RxPipelineCounters,
     aggregate_counters: &AggregateTxCounters,
@@ -142,7 +190,6 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
                         .expect("validated TCP RX session carries an RX flow");
                     rx = receive_stream(
                         &mut socket,
-                        io_buffer,
                         usize::from(flow.payload_bytes),
                         config.idle_timeout,
                     )
@@ -155,7 +202,6 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
                         .expect("validated TCP TX session carries a TX flow");
                     tx = transmit_stream(
                         &mut socket,
-                        io_buffer,
                         usize::from(flow.payload_bytes),
                         flow.offered_rate_bps,
                         started,
@@ -172,19 +218,15 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
                         .config
                         .target_tx
                         .expect("validated bidirectional TCP session carries a TX flow");
-                    let split = usize::from(config.maximum_payload_bytes);
-                    let (rx_io, tx_io) = io_buffer.split_at_mut(split);
                     let (mut reader, mut writer) = socket.split();
                     (rx, tx) = join(
                         receive_stream(
                             &mut reader,
-                            rx_io,
                             usize::from(rx_flow.payload_bytes),
                             config.idle_timeout,
                         ),
                         transmit_stream(
                             &mut writer,
-                            tx_io,
                             usize::from(tx_flow.payload_bytes),
                             tx_flow.offered_rate_bps,
                             started,
@@ -322,7 +364,6 @@ impl TcpWrite for TcpWriter<'_> {
 
 async fn receive_stream(
     reader: &mut impl TcpRead,
-    buffer: &mut [u8],
     chunk_bytes: usize,
     idle_timeout: Duration,
 ) -> StreamResult {
@@ -330,16 +371,23 @@ async fn receive_stream(
         pattern_ok: true,
         ..StreamResult::default()
     };
-    let buffer = &mut buffer[..chunk_bytes];
     loop {
-        match with_timeout(idle_timeout, reader.read(buffer)).await {
+        let read = {
+            let mut buffer = TCP_RX_PATTERN_BUFFER.lock().await;
+            with_timeout(idle_timeout, reader.read(&mut buffer[..chunk_bytes])).await
+        };
+        match read {
             Ok(Ok(0)) => {
                 result.eof = true;
                 result.units = 1;
                 break;
             }
             Ok(Ok(length)) => {
-                result.pattern_ok &= stream_pattern_matches(&buffer[..length], result.bytes);
+                TCP_RX_PATTERN_JOB.signal(RxPatternJob {
+                    length,
+                    offset: result.bytes,
+                });
+                result.pattern_ok &= TCP_RX_PATTERN_RESULT.wait().await;
                 result.bytes = result.bytes.saturating_add(length as u64);
             }
             Ok(Err(_)) | Err(_) => {
@@ -353,18 +401,20 @@ async fn receive_stream(
 
 async fn transmit_stream(
     writer: &mut impl TcpWrite,
-    buffer: &mut [u8],
     chunk_bytes: usize,
     offered_rate_bps: Option<u64>,
     started: Instant,
     duration: Duration,
 ) -> StreamResult {
     let mut result = StreamResult::default();
-    let buffer = &mut buffer[..chunk_bytes];
     let mut pending_offset = chunk_bytes;
     while started.elapsed() < duration {
         if pending_offset == chunk_bytes {
-            fill_stream_pattern(buffer, result.bytes);
+            TCP_TX_PATTERN_JOB.signal(TxPatternJob {
+                length: chunk_bytes,
+                offset: result.bytes,
+            });
+            let _ = TCP_TX_PATTERN_RESULT.wait().await;
             pending_offset = 0;
         }
         let elapsed = started.elapsed();
@@ -372,7 +422,15 @@ async fn transmit_stream(
             break;
         }
         let remaining = duration - elapsed;
-        match with_timeout(remaining, writer.write(&buffer[pending_offset..])).await {
+        let write = {
+            let buffer = TCP_TX_PATTERN_BUFFER.lock().await;
+            with_timeout(
+                remaining,
+                writer.write(&buffer[pending_offset..chunk_bytes]),
+            )
+            .await
+        };
+        match write {
             Err(_) if started.elapsed() >= duration => break,
             Ok(Ok(0)) | Ok(Err(_)) | Err(_) => {
                 result.errors = result.errors.saturating_add(1);

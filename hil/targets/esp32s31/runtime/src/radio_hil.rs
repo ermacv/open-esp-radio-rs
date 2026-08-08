@@ -112,7 +112,7 @@ use phy_diagnostics::*;
 mod connected_traffic;
 use connected_traffic::{
     BidirectionalResultChannel, BidirectionalSessionChannel, RadioHilConnectedTrafficConfig,
-    connected_traffic_task,
+    connected_traffic_task, tcp_rx_pattern_worker_task, tcp_tx_pattern_worker_task,
 };
 mod station;
 use station::{
@@ -267,7 +267,7 @@ const OPEN_RADIO_UDP_TX_BENCH_DURATION: Duration = Duration::from_secs(5);
 const OPEN_RADIO_UDP_TX_DRAIN: Duration = Duration::from_millis(250);
 const OPEN_RADIO_UDP_RX_IDLE: Duration = Duration::from_millis(750);
 const OPEN_RADIO_TCP_PORT: u16 = 4_325;
-const OPEN_RADIO_TCP_RX_BUFFER_CAPACITY: usize = 65_536;
+const OPEN_RADIO_TCP_RX_BUFFER_CAPACITY: usize = 262_144;
 const OPEN_RADIO_TCP_TX_BUFFER_CAPACITY: usize = 65_536;
 const OPEN_RADIO_TCP_IO_CAPACITY: usize = 65_536;
 const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
@@ -1323,6 +1323,14 @@ pub async fn run(
         "OPEN_RADIO_PHY_HIL stage=network-config-waiting source=hil-protocol"
     ));
     let startup_configuration = crate::console::receive_startup_configuration().await;
+    if OPEN_RADIO_TCP_BENCH {
+        let rx_pattern_task = tcp_rx_pattern_worker_task()
+            .unwrap_or_else(|_| panic!("TCP RX pattern task allocation failed"));
+        protocol_spawner.spawn(rx_pattern_task);
+        let tx_pattern_task = tcp_tx_pattern_worker_task()
+            .unwrap_or_else(|_| panic!("TCP TX pattern task allocation failed"));
+        protocol_spawner.spawn(tx_pattern_task);
+    }
     let NetworkConfiguration {
         credentials: mut network_credentials,
         ipv4: network_ipv4,

@@ -54,7 +54,6 @@ static OPEN_RADIO_TCP_RX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACI
     StaticCell::new();
 static OPEN_RADIO_TCP_TX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]> =
     StaticCell::new();
-static OPEN_RADIO_TCP_IO_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_IO_CAPACITY]> = StaticCell::new();
 static OPEN_RADIO_BIDIRECTIONAL_RX_METADATA: StaticCell<
     [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
 > = StaticCell::new();
@@ -138,13 +137,12 @@ async fn run_connected_traffic_workload(
         RadioHilConnectedTrafficBuffers::Raw => loop {
             Timer::after_secs(60).await;
         },
-        RadioHilConnectedTrafficBuffers::Tcp { rx, tx, read } => {
+        RadioHilConnectedTrafficBuffers::Tcp { rx, tx } => {
             run_open_radio_tcp_benchmark(
                 stack,
                 registers,
                 &mut **rx,
                 &mut **tx,
-                &mut **read,
                 TcpBenchmarkConfig {
                     local_port: OPEN_RADIO_TCP_PORT,
                     maximum_payload_bytes: OPEN_RADIO_TCP_CHUNK_CAPACITY as u16,
@@ -285,7 +283,6 @@ enum RadioHilConnectedTrafficBuffers {
     Tcp {
         rx: &'static mut [u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY],
         tx: &'static mut [u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY],
-        read: &'static mut [u8; OPEN_RADIO_TCP_IO_CAPACITY],
     },
     UdpRx {
         rx_metadata: &'static mut [PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH],
@@ -323,7 +320,6 @@ impl RadioHilConnectedTrafficBuffers {
             Self::Tcp {
                 rx: OPEN_RADIO_TCP_RX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]),
                 tx: OPEN_RADIO_TCP_TX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]),
-                read: OPEN_RADIO_TCP_IO_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_IO_CAPACITY]),
             }
         } else if OPEN_RADIO_RAW_MAC_BENCH {
             Self::Raw

@@ -51,16 +51,16 @@ use crate::{
     radio_hil::{
         ControlResources, HilConnectedRxObserver, NETWORK_FRAME_CAPACITY, NETWORK_RX_QUEUE_DEPTH,
         NETWORK_TX_QUEUE_DEPTH, OPEN_RADIO_MAC_IRQ_CLASSIFICATION, OPEN_RADIO_MAC_IRQ_ENTRIES,
-        OPEN_RADIO_RX_PIPELINE_COUNTERS, OpenRadioRxReloadDelay, RX_BLOCK_ACK_SOFTWARE_WINDOW,
-        RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT, RadioHilConnectedEpochBindings,
-        RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn, RadioHilConnectedExit,
-        RadioHilConnectedTaskFixture, RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig,
-        RadioHilDisconnectedEpoch, RadioHilRunningNetwork, RadioHilStaNetwork,
-        RadioHilStationCommandReceiver, RadioHilStationEpochProgress, StaAssociationSecurity,
-        StaConnectedSession, TX_AMPDU_FRAME_COUNT, connected_network_report_task,
-        connected_network_stack_task, connected_rx_protocol_task,
-        connected_traffic::observe_open_radio_task_polls, connected_traffic_task,
-        injected_tx_source_requires_reset,
+        OPEN_RADIO_RX_PIPELINE_COUNTERS, OPEN_RADIO_TCP_BENCH, OpenRadioRxReloadDelay,
+        RX_BLOCK_ACK_SOFTWARE_WINDOW, RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT,
+        RadioHilConnectedEpochBindings, RadioHilConnectedEpochResources,
+        RadioHilConnectedEpochReturn, RadioHilConnectedExit, RadioHilConnectedTaskFixture,
+        RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig, RadioHilDisconnectedEpoch,
+        RadioHilRunningNetwork, RadioHilStaNetwork, RadioHilStationCommandReceiver,
+        RadioHilStationEpochProgress, StaAssociationSecurity, StaConnectedSession,
+        TX_AMPDU_FRAME_COUNT, connected_network_report_task, connected_network_stack_task,
+        connected_rx_protocol_task, connected_traffic::observe_open_radio_task_polls,
+        connected_traffic_task, injected_tx_source_requires_reset,
     },
 };
 
@@ -380,10 +380,16 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             data_tx_rate: benchmark_tx_rate,
         })
         .await;
+    let benchmark_topology = if OPEN_RADIO_TCP_BENCH {
+        "core0-io+core1-pattern"
+    } else {
+        "core0"
+    };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=embassy-task-topology \
          network=core0 rx_protocol=core1 radio=sta-parent-core0 \
-         report=core0 benchmark=core0 network_started={}",
+         report=core0 benchmark={} network_started={}",
+        benchmark_topology,
         u8::from(network_started)
     ));
     crate::console::publish_station_lifecycle(StationLifecycleEvent::Connected { generation })

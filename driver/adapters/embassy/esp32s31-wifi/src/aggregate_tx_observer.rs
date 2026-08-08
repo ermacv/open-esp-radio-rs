@@ -44,6 +44,9 @@ pub enum AggregateTxObservation {
     PreparationCompleted {
         micros: u64,
     },
+    StandbyPrepared,
+    StandbyPublished,
+    StandbyCancelled,
     Published {
         /// Clock image captured immediately before queue programming began.
         at_micros: u64,

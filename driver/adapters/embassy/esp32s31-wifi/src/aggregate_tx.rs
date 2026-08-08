@@ -61,6 +61,55 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
     pub aggregate: A,
 }
 
+/// Descriptor arenas owned by one connected aggregate-TX scheduler.
+///
+/// `primary` is the only arena which may become hardware-owned. `standby`,
+/// when present, may be filled while `primary` is in flight but remains in the
+/// software-owned `Reserved` state until the outer scheduler admits its
+/// publication.
+pub struct AggregateTxResources<'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
+    primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+    standby: Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
+}
+
+impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
+    AggregateTxResources<'storage, SLOTS, BUFFER_SIZE>
+{
+    pub const fn single(primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>) -> Self {
+        Self {
+            primary,
+            standby: None,
+        }
+    }
+
+    pub const fn pipelined(
+        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        standby: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+    ) -> Self {
+        Self {
+            primary,
+            standby: Some(standby),
+        }
+    }
+
+    pub const fn primary(&self) -> &HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE> {
+        &self.primary
+    }
+
+    pub const fn standby(&self) -> Option<&HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>> {
+        self.standby.as_ref()
+    }
+}
+
+impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
+    From<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>
+    for AggregateTxResources<'storage, SLOTS, BUFFER_SIZE>
+{
+    fn from(primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>) -> Self {
+        Self::single(primary)
+    }
+}
+
 /// Finite aggregate publication policy installed after Association.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AggregateTxConfig {
@@ -147,6 +196,15 @@ struct AggregateActive<const SLOTS: usize> {
     first_publication_micros: Option<u64>,
 }
 
+struct AggregatePrepared<const SLOTS: usize> {
+    aggregate_length: u16,
+    retry: AmpduRetryState<SLOTS>,
+    original_subframes: u8,
+    first_sequence: u16,
+    build_stop: AggregateBuildStop,
+    preparation_micros: u64,
+}
+
 enum ConnectedTxActive<const SLOTS: usize> {
     Idle,
     Ordinary,
@@ -227,7 +285,18 @@ pub struct Esp32s31ConnectedTx<
             AMPDU_BUFFER_SIZE,
         >,
     >,
+    standby_ampdu: Option<
+        RetainedDmaAmpduTx<
+            'ampdu,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+        >,
+    >,
     cookie: Option<TxCookie>,
+    standby_cookie: Option<TxCookie>,
+    standby_prepared: Option<AggregatePrepared<SLOTS>>,
+    standby_error: Option<AggregateTxError>,
     block_ack_operational: [bool; 8],
     config: AggregateTxConfig,
     active: ConnectedTxActive<SLOTS>,

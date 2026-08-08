@@ -148,12 +148,161 @@ impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TR
     }
 }
 
+struct PreparedBackend {
+    order: [u8; 2],
+    count: usize,
+    control_pending: bool,
+    prepared: bool,
+    cancelled: bool,
+}
+
+impl ConnectedRunnerServices<'static, NoopRawMutex, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>
+    for PreparedBackend
+{
+    type Error = TestError;
+
+    fn service_rx(&mut self) -> impl Future<Output = Result<WifiRxProgress, Self::Error>> + '_ {
+        pending()
+    }
+
+    fn service_control<'a>(
+        &'a mut self,
+        _context: WifiControlContext,
+    ) -> impl Future<Output = Result<WifiControlProgress, Self::Error>> + 'a
+    where
+        'static: 'a,
+        NoopRawMutex: 'a,
+    {
+        async move {
+            if self.control_pending {
+                self.control_pending = false;
+                self.order[self.count] = 1;
+                self.count += 1;
+                Ok(WifiControlProgress::More)
+            } else {
+                Ok(WifiControlProgress::Idle)
+            }
+        }
+    }
+
+    fn start_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn wait_tx_deadline(&mut self) -> impl Future<Output = ()> + '_ {
+        pending()
+    }
+
+    fn service_tx<'a>(
+        &'a mut self,
+        _wake: WifiTxWake,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        pending()
+    }
+
+    fn has_prepared_tx(&self) -> bool {
+        self.prepared
+    }
+
+    fn start_prepared_tx<'a>(
+        &'a mut self,
+        _network: &'a PinnedTxConsumer<
+            'static,
+            NoopRawMutex,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            self.prepared = false;
+            self.order[self.count] = 2;
+            self.count += 1;
+            Err(TestError::Finished)
+        }
+    }
+
+    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+        self.prepared = false;
+        self.cancelled = true;
+        Ok(())
+    }
+}
+
 fn enqueue_frame(device: &mut Device) {
     let mut context = Context::from_waker(core::task::Waker::noop());
     device
         .transmit(&mut context)
         .unwrap()
         .consume(14, |frame| frame.fill(0x5a));
+}
+
+#[test]
+fn control_boundary_precedes_prepared_network_publication() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = PreparedBackend {
+        order: [0; 2],
+        count: 0,
+        control_pending: true,
+        prepared: true,
+        cancelled: false,
+    };
+    let mut runner = ConnectedRunner::new(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run()),
+        Err(TestError::Finished)
+    );
+    assert_eq!(runner.services().order, [1, 2]);
+}
+
+#[test]
+fn caller_stop_cancels_software_owned_prepared_network_tx() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (_device, network) = resources.split(pool, [2, 3, 4, 5, 6, 7]);
+    let irq = std::boxed::Box::leak(std::boxed::Box::new(
+        EmbassyMacIrqRuntime::<NoopRawMutex>::new(),
+    ));
+    let services = PreparedBackend {
+        order: [0; 2],
+        count: 0,
+        control_pending: false,
+        prepared: true,
+        cancelled: false,
+    };
+    let mut runner = ConnectedRunner::new(irq, network, services);
+
+    assert_eq!(
+        embassy_futures::block_on(runner.run_until(core::future::ready(()))),
+        Ok(ConnectedRunnerExit::Stopped)
+    );
+    assert!(runner.services().cancelled);
+    assert!(!runner.services().prepared);
 }
 
 #[test]

@@ -51,6 +51,15 @@ impl RecordingAggregateTxObserver {
     fn observed(&self, expected: AggregateTxObservation) -> bool {
         self.observations.lock().unwrap().contains(&expected)
     }
+
+    fn count(&self, expected: AggregateTxObservation) -> usize {
+        self.observations
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|observation| **observation == expected)
+            .count()
+    }
 }
 
 const STATION: [u8; 6] = [2, 3, 4, 5, 6, 7];
@@ -334,7 +343,7 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         Ok(parts) => parts,
         Err(_) => panic!("idle aggregate must decompose"),
     };
-    assert_eq!(returned.aggregate.state(), TxSlotState::Free);
+    assert_eq!(returned.aggregate.primary().state(), TxSlotState::Free);
     assert_eq!(returned.resources.slot.state(), TxSlotState::Free);
     assert_eq!(returned.sequences.peek_non_qos(), 7);
     returned.pairwise_key.clear(&mut hardware);
@@ -436,6 +445,173 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
         subframes: 2,
         stop: AggregateBuildStop::QueueEmpty,
     }));
+}
+
+#[test]
+fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
+    const PIPELINE_DEPTH: usize = 6;
+    type PipelineResources = PinnedResources<
+        NoopRawMutex,
+        TEST_FRAME_CAPACITY,
+        TEST_HEADROOM,
+        TEST_TRAILER,
+        PIPELINE_DEPTH,
+    >;
+    type PipelinePool =
+        PinnedTxPool<TEST_FRAME_CAPACITY, TEST_HEADROOM, TEST_TRAILER, PIPELINE_DEPTH>;
+
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(PipelineResources::new()));
+    let pool = PipelinePool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(
+        PipelinePool::new(),
+    )));
+    let (mut device, network) = resources.split(pool, STATION);
+    for marker in 1..=3 {
+        device
+            .transmit(&mut context())
+            .expect("pipeline queue has one free slot")
+            .consume(17, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+            });
+    }
+    let first = network.try_receive_tx().unwrap();
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let observer = RecordingAggregateTxObserver::default();
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        AggregateTxResources::pipelined(
+            HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
+            HtAmpduTxResources::new_model(standby.as_mut()).unwrap(),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap()
+    .with_observer(&observer);
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 1);
+    assert!(!tx.has_prepared_network_tx());
+    assert_eq!(network.tx_queue_len(), 0);
+
+    // The network producer may wake more than once while the current arena is
+    // hardware-owned. Each wake extends the same software-owned standby arena
+    // without publishing it or consuming another sequence space.
+    for marker in 4..=5 {
+        device
+            .transmit(&mut context())
+            .expect("pipeline queue has one free slot")
+            .consume(17, |frame| {
+                frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, marker]);
+                frame[6..12].copy_from_slice(&STATION);
+                frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+                frame[14..].fill(marker);
+            });
+    }
+    let standby_first = network.try_receive_tx().unwrap();
+    tx.prepare_network_standby(standby_first, &network.tx_consumer());
+    assert!(tx.has_prepared_network_tx());
+    assert_eq!(network.tx_queue_len(), 0);
+    assert_eq!(hardware.ht_publications, 1);
+
+    device
+        .transmit(&mut context())
+        .expect("pipeline queue has one free slot")
+        .consume(17, |frame| {
+            frame[..6].copy_from_slice(&[0x30, 0x31, 0x32, 0x33, 0x34, 6]);
+            frame[6..12].copy_from_slice(&STATION);
+            frame[12..14].copy_from_slice(&0x0800_u16.to_be_bytes());
+            frame[14..].fill(6);
+        });
+    let extension = network.try_receive_tx().unwrap();
+    tx.prepare_network_standby(extension, &network.tx_consumer());
+    assert!(tx.has_prepared_network_tx());
+    assert_eq!(hardware.ht_publications, 1);
+    assert_eq!(observer.count(AggregateTxObservation::StandbyPrepared), 1);
+    assert_eq!(
+        observer.count(AggregateTxObservation::Prepared {
+            subframes: 3,
+            stop: AggregateBuildStop::FrameLimit,
+        }),
+        1,
+        "standby preparation stays private until the publication boundary"
+    );
+
+    hardware.aggregate_completion = Some(aggregate_completion(7, 0b001));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 2);
+    assert!(tx.has_prepared_network_tx());
+
+    hardware.aggregate_completion = Some(aggregate_completion(8, 0b11));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+    assert!(tx.has_prepared_network_tx());
+    assert_eq!(hardware.ht_publications, 2);
+
+    assert_eq!(
+        tx.start_prepared_network(&mut hardware, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending)
+    );
+    assert_eq!(hardware.ht_publications, 3);
+    assert!(!tx.has_prepared_network_tx());
+    assert_eq!(
+        observer.count(AggregateTxObservation::Prepared {
+            subframes: 3,
+            stop: AggregateBuildStop::FrameLimit,
+        }),
+        2
+    );
+
+    hardware.aggregate_completion = Some(aggregate_completion(10, 0b111));
+    assert_eq!(
+        embassy_futures::block_on(tx.service(
+            &mut hardware,
+            WifiTxWake::Interrupt {
+                events: MAC_INT_TX_COMPLETE,
+            },
+        )),
+        Ok(WifiTxProgress::Complete)
+    );
+
+    let returned = tx
+        .try_into_station_parts()
+        .unwrap_or_else(|_| panic!("both aggregate arenas must return idle"));
+    assert_eq!(returned.aggregate.primary().state(), TxSlotState::Free);
+    assert_eq!(
+        returned.aggregate.standby().map(|arena| arena.state()),
+        Some(TxSlotState::Free)
+    );
+    returned.pairwise_key.clear(&mut hardware);
 }
 
 #[test]

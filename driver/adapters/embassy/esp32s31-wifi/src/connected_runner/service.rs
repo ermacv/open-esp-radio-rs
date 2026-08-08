@@ -50,22 +50,40 @@ where
                     irq.wait_rx().await;
                 }
             };
-            let wake = select3(
+            let can_prepare = self.services.can_prepare_tx();
+            let wait_network = async {
+                if can_prepare {
+                    self.network.receive_tx().await
+                } else {
+                    pending().await
+                }
+            };
+            let wake = select4(
                 wait_rx,
                 self.irq.wait_tx(),
                 self.services.wait_tx_deadline(),
+                wait_network,
             )
             .await;
             match wake {
-                Either3::First(()) => self.service_rx().await?,
-                Either3::Second(events) => {
+                Either4::First(()) => self.service_rx().await?,
+                Either4::Second(events) => {
                     progress = self
                         .services
                         .service_tx(WifiTxWake::Interrupt { events })
                         .await?;
                 }
-                Either3::Third(()) => {
+                Either4::Third(()) => {
                     progress = self.services.service_tx(WifiTxWake::Deadline).await?;
+                }
+                Either4::Fourth(frame) => {
+                    // The first ready lease wakes this task. Give the network
+                    // producer one cooperative poll before snapshotting the
+                    // bounded queue, so one socket wake can contribute its
+                    // complete ready burst without an artificial timer.
+                    yield_now().await;
+                    let network = self.network.tx_consumer();
+                    self.services.prepare_tx(frame, &network).await?;
                 }
             }
         }

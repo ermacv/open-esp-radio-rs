@@ -8,7 +8,7 @@
 use core::future::{Future, pending, ready};
 
 use embassy_futures::{
-    select::{Either, Either3, select, select3},
+    select::{Either, Either3, Either4, select, select3, select4},
     yield_now,
 };
 use open_esp_radio_embassy_net::{
@@ -133,6 +133,47 @@ pub trait ConnectedRunnerServices<
         &'a mut self,
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+
+    fn has_prepared_tx(&self) -> bool {
+        false
+    }
+
+    fn start_prepared_tx<'a>(
+        &'a mut self,
+        _network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        ready(Ok(WifiTxProgress::Complete))
+    }
+
+    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn can_prepare_tx(&self) -> bool {
+        false
+    }
+
+    fn prepare_tx<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        _network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        ready(Ok(()))
+    }
 }
 
 /// Single Embassy owner for RX DMA, control, network TX and MAC IRQ order.

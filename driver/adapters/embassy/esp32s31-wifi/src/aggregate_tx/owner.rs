@@ -40,7 +40,7 @@ where
 {
     pub fn new(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        ampdu: HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+        ampdu: impl Into<AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>>,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
         if SLOTS == 0
@@ -59,14 +59,28 @@ where
         if config.attempt_limit == 0 {
             return Err(AmpduRetryError::ZeroAttemptLimit.into());
         }
-        let mut ampdu = RetainedDmaAmpduTx::new(ampdu);
+        let AggregateTxResources { primary, standby } = ampdu.into();
+        let mut ampdu = RetainedDmaAmpduTx::new(primary);
         ampdu.configure_max_aggregate_bytes(
             ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
+        let standby_ampdu = standby.map(|resources| {
+            let mut owner = RetainedDmaAmpduTx::new(resources);
+            owner
+                .configure_max_aggregate_bytes(
+                    ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
+                )
+                .expect("idle standby arena accepts validated association byte limit");
+            owner
+        });
         Ok(Self {
             ordinary: TeardownResource::new(ordinary),
             ampdu: TeardownResource::new(ampdu),
+            standby_ampdu,
             cookie: None,
+            standby_cookie: None,
+            standby_prepared: None,
+            standby_error: None,
             block_ack_operational: [false; 8],
             config,
             active: ConnectedTxActive::Idle,
@@ -124,6 +138,10 @@ where
         !matches!(self.active, ConnectedTxActive::Idle)
     }
 
+    pub fn has_prepared_network_tx(&self) -> bool {
+        self.standby_prepared.is_some() || self.standby_error.is_some()
+    }
+
     /// Portable queue state across the aggregate and ordinary descriptor
     /// owners that form one connected TX service.
     pub fn queue_state(&self) -> MacTxQueueState {
@@ -131,7 +149,10 @@ where
             || self.ordinary.queue_state() == MacTxQueueState::ResetRequired
         {
             MacTxQueueState::ResetRequired
-        } else if self.active() || self.ordinary.queue_state() == MacTxQueueState::Backpressured {
+        } else if self.active()
+            || self.has_prepared_network_tx()
+            || self.ordinary.queue_state() == MacTxQueueState::Backpressured
+        {
             MacTxQueueState::Backpressured
         } else {
             MacTxQueueState::Ready
@@ -154,13 +175,13 @@ where
     /// An active or partially detached aggregate is returned intact. Losing
     /// that value would leak pinned `embassy-net` leases or make DMA lifetime
     /// unknowable to an outer reconnect owner.
-    #[allow(clippy::result_large_err)]
+    #[allow(clippy::result_large_err, clippy::type_complexity)]
     pub fn try_into_parts(
         mut self,
     ) -> Result<
         (
             Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
@@ -168,6 +189,13 @@ where
             || self.ordinary.active()
             || self.ampdu.held_backing_count() != 0
             || self.cookie.is_some()
+            || self.standby_prepared.is_some()
+            || self.standby_cookie.is_some()
+            || self.standby_error.is_some()
+            || self
+                .standby_ampdu
+                .as_ref()
+                .is_some_and(|owner| owner.held_backing_count() != 0)
         {
             return Err(self);
         }
@@ -176,7 +204,18 @@ where
             Ok(resources) => resources,
             Err(_) => unreachable!("idle retained DMA owner must return its storage"),
         };
-        Ok((ordinary, ampdu))
+        let standby = self.standby_ampdu.take().map(|owner| {
+            owner
+                .try_into_resources()
+                .unwrap_or_else(|_| unreachable!("idle standby owner must return its storage"))
+        });
+        Ok((
+            ordinary,
+            AggregateTxResources {
+                primary: ampdu,
+                standby,
+            },
+        ))
     }
 
     /// Return every idle connected-TX resource needed by station teardown.
@@ -191,14 +230,11 @@ where
         (
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
             ConnectedTxHandoff,
-            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         ),
         Self,
     > {
-        let (ordinary, ampdu) = match self.try_into_parts() {
-            Ok(parts) => parts,
-            Err(owner) => return Err(owner),
-        };
+        let (ordinary, ampdu) = self.try_into_parts()?;
         // `try_into_parts` checks both aggregate and ordinary active state
         // before transferring either field. No executor or hardware actor can
         // mutate the uniquely owned ordinary value between these two calls.
@@ -217,7 +253,7 @@ where
     ) -> Result<
         Esp32s31ConnectedTxTeardownParts<
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
         >,
         Self,
     > {

@@ -179,4 +179,52 @@ where
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
         Esp32s31ConnectedTx::service(self, hardware, wake)
     }
+
+    fn has_prepared(&self) -> bool {
+        self.has_prepared_network_tx()
+    }
+
+    fn start_prepared<'a>(
+        &'a mut self,
+        hardware: &'a mut H,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move { self.start_prepared_network(hardware, network) }
+    }
+
+    fn cancel_prepared(&mut self) -> Result<(), Self::Error> {
+        self.cancel_prepared_network()
+    }
+
+    fn can_prepare(&self) -> bool {
+        self.can_prepare_network_tx()
+    }
+
+    fn prepare<'a>(
+        &'a mut self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        H: 'a,
+    {
+        async move {
+            self.prepare_network_standby(frame, network);
+            Ok(())
+        }
+    }
 }

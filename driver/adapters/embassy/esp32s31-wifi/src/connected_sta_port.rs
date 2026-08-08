@@ -17,7 +17,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
         HeDcmRate, HeEdcaTxopLimit, HeMcs, HtGuardInterval, HtMcs, LegacyRate, TxPhyRate,
         TxSlotState,
     },
-    tx_ampdu::{HtAmpduTxResources, StaTxBlockAckSessions, TxBlockAckError},
+    tx_ampdu::{StaTxBlockAckSessions, TxBlockAckError},
 };
 use open_esp_radio_esp32s31_wifi_sta::peer::{Esp32s31ConnectedStaPeer, Esp32s31StaConnectedLink};
 use open_esp_radio_ieee80211::{
@@ -32,7 +32,7 @@ use open_esp_radio_wifi_softmac::{
 use open_esp_radio_wifi_sta::link_monitor::{StaBeaconLossConfig, StaBeaconLossConfigError};
 
 use crate::{
-    aggregate_tx::{AggregateTxConfig, Esp32s31ConnectedTx},
+    aggregate_tx::{AggregateTxConfig, AggregateTxResources, Esp32s31ConnectedTx},
     aggregate_tx_observer::AggregateTxObserver,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{

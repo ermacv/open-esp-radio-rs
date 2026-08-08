@@ -44,7 +44,7 @@ where
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
     ) -> Result<WifiTxProgress, AggregateTxError> {
-        if self.active() {
+        if self.active() || self.has_prepared_network_tx() {
             return Err(AggregateTxError::ActiveTransaction);
         }
         self.last_aggregate_status = None;
@@ -87,13 +87,17 @@ where
         }
 
         let preparation_started = self.observer.map(|_| self.ordinary.now_micros());
-        self.prepare_aggregate(first, network)?;
+        let prepared = self.prepare_aggregate(first, network)?;
+        self.observe_prepared(&prepared);
         if let (Some(observer), Some(started)) = (self.observer, preparation_started) {
             observer.observe(AggregateTxObservation::PreparationCompleted {
                 micros: self.ordinary.now_micros().wrapping_sub(started),
             });
         }
-        self.publish_initial(hardware)
+        self.activate_prepared(prepared)?;
+        let progress = self.publish_initial(hardware)?;
+        self.prepare_standby(network);
+        Ok(progress)
     }
 
     fn start_network_ordinary<H: HtAmpduHardware>(
@@ -152,7 +156,7 @@ where
         &mut self,
         first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
-    ) -> Result<(), AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
         let first_sequence = self
             .ordinary
             .peek_qos_sequence(DATA_TID)
@@ -180,7 +184,7 @@ where
         network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
         first_sequence: u16,
         cookie: TxCookie,
-    ) -> Result<(), AggregateTxError> {
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
         self.push_frame(first, AggregateFrameAdmission::FreshExact)?;
 
         let build_stop = loop {
@@ -210,21 +214,254 @@ where
                 retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_)),
             },
         )?;
-        let config = self.publication_config(aggregate.bytes, aggregate.subframes)?;
-        self.active = ConnectedTxActive::Aggregate(AggregateActive {
-            config,
+        let prepared = AggregatePrepared {
+            aggregate_length: aggregate.bytes,
             retry,
             original_subframes: aggregate.subframes,
+            first_sequence,
+            build_stop,
+            preparation_micros: 0,
+        };
+        Ok(prepared)
+    }
+
+    fn extend_reserved(
+        &mut self,
+        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        mut prepared: AggregatePrepared<SLOTS>,
+    ) -> Result<AggregatePrepared<SLOTS>, AggregateTxError> {
+        let admission = match self.config.rate {
+            TxPhyRate::Ht(_) => AggregateFrameAdmission::HtQueueCapacity,
+            TxPhyRate::He(_) => AggregateFrameAdmission::NeedsExactCheck,
+            TxPhyRate::Legacy(_) => return Err(AggregateTxError::UnsupportedRate),
+        };
+        self.push_frame(first, admission)?;
+        let build_stop = loop {
+            if self.ampdu.held_backing_count() >= usize::from(self.config.frame_limit) {
+                break AggregateBuildStop::FrameLimit;
+            }
+            if !self.can_push(FRAME_CAPACITY)? {
+                break AggregateBuildStop::CapacityLimit;
+            }
+            let Some(frame) = network.try_receive() else {
+                break AggregateBuildStop::QueueEmpty;
+            };
+            self.push_frame(frame, admission)?;
+        };
+        let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let aggregate = self.ampdu.prepared_aggregate(cookie)?;
+        prepared.aggregate_length = aggregate.bytes;
+        prepared.original_subframes = aggregate.subframes;
+        prepared.build_stop = build_stop;
+        prepared.retry = AmpduRetryState::<SLOTS>::new(
+            prepared.first_sequence,
+            aggregate.subframes,
+            AmpduRetryPolicy {
+                attempt_limit: self.config.attempt_limit,
+                retain_single_mpdu: matches!(self.config.rate, TxPhyRate::He(_)),
+            },
+        )?;
+        Ok(prepared)
+    }
+
+    fn observe_prepared(&self, prepared: &AggregatePrepared<SLOTS>) {
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::Prepared {
+                subframes: prepared.original_subframes,
+                stop: prepared.build_stop,
+            });
+        }
+    }
+
+    fn activate_prepared(
+        &mut self,
+        prepared: AggregatePrepared<SLOTS>,
+    ) -> Result<(), AggregateTxError> {
+        let config =
+            self.publication_config(prepared.aggregate_length, prepared.original_subframes)?;
+        self.active = ConnectedTxActive::Aggregate(AggregateActive {
+            config,
+            retry: prepared.retry,
+            original_subframes: prepared.original_subframes,
             deadline_micros: 0,
             first_publication_micros: None,
         });
+        Ok(())
+    }
+
+    /// Fill the software-owned second arena after the current aggregate has
+    /// already been published. No descriptor from this arena becomes visible
+    /// to MAC hardware at this edge.
+    fn prepare_standby(
+        &mut self,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        if !self.can_prepare_network_tx() {
+            return;
+        }
+        let minimum_frames = if matches!(self.config.rate, TxPhyRate::Ht(_)) {
+            2
+        } else {
+            1
+        };
+        if network.queue_len() < minimum_frames
+            || !matches!(
+                self.first_frame_fits_fresh_aggregate(FRAME_CAPACITY),
+                Ok(true)
+            )
+        {
+            return;
+        }
+        let Some(first) = network.try_receive() else {
+            return;
+        };
+
+        self.prepare_network_standby(first, network);
+    }
+
+    pub(super) fn can_prepare_network_tx(&self) -> bool {
+        let base = self.active()
+            && self.standby_ampdu.is_some()
+            && self.standby_error.is_none()
+            && self.block_ack_operational(DATA_TID)
+            && !matches!(self.config.rate, TxPhyRate::Legacy(_));
+        if !base {
+            return false;
+        }
+        match self.standby_prepared.as_ref() {
+            // The scheduler consumes a typed network frame only after this
+            // predicate succeeds. Prove the largest frame admitted by that
+            // queue fits a fresh aggregate before ownership crosses that
+            // boundary; `prepare_network_standby` can then use `FreshExact`
+            // without a lossy error path.
+            None => matches!(
+                self.first_frame_fits_fresh_aggregate(FRAME_CAPACITY),
+                Ok(true)
+            ),
+            Some(_) => {
+                self.standby_ampdu.as_ref().is_some_and(|owner| {
+                    owner.held_backing_count() < usize::from(self.config.frame_limit)
+                        && owner.held_backing_count() < SLOTS
+                }) && matches!(self.can_push_standby(FRAME_CAPACITY), Ok(true))
+            }
+        }
+    }
+
+    fn can_push_standby(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {
+        let ampdu = self
+            .standby_ampdu
+            .as_ref()
+            .ok_or(AggregateTxError::InvalidPublicationState)?;
+        let cookie = self.standby_cookie.ok_or(AggregateTxError::MissingCookie)?;
+        let frame_length = ethernet_length
+            .checked_add(STA_PROTECTED_QOS_ETHERNET_OVERHEAD)
+            .ok_or(AggregateTxError::BufferSizeOverflow)?;
+        let dma_capacity = HEADROOM + FRAME_CAPACITY + TRAILER;
+        let hardware_mic_length = crate::ordinary_tx::TX_CCMP_MIC_SIZE as u8;
+        match self.config.rate {
+            TxPhyRate::Ht(rate) => Ok(ampdu.can_commit_referenced_ht_frame(
+                cookie,
+                frame_length,
+                hardware_mic_length,
+                0,
+                rate,
+                dma_capacity,
+            )?),
+            TxPhyRate::He(rate) => Ok(ampdu.can_commit_referenced_he_frame(
+                cookie,
+                AmpduFrameSize::new(frame_length, hardware_mic_length),
+                HeAmpduPolicy::new(
+                    rate,
+                    self.ordinary.policy().ht_ampdu().density(),
+                    self.config.he_txop_limit,
+                ),
+                dma_capacity,
+            )?),
+            TxPhyRate::Legacy(_) => Err(AggregateTxError::UnsupportedRate),
+        }
+    }
+
+    pub(super) fn prepare_network_standby(
+        &mut self,
+        first: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) {
+        if !self.can_prepare_network_tx() {
+            drop(first);
+            return;
+        }
+
+        let started = self.observer.map(|_| self.ordinary.now_micros());
+        let mut standby = self
+            .standby_ampdu
+            .take()
+            .expect("standby presence checked before preparation");
+        core::mem::swap(&mut *self.ampdu, &mut standby);
+        core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
+        let previous = self.standby_prepared.take();
+        let extending = previous.is_some();
+        let result = match previous {
+            Some(prepared) => self.extend_reserved(first, network, prepared),
+            None => self.prepare_aggregate(first, network),
+        };
+        let elapsed = started.map(|started| self.ordinary.now_micros().wrapping_sub(started));
+        if result.is_err() && self.cookie.is_some() {
+            self.cancel_prepared();
+        }
+        core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
+        core::mem::swap(&mut *self.ampdu, &mut standby);
+        self.standby_ampdu = Some(standby);
+
+        match result {
+            Ok(mut prepared) => {
+                prepared.preparation_micros = prepared
+                    .preparation_micros
+                    .wrapping_add(elapsed.unwrap_or(0));
+                self.standby_prepared = Some(prepared);
+                if !extending && let Some(observer) = self.observer {
+                    observer.observe(AggregateTxObservation::StandbyPrepared);
+                }
+            }
+            Err(error) => self.standby_error = Some(error),
+        }
+    }
+
+    pub(super) fn start_prepared_network<H: HtAmpduHardware>(
+        &mut self,
+        hardware: &mut H,
+        network: &PinnedTxConsumer<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+    ) -> Result<WifiTxProgress, AggregateTxError> {
+        if self.active() {
+            return Err(AggregateTxError::ActiveTransaction);
+        }
+        if let Some(error) = self.standby_error.take() {
+            return Err(error);
+        }
+        let prepared = self
+            .standby_prepared
+            .take()
+            .ok_or(AggregateTxError::InvalidPublicationState)?;
+        self.observe_prepared(&prepared);
         if let Some(observer) = self.observer {
-            observer.observe(AggregateTxObservation::Prepared {
-                subframes: aggregate.subframes,
-                stop: build_stop,
+            observer.observe(AggregateTxObservation::PreparationCompleted {
+                micros: prepared.preparation_micros,
             });
         }
-        Ok(())
+        let mut standby = self
+            .standby_ampdu
+            .take()
+            .expect("prepared standby retains its arena");
+        core::mem::swap(&mut *self.ampdu, &mut standby);
+        core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
+        self.standby_ampdu = Some(standby);
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::StandbyPublished);
+        }
+        self.activate_prepared(prepared)?;
+        let progress = self.publish_initial(hardware)?;
+        self.prepare_standby(network);
+        Ok(progress)
     }
 
     fn can_push(&self, ethernet_length: usize) -> Result<bool, AggregateTxError> {

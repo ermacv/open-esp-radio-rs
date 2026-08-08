@@ -46,6 +46,27 @@ where
         self.active = ConnectedTxActive::Idle;
     }
 
+    pub(super) fn cancel_prepared_network(&mut self) -> Result<(), AggregateTxError> {
+        self.standby_error = None;
+        if self.standby_prepared.take().is_none() {
+            return Ok(());
+        }
+        let cookie = self
+            .standby_cookie
+            .take()
+            .ok_or(AggregateTxError::MissingCookie)?;
+        let standby = self
+            .standby_ampdu
+            .as_mut()
+            .ok_or(AggregateTxError::InvalidPublicationState)?;
+        standby.cancel(cookie)?;
+        standby.release_free_backings()?;
+        if let Some(observer) = self.observer {
+            observer.observe(AggregateTxObservation::StandbyCancelled);
+        }
+        Ok(())
+    }
+
     pub(super) fn release_completed(&mut self) -> Result<(), AggregateTxError> {
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         self.ampdu.release_completed(cookie)?;
@@ -68,6 +89,11 @@ where
         &mut self,
         reason: AggregateTxResetReason,
     ) -> Result<WifiTxProgress, AggregateTxError> {
+        if self.cancel_prepared_network().is_err()
+            && let Some(standby) = self.standby_ampdu.as_mut()
+        {
+            standby.forget_backings();
+        }
         let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
         self.ampdu.require_reset(cookie)?;
         self.forget_frames();
@@ -112,6 +138,12 @@ where
     fn drop(&mut self) {
         if !self.ordinary.is_present() || !self.ampdu.is_present() {
             return;
+        }
+        if self.standby_prepared.is_some()
+            && self.cancel_prepared_network().is_err()
+            && let Some(standby) = self.standby_ampdu.as_mut()
+        {
+            standby.forget_backings();
         }
         match self.ampdu.state() {
             TxSlotState::Free => self.release_frames(),

@@ -17,6 +17,9 @@ use open_esp_radio::{
     adapters::{
         esp32s31::wifi_embassy::{
             connected_runner::ConnectedRunner,
+            connected_rx_protocol::{
+                ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
+            },
             connected_sta_port::{
                 Esp32s31ConnectedStaConfig, Esp32s31ConnectedStaControlResources,
                 Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaNetworkTxDomain,
@@ -37,9 +40,6 @@ use open_esp_radio::{
             rx_dma_service::{Esp32s31RxEpochResources, Esp32s31StoppedRx},
             rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
             sta_tx_epoch::Esp32s31StaTxEpochExt,
-            connected_rx_protocol::{
-                ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
-            },
             station::{
                 Esp32s31ConnectedStationExit, Esp32s31ConnectedTaskGroup,
                 Esp32s31ConnectedTaskStopOutcome, Esp32s31StationCommand,
@@ -542,7 +542,7 @@ pub async fn run_connected(
         &plan,
         Esp32s31ConnectedStaTxResources {
             control: control_tx,
-            aggregate,
+            aggregate: aggregate.into(),
             pairwise_key: pairwise,
             sequences: tx_sequences,
             counters: None,

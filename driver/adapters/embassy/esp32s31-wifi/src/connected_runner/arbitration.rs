@@ -53,6 +53,7 @@ where
             // makes this a non-blocking ordered probe, with stop winning an
             // exact tie before another transaction can begin.
             if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
+                self.services.cancel_prepared_tx()?;
                 self.network
                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
                 return Ok(ConnectedRunnerExit::Stopped);
@@ -71,11 +72,25 @@ where
                     continue;
                 }
                 WifiControlProgress::Disconnected => {
+                    self.services.cancel_prepared_tx()?;
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
                     return Ok(ConnectedRunnerExit::Disconnected);
                 }
                 WifiControlProgress::Idle => {}
+            }
+
+            // A prepared network batch owns only software-reserved
+            // descriptors and pinned leases. Give control the transaction
+            // boundary above, then admit the batch before claiming newer
+            // frames from the network queue.
+            if self.services.has_prepared_tx() {
+                let network_tx = self.network.tx_consumer();
+                let progress = self.services.start_prepared_tx(&network_tx).await?;
+                if progress == WifiTxProgress::Pending {
+                    self.drive_active_tx().await?;
+                }
+                continue;
             }
 
             let irq = self.irq;
@@ -98,6 +113,7 @@ where
             .await
             {
                 Either::First(()) => {
+                    self.services.cancel_prepared_tx()?;
                     self.network
                         .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
                     return Ok(ConnectedRunnerExit::Stopped);
@@ -113,6 +129,7 @@ where
                     loop {
                         if matches!(select(stop.as_mut(), ready(())).await, Either::First(())) {
                             drop(frame);
+                            self.services.cancel_prepared_tx()?;
                             self.network
                                 .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
                             return Ok(ConnectedRunnerExit::Stopped);
@@ -130,6 +147,7 @@ where
                             }
                             WifiControlProgress::Disconnected => {
                                 drop(frame);
+                                self.services.cancel_prepared_tx()?;
                                 self.network
                                     .set_link_state(open_esp_radio_embassy_net::LinkState::Down);
                                 return Ok(ConnectedRunnerExit::Disconnected);

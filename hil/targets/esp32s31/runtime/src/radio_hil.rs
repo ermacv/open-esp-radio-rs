@@ -25,6 +25,7 @@ use open_esp_radio::esp32s31::wifi::sta::{
 use open_esp_radio::{
     adapters::{
         esp32s31::wifi_embassy::{
+            aggregate_tx::AggregateTxResources,
             connected_rx_protocol::{
                 ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
             },
@@ -82,7 +83,7 @@ use open_esp_radio::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
                 HtMcs, LegacyRate, TxSlot,
             },
-            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
+            tx_ampdu::HtAmpduTxStorage,
         },
     },
     wifi::ieee80211::station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPreference},
@@ -796,6 +797,16 @@ static OPEN_RADIO_TX_AMPDU_STORAGE: StaticCell<ConnectedAmpduMetadataBacking> = 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
 static OPEN_RADIO_TX_AMPDU_DMA_STORAGE: StaticCell<ConnectedAmpduDmaBacking> = StaticCell::new();
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby")]
+static OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE: StaticCell<ConnectedAmpduMetadataBacking> =
+    StaticCell::new();
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby_descriptors")]
+static OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE: StaticCell<ConnectedAmpduDmaBacking> =
+    StaticCell::new();
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
 static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
 static ETHERNET_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
@@ -946,7 +957,7 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_STORAGE_SIZE,
 >;
 type ConnectedAmpduStorage =
-    HtAmpduTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
+    AggregateTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 type RadioHilReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     RadioHilJoinRx<'static>,
@@ -1137,6 +1148,8 @@ fn connected_epoch_bindings() -> RadioHilConnectedEpochBindings {
             stack: &OPEN_RADIO_STACK_RESOURCES,
             ampdu_metadata: &OPEN_RADIO_TX_AMPDU_STORAGE,
             ampdu_dma: &OPEN_RADIO_TX_AMPDU_DMA_STORAGE,
+            ampdu_standby_metadata: &OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE,
+            ampdu_standby_dma: &OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE,
             control: &OPEN_RADIO_CONTROL_RESOURCES,
             registers: &OPEN_RADIO_REGISTER_CELL,
         },
@@ -1193,8 +1206,7 @@ impl IrqSink for OpenRadioMacIrqSink {
                 OPEN_RADIO_RX_PIPELINE_COUNTERS.record_rx_irq_epoch();
             }
         }
-        const TX_EVENTS: u32 =
-            MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
+        const TX_EVENTS: u32 = MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
         if mac_pending & TX_EVENTS != 0 && !OPEN_RADIO_IRQ_RUNTIME.tx_signaled() {
             // Match the RX timing boundary: preserve the oldest unconsumed TX
             // wake and sample its timestamp before the cross-core signal.

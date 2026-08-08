@@ -42,7 +42,7 @@ pub struct Esp32s31ConnectedStaTxResources<
     const ORDINARY_BUFFER_SIZE: usize,
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub aggregate: AggregateTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub pairwise_key: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
     /// Optional observation-only hook supplied by the composition root.
@@ -140,7 +140,7 @@ pub struct Esp32s31ConnectedStaTxHandoffFailure<
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
     pub handoff: ConnectedTxHandoff,
-    pub aggregate: HtAmpduTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub aggregate: AggregateTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub aggregate_tx_observer: Option<&'resources dyn AggregateTxObserver>,
 }
 

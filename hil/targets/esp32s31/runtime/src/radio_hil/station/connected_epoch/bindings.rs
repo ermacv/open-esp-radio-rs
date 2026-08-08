@@ -32,6 +32,9 @@ pub(in crate::radio_hil) struct RadioHilConnectedEpochStorage {
     pub(in crate::radio_hil) stack: &'static StaticCell<ConnectedStackResources>,
     pub(in crate::radio_hil) ampdu_metadata: &'static StaticCell<ConnectedAmpduMetadataBacking>,
     pub(in crate::radio_hil) ampdu_dma: &'static StaticCell<ConnectedAmpduDmaBacking>,
+    pub(in crate::radio_hil) ampdu_standby_metadata:
+        &'static StaticCell<ConnectedAmpduMetadataBacking>,
+    pub(in crate::radio_hil) ampdu_standby_dma: &'static StaticCell<ConnectedAmpduDmaBacking>,
     pub(in crate::radio_hil) control: &'static StaticCell<ControlResources>,
     pub(in crate::radio_hil) registers: &'static StaticCell<RefCell<&'static mut RadioRegisters>>,
 }

@@ -7,6 +7,7 @@ use embassy_net_driver::LinkState;
 use embassy_time::Timer;
 use open_esp_radio::{
     adapters::esp32s31::wifi_embassy::{
+        aggregate_tx::AggregateTxResources,
         connected_runner::ConnectedRunner,
         connected_sta_port::{
             Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
@@ -216,6 +217,14 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
                 storage.ampdu_dma.init_with(AmpduDmaStorage::new),
             )
             .expect("A-MPDU metadata and descriptor storage must be valid");
+            let standby_ampdu = HtAmpduTxResources::pin_static(
+                storage
+                    .ampdu_standby_metadata
+                    .init_with(HtAmpduTxStorage::new),
+                storage.ampdu_standby_dma.init_with(AmpduDmaStorage::new),
+            )
+            .expect("standby A-MPDU metadata and descriptor storage must be valid");
+            let ampdu = AggregateTxResources::pipelined(ampdu, standby_ampdu);
             let control_resources = storage.control.init(ControlResources::new());
             let registers = storage.registers.init(RefCell::new(registers));
             (

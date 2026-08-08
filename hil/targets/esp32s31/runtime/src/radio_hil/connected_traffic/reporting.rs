@@ -88,6 +88,10 @@ pub(in crate::radio_hil) fn log_open_radio_ampdu_interval(
         aggregate.tx_publication_to_irq_micros,
         aggregate.tx_publication_to_irq_lifetime_max_micros,
     ));
+    emergency_log(format_args!(
+        "OAMPP standby_prepared={} standby_published={} standby_cancelled={}",
+        aggregate.standby_prepared, aggregate.standby_published, aggregate.standby_cancelled,
+    ));
 }
 
 pub(in crate::radio_hil) fn log_open_radio_rx_pipeline_interval(

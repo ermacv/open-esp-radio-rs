@@ -29,6 +29,9 @@ pub struct AggregateTxCounters {
     network_single_fresh_aggregate_capacity: AtomicU32,
     network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32,
     aggregates_prepared: AtomicU32,
+    standby_prepared: AtomicU32,
+    standby_published: AtomicU32,
+    standby_cancelled: AtomicU32,
     aggregate_publications: AtomicU32,
     aggregates_completed: AtomicU32,
     subframes_acknowledged: AtomicU32,
@@ -78,6 +81,9 @@ impl AggregateTxCounters {
             network_single_fresh_aggregate_capacity: AtomicU32::new(0),
             network_single_fresh_capacity_lifetime_max_ethernet_length: AtomicU32::new(0),
             aggregates_prepared: AtomicU32::new(0),
+            standby_prepared: AtomicU32::new(0),
+            standby_published: AtomicU32::new(0),
+            standby_cancelled: AtomicU32::new(0),
             aggregate_publications: AtomicU32::new(0),
             aggregates_completed: AtomicU32::new(0),
             subframes_acknowledged: AtomicU32::new(0),
@@ -129,6 +135,9 @@ impl AggregateTxCounters {
                 .network_single_fresh_capacity_lifetime_max_ethernet_length
                 .load(Ordering::Relaxed),
             aggregates_prepared: self.aggregates_prepared.load(Ordering::Relaxed),
+            standby_prepared: self.standby_prepared.load(Ordering::Relaxed),
+            standby_published: self.standby_published.load(Ordering::Relaxed),
+            standby_cancelled: self.standby_cancelled.load(Ordering::Relaxed),
             aggregate_publications: self.aggregate_publications.load(Ordering::Relaxed),
             aggregates_completed: self.aggregates_completed.load(Ordering::Relaxed),
             subframes_acknowledged: self.subframes_acknowledged.load(Ordering::Relaxed),
@@ -170,9 +179,7 @@ impl AggregateTxCounters {
             tx_publication_to_irq_samples: self
                 .tx_publication_to_irq_samples
                 .load(Ordering::Relaxed),
-            tx_publication_to_irq_micros: self
-                .tx_publication_to_irq_micros
-                .load(Ordering::Relaxed),
+            tx_publication_to_irq_micros: self.tx_publication_to_irq_micros.load(Ordering::Relaxed),
             tx_publication_to_irq_lifetime_max_micros: self
                 .tx_publication_to_irq_lifetime_max_micros
                 .load(Ordering::Relaxed),
@@ -382,6 +389,15 @@ impl AggregateTxObserver for AggregateTxCounters {
             AggregateTxObservation::PreparationCompleted { micros } => {
                 self.record_preparation_time(micros);
             }
+            AggregateTxObservation::StandbyPrepared => {
+                self.standby_prepared.fetch_add(1, Ordering::Relaxed);
+            }
+            AggregateTxObservation::StandbyPublished => {
+                self.standby_published.fetch_add(1, Ordering::Relaxed);
+            }
+            AggregateTxObservation::StandbyCancelled => {
+                self.standby_cancelled.fetch_add(1, Ordering::Relaxed);
+            }
             AggregateTxObservation::Published {
                 at_micros,
                 program_micros,
@@ -425,6 +441,9 @@ pub struct AggregateTxCounterSnapshot {
     /// Maximum rejected Ethernet length since boot, not an interval delta.
     pub network_single_fresh_capacity_lifetime_max_ethernet_length: u32,
     pub aggregates_prepared: u32,
+    pub standby_prepared: u32,
+    pub standby_published: u32,
+    pub standby_cancelled: u32,
     pub aggregate_publications: u32,
     pub aggregates_completed: u32,
     pub subframes_acknowledged: u32,
@@ -488,6 +507,13 @@ impl AggregateTxCounterSnapshot {
             aggregates_prepared: self
                 .aggregates_prepared
                 .wrapping_sub(earlier.aggregates_prepared),
+            standby_prepared: self.standby_prepared.wrapping_sub(earlier.standby_prepared),
+            standby_published: self
+                .standby_published
+                .wrapping_sub(earlier.standby_published),
+            standby_cancelled: self
+                .standby_cancelled
+                .wrapping_sub(earlier.standby_cancelled),
             aggregate_publications: self
                 .aggregate_publications
                 .wrapping_sub(earlier.aggregate_publications),
@@ -542,8 +568,7 @@ impl AggregateTxCounterSnapshot {
             tx_irq_to_service_micros: self
                 .tx_irq_to_service_micros
                 .wrapping_sub(earlier.tx_irq_to_service_micros),
-            tx_irq_to_service_lifetime_max_micros: self
-                .tx_irq_to_service_lifetime_max_micros,
+            tx_irq_to_service_lifetime_max_micros: self.tx_irq_to_service_lifetime_max_micros,
             tx_publication_to_irq_samples: self
                 .tx_publication_to_irq_samples
                 .wrapping_sub(earlier.tx_publication_to_irq_samples),

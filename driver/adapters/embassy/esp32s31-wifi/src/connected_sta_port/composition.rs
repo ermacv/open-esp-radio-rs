@@ -133,10 +133,17 @@ impl Esp32s31ConnectedStaPort {
         T: WifiTxTimer,
     {
         assert_eq!(
-            resources.aggregate.state(),
+            resources.aggregate.primary().state(),
             TxSlotState::Free,
             "a connected epoch requires returned idle aggregate storage"
         );
+        if let Some(standby) = resources.aggregate.standby() {
+            assert_eq!(
+                standby.state(),
+                TxSlotState::Free,
+                "a connected epoch requires returned idle standby aggregate storage"
+            );
+        }
         let handoff = ConnectedTxHandoff {
             key: resources.pairwise_key,
             sequences: resources.sequences,

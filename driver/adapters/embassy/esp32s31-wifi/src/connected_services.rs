@@ -103,6 +103,55 @@ pub trait Esp32s31NetworkTxService<
         hardware: &'a mut H,
         wake: WifiTxWake,
     ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a;
+
+    /// Whether a software-owned network batch is ready for scheduler
+    /// admission. It is not hardware-owned and must not suppress control
+    /// service at the transaction boundary.
+    fn has_prepared(&self) -> bool {
+        false
+    }
+
+    fn start_prepared<'a>(
+        &'a mut self,
+        _hardware: &'a mut H,
+        _network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        ready(Ok(WifiTxProgress::Complete))
+    }
+
+    /// Release a software-owned standby batch at stop/disconnect.
+    fn cancel_prepared(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    fn can_prepare(&self) -> bool {
+        false
+    }
+
+    fn prepare<'a>(
+        &'a mut self,
+        _frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        _network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a
+    where
+        H: 'a,
+    {
+        ready(Ok(()))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -273,6 +322,59 @@ where
         async move {
             self.tx
                 .service(&mut self.hardware, wake)
+                .await
+                .map_err(Esp32s31ConnectedServicesError::Tx)
+        }
+    }
+
+    fn has_prepared_tx(&self) -> bool {
+        self.tx.has_prepared()
+    }
+
+    fn start_prepared_tx<'a>(
+        &'a mut self,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            self.tx
+                .start_prepared(&mut self.hardware, network)
+                .await
+                .map_err(Esp32s31ConnectedServicesError::Tx)
+        }
+    }
+
+    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+        self.tx
+            .cancel_prepared()
+            .map_err(Esp32s31ConnectedServicesError::Tx)
+    }
+
+    fn can_prepare_tx(&self) -> bool {
+        self.tx.can_prepare()
+    }
+
+    fn prepare_tx<'a>(
+        &'a mut self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            QUEUE_DEPTH,
+        >,
+    ) -> impl Future<Output = Result<(), Self::Error>> + 'a {
+        async move {
+            self.tx
+                .prepare(frame, network)
                 .await
                 .map_err(Esp32s31ConnectedServicesError::Tx)
         }

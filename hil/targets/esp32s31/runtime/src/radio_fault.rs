@@ -334,4 +334,62 @@ where
             }
         }
     }
+
+    fn has_prepared_tx(&self) -> bool {
+        self.inner.has_prepared_tx()
+    }
+
+    fn start_prepared_tx<'a>(
+        &'a mut self,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl core::future::Future<Output = Result<WifiTxProgress, Self::Error>> + 'a {
+        async move {
+            let progress = self
+                .inner
+                .start_prepared_tx(network)
+                .await
+                .map_err(FaultInjectingServicesError::Inner)?;
+            if progress == WifiTxProgress::Pending {
+                self.active = self.control.take_after_tx_publication();
+            }
+            Ok(progress)
+        }
+    }
+
+    fn cancel_prepared_tx(&mut self) -> Result<(), Self::Error> {
+        self.inner
+            .cancel_prepared_tx()
+            .map_err(FaultInjectingServicesError::Inner)
+    }
+
+    fn can_prepare_tx(&self) -> bool {
+        self.inner.can_prepare_tx()
+    }
+
+    fn prepare_tx<'a>(
+        &'a mut self,
+        frame: PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+        network: &'a PinnedTxConsumer<
+            'resources,
+            M,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+        >,
+    ) -> impl core::future::Future<Output = Result<(), Self::Error>> + 'a {
+        async move {
+            self.inner
+                .prepare_tx(frame, network)
+                .await
+                .map_err(FaultInjectingServicesError::Inner)
+        }
+    }
 }

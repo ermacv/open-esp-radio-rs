@@ -9,12 +9,11 @@ use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpSlot, clear_sta_ccmp_slots},
     rx::{RxDma, RxRingError},
-    tx_ampdu::HtAmpduTxResources,
 };
 use open_esp_radio_ieee80211::station::StaTxSequenceCounters;
 
 use crate::{
-    aggregate_tx::{Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
+    aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx, Esp32s31ConnectedTxTeardownParts},
     connected_control::{
         ConnectedControlError, ConnectedControlHardware, ConnectedControlShutdown,
         ConnectedControlTx, Esp32s31ConnectedControl,
@@ -157,7 +156,7 @@ where
     T: WifiTxTimer,
 {
     type Resources = WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>;
-    type Aggregate = HtAmpduTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>;
+    type Aggregate = AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>;
 
     fn try_return(
         self,

@@ -6,12 +6,15 @@ use std::{
     thread,
 };
 
-use crate::{FunctionDetailSummary, WorkbenchApplication, WorkspaceSnapshot};
+use crate::{
+    FunctionDetailSummary, RegisterDetailSummary, WorkbenchApplication, WorkspaceSnapshot,
+};
 
 enum Command {
     Reload,
     Compare(String),
     FunctionDetail(String),
+    RegisterDetail(u32),
     Shutdown,
 }
 
@@ -24,6 +27,10 @@ pub(super) enum Event {
     FunctionDetail {
         identity: String,
         detail: Option<Box<FunctionDetailSummary>>,
+    },
+    RegisterDetail {
+        address: u32,
+        detail: Option<Box<RegisterDetailSummary>>,
     },
     Error(String),
 }
@@ -76,6 +83,18 @@ impl Worker {
                                 break;
                             }
                         }
+                        Command::RegisterDetail(address) => {
+                            let event = match application.register_detail(address) {
+                                Ok(detail) => Event::RegisterDetail {
+                                    address,
+                                    detail: detail.map(Box::new),
+                                },
+                                Err(error) => Event::Error(error.to_string()),
+                            };
+                            if event_tx.send(event).is_err() {
+                                break;
+                            }
+                        }
                         Command::Shutdown => break,
                     }
                 }
@@ -102,6 +121,12 @@ impl Worker {
     pub(super) fn function_detail(&self, identity: String) -> io::Result<()> {
         self.commands
             .send(Command::FunctionDetail(identity))
+            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
+    }
+
+    pub(super) fn register_detail(&self, address: u32) -> io::Result<()> {
+        self.commands
+            .send(Command::RegisterDetail(address))
             .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "TUI worker stopped"))
     }
 

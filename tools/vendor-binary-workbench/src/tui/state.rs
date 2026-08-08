@@ -2,7 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{ExecutionComparisonReport, FunctionDetailSummary, WorkspaceSnapshot};
+use crate::{
+    ExecutionComparisonReport, FunctionDetailSummary, RegisterDetailSummary, WorkspaceSnapshot,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
@@ -59,6 +61,8 @@ pub(super) struct BrowserState {
     pub(super) comparisons: BTreeMap<String, Box<ExecutionComparisonReport>>,
     function_details: BTreeMap<String, Box<FunctionDetailSummary>>,
     requested_function_details: BTreeSet<String>,
+    register_details: BTreeMap<u32, Box<RegisterDetailSummary>>,
+    requested_register_details: BTreeSet<u32>,
 }
 
 impl BrowserState {
@@ -75,6 +79,8 @@ impl BrowserState {
             comparisons: BTreeMap::new(),
             function_details: BTreeMap::new(),
             requested_function_details: BTreeSet::new(),
+            register_details: BTreeMap::new(),
+            requested_register_details: BTreeSet::new(),
         }
     }
 
@@ -238,6 +244,35 @@ impl BrowserState {
         }
     }
 
+    pub(super) fn request_register_detail(&mut self) -> Option<u32> {
+        if self.section != Section::Registers {
+            return None;
+        }
+        let address = self
+            .snapshot
+            .registers
+            .registers
+            .get(self.selected())?
+            .address;
+        self.requested_register_details
+            .insert(address)
+            .then_some(address)
+    }
+
+    pub(super) fn register_detail(&self, address: u32) -> Option<&RegisterDetailSummary> {
+        self.register_details.get(&address).map(Box::as_ref)
+    }
+
+    pub(super) fn register_detail_finished(
+        &mut self,
+        address: u32,
+        detail: Option<RegisterDetailSummary>,
+    ) {
+        if let Some(detail) = detail {
+            self.register_details.insert(address, Box::new(detail));
+        }
+    }
+
     pub(super) fn activate(&mut self) -> Action {
         if self.section == Section::Comparisons {
             return self.begin_compare();
@@ -341,6 +376,8 @@ impl BrowserState {
         self.comparisons.clear();
         self.function_details.clear();
         self.requested_function_details.clear();
+        self.register_details.clear();
+        self.requested_register_details.clear();
         self.busy = false;
         self.message = Some(format!("Reloaded generation {}", self.snapshot.generation));
         for section in Section::ALL {
@@ -696,5 +733,21 @@ mod tests {
         assert_eq!(state.request_function_detail(), None);
         state.replace_snapshot(snapshot(2, 0, 0));
         assert!(state.requested_function_details.is_empty());
+    }
+
+    #[test]
+    fn register_detail_is_requested_once_per_snapshot_generation() {
+        let mut workspace = snapshot(1, 0, 0);
+        workspace.registers.registers.push(RegisterSummary {
+            address: 0x4000,
+            name: "RADIO.STATUS".to_owned(),
+        });
+        let mut state = BrowserState::new(workspace);
+        state.section = Section::Registers;
+
+        assert_eq!(state.request_register_detail(), Some(0x4000));
+        assert_eq!(state.request_register_detail(), None);
+        state.replace_snapshot(snapshot(2, 0, 0));
+        assert!(state.requested_register_details.is_empty());
     }
 }

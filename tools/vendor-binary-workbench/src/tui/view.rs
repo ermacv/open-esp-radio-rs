@@ -199,11 +199,97 @@ fn render_registers(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     }
     if let Some(register) = report.registers.get(state.selected()) {
         lines.push(Line::from(""));
-        lines.push(field(
-            "Selected address",
-            format!("0x{:08x}", register.address),
-        ));
-        lines.push(field("Selected name", &register.name));
+        if let Some(detail) = state.register_detail(register.address) {
+            lines.push(field("Address", format!("0x{:08x}", detail.address)));
+            lines.push(field("Name", &detail.name));
+            lines.push(field("Name source", detail.name_source.label()));
+            lines.push(field("Review", detail.review_status.label()));
+            lines.push(field(
+                "Width",
+                detail
+                    .width
+                    .map_or_else(|| "unknown".to_owned(), |width| format!("{width} bits")),
+            ));
+            lines.push(field(
+                "Accesses",
+                format!(
+                    "reads={} writes={} RMW={}",
+                    detail.reads, detail.writes, detail.read_modify_writes
+                ),
+            ));
+            if let Some(confidence) = &detail.review_confidence {
+                lines.push(field("Confidence", confidence));
+            }
+            if !detail.functions.is_empty() {
+                lines.push(field("Functions", detail.functions.join(", ")));
+            }
+            if !detail.semantic_operations.is_empty() {
+                lines.push(field("Semantics", detail.semantic_operations.join(", ")));
+            }
+            if !detail.fields.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Field candidates",
+                    Style::new().add_modifier(Modifier::BOLD),
+                )));
+                for candidate in &detail.fields {
+                    lines.push(Line::from(format!(
+                        "bits {}..{} mask={:#010x} writes={} predicates={} polls={}",
+                        candidate.most_significant_bit,
+                        candidate.least_significant_bit,
+                        candidate.mask,
+                        candidate.write_shapes,
+                        candidate.predicate_shapes,
+                        candidate.poll_shapes,
+                    )));
+                    if !candidate.semantic_operations.is_empty() {
+                        lines.push(Line::from(format!(
+                            "  semantics: {}",
+                            candidate.semantic_operations.join(", ")
+                        )));
+                    }
+                    for predicate in &candidate.predicates {
+                        lines.push(Line::from(format!(
+                            "  {} predicate in {}: {}{}",
+                            if predicate.transitive {
+                                "transitive"
+                            } else {
+                                "direct"
+                            },
+                            predicate.function,
+                            predicate.condition,
+                            predicate
+                                .effective_operation
+                                .as_ref()
+                                .map_or_else(String::new, |operation| format!(" [{operation}]")),
+                        )));
+                    }
+                }
+            }
+            if !detail.write_patterns.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Write patterns",
+                    Style::new().add_modifier(Modifier::BOLD),
+                )));
+                for pattern in &detail.write_patterns {
+                    lines.push(Line::from(format!(
+                        "count={} modified={:#010x} preserved={:#010x} dynamic={:#010x}",
+                        pattern.occurrences,
+                        pattern.modified_mask,
+                        pattern.preserved_mask,
+                        pattern.dynamic_mask,
+                    )));
+                }
+            }
+        } else {
+            lines.push(field(
+                "Selected address",
+                format!("0x{:08x}", register.address),
+            ));
+            lines.push(field("Selected name", &register.name));
+            lines.push(Line::from("Loading register evidence..."));
+        }
     }
     frame.render_widget(
         detail_paragraph(" Register workspace ", lines, state.detail_scroll()),

@@ -211,6 +211,103 @@ pub struct RegisterSummary {
     pub name: String,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegisterReviewState {
+    Reviewed,
+    Manual,
+    Unreviewed,
+}
+
+impl RegisterReviewState {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Reviewed => "reviewed",
+            Self::Manual => "manual",
+            Self::Unreviewed => "unreviewed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RegisterNameSource {
+    Model,
+    Catalog,
+    Discovery,
+    Address,
+}
+
+impl RegisterNameSource {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Model => "model",
+            Self::Catalog => "catalog/SVD",
+            Self::Discovery => "discovery",
+            Self::Address => "address",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RegisterWritePatternSummary {
+    pub occurrences: usize,
+    pub modified_mask: u32,
+    pub preserved_mask: u32,
+    pub inverted_mask: u32,
+    pub forced_zero_mask: u32,
+    pub forced_one_mask: u32,
+    pub read_derived_mask: u32,
+    pub dynamic_mask: u32,
+    pub functions: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RegisterPredicateSummary {
+    pub kind: String,
+    pub function: String,
+    pub producer_path: Vec<String>,
+    pub condition: String,
+    pub effective_operation: Option<String>,
+    pub register_comparison_value: Option<u32>,
+    pub transitive: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RegisterFieldSummary {
+    pub least_significant_bit: u8,
+    pub most_significant_bit: u8,
+    pub mask: u32,
+    pub write_shapes: usize,
+    pub predicate_shapes: usize,
+    pub poll_shapes: usize,
+    pub functions: Vec<String>,
+    pub predicate_functions: Vec<String>,
+    pub semantic_operations: Vec<String>,
+    pub semantic_roots: Vec<String>,
+    pub predicates: Vec<RegisterPredicateSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RegisterDetailSummary {
+    pub address: u32,
+    pub width: Option<u8>,
+    pub name: String,
+    pub name_source: RegisterNameSource,
+    pub review_status: RegisterReviewState,
+    pub review_confidence: Option<String>,
+    pub review_sources: Vec<String>,
+    pub reads: usize,
+    pub writes: usize,
+    pub read_modify_writes: usize,
+    pub read_functions: Vec<String>,
+    pub write_functions: Vec<String>,
+    pub functions: Vec<String>,
+    pub write_patterns: Vec<RegisterWritePatternSummary>,
+    pub fields: Vec<RegisterFieldSummary>,
+    pub semantic_operations: Vec<String>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterWorkspaceReport {
     pub configured: bool,

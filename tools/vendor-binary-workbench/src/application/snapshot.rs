@@ -93,6 +93,13 @@ pub(super) fn function_detail(
     )))
 }
 
+pub(super) fn register_detail(
+    resolved: &ProjectSession,
+    address: u32,
+) -> crate::Result<Option<RegisterDetailSummary>> {
+    self::registers::detail(resolved, address)
+}
+
 fn function_detail_summary(
     fact: &FunctionFact,
     reviewed: Option<&ReviewedFunction>,

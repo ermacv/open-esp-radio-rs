@@ -25,7 +25,7 @@ pub(crate) fn run(manifest: &Path) -> Result<bool> {
     let snapshot = application.snapshot().map_err(|error| error.into_inner())?;
     let mut state = BrowserState::new(snapshot);
     let worker = Worker::start(application)?;
-    request_function_detail(&mut state, &worker);
+    request_details(&mut state, &worker);
     ratatui::run(|terminal| event_loop(terminal, &mut state, &worker))?;
     Ok(true)
 }
@@ -45,10 +45,13 @@ fn event_loop(
                 worker::Event::FunctionDetail { identity, detail } => {
                     state.function_detail_finished(identity, detail.map(|detail| *detail));
                 }
+                worker::Event::RegisterDetail { address, detail } => {
+                    state.register_detail_finished(address, detail.map(|detail| *detail));
+                }
                 worker::Event::Error(message) => state.operation_failed(message),
             }
         }
-        request_function_detail(state, worker);
+        request_details(state, worker);
         terminal.draw(|frame| super::view::render(frame, state))?;
         if event::poll(Duration::from_millis(75))?
             && let Event::Key(key) = event::read()?
@@ -68,14 +71,19 @@ fn event_loop(
                 }
                 Action::Quit => return Ok(()),
             }
-            request_function_detail(state, worker);
+            request_details(state, worker);
         }
     }
 }
 
-fn request_function_detail(state: &mut BrowserState, worker: &Worker) {
+fn request_details(state: &mut BrowserState, worker: &Worker) {
     if let Some(identity) = state.request_function_detail()
         && let Err(error) = worker.function_detail(identity)
+    {
+        state.operation_failed(error.to_string());
+    }
+    if let Some(address) = state.request_register_detail()
+        && let Err(error) = worker.register_detail(address)
     {
         state.operation_failed(error.to_string());
     }

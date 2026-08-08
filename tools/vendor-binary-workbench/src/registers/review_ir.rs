@@ -9,17 +9,17 @@ use super::review_ir_parse::parse_report;
 use crate::Result;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) struct ReviewPredicateEvidence {
-    pub(super) kind: String,
-    pub(super) function: String,
-    pub(super) producer_path: Vec<String>,
-    pub(super) condition: String,
-    pub(super) effective_operation: Option<String>,
-    pub(super) register_comparison_value: Option<u32>,
+pub(crate) struct ReviewPredicateEvidence {
+    pub(crate) kind: String,
+    pub(crate) function: String,
+    pub(crate) producer_path: Vec<String>,
+    pub(crate) condition: String,
+    pub(crate) effective_operation: Option<String>,
+    pub(crate) register_comparison_value: Option<u32>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-pub(super) struct ReviewSemanticEvidence {
+pub(crate) struct ReviewSemanticEvidence {
     pub(super) kind: String,
     pub(super) root: String,
     pub(super) operation: String,
@@ -33,39 +33,39 @@ pub(super) struct ReviewSemanticEvidence {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct ReviewFieldEvidence {
-    pub(super) least_significant_bit: u8,
-    pub(super) most_significant_bit: u8,
-    pub(super) mask: u32,
-    pub(super) write_shapes: usize,
-    pub(super) predicate_shapes: usize,
-    pub(super) poll_shapes: usize,
-    pub(super) functions: BTreeSet<String>,
-    pub(super) access_functions: BTreeSet<String>,
-    pub(super) predicate_functions: BTreeSet<String>,
-    pub(super) predicate_evidence: BTreeSet<ReviewPredicateEvidence>,
-    pub(super) semantic_operations: BTreeSet<String>,
-    pub(super) semantic_roots: BTreeSet<String>,
-    pub(super) semantic_evidence: BTreeSet<ReviewSemanticEvidence>,
+pub(crate) struct ReviewFieldEvidence {
+    pub(crate) least_significant_bit: u8,
+    pub(crate) most_significant_bit: u8,
+    pub(crate) mask: u32,
+    pub(crate) write_shapes: usize,
+    pub(crate) predicate_shapes: usize,
+    pub(crate) poll_shapes: usize,
+    pub(crate) functions: BTreeSet<String>,
+    pub(crate) access_functions: BTreeSet<String>,
+    pub(crate) predicate_functions: BTreeSet<String>,
+    pub(crate) predicate_evidence: BTreeSet<ReviewPredicateEvidence>,
+    pub(crate) semantic_operations: BTreeSet<String>,
+    pub(crate) semantic_roots: BTreeSet<String>,
+    pub(crate) semantic_evidence: BTreeSet<ReviewSemanticEvidence>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct ReviewIrRegister {
-    pub(super) address: u32,
-    pub(super) width: u8,
-    pub(super) names: BTreeSet<String>,
-    pub(super) functions: BTreeSet<String>,
-    pub(super) fields: BTreeMap<(u8, u8, u32), ReviewFieldEvidence>,
+pub(crate) struct ReviewIrRegister {
+    pub(crate) address: u32,
+    pub(crate) width: u8,
+    pub(crate) names: BTreeSet<String>,
+    pub(crate) functions: BTreeSet<String>,
+    pub(crate) fields: BTreeMap<(u8, u8, u32), ReviewFieldEvidence>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub(super) struct RegisterReviewIr {
-    pub(super) reports: Vec<PathBuf>,
-    pub(super) registers: BTreeMap<(u32, u8), ReviewIrRegister>,
+pub(crate) struct RegisterReviewIr {
+    pub(crate) reports: Vec<PathBuf>,
+    pub(crate) registers: BTreeMap<(u32, u8), ReviewIrRegister>,
 }
 
 impl RegisterReviewIr {
-    pub(super) fn load_all(paths: &[PathBuf]) -> Result<Self> {
+    pub(crate) fn load_all(paths: &[PathBuf]) -> Result<Self> {
         let mut unique = BTreeSet::new();
         let mut output = Self::default();
         for path in paths {
@@ -89,11 +89,11 @@ impl RegisterReviewIr {
         Ok(())
     }
 
-    pub(super) fn register(&self, address: u32, width: u8) -> Option<&ReviewIrRegister> {
+    pub(crate) fn register(&self, address: u32, width: u8) -> Option<&ReviewIrRegister> {
         self.registers.get(&(address, width))
     }
 
-    pub(super) fn field_count(&self) -> usize {
+    pub(crate) fn field_count(&self) -> usize {
         self.registers
             .values()
             .map(|register| register.fields.len())

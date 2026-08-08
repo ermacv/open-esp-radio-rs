@@ -24,4 +24,5 @@ pub(crate) use pac::*;
 pub(crate) use project_validation::*;
 pub(crate) use publication::*;
 pub(crate) use review::*;
+pub(crate) use review_ir::RegisterReviewIr;
 pub(crate) use workspace::*;

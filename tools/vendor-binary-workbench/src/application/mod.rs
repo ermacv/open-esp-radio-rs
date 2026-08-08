@@ -52,6 +52,14 @@ impl WorkbenchApplication {
         Ok(snapshot::function_detail(&self.resolved, identity)?)
     }
 
+    /// Load heavyweight discovery, review and linked-IR evidence for one MMIO address.
+    pub fn register_detail(
+        &self,
+        address: u32,
+    ) -> ApplicationResult<Option<RegisterDetailSummary>> {
+        Ok(snapshot::register_detail(&self.resolved, address)?)
+    }
+
     pub fn analyze(&mut self, request: AnalyzeRequest) -> ApplicationResult<AnalysisReport> {
         if let Some(report) = self.analysis_cache.get(&request) {
             return Ok(report.clone());
@@ -189,6 +197,15 @@ mod tests {
         assert!(!first.project_status.phases.is_empty());
         assert!(first.registers.configured);
         assert!(!first.registers.registers.is_empty());
+        let register = &first.registers.registers[0];
+        let register_detail = application
+            .register_detail(register.address)
+            .unwrap()
+            .expect("catalog register has detail");
+        assert_eq!(register_detail.address, register.address);
+        assert_eq!(register_detail.name_source, RegisterNameSource::Model);
+        assert_eq!(register_detail.review_status, RegisterReviewState::Manual);
+        assert!(register_detail.width.is_some());
         assert!(!first.comparisons.is_empty());
         let comparison_error = application
             .compare_profile(&first.comparisons[0].name)

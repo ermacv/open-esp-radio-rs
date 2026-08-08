@@ -25,6 +25,30 @@ impl IrDoctorReport {
         (self.errors, self.warnings)
     }
 
+    pub(super) fn render_human(&self) {
+        outputln!(
+            "Linked IR: {} — profiles={} errors={} warnings={}",
+            self.status,
+            self.profiles.len(),
+            self.errors,
+            self.warnings
+        );
+        for profile in &self.profiles {
+            outputln!(
+                "  {:<20} inputs={:<20} output={:<14} functions={} registers={} fields={}",
+                profile.id,
+                profile.input_status,
+                profile.output_status,
+                profile.functions,
+                profile.registers,
+                profile.field_candidates
+            );
+            for diagnostic in &profile.diagnostics {
+                outputln!("    {}: {}", diagnostic.kind, diagnostic.error);
+            }
+        }
+    }
+
     pub(super) fn render_tsv(&self) {
         for profile in &self.profiles {
             for diagnostic in &profile.diagnostics {

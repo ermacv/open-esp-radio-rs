@@ -82,9 +82,10 @@ outputs without invoking `project analyze` or `project publish`.
 
 ## Status versus doctor
 
-`project doctor` remains the verbose troubleshooting command. It prints exact
-input symbol counts, individual linked-IR diagnostics and workspace-specific
-errors useful while fixing a project.
+`project doctor` remains the verbose troubleshooting command. Its human view
+shows exact input symbol counts, individual linked-IR diagnostics and
+workspace-specific errors useful while fixing a project; its JSON/JSONL form
+is one typed diagnostic report rather than a stream of presentation lines.
 
 `project status` is the smaller automation contract: stable phase names,
 component states, structured counts and one overall result. It does not mutate

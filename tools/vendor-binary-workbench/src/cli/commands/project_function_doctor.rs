@@ -34,6 +34,23 @@ impl FunctionDoctorReport {
         (self.errors, self.warnings)
     }
 
+    pub(super) fn render_human(&self) {
+        outputln!(
+            "Function workspace: {} — profiles={} roots={} errors={} warnings={}",
+            self.status,
+            self.profiles,
+            self.root_functions,
+            self.errors,
+            self.warnings
+        );
+        if let Some(error) = self.error.as_deref() {
+            outputln!("  error: {error}");
+        }
+        if let Some(pack) = self.pack.as_deref() {
+            outputln!("  pack: {}", pack.display());
+        }
+    }
+
     pub(super) fn render_tsv(&self) {
         let pack = display_optional(self.pack.as_deref());
         let review_output = display_optional(self.review_output.as_deref());

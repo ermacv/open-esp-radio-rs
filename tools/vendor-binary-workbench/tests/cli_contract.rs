@@ -62,6 +62,66 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
 }
 
 #[test]
+fn project_doctor_json_is_one_complete_typed_report() {
+    let output = run(&[
+        "project",
+        "doctor",
+        "--project",
+        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        "--format",
+        "json",
+        "--color",
+        "never",
+    ]);
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
+    let records = document["records"].as_array().unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["kind"], "project-doctor");
+    let report = &records[0]["data"];
+    assert_eq!(report["schema"], 1);
+    assert_eq!(report["command"], "project doctor");
+    assert_eq!(report["status"], "ok");
+    assert_eq!(report["project"]["id"], "esp32s31-radio-rev0");
+    assert_eq!(report["target"]["id"], "esp32s31-rev0");
+    assert!(report["capabilities"].as_array().unwrap().len() > 10);
+    assert_eq!(report["ir_build"]["status"], "configured");
+    assert_eq!(report["function_workspace"]["status"], "not-generated");
+    assert_eq!(report["run_spec"]["status"], "not-configured");
+    assert!(report["inputs"].is_array());
+    assert!(report["errors"].is_u64());
+    assert!(report["warnings"].is_u64());
+
+    let memory = report["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|capability| capability["name"] == "memory-map")
+        .expect("memory-map capability");
+    assert!(memory["details"]["mmio-regions"].is_u64());
+
+    let jsonl = run(&[
+        "project",
+        "doctor",
+        "--project",
+        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        "--format",
+        "jsonl",
+        "--color",
+        "never",
+    ]);
+    assert!(jsonl.status.success());
+    assert_eq!(String::from_utf8_lossy(&jsonl.stdout).lines().count(), 1);
+    let record: serde_json::Value = serde_json::from_slice(&jsonl.stdout).unwrap();
+    assert_eq!(record["kind"], "project-doctor");
+}
+
+#[test]
 fn runtime_errors_do_not_emit_usage_or_an_empty_json_result() {
     let output = run(&[
         "project",

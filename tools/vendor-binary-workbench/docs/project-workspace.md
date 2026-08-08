@@ -251,7 +251,13 @@ From inside a project tree, the short form is sufficient:
 cargo vendor-binary-workbench project doctor
 ```
 
-For automation, `project status` expresses the same project as five stable
+The default output is a compact human report. `--format tsv` exposes stable
+`CAPABILITY`, `IR-PROFILE`, `INPUT`, and `SUMMARY` rows. `--format json` or
+`--format jsonl` emits one schema-1 `project-doctor` record containing project
+and target identity, typed capability details, IR/function readiness, run-spec
+state, inspected inputs, diagnostics, and aggregate error/warning counts.
+
+For lifecycle automation, `project status` expresses the same project as six stable
 readiness phases and can write deterministic schema-1 JSON. It distinguishes a
 valid but incomplete analysis workspace from invalid configuration and from a
 publication-ready register workspace. See

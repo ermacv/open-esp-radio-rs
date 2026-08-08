@@ -55,12 +55,16 @@ dispatch path:
 
 | Module | Responsibility |
 | --- | --- |
-| `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options and command capability policy |
+| `cli/args.rs` | `clap` workflow/subcommand hierarchy, global options, command capability policy and `ParsedInvocation` |
 | `cli/arguments.rs` | Typed leaf-command arguments, declarative conflicts and value grammar |
-| `cli/resolver.rs` | Precedence-aware merge of caller-owned run-spec inputs into typed arguments |
+| `cli/resolver.rs` | Project discovery, project/target/run-spec composition, precedence-aware defaults and owned `ResolvedInvocation` |
+| `cli/resolver/defaults.rs` | Typed CLI > run-spec > project/target argument-default merge |
+| `cli/resolver/register_catalog.rs` | SVD plus reviewed register-model composition |
+| `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
+| `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
 | `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
 | `cli/ui.rs` | miette diagnostics and tracing configuration on stderr |
-| `cli/mod.rs` | Project/target composition and dispatch of resolved typed commands |
+| `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
 | `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
 
 Explicit CLI values take precedence over run-spec values. A run spec fills
@@ -72,6 +76,22 @@ Compound `SOURCE=PATH`, `SOURCE=VALUE` and `NAME=START..END` values also cross
 the clap boundary as typed values. Run-spec input names are parsed once into a
 closed `InputRole` enum; the resolver never recovers roles from prefixes or
 recreates compound arguments as strings.
+
+Configuration resolution is a distinct phase:
+
+```text
+clap argv -> ParsedInvocation
+               + discovered/explicit project
+               + target and platform pack
+               + explicit/project run spec
+               + CLI/project/target SVD and memory defaults
+             -> ResolvedInvocation -> dispatch -> domain workflow
+```
+
+The resolved form owns every loaded configuration object and effective path.
+Dispatch does not perform discovery, load configuration files or merge
+defaults. Project initialization and configuration are explicit resolved
+variants, so they never carry a fake or partially initialized target context.
 `--format` changes only stdout. Diagnostics, warnings and verbosity-controlled
 tracing stay on stderr, so JSON and JSONL output remains pipe-safe. Errors are
 typed at every workbench crate boundary; there is no boxed external-error

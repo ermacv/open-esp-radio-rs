@@ -51,7 +51,6 @@ pub(crate) use open_radio_vendor_backend_riscv::{
 pub(crate) use orchestration::generated_reference;
 use parse::u32_literal as parse_u32;
 use project::ProjectSpec;
-use run_spec::RunSpec;
 use target::TargetSpec;
 #[cfg(test)]
 use test_support::{private_input, trace_disassembly};

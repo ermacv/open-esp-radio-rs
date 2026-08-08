@@ -551,7 +551,7 @@ impl Command {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct Invocation {
+pub(crate) struct ParsedInvocation {
     pub(crate) ui: UiArgs,
     pub(crate) command: Command,
     pub(crate) project: Option<PathBuf>,
@@ -561,7 +561,7 @@ pub(crate) struct Invocation {
     pub(crate) arguments: CommandArguments,
 }
 
-impl Invocation {
+impl ParsedInvocation {
     pub(crate) fn parse(arguments: impl IntoIterator<Item = String>) -> Result<Self> {
         let cli = Cli::try_parse_from(
             std::iter::once("vendor-binary-workbench".to_owned()).chain(arguments),
@@ -585,7 +585,7 @@ mod tests {
 
     #[test]
     fn parses_typed_leaf_arguments_and_globals_in_any_position() {
-        let invocation = Invocation::parse([
+        let invocation = ParsedInvocation::parse([
             "ir".to_owned(),
             "export".to_owned(),
             "--artifact".to_owned(),
@@ -610,7 +610,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_leaf_options() {
-        let error = Invocation::parse([
+        let error = ParsedInvocation::parse([
             "project".to_owned(),
             "status".to_owned(),
             "--unknown".to_owned(),
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn enforces_declarative_conflicts_and_requirements() {
         assert!(
-            Invocation::parse([
+            ParsedInvocation::parse([
                 "project".to_owned(),
                 "status".to_owned(),
                 "--check".to_owned(),
@@ -630,7 +630,7 @@ mod tests {
             .is_err()
         );
         assert!(
-            Invocation::parse([
+            ParsedInvocation::parse([
                 "project".to_owned(),
                 "configure".to_owned(),
                 "--platform-pack".to_owned(),
@@ -643,7 +643,7 @@ mod tests {
 
     #[test]
     fn exposes_nested_help_from_the_same_grammar() {
-        let error = Invocation::parse([
+        let error = ParsedInvocation::parse([
             "registers".to_owned(),
             "generate-pac".to_owned(),
             "--help".to_owned(),

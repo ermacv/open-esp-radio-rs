@@ -53,7 +53,6 @@ pub(super) fn emit_svd(status: &'static str, summary: &SvdExportSummary, path: &
         path,
     };
     crate::cli::output::render_report(
-        "svd-publication",
         &report,
         || {
             outputln!("SVD: {} — {}", report.status, report.path.display());
@@ -97,7 +96,6 @@ pub(super) fn emit_pac(
         path,
     };
     crate::cli::output::render_report(
-        "pac-publication",
         &report,
         || {
             outputln!("PAC: {} — {}", report.status, report.path.display());
@@ -145,7 +143,6 @@ pub(super) fn emit_bindings(
         path,
     };
     crate::cli::output::render_report(
-        "binding-publication",
         &report,
         || {
             outputln!(

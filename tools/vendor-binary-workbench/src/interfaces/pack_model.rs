@@ -157,7 +157,11 @@ impl InterfaceWorkspace {
         let facts = InterfaceFacts::load(facts_path)?;
         let catalogs = SemanticCatalogs::load(semantic_paths)?;
         let pack = InterfacePack::load(pack_path)?;
-        let (summary, bindings) = pack.validate(&facts, &catalogs, calling_convention)?;
+        let (summary, bindings) = pack
+            .validate(&facts, &catalogs, calling_convention)
+            .map_err(|error| {
+                crate::error::WorkbenchError::manifest("interface pack", pack_path, error)
+            })?;
         Ok(Self { summary, bindings })
     }
 

@@ -316,7 +316,6 @@ fn render_result(input: ExecutionRenderInput<'_>) -> Result<bool> {
     let document = execution_document(&input)?;
     let complete = document.summary.complete;
     crate::cli::output::render_report(
-        "execution",
         &document,
         || render_execution(&input),
         || render_execution(&input),

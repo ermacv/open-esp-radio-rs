@@ -7,6 +7,7 @@ mod dispatch;
 mod generated_output;
 mod output;
 mod resolver;
+mod table;
 mod ui;
 mod values;
 

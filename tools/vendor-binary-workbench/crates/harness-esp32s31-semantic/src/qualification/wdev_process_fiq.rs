@@ -21,7 +21,7 @@ use open_radio_vendor_semantics::{
     DriverAdapterVerification, EffectDisposition, EffectPolicy, EffectSelector,
 };
 
-use crate::{MmioRegisterMap, Result, artifact_sha256, execution};
+use crate::{MmioRegisterMap, Result, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -395,24 +395,10 @@ pub fn verify_esp32s31_wdev_process_fiq_mac_slice(
     rust_companion: Option<&Path>,
     rust_symbol: &str,
     policy: &EffectPolicy,
-    print_oracles: bool,
 ) -> Result<DriverAdapterVerification> {
     validate_policy(policy)?;
     let vendor_inventory = vendor_inventory
         .ok_or("wDev_ProcessFiq verification requires the caller-owned raw libpp inventory")?;
-    if print_oracles {
-        let vendor_archive_digest = artifact_sha256(vendor_inventory)?;
-        let vendor_linked_digest = artifact_sha256(vendor_artifact)?;
-        println!(
-            "ORACLE\tlibpp\t{}\tsha256={vendor_archive_digest}",
-            vendor_inventory.display()
-        );
-        println!(
-            "ORACLE\tlibpp-linked\t{}\tsha256={vendor_linked_digest}",
-            vendor_artifact.display()
-        );
-    }
-
     let mut vendor_image = execution::ExecutableImage::load(vendor_artifact)?;
     if let Some(companion) = vendor_companion {
         vendor_image.add_companion(companion)?;
@@ -456,21 +442,7 @@ pub fn verify_esp32s31_wdev_process_fiq_mac_slice(
             "scenario {} status={:#010x} semantic={expected:#010x} vendor-steps={} rust-steps={}\n",
             case.name, case.status, vendor.steps, rust.steps
         ));
-        println!(
-            "WDEV-FIQ-MAC-CASE\t{}\t{}\tstatus={:#010x}\tsemantic={:#010x}\tvendor-steps={}\trust-steps={}",
-            case.name,
-            if case_matched { "MATCH" } else { "MISMATCH" },
-            case.status,
-            rust.return_value,
-            vendor.steps,
-            rust.steps,
-        );
     }
-    println!(
-        "WDEV-FIQ-MAC-SUMMARY\twDev_ProcessFiq\t{}\tscenarios={}\tscope=mac-interrupt-domain",
-        if matched { "MATCH" } else { "MISMATCH" },
-        CASES.len(),
-    );
     Ok(DriverAdapterVerification { matched, canonical })
 }
 

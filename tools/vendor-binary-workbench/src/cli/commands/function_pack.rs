@@ -59,7 +59,6 @@ fn init_pack(arguments: OutputArgs, project: &ProjectSpec, configured: &Path) ->
         path: output,
     };
     crate::cli::output::render_report(
-        "function-pack",
         &report,
         || print_pack_human(&report),
         || print_pack_tsv(&report),
@@ -95,7 +94,6 @@ fn validate(arguments: ValidationArgs, project: &ProjectSpec, pack: &Path) -> Re
         pack,
     };
     crate::cli::output::render_report(
-        "function-workspace",
         &report,
         || print_workspace_human(&report),
         || print_workspace_tsv(&report),
@@ -142,7 +140,6 @@ fn review(
         output,
     };
     crate::cli::output::render_report(
-        "function-review",
         &report,
         || print_review_human(&report),
         || print_review_tsv(&report),

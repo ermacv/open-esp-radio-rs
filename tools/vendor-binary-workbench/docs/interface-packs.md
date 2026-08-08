@@ -63,9 +63,10 @@ cargo vendor-binary-workbench interfaces validate \
 
 The command reports every resolved reviewed binding with its layout version,
 ABI, semantic operation, vendor functions, concrete call-site addresses, call
-kind, and recovered argument expressions. The default view is human-oriented;
+kind, and recovered argument expressions. The default view uses separate
+coverage, binding and resolved-call tables;
 `--format tsv` uses `INTERFACE-BINDING` plus following `INTERFACE-CALL` rows,
-while JSON/JSONL emits one `interface-workspace` record with nested bindings,
+while JSON/JSONL emits the `interface-workspace` report with nested bindings,
 calls and typed arguments. `interfaces init-pack` similarly emits one
 `interface-pack` result.
 Use `--deny-unreviewed` in CI to return a non-success status while any observed

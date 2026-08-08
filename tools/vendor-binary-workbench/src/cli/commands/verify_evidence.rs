@@ -46,7 +46,7 @@ pub(super) fn run(arguments: VerifyEvidenceArgs) -> Result<bool> {
         candidate: arguments.candidate.map(|path| path.display().to_string()),
         comparison,
     };
-    if !crate::cli::output::structured("evidence-review", &review) {
+    if !crate::cli::output::structured(&review) {
         print_evidence_comparison(&review.comparison);
         if let Some(candidate) = &review.candidate {
             outputln!(

@@ -76,7 +76,7 @@ pub(super) fn run(
     if let Some(path) = arguments.json_report.as_deref() {
         write_json_report(path, &document)?;
     }
-    if !crate::cli::output::structured("linked-ir", &document) {
+    if !crate::cli::output::structured(&document) {
         print_report(&artifacts, &report, arguments.include_reachable);
         for publication in publications {
             outputln!(

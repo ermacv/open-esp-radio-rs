@@ -105,7 +105,6 @@ pub(super) fn run(
         report: None,
     };
     crate::cli::output::render_report(
-        "source-verification",
         &report,
         || render_verification_human(&report),
         || render_verification_tsv(&report),

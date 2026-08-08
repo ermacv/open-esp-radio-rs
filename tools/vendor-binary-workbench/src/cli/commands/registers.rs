@@ -95,7 +95,6 @@ fn review(
         path: output,
     };
     crate::cli::output::render_report(
-        "register-review",
         &report,
         || print_review_human(&report),
         || print_review_tsv(&report),
@@ -132,7 +131,6 @@ fn init_model(
         model: output,
     };
     crate::cli::output::render_report(
-        "register-model",
         &report,
         || print_model_human(&report),
         || print_model_tsv(&report),
@@ -169,7 +167,6 @@ fn import_svd(
         model: output,
     };
     crate::cli::output::render_report(
-        "register-model",
         &report,
         || print_model_human(&report),
         || print_model_tsv(&report),
@@ -239,7 +236,6 @@ fn validate(
         }),
     };
     crate::cli::output::render_report(
-        "register-workspace",
         &report,
         || print_workspace_human(&report),
         || print_workspace_tsv(&report),

@@ -110,10 +110,10 @@ open-esp-radio-verification-esp32s31-probes-elf \
 same-value writes), fences, delays, observed final RAM mutations and optional
 return values. It statically inventories reachable
 conditional branches in each ELF, aggregates the outcomes exercised by every
-`--case`, and prints each
-missing true/false outcome as `UNCOVERED-BRANCH`. An unresolved indirect edge
-is printed as `UNCOVERED-CONTROL-FLOW`, and a physical MMIO access without an
-SVD register is printed as `UNCOVERED-MMIO`. Each `--case` is a complete,
+`--case`, and reports each missing true/false outcome as an uncovered branch.
+An unresolved indirect edge is reported as uncovered control flow, and a
+physical MMIO access without an SVD register is reported as uncovered MMIO.
+Each `--case` is a complete,
 self-contained scenario in the form `NAME[;KEY=VALUE...]`; this keeps repeated
 scenario groups typed and unambiguous at the CLI boundary. Any of these
 conditions makes the
@@ -158,6 +158,11 @@ reported as `COVERED-CONTROL-FLOW`; their child branch inventory is included
 in coverage.
 Profiles are executable coverage input; they are not a parallel function
 ledger.
+
+The default `verify profiles` view contains a profile coverage table and a
+scenario table with match, mismatch or incomplete details. `--format tsv`
+retains the stable trace-oriented rows for scripts; JSON and JSONL serialize
+the same typed aggregate report directly.
 
 `arg-range` is a closed ABI precondition, not a hint inferred from the listed
 cases. The loader requires an executed case for every value combination in
@@ -225,8 +230,9 @@ generated frequency/CBW cases with replayable seeds. All 77 calls run through
 one persistent vendor/Rust state sequence rather than resetting `phy_param`
 for every case. A success is labeled
 `STATE-SCENARIO-MATCH`, not symbolic or domain-exhaustive equality. Any poison
-read, unmapped MMIO or event/state divergence fails closed and prints the first
-complete normalized diff. Each case reports the number of state bytes read and
+read, unmapped MMIO or event/state divergence fails closed and retains the
+first complete normalized diff in the typed qualification report. Each case
+reports the number of state bytes read and
 written under the reviewed footprint. RF init runs twice through one persistent execution
 session: first from the linked ELF image, then from the RAM state produced by
 the first call. Its `STATE-SEQUENCE-MATCH` therefore also checks retained

@@ -5,7 +5,7 @@ use std::path::Path;
 use sha2::{Digest, Sha256};
 
 use super::*;
-use crate::{MmioRegisterMap, artifact_sha256};
+use crate::MmioRegisterMap;
 use open_radio_vendor_semantics::{
     ContractEffect, ContractValue, EffectComparisonVerdict, EffectPolicy, ReadyCondition,
     RegisterId, StateField, Timeout, compare_effects,
@@ -590,15 +590,7 @@ pub fn verify_esp32s31_iq_est_enable(
     rust_companion: Option<&Path>,
     rust_symbol: &str,
     policy: &EffectPolicy,
-    print_oracles: bool,
 ) -> Result<DriverAdapterVerification> {
-    if print_oracles {
-        let vendor_digest = artifact_sha256(vendor_artifact)?;
-        println!(
-            "ORACLE\trom\t{}\tsha256={vendor_digest}",
-            vendor_artifact.display()
-        );
-    }
     let mut vendor_image = execution::ExecutableImage::load(vendor_artifact)?;
     if let Some(companion) = vendor_companion {
         vendor_image.add_companion(companion)?;
@@ -650,12 +642,12 @@ pub fn verify_esp32s31_iq_est_enable(
                 .zip(&rust_raw)
                 .position(|(vendor, rust)| vendor != rust)
                 .unwrap_or_else(|| vendor_raw.len().min(rust_raw.len()));
-            println!(
-                "IQ-ADAPTER-DIFF\t{}\tindex={divergence}\tvendor={:?}\trust={:?}\tvendor-state={vendor_counter}\trust-state={rust_counter}\trust-samples={rust_samples}",
+            canonical.push_str(&format!(
+                "scenario-difference {} index={divergence} vendor={:?} rust={:?} vendor-state={vendor_counter} rust-state={rust_counter} rust-samples={rust_samples}\n",
                 case.name,
                 vendor_raw.get(divergence),
                 rust_raw.get(divergence),
-            );
+            ));
         }
 
         if case.name == "active-inactive-ready" {
@@ -665,7 +657,10 @@ pub fn verify_esp32s31_iq_est_enable(
                 EffectComparisonVerdict::Match => {}
                 EffectComparisonVerdict::Mismatch(reason) => {
                     matched = false;
-                    println!("IQ-EFFECT-DIFF\t{}\t{reason}", case.name);
+                    canonical.push_str(&format!(
+                        "effect-difference {} reason={reason}\n",
+                        case.name
+                    ));
                 }
             }
             canonical.push_str(&format!(
@@ -686,14 +681,6 @@ pub fn verify_esp32s31_iq_est_enable(
             case.expected_activity_edges,
             async_samples,
         ));
-        println!(
-            "IQ-ADAPTER-CASE\t{}\t{}\teffects={}\tasync-samples={}\tactivity-edges={}",
-            case.name,
-            if case_matched { "MATCH" } else { "MISMATCH" },
-            vendor_raw.len(),
-            async_samples,
-            vendor_counter,
-        );
     }
 
     validate_typed_timeout()?;
@@ -705,10 +692,10 @@ pub fn verify_esp32s31_iq_est_enable(
     if !uncovered.is_empty() {
         matched = false;
         for (site, taken) in &uncovered {
-            println!(
-                "IQ-ADAPTER-UNCOVERED-BRANCH\t{}\ttaken={taken}",
+            canonical.push_str(&format!(
+                "uncovered-branch {} taken={taken}\n",
                 vendor_image.location(*site)
-            );
+            ));
         }
     }
     canonical.push_str(&format!(
@@ -717,14 +704,6 @@ pub fn verify_esp32s31_iq_est_enable(
         vendor_covered.len(),
         open_esp_radio_esp32s31_phy::HARDWARE_EDGE_LIMIT,
     ));
-    println!(
-        "IQ-ADAPTER-SUMMARY\tphy_iq_est_enable\t{}\tscenarios={}\tvendor-branches={}/{}\ttimeout-attempts={}",
-        if matched { "MATCH" } else { "MISMATCH" },
-        CASES.len(),
-        vendor_covered.len(),
-        vendor_inventory.branch_outcomes.len(),
-        open_esp_radio_esp32s31_phy::HARDWARE_EDGE_LIMIT,
-    );
     Ok(DriverAdapterVerification { matched, canonical })
 }
 

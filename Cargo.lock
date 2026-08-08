@@ -1637,6 +1637,7 @@ dependencies = [
  "open-radio-vendor-backend-riscv",
  "open-radio-vendor-harness-esp32s31",
  "open-radio-vendor-semantics",
+ "serde",
  "sha2",
  "thiserror 2.0.19",
 ]

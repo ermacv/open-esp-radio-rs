@@ -303,7 +303,6 @@ pub(super) fn run(
         write_verification_json_report(path, &report)?;
     }
     crate::cli::output::render_report(
-        "inventory-verification",
         &report,
         || render_verification_human(&report),
         || render_verification_tsv(&report),

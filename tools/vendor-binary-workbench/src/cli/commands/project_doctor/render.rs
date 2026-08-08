@@ -8,7 +8,7 @@ use crate::cli::args::OutputFormat;
 use super::model::{CapabilityReport, DoctorReport, InputReport};
 
 pub(super) fn render(report: &DoctorReport) {
-    if crate::cli::output::structured("project-doctor", report) {
+    if crate::cli::output::structured(report) {
         return;
     }
     match crate::cli::output::format() {

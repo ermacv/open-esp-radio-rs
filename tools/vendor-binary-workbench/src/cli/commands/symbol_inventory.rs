@@ -5,7 +5,7 @@ use std::{fs, path::Path};
 use serde::{Deserialize, Serialize};
 
 use super::super::*;
-use crate::run_spec::RunSpec;
+use crate::{cli::args::OutputFormat, run_spec::RunSpec};
 
 type Options = SymbolInventoryArgs;
 
@@ -23,7 +23,7 @@ fn optional_human(value: Option<&str>) -> &str {
     value.unwrap_or("-")
 }
 
-fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
+fn print_report_tsv(inventory: &ProjectLinkageInventory, options: &Options) {
     for (index, artifact) in inventory.artifacts.iter().enumerate() {
         outputln!(
             "ARTIFACT\tindex={}\tcontainer={}\tobjects={}\tskipped-members={}\troles={}\tsources={}\tpath={}",
@@ -97,6 +97,119 @@ fn print_report(inventory: &ProjectLinkageInventory, options: &Options) {
         inventory.artifacts.len(),
         inventory.symbols.len(),
         emitted,
+        exported,
+        undefined,
+        unresolved,
+    );
+}
+
+fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
+    outputln!("Symbol inventory");
+    outputln!(
+        "Artifacts:\n{}",
+        crate::cli::table::render(
+            [
+                "#",
+                "Container",
+                "Objects",
+                "Skipped",
+                "Roles",
+                "Sources",
+                "Path"
+            ],
+            inventory
+                .artifacts
+                .iter()
+                .enumerate()
+                .map(|(index, artifact)| [
+                    index.to_string(),
+                    artifact.container.label().to_owned(),
+                    artifact.objects.to_string(),
+                    artifact.skipped_members.to_string(),
+                    artifact.roles.join(", "),
+                    artifact.sources.join(", "),
+                    artifact.path.display().to_string(),
+                ]),
+        )
+    );
+
+    let symbols = inventory
+        .symbols
+        .iter()
+        .filter(|symbol| options.includes(symbol))
+        .collect::<Vec<_>>();
+    outputln!(
+        "Symbols:\n{}",
+        crate::cli::table::render(
+            [
+                "Artifact",
+                "Member",
+                "Name",
+                "Definition",
+                "Address",
+                "Size",
+                "Resolution",
+                "Candidates",
+            ],
+            symbols.iter().map(|symbol| [
+                symbol.artifact.to_string(),
+                optional_human(symbol.member.as_deref()).to_owned(),
+                symbol.fact.name.clone(),
+                symbol.fact.definition.label().to_owned(),
+                format!("{:#x}", symbol.fact.address),
+                symbol.fact.size.to_string(),
+                symbol.resolution.label().to_owned(),
+                symbol.candidates.len().to_string(),
+            ]),
+        )
+    );
+
+    let candidates = symbols
+        .iter()
+        .flat_map(|symbol| {
+            symbol.candidates.iter().map(move |candidate| {
+                [
+                    symbol.fact.name.clone(),
+                    candidate.artifact.to_string(),
+                    optional_human(candidate.member.as_deref()).to_owned(),
+                    format!("{:#x}", candidate.address),
+                    candidate.kind.label().to_owned(),
+                ]
+            })
+        })
+        .collect::<Vec<_>>();
+    if !candidates.is_empty() {
+        outputln!(
+            "Resolution candidates:\n{}",
+            crate::cli::table::render(
+                ["Symbol", "Artifact", "Member", "Address", "Kind"],
+                candidates,
+            )
+        );
+    }
+
+    let undefined = inventory
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol.fact.definition == artifact::ArtifactSymbolDefinitionState::Undefined
+        })
+        .count();
+    let exported = inventory
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.fact.is_exported_definition())
+        .count();
+    let unresolved = inventory
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.resolution.is_unresolved())
+        .count();
+    outputln!(
+        "Summary: artifacts={} symbol-facts={} shown={} exported={} undefined={} unresolved-or-associated={}",
+        inventory.artifacts.len(),
+        inventory.symbols.len(),
+        symbols.len(),
         exported,
         undefined,
         unresolved,
@@ -297,14 +410,26 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
         )?;
     }
     let document = document(&inventory, &options, publication.clone())?;
-    if !crate::cli::output::structured("symbol-inventory", &document) {
-        print_report(&inventory, &options);
+    if !crate::cli::output::structured(&document) {
+        match crate::cli::output::format() {
+            OutputFormat::Human => print_report_human(&inventory, &options),
+            OutputFormat::Tsv => print_report_tsv(&inventory, &options),
+            OutputFormat::Json | OutputFormat::Jsonl => {
+                unreachable!("typed symbol inventory was already emitted")
+            }
+        }
         if let Some(publication) = publication {
-            outputln!(
-                "PUBLICATION\tstatus={}\tpath={}",
-                publication.status,
-                publication.path
-            );
+            match crate::cli::output::format() {
+                OutputFormat::Human => {
+                    outputln!("Publication: {} — {}", publication.status, publication.path)
+                }
+                OutputFormat::Tsv => outputln!(
+                    "PUBLICATION\tstatus={}\tpath={}",
+                    publication.status,
+                    publication.path
+                ),
+                OutputFormat::Json | OutputFormat::Jsonl => unreachable!(),
+            }
         }
     }
     Ok(true)

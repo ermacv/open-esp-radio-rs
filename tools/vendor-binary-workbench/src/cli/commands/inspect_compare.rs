@@ -64,6 +64,6 @@ pub(super) fn run(arguments: InspectCompareArgs, svd: &MmioRegisterMap) -> Resul
             }
         );
     };
-    crate::cli::output::render_report("trace-comparison", &document, render, render);
+    crate::cli::output::render_report(&document, render, render);
     Ok(equal)
 }

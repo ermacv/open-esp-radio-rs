@@ -60,7 +60,6 @@ pub(super) fn run(command: Command, arguments: CommandArguments) -> Result<bool>
     };
     debug_assert!(!contents.is_empty());
     crate::cli::output::render_report(
-        "tooling-asset",
         &report,
         || {
             outputln!(

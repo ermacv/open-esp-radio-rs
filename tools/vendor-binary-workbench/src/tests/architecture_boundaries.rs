@@ -39,8 +39,12 @@ fn contains_bare_macro_call(source: &str, name: &str) -> bool {
 
 #[test]
 fn production_modules_cannot_bypass_the_command_output_boundary() {
-    let source_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    for path in rust_sources(&source_root) {
+    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source_roots = [
+        manifest_root.join("src"),
+        manifest_root.join("crates/harness-esp32s31-semantic/src"),
+    ];
+    for path in source_roots.iter().flat_map(|root| rust_sources(root)) {
         if path.components().any(|component| {
             matches!(
                 component.as_os_str().to_str(),

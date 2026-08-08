@@ -18,7 +18,7 @@ use open_radio_vendor_semantics::{
     PlatformOperation,
 };
 
-use crate::{MmioRegisterMap, Result, artifact, artifact_sha256, execution};
+use crate::{MmioRegisterMap, Result, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -307,18 +307,10 @@ pub fn verify_esp32s31_sta_join_state(
     rust_companion: Option<&Path>,
     rust_symbol: &str,
     policy: &EffectPolicy,
-    print_oracles: bool,
 ) -> Result<DriverAdapterVerification> {
     validate_policy(policy)?;
     let vendor_inventory = vendor_inventory
         .ok_or("STA join verification requires the caller-owned raw libnet80211 inventory")?;
-    if print_oracles {
-        let vendor_inventory_digest = artifact_sha256(vendor_inventory)?;
-        println!(
-            "ORACLE\tlibnet80211\t{}\tsha256={vendor_inventory_digest}",
-            vendor_inventory.display()
-        );
-    }
     let vendor_proof = validate_vendor_shape(vendor_inventory)?;
 
     let mut vendor_image = execution::ExecutableImage::load(vendor_artifact)?;
@@ -363,21 +355,7 @@ pub fn verify_esp32s31_sta_join_state(
             first.events.len(),
             padding_independent,
         ));
-        println!(
-            "STA-JOIN-CASE\t{}\t{}\treturn={:#010x}\tevents={}\tsteps={}\tpadding-independent={}",
-            case.name,
-            if case_matched { "MATCH" } else { "MISMATCH" },
-            first.return_value,
-            first.events.len(),
-            first.steps,
-            padding_independent,
-        );
     }
-    println!(
-        "STA-JOIN-SUMMARY\t{SYMBOL}\t{}\tscenarios={}\tscope=infrastructure-sta-state",
-        if matched { "MATCH" } else { "MISMATCH" },
-        CASES.len(),
-    );
     Ok(DriverAdapterVerification { matched, canonical })
 }
 

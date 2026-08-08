@@ -116,7 +116,10 @@ the complete non-quiet filter. `--quiet` always disables tracing. A command
 that fails before producing a result leaves stdout empty, including in JSON
 mode; its diagnostic is rendered only on stderr.
 
-Machine output is a schema-1 stream of `{ kind, data }` records. Commands with
+Machine output is the command's typed report itself; there is no generic
+record envelope. The output boundary owns a single report slot: a second
+report is an invariant violation, and human `line`/`text` presentation cannot
+be converted into machine output. Commands with
 stable domain reports emit those reports directly: project status, symbol
 inventory, MMIO and interface discovery, linked IR, artifact analysis, and
 project diagnostics/analysis/publication, project IR builds, batch reference
@@ -127,24 +130,33 @@ human presentation. The verification evidence document is a Serde model shared
 by the aggregate command report and file output. Source and inventory
 verification return typed per-function verdicts from the engine; their removed
 line protocol has no compatibility path. The former handwritten JSON encoder
-has been removed. The
-remaining command renderers still enter the same boundary as explicit
-`line`/`text` records; no analysis or verification module writes directly to
-stdout. This makes the residual DTO migration visible without allowing raw
-text to corrupt JSON or JSONL output.
+has been removed. No analysis, verification or platform-harness module writes
+directly to stdout. Semantic qualifications return a typed report containing
+artifacts, scenario verdicts, coverage totals, state-footprint counts and the
+first retained difference; only the CLI renders that report.
+
+Line-oriented verification profiles, dispositions and evidence baselines
+preserve their physical source line as a typed diagnostic span. TOML project,
+memory, platform, function and interface manifests retain parser-provided byte
+spans. Malformed JSON facts and verification reports retain the parser's
+physical source line instead of degrading to a path-only message. Function and
+interface semantic validation errors remain attached to the reviewed pack path
+after syntax parsing, including stale provenance, ABI/layout and semantic-link
+failures.
 
 Commands that publish JSON, pseudo-Rust or navigation files include the path
 and `written`/`verified` state in their primary typed result. Publication is
-not a second machine record; the removed `output::file` path has no
+not a second machine report; the removed `output::file` path has no
 compatibility mode. Nested project navigation reports publication through its
 own project-analysis stage and tracing span.
 
 `project doctor` is split into generic capability, register, interface and
 caller-input collectors. They populate one top-level report together with the
 IR-profile and function-workspace reports. Human and TSV rendering are separate
-from collection, while JSON and JSONL serialize the same model as one
-`project-doctor` record. Human status and capability summaries use tables only
-as a presentation layer; TSV and structured output continue to serialize the
+from collection, while JSON and JSONL serialize the same `project-doctor`
+model directly. Human status/capability, symbol inventory, profile verification
+and register/function/interface review summaries use tables only as a
+presentation layer; TSV and structured output continue to serialize the
 underlying typed reports.
 
 ## Shared trace and effect-contract layout
@@ -381,6 +393,25 @@ claims. Pack validation consumes only the stable facts projection rather
 than the linked analyzer's internal Rust types, so schema changes cross one
 explicit fail-closed boundary.
 
+## Project and interface-facts source layout
+
+`project.rs` is the stable project model and discovery façade. TOML decoding,
+workspace path resolution and semantic manifest checks live in
+`project/load.rs`; focused manifest fixtures live in `project/tests.rs`.
+Callers therefore depend on `ProjectSpec`, not on parser helpers or
+`toml_edit` details.
+
+Generated interface facts follow the same direction:
+
+| Module | Responsibility |
+| --- | --- |
+| `interfaces/facts.rs` | Stable facts model, loading boundary and queries |
+| `interfaces/facts/parse.rs` | Strict schema-2 JSON projection |
+| `interfaces/facts/validate.rs` | Cross-record identities, slot/call consistency and digest rules |
+
+Parsing constructs the model and then invokes validation once. Pack code can
+query validated facts but cannot bypass that loading boundary.
+
 ## IR export source layout
 
 `cli/commands/export_ir.rs` consumes typed options, invokes linked analysis,
@@ -412,3 +443,13 @@ Line count is only a signal, but the next useful responsibility reviews are:
 These should be split only at ownership and invariant boundaries. Moving a
 contiguous block into another file without reducing shared mutable state or
 clarifying the dependency direction is not an architectural improvement.
+
+## Deferred terminal UX
+
+Progress bars, an interactive project wizard and an IR TUI are not part of the
+current command contract. Long operations already expose nested tracing spans
+on stderr, while every project-init/configuration operation remains fully
+scriptable through typed arguments and checked-in manifests. If progress is
+added later it must be stderr/TTY-only and must not affect JSON, JSONL or TSV;
+an interactive wizard must remain a frontend over the same resolver. A TUI
+should consume the typed reports rather than introduce a second analysis path.

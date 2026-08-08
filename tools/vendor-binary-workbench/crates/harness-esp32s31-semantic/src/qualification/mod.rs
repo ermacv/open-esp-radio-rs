@@ -15,6 +15,7 @@ mod bluetooth_txdc_pwdet;
 mod channel;
 mod hal_mac_txq_enable;
 mod iq_estimator;
+mod report;
 mod rf_init;
 mod runner;
 mod sta_join_state;
@@ -28,6 +29,7 @@ pub use bluetooth_txdc_pwdet::*;
 pub use channel::*;
 pub use hal_mac_txq_enable::*;
 pub use iq_estimator::*;
+pub use report::*;
 pub use rf_init::*;
 #[cfg(test)]
 use rf_init::{rf_phase, vendor_rf_init_phase};

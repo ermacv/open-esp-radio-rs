@@ -3,6 +3,9 @@
 pub(crate) mod esp32s31;
 mod neutral;
 
+pub(crate) use open_radio_vendor_harness_esp32s31_semantic::verification::{
+    QualificationCase, QualificationDifference, QualificationReport,
+};
 pub(crate) use open_radio_vendor_semantics::{
     DriverAdapterEvidenceSources, DriverAdapterRequest, DriverAdapterVerification,
     SemanticContractEvidenceSources, SemanticContractRequest,
@@ -94,7 +97,7 @@ pub(crate) fn verify_named_contract(
     svd: &crate::MmioRegisterMap,
     vendor_artifact: &std::path::Path,
     vendor_companion: &std::path::Path,
-) -> crate::Result<bool> {
+) -> crate::Result<QualificationReport> {
     if harness != "esp32s31-radio-v1" {
         return Err(format!("unavailable platform harness {harness:?}").into());
     }
@@ -103,13 +106,11 @@ pub(crate) fn verify_named_contract(
             svd,
             vendor_artifact,
             vendor_companion,
-            true,
         )?),
         "rf-init" => Ok(esp32s31::verification::verify_esp32s31_rf_init(
             svd,
             vendor_artifact,
             vendor_companion,
-            true,
         )?),
         _ => Err(format!("selected harness has no contract {name:?}").into()),
     }

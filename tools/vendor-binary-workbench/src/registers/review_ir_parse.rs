@@ -16,8 +16,9 @@ use crate::{Result, error::WorkbenchError, parse_u32};
 #[tracing::instrument(name = "load_register_review_ir", fields(path = %path.display()))]
 pub(super) fn parse_report(path: &Path) -> Result<Vec<ReviewIrRegister>> {
     let input = fs::read_to_string(path)?;
-    parse_report_text(path, &input)
-        .map_err(|error| WorkbenchError::manifest("linked-IR review report", path, error))
+    parse_report_text(path, &input).map_err(|error| {
+        WorkbenchError::manifest_document("linked-IR review report", path, &input, error)
+    })
 }
 
 fn parse_report_text(path: &Path, input: &str) -> Result<Vec<ReviewIrRegister>> {

@@ -149,131 +149,135 @@ pub(super) struct EntryBuilder {
 
 impl EntryBuilder {
     pub(super) fn finish(self) -> Result<Entry> {
-        let disposition = self.disposition.ok_or_else(|| {
-            format!(
-                "function {} {} has no disposition (started at line {})",
-                self.source, self.symbol, self.line
-            )
-        })?;
-        if disposition.is_implemented() && self.rust_component.is_none() {
-            return Err(format!(
-                "implemented function {} {} has no rust-component",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.semantic_contract.is_some() && !disposition.is_implemented() {
-            return Err(format!(
-                "unimplemented function {} {} cannot have a semantic-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.effect_comparison.is_some()
-            && !disposition.is_implemented()
-            && disposition != Disposition::GenerationCandidate
-        {
-            return Err(format!(
-                "unimplemented function {} {} cannot have an effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.semantic_contract.is_some() && self.effect_comparison.is_some() {
-            return Err(format!(
-                "function {} {} cannot combine semantic-contract and effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if self.effect_comparison.is_none() && !self.effect_rules.is_empty() {
-            return Err(format!(
-                "function {} {} has effect rules but no effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if !self.qualification_blockers.is_empty() && !disposition.is_implemented() {
-            return Err(format!(
-                "unimplemented function {} {} cannot have qualification blockers",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if !self.qualification_blockers.is_empty()
-            && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
-        {
-            return Err(format!(
-                "qualified function {} {} cannot have qualification blockers",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        let effect_contract = self
-            .effect_comparison
-            .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
-            .transpose()?;
-        let has_binding_fields = self.rust_probe.is_some()
-            || self.compare_return.is_some()
-            || self.driver_adapter.is_some();
-        let binding = match self.binding_version {
-            Some(version) => Some(Binding::new(
-                version,
-                self.rust_probe.ok_or_else(|| {
-                    format!("binding {} {} has no rust-probe", self.source, self.symbol)
-                })?,
-                self.compare_return.unwrap_or(false),
-                self.driver_adapter,
-            )?),
-            None if has_binding_fields => {
+        let line = self.line;
+        (|| {
+            let disposition = self.disposition.ok_or_else(|| {
+                format!(
+                    "function {} {} has no disposition (started at line {})",
+                    self.source, self.symbol, self.line
+                )
+            })?;
+            if disposition.is_implemented() && self.rust_component.is_none() {
                 return Err(format!(
-                    "function {} {} has binding fields but no binding version",
+                    "implemented function {} {} has no rust-component",
                     self.source, self.symbol
                 )
                 .into());
             }
-            None => None,
-        };
-        if effect_contract.is_some()
-            && binding.is_none()
-            && disposition != Disposition::GenerationCandidate
-        {
-            return Err(format!(
-                "effect contract {} {} has no executable binding",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
-            return Err(format!(
-                "binding {} {} has no registered effect or semantic contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        if binding
-            .as_ref()
-            .is_some_and(|binding| binding.driver_adapter.is_some())
-            && effect_contract.is_none()
-        {
-            return Err(format!(
-                "driver adapter {} {} requires an effect-contract",
-                self.source, self.symbol
-            )
-            .into());
-        }
-        Ok(Entry {
-            source: self.source,
-            symbol: self.symbol,
-            disposition,
-            protocol: self.protocol,
-            rust_component: self.rust_component,
-            hil_evidence: self.hil_evidence,
-            semantic_contract: self.semantic_contract,
-            effect_contract,
-            binding,
-            qualification_blockers: self.qualification_blockers,
-        })
+            if self.semantic_contract.is_some() && !disposition.is_implemented() {
+                return Err(format!(
+                    "unimplemented function {} {} cannot have a semantic-contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if self.effect_comparison.is_some()
+                && !disposition.is_implemented()
+                && disposition != Disposition::GenerationCandidate
+            {
+                return Err(format!(
+                    "unimplemented function {} {} cannot have an effect-contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if self.semantic_contract.is_some() && self.effect_comparison.is_some() {
+                return Err(format!(
+                    "function {} {} cannot combine semantic-contract and effect-contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if self.effect_comparison.is_none() && !self.effect_rules.is_empty() {
+                return Err(format!(
+                    "function {} {} has effect rules but no effect-contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if !self.qualification_blockers.is_empty() && !disposition.is_implemented() {
+                return Err(format!(
+                    "unimplemented function {} {} cannot have qualification blockers",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if !self.qualification_blockers.is_empty()
+                && (self.semantic_contract.is_some() || self.effect_comparison.is_some())
+            {
+                return Err(format!(
+                    "qualified function {} {} cannot have qualification blockers",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            let effect_contract = self
+                .effect_comparison
+                .map(|comparison| EffectPolicy::new(comparison, self.effect_rules))
+                .transpose()?;
+            let has_binding_fields = self.rust_probe.is_some()
+                || self.compare_return.is_some()
+                || self.driver_adapter.is_some();
+            let binding = match self.binding_version {
+                Some(version) => Some(Binding::new(
+                    version,
+                    self.rust_probe.ok_or_else(|| {
+                        format!("binding {} {} has no rust-probe", self.source, self.symbol)
+                    })?,
+                    self.compare_return.unwrap_or(false),
+                    self.driver_adapter,
+                )?),
+                None if has_binding_fields => {
+                    return Err(format!(
+                        "function {} {} has binding fields but no binding version",
+                        self.source, self.symbol
+                    )
+                    .into());
+                }
+                None => None,
+            };
+            if effect_contract.is_some()
+                && binding.is_none()
+                && disposition != Disposition::GenerationCandidate
+            {
+                return Err(format!(
+                    "effect contract {} {} has no executable binding",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if binding.is_some() && effect_contract.is_none() && self.semantic_contract.is_none() {
+                return Err(format!(
+                    "binding {} {} has no registered effect or semantic contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            if binding
+                .as_ref()
+                .is_some_and(|binding| binding.driver_adapter.is_some())
+                && effect_contract.is_none()
+            {
+                return Err(format!(
+                    "driver adapter {} {} requires an effect-contract",
+                    self.source, self.symbol
+                )
+                .into());
+            }
+            Ok(Entry {
+                source: self.source,
+                symbol: self.symbol,
+                disposition,
+                protocol: self.protocol,
+                rust_component: self.rust_component,
+                hil_evidence: self.hil_evidence,
+                semantic_contract: self.semantic_contract,
+                effect_contract,
+                binding,
+                qualification_blockers: self.qualification_blockers,
+            })
+        })()
+        .map_err(|error: crate::error::WorkbenchError| error.at_line(line))
     }
 }
 

@@ -147,7 +147,7 @@ pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
         blocked: summary.blocked,
         not_configured: summary.not_configured,
     };
-    if !crate::cli::output::structured("project-analysis", &document) {
+    if !crate::cli::output::structured(&document) {
         match crate::cli::output::format() {
             OutputFormat::Human => print_human(&document),
             OutputFormat::Tsv => print_tsv(&document),

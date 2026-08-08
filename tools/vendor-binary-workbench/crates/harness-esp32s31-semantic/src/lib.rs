@@ -88,7 +88,6 @@ pub fn verify_driver_adapter(
                 request.rust_companion,
                 request.rust_symbol,
                 request.policy,
-                false,
             )
             .map(Some)
         }
@@ -107,7 +106,6 @@ pub fn verify_driver_adapter(
                 request.rust_companion,
                 request.rust_symbol,
                 request.policy,
-                false,
             )
             .map(Some)
         }
@@ -126,7 +124,6 @@ pub fn verify_driver_adapter(
                 request.rust_companion,
                 request.rust_symbol,
                 request.policy,
-                false,
             )
             .map(Some)
         }
@@ -145,7 +142,6 @@ pub fn verify_driver_adapter(
                 request.rust_companion,
                 request.rust_symbol,
                 request.policy,
-                false,
             )
             .map(Some)
         }
@@ -164,7 +160,6 @@ pub fn verify_driver_adapter(
                 request.rust_companion,
                 request.rust_symbol,
                 request.policy,
-                false,
             )
             .map(Some)
         }
@@ -193,36 +188,38 @@ pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result
         .vendor_companion
         .ok_or_else(|| format!("semantic contract {id} requires an archive companion"))?;
     let matched = match id {
-        "esp32s31-channel" => verification::verify_esp32s31_channel(
-            request.svd,
-            request.vendor_artifact,
-            companion,
-            false,
-        )?,
-        "esp32s31-rf-init" => verification::verify_esp32s31_rf_init(
-            request.svd,
-            request.vendor_artifact,
-            companion,
-            false,
-        )?,
-        "esp32s31-bluetooth-txdc" => verification::verify_esp32s31_bluetooth_txdc(
-            request.svd,
-            request.vendor_artifact,
-            companion,
-            false,
-        )?,
-        "esp32s31-bluetooth-txdc-pwdet" => verification::verify_esp32s31_bluetooth_txdc_pwdet(
-            request.svd,
-            request.vendor_artifact,
-            companion,
-            false,
-        )?,
-        "esp32s31-bluetooth-tx-power" => verification::verify_esp32s31_bluetooth_tx_power(
-            request.svd,
-            request.vendor_artifact,
-            companion,
-            false,
-        )?,
+        "esp32s31-channel" => {
+            verification::verify_esp32s31_channel(request.svd, request.vendor_artifact, companion)?
+                .matched
+        }
+        "esp32s31-rf-init" => {
+            verification::verify_esp32s31_rf_init(request.svd, request.vendor_artifact, companion)?
+                .matched
+        }
+        "esp32s31-bluetooth-txdc" => {
+            verification::verify_esp32s31_bluetooth_txdc(
+                request.svd,
+                request.vendor_artifact,
+                companion,
+            )?
+            .matched
+        }
+        "esp32s31-bluetooth-txdc-pwdet" => {
+            verification::verify_esp32s31_bluetooth_txdc_pwdet(
+                request.svd,
+                request.vendor_artifact,
+                companion,
+            )?
+            .matched
+        }
+        "esp32s31-bluetooth-tx-power" => {
+            verification::verify_esp32s31_bluetooth_tx_power(
+                request.svd,
+                request.vendor_artifact,
+                companion,
+            )?
+            .matched
+        }
         _ => unreachable!("registered contract was matched above"),
     };
     Ok(Some(matched))

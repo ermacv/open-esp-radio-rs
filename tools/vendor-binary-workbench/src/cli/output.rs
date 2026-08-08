@@ -9,26 +9,24 @@ use std::{
 };
 
 use serde::Serialize;
+use serde_json::value::RawValue;
 
 use super::args::OutputFormat;
 use crate::Result;
 
 static FORMAT: OnceLock<OutputFormat> = OnceLock::new();
-static RECORDS: Mutex<Vec<OutputRecord>> = Mutex::new(Vec::new());
+static STATE: Mutex<OutputState> = Mutex::new(OutputState {
+    claimed: false,
+    report: None,
+});
 
 thread_local! {
     static SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
-#[derive(Serialize)]
-struct OutputRecord {
-    kind: &'static str,
-    data: serde_json::Value,
-}
-
-#[derive(Serialize)]
-struct TextRecord {
-    text: String,
+struct OutputState {
+    claimed: bool,
+    report: Option<Box<RawValue>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -44,12 +42,6 @@ impl Publication {
             status,
         }
     }
-}
-
-#[derive(Serialize)]
-struct OutputDocument<'a> {
-    schema: u32,
-    records: &'a [OutputRecord],
 }
 
 pub(super) fn init(format: OutputFormat) {
@@ -79,14 +71,14 @@ pub(super) fn suppress<T>(action: impl FnOnce() -> T) -> T {
 }
 
 pub(super) fn line(arguments: fmt::Arguments<'_>) {
-    emit_text("line", arguments.to_string(), true);
+    emit_text(arguments.to_string(), true);
 }
 
 pub(super) fn text(value: impl Into<String>) {
-    emit_text("text", value.into(), false);
+    emit_text(value.into(), false);
 }
 
-pub(super) fn structured(kind: &'static str, value: &impl Serialize) -> bool {
+pub(super) fn structured(value: &impl Serialize) -> bool {
     if suppressed() {
         return true;
     }
@@ -96,20 +88,15 @@ pub(super) fn structured(kind: &'static str, value: &impl Serialize) -> bool {
     ) {
         return false;
     }
-    let data = serde_json::to_value(value).expect("serializing typed command report");
-    emit_record(OutputRecord { kind, data });
+    let data = serde_json::value::to_raw_value(value).expect("serializing typed command report");
+    emit_report(data);
     true
 }
 
 /// Emits one typed command result and selects exactly one presentation
 /// renderer when stdout is intended for humans or TSV automation.
-pub(super) fn render_report(
-    kind: &'static str,
-    value: &impl Serialize,
-    human: impl FnOnce(),
-    tsv: impl FnOnce(),
-) {
-    if structured(kind, value) {
+pub(super) fn render_report(value: &impl Serialize, human: impl FnOnce(), tsv: impl FnOnce()) {
+    if structured(value) {
         return;
     }
     match format() {
@@ -121,7 +108,7 @@ pub(super) fn render_report(
     }
 }
 
-fn emit_text(kind: &'static str, text: String, newline: bool) {
+fn emit_text(text: String, newline: bool) {
     if suppressed() {
         return;
     }
@@ -134,17 +121,8 @@ fn emit_text(kind: &'static str, text: String, newline: bool) {
                 write!(stdout, "{text}").expect("writing command output to stdout");
             }
         }
-        OutputFormat::Json => emit_record(OutputRecord {
-            kind,
-            data: serde_json::to_value(TextRecord { text })
-                .expect("serializing command output text"),
-        }),
-        OutputFormat::Jsonl => {
-            emit_record(OutputRecord {
-                kind,
-                data: serde_json::to_value(TextRecord { text })
-                    .expect("serializing command output text"),
-            });
+        OutputFormat::Json | OutputFormat::Jsonl => {
+            panic!("machine output requires one typed command report")
         }
     }
 }
@@ -153,19 +131,23 @@ fn suppressed() -> bool {
     SUPPRESSION_DEPTH.with(|depth| depth.get() != 0)
 }
 
-fn emit_record(record: OutputRecord) {
+fn emit_report(report: Box<RawValue>) {
+    let mut state = STATE.lock().expect("command output state lock");
+    assert!(
+        !state.claimed,
+        "a command emitted more than one typed report"
+    );
+    state.claimed = true;
     match FORMAT.get().copied().unwrap_or_default() {
-        OutputFormat::Json => RECORDS
-            .lock()
-            .expect("command output buffer lock")
-            .push(record),
+        OutputFormat::Json => state.report = Some(report),
         OutputFormat::Jsonl => {
+            drop(state);
             let mut stdout = io::stdout().lock();
-            serde_json::to_writer(&mut stdout, &record).expect("serializing command output record");
+            serde_json::to_writer(&mut stdout, &report).expect("serializing command report");
             writeln!(stdout).expect("writing command output to stdout");
         }
         OutputFormat::Human | OutputFormat::Tsv => {
-            unreachable!("structured records are emitted only for machine output")
+            unreachable!("typed reports are emitted only for machine output")
         }
     }
 }
@@ -174,13 +156,13 @@ pub(super) fn finish() -> Result<()> {
     if FORMAT.get().copied().unwrap_or_default() != OutputFormat::Json {
         return Ok(());
     }
-    let records = RECORDS.lock().expect("command output buffer lock");
-    let document = OutputDocument {
-        schema: 1,
-        records: &records,
-    };
+    let state = STATE.lock().expect("command output state lock");
+    let report = state
+        .report
+        .as_ref()
+        .expect("a successful JSON command must emit one typed report");
     let mut stdout = io::stdout().lock();
-    serde_json::to_writer_pretty(&mut stdout, &document)?;
+    serde_json::to_writer_pretty(&mut stdout, report)?;
     writeln!(stdout)?;
     Ok(())
 }

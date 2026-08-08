@@ -58,11 +58,16 @@ pub(super) fn print_pack_human(report: &FunctionPackDocument<'_>) {
         report.path.display()
     );
     outputln!(
-        "  inputs={} functions={} roots={} context-fields={}",
-        report.inputs,
-        report.functions,
-        report.root_functions,
-        report.context_fields
+        "{}",
+        crate::cli::table::render(
+            ["Inputs", "Functions", "Root functions", "Context fields"],
+            [[
+                report.inputs.to_string(),
+                report.functions.to_string(),
+                report.root_functions.to_string(),
+                report.context_fields.to_string(),
+            ]],
+        )
     );
 }
 
@@ -85,21 +90,44 @@ pub(super) fn print_workspace_human(report: &FunctionWorkspaceDocument<'_>) {
         report.pack.display()
     );
     outputln!(
-        "  functions: observed={} reviewed={} ignored={} unreviewed={}",
-        report.observed_functions,
-        report.reviewed_functions,
-        report.ignored_functions,
-        report.unreviewed_functions
+        "{}",
+        crate::cli::table::render(
+            ["Scope", "Observed", "Reviewed", "Ignored", "Unreviewed"],
+            [
+                [
+                    "Functions".into(),
+                    report.observed_functions.to_string(),
+                    report.reviewed_functions.to_string(),
+                    report.ignored_functions.to_string(),
+                    report.unreviewed_functions.to_string(),
+                ],
+                [
+                    "Contexts".into(),
+                    (report.reviewed_contexts
+                        + report.ignored_contexts
+                        + report.unreviewed_contexts)
+                        .to_string(),
+                    report.reviewed_contexts.to_string(),
+                    report.ignored_contexts.to_string(),
+                    report.unreviewed_contexts.to_string(),
+                ],
+                [
+                    "Fields".into(),
+                    (report.reviewed_fields + report.ignored_fields + report.unreviewed_fields)
+                        .to_string(),
+                    report.reviewed_fields.to_string(),
+                    report.ignored_fields.to_string(),
+                    report.unreviewed_fields.to_string(),
+                ],
+            ],
+        )
     );
-    outputln!(
-        "  contexts: reviewed={} ignored={} unreviewed={}; fields: reviewed={} ignored={} unreviewed={}",
-        report.reviewed_contexts,
-        report.ignored_contexts,
-        report.unreviewed_contexts,
-        report.reviewed_fields,
-        report.ignored_fields,
-        report.unreviewed_fields
-    );
+    if report.accepted_incomplete != 0 {
+        outputln!(
+            "Accepted incomplete function reviews: {}",
+            report.accepted_incomplete
+        );
+    }
 }
 
 pub(super) fn print_workspace_tsv(report: &FunctionWorkspaceDocument<'_>) {
@@ -130,13 +158,25 @@ pub(super) fn print_review_human(report: &FunctionReviewDocument<'_>) {
         report.output.display()
     );
     outputln!(
-        "  roots={} reviewed={} unreviewed={} contexts={} fields={} interface-links={}",
-        report.root_functions,
-        report.reviewed,
-        report.unreviewed,
-        report.contexts,
-        report.fields,
-        report.interface_links
+        "{}",
+        crate::cli::table::render(
+            [
+                "Root functions",
+                "Reviewed",
+                "Unreviewed",
+                "Contexts",
+                "Fields",
+                "Interface links",
+            ],
+            [[
+                report.root_functions.to_string(),
+                report.reviewed.to_string(),
+                report.unreviewed.to_string(),
+                report.contexts.to_string(),
+                report.fields.to_string(),
+                report.interface_links.to_string(),
+            ]],
+        )
     );
 }
 

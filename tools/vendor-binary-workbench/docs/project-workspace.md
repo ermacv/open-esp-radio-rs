@@ -253,7 +253,7 @@ cargo vendor-binary-workbench project doctor
 
 The default output is a compact human report. `--format tsv` exposes stable
 `CAPABILITY`, `IR-PROFILE`, `INPUT`, and `SUMMARY` rows. `--format json` or
-`--format jsonl` emits one schema-1 `project-doctor` record containing project
+`--format jsonl` emits the schema-1 `project-doctor` report containing project
 and target identity, typed capability details, IR/function readiness, run-spec
 state, inspected inputs, diagnostics, and aggregate error/warning counts.
 

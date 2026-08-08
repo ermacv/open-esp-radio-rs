@@ -15,6 +15,9 @@ pub(crate) enum WorkbenchError {
         help("use the leaf command's --help output or correct the referenced project input")
     )]
     InvalidInput { message: String },
+    #[error("{message}")]
+    #[diagnostic(code(workbench::input::line))]
+    InputLine { line: usize, message: String },
     #[error("invalid {kind} {path}: {reason}")]
     #[diagnostic(
         code(workbench::manifest::invalid),
@@ -36,7 +39,7 @@ pub(crate) enum WorkbenchError {
         reason: String,
         #[source_code]
         src: std::sync::Arc<NamedSource<String>>,
-        #[label("invalid document syntax")]
+        #[label("invalid document content")]
         span: SourceSpan,
     },
     #[error(transparent)]
@@ -112,6 +115,52 @@ impl WorkbenchError {
             span: span.into(),
         }
     }
+
+    pub(crate) fn at_line(self, line: usize) -> Self {
+        if matches!(self, Self::InputLine { .. }) {
+            self
+        } else {
+            Self::InputLine {
+                line,
+                message: self.to_string(),
+            }
+        }
+    }
+
+    pub(crate) fn manifest_document(
+        kind: &'static str,
+        path: &std::path::Path,
+        input: &str,
+        error: Self,
+    ) -> Self {
+        let line = match &error {
+            Self::InputLine { line, .. } => Some(*line),
+            Self::Json(error) => Some(error.line()),
+            _ => None,
+        };
+        match line.and_then(|line| source_line_span(input, line)) {
+            Some(span) => Self::manifest_source(kind, path, input, error, Some(span)),
+            None => Self::manifest(kind, path, error),
+        }
+    }
+}
+
+fn source_line_span(input: &str, line: usize) -> Option<std::ops::Range<usize>> {
+    if line == 0 {
+        return None;
+    }
+    let mut offset = 0;
+    for (index, physical_line) in input.split_inclusive('\n').enumerate() {
+        let length = physical_line.trim_end_matches(['\r', '\n']).len();
+        if index + 1 == line {
+            return Some(offset..offset + length.max(1).min(physical_line.len()));
+        }
+        offset += physical_line.len();
+    }
+    if line == input.lines().count() && !input.ends_with('\n') {
+        return Some(input.len().saturating_sub(1)..input.len());
+    }
+    None
 }
 
 impl From<String> for WorkbenchError {
@@ -129,3 +178,26 @@ impl From<&str> for WorkbenchError {
 }
 
 pub(crate) type Result<T> = std::result::Result<T, WorkbenchError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_diagnostic_retains_the_physical_source_line() {
+        let input = "{\n  \"value\":,\n}\n";
+        let error = serde_json::from_str::<serde_json::Value>(input).unwrap_err();
+        let error = WorkbenchError::manifest_document(
+            "fixture report",
+            std::path::Path::new("fixture.json"),
+            input,
+            error.into(),
+        );
+
+        assert!(matches!(
+            error,
+            WorkbenchError::ManifestSource { span, .. }
+                if span.offset() == input.find("  \"value\":,").unwrap()
+        ));
+    }
+}

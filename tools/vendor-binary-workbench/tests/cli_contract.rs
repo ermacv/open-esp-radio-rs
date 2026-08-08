@@ -53,7 +53,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
     assert_eq!(document["schema"], 1);
-    assert_eq!(document["records"][0]["kind"], "project-status");
+    assert_eq!(document["command"], "project status");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         !stderr.contains("Missing description for register"),
@@ -80,10 +80,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
-    let records = document["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["kind"], "project-doctor");
-    let report = &records[0]["data"];
+    let report = &document;
     assert_eq!(report["schema"], 1);
     assert_eq!(report["command"], "project doctor");
     assert_eq!(report["status"], "ok");
@@ -117,8 +114,8 @@ fn project_doctor_json_is_one_complete_typed_report() {
     ]);
     assert!(jsonl.status.success());
     assert_eq!(String::from_utf8_lossy(&jsonl.stdout).lines().count(), 1);
-    let record: serde_json::Value = serde_json::from_slice(&jsonl.stdout).unwrap();
-    assert_eq!(record["kind"], "project-doctor");
+    let report: serde_json::Value = serde_json::from_slice(&jsonl.stdout).unwrap();
+    assert_eq!(report["command"], "project doctor");
 }
 
 #[test]
@@ -148,6 +145,45 @@ fn runtime_errors_do_not_emit_usage_or_an_empty_json_result() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("MMIO ranges \"first\" and \"second\" overlap"));
     assert!(!stderr.contains("Usage:"));
+}
+
+#[test]
+fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
+    for contract in ["channel", "rf-init"] {
+        let output = run(&[
+            "verify",
+            "contract",
+            contract,
+            "--project",
+            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            "--vendor-artifact",
+            "/missing/vendor-contract.elf",
+            "--vendor-companion",
+            "/missing/vendor-rom.elf",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ]);
+        assert!(
+            !output.status.success(),
+            "{contract} unexpectedly succeeded"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "{contract} leaked qualification output: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("ORACLE\t"),
+            "domain output leaked: {stderr}"
+        );
+        assert!(
+            !stderr.contains("Usage:"),
+            "runtime error printed usage: {stderr}"
+        );
+    }
 }
 
 #[test]
@@ -240,10 +276,7 @@ fn verify_source_json_is_one_typed_function_report() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("verification stdout must be valid JSON");
-    let records = document["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["kind"], "source-verification");
-    let report = &records[0]["data"];
+    let report = &document;
     assert_eq!(report["command"], "verify source");
     assert_eq!(report["passed"], true);
     assert_eq!(report["summary"]["vendor_functions"], 1);
@@ -261,7 +294,7 @@ fn verify_source_json_is_one_typed_function_report() {
 }
 
 #[test]
-fn verify_inventory_json_combines_results_and_publication_in_one_record() {
+fn verify_inventory_json_combines_results_and_publication_in_one_report() {
     let suffix = std::process::id();
     let artifact = std::env::temp_dir().join(format!(
         "vendor-workbench-verify-inventory-contract-{suffix}.o"
@@ -301,10 +334,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_record() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("verification stdout must be valid JSON");
-    let records = document["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["kind"], "inventory-verification");
-    let report = &records[0]["data"];
+    let report = &document;
     assert_eq!(report["command"], "verify inventory");
     assert_eq!(report["passed"], true);
     assert_eq!(report["inventory"][0]["source"], "fixture");
@@ -359,15 +389,9 @@ fn direct_target_audit_json_is_one_typed_report() {
         String::from_utf8_lossy(&output.stderr)
     );
     let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-    let records = document["records"].as_array().unwrap();
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["kind"], "direct-target-audit");
-    assert_eq!(records[0]["data"]["command"], "image audit-targets");
-    assert_eq!(records[0]["data"]["passed"], true);
-    assert_eq!(
-        records[0]["data"]["forbidden_targets"],
-        serde_json::json!([])
-    );
+    assert_eq!(document["command"], "image audit-targets");
+    assert_eq!(document["passed"], true);
+    assert_eq!(document["forbidden_targets"], serde_json::json!([]));
 }
 
 #[test]
@@ -402,21 +426,14 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["records"].as_array().unwrap().len(), 1);
-    let report = document["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["kind"] == "project-analysis")
-        .expect("project-analysis record");
-    assert_eq!(report["data"]["schema"], 1);
-    assert_eq!(report["data"]["command"], "project analyze");
-    assert_eq!(report["data"]["mode"], "check");
-    assert_eq!(report["data"]["status"], "failed");
-    assert!(report["data"]["blocked"].as_u64().unwrap() > 0);
-    assert!(report["data"]["stages"].is_array());
+    assert_eq!(document["schema"], 1);
+    assert_eq!(document["command"], "project analyze");
+    assert_eq!(document["mode"], "check");
+    assert_eq!(document["status"], "failed");
+    assert!(document["blocked"].as_u64().unwrap() > 0);
+    assert!(document["stages"].is_array());
     assert!(
-        report["data"]["stages"]
+        document["stages"]
             .as_array()
             .unwrap()
             .iter()
@@ -476,26 +493,16 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout)
             .expect("project analysis stdout must be valid JSON");
-        assert_eq!(
-            document["records"].as_array().unwrap().len(),
-            1,
-            "nested stage output must not leak into the project report"
-        );
-        let analysis = document["records"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|record| record["kind"] == "project-analysis")
-            .expect("project-analysis record");
-        assert_eq!(analysis["data"]["status"], "ok");
-        let symbol_stage = analysis["data"]["stages"]
+        assert_eq!(document["command"], "project analyze");
+        assert_eq!(document["status"], "ok");
+        let symbol_stage = document["stages"]
             .as_array()
             .unwrap()
             .iter()
             .find(|stage| stage["name"] == "symbol-inventory")
             .expect("symbol-inventory stage");
         assert_eq!(symbol_stage["status"], expected_stage_status);
-        let navigation_stage = analysis["data"]["stages"]
+        let navigation_stage = document["stages"]
             .as_array()
             .unwrap()
             .iter()
@@ -520,15 +527,10 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     );
     let ir_build: serde_json::Value =
         serde_json::from_slice(&ir_build.stdout).expect("IR build stdout must be valid JSON");
-    assert_eq!(ir_build["records"].as_array().unwrap().len(), 1);
-    assert_eq!(ir_build["records"][0]["kind"], "ir-build");
-    assert_eq!(ir_build["records"][0]["data"]["command"], "ir build");
-    assert_eq!(ir_build["records"][0]["data"]["mode"], "check");
-    assert_eq!(ir_build["records"][0]["data"]["status"], "verified");
-    assert_eq!(
-        ir_build["records"][0]["data"]["profiles"][0]["id"],
-        "fixture"
-    );
+    assert_eq!(ir_build["command"], "ir build");
+    assert_eq!(ir_build["mode"], "check");
+    assert_eq!(ir_build["status"], "verified");
+    assert_eq!(ir_build["profiles"][0]["id"], "fixture");
 
     let manifest_contents = std::fs::read_to_string(&manifest).unwrap().replace(
         "[interfaces]\nfacts = \"generated/interfaces.json\"\n",
@@ -538,10 +540,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::create_dir_all(directory.join("interfaces")).unwrap();
     std::fs::create_dir_all(directory.join("functions")).unwrap();
 
-    for (domain, kind) in [
-        ("interfaces", "interface-pack"),
-        ("functions", "function-pack"),
-    ] {
+    for domain in ["interfaces", "functions"] {
         let output = workbench()
             .current_dir(repository_root())
             .args([domain, "init-pack", "--project"])
@@ -555,15 +554,10 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
             String::from_utf8_lossy(&output.stderr)
         );
         let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(output["records"].as_array().unwrap().len(), 1);
-        assert_eq!(output["records"][0]["kind"], kind);
-        assert_eq!(output["records"][0]["data"]["status"], "created");
+        assert_eq!(output["status"], "created");
     }
 
-    for (domain, kind) in [
-        ("interfaces", "interface-workspace"),
-        ("functions", "function-workspace"),
-    ] {
+    for domain in ["interfaces", "functions"] {
         let output = workbench()
             .current_dir(repository_root())
             .args([domain, "validate", "--project"])
@@ -577,9 +571,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
             String::from_utf8_lossy(&output.stderr)
         );
         let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(output["records"].as_array().unwrap().len(), 1);
-        assert_eq!(output["records"][0]["kind"], kind);
-        assert_eq!(output["records"][0]["data"]["status"], "valid");
+        assert_eq!(output["status"], "valid");
     }
 
     let denied = workbench()
@@ -591,10 +583,8 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("enforce reviewed function coverage");
     assert_eq!(denied.status.code(), Some(2));
     let denied: serde_json::Value = serde_json::from_slice(&denied.stdout).unwrap();
-    assert_eq!(denied["records"].as_array().unwrap().len(), 1);
-    assert_eq!(denied["records"][0]["kind"], "function-workspace");
-    assert_eq!(denied["records"][0]["data"]["status"], "unreviewed");
-    assert_eq!(denied["records"][0]["data"]["deny_unreviewed"], true);
+    assert_eq!(denied["status"], "unreviewed");
+    assert_eq!(denied["deny_unreviewed"], true);
 
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
@@ -627,13 +617,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("run project status");
     assert!(status.status.success());
     let status: serde_json::Value = serde_json::from_slice(&status.stdout).unwrap();
-    let status = status["records"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|record| record["kind"] == "project-status")
-        .expect("project-status record");
-    let symbol_component = status["data"]["phases"]["analysis"]["components"]
+    let symbol_component = status["phases"]["analysis"]["components"]
         .as_array()
         .unwrap()
         .iter()
@@ -642,7 +626,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     assert_eq!(symbol_component["status"], "ready");
     assert_eq!(symbol_component["exported_definitions"], 1);
     assert_eq!(symbol_component["undefined"], 1);
-    let navigation_component = status["data"]["phases"]["analysis"]["components"]
+    let navigation_component = status["phases"]["analysis"]["components"]
         .as_array()
         .unwrap()
         .iter()
@@ -666,7 +650,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         .expect("run project status with stale navigation");
     assert!(!stale.status.success());
     let stale: serde_json::Value = serde_json::from_slice(&stale.stdout).unwrap();
-    let navigation_component = stale["records"][0]["data"]["phases"]["analysis"]["components"]
+    let navigation_component = stale["phases"]["analysis"]["components"]
         .as_array()
         .unwrap()
         .iter()
@@ -702,18 +686,10 @@ fn project_publication_json_is_one_typed_report() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("publication stdout must be valid JSON");
-    assert_eq!(document["records"].as_array().unwrap().len(), 1);
-    assert_eq!(document["records"][0]["kind"], "project-publication");
-    assert_eq!(document["records"][0]["data"]["command"], "project publish");
-    assert_eq!(document["records"][0]["data"]["mode"], "check");
-    assert_eq!(document["records"][0]["data"]["status"], "ok");
-    assert_eq!(
-        document["records"][0]["data"]["stages"]
-            .as_array()
-            .unwrap()
-            .len(),
-        4
-    );
+    assert_eq!(document["command"], "project publish");
+    assert_eq!(document["mode"], "check");
+    assert_eq!(document["status"], "ok");
+    assert_eq!(document["stages"].as_array().unwrap().len(), 4);
 }
 
 #[test]
@@ -759,11 +735,48 @@ fn register_lifecycle_commands_emit_one_typed_report() {
             String::from_utf8_lossy(&output.stderr)
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(document["records"].as_array().unwrap().len(), 1);
-        assert_eq!(document["records"][0]["kind"], kind);
-        assert_eq!(document["records"][0]["data"]["schema"], 1);
-        assert_eq!(document["records"][0]["data"]["status"], status);
+        assert_eq!(document["schema"], 1);
+        assert_eq!(document["status"], status);
     }
+}
+
+#[test]
+fn human_tables_do_not_replace_the_stable_tsv_protocol() {
+    let project = "verification/vendor/targets/esp32s31/vendor-project.toml";
+    let human = run(&[
+        "registers",
+        "validate",
+        "--project",
+        project,
+        "--format",
+        "human",
+        "--color",
+        "never",
+    ]);
+    assert!(
+        human.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&human.stderr)
+    );
+    let human = String::from_utf8(human.stdout).unwrap();
+    assert!(human.contains("Coverage:\n╭"));
+    assert!(human.contains("Checks:\n╭"));
+    assert!(!human.contains("REGISTER-WORKSPACE\t"));
+
+    let tsv = run(&[
+        "registers",
+        "validate",
+        "--project",
+        project,
+        "--format",
+        "tsv",
+        "--color",
+        "never",
+    ]);
+    assert!(tsv.status.success());
+    let tsv = String::from_utf8(tsv.stdout).unwrap();
+    assert!(tsv.contains("REGISTER-WORKSPACE\tstatus=valid"));
+    assert!(!tsv.contains('╭'));
 }
 
 #[test]
@@ -800,10 +813,8 @@ fn tooling_assets_come_from_the_canonical_cli_without_a_project() {
             String::from_utf8_lossy(&output.stderr)
         );
         let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-        assert_eq!(document["records"].as_array().unwrap().len(), 1);
-        assert_eq!(document["records"][0]["kind"], "tooling-asset");
-        assert_eq!(document["records"][0]["data"]["kind"], expected_kind);
-        assert_eq!(document["records"][0]["data"]["status"], "written");
+        assert_eq!(document["kind"], expected_kind);
+        assert_eq!(document["status"], "written");
         assert!(output_path.metadata().unwrap().len() > 100);
     }
 

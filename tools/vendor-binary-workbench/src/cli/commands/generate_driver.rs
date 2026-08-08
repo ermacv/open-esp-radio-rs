@@ -114,7 +114,7 @@ pub(super) fn run(
         plan_output: arguments.plan_output.map(|path| path.display().to_string()),
         source: generated,
     };
-    if !crate::cli::output::structured("generated-driver", &report) {
+    if !crate::cli::output::structured(&report) {
         if let Some(output) = &report.output {
             outputln!(
                 "GENERATED-DRIVER\t{}\t{}\tkind={}\tsource={}",

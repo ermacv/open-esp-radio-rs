@@ -67,6 +67,7 @@ impl ProfileContract {
 #[derive(Default)]
 struct ProfileBuilder {
     name: String,
+    line: usize,
     vendor_source: Option<String>,
     vendor_symbol: Option<String>,
     rust_symbol: Option<String>,
@@ -85,22 +86,26 @@ impl ProfileBuilder {
     }
 
     fn finish(mut self) -> Result<Profile> {
-        self.finish_scenario();
-        if self.scenarios.is_empty() {
-            return Err(format!("profile {} has no cases", self.name).into());
-        }
-        self.argument_ranges.sort_by_key(|range| range.index);
-        validate_argument_domain(&self.name, &self.argument_ranges, &self.scenarios)?;
-        Ok(Profile {
-            name: self.name,
-            vendor_source: self.vendor_source.ok_or("profile has no vendor-source")?,
-            vendor_symbol: self.vendor_symbol.ok_or("profile has no vendor-symbol")?,
-            rust_symbol: self.rust_symbol.ok_or("profile has no rust-symbol")?,
-            contract: self.contract,
-            compare_return: self.compare_return,
-            argument_ranges: self.argument_ranges,
-            scenarios: self.scenarios,
-        })
+        let line = self.line;
+        (|| {
+            self.finish_scenario();
+            if self.scenarios.is_empty() {
+                return Err(format!("profile {} has no cases", self.name).into());
+            }
+            self.argument_ranges.sort_by_key(|range| range.index);
+            validate_argument_domain(&self.name, &self.argument_ranges, &self.scenarios)?;
+            Ok(Profile {
+                name: self.name,
+                vendor_source: self.vendor_source.ok_or("profile has no vendor-source")?,
+                vendor_symbol: self.vendor_symbol.ok_or("profile has no vendor-symbol")?,
+                rust_symbol: self.rust_symbol.ok_or("profile has no rust-symbol")?,
+                contract: self.contract,
+                compare_return: self.compare_return,
+                argument_ranges: self.argument_ranges,
+                scenarios: self.scenarios,
+            })
+        })()
+        .map_err(|error: crate::error::WorkbenchError| error.at_line(line))
     }
 
     fn scenario(&mut self, line: usize) -> Result<&mut execution::Scenario> {
@@ -229,7 +234,12 @@ fn split_directive(line: &str, line_number: usize) -> Result<(&str, &str)> {
 pub fn load(path: &Path) -> Result<Vec<Profile>> {
     let input = fs::read_to_string(path)?;
     parse(&input).map_err(|error| {
-        crate::error::WorkbenchError::manifest("verification profile manifest", path, error)
+        crate::error::WorkbenchError::manifest_document(
+            "verification profile manifest",
+            path,
+            &input,
+            error,
+        )
     })
 }
 
@@ -243,137 +253,144 @@ fn parse(input: &str) -> Result<Vec<Profile>> {
         if line.is_empty() {
             continue;
         }
-        let (directive, value) = split_directive(line, line_number)?;
-        if directive == "profile" {
-            if let Some(profile) = current.take() {
-                profiles.push(profile.finish()?);
+        (|| -> Result<()> {
+            let (directive, value) = split_directive(line, line_number)?;
+            if directive == "profile" {
+                if let Some(profile) = current.take() {
+                    profiles.push(profile.finish()?);
+                }
+                current = Some(ProfileBuilder {
+                    name: value.to_owned(),
+                    line: line_number,
+                    ..ProfileBuilder::default()
+                });
+                return Ok(());
             }
-            current = Some(ProfileBuilder {
-                name: value.to_owned(),
-                ..ProfileBuilder::default()
-            });
-            continue;
-        }
-        let profile = current
-            .as_mut()
-            .ok_or_else(|| format!("directive before profile at line {line_number}"))?;
-        match directive {
-            "vendor-source" => {
-                validate_source_id(value, line_number)?;
-                profile.vendor_source = Some(value.to_owned());
-            }
-            "vendor-symbol" => profile.vendor_symbol = Some(value.to_owned()),
-            "rust-symbol" => profile.rust_symbol = Some(value.to_owned()),
-            "contract" => {
-                profile.contract = match value {
-                    "scenario" => ProfileContract::Scenario,
-                    "state" => ProfileContract::State,
-                    _ => {
-                        return Err(
-                            format!("invalid contract {value:?} at line {line_number}").into()
-                        );
+            let profile = current
+                .as_mut()
+                .ok_or_else(|| format!("directive before profile at line {line_number}"))?;
+            match directive {
+                "vendor-source" => {
+                    validate_source_id(value, line_number)?;
+                    profile.vendor_source = Some(value.to_owned());
+                }
+                "vendor-symbol" => profile.vendor_symbol = Some(value.to_owned()),
+                "rust-symbol" => profile.rust_symbol = Some(value.to_owned()),
+                "contract" => {
+                    profile.contract = match value {
+                        "scenario" => ProfileContract::Scenario,
+                        "state" => ProfileContract::State,
+                        _ => {
+                            return Err(format!(
+                                "invalid contract {value:?} at line {line_number}"
+                            )
+                            .into());
+                        }
+                    };
+                }
+                "compare-return" => {
+                    profile.compare_return = value
+                        .parse()
+                        .map_err(|_| format!("invalid boolean at line {line_number}"))?;
+                }
+                "arg-range" => profile
+                    .argument_ranges
+                    .push(parse_argument_range(value, line_number)?),
+                "case" => {
+                    profile.finish_scenario();
+                    profile.current_scenario = Some(NamedScenario::new(value.to_owned()));
+                }
+                "arg" => profile.scenario(line_number)?.arguments.push(
+                    parse_u32(value).ok_or_else(|| format!("invalid arg at line {line_number}"))?,
+                ),
+                "mmio" => {
+                    let (address, value) = parse_assignment(value, "mmio")?;
+                    profile
+                        .scenario(line_number)?
+                        .mmio_initial
+                        .insert(address, value);
+                }
+                "read" => {
+                    let (address, value) = parse_assignment(value, "read")?;
+                    profile
+                        .scenario(line_number)?
+                        .mmio_reads
+                        .entry(address)
+                        .or_default()
+                        .push_back(value);
+                }
+                "ram" => {
+                    let (address, value) = parse_assignment(value, "ram")?;
+                    seed_ram_word(profile.scenario(line_number)?, address, value);
+                }
+                "vendor-ram" | "rust-ram" => {
+                    let word = parse_assignment(value, directive)?;
+                    let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
+                        format!("profile directive before case at line {line_number}")
+                    })?;
+                    if directive == "vendor-ram" {
+                        scenario.vendor_ram_words.push(word);
+                    } else {
+                        scenario.rust_ram_words.push(word);
                     }
-                };
-            }
-            "compare-return" => {
-                profile.compare_return = value
-                    .parse()
-                    .map_err(|_| format!("invalid boolean at line {line_number}"))?;
-            }
-            "arg-range" => profile
-                .argument_ranges
-                .push(parse_argument_range(value, line_number)?),
-            "case" => {
-                profile.finish_scenario();
-                profile.current_scenario = Some(NamedScenario::new(value.to_owned()));
-            }
-            "arg" => profile.scenario(line_number)?.arguments.push(
-                parse_u32(value).ok_or_else(|| format!("invalid arg at line {line_number}"))?,
-            ),
-            "mmio" => {
-                let (address, value) = parse_assignment(value, "mmio")?;
-                profile
-                    .scenario(line_number)?
-                    .mmio_initial
-                    .insert(address, value);
-            }
-            "read" => {
-                let (address, value) = parse_assignment(value, "read")?;
-                profile
-                    .scenario(line_number)?
-                    .mmio_reads
-                    .entry(address)
-                    .or_default()
-                    .push_back(value);
-            }
-            "ram" => {
-                let (address, value) = parse_assignment(value, "ram")?;
-                seed_ram_word(profile.scenario(line_number)?, address, value);
-            }
-            "vendor-ram" | "rust-ram" => {
-                let word = parse_assignment(value, directive)?;
-                let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
-                    format!("profile directive before case at line {line_number}")
-                })?;
-                if directive == "vendor-ram" {
-                    scenario.vendor_ram_words.push(word);
-                } else {
-                    scenario.rust_ram_words.push(word);
+                }
+                "vendor-ram-symbol" => profile
+                    .current_scenario
+                    .as_mut()
+                    .ok_or_else(|| format!("profile directive before case at line {line_number}"))?
+                    .vendor_symbol_words
+                    .push(parse_symbol_word(value, "vendor-ram-symbol")?),
+                "rust-ram-symbol" => profile
+                    .current_scenario
+                    .as_mut()
+                    .ok_or_else(|| format!("profile directive before case at line {line_number}"))?
+                    .rust_symbol_words
+                    .push(parse_symbol_word(value, "rust-ram-symbol")?),
+                "vendor-observe" | "rust-observe" => {
+                    let (address, length) = parse_assignment(value, directive)?;
+                    if length == 0 {
+                        return Err(format!("{directive} length must be non-zero").into());
+                    }
+                    let observation = MemoryObservation::Absolute { address, length };
+                    let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
+                        format!("profile directive before case at line {line_number}")
+                    })?;
+                    if directive == "vendor-observe" {
+                        scenario.vendor_observations.push(observation);
+                    } else {
+                        scenario.rust_observations.push(observation);
+                    }
+                }
+                "vendor-observe-symbol" | "rust-observe-symbol" => {
+                    let observation = parse_symbol_observation(value, directive)?;
+                    let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
+                        format!("profile directive before case at line {line_number}")
+                    })?;
+                    if directive == "vendor-observe-symbol" {
+                        scenario.vendor_observations.push(observation);
+                    } else {
+                        scenario.rust_observations.push(observation);
+                    }
+                }
+                "observe" => {
+                    let (address, length) = parse_assignment(value, "observe")?;
+                    observe_memory(profile.scenario(line_number)?, address, length)?;
+                }
+                "max-steps" => {
+                    profile.scenario(line_number)?.max_steps = value
+                        .parse()
+                        .map_err(|_| format!("invalid max-steps at line {line_number}"))?;
+                }
+                _ => {
+                    return Err(format!(
+                        "unknown profile directive {directive} at line {line_number}"
+                    )
+                    .into());
                 }
             }
-            "vendor-ram-symbol" => profile
-                .current_scenario
-                .as_mut()
-                .ok_or_else(|| format!("profile directive before case at line {line_number}"))?
-                .vendor_symbol_words
-                .push(parse_symbol_word(value, "vendor-ram-symbol")?),
-            "rust-ram-symbol" => profile
-                .current_scenario
-                .as_mut()
-                .ok_or_else(|| format!("profile directive before case at line {line_number}"))?
-                .rust_symbol_words
-                .push(parse_symbol_word(value, "rust-ram-symbol")?),
-            "vendor-observe" | "rust-observe" => {
-                let (address, length) = parse_assignment(value, directive)?;
-                if length == 0 {
-                    return Err(format!("{directive} length must be non-zero").into());
-                }
-                let observation = MemoryObservation::Absolute { address, length };
-                let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
-                    format!("profile directive before case at line {line_number}")
-                })?;
-                if directive == "vendor-observe" {
-                    scenario.vendor_observations.push(observation);
-                } else {
-                    scenario.rust_observations.push(observation);
-                }
-            }
-            "vendor-observe-symbol" | "rust-observe-symbol" => {
-                let observation = parse_symbol_observation(value, directive)?;
-                let scenario = profile.current_scenario.as_mut().ok_or_else(|| {
-                    format!("profile directive before case at line {line_number}")
-                })?;
-                if directive == "vendor-observe-symbol" {
-                    scenario.vendor_observations.push(observation);
-                } else {
-                    scenario.rust_observations.push(observation);
-                }
-            }
-            "observe" => {
-                let (address, length) = parse_assignment(value, "observe")?;
-                observe_memory(profile.scenario(line_number)?, address, length)?;
-            }
-            "max-steps" => {
-                profile.scenario(line_number)?.max_steps = value
-                    .parse()
-                    .map_err(|_| format!("invalid max-steps at line {line_number}"))?;
-            }
-            _ => {
-                return Err(
-                    format!("unknown profile directive {directive} at line {line_number}").into(),
-                );
-            }
-        }
+            Ok(())
+        })()
+        .map_err(|error| error.at_line(line_number))?;
     }
     if let Some(profile) = current {
         profiles.push(profile.finish()?);

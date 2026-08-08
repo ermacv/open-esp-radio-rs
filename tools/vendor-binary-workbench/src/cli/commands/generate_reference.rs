@@ -86,7 +86,7 @@ pub(super) fn run(
         dependencies: resolved.dependencies,
         source: generated.source,
     };
-    if !crate::cli::output::structured("generated-reference", &report) {
+    if !crate::cli::output::structured(&report) {
         if let Some(output) = &report.output {
             outputln!(
                 "GENERATED\t{}\t{}\texit-a0={}",

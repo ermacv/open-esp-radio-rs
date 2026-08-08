@@ -97,7 +97,7 @@ The actual output uses tab separators. Status values are:
 - `not-configured`: the optional project feature is absent.
 
 The final TSV `PROJECT-ANALYSIS` line aggregates all stages. In JSON and JSONL
-modes the same data is a typed `project-analysis` record with schema,
+modes the same data is the typed `project-analysis` report with schema,
 `command`, `mode`, `status`, ordered `stages`, reasons and aggregate counts; it
 is not encoded as presentation text. Nested command presentation is suppressed
 so the project report is the sole stdout result; diagnostics and tracing remain

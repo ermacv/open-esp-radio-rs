@@ -20,7 +20,7 @@ use open_radio_vendor_semantics::{
     PlatformOperation, Timeout,
 };
 
-use crate::{MmioRegisterMap, Result, artifact, artifact_sha256, execution};
+use crate::{MmioRegisterMap, Result, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -510,18 +510,10 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
     rust_companion: Option<&Path>,
     rust_symbol: &str,
     policy: &EffectPolicy,
-    print_oracles: bool,
 ) -> Result<DriverAdapterVerification> {
     validate_policy(policy)?;
     let vendor_inventory = vendor_inventory
         .ok_or("wDev_AppendRxBlocks verification requires the caller-owned raw libpp inventory")?;
-    if print_oracles {
-        let vendor_archive_digest = artifact_sha256(vendor_inventory)?;
-        println!(
-            "ORACLE\tlibpp\t{}\tsha256={vendor_archive_digest}",
-            vendor_inventory.display()
-        );
-    }
     let vendor_proof = validate_vendor_shape(vendor_inventory, svd)?;
 
     let mut vendor_image = execution::ExecutableImage::load(vendor_artifact)?;
@@ -551,8 +543,6 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
         let second = execution::execute(&rust_image, svd, rust_symbol, rust_scenario(*case, 0xa5))?;
         let padding_independent =
             first.events == second.events && first.return_value == second.return_value;
-        let return_matched = first.return_value == expected_return(*case);
-        let events_matched = event_sequences_match(&first.events, &expected_rust_events(*case));
         let case_matched = rust_case_matches(&first, *case) && padding_independent;
         matched &= case_matched;
         canonical.push_str(&format!(
@@ -566,25 +556,7 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
             first.ordered_branches.len(),
             padding_independent,
         ));
-        println!(
-            "WDEV-APPEND-RX-CASE\t{}\t{}\tpending={}\trepair={}\ttimeout={}\tevents={}\tsteps={}\treturn-match={}\tevents-match={}\tpadding-independent={}",
-            case.name,
-            if case_matched { "MATCH" } else { "MISMATCH" },
-            case.pending_samples,
-            case.repair_base,
-            case.timeout,
-            first.events.len(),
-            first.steps,
-            return_matched,
-            events_matched,
-            padding_independent,
-        );
     }
-    println!(
-        "WDEV-APPEND-RX-SUMMARY\t{SYMBOL}\t{}\tscenarios={}\tscope=rx-ring-composition",
-        if matched { "MATCH" } else { "MISMATCH" },
-        CASES.len(),
-    );
     Ok(DriverAdapterVerification { matched, canonical })
 }
 

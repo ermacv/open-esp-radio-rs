@@ -55,8 +55,9 @@ impl RegisterFacts {
     #[tracing::instrument(name = "load_register_facts", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        Self::parse(&input)
-            .map_err(|error| WorkbenchError::manifest("MMIO discovery report", path, error))
+        Self::parse(&input).map_err(|error| {
+            WorkbenchError::manifest_document("MMIO discovery report", path, &input, error)
+        })
     }
 
     fn parse(input: &str) -> Result<Self> {

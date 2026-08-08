@@ -237,6 +237,7 @@ fn artifact_guard_mismatch_makes_an_observed_anchor_stale() {
     let error = InterfaceWorkspace::load(&facts, &pack, &[catalog], "riscv-ilp32").unwrap_err();
     std::fs::remove_dir_all(directory).unwrap();
     assert!(error.to_string().contains("stale"));
+    assert!(error.to_string().contains(&pack.display().to_string()));
 }
 
 #[test]
@@ -253,6 +254,7 @@ fn unknown_semantic_operation_is_not_accepted_by_name() {
     let error = InterfaceWorkspace::load(&facts, &pack, &[catalog], "riscv-ilp32").unwrap_err();
     std::fs::remove_dir_all(directory).unwrap();
     assert!(error.to_string().contains("unknown semantic operation"));
+    assert!(error.to_string().contains(&pack.display().to_string()));
 }
 
 #[test]

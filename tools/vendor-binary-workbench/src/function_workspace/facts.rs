@@ -79,7 +79,12 @@ impl FunctionFacts {
             let input = fs::read_to_string(path)?;
             let (report_inputs, report_functions) =
                 parse_report(profile, &input).map_err(|error| {
-                    WorkbenchError::manifest("linked-IR function facts", path, error)
+                    WorkbenchError::manifest_document(
+                        "linked-IR function facts",
+                        path,
+                        &input,
+                        error,
+                    )
                 })?;
             inputs.extend(report_inputs);
             functions.extend(report_functions);

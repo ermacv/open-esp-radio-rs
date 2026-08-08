@@ -540,3 +540,24 @@ fn manifest_accepts_arbitrary_stable_source_ids() {
         assert!(validate_source_id(invalid, 1).is_err());
     }
 }
+
+#[test]
+fn malformed_disposition_retains_its_physical_source_line() {
+    let input = "default-disposition not-yet-ported\ndefault-protocol shared\nunknown value\n";
+    let path = std::env::temp_dir().join(format!(
+        "vendor-workbench-disposition-diagnostic-{}.disposition",
+        std::process::id()
+    ));
+    std::fs::write(&path, input).unwrap();
+    let error = Manifest::load(&path).unwrap_err();
+    std::fs::remove_file(&path).unwrap();
+
+    assert!(matches!(
+        error,
+        crate::error::WorkbenchError::ManifestSource {
+            path: reported,
+            span,
+            ..
+        } if reported == path && span.offset() == input.find("unknown").unwrap()
+    ));
+}

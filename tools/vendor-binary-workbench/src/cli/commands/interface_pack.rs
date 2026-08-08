@@ -59,7 +59,6 @@ fn init_pack(
         path: output,
     };
     crate::cli::output::render_report(
-        "interface-pack",
         &report,
         || print_pack_human(&report),
         || print_pack_tsv(&report),
@@ -150,7 +149,6 @@ fn validate(
             .collect(),
     };
     crate::cli::output::render_report(
-        "interface-workspace",
         &report,
         || print_workspace_human(&report),
         || print_workspace_tsv(&report),

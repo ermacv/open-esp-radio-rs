@@ -68,8 +68,8 @@ PROJECT-PUBLICATION mode=check status=ok written=0 verified=4 failed=0 blocked=0
 
 Statuses are `written`, `verified`, `failed`, `blocked`, and
 `not-configured`. Any failed or blocked stage makes the process unsuccessful.
-`--format json` and `--format jsonl` emit one typed `project-publication`
-record containing the ordered stages and aggregate counts. Output from the
+`--format json` and `--format jsonl` emit the typed `project-publication`
+report containing the ordered stages and aggregate counts. Output from the
 nested validation and generation commands is intentionally suppressed at this
 composition boundary; diagnostics and tracing still go to stderr.
 

@@ -2,26 +2,95 @@
 
 use std::{collections::BTreeSet, path::Path};
 
+use super::{
+    QualificationArtifact, QualificationCase, QualificationDifference, QualificationReport,
+    QualificationSummary, QualificationVerdict, StateFootprintStats,
+};
 use crate::*;
+
+fn debug_events(events: &[impl std::fmt::Debug]) -> Vec<String> {
+    events.iter().map(|event| format!("{event:?}")).collect()
+}
+
+fn matched_case(
+    name: impl Into<String>,
+    result: &execution::ExecutionResult,
+    events: usize,
+    footprint: StateFootprintStats,
+) -> QualificationCase {
+    QualificationCase {
+        name: name.into(),
+        verdict: QualificationVerdict::Match,
+        events: Some(events),
+        steps: Some(result.steps),
+        branch_outcomes: Some(result.branches.len()),
+        branch_events: Some(result.ordered_branches.len()),
+        calls: Some(result.calls.len()),
+        call_events: Some(result.ordered_calls.len()),
+        state: Some(footprint.into()),
+        unmapped_mmio: Vec::new(),
+        difference: None,
+    }
+}
+
+fn artifact_report(role: &'static str, path: &Path, sha256: String) -> QualificationArtifact {
+    QualificationArtifact {
+        role,
+        path: path.to_owned(),
+        sha256,
+    }
+}
+
+fn single_case_report(
+    contract: &'static str,
+    vendor_symbol: &'static str,
+    artifacts: Vec<QualificationArtifact>,
+    result: &execution::ExecutionResult,
+    case: QualificationCase,
+) -> QualificationReport {
+    let matched = case.verdict == QualificationVerdict::Match;
+    let mismatched = usize::from(case.verdict == QualificationVerdict::Mismatch);
+    let incomplete = usize::from(case.verdict == QualificationVerdict::Incomplete);
+    QualificationReport {
+        schema: 1,
+        contract,
+        vendor_symbol,
+        verdict: case.verdict,
+        matched,
+        artifacts,
+        summary: QualificationSummary {
+            scenarios: 1,
+            matched: usize::from(matched),
+            mismatched,
+            incomplete,
+            failed: usize::from(!matched),
+            steps: result.steps,
+            branch_outcomes: result.branches.len(),
+            calls: result.calls.len(),
+        },
+        cases: vec![case],
+    }
+}
 
 pub fn verify_esp32s31_channel(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
-    print_oracles: bool,
-) -> Result<bool> {
+) -> Result<QualificationReport> {
     let artifact_digest = artifact_sha256(vendor_artifact)?;
     let companion_digest = artifact_sha256(vendor_companion)?;
-    if print_oracles {
-        println!(
-            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
-            vendor_artifact.display()
-        );
-        println!(
-            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
-            vendor_companion.display()
-        );
-    }
+    let artifacts = vec![
+        QualificationArtifact {
+            role: "archive",
+            path: vendor_artifact.to_owned(),
+            sha256: artifact_digest,
+        },
+        QualificationArtifact {
+            role: "rom-companion",
+            path: vendor_companion.to_owned(),
+            sha256: companion_digest,
+        },
+    ];
 
     let mut image = execution::ExecutableImage::load(vendor_artifact)?;
     image.add_companion(vendor_companion)?;
@@ -74,6 +143,7 @@ pub fn verify_esp32s31_channel(
     let mut passed = 0_usize;
     let mut reported_full_diff = false;
     let total = cases.len();
+    let mut case_reports = Vec::with_capacity(total);
     let mut vendor_session = execution::ExecutionSession::default();
     let mut rust_state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
     for (case_index, (name, channel_or_frequency, cbw)) in cases.into_iter().enumerate() {
@@ -95,13 +165,10 @@ pub fn verify_esp32s31_channel(
             .filter_map(unmapped_execution_address)
             .collect();
         if !unmapped.is_empty() {
-            for address in &unmapped {
-                println!("SEMANTIC-UNCOVERED\t{name}\tunmapped-mmio\t{address:#010x}");
-            }
-            println!(
-                "VERIFICATION-CASE\t{name}\tINCOMPLETE\tunmapped-mmio={}",
-                unmapped.len()
-            );
+            case_reports.push(QualificationCase::incomplete(
+                name,
+                unmapped.into_iter().collect(),
+            ));
             continue;
         }
         let footprint = verification::vendor_channel_state_footprint(&result, phy_param)?;
@@ -120,25 +187,40 @@ pub fn verify_esp32s31_channel(
                 .zip(&rust_events)
                 .position(|(vendor, rust)| vendor != rust)
                 .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
-            println!(
-                "SEMANTIC-DIFF\t{name}\tindex={divergence}\tvendor={:?}\trust={:?}",
-                vendor_events.get(divergence),
-                rust_events.get(divergence),
-            );
-            if !reported_full_diff {
-                for (index, event) in vendor_events.iter().enumerate() {
-                    println!("SEMANTIC-EVENT\t{name}\tvendor\t{index}\t{event:?}");
-                }
-                for (index, event) in rust_events.iter().enumerate() {
-                    println!("SEMANTIC-EVENT\t{name}\trust\t{index}\t{event:?}");
-                }
-                reported_full_diff = true;
-            }
-            println!(
-                "VERIFICATION-CASE\t{name}\tMISMATCH\tvendor-events={}\trust-events={}",
-                vendor_events.len(),
-                rust_events.len(),
-            );
+            let retain_full_diff = !reported_full_diff;
+            reported_full_diff = true;
+            case_reports.push(QualificationCase {
+                name,
+                verdict: QualificationVerdict::Mismatch,
+                events: Some(vendor_events.len()),
+                steps: Some(result.steps),
+                branch_outcomes: Some(result.branches.len()),
+                branch_events: Some(result.ordered_branches.len()),
+                calls: Some(result.calls.len()),
+                call_events: Some(result.ordered_calls.len()),
+                state: Some(footprint.into()),
+                unmapped_mmio: Vec::new(),
+                difference: Some(QualificationDifference {
+                    index: Some(divergence),
+                    vendor: vendor_events
+                        .get(divergence)
+                        .map(|event| format!("{event:?}")),
+                    rust: rust_events
+                        .get(divergence)
+                        .map(|event| format!("{event:?}")),
+                    reason: None,
+                    vendor_events: if retain_full_diff {
+                        debug_events(&vendor_events)
+                    } else {
+                        Vec::new()
+                    },
+                    rust_events: if retain_full_diff {
+                        debug_events(&rust_events)
+                    } else {
+                        Vec::new()
+                    },
+                }),
+            });
             continue;
         }
 
@@ -146,51 +228,60 @@ pub fn verify_esp32s31_channel(
         total_steps = total_steps.saturating_add(result.steps);
         all_branches.extend(result.branches.iter().copied());
         all_calls.extend(result.calls.iter().cloned());
-        println!(
-            "VERIFICATION-CASE\t{name}\tSTATE-SCENARIO-MATCH\tevents={}\tsteps={}\tbranch-outcomes={}\tbranch-events={}\tcalls={}\tcall-events={}\tstate-read-bytes={}\tstate-written-bytes={}\tstate-ranges={}",
-            vendor_events.len(),
-            result.steps,
-            result.branches.len(),
-            result.ordered_branches.len(),
-            result.calls.len(),
-            result.ordered_calls.len(),
-            footprint.read_bytes,
-            footprint.written_bytes,
-            footprint.classified_ranges,
-        );
+        case_reports.push(matched_case(name, &result, vendor_events.len(), footprint));
     }
-    let verdict = if passed == total {
-        "STATE-SCENARIO-MATCH"
-    } else {
-        "FAIL"
-    };
-    println!(
-        "VERIFICATION-SUMMARY\tphy_chip_set_chan\t{verdict}\tscenarios={total}\tmatched={passed}\tfailed={}\tsteps={total_steps}\tbranch-outcomes={}\tcalls={}",
-        total - passed,
-        all_branches.len(),
-        all_calls.len(),
-    );
-    Ok(passed == total)
+    let matched = passed == total;
+    let incomplete = case_reports
+        .iter()
+        .filter(|case| case.verdict == QualificationVerdict::Incomplete)
+        .count();
+    let mismatched = total - passed - incomplete;
+    Ok(QualificationReport {
+        schema: 1,
+        contract: "esp32s31-channel",
+        vendor_symbol: "phy_chip_set_chan",
+        verdict: if matched {
+            QualificationVerdict::Match
+        } else if incomplete != 0 {
+            QualificationVerdict::Incomplete
+        } else {
+            QualificationVerdict::Mismatch
+        },
+        matched,
+        artifacts,
+        cases: case_reports,
+        summary: QualificationSummary {
+            scenarios: total,
+            matched: passed,
+            mismatched,
+            incomplete,
+            failed: total - passed,
+            steps: total_steps,
+            branch_outcomes: all_branches.len(),
+            calls: all_calls.len(),
+        },
+    })
 }
 
 pub fn verify_esp32s31_rf_init(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
-    print_oracles: bool,
-) -> Result<bool> {
+) -> Result<QualificationReport> {
     let artifact_digest = artifact_sha256(vendor_artifact)?;
     let companion_digest = artifact_sha256(vendor_companion)?;
-    if print_oracles {
-        println!(
-            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
-            vendor_artifact.display()
-        );
-        println!(
-            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
-            vendor_companion.display()
-        );
-    }
+    let artifacts = vec![
+        QualificationArtifact {
+            role: "archive",
+            path: vendor_artifact.to_owned(),
+            sha256: artifact_digest,
+        },
+        QualificationArtifact {
+            role: "rom-companion",
+            path: vendor_companion.to_owned(),
+            sha256: companion_digest,
+        },
+    ];
 
     let mut image = execution::ExecutableImage::load(vendor_artifact)?;
     image.add_companion(vendor_companion)?;
@@ -208,6 +299,7 @@ pub fn verify_esp32s31_rf_init(
     let mut all_branches = BTreeSet::new();
     let mut all_calls = BTreeSet::new();
     let cases = ["cold-image", "retained-state"];
+    let mut case_reports = Vec::with_capacity(cases.len());
     for (case_index, name) in cases.into_iter().enumerate() {
         let mut scenario = verification::vendor_rf_init_scenario(phy_param, phy_functions_pointer);
         scenario.reset_policy = if case_index == 0 {
@@ -222,13 +314,10 @@ pub fn verify_esp32s31_rf_init(
             .filter_map(unmapped_execution_address)
             .collect();
         if !unmapped.is_empty() {
-            for address in &unmapped {
-                println!("SEMANTIC-UNCOVERED\t{name}\tunmapped-mmio\t{address:#010x}");
-            }
-            println!(
-                "VERIFICATION-CASE\t{name}\tINCOMPLETE\tunmapped-mmio={}",
-                unmapped.len()
-            );
+            case_reports.push(QualificationCase::incomplete(
+                name,
+                unmapped.into_iter().collect(),
+            ));
             continue;
         }
 
@@ -242,22 +331,30 @@ pub fn verify_esp32s31_rf_init(
                 .zip(&rust_events)
                 .position(|(vendor, rust)| vendor != rust)
                 .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
-            println!(
-                "SEMANTIC-DIFF\t{name}\tindex={divergence}\tvendor={:?}\trust={:?}",
-                vendor_events.get(divergence),
-                rust_events.get(divergence),
-            );
-            for (index, event) in vendor_events.iter().enumerate() {
-                println!("SEMANTIC-EVENT\t{name}\tvendor\t{index}\t{event:?}");
-            }
-            for (index, event) in rust_events.iter().enumerate() {
-                println!("SEMANTIC-EVENT\t{name}\trust\t{index}\t{event:?}");
-            }
-            println!(
-                "VERIFICATION-CASE\t{name}\tMISMATCH\tvendor-events={}\trust-events={}",
-                vendor_events.len(),
-                rust_events.len(),
-            );
+            case_reports.push(QualificationCase {
+                name: name.to_owned(),
+                verdict: QualificationVerdict::Mismatch,
+                events: Some(vendor_events.len()),
+                steps: Some(result.steps),
+                branch_outcomes: Some(result.branches.len()),
+                branch_events: Some(result.ordered_branches.len()),
+                calls: Some(result.calls.len()),
+                call_events: Some(result.ordered_calls.len()),
+                state: Some(footprint.into()),
+                unmapped_mmio: Vec::new(),
+                difference: Some(QualificationDifference {
+                    index: Some(divergence),
+                    vendor: vendor_events
+                        .get(divergence)
+                        .map(|event| format!("{event:?}")),
+                    rust: rust_events
+                        .get(divergence)
+                        .map(|event| format!("{event:?}")),
+                    reason: None,
+                    vendor_events: debug_events(&vendor_events),
+                    rust_events: debug_events(&rust_events),
+                }),
+            });
             continue;
         }
 
@@ -267,10 +364,25 @@ pub fn verify_esp32s31_rf_init(
             & 0x80
             != 0;
         if retained_rc != rust_state.rc_calibration_complete() {
-            println!(
-                "VERIFICATION-CASE\t{name}\tMISMATCH\tpersistent-rc-vendor={retained_rc}\tpersistent-rc-rust={}",
-                rust_state.rc_calibration_complete()
-            );
+            case_reports.push(QualificationCase {
+                name: name.to_owned(),
+                verdict: QualificationVerdict::Mismatch,
+                events: Some(vendor_events.len()),
+                steps: Some(result.steps),
+                branch_outcomes: Some(result.branches.len()),
+                branch_events: Some(result.ordered_branches.len()),
+                calls: Some(result.calls.len()),
+                call_events: Some(result.ordered_calls.len()),
+                state: Some(footprint.into()),
+                unmapped_mmio: Vec::new(),
+                difference: Some(QualificationDifference {
+                    reason: Some(format!(
+                        "persistent RC state differs: vendor={retained_rc}, rust={}",
+                        rust_state.rc_calibration_complete()
+                    )),
+                    ..Default::default()
+                }),
+            });
             continue;
         }
 
@@ -278,53 +390,52 @@ pub fn verify_esp32s31_rf_init(
         total_steps = total_steps.saturating_add(result.steps);
         all_branches.extend(result.branches.iter().copied());
         all_calls.extend(result.calls.iter().cloned());
-        println!(
-            "VERIFICATION-CASE\t{name}\tSTATE-SEQUENCE-MATCH\tevents={}\tsteps={}\tbranch-outcomes={}\tbranch-events={}\tcalls={}\tcall-events={}\tstate-read-bytes={}\tstate-written-bytes={}\tstate-ranges={}",
-            vendor_events.len(),
-            result.steps,
-            result.branches.len(),
-            result.ordered_branches.len(),
-            result.calls.len(),
-            result.ordered_calls.len(),
-            footprint.read_bytes,
-            footprint.written_bytes,
-            footprint.classified_ranges,
-        );
+        case_reports.push(matched_case(name, &result, vendor_events.len(), footprint));
     }
-
-    let verdict = if passed == cases.len() {
-        "STATE-SEQUENCE-MATCH"
-    } else {
-        "FAIL"
-    };
-    println!(
-        "VERIFICATION-SUMMARY\tphy_rf_init\t{verdict}\tscenarios={}\tmatched={passed}\tfailed={}\tsteps={total_steps}\tbranch-outcomes={}\tcalls={}",
-        cases.len(),
-        cases.len() - passed,
-        all_branches.len(),
-        all_calls.len(),
-    );
-    Ok(passed == cases.len())
+    let matched = passed == cases.len();
+    let incomplete = case_reports
+        .iter()
+        .filter(|case| case.verdict == QualificationVerdict::Incomplete)
+        .count();
+    let mismatched = cases.len() - passed - incomplete;
+    Ok(QualificationReport {
+        schema: 1,
+        contract: "esp32s31-rf-init",
+        vendor_symbol: "phy_rf_init",
+        verdict: if matched {
+            QualificationVerdict::Match
+        } else if incomplete != 0 {
+            QualificationVerdict::Incomplete
+        } else {
+            QualificationVerdict::Mismatch
+        },
+        matched,
+        artifacts,
+        cases: case_reports,
+        summary: QualificationSummary {
+            scenarios: cases.len(),
+            matched: passed,
+            mismatched,
+            incomplete,
+            failed: cases.len() - passed,
+            steps: total_steps,
+            branch_outcomes: all_branches.len(),
+            calls: all_calls.len(),
+        },
+    })
 }
 
 pub fn verify_esp32s31_bluetooth_txdc(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
-    print_oracles: bool,
-) -> Result<bool> {
+) -> Result<QualificationReport> {
     let artifact_digest = artifact_sha256(vendor_artifact)?;
     let companion_digest = artifact_sha256(vendor_companion)?;
-    if print_oracles {
-        println!(
-            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
-            vendor_artifact.display()
-        );
-        println!(
-            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
-            vendor_companion.display()
-        );
-    }
+    let artifacts = vec![
+        artifact_report("archive", vendor_artifact, artifact_digest),
+        artifact_report("rom-companion", vendor_companion, companion_digest),
+    ];
 
     let mut image = execution::ExecutableImage::load(vendor_artifact)?;
     image.add_companion(vendor_companion)?;
@@ -342,14 +453,14 @@ pub fn verify_esp32s31_bluetooth_txdc(
         .filter_map(unmapped_execution_address)
         .collect();
     if !unmapped.is_empty() {
-        for address in &unmapped {
-            println!("SEMANTIC-UNCOVERED\tbluetooth-txdc\tunmapped-mmio\t{address:#010x}");
-        }
-        println!(
-            "VERIFICATION-SUMMARY\tphy_bt_txdc_cal_new\tINCOMPLETE\tunmapped-mmio={}",
-            unmapped.len()
-        );
-        return Ok(false);
+        let case = QualificationCase::incomplete("bluetooth-txdc", unmapped.into_iter().collect());
+        return Ok(single_case_report(
+            "esp32s31-bluetooth-txdc",
+            "phy_bt_txdc_cal_new",
+            artifacts,
+            &result,
+            case,
+        ));
     }
 
     let vendor_events = verification::normalize_vendor_bluetooth_txdc(&image, &result, phy_param)?;
@@ -357,59 +468,64 @@ pub fn verify_esp32s31_bluetooth_txdc(
         open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
     )?;
     let matched = vendor_events == rust_events;
-    if !matched {
+    let difference = if matched {
+        None
+    } else {
         let divergence = vendor_events
             .iter()
             .zip(&rust_events)
             .position(|(vendor, rust)| vendor != rust)
             .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
-        println!(
-            "SEMANTIC-DIFF\tbluetooth-txdc\tindex={divergence}\tvendor={:?}\trust={:?}",
-            vendor_events.get(divergence),
-            rust_events.get(divergence),
-        );
-        for (index, event) in vendor_events.iter().enumerate() {
-            println!("SEMANTIC-EVENT\tbluetooth-txdc\tvendor\t{index}\t{event:?}");
-        }
-        for (index, event) in rust_events.iter().enumerate() {
-            println!("SEMANTIC-EVENT\tbluetooth-txdc\trust\t{index}\t{event:?}");
-        }
-    }
-    let verdict = if matched {
-        "STATE-SCENARIO-MATCH"
-    } else {
-        "MISMATCH"
+        Some(QualificationDifference {
+            index: Some(divergence),
+            vendor: vendor_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            rust: rust_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            reason: None,
+            vendor_events: debug_events(&vendor_events),
+            rust_events: debug_events(&rust_events),
+        })
     };
-    println!(
-        "VERIFICATION-SUMMARY\tphy_bt_txdc_cal_new\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}",
-        usize::from(matched),
-        usize::from(!matched),
-        vendor_events.len(),
-        result.steps,
-        result.branches.len(),
-        result.calls.len(),
-    );
-    Ok(matched)
+    let case = QualificationCase {
+        name: "bluetooth-txdc".to_owned(),
+        verdict: if matched {
+            QualificationVerdict::Match
+        } else {
+            QualificationVerdict::Mismatch
+        },
+        events: Some(vendor_events.len()),
+        steps: Some(result.steps),
+        branch_outcomes: Some(result.branches.len()),
+        branch_events: Some(result.ordered_branches.len()),
+        calls: Some(result.calls.len()),
+        call_events: Some(result.ordered_calls.len()),
+        state: None,
+        unmapped_mmio: Vec::new(),
+        difference,
+    };
+    Ok(single_case_report(
+        "esp32s31-bluetooth-txdc",
+        "phy_bt_txdc_cal_new",
+        artifacts,
+        &result,
+        case,
+    ))
 }
 
 pub fn verify_esp32s31_bluetooth_tx_power(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
-    print_oracles: bool,
-) -> Result<bool> {
+) -> Result<QualificationReport> {
     let artifact_digest = artifact_sha256(vendor_artifact)?;
     let companion_digest = artifact_sha256(vendor_companion)?;
-    if print_oracles {
-        println!(
-            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
-            vendor_artifact.display()
-        );
-        println!(
-            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
-            vendor_companion.display()
-        );
-    }
+    let artifacts = vec![
+        artifact_report("archive", vendor_artifact, artifact_digest),
+        artifact_report("rom-companion", vendor_companion, companion_digest),
+    ];
 
     let mut image = execution::ExecutableImage::load(vendor_artifact)?;
     image.add_companion(vendor_companion)?;
@@ -428,14 +544,15 @@ pub fn verify_esp32s31_bluetooth_tx_power(
         .filter_map(unmapped_execution_address)
         .collect();
     if !unmapped.is_empty() {
-        for address in &unmapped {
-            println!("SEMANTIC-UNCOVERED\tbluetooth-tx-power\tunmapped-mmio\t{address:#010x}");
-        }
-        println!(
-            "VERIFICATION-SUMMARY\tphy_bt_tx_pwctrl_init\tINCOMPLETE\tunmapped-mmio={}",
-            unmapped.len()
-        );
-        return Ok(false);
+        let case =
+            QualificationCase::incomplete("bluetooth-tx-power", unmapped.into_iter().collect());
+        return Ok(single_case_report(
+            "esp32s31-bluetooth-tx-power",
+            "phy_bt_tx_pwctrl_init",
+            artifacts,
+            &result,
+            case,
+        ));
     }
 
     let footprint = verification::vendor_bluetooth_tx_power_state_footprint(&result, phy_param)?;
@@ -445,62 +562,64 @@ pub fn verify_esp32s31_bluetooth_tx_power(
         open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
     )?;
     let matched = vendor_events == rust_events;
-    if !matched {
+    let difference = if matched {
+        None
+    } else {
         let divergence = vendor_events
             .iter()
             .zip(&rust_events)
             .position(|(vendor, rust)| vendor != rust)
             .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
-        println!(
-            "SEMANTIC-DIFF\tbluetooth-tx-power\tindex={divergence}\tvendor={:?}\trust={:?}",
-            vendor_events.get(divergence),
-            rust_events.get(divergence),
-        );
-        for (index, event) in vendor_events.iter().enumerate() {
-            println!("SEMANTIC-EVENT\tbluetooth-tx-power\tvendor\t{index}\t{event:?}");
-        }
-        for (index, event) in rust_events.iter().enumerate() {
-            println!("SEMANTIC-EVENT\tbluetooth-tx-power\trust\t{index}\t{event:?}");
-        }
-    }
-    let verdict = if matched {
-        "STATE-SCENARIO-MATCH"
-    } else {
-        "MISMATCH"
+        Some(QualificationDifference {
+            index: Some(divergence),
+            vendor: vendor_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            rust: rust_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            reason: None,
+            vendor_events: debug_events(&vendor_events),
+            rust_events: debug_events(&rust_events),
+        })
     };
-    println!(
-        "VERIFICATION-SUMMARY\tphy_bt_tx_pwctrl_init\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}\tstate-read-bytes={}\tstate-write-bytes={}\tstate-ranges={}",
-        usize::from(matched),
-        usize::from(!matched),
-        vendor_events.len(),
-        result.steps,
-        result.branches.len(),
-        result.calls.len(),
-        footprint.read_bytes,
-        footprint.written_bytes,
-        footprint.classified_ranges,
-    );
-    Ok(matched)
+    let case = QualificationCase {
+        name: "bluetooth-tx-power".to_owned(),
+        verdict: if matched {
+            QualificationVerdict::Match
+        } else {
+            QualificationVerdict::Mismatch
+        },
+        events: Some(vendor_events.len()),
+        steps: Some(result.steps),
+        branch_outcomes: Some(result.branches.len()),
+        branch_events: Some(result.ordered_branches.len()),
+        calls: Some(result.calls.len()),
+        call_events: Some(result.ordered_calls.len()),
+        state: Some(footprint.into()),
+        unmapped_mmio: Vec::new(),
+        difference,
+    };
+    Ok(single_case_report(
+        "esp32s31-bluetooth-tx-power",
+        "phy_bt_tx_pwctrl_init",
+        artifacts,
+        &result,
+        case,
+    ))
 }
 
 pub fn verify_esp32s31_bluetooth_txdc_pwdet(
     svd: &MmioRegisterMap,
     vendor_artifact: &Path,
     vendor_companion: &Path,
-    print_oracles: bool,
-) -> Result<bool> {
+) -> Result<QualificationReport> {
     let artifact_digest = artifact_sha256(vendor_artifact)?;
     let companion_digest = artifact_sha256(vendor_companion)?;
-    if print_oracles {
-        println!(
-            "ORACLE\tarchive\t{}\tsha256={artifact_digest}",
-            vendor_artifact.display()
-        );
-        println!(
-            "ORACLE\trom-companion\t{}\tsha256={companion_digest}",
-            vendor_companion.display()
-        );
-    }
+    let artifacts = vec![
+        artifact_report("archive", vendor_artifact, artifact_digest),
+        artifact_report("rom-companion", vendor_companion, companion_digest),
+    ];
 
     let mut image = execution::ExecutableImage::load(vendor_artifact)?;
     image.add_companion(vendor_companion)?;
@@ -519,14 +638,15 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
         .filter_map(unmapped_execution_address)
         .collect();
     if !unmapped.is_empty() {
-        for address in &unmapped {
-            println!("SEMANTIC-UNCOVERED\tbluetooth-txdc-pwdet\tunmapped-mmio\t{address:#010x}");
-        }
-        println!(
-            "VERIFICATION-SUMMARY\tphy_txdc_cal_pwdet_init\tINCOMPLETE\tunmapped-mmio={}",
-            unmapped.len()
-        );
-        return Ok(false);
+        let case =
+            QualificationCase::incomplete("bluetooth-txdc-pwdet", unmapped.into_iter().collect());
+        return Ok(single_case_report(
+            "esp32s31-bluetooth-txdc-pwdet",
+            "phy_txdc_cal_pwdet_init",
+            artifacts,
+            &result,
+            case,
+        ));
     }
 
     let footprint = verification::vendor_bluetooth_txdc_pwdet_state_footprint(&result, phy_param)?;
@@ -536,55 +656,58 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
         open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
     )?;
     let matched = vendor_events == rust_events;
-    if !matched {
+    let difference = if matched {
+        None
+    } else {
         let divergence = vendor_events
             .iter()
             .zip(&rust_events)
             .position(|(vendor, rust)| vendor != rust)
             .unwrap_or_else(|| vendor_events.len().min(rust_events.len()));
-        println!(
-            "SEMANTIC-DIFF\tbluetooth-txdc-pwdet\tindex={divergence}\tvendor={:?}\trust={:?}",
-            vendor_events.get(divergence),
-            rust_events.get(divergence),
-        );
         let window_start = divergence.saturating_sub(8);
         let window_end = divergence
             .saturating_add(9)
             .max(window_start)
             .min(vendor_events.len().max(rust_events.len()));
-        for (index, event) in vendor_events
-            .iter()
-            .enumerate()
-            .skip(window_start)
-            .take(window_end - window_start)
-        {
-            println!("SEMANTIC-EVENT\tbluetooth-txdc-pwdet\tvendor\t{index}\t{event:?}");
-        }
-        for (index, event) in rust_events
-            .iter()
-            .enumerate()
-            .skip(window_start)
-            .take(window_end - window_start)
-        {
-            println!("SEMANTIC-EVENT\tbluetooth-txdc-pwdet\trust\t{index}\t{event:?}");
-        }
-    }
-    let verdict = if matched {
-        "STATE-SCENARIO-MATCH"
-    } else {
-        "MISMATCH"
+        Some(QualificationDifference {
+            index: Some(divergence),
+            vendor: vendor_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            rust: rust_events
+                .get(divergence)
+                .map(|event| format!("{event:?}")),
+            reason: None,
+            vendor_events: debug_events(
+                &vendor_events[window_start..vendor_events.len().min(window_end)],
+            ),
+            rust_events: debug_events(
+                &rust_events[window_start..rust_events.len().min(window_end)],
+            ),
+        })
     };
-    println!(
-        "VERIFICATION-SUMMARY\tphy_txdc_cal_pwdet_init\t{verdict}\tscenarios=1\tmatched={}\tfailed={}\tevents={}\tsteps={}\tbranch-outcomes={}\tcalls={}\tstate-read-bytes={}\tstate-write-bytes={}\tstate-ranges={}",
-        usize::from(matched),
-        usize::from(!matched),
-        vendor_events.len(),
-        result.steps,
-        result.branches.len(),
-        result.calls.len(),
-        footprint.read_bytes,
-        footprint.written_bytes,
-        footprint.classified_ranges,
-    );
-    Ok(matched)
+    let case = QualificationCase {
+        name: "bluetooth-txdc-pwdet".to_owned(),
+        verdict: if matched {
+            QualificationVerdict::Match
+        } else {
+            QualificationVerdict::Mismatch
+        },
+        events: Some(vendor_events.len()),
+        steps: Some(result.steps),
+        branch_outcomes: Some(result.branches.len()),
+        branch_events: Some(result.ordered_branches.len()),
+        calls: Some(result.calls.len()),
+        call_events: Some(result.ordered_calls.len()),
+        state: Some(footprint.into()),
+        unmapped_mmio: Vec::new(),
+        difference,
+    };
+    Ok(single_case_report(
+        "esp32s31-bluetooth-txdc-pwdet",
+        "phy_txdc_cal_pwdet_init",
+        artifacts,
+        &result,
+        case,
+    ))
 }

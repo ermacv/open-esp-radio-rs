@@ -52,7 +52,6 @@ pub(super) fn run(arguments: ExecuteCompareArgs, svd: &MmioRegisterMap) -> Resul
     )?;
     let matched = report.verdict == ComparisonVerdict::Match;
     crate::cli::output::render_report(
-        "execution-comparison",
         &report,
         || print_execution_comparison(&report),
         || print_execution_comparison(&report),

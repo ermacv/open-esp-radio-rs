@@ -19,9 +19,7 @@ use open_radio_vendor_semantics::{
     SymbolicValue, evaluate_for_input,
 };
 
-use crate::{
-    MmioRegisterMap, Result, StructuralPointerContext, artifact, artifact_sha256, execution,
-};
+use crate::{MmioRegisterMap, Result, StructuralPointerContext, artifact, execution};
 
 use super::{code_closure_sha256, inventory_symbol_sha256};
 
@@ -325,23 +323,10 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
     rust_companion: Option<&Path>,
     rust_symbol: &str,
     policy: &EffectPolicy,
-    print_oracles: bool,
 ) -> Result<DriverAdapterVerification> {
     validate_policy(policy)?;
     let vendor_inventory = vendor_inventory
         .ok_or("hal_mac_txq_enable verification requires the caller-owned raw libpp inventory")?;
-    if print_oracles {
-        let vendor_archive_digest = artifact_sha256(vendor_inventory)?;
-        let vendor_linked_digest = artifact_sha256(vendor_artifact)?;
-        println!(
-            "ORACLE\tlibpp\t{}\tsha256={vendor_archive_digest}",
-            vendor_inventory.display()
-        );
-        println!(
-            "ORACLE\tlibpp-linked\t{}\tsha256={vendor_linked_digest}",
-            vendor_artifact.display()
-        );
-    }
     let vendor_proof = validate_vendor_register_slice(vendor_inventory, svd)?;
 
     let mut vendor_image = execution::ExecutableImage::load(vendor_artifact)?;
@@ -399,11 +384,6 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
             initial | ENABLE_VALID,
             result.steps
         ));
-        println!(
-            "TXQ-ENABLE-SLICE-CASE\tqueue-{queue}\t{}\taddress={address:#010x}\twrite={:#010x}",
-            if case_matched { "MATCH" } else { "MISMATCH" },
-            initial | ENABLE_VALID,
-        );
     }
     if !required.unresolved_edges.is_empty() {
         return Err(format!(
@@ -427,10 +407,6 @@ pub fn verify_esp32s31_hal_mac_txq_enable_register_slice(
         "rust-branch-outcomes {} covered\n",
         required.branch_outcomes.len()
     ));
-    println!(
-        "TXQ-ENABLE-SLICE-SUMMARY\t{SYMBOL}\t{}\tscenarios=4\tscope=register-prefix",
-        if matched { "MATCH" } else { "MISMATCH" }
-    );
     Ok(DriverAdapterVerification { matched, canonical })
 }
 

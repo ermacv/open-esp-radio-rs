@@ -59,12 +59,7 @@ pub(super) fn run(arguments: ImageAuditArgs) -> Result<bool> {
             })
             .collect(),
     };
-    crate::cli::output::render_report(
-        "direct-target-audit",
-        &report,
-        || render_human(&report),
-        || render_tsv(&report),
-    );
+    crate::cli::output::render_report(&report, || render_human(&report), || render_tsv(&report));
     Ok(passed)
 }
 

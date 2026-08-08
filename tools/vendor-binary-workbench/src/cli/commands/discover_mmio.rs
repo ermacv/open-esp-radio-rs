@@ -175,7 +175,7 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<
         )?;
     }
     let document = super::discover_mmio_json::document(&report, publication.clone())?;
-    if !crate::cli::output::structured("mmio-discovery", &document) {
+    if !crate::cli::output::structured(&document) {
         print_report(&report);
         if let Some(publication) = publication {
             outputln!(

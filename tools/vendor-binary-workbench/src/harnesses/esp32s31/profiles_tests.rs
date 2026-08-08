@@ -140,3 +140,24 @@ fn declared_argument_domain_requires_an_executed_case_for_every_value() {
         .to_string();
     assert!(error.contains("a0=0x3"), "{error}");
 }
+
+#[test]
+fn malformed_profile_retains_its_physical_source_line() {
+    let input = "profile fixture\nvendor-source fixture\nunknown value\n";
+    let path = std::env::temp_dir().join(format!(
+        "vendor-workbench-profile-diagnostic-{}.profile",
+        std::process::id()
+    ));
+    std::fs::write(&path, input).unwrap();
+    let error = load(&path).unwrap_err();
+    std::fs::remove_file(&path).unwrap();
+
+    assert!(matches!(
+        error,
+        crate::error::WorkbenchError::ManifestSource {
+            path: reported,
+            span,
+            ..
+        } if reported == path && span.offset() == input.find("unknown").unwrap()
+    ));
+}

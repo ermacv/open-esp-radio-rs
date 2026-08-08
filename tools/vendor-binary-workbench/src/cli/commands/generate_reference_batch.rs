@@ -305,7 +305,7 @@ pub(super) fn run(
         blocked: &blocked,
     })?;
     write_manifest(&manifest, &document)?;
-    if !crate::cli::output::structured("reference-generation", &document) {
+    if !crate::cli::output::structured(&document) {
         print_generation_report(&output_dir, &manifest, symbols.len(), &generated, &blocked);
     }
     Ok(true)

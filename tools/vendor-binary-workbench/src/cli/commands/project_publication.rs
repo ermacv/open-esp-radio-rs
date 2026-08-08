@@ -248,7 +248,7 @@ fn finish(check: bool, summary: PipelineSummary) -> Result<bool> {
         blocked: summary.blocked,
         not_configured: summary.not_configured,
     };
-    if !crate::cli::output::structured("project-publication", &document) {
+    if !crate::cli::output::structured(&document) {
         match crate::cli::output::format() {
             OutputFormat::Human => print_human(&document),
             OutputFormat::Tsv => print_tsv(&document),

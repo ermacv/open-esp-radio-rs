@@ -84,10 +84,12 @@ pub(crate) struct FunctionWorkspace {
 }
 
 impl FunctionWorkspace {
-    pub(crate) fn load(reports: &[(String, std::path::PathBuf)], pack: &Path) -> Result<Self> {
+    pub(crate) fn load(reports: &[(String, std::path::PathBuf)], pack_path: &Path) -> Result<Self> {
         let facts = FunctionFacts::load(reports)?;
-        let pack = FunctionPack::load(pack)?;
-        let summary = super::pack_validate::validate(&pack, &facts)?;
+        let pack = FunctionPack::load(pack_path)?;
+        let summary = super::pack_validate::validate(&pack, &facts).map_err(|error| {
+            crate::error::WorkbenchError::manifest("function pack", pack_path, error)
+        })?;
         Ok(Self {
             facts,
             pack,

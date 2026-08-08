@@ -226,7 +226,7 @@ pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Resul
     tracing::debug!(inputs = inputs.len(), "resolved interface discovery inputs");
     let discovery = discover(&inputs, &options)?;
     let document = super::interface_discovery_json::document(&discovery)?;
-    if !crate::cli::output::structured("interface-discovery", &document) {
+    if !crate::cli::output::structured(&document) {
         print_report(&discovery);
     }
     if let Some(path) = options.json_report.as_deref() {

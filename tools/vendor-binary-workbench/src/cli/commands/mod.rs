@@ -30,8 +30,7 @@ mod project_status;
 mod registers;
 mod symbol_inventory;
 mod tooling;
-mod verify_contract_channel;
-mod verify_contract_rf_init;
+mod verify_contract;
 mod verify_evidence;
 mod verify_inventory;
 mod verify_profiles;
@@ -223,13 +222,13 @@ pub(super) fn run(
         },
         Command::VerifyContractChannel => match arguments {
             CommandArguments::VerifyContract(args) => {
-                verify_contract_channel::run(args, svd, target.require_available_harness()?)
+                verify_contract::run(args, svd, target.require_available_harness()?, "channel")
             }
             _ => unreachable!(),
         },
         Command::VerifyContractRfInit => match arguments {
             CommandArguments::VerifyContract(args) => {
-                verify_contract_rf_init::run(args, svd, target.require_available_harness()?)
+                verify_contract::run(args, svd, target.require_available_harness()?, "rf-init")
             }
             _ => unreachable!(),
         },

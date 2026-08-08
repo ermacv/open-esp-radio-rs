@@ -242,6 +242,7 @@ description = "Observed read/write event word."
     std::fs::write(&pack, stale).unwrap();
     let error = FunctionWorkspace::load(&reports, &pack).unwrap_err();
     assert!(error.to_string().contains("stale function input digest"));
+    assert!(error.to_string().contains(&pack.display().to_string()));
     std::fs::remove_dir_all(directory).unwrap();
 }
 

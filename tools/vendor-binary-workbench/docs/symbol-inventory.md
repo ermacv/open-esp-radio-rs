@@ -12,8 +12,11 @@ cargo vendor-binary-workbench symbols inventory \
 ```
 
 Use `--name-prefix PREFIX` for a focused investigation and
-`--undefined-only` to list imports. Both filters affect emitted `SYMBOL` rows
-and the JSON `symbols` array; summary counts still describe the complete input.
+`--undefined-only` to list imports. Both filters affect the human symbols
+table, TSV `SYMBOL` rows and the JSON `symbols` array; summary counts still
+describe the complete input. The default human view separates artifact,
+symbol and resolution-candidate tables so archive association evidence stays
+visible without exposing the TSV protocol as presentation.
 
 A project can own the complete, unfiltered inventory destination:
 

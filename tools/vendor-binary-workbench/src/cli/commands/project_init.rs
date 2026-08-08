@@ -58,7 +58,7 @@ pub(super) fn run(arguments: ProjectInitArgs) -> Result<bool> {
             DEFAULT_PROJECT_MANIFEST
         ),
     };
-    if !crate::cli::output::structured("project-init", &report) {
+    if !crate::cli::output::structured(&report) {
         outputln!(
             "PROJECT-INIT\tstatus=created\tid={}\tarchitecture=riscv32\tsources={}\tmmio-regions={}\timported-svd={}\tpath={}",
             report.id,

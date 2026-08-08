@@ -110,7 +110,7 @@ pub(super) fn run(
             .collect(),
         documents: document_count,
     };
-    if !crate::cli::output::structured("ir-build", &document) {
+    if !crate::cli::output::structured(&document) {
         match crate::cli::output::format() {
             OutputFormat::Human => print_human(&document),
             OutputFormat::Tsv => print_tsv(&document),

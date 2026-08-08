@@ -16,7 +16,7 @@ use crate::{Result, error::WorkbenchError};
 pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
     let text = fs::read_to_string(path)?;
     parse_evidence_baseline(path, &text)
-        .map_err(|error| WorkbenchError::manifest("evidence baseline", path, error))
+        .map_err(|error| WorkbenchError::manifest_document("evidence baseline", path, &text, error))
 }
 
 fn parse_evidence_baseline(path: &Path, text: &str) -> Result<EvidenceSet> {
@@ -27,14 +27,16 @@ fn parse_evidence_baseline(path: &Path, text: &str) -> Result<EvidenceSet> {
         if line.is_empty() {
             continue;
         }
-        let fields = line.split_whitespace().collect::<Vec<_>>();
-        let ["evidence", source, symbol, kind] = fields.as_slice() else {
-            return Err(format!(
-                "invalid evidence baseline line {line_number}; expected: evidence SOURCE SYMBOL KIND"
-            )
-            .into());
-        };
-        record_evidence(&mut evidence, source, symbol, *kind)?;
+        (|| {
+            let fields = line.split_whitespace().collect::<Vec<_>>();
+            let ["evidence", source, symbol, kind] = fields.as_slice() else {
+                return Err(
+                    "expected evidence baseline directive: evidence SOURCE SYMBOL KIND".into(),
+                );
+            };
+            record_evidence(&mut evidence, source, symbol, *kind)
+        })()
+        .map_err(|error: WorkbenchError| error.at_line(line_number))?;
     }
     if evidence.is_empty() {
         return Err(format!("evidence baseline {} is empty", path.display()).into());
@@ -193,8 +195,9 @@ struct StoredVerificationReport {
 #[tracing::instrument(name = "load_verification_report", fields(path = %path.display()))]
 pub(crate) fn load_evidence_report(path: &Path) -> Result<EvidenceSet> {
     let text = fs::read_to_string(path)?;
-    parse_evidence_report(path, &text)
-        .map_err(|error| WorkbenchError::manifest("verification report", path, error))
+    parse_evidence_report(path, &text).map_err(|error| {
+        WorkbenchError::manifest_document("verification report", path, &text, error)
+    })
 }
 
 fn parse_evidence_report(path: &Path, text: &str) -> Result<EvidenceSet> {
@@ -217,4 +220,20 @@ fn parse_evidence_report(path: &Path, text: &str) -> Result<EvidenceSet> {
         return Err(format!("verification report {} has no evidence", path.display()).into());
     }
     Ok(evidence)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn malformed_baseline_retains_its_physical_source_line() {
+        let error = parse_evidence_baseline(
+            Path::new("fixture.evidence"),
+            "# reviewed baseline\nevidence incomplete\n",
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, WorkbenchError::InputLine { line: 2, .. }));
+    }
 }

@@ -489,7 +489,7 @@ pub(super) fn run(
             );
         }
     };
-    crate::cli::output::render_report("artifact-analysis", &document, render, render);
+    crate::cli::output::render_report(&document, render, render);
     Ok(incomplete == 0)
 }
 

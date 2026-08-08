@@ -127,7 +127,7 @@ pub(super) fn run(arguments: ProjectConfigureArgs, manifest: &Path) -> Result<bo
             .map_or(0, |pack| pack.semantic_operations),
         manifest: manifest.display().to_string(),
     };
-    if !crate::cli::output::structured("project-configure", &report) {
+    if !crate::cli::output::structured(&report) {
         print_report(&report);
     }
     Ok(true)

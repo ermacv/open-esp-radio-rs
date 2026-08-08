@@ -87,10 +87,15 @@ pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
         report.path.display()
     );
     outputln!(
-        "  tables={} observed-slots={} observed-calls={}",
-        report.tables,
-        report.observed_slots,
-        report.observed_calls
+        "{}",
+        crate::cli::table::render(
+            ["Tables", "Observed slots", "Observed calls"],
+            [[
+                report.tables.to_string(),
+                report.observed_slots.to_string(),
+                report.observed_calls.to_string(),
+            ]],
+        )
     );
 }
 
@@ -112,30 +117,106 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
         report.pack.display()
     );
     outputln!(
-        "  anchors: reviewed={} ignored={} unreviewed={} manual={}",
-        report.reviewed_anchors,
-        report.ignored_anchors,
-        report.unreviewed_anchors,
-        report.manual_anchors
+        "Coverage:\n{}",
+        crate::cli::table::render(
+            [
+                "Scope",
+                "Observed",
+                "Reviewed",
+                "Ignored",
+                "Unreviewed",
+                "Manual"
+            ],
+            [
+                [
+                    "Anchors".into(),
+                    report.fact_tables.to_string(),
+                    report.reviewed_anchors.to_string(),
+                    report.ignored_anchors.to_string(),
+                    report.unreviewed_anchors.to_string(),
+                    report.manual_anchors.to_string(),
+                ],
+                [
+                    "Slots".into(),
+                    report.observed_slots.to_string(),
+                    report.reviewed_slots.to_string(),
+                    report.ignored_slots.to_string(),
+                    report.unreviewed_slots.to_string(),
+                    report.manual_slots.to_string(),
+                ],
+            ],
+        )
     );
-    outputln!(
-        "  slots: observed={} reviewed={} ignored={} unreviewed={} resolved-calls={}",
-        report.observed_slots,
-        report.reviewed_slots,
-        report.ignored_slots,
-        report.unreviewed_slots,
-        report.resolved_calls
-    );
-    for binding in &report.bindings {
+    if !report.bindings.is_empty() {
         outputln!(
-            "  {:<24} offset={:+#x} name={} calls={} semantic={}",
-            binding.anchor,
-            binding.offset,
-            binding.name,
-            binding.calls.len(),
-            binding.semantic.unwrap_or("-")
+            "Bindings:\n{}",
+            crate::cli::table::render(
+                [
+                    "Anchor", "Source", "Layout", "Offset", "Width", "Name", "ABI", "Semantic",
+                    "Calls",
+                ],
+                report.bindings.iter().map(|binding| [
+                    binding.anchor.to_owned(),
+                    binding.source.to_owned(),
+                    binding.layout_version.to_owned(),
+                    format!("{:+#x}", binding.offset),
+                    binding.width.to_string(),
+                    binding.name.to_owned(),
+                    format!(
+                        "{}({})->{}{}",
+                        report.calling_convention,
+                        binding.arguments.join(", "),
+                        binding.return_type,
+                        if binding.variadic { ", ..." } else { "" },
+                    ),
+                    binding.semantic.unwrap_or("-").to_owned(),
+                    binding.calls.len().to_string(),
+                ]),
+            )
         );
+        let calls = report
+            .bindings
+            .iter()
+            .flat_map(|binding| {
+                binding.calls.iter().map(move |call| {
+                    [
+                        binding.anchor.to_owned(),
+                        call.function.to_owned(),
+                        format!("{:#010x}", call.site),
+                        call.kind.to_owned(),
+                        call.arguments
+                            .iter()
+                            .map(|argument| {
+                                format!(
+                                    "a{}:{}={}",
+                                    argument.index, argument.kind, argument.expression
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ]
+                })
+            })
+            .collect::<Vec<_>>();
+        if !calls.is_empty() {
+            outputln!(
+                "Resolved calls:\n{}",
+                crate::cli::table::render(
+                    ["Anchor", "Function", "Site", "Kind", "Arguments"],
+                    calls,
+                )
+            );
+        }
     }
+    outputln!(
+        "Summary: observed-calls={} resolved-calls={} semantic-links={} operations={} artifact-guards={} runtime-guards={}",
+        report.observed_calls,
+        report.resolved_calls,
+        report.semantic_links,
+        report.semantic_operations,
+        report.artifact_guards,
+        report.runtime_guards,
+    );
 }
 
 pub(super) fn print_workspace_tsv(report: &InterfaceWorkspaceDocument<'_>) {

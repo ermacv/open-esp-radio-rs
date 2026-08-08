@@ -1,0 +1,4 @@
+schema = 1
+id = "generic-rv32-fixture"
+target-spec = "target.spec"
+memory-map = "memory.toml"

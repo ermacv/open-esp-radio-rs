@@ -2,141 +2,191 @@ use super::*;
 
 fn write_ir(path: &std::path::Path) {
     let digest = "a".repeat(64);
-    std::fs::write(
-        path,
-        r#"{
-  "schema_version": 35,
-  "command": "ir export",
-  "completeness_claim": false,
-  "mmio_field_semantics_claim": false,
-  "artifacts": [
-    {
-      "source": "rom",
-      "artifact": {
-        "path": "rom.elf",
-        "sha256": "__ARTIFACT_DIGEST__"
-      }
-    }
-  ],
-  "mmio_registers": [],
-  "functions": [
-    {
-      "source": "rom",
-      "identity": "rom::vendor_irq",
-      "member": null,
-      "symbol": "vendor_irq",
-      "selection": "symbol-prefix-root",
-      "object_offset": 256,
-      "complete": true,
-      "mmio_accesses": [],
-      "calls": [
-        {
-          "kind": "internal",
-          "target": "rom::vendor_helper",
-          "semantic_operation": null,
-          "site": 128,
-          "arguments": [],
-          "guard_paths": [{"guards": []}]
-        }
-      ],
-      "scenario_suggestions": [],
-      "pseudo": "fn vendor_irq(ctx0: *mut u8) { ctx0.write32(+0x4, value); }",
-      "effect_summary": {
-        "call_graph_closed": true,
-        "context_projection_complete": true,
-        "context_projection_blockers": [],
-        "reachable_functions": ["rom::vendor_helper"],
-        "context_fields": [
-          {
-            "argument": 0,
-            "offset": 4,
-            "width": 32,
-            "reads": 1,
-            "writes": 1,
-            "write_mask": 4294967295
-          }
-        ],
-        "memory_fields": [
-          {
-            "object": {"kind": "argument", "index": 0},
-            "offset": 4,
-            "width": 32,
-            "reads": 1,
-            "writes": 1,
-            "write_mask": 4294967295,
-            "origins": ["rom::vendor_irq"],
-            "paths": ["entry"],
-            "write_values": ["value"]
-          }
-        ],
-        "semantic_operations": [
-          {"operation": "rtos.queue.send"}
-        ],
-        "trampoline_calls": [],
-        "event_dispatches": []
-      }
-    },
-    {
-      "source": "rom",
-      "identity": "rom::vendor_helper",
-      "member": null,
-      "symbol": "vendor_helper",
-      "selection": "reachable-internal",
-      "object_offset": 512,
-      "complete": true,
-      "mmio_accesses": [],
-      "calls": [
-        {
-          "kind": "external",
-          "target": "wifi_osi::queue_send_from_isr",
-          "semantic_operation": "rtos.queue.send-from-isr",
-          "site": 288,
-          "arguments": ["?", "0x0000002a"],
-          "guard_paths": [{
-            "guards": [{
-              "site": 288,
-              "condition": "(arg0 & 0x00000001) != 0",
-              "operation": "not-equal",
-              "taken": true,
-              "result_sources": [],
-              "direct_mmio_sources": []
-            }]
-          }]
-        }
-      ],
-      "scenario_suggestions": [],
-      "pseudo": "fn vendor_helper() { semantic.rtos_queue_send_from_isr(); }",
-      "effect_summary": {
-        "call_graph_closed": true,
-        "context_projection_complete": true,
-        "context_projection_blockers": [],
-        "reachable_functions": [],
-        "context_fields": [],
-        "memory_fields": [
-          {
-            "object": {"kind": "global", "member": "state.o", "symbol": "phy_state"},
-            "offset": 12,
-            "width": 16,
-            "reads": 0,
-            "writes": 1,
-            "write_mask": 65535,
-            "origins": ["rom::vendor_helper"],
-            "paths": ["entry"],
-            "write_values": ["7"]
-          }
-        ],
-        "semantic_operations": [
-          {"operation": "rtos.queue.send"}
-        ],
-        "trampoline_calls": [],
-        "event_dispatches": []
-      }
-    }
-  ]
-}"#
-        .replace("__ARTIFACT_DIGEST__", &digest),
+    let call = |kind: &'static str,
+                target: &str,
+                site: u32,
+                semantic_operation: Option<String>,
+                arguments: Vec<String>,
+                guards: Vec<crate::LinkedCallGuard>| crate::LinkedCall {
+        kind,
+        target: target.to_owned(),
+        site: Some(site),
+        tail: false,
+        result_modeled: false,
+        semantics: None,
+        semantic_operation,
+        semantic_contract: None,
+        replacement_hint: None,
+        project_symbol: None,
+        project_candidates: Vec::new(),
+        trampoline: None,
+        argument_shapes: 1,
+        arguments,
+        argument_bindings: Vec::new(),
+        typed_arguments: Vec::new(),
+        guard_paths: Some(vec![crate::LinkedCallGuardPath { guards }]),
+    };
+    let provenance = || crate::LinkedReturnProvenance {
+        exact: false,
+        known_zero_bits: 0,
+        known_one_bits: 0,
+        unknown_bits: u32::MAX,
+        sources: Vec::new(),
+    };
+    let semantic_summary = || crate::LinkedSummarySemantic {
+        operation: "rtos.queue.send".to_owned(),
+        call_shapes: 1,
+        targets: vec!["wifi_osi::queue_send_from_isr".to_owned()],
+        replacement_hints: Vec::new(),
+        origins: vec!["rom::vendor_helper".to_owned()],
+    };
+    let mut irq_effects = crate::LinkedEffectSummary {
+        call_graph_closed: true,
+        reachable_functions: vec!["rom::vendor_helper".to_owned()],
+        context_projection_complete: true,
+        ..crate::LinkedEffectSummary::default()
+    };
+    irq_effects
+        .context_fields
+        .push(crate::LinkedSummaryContextField {
+            argument: 0,
+            offset: 4,
+            width: 32,
+            reads: 1,
+            writes: 1,
+            write_mask: u32::MAX,
+            origins: vec!["rom::vendor_irq".to_owned()],
+            paths: vec!["entry".to_owned()],
+            write_values: vec!["value".to_owned()],
+        });
+    irq_effects
+        .memory_fields
+        .push(crate::LinkedSummaryMemoryField {
+            object: crate::LinkedMemoryObject::Argument { index: 0 },
+            offset: 4,
+            width: 32,
+            reads: 1,
+            writes: 1,
+            write_mask: u32::MAX,
+            origins: vec!["rom::vendor_irq".to_owned()],
+            paths: vec!["entry".to_owned()],
+            write_values: vec!["value".to_owned()],
+        });
+    irq_effects.semantic_operations.push(semantic_summary());
+
+    let mut helper_effects = crate::LinkedEffectSummary {
+        call_graph_closed: true,
+        context_projection_complete: true,
+        ..crate::LinkedEffectSummary::default()
+    };
+    helper_effects
+        .memory_fields
+        .push(crate::LinkedSummaryMemoryField {
+            object: crate::LinkedMemoryObject::Global {
+                member: Some("state.o".to_owned()),
+                symbol: "phy_state".to_owned(),
+            },
+            offset: 12,
+            width: 16,
+            reads: 0,
+            writes: 1,
+            write_mask: 65535,
+            origins: vec!["rom::vendor_helper".to_owned()],
+            paths: vec!["entry".to_owned()],
+            write_values: vec!["7".to_owned()],
+        });
+    helper_effects.semantic_operations.push(semantic_summary());
+
+    let function = |identity: &str,
+                    symbol: &str,
+                    selection: &'static str,
+                    object_offset: u32,
+                    calls: Vec<crate::LinkedCall>,
+                    effect_summary: crate::LinkedEffectSummary,
+                    pseudo: &str| crate::LinkedIrFunction {
+        source: "rom".to_owned(),
+        identity: identity.to_owned(),
+        selection,
+        member: None,
+        symbol: symbol.to_owned(),
+        binding: "global",
+        address: Some(object_offset),
+        object_offset,
+        size: 4,
+        flow_kind: "linear",
+        complete: true,
+        exact: true,
+        return_value: "?".to_owned(),
+        return_provenance: provenance(),
+        dependencies: Vec::new(),
+        calls,
+        direct_mmio_predicates: Vec::new(),
+        mmio_accesses: Vec::new(),
+        delays: Vec::new(),
+        context_accesses: Vec::new(),
+        context_fields: Vec::new(),
+        memory_accesses: Vec::new(),
+        memory_fields: Vec::new(),
+        scenario_suggestions: Vec::new(),
+        effect_summary,
+        call_graph_diagnostics: Vec::new(),
+        direct_diagnostics: Vec::new(),
+        reference_diagnostics: Vec::new(),
+        call_graph_blockers: Vec::new(),
+        direct_blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        pseudo: pseudo.to_owned(),
+    };
+    let functions = vec![
+        function(
+            "rom::vendor_irq",
+            "vendor_irq",
+            "symbol-prefix-root",
+            256,
+            vec![call(
+                "internal",
+                "rom::vendor_helper",
+                128,
+                None,
+                Vec::new(),
+                Vec::new(),
+            )],
+            irq_effects,
+            "fn vendor_irq(ctx0: *mut u8) { ctx0.write32(+0x4, value); }",
+        ),
+        function(
+            "rom::vendor_helper",
+            "vendor_helper",
+            "reachable-internal",
+            512,
+            vec![call(
+                "external",
+                "wifi_osi::queue_send_from_isr",
+                288,
+                Some("rtos.queue.send-from-isr".to_owned()),
+                vec!["?".to_owned(), "0x0000002a".to_owned()],
+                vec![crate::LinkedCallGuard {
+                    site: 288,
+                    condition: "(arg0 & 0x00000001) != 0".to_owned(),
+                    operation: "not-equal",
+                    taken: true,
+                    result_sources: Vec::new(),
+                    direct_mmio_sources: Vec::new(),
+                }],
+            )],
+            helper_effects,
+            "fn vendor_helper() { semantic.rtos_queue_send_from_isr(); }",
+        ),
+    ];
+    let mut document: serde_json::Value = serde_json::from_str(
+        &crate::artifacts::render_linked_ir_fixture(functions, Vec::new()),
     )
     .unwrap();
+    document["artifacts"] = serde_json::json!([{
+        "source": "rom",
+        "artifact": {"path": "rom.elf", "sha256": digest}
+    }]);
+    std::fs::write(path, serde_json::to_string_pretty(&document).unwrap()).unwrap();
 }
 
 #[test]

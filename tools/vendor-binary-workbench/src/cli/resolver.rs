@@ -217,9 +217,10 @@ impl ResolutionNeeds {
             | Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
             | Command::GenerateDriver(_)
-            | Command::InspectAnalyze(_)
-            | Command::VerifyInventory(_)
-            | Command::VerifySource(_) => Self::new(true, true, true, true, true, true, true),
+            | Command::InspectAnalyze(_) => Self::new(true, true, true, true, true, true, true),
+            Command::VerifyInventory(_) | Command::VerifySource(_) => {
+                Self::new(true, true, false, true, true, true, true)
+            }
         }
     }
 }

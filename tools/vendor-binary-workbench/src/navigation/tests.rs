@@ -26,33 +26,61 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         serde_json::to_string(&json!({
             "schema_version": 2,
             "command": "symbols inventory",
+            "linkage_mode": "association-only",
+            "linker_resolution_claim": false,
             "artifacts": [{
                 "index": 0,
                 "artifact": {"path": "vendor.o", "sha256": digest},
-                "sources": ["vendor"]
+                "roles": ["vendor"],
+                "sources": ["vendor"],
+                "container": "object",
+                "objects": 1,
+                "skipped_members": 0
             }],
             "symbols": [
                 {
                     "artifact": 0,
                     "member": null,
+                    "object_kind": "relocatable",
                     "name": "caller",
                     "address": "0x100",
                     "table": "static",
+                    "binding": "global",
+                    "visibility": "default",
                     "definition": "section",
                     "kind": "text",
-                    "resolution": "defined-exported"
+                    "section": ".text",
+                    "size": 4,
+                    "scope": "linkage",
+                    "resolution": "defined-exported",
+                    "candidates": []
                 },
                 {
                     "artifact": 0,
                     "member": null,
+                    "object_kind": "relocatable",
                     "name": "g_table",
                     "address": "0x200",
                     "table": "static",
+                    "binding": "global",
+                    "visibility": "default",
                     "definition": "section",
                     "kind": "data",
-                    "resolution": "defined-exported"
+                    "section": ".data",
+                    "size": 4,
+                    "scope": "linkage",
+                    "resolution": "defined-exported",
+                    "candidates": []
                 }
-            ]
+            ],
+            "summary": {
+                "artifacts": 1,
+                "symbol_facts": 2,
+                "emitted": 2,
+                "exported_definitions": 2,
+                "undefined": 0,
+                "unresolved_or_associated": 0
+            }
         }))
         .unwrap(),
     )
@@ -62,11 +90,24 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         serde_json::to_string(&json!({
             "schema_version": 3,
             "command": "interfaces discover",
+            "analysis_scope": {
+                "architecture": "riscv32",
+                "calling_convention": "riscv-ilp32",
+                "evidence": "control-flow-merged register provenance",
+                "relocation_evidence": ["absolute", "pc-relative", "got"],
+                "semantic_claim": false,
+                "table_layout_claim": false,
+                "linker_resolution_claim": false,
+                "completeness_claim": false
+            },
             "artifacts": [{
                 "index": 0,
                 "path": "vendor.o",
+                "roles": ["vendor"],
                 "sources": ["vendor"],
-                "sha256": "11".repeat(32)
+                "sha256": "11".repeat(32),
+                "container": "object",
+                "functions": 1
             }],
             "calls": [{
                 "artifact": 0,
@@ -75,21 +116,32 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "function_address": "0x100",
                 "site": "0x110",
                 "kind": "call",
-                "target": {"root": {
-                    "kind": "relocated-symbol",
-                    "member": null,
-                    "symbol": "g_table",
-                    "addend": 0,
-                    "addressing": "absolute"
+                "link_register": 1,
+                "target": {
+                    "canonical": "g_table",
+                    "root": {
+                        "kind": "relocated-symbol",
+                        "canonical": "g_table",
+                        "member": null,
+                        "symbol": "g_table",
+                        "addend": 0,
+                        "addressing": "absolute"
+                    },
+                    "loads": [],
+                    "container_depth": 0,
+                    "slot_offset": null,
+                    "jalr_offset": 0
                 },
-                "loads": [],
-                "container_depth": 0,
-                "slot_offset": null,
-                "jalr_offset": 0
+                "root_linkage": {
+                    "mode": "association-only",
+                    "symbols": ["g_table"],
+                    "resolutions": ["defined-exported"],
+                    "candidates": []
                 },
                 "arguments": []
             }],
-            "table_candidates": []
+            "table_candidates": [],
+            "decode_failures": []
         }))
         .unwrap(),
     )

@@ -188,7 +188,6 @@ pub(super) fn run(
     let mut total = VerifySummary::default();
     let mut source_reports = Vec::with_capacity(verify_sources.len());
     let mut evidence = EvidenceSet::new();
-    let harness = target.require_available_harness()?;
     for source in &verify_sources {
         let source_profiles = profiles_by_source
             .get(source.name)
@@ -196,7 +195,7 @@ pub(super) fn run(
             .unwrap_or_default();
         let report = verify_source(
             svd,
-            harness,
+            target.harness.as_deref(),
             &target.rust_target,
             *source,
             &rust_artifact,

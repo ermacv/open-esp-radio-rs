@@ -2,10 +2,6 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
-
-use super::{LINKED_IR, read_json};
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedIrSummary {
     pub(crate) functions: usize,
@@ -13,38 +9,14 @@ pub(crate) struct LinkedIrSummary {
     pub(crate) field_candidates: usize,
 }
 
-#[derive(Deserialize)]
-struct LinkedIrDocument {
-    schema_version: u32,
-    command: String,
-    completeness_claim: bool,
-    mmio_field_semantics_claim: bool,
-    summary: SummaryDocument,
-}
-
-#[derive(Deserialize)]
-struct SummaryDocument {
-    functions: usize,
-    mmio_registers: usize,
-    mmio_field_candidates: usize,
-}
-
 pub(crate) fn inspect_linked_ir(path: &Path) -> crate::Result<LinkedIrSummary> {
-    let document = read_json::<LinkedIrDocument>("linked-IR report", path)?;
-    if document.schema_version != LINKED_IR.version || document.command != LINKED_IR.command {
-        return Err(crate::Error::invalid(format!(
-            "unsupported linked-IR artifact in {}: expected schema_version {} and command {:?}",
-            path.display(),
-            LINKED_IR.version,
-            LINKED_IR.command,
-        )));
-    }
-    if document.completeness_claim || document.mmio_field_semantics_claim {
-        return Err(crate::Error::invalid(format!(
-            "linked-IR artifact {} makes an unsupported completeness or field-semantics claim",
+    let input = std::fs::read_to_string(path)?;
+    let document = super::parse_linked_ir(&input).map_err(|error| {
+        crate::Error::invalid(format!(
+            "unsupported linked-IR artifact in {}: {error}",
             path.display()
-        )));
-    }
+        ))
+    })?;
     Ok(LinkedIrSummary {
         functions: document.summary.functions,
         registers: document.summary.mmio_registers,
@@ -56,37 +28,32 @@ pub(crate) fn inspect_linked_ir(path: &Path) -> crate::Result<LinkedIrSummary> {
 mod tests {
     use super::*;
 
+    fn document() -> serde_json::Value {
+        let mut document: serde_json::Value = serde_json::from_str(
+            &crate::artifacts::render_linked_ir_fixture(Vec::new(), Vec::new()),
+        )
+        .unwrap();
+        document["summary"]["functions"] = serde_json::json!(3);
+        document["summary"]["mmio_registers"] = serde_json::json!(2);
+        document["summary"]["mmio_field_candidates"] = serde_json::json!(4);
+        document
+    }
+
     #[test]
     fn validates_identity_claims_and_reads_summary() {
         let path = std::env::temp_dir().join(format!(
             "vendor-workbench-linked-ir-artifact-{}.json",
             std::process::id()
         ));
-        std::fs::write(
-            &path,
-            r#"{
-  "schema_version": 35,
-  "command": "ir export",
-  "completeness_claim": false,
-  "mmio_field_semantics_claim": false,
-  "summary": {
-    "functions": 3,
-    "mmio_registers": 2,
-    "mmio_field_candidates": 4
-  }
-}"#,
-        )
-        .unwrap();
+        std::fs::write(&path, serde_json::to_string_pretty(&document()).unwrap()).unwrap();
         let summary = inspect_linked_ir(&path).unwrap();
         assert_eq!(summary.functions, 3);
         assert_eq!(summary.registers, 2);
         assert_eq!(summary.field_candidates, 4);
 
-        std::fs::write(
-            &path,
-            r#"{"schema_version":34,"command":"ir export","completeness_claim":false,"mmio_field_semantics_claim":false,"summary":{"functions":0,"mmio_registers":0,"mmio_field_candidates":0}}"#,
-        )
-        .unwrap();
+        let mut stale = document();
+        stale["schema_version"] = serde_json::json!(34);
+        std::fs::write(&path, stale.to_string()).unwrap();
         assert!(
             inspect_linked_ir(&path)
                 .unwrap_err()
@@ -94,5 +61,25 @@ mod tests {
                 .contains("expected schema_version 35")
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn rejects_unknown_and_missing_fields_at_every_projection_boundary() {
+        let mut unknown = document();
+        unknown["summary"]["legacy_field"] = serde_json::json!(true);
+        let error = super::super::parse_linked_ir(&unknown.to_string()).unwrap_err();
+        assert!(error.to_string().contains("unknown field `legacy_field`"));
+
+        let mut missing = document();
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("scenario_suggestion_mode");
+        let error = super::super::parse_linked_ir(&missing.to_string()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("missing field `scenario_suggestion_mode`")
+        );
     }
 }

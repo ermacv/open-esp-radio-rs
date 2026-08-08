@@ -82,7 +82,17 @@ fn write_facts(path: &Path, digest: &str) {
             r#"{{
   "schema_version": 3,
   "command": "interfaces discover",
-  "artifacts": [{{"index":0,"path":"libpp.a","sources":["libpp"],"sha256":"{digest}"}}],
+  "analysis_scope": {{
+    "architecture":"riscv32",
+    "calling_convention":"riscv-ilp32",
+    "evidence":"control-flow-merged register provenance",
+    "relocation_evidence":["absolute","pc-relative","got"],
+    "semantic_claim":false,
+    "table_layout_claim":false,
+    "linker_resolution_claim":false,
+    "completeness_claim":false
+  }},
+  "artifacts": [{{"index":0,"path":"libpp.a","roles":[],"sources":["libpp"],"sha256":"{digest}","container":"archive","functions":1}}],
   "calls": [{{
     "artifact":0,
     "member":"event.o",
@@ -90,9 +100,12 @@ fn write_facts(path: &Path, digest: &str) {
     "function_address":"0x100",
     "site":"0x120",
     "kind":"call",
+    "link_register":1,
     "target":{{
+      "canonical":"event.o::g_services[0][16]",
       "root":{{
         "kind":"relocated-symbol",
+        "canonical":"event.o::g_services",
         "member":"event.o",
         "symbol":"g_services",
         "addend":0,
@@ -106,25 +119,41 @@ fn write_facts(path: &Path, digest: &str) {
       "slot_offset":16,
       "jalr_offset":0
     }},
+    "root_linkage":{{
+      "mode":"association-only",
+      "symbols":["g_services"],
+      "resolutions":["defined"],
+      "candidates":[]
+    }},
     "arguments":[
       {{"index":0,"kind":"unknown"}},
       {{"index":1,"kind":"constant","value":"0x0000002a"}},
-      {{"index":2,"kind":"pointer-provenance","canonical":"arg0+4"}}
+      {{
+        "index":2,
+        "kind":"pointer-provenance",
+        "canonical":"arg0+4",
+        "root":{{"kind":"function-argument","canonical":"arg0","argument":0}},
+        "loads":[],
+        "post_offset":4
+      }}
     ]
   }}],
   "table_candidates": [{{
     "artifact": 0,
     "root": {{
       "kind":"relocated-symbol",
+      "canonical":"event.o::g_services",
       "member":"event.o",
       "symbol":"g_services",
       "addend":0,
       "addressing":"absolute"
     }},
     "container_path":[{{"offset":0,"width":32}}],
-    "slots":[{{"offset":16,"width":32,"functions":["post_event"]}}],
-    "functions":["post_event"]
-  }}]
+    "slots":[{{"offset":16,"width":32,"functions":["post_event"],"call_sites":1}}],
+    "functions":["post_event"],
+    "call_sites":1
+  }}],
+  "decode_failures":[]
 }}"#
         ),
     )
@@ -148,6 +177,28 @@ replacement = "async.channel.try-send"
 "#,
     )
     .unwrap();
+}
+
+#[test]
+fn stored_interface_facts_reject_unknown_and_missing_fields() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    write_facts(&facts, &fake_digest('a'));
+    let input = std::fs::read_to_string(&facts).unwrap();
+
+    let mut unknown: serde_json::Value = serde_json::from_str(&input).unwrap();
+    unknown["calls"][0]["target"]["legacy_field"] = serde_json::json!(true);
+    let error = crate::artifacts::parse_interface_facts(&unknown.to_string()).unwrap_err();
+    assert!(error.to_string().contains("unknown field `legacy_field`"));
+
+    let mut missing: serde_json::Value = serde_json::from_str(&input).unwrap();
+    missing["artifacts"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("container");
+    let error = crate::artifacts::parse_interface_facts(&missing.to_string()).unwrap_err();
+    assert!(error.to_string().contains("missing field `container`"));
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 fn reviewed_pack(digest: &str, semantic: &str) -> String {
@@ -288,8 +339,8 @@ fn indexed_slot_evidence_requires_and_keeps_a_reviewed_index_domain() {
         )
         .replace(r#""slot_offset":16"#, r#""slot_offset":null,"slot_selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"}"#)
         .replace(
-            r#"{"offset":16,"width":32,"functions":["post_event"]}"#,
-            r#"{"offset":0,"width":32,"selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"},"functions":["post_event"]}"#,
+            r#"{"offset":16,"width":32,"functions":["post_event"],"call_sites":1}"#,
+            r#"{"offset":0,"width":32,"selector":{"argument":0,"scale":4,"addend":0,"canonical":"arg0*4+0x0"},"functions":["post_event"],"call_sites":1}"#,
         );
     std::fs::write(&facts, indexed).unwrap();
     write_catalog(&catalog);

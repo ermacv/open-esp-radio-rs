@@ -38,10 +38,9 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
     };
     let symbols = vendor_symbols(source)?;
     let mut evidence = EvidenceSet::new();
-    let harness = target.require_available_harness()?;
     let source_report = verify_source(
         svd,
-        harness,
+        target.harness.as_deref(),
         &target.rust_target,
         source,
         &rust_artifact,

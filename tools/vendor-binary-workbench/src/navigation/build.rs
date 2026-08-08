@@ -216,7 +216,7 @@ fn add_interfaces(
                         StoredInterfaceRoot::RelocatedSymbol { member, symbol, .. } => {
                             key.member == *member && key.name == *symbol
                         }
-                        StoredInterfaceRoot::AbsoluteAddress { address } => {
+                        StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
                             key.object_address == *address
                         }
                         StoredInterfaceRoot::FunctionArgument { .. } => false,

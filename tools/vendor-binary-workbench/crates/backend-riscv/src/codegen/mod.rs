@@ -33,7 +33,7 @@ pub struct GeneratedReference {
 }
 
 pub fn reference_function_name(symbol: &str) -> String {
-    let mut output = String::from("open_phy_reference_");
+    let mut output = String::from("vendor_reference_");
     for character in symbol.chars() {
         if character.is_ascii_alphanumeric() || character == '_' {
             output.push(character);

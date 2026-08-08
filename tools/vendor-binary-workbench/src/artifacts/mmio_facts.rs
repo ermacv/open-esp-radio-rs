@@ -214,4 +214,24 @@ mod tests {
         assert_eq!(parsed["schema_version"], 2);
         assert_eq!(parsed["command"], "mmio discover");
     }
+
+    #[test]
+    fn stored_mmio_facts_reject_unknown_and_missing_fields() {
+        let report = MmioDiscoveryReport {
+            artifacts: Vec::new(),
+            ranges: Vec::new(),
+            registers: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
+        let mut unknown: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        unknown["legacy_field"] = serde_json::json!(true);
+        let error = super::super::parse_mmio_facts(&unknown.to_string()).unwrap_err();
+        assert!(error.to_string().contains("unknown field `legacy_field`"));
+
+        let mut missing: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        missing.as_object_mut().unwrap().remove("diagnostics");
+        let error = super::super::parse_mmio_facts(&missing.to_string()).unwrap_err();
+        assert!(error.to_string().contains("missing field `diagnostics`"));
+    }
 }

@@ -111,6 +111,37 @@ fn generic_cli_has_no_esp_phy_prefix_defaults() {
 }
 
 #[test]
+fn generic_reference_generation_has_no_target_product_vocabulary() {
+    let manifest_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let roots = [
+        manifest_root.join("crates/backend-riscv/src"),
+        manifest_root.join("src/orchestration/generated_reference.rs"),
+    ];
+    let mut violations = Vec::new();
+    for root in roots {
+        let files = if root.is_dir() {
+            let mut files = Vec::new();
+            rust_files(&root, &mut files);
+            files
+        } else {
+            vec![root]
+        };
+        for path in files {
+            let source = fs::read_to_string(&path).expect("read generic reference source");
+            for forbidden in ["open_phy", "esp32s31", "open_esp_radio"] {
+                if source.contains(forbidden) {
+                    violations.push((path.clone(), forbidden));
+                }
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "generic reference generation contains target/product vocabulary: {violations:#?}"
+    );
+}
+
+#[test]
 fn execution_environment_contracts_do_not_live_in_the_riscv_backend() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("crates/backend-riscv/src/execution");
     let mut files = Vec::new();

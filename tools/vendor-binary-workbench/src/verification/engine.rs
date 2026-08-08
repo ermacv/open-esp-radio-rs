@@ -24,7 +24,7 @@ pub(crate) use model::*;
 )]
 pub(crate) fn verify_source(
     svd: &MmioMap,
-    harness: &str,
+    harness: Option<&str>,
     rust_target: &str,
     source: VerifySource<'_>,
     rust_artifact: &Path,
@@ -120,6 +120,7 @@ pub(crate) fn verify_source(
                     .map(|adapter| (entry, binding, adapter))
             })
         }) {
+            let harness = require_platform_harness(harness, "driver-adapter verification")?;
             let policy = entry
                 .effect_contract
                 .as_ref()
@@ -190,6 +191,8 @@ pub(crate) fn verify_source(
                         .entry
                         .expect("implemented disposition must be an exact function entry");
                     if let Some(contract) = entry.semantic_contract.as_ref() {
+                        let harness =
+                            require_platform_harness(harness, "semantic-contract verification")?;
                         let matched = harnesses::verify_semantic_contract(
                             harness,
                             &harnesses::SemanticContractRequest {
@@ -391,6 +394,10 @@ pub(crate) fn verify_source(
             function.return_compared = Some(compare_return);
             functions.push(function);
         } else if let Some(policy) = effect_policy {
+            let harness = require_platform_harness(
+                harness,
+                "generated-reference effect-contract verification",
+            )?;
             let generated_companions = source
                 .companion
                 .into_iter()
@@ -557,5 +564,13 @@ pub(crate) fn verify_source(
         source: source.name.to_owned(),
         summary,
         functions,
+    })
+}
+
+fn require_platform_harness<'a>(harness: Option<&'a str>, capability: &str) -> Result<&'a str> {
+    harness.ok_or_else(|| {
+        crate::Error::invalid(format!(
+            "{capability} requires a project platform pack with an executable harness"
+        ))
     })
 }

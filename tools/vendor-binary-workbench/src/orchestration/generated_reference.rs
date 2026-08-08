@@ -278,7 +278,7 @@ fn prove_exact_mmio_leaf(
     let harness_path = build.path().join("harness.rs");
     let artifact_path = build.path().join("libgenerated_reference.rlib");
     let probe_symbol = format!(
-        "open_phy_generated_reference_{}",
+        "vendor_generated_reference_{}",
         sanitize_identifier(vendor_symbol)
     );
     let harness = harness_source(
@@ -293,7 +293,7 @@ fn prove_exact_mmio_leaf(
         .current_dir(build.path())
         .args([
             "--edition=2024",
-            "--crate-name=open_esp_radio_generated_reference",
+            "--crate-name=vendor_binary_workbench_generated_reference",
             "--crate-type=rlib",
             "--target",
             target,
@@ -393,11 +393,11 @@ mod tests {
 
     #[test]
     fn harness_keeps_all_rv32_register_arguments_and_traps_other_boundaries() {
-        let source = harness_source("open_phy_reference_leaf", "open_phy_generated_leaf");
+        let source = harness_source("vendor_reference_leaf", "vendor_generated_leaf");
         assert!(source.contains("registers: [a0, a1, a2, a3, a4, a5, a6, a7]"));
         assert!(source.contains("unsupported(\"memory-read\")"));
         assert!(source.contains("unsupported(\"delay\")"));
-        assert!(source.contains("generated::open_phy_reference_leaf("));
+        assert!(source.contains("generated::vendor_reference_leaf("));
     }
 
     #[test]

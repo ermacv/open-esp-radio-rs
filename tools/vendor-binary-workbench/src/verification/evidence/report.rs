@@ -12,7 +12,8 @@ use crate::{Result, TargetSpec, VerificationGate, VerifySummary};
 #[derive(Serialize)]
 pub(crate) struct VerificationTargetDocument {
     id: String,
-    harness: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    harness: Option<String>,
     architecture: &'static str,
     calling_convention: &'static str,
     endianness: &'static str,
@@ -114,7 +115,7 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
     Ok(VerificationCoreReport {
         target: VerificationTargetDocument {
             id: target.id.clone(),
-            harness: target.require_available_harness()?.to_owned(),
+            harness: target.harness.clone(),
             architecture: target.architecture.label(),
             calling_convention: target.calling_convention.label(),
             endianness: target.endianness.label(),

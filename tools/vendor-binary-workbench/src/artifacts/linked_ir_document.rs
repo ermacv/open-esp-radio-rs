@@ -255,3 +255,62 @@ pub(crate) fn write_linked_ir(path: &Path, document: &LinkedIrDocument<'_>) -> R
     std::fs::write(path, render_linked_ir(document)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+pub(crate) fn render_linked_ir_fixture(
+    functions: Vec<LinkedIrFunction>,
+    mmio_registers: Vec<LinkedMmioRegister>,
+) -> String {
+    use crate::EntryContractSpec;
+
+    static ENTRY: EntryContractSpec = EntryContractSpec {
+        id: "none",
+        function_table: None,
+        pointer_symbols: &[],
+        data_pointer_binding: None,
+    };
+    let report = LinkedIrReport {
+        functions,
+        mmio_registers,
+        mmio_functions: 0,
+        mmio_access_shapes: 0,
+        delay_functions: 0,
+        delay_shapes: 0,
+        semantic_boundaries: Vec::new(),
+        semantic_calls: 0,
+        trampoline_slots: Vec::new(),
+        trampoline_calls: 0,
+        exported_functions: 0,
+        local_functions: 0,
+        context_functions: 0,
+        context_accesses: 0,
+        context_fields: 0,
+        memory_functions: 0,
+        memory_accesses: 0,
+        memory_fields: 0,
+        complete_functions: 0,
+        structured_functions: 0,
+        internal_calls: 0,
+        external_calls: 0,
+        call_argument_shapes: 0,
+        project_linked_calls: 0,
+        ambiguous_project_calls: 0,
+        unresolved_calls: 0,
+        closed_effect_summaries: 0,
+        recursive_effect_summaries: 0,
+        complete_context_projections: 0,
+        projected_context_fields: 0,
+        projected_memory_fields: 0,
+        scenario_suggestions: 0,
+    };
+    let document = build_linked_ir_document(
+        &[],
+        &[],
+        "",
+        crate::EntryContractRef::new(&ENTRY),
+        &report,
+        false,
+    )
+    .unwrap();
+    render_linked_ir(&document).unwrap()
+}

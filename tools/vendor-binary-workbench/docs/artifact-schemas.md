@@ -19,6 +19,11 @@ projections. They neither repeat numeric schema literals nor walk arbitrary
 `serde_json::Value` trees. Producer and consumer DTOs are separate only where
 the complete report directly serializes live analysis-domain structures;
 identity and supported claims are still validated once in the artifact layer.
+Persistent consumer DTOs describe the complete stored document and apply
+`deny_unknown_fields` recursively. Consequently both removed required fields
+and unversioned additions fail closed instead of being silently ignored.
+Contract tests build canonical fixtures with the producer wherever practical,
+then exercise the same strict reader used by downstream workspaces.
 The navigation join consumes these projections directly; it has no shortened
 copies of the symbol, interface or linked-IR envelopes.
 

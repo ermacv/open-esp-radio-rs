@@ -1,10 +1,15 @@
 //! Stored symbol-inventory schema, writer and strict summary projection.
 
+#![allow(
+    dead_code,
+    reason = "complete stored DTOs enforce every persistent schema field"
+)]
+
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{SYMBOL_INVENTORY, read_json};
+use super::SYMBOL_INVENTORY;
 use crate::{
     analysis::{LinkageSymbol, ProjectLinkageInventory},
     artifact_sha256,
@@ -181,79 +186,95 @@ pub(crate) struct SymbolInventorySummary {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolInventory {
     schema_version: u32,
     command: String,
+    linkage_mode: String,
+    linker_resolution_claim: bool,
     pub(crate) artifacts: Vec<StoredSymbolArtifact>,
     pub(crate) symbols: Vec<StoredSymbolFact>,
+    summary: StoredSummaryDocument,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolArtifact {
     pub(crate) index: usize,
     pub(crate) artifact: StoredSymbolArtifactIdentity,
+    roles: Vec<String>,
     pub(crate) sources: Vec<String>,
+    container: String,
+    objects: usize,
+    skipped_members: usize,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolArtifactIdentity {
     pub(crate) path: String,
     pub(crate) sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolFact {
     pub(crate) artifact: usize,
     pub(crate) member: Option<String>,
+    object_kind: String,
     pub(crate) name: String,
-    pub(crate) address: String,
     pub(crate) table: String,
+    binding: String,
+    visibility: String,
     pub(crate) definition: String,
     pub(crate) kind: String,
+    section: Option<String>,
+    pub(crate) address: String,
+    size: u64,
+    scope: String,
     pub(crate) resolution: String,
+    candidates: Vec<StoredSymbolCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredSymbolCandidate {
+    artifact: usize,
+    member: Option<String>,
+    address: String,
+    kind: String,
 }
 
 pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolInventory> {
+    super::expect_identity(input, SYMBOL_INVENTORY)?;
     let document: StoredSymbolInventory = serde_json::from_str(input)?;
-    if document.schema_version != SYMBOL_INVENTORY.version
-        || document.command != SYMBOL_INVENTORY.command
-    {
-        return Err(crate::Error::invalid(format!(
-            "expected schema_version {} and command {:?}",
-            SYMBOL_INVENTORY.version, SYMBOL_INVENTORY.command
-        )));
+    if document.linkage_mode != "association-only" || document.linker_resolution_claim {
+        return Err(crate::Error::invalid(
+            "symbol inventory makes an unsupported linker-resolution claim",
+        ));
     }
     Ok(document)
 }
 
-#[derive(Deserialize)]
-struct StoredInventoryDocument {
-    schema_version: u32,
-    command: String,
-    summary: StoredSummaryDocument,
-}
-
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct StoredSummaryDocument {
     artifacts: usize,
     symbol_facts: usize,
+    emitted: usize,
     exported_definitions: usize,
     undefined: usize,
     unresolved_or_associated: usize,
 }
 
 pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInventorySummary> {
-    let document = read_json::<StoredInventoryDocument>("symbol inventory", path)?;
-    if document.schema_version != SYMBOL_INVENTORY.version
-        || document.command != SYMBOL_INVENTORY.command
-    {
-        return Err(crate::Error::invalid(format!(
-            "unsupported symbol inventory in {}: expected schema_version {} and command {:?}",
-            path.display(),
-            SYMBOL_INVENTORY.version,
-            SYMBOL_INVENTORY.command,
-        )));
-    }
+    let input = std::fs::read_to_string(path)?;
+    let document = parse_symbol_inventory(&input).map_err(|error| {
+        crate::Error::invalid(format!(
+            "unsupported symbol inventory in {}: {error}",
+            path.display()
+        ))
+    })?;
     Ok(SymbolInventorySummary {
         artifacts: document.summary.artifacts,
         symbol_facts: document.summary.symbol_facts,
@@ -275,7 +296,7 @@ mod tests {
         ));
         std::fs::write(
             &path,
-            r#"{"schema_version":2,"command":"symbols inventory","summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5}}"#,
+            r#"{"schema_version":2,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5}}"#,
         )
         .unwrap();
         let summary = inspect_symbol_inventory(&path).unwrap();
@@ -295,5 +316,22 @@ mod tests {
                 .contains("expected schema_version 2")
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn stored_inventory_rejects_unknown_and_missing_fields() {
+        let input = r#"{"schema_version":2,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0}}"#;
+        let mut unknown: serde_json::Value = serde_json::from_str(input).unwrap();
+        unknown["summary"]["legacy_field"] = serde_json::json!(true);
+        let error = parse_symbol_inventory(&unknown.to_string()).unwrap_err();
+        assert!(error.to_string().contains("unknown field `legacy_field`"));
+
+        let mut missing: serde_json::Value = serde_json::from_str(input).unwrap();
+        missing["summary"]
+            .as_object_mut()
+            .unwrap()
+            .remove("emitted");
+        let error = parse_symbol_inventory(&missing.to_string()).unwrap_err();
+        assert!(error.to_string().contains("missing field `emitted`"));
     }
 }

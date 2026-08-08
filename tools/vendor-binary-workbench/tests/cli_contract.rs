@@ -17,6 +17,9 @@ fn repository_root() -> PathBuf {
         .expect("workspace root")
 }
 
+const GENERIC_PROJECT: &str =
+    "tools/vendor-binary-workbench/tests/fixtures/generic-project/vendor-project.toml";
+
 fn run(arguments: &[&str]) -> Output {
     workbench()
         .current_dir(repository_root())
@@ -63,7 +66,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
         "project",
         "status",
         "--project",
-        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        GENERIC_PROJECT,
         "--format",
         "json",
         "--color",
@@ -91,7 +94,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
         "project",
         "doctor",
         "--project",
-        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        GENERIC_PROJECT,
         "--format",
         "json",
         "--color",
@@ -108,11 +111,11 @@ fn project_doctor_json_is_one_complete_typed_report() {
     assert_eq!(report["schema"], 1);
     assert_eq!(report["command"], "project doctor");
     assert_eq!(report["status"], "ok");
-    assert_eq!(report["project"]["id"], "esp32s31-radio-rev0");
-    assert_eq!(report["target"]["id"], "esp32s31-rev0");
+    assert_eq!(report["project"]["id"], "generic-rv32-fixture");
+    assert_eq!(report["target"]["id"], "generic-rv32");
     assert!(report["capabilities"].as_array().unwrap().len() > 10);
-    assert_eq!(report["ir_build"]["status"], "configured");
-    assert_eq!(report["function_workspace"]["status"], "not-generated");
+    assert_eq!(report["ir_build"]["status"], "not-configured");
+    assert_eq!(report["function_workspace"]["status"], "not-configured");
     assert_eq!(report["run_spec"]["status"], "not-configured");
     assert!(report["inputs"].is_array());
     assert!(report["errors"].is_u64());
@@ -130,7 +133,7 @@ fn project_doctor_json_is_one_complete_typed_report() {
         "project",
         "doctor",
         "--project",
-        "verification/vendor/targets/esp32s31/vendor-project.toml",
+        GENERIC_PROJECT,
         "--format",
         "jsonl",
         "--color",
@@ -346,7 +349,7 @@ fn quiet_overrides_an_explicit_rust_log_filter() {
             "project",
             "status",
             "--project",
-            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            GENERIC_PROJECT,
             "--format",
             "json",
             "--quiet",
@@ -378,7 +381,7 @@ fn verify_source_json_is_one_typed_function_report() {
             "verify",
             "source",
             "--project",
-            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            GENERIC_PROJECT,
             "--vendor-artifact",
         ])
         .arg(&artifact)
@@ -437,7 +440,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
             "verify",
             "inventory",
             "--project",
-            "verification/vendor/targets/esp32s31/vendor-project.toml",
+            GENERIC_PROJECT,
             "--source-artifact",
         ])
         .arg(format!("fixture={}", artifact.display()))

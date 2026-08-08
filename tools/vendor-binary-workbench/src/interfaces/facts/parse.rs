@@ -66,16 +66,17 @@ fn root(root: artifacts::StoredInterfaceRoot) -> InterfaceFactRoot {
             symbol,
             addend,
             addressing,
+            ..
         } => InterfaceFactRoot::RelocatedSymbol {
             member,
             symbol,
             addend,
             addressing,
         },
-        artifacts::StoredInterfaceRoot::FunctionArgument { argument } => {
+        artifacts::StoredInterfaceRoot::FunctionArgument { argument, .. } => {
             InterfaceFactRoot::FunctionArgument { argument }
         }
-        artifacts::StoredInterfaceRoot::AbsoluteAddress { address } => {
+        artifacts::StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
             InterfaceFactRoot::AbsoluteAddress { address }
         }
     }
@@ -109,12 +110,12 @@ fn argument(argument: artifacts::StoredInterfaceArgument) -> InterfaceArgumentFa
             kind: "constant".to_owned(),
             expression: format!("{value:#010x}"),
         },
-        artifacts::StoredInterfaceArgument::PointerProvenance { index, canonical } => {
-            InterfaceArgumentFact {
-                index,
-                kind: "pointer-provenance".to_owned(),
-                expression: canonical,
-            }
-        }
+        artifacts::StoredInterfaceArgument::PointerProvenance {
+            index, canonical, ..
+        } => InterfaceArgumentFact {
+            index,
+            kind: "pointer-provenance".to_owned(),
+            expression: canonical,
+        },
     }
 }

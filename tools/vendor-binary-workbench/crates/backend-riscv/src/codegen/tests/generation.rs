@@ -79,7 +79,7 @@ fn generates_a_self_contained_ordered_reference() {
     assert!(
         generated
             .source
-            .contains("pub fn open_phy_reference_phy_example(")
+            .contains("pub fn vendor_reference_phy_example(")
     );
     assert!(
         generated

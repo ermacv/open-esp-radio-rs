@@ -153,43 +153,58 @@ mod tests {
     use super::*;
 
     fn report(write_shapes: usize, operation: &str) -> String {
-        format!(
-            r#"{{
-  "schema_version": 35,
-  "command": "ir export",
-  "completeness_claim": false,
-  "mmio_field_semantics_claim": false,
-  "artifacts": [],
-  "mmio_registers": [{{
-    "address": 4112,
-    "width": 32,
-    "names": ["RADIO.CONTROL"],
-    "functions": ["rom:init"],
-    "field_candidates": [{{
-      "least_significant_bit": 4,
-      "most_significant_bit": 7,
-      "mask": 240,
-      "write_shapes": {write_shapes},
-      "predicate_shapes": 1,
-      "poll_shapes": 0,
-      "functions": ["rom:init"],
-      "access_functions": ["rom:read_control"],
-      "predicate_functions": ["rom:init"],
-      "predicate_evidence": [{{
-        "kind": "direct-mmio",
-        "function": "rom:init",
-        "producer_path": ["rom:read_control"],
-        "condition": "field != 0",
-        "effective_operation": "not-equal",
-        "register_comparison_value": 0
-      }}],
-      "semantic_operations": ["{operation}"],
-      "semantic_roots": ["rom:init"],
-      "semantic_evidence": []
-    }}]
-  }}],
-  "functions": []
-}}"#
+        crate::artifacts::render_linked_ir_fixture(
+            Vec::new(),
+            vec![crate::LinkedMmioRegister {
+                address: 4112,
+                width: 32,
+                names: vec!["RADIO.CONTROL".to_owned()],
+                read_shapes: 0,
+                write_shapes,
+                poll_shapes: 0,
+                predicate_shapes: 1,
+                static_shapes: 0,
+                indexed_candidate_shapes: 0,
+                whole_register_write_shapes: 0,
+                whole_register_predicate_shapes: 0,
+                whole_register_poll_shapes: 0,
+                read_modify_write_shapes: 0,
+                write_masks: Vec::new(),
+                predicate_masks: vec![240],
+                poll_masks: Vec::new(),
+                candidate_bit_ranges: Vec::new(),
+                field_candidates: vec![crate::LinkedMmioFieldCandidate {
+                    least_significant_bit: 4,
+                    most_significant_bit: 7,
+                    mask: 240,
+                    write_shapes,
+                    predicate_shapes: 1,
+                    poll_shapes: 0,
+                    functions: vec!["rom:init".to_owned()],
+                    access_functions: vec!["rom:read_control".to_owned()],
+                    predicate_functions: vec!["rom:init".to_owned()],
+                    predicate_evidence: vec![crate::LinkedMmioFieldPredicateEvidence {
+                        kind: "direct-mmio",
+                        function: "rom:init".to_owned(),
+                        producer: None,
+                        producer_path: vec!["rom:read_control".to_owned()],
+                        site: None,
+                        path: None,
+                        condition: "field != 0".to_owned(),
+                        operation: "not-equal",
+                        taken: None,
+                        effective_operation: Some("not-equal"),
+                        operand: None,
+                        comparison_value: None,
+                        register_comparison_value: Some(0),
+                        inverted: false,
+                    }],
+                    semantic_operations: vec![operation.to_owned()],
+                    semantic_roots: vec!["rom:init".to_owned()],
+                    semantic_evidence: Vec::new(),
+                }],
+                functions: vec!["rom:init".to_owned()],
+            }],
         )
     }
 

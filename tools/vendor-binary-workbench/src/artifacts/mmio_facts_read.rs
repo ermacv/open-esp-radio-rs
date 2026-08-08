@@ -1,18 +1,30 @@
 //! Typed consumer projection for schema-v2 MMIO discovery facts.
 
+#![allow(
+    dead_code,
+    reason = "complete stored DTOs enforce every persistent schema field"
+)]
+
 use serde::{Deserialize, Deserializer};
 
 use crate::Result;
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredMmioFacts {
     schema_version: u32,
     command: String,
+    analysis_mode: String,
+    access_count_mode: String,
+    completeness_claim: bool,
     pub(crate) ranges: Vec<StoredMmioRange>,
+    artifacts: Vec<StoredMmioArtifact>,
     pub(crate) registers: Vec<StoredRegisterFact>,
+    diagnostics: Vec<StoredMmioDiagnostic>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredMmioRange {
     pub(crate) name: String,
     #[serde(deserialize_with = "hex_u32")]
@@ -22,6 +34,27 @@ pub(crate) struct StoredMmioRange {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredMmioArtifact {
+    source: String,
+    artifact: StoredArtifactIdentity,
+    functions: usize,
+    functions_with_mmio: usize,
+    functions_with_diagnostics: usize,
+    explored_states: usize,
+    terminal_paths: usize,
+    branch_sites: usize,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredArtifactIdentity {
+    path: String,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredRegisterFact {
     #[serde(deserialize_with = "hex_u32")]
     pub(crate) address: u32,
@@ -35,10 +68,12 @@ pub(crate) struct StoredRegisterFact {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct StoredWritePattern {
     pub(crate) occurrences: usize,
     #[serde(deserialize_with = "hex_u32")]
     pub(crate) modified_mask: u32,
+    candidate_bit_ranges: String,
     #[serde(deserialize_with = "hex_u32")]
     pub(crate) preserved_mask: u32,
     #[serde(deserialize_with = "hex_u32")]
@@ -54,16 +89,24 @@ pub(crate) struct StoredWritePattern {
     pub(crate) functions: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredMmioDiagnostic {
+    function: String,
+    scope: String,
+    message: String,
+}
+
 pub(crate) fn parse_mmio_facts(input: &str) -> Result<StoredMmioFacts> {
+    super::expect_identity(input, super::MMIO_FACTS)?;
     let document: StoredMmioFacts = serde_json::from_str(input)?;
-    if document.schema_version != super::MMIO_FACTS.version
-        || document.command != super::MMIO_FACTS.command
+    if document.analysis_mode != "best-effort"
+        || document.access_count_mode != "maximum-per-path"
+        || document.completeness_claim
     {
-        return Err(crate::Error::invalid(format!(
-            "expected schema-v{} {} artifact",
-            super::MMIO_FACTS.version,
-            super::MMIO_FACTS.command
-        )));
+        return Err(crate::Error::invalid(
+            "MMIO facts artifact makes an unsupported analysis or completeness claim",
+        ));
     }
     Ok(document)
 }

@@ -19,6 +19,8 @@ pub(crate) use interface_facts_read::{
     StoredInterfaceStep, parse_interface_facts,
 };
 pub(crate) use linked_ir::inspect_linked_ir;
+#[cfg(test)]
+pub(crate) use linked_ir_document::render_linked_ir_fixture;
 pub(crate) use linked_ir_document::{build_linked_ir_document, render_linked_ir, write_linked_ir};
 pub(crate) use linked_ir_read::{
     LinkedIrStoredDocument, StoredCall, StoredMemoryObject, parse_linked_ir,
@@ -30,9 +32,7 @@ pub(crate) use symbol_inventory::{
     inspect_symbol_inventory, parse_symbol_inventory, render_symbol_inventory,
 };
 
-use std::path::Path;
-
-use serde::de::DeserializeOwned;
+use serde::Deserialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct ArtifactSchema {
@@ -60,11 +60,21 @@ pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
     command: "ir export",
 };
 
-fn read_json<T: DeserializeOwned>(kind: &'static str, path: &Path) -> crate::Result<T> {
-    let input = std::fs::read_to_string(path)?;
-    serde_json::from_str(&input)
-        .map_err(crate::Error::from)
-        .map_err(|error| crate::Error::manifest_document(kind, path, &input, error))
+#[derive(Deserialize)]
+struct ArtifactIdentityDocument {
+    schema_version: u32,
+    command: String,
+}
+
+fn expect_identity(input: &str, schema: ArtifactSchema) -> crate::Result<()> {
+    let identity: ArtifactIdentityDocument = serde_json::from_str(input)?;
+    if identity.schema_version != schema.version || identity.command != schema.command {
+        return Err(crate::Error::invalid(format!(
+            "expected schema_version {} and command {:?}",
+            schema.version, schema.command
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

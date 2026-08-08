@@ -1,0 +1,15 @@
+schema = 1
+default-address-space = "cpu"
+
+[[address-spaces]]
+id = "cpu"
+address-width = 32
+endianness = "little"
+
+[[regions]]
+name = "fixture-mmio"
+address-space = "cpu"
+kind = "mmio"
+start = 0x40000000
+end-exclusive = 0x40010000
+permissions = "rw"

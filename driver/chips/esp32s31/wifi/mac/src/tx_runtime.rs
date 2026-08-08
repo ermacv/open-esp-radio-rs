@@ -397,6 +397,10 @@ impl<const CAPACITY: usize> AmpduRetryState<CAPACITY> {
         self.current_subframes
     }
 
+    pub const fn current_first_sequence(&self) -> u16 {
+        self.sequences[0]
+    }
+
     pub const fn aggregate_attempts(&self) -> u8 {
         self.aggregate_attempts
     }
@@ -524,6 +528,7 @@ mod tests {
                 control: 0,
                 block_ack: TxBlockAckBitmap::new(starting_sequence, bitmap),
             },
+            block_ack_received: true,
         }
     }
 
@@ -577,6 +582,18 @@ mod tests {
         let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
         assert_eq!(
             state.observe(completion(5, 20, u64::MAX), 2),
+            Ok(AmpduRetryDecision::RetainAggregate { retry_mask: 0b11 })
+        );
+        assert_eq!(state.acknowledged(), 0);
+    }
+
+    #[test]
+    fn missing_block_ack_result_ignores_a_stale_success_bitmap() {
+        let mut state = AmpduRetryState::<4>::new(20, 2, HT_POLICY).unwrap();
+        let mut stale = completion(0, 20, u64::MAX);
+        stale.block_ack_received = false;
+        assert_eq!(
+            state.observe(stale, 2),
             Ok(AmpduRetryDecision::RetainAggregate { retry_mask: 0b11 })
         );
         assert_eq!(state.acknowledged(), 0);

@@ -16,7 +16,9 @@ use open_esp_radio_dma::{
     ReturningStableDmaBacking, RxHandoffPool, RxNetworkLease, RxRadioLease,
 };
 
-use crate::{ETHERNET_HEADER_LEN, FrameLengthError, RxEnqueueError, SharedLinkState};
+use crate::{
+    ETHERNET_HEADER_LEN, FrameLengthError, IngressPollFairness, RxEnqueueError, SharedLinkState,
+};
 
 /// Static resources for copy-minimal RX and copy-free TX ownership boundaries.
 ///
@@ -154,6 +156,7 @@ impl<
                 station_address,
                 reserved_tx: None,
                 tx_reservation: (),
+                ingress_fairness: IngressPollFairness::new(RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH)),
             },
             SplitPinnedRadioRunner {
                 free_rx: resources.free_rx.receiver(),
@@ -204,6 +207,7 @@ pub struct SplitPinnedDevice<
     station_address: [u8; 6],
     reserved_tx: Option<u8>,
     tx_reservation: (),
+    ingress_fairness: IngressPollFairness,
 }
 
 /// Compatibility form with equal receive and transmit queue depths.
@@ -426,13 +430,24 @@ impl<
         Self: 'device;
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let ingress_epoch_capacity = RX_QUEUE_DEPTH.min(TX_QUEUE_DEPTH);
+        if !self.ingress_fairness.admit(cx, ingress_epoch_capacity) {
+            return None;
+        }
         if !self.poll_reserve_tx(cx) {
+            self.ingress_fairness
+                .record_natural_stop(ingress_epoch_capacity);
             return None;
         }
         let index = match self.ready_rx.poll_receive(cx) {
             Poll::Ready(index) => index,
-            Poll::Pending => return None,
+            Poll::Pending => {
+                self.ingress_fairness
+                    .record_natural_stop(ingress_epoch_capacity);
+                return None;
+            }
         };
+        self.ingress_fairness.record_received();
         let lease = self.rx_pool.claim_network(index);
         Some((
             PinnedReceiveToken {

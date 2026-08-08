@@ -45,6 +45,7 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxStorage<SLOTS, BUFFE
                 registers.block_ack_bitmap_low,
                 registers.block_ack_bitmap_high,
             ),
+            block_ack_received: registers.block_ack_received,
         }))
     }
 

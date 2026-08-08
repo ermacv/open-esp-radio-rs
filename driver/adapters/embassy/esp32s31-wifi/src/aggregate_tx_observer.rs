@@ -25,6 +25,13 @@ pub enum AggregateBuildStop {
 /// Value-only observations emitted by the production aggregate TX owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AggregateTxObservation {
+    /// One negotiated TX BlockAck agreement changed its operational state.
+    /// This is a protocol-control edge, not evidence that an aggregate has
+    /// already been published.
+    BlockAckOperational {
+        tid: u8,
+        operational: bool,
+    },
     /// A coalesced hardware TX interrupt has reached the connected TX owner.
     ///
     /// This timestamp is emitted only when an observer is attached. It lets a
@@ -51,6 +58,16 @@ pub enum AggregateTxObservation {
         /// Clock image captured immediately before queue programming began.
         at_micros: u64,
         program_micros: u64,
+    },
+    /// One detached hardware A-MPDU completion after BlockAck classification.
+    BlockAckProcessed {
+        tx_status: u8,
+        block_ack_received: bool,
+        control: u8,
+        first_sequence: u16,
+        starting_sequence: u16,
+        subframes: u8,
+        missing: u8,
     },
     Completed {
         acknowledged: u8,

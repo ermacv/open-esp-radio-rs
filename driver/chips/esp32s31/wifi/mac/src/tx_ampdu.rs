@@ -130,6 +130,7 @@ pub enum HtAmpduTxFormat {
 pub struct HtAmpduTxCompletion {
     pub tx: TxCompletion,
     pub block_ack: HtBlockAckRegisters,
+    pub block_ack_received: bool,
 }
 
 impl HtAmpduTxCompletion {
@@ -144,7 +145,9 @@ impl HtAmpduTxCompletion {
     /// four-stream TX load produced successful partial BlockAck completions
     /// and status-five completions with stale nonzero bitmap words.
     pub const fn acknowledges(self, sequence: u16) -> bool {
-        self.tx.status == 0 && self.block_ack.block_ack.acknowledges(sequence)
+        self.tx.status == 0
+            && self.block_ack_received
+            && self.block_ack.block_ack.acknowledges(sequence)
     }
 }
 

@@ -109,7 +109,13 @@ where
 
     pub fn set_block_ack_operational(&mut self, tid: u8, operational: bool) {
         if let Some(entry) = self.block_ack_operational.get_mut(usize::from(tid)) {
+            if *entry == operational {
+                return;
+            }
             *entry = operational;
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::BlockAckOperational { tid, operational });
+            }
         }
     }
 

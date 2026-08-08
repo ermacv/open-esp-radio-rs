@@ -106,6 +106,7 @@ impl DetachingCompletionHardware {
                 block_ack_control_and_sequence: 0,
                 block_ack_bitmap_low: u32::MAX,
                 block_ack_bitmap_high: u32::MAX,
+                block_ack_received: true,
             }),
         }
     }
@@ -812,6 +813,7 @@ fn completion_exposes_publication_snapshot_then_clears_tb_enable() {
             block_ack_control_and_sequence: 0,
             block_ack_bitmap_low: 0,
             block_ack_bitmap_high: 0,
+            block_ack_received: true,
         }),
         cleared: None,
         trigger_snapshot: Some(snapshot),

@@ -74,6 +74,20 @@ impl<M: RawMutex> EmbassyMacIrqRuntime<M> {
         self.rx.wait().await;
     }
 
+    /// Schedule one RX bottom-half probe when an already-live DMA ring moves
+    /// from polling ownership to the interrupt-driven connected runner.
+    ///
+    /// A completion may become durable before the CPU route is unmasked. Some
+    /// interrupt controllers do not replay that old edge, so waiting only for
+    /// a future interrupt can strand the completed frontier indefinitely.
+    /// This wake does not increment [`Self::rx_post_count`]: it is a handoff
+    /// probe, not fabricated interrupt evidence. The bounded RX service still
+    /// decides from descriptor ownership whether any work exists.
+    #[inline]
+    pub fn notify_rx_handoff(&self) {
+        self.rx.signal(());
+    }
+
     /// Wake a radio actor stopped by staging ownership backpressure.
     ///
     /// This is distinct from a hardware RX edge: while backpressured, new RX

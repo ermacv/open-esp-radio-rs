@@ -138,6 +138,12 @@ pub struct MacHtAmpduCompletionRegisters {
     pub block_ack_control_and_sequence: u32,
     pub block_ack_bitmap_low: u32,
     pub block_ack_bitmap_high: u32,
+    /// Hardware says the completed PPDU received a BlockAck response.
+    ///
+    /// This is independent of the ordinary TX status. The bitmap registers
+    /// are not cleared at every completion and therefore must not be trusted
+    /// when this result bit is clear.
+    pub block_ack_received: bool,
 }
 
 /// Hardware edge which must precede reuse of one TX descriptor chain.
@@ -764,6 +770,7 @@ impl RadioRegisters {
             block_ack_control_and_sequence: block_ack.control_and_sequence,
             block_ack_bitmap_low: block_ack.bitmap_low,
             block_ack_bitmap_high: block_ack.bitmap_high,
+            block_ack_received: block_ack.block_ack_received,
         })
     }
 

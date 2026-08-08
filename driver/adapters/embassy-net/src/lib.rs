@@ -47,6 +47,44 @@ pub use pinned::{
 /// Ethernet header length, excluding an FCS.
 pub const ETHERNET_HEADER_LEN: usize = 14;
 
+/// Breaks an unbounded `smoltcp::Interface::poll` ingress drain at the
+/// adapter's physical queue boundary.
+///
+/// `smoltcp` deliberately drains a device until `receive` returns `None`.
+/// With a concurrently refilled radio queue that can fill an application
+/// socket and keep dropping later packets before its consumer is polled. The
+/// synthetic `None` self-wakes the network task; Embassy can then poll every
+/// socket consumer already woken by this epoch before continuing immediately.
+pub(crate) struct IngressPollFairness {
+    remaining: usize,
+}
+
+impl IngressPollFairness {
+    pub(crate) const fn new(epoch_capacity: usize) -> Self {
+        Self {
+            remaining: epoch_capacity,
+        }
+    }
+
+    pub(crate) fn admit(&mut self, cx: &mut Context<'_>, epoch_capacity: usize) -> bool {
+        if self.remaining == 0 {
+            self.remaining = epoch_capacity;
+            cx.waker().wake_by_ref();
+            false
+        } else {
+            true
+        }
+    }
+
+    pub(crate) fn record_received(&mut self) {
+        self.remaining -= 1;
+    }
+
+    pub(crate) fn record_natural_stop(&mut self, epoch_capacity: usize) {
+        self.remaining = epoch_capacity;
+    }
+}
+
 /// A complete Ethernet frame with storage owned by its current pipeline stage.
 ///
 /// `CAPACITY` includes the Ethernet header and excludes the Ethernet FCS.
@@ -213,6 +251,7 @@ impl<M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: usize>
                 link: &self.link,
                 station_address,
                 tx_reservation: (),
+                ingress_fairness: IngressPollFairness::new(QUEUE_DEPTH),
             },
             RadioRunner {
                 rx: self.rx.sender(),
@@ -240,6 +279,7 @@ pub struct Device<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QU
     // Borrowed by every TX token. The GAT lifetime prevents a second token
     // being requested while the first one is live, preserving its reservation.
     tx_reservation: (),
+    ingress_fairness: IngressPollFairness,
 }
 
 /// The radio-task side of the ownership boundary.
@@ -362,15 +402,23 @@ impl<'resources, M: RawMutex, const FRAME_CAPACITY: usize, const QUEUE_DEPTH: us
         Self: 'device;
 
     fn receive(&mut self, cx: &mut Context<'_>) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        if !self.ingress_fairness.admit(cx, QUEUE_DEPTH) {
+            return None;
+        }
         // A receive token must be accompanied by a guaranteed TX token.
         if self.tx.poll_ready_to_send(cx).is_pending() {
+            self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
             return None;
         }
 
         let frame = match self.rx.poll_receive(cx) {
             Poll::Ready(frame) => frame,
-            Poll::Pending => return None,
+            Poll::Pending => {
+                self.ingress_fairness.record_natural_stop(QUEUE_DEPTH);
+                return None;
+            }
         };
+        self.ingress_fairness.record_received();
 
         Some((
             ReceiveToken { frame },

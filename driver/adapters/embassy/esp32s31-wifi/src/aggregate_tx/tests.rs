@@ -254,6 +254,7 @@ fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduComple
         block_ack_control_and_sequence: u32::from(starting_sequence & 0x0fff) << 4,
         block_ack_bitmap_low: bitmap as u32,
         block_ack_bitmap_high: (bitmap >> 32) as u32,
+        block_ack_received: true,
     }
 }
 
@@ -373,6 +374,15 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     .unwrap()
     .with_observer(&observer);
     tx.set_block_ack_operational(0, true);
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        observer.count(AggregateTxObservation::BlockAckOperational {
+            tid: 0,
+            operational: true,
+        }),
+        1,
+    );
 
     assert_eq!(
         tx.start_network(&mut hardware, first, &network.tx_consumer()),

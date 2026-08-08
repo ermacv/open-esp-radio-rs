@@ -43,6 +43,28 @@ fn rx_frame_ownership_moves_into_and_out_of_driver() {
 }
 
 #[test]
+fn owned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
+    let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 2>::new();
+    let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
+    radio.try_send_rx(&[0x11; ETHERNET_HEADER_LEN]).unwrap();
+    radio.try_send_rx(&[0x22; ETHERNET_HEADER_LEN]).unwrap();
+
+    let first = device.receive(&mut context()).unwrap();
+    drop(first);
+    radio.try_send_rx(&[0x33; ETHERNET_HEADER_LEN]).unwrap();
+    let second = device.receive(&mut context()).unwrap();
+    drop(second);
+
+    // The producer refilled the queue while smoltcp's current poll was
+    // draining it. End that poll after the two-slot physical epoch; the
+    // immediately self-woken next poll can consume the retained third frame.
+    assert!(device.receive(&mut context()).is_none());
+    let (third, reply) = device.receive(&mut context()).unwrap();
+    third.consume(|frame| assert_eq!(frame[0], 0x33));
+    drop(reply);
+}
+
+#[test]
 fn tx_token_reserves_capacity_and_applies_backpressure() {
     let mut resources = Resources::<NoopRawMutex, FRAME_CAPACITY, 1>::new();
     let (mut device, radio) = resources.split([2, 0, 0, 0, 0, 1]);
@@ -103,6 +125,29 @@ fn pinned_rx_publisher_exposes_a_real_capacity_edge() {
 }
 
 #[test]
+fn pinned_device_ends_a_refilled_ingress_epoch_at_its_physical_depth() {
+    type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 2>;
+    let resources = Box::leak(Box::new(TestResources::new()));
+    let pool = TestPool::pin_static(Box::leak(Box::new(TestPool::new())));
+    let (mut device, radio) = resources.split(pool, [0; 6]);
+    let mut publisher = radio.rx_publisher();
+    publisher.try_send(&[0x11; ETHERNET_HEADER_LEN]).unwrap();
+    publisher.try_send(&[0x22; ETHERNET_HEADER_LEN]).unwrap();
+
+    let first = device.receive(&mut context()).unwrap();
+    drop(first);
+    publisher.try_send(&[0x33; ETHERNET_HEADER_LEN]).unwrap();
+    let second = device.receive(&mut context()).unwrap();
+    drop(second);
+
+    assert!(device.receive(&mut context()).is_none());
+    let (third, reply) = device.receive(&mut context()).unwrap();
+    third.consume(|frame| assert_eq!(frame[0], 0x33));
+    drop(reply);
+}
+
+#[test]
 fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
     type TestResources = PinnedResources<NoopRawMutex, FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
     type TestPool = PinnedTxPool<FRAME_CAPACITY, TX_HEADROOM, TX_TRAILER, 1>;
@@ -125,6 +170,7 @@ fn pinned_rx_slot_keeps_one_address_across_network_ownership() {
     drop(reply);
 
     publisher.try_send(&[0xa5; ETHERNET_HEADER_LEN]).unwrap();
+    assert!(device.receive(&mut context()).is_none());
     let (second, reply) = device.receive(&mut context()).unwrap();
     let second_address = second.consume(|frame| {
         assert_eq!(frame, &[0xa5; ETHERNET_HEADER_LEN]);
@@ -228,6 +274,9 @@ fn pinned_rx_and_tx_depths_are_independent() {
     assert_eq!(consumer.try_receive().unwrap().ethernet()[0], 0xa5);
 
     for marker in 0..3 {
+        if marker != 0 {
+            assert!(device.receive(&mut context()).is_none());
+        }
         let (received, reply) = device.receive(&mut context()).unwrap();
         received.consume(|frame| assert_eq!(frame[0], marker));
         drop(reply);

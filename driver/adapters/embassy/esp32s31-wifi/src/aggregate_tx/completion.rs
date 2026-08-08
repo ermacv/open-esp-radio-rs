@@ -101,7 +101,19 @@ where
             let cookie = self.cookie.ok_or(AggregateTxError::MissingCookie)?;
             self.ampdu.detach_completed(hardware, cookie)?;
             let current_subframes = self.ampdu.frame_count();
+            let current_first_sequence = active.retry.current_first_sequence();
             let decision = active.retry.observe(completion, current_subframes)?;
+            if let Some(observer) = self.observer {
+                observer.observe(AggregateTxObservation::BlockAckProcessed {
+                    tx_status: completion.tx.status,
+                    block_ack_received: completion.block_ack_received,
+                    control: completion.block_ack.control,
+                    first_sequence: current_first_sequence,
+                    starting_sequence: completion.block_ack.block_ack.starting_sequence,
+                    subframes: current_subframes,
+                    missing: decision.missing(),
+                });
+            }
             if let AmpduRetryDecision::RetainAggregate { retry_mask } = decision {
                 let aggregate = self.ampdu.retain_for_ampdu_retry(cookie, retry_mask)?;
                 self.ordinary

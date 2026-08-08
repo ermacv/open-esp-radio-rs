@@ -82,6 +82,18 @@ fn staging_capacity_wake_does_not_forge_interrupt_evidence() {
 }
 
 #[test]
+fn live_ring_handoff_probe_does_not_forge_interrupt_evidence() {
+    let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
+
+    runtime.notify_rx_handoff();
+    assert!(runtime.rx_signaled());
+    embassy_futures::block_on(runtime.wait_rx());
+
+    assert!(!runtime.rx_signaled());
+    assert_eq!(runtime.rx_post_count(), 0);
+}
+
+#[test]
 fn quiesced_epoch_drain_removes_every_coalesced_wake() {
     let runtime = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
 

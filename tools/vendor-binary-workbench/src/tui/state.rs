@@ -6,6 +6,10 @@ use crate::{
     ExecutionComparisonReport, FunctionDetailSummary, RegisterDetailSummary, WorkspaceSnapshot,
 };
 
+mod detail;
+mod filter;
+mod navigation;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
     Overview,
@@ -213,156 +217,6 @@ impl BrowserState {
         Action::Compare(name)
     }
 
-    pub(super) fn request_function_detail(&mut self) -> Option<String> {
-        if self.section != Section::Functions {
-            return None;
-        }
-        let identity = self
-            .snapshot
-            .functions
-            .get(self.selected())?
-            .identity
-            .clone();
-        if self.requested_function_details.insert(identity.clone()) {
-            Some(identity)
-        } else {
-            None
-        }
-    }
-
-    pub(super) fn function_detail(&self, identity: &str) -> Option<&FunctionDetailSummary> {
-        self.function_details.get(identity).map(Box::as_ref)
-    }
-
-    pub(super) fn function_detail_finished(
-        &mut self,
-        identity: String,
-        detail: Option<FunctionDetailSummary>,
-    ) {
-        if let Some(detail) = detail {
-            self.function_details.insert(identity, Box::new(detail));
-        }
-    }
-
-    pub(super) fn request_register_detail(&mut self) -> Option<u32> {
-        if self.section != Section::Registers {
-            return None;
-        }
-        let address = self
-            .snapshot
-            .registers
-            .registers
-            .get(self.selected())?
-            .address;
-        self.requested_register_details
-            .insert(address)
-            .then_some(address)
-    }
-
-    pub(super) fn register_detail(&self, address: u32) -> Option<&RegisterDetailSummary> {
-        self.register_details.get(&address).map(Box::as_ref)
-    }
-
-    pub(super) fn register_detail_finished(
-        &mut self,
-        address: u32,
-        detail: Option<RegisterDetailSummary>,
-    ) {
-        if let Some(detail) = detail {
-            self.register_details.insert(address, Box::new(detail));
-        }
-    }
-
-    pub(super) fn activate(&mut self) -> Action {
-        if self.section == Section::Comparisons {
-            return self.begin_compare();
-        }
-        let target = match self.section {
-            Section::Functions => {
-                let function = self.snapshot.functions.get(self.selected());
-                function.and_then(|function| {
-                    self.snapshot
-                        .registers
-                        .registers
-                        .iter()
-                        .position(|register| function.registers.contains(&register.address))
-                        .map(|index| (Section::Registers, index, "MMIO register"))
-                        .or_else(|| {
-                            self.snapshot
-                                .interfaces
-                                .slots
-                                .iter()
-                                .position(|slot| {
-                                    slot.functions.iter().any(|name| {
-                                        name == &function.identity || name == &function.symbol
-                                    }) || slot.semantic.as_ref().is_some_and(|semantic| {
-                                        function.semantic_operations.contains(semantic)
-                                    })
-                                })
-                                .map(|index| {
-                                    (Section::Interfaces, index, "interface/semantic call")
-                                })
-                        })
-                })
-            }
-            Section::Registers => {
-                let register = self.snapshot.registers.registers.get(self.selected());
-                register
-                    .and_then(|register| {
-                        self.snapshot
-                            .functions
-                            .iter()
-                            .position(|function| function.registers.contains(&register.address))
-                    })
-                    .map(|index| (Section::Functions, index, "register user"))
-            }
-            Section::Interfaces => {
-                let slot = self.snapshot.interfaces.slots.get(self.selected());
-                slot.and_then(|slot| {
-                    self.snapshot
-                        .functions
-                        .iter()
-                        .position(|function| {
-                            slot.functions
-                                .iter()
-                                .any(|name| name == &function.identity || name == &function.symbol)
-                        })
-                        .map(|index| (Section::Functions, index, "calling function"))
-                })
-            }
-            Section::Types => {
-                let logical_type = self.snapshot.logical_types.get(self.selected());
-                logical_type
-                    .and_then(|logical_type| {
-                        logical_type.bindings.iter().find_map(|binding| {
-                            let function = binding
-                                .object
-                                .strip_prefix("argument:")?
-                                .split(':')
-                                .next()?;
-                            self.snapshot.functions.iter().position(|item| {
-                                item.identity == function || item.symbol == function
-                            })
-                        })
-                    })
-                    .map(|index| (Section::Functions, index, "bound function"))
-            }
-            _ => None,
-        };
-        if let Some((section, index, label)) = target {
-            self.search_query.clear();
-            self.search_editing = false;
-            self.section = section;
-            let section_index = self.section_index();
-            self.selections[section_index] = index;
-            self.detail_scroll[section_index] = 0;
-            self.message = Some(format!("Navigated to {label}"));
-        } else {
-            self.message = Some("No reviewed cross-reference for this item".to_owned());
-        }
-        Action::Continue
-    }
-
     pub(super) fn comparison_finished(&mut self, name: String, report: ExecutionComparisonReport) {
         let verdict = report.verdict.label();
         self.comparisons.insert(name.clone(), Box::new(report));
@@ -403,18 +257,6 @@ impl BrowserState {
         self.filtered_indices().len()
     }
 
-    fn unfiltered_item_count(&self, section: Section) -> usize {
-        match section {
-            Section::Overview => self.snapshot.project_status.phases.len(),
-            Section::Functions => self.snapshot.functions.len(),
-            Section::Registers => self.snapshot.registers.registers.len(),
-            Section::Interfaces => self.snapshot.interfaces.slots.len(),
-            Section::Comparisons => self.snapshot.comparisons.len(),
-            Section::Diagnostics => self.snapshot.diagnostics.len(),
-            Section::Types => self.snapshot.logical_types.len(),
-        }
-    }
-
     fn clamp_selection(&mut self) {
         let section = self.section_index();
         self.selections[section] =
@@ -430,80 +272,6 @@ impl BrowserState {
         let section = self.section_index();
         self.selections[section] = 0;
         self.detail_scroll[section] = 0;
-    }
-
-    fn filtered_indices(&self) -> Vec<usize> {
-        (0..self.unfiltered_item_count(self.section))
-            .filter(|index| self.item_matches(self.section, *index))
-            .collect()
-    }
-
-    fn item_matches(&self, section: Section, index: usize) -> bool {
-        let query = self.search_query.trim().to_ascii_lowercase();
-        if query.is_empty() {
-            return true;
-        }
-        let contains = |value: &str| value.to_ascii_lowercase().contains(&query);
-        match section {
-            Section::Overview => {
-                self.snapshot
-                    .project_status
-                    .phases
-                    .get(index)
-                    .is_some_and(|phase| {
-                        contains(&phase.name)
-                            || phase.components.iter().any(|component| {
-                                contains(&component.name)
-                                    || component.diagnostic.as_deref().is_some_and(&contains)
-                            })
-                    })
-            }
-            Section::Functions => self.snapshot.functions.get(index).is_some_and(|function| {
-                contains(&function.identity)
-                    || contains(&function.symbol)
-                    || function.reviewed_name.as_deref().is_some_and(&contains)
-                    || function.role.as_deref().is_some_and(&contains)
-                    || function
-                        .semantic_operations
-                        .iter()
-                        .any(|value| contains(value))
-            }),
-            Section::Registers => {
-                self.snapshot
-                    .registers
-                    .registers
-                    .get(index)
-                    .is_some_and(|register| {
-                        contains(&register.name) || contains(&format!("{:#010x}", register.address))
-                    })
-            }
-            Section::Interfaces => self
-                .snapshot
-                .interfaces
-                .slots
-                .get(index)
-                .is_some_and(|slot| {
-                    contains(&slot.id)
-                        || contains(&slot.name)
-                        || slot.semantic.as_deref().is_some_and(&contains)
-                        || slot.functions.iter().any(|value| contains(value))
-                }),
-            Section::Comparisons => self.snapshot.comparisons.get(index).is_some_and(|profile| {
-                contains(&profile.name)
-                    || contains(&profile.vendor_symbol)
-                    || contains(&profile.rust_symbol)
-            }),
-            Section::Diagnostics => self
-                .snapshot
-                .diagnostics
-                .get(index)
-                .is_some_and(|item| contains(&item.component) || contains(&item.message)),
-            Section::Types => self
-                .snapshot
-                .logical_types
-                .get(index)
-                .is_some_and(|item| contains(&item.id) || contains(&item.name)),
-        }
     }
 }
 

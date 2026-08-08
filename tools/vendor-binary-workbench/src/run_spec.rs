@@ -2,12 +2,14 @@
 
 use std::{
     collections::BTreeSet,
-    fs, io,
+    fmt, fs, io,
     path::{Path, PathBuf},
 };
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use thiserror::Error;
+
+use crate::source_id::SourceId;
 
 #[derive(Debug, Error, Diagnostic)]
 pub(crate) enum RunSpecError {
@@ -31,29 +33,94 @@ pub(crate) enum RunSpecError {
 
 type Result<T> = std::result::Result<T, RunSpecError>;
 
-const PATH_ROLES: &[&str] = &[
-    "artifact",
-    "companion",
-    "vendor-artifact",
-    "vendor-inventory",
-    "vendor-companion",
-    "rust-artifact",
-    "rust-companion",
-];
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) enum InputRole {
+    Artifact,
+    Companion,
+    VendorArtifact,
+    VendorInventory,
+    VendorCompanion,
+    RustArtifact,
+    RustCompanion,
+    SourceArtifact(SourceId),
+    SourceInventory(SourceId),
+    SourceCompanion(SourceId),
+}
 
-fn is_source_path_role(role: &str) -> bool {
-    let Some((kind, source)) = role.split_once(':') else {
-        return false;
-    };
-    matches!(
-        kind,
-        "source-artifact" | "source-inventory" | "source-companion"
-    ) && crate::source_id::is_source_id(source)
+impl InputRole {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "artifact" => Some(Self::Artifact),
+            "companion" => Some(Self::Companion),
+            "vendor-artifact" => Some(Self::VendorArtifact),
+            "vendor-inventory" => Some(Self::VendorInventory),
+            "vendor-companion" => Some(Self::VendorCompanion),
+            "rust-artifact" => Some(Self::RustArtifact),
+            "rust-companion" => Some(Self::RustCompanion),
+            _ => {
+                let (kind, source) = value.split_once(':')?;
+                let source = source.parse().ok()?;
+                match kind {
+                    "source-artifact" => Some(Self::SourceArtifact(source)),
+                    "source-inventory" => Some(Self::SourceInventory(source)),
+                    "source-companion" => Some(Self::SourceCompanion(source)),
+                    _ => None,
+                }
+            }
+        }
+    }
+
+    pub(crate) const fn is_scannable(&self) -> bool {
+        matches!(
+            self,
+            Self::Artifact
+                | Self::VendorArtifact
+                | Self::VendorInventory
+                | Self::RustArtifact
+                | Self::SourceArtifact(_)
+                | Self::SourceInventory(_)
+        )
+    }
+
+    pub(crate) fn source_id(&self) -> &str {
+        match self {
+            Self::VendorArtifact | Self::VendorInventory | Self::VendorCompanion => "vendor",
+            Self::RustArtifact | Self::RustCompanion => "rust",
+            Self::SourceArtifact(source)
+            | Self::SourceInventory(source)
+            | Self::SourceCompanion(source) => source.as_str(),
+            Self::Artifact => "artifact",
+            Self::Companion => "companion",
+        }
+    }
+}
+
+impl fmt::Display for InputRole {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Artifact => formatter.write_str("artifact"),
+            Self::Companion => formatter.write_str("companion"),
+            Self::VendorArtifact => formatter.write_str("vendor-artifact"),
+            Self::VendorInventory => formatter.write_str("vendor-inventory"),
+            Self::VendorCompanion => formatter.write_str("vendor-companion"),
+            Self::RustArtifact => formatter.write_str("rust-artifact"),
+            Self::RustCompanion => formatter.write_str("rust-companion"),
+            Self::SourceArtifact(source) => write!(formatter, "source-artifact:{source}"),
+            Self::SourceInventory(source) => write!(formatter, "source-inventory:{source}"),
+            Self::SourceCompanion(source) => write!(formatter, "source-companion:{source}"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct RunInput {
+    pub(crate) role: InputRole,
+    pub(crate) path: PathBuf,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RunSpec {
-    inputs: Vec<(String, PathBuf)>,
+    inputs: Vec<RunInput>,
 }
 
 impl RunSpec {
@@ -83,32 +150,32 @@ impl RunSpec {
                     }
                 }
                 "input" => {
-                    let (role, input_path) = split_value(value, path, &input, index)?;
-                    if !PATH_ROLES.contains(&role) && !is_source_path_role(role) {
+                    let (role_text, input_path) = split_value(value, path, &input, index)?;
+                    let Some(role) = InputRole::parse(role_text) else {
                         return Err(invalid(
                             path,
                             &input,
                             index,
-                            format!("unsupported input role {role:?}"),
+                            format!("unsupported input role {role_text:?}"),
                         ));
-                    }
-                    if role != "companion" && !unique_roles.insert(role.to_owned()) {
+                    };
+                    if role != InputRole::Companion && !unique_roles.insert(role.clone()) {
                         return Err(invalid(
                             path,
                             &input,
                             index,
-                            format!("duplicate input role {role:?}"),
+                            format!("duplicate input role {role_text:?}"),
                         ));
                     }
                     let input_path = Path::new(input_path);
-                    inputs.push((
-                        role.to_owned(),
-                        if input_path.is_absolute() {
+                    inputs.push(RunInput {
+                        role,
+                        path: if input_path.is_absolute() {
                             input_path.to_owned()
                         } else {
                             base.join(input_path)
                         },
-                    ));
+                    });
                 }
                 _ => {
                     return Err(invalid(
@@ -134,7 +201,7 @@ impl RunSpec {
         Ok(Self { inputs })
     }
 
-    pub(crate) fn inputs(&self) -> &[(String, PathBuf)] {
+    pub(crate) fn inputs(&self) -> &[RunInput] {
         &self.inputs
     }
 }
@@ -194,10 +261,10 @@ mod tests {
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(run.inputs[0].0, "source-artifact:rom");
-        assert!(run.inputs[0].1.ends_with("inputs/rom.elf"));
-        assert_eq!(run.inputs[1].0, "rust-artifact");
-        assert_eq!(run.inputs[1].1, PathBuf::from("/tmp/probes.elf"));
+        assert_eq!(run.inputs[0].role.to_string(), "source-artifact:rom");
+        assert!(run.inputs[0].path.ends_with("inputs/rom.elf"));
+        assert_eq!(run.inputs[1].role, InputRole::RustArtifact);
+        assert_eq!(run.inputs[1].path, PathBuf::from("/tmp/probes.elf"));
     }
 
     #[test]
@@ -215,10 +282,10 @@ mod tests {
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
         std::fs::remove_dir_all(directory).unwrap();
-        assert_eq!(run.inputs[0].0, "source-artifact:libpp");
-        assert!(run.inputs[0].1.ends_with("inputs/libpp.elf"));
-        assert_eq!(run.inputs[1].0, "source-inventory:libpp");
-        assert!(run.inputs[1].1.ends_with("inputs/libpp.a"));
+        assert_eq!(run.inputs[0].role.to_string(), "source-artifact:libpp");
+        assert!(run.inputs[0].path.ends_with("inputs/libpp.elf"));
+        assert_eq!(run.inputs[1].role.to_string(), "source-inventory:libpp");
+        assert!(run.inputs[1].path.ends_with("inputs/libpp.a"));
     }
 
     #[test]
@@ -237,8 +304,8 @@ mod tests {
         let run = RunSpec::load(&path).unwrap();
         std::fs::remove_dir_all(directory).unwrap();
         assert_eq!(run.inputs.len(), 3);
-        assert_eq!(run.inputs[0].0, "source-artifact:rom");
-        assert_eq!(run.inputs[1].0, "source-inventory:rom");
-        assert_eq!(run.inputs[2].0, "rust-artifact");
+        assert_eq!(run.inputs[0].role.to_string(), "source-artifact:rom");
+        assert_eq!(run.inputs[1].role.to_string(), "source-inventory:rom");
+        assert_eq!(run.inputs[2].role, InputRole::RustArtifact);
     }
 }

@@ -415,17 +415,17 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
         (Some(path), Some(run_spec)) => {
             outputln!("RUN-SPEC\t{}", path.display());
             input_count = run_spec.inputs().len();
-            for (role, path) in run_spec.inputs() {
-                if !path.is_file() {
+            for input in run_spec.inputs() {
+                if !input.path.is_file() {
                     errors += 1;
                     outputln!(
                         "INPUT\trole={}\tstatus=missing\tpath={}",
-                        role,
-                        path.display()
+                        input.role,
+                        input.path.display()
                     );
                     continue;
                 }
-                match artifact::inspect_artifact(path) {
+                match artifact::inspect_artifact(&input.path) {
                     Ok(inventory) => {
                         valid_inputs += 1;
                         let symbol_facts = inventory.symbols().count();
@@ -452,7 +452,7 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
                         }
                         outputln!(
                             "INPUT\trole={}\tstatus={}\tcontainer={}\tobjects={}\tskipped-members={}\tsymbol-facts={}\tcode-definitions={}\texported-definitions={}\tundefined={}\tpath={}",
-                            role,
+                            input.role,
                             if symbol_facts == 0 {
                                 "readable-no-symbols"
                             } else {
@@ -465,15 +465,15 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
                             code_definitions,
                             exported_definitions,
                             undefined,
-                            path.display()
+                            input.path.display()
                         );
                     }
                     Err(error) => {
                         errors += 1;
                         outputln!(
                             "INPUT\trole={}\tstatus=invalid\tpath={}\terror={}",
-                            role,
-                            path.display(),
+                            input.role,
+                            input.path.display(),
                             error
                         );
                     }

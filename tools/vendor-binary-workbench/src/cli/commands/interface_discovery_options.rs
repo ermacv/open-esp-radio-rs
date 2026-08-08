@@ -24,14 +24,6 @@ pub(super) fn resolve_options(arguments: InterfaceDiscoverArgs) -> Options {
     }
 }
 
-fn is_scannable_role(role: &str) -> bool {
-    role == "artifact"
-        || role.ends_with("-artifact")
-        || role.ends_with("-inventory")
-        || role.starts_with("source-artifact:")
-        || role.starts_with("source-inventory:")
-}
-
 pub(super) fn selected_inputs(
     run_spec: &RunSpec,
     options: &Options,
@@ -39,8 +31,8 @@ pub(super) fn selected_inputs(
     let all_sources = run_spec
         .inputs()
         .iter()
-        .filter(|(role, _)| is_scannable_role(role))
-        .map(|(role, _)| crate::analysis::source_id(role))
+        .filter(|input| input.role.is_scannable())
+        .map(|input| input.role.source_id().to_owned())
         .collect::<BTreeSet<_>>();
     let unknown = options
         .sources
@@ -58,11 +50,10 @@ pub(super) fn selected_inputs(
     Ok(run_spec
         .inputs()
         .iter()
-        .filter(|(role, _)| is_scannable_role(role))
-        .filter(|(role, _)| {
-            options.sources.is_empty()
-                || options.sources.contains(&crate::analysis::source_id(role))
+        .filter(|input| input.role.is_scannable())
+        .filter(|input| {
+            options.sources.is_empty() || options.sources.contains(input.role.source_id())
         })
-        .cloned()
+        .map(|input| (input.role.to_string(), input.path.clone()))
         .collect())
 }

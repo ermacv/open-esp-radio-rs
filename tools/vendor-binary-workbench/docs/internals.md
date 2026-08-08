@@ -68,12 +68,23 @@ only missing inputs and never synthesizes command-line tokens. Help, usage,
 unknown-option rejection and option conflicts are all derived from the same
 `clap` declarations. Runtime and project errors therefore do not print CLI
 usage, while parser errors retain `clap`'s command-specific diagnostics.
+Compound `SOURCE=PATH`, `SOURCE=VALUE` and `NAME=START..END` values also cross
+the clap boundary as typed values. Run-spec input names are parsed once into a
+closed `InputRole` enum; the resolver never recovers roles from prefixes or
+recreates compound arguments as strings.
 `--format` changes only stdout. Diagnostics, warnings and verbosity-controlled
 tracing stay on stderr, so JSON and JSONL output remains pipe-safe. Errors are
 typed at every workbench crate boundary; there is no boxed external-error
 escape hatch in the facade. The facade error itself implements `miette::Diagnostic`;
 project, run-spec and target parse failures retain their named source and
 labelled span through the common renderer.
+
+Without `RUST_LOG`, the default tracing filter shows workbench warnings while
+keeping dependency diagnostics below `error`; `-v`, `-vv` and `-vvv` raise
+only workbench targets to info, debug and trace. An explicit `RUST_LOG` owns
+the complete non-quiet filter. `--quiet` always disables tracing. A command
+that fails before producing a result leaves stdout empty, including in JSON
+mode; its diagnostic is rendered only on stderr.
 
 Machine output is a schema-1 stream of `{ kind, data }` records. Commands with
 stable domain reports emit those reports directly: project status, symbol

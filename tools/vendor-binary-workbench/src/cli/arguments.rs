@@ -4,6 +4,9 @@ use std::{path::PathBuf, str::FromStr};
 
 use clap::Args;
 
+use super::{NamedAddressRange, SourcePath, SourceValue};
+use crate::source_id::SourceId;
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct EmptyArgs {}
 
@@ -17,10 +20,10 @@ pub(crate) struct ProjectInitArgs {
     pub(crate) id: String,
     /// Named half-open MMIO region; repeat for every region.
     #[arg(long, value_name = "NAME=START..END", required = true)]
-    pub(crate) mmio: Vec<String>,
+    pub(crate) mmio: Vec<NamedAddressRange>,
     /// Stable vendor source identifier; repeat for multiple sources.
     #[arg(long)]
-    pub(crate) source: Vec<String>,
+    pub(crate) source: Vec<SourceId>,
     /// Rust compilation target used by generated project artifacts.
     #[arg(long)]
     pub(crate) rust_target: Option<String>,
@@ -228,17 +231,17 @@ pub(crate) struct ImageAuditArgs {
     pub(crate) artifact: Option<PathBuf>,
     /// Named address range that direct control flow must not target.
     #[arg(long, value_name = "NAME=START..END")]
-    pub(crate) forbid: Vec<String>,
+    pub(crate) forbid: Vec<NamedAddressRange>,
 }
 
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct MmioDiscoverArgs {
     /// Named vendor artifact; repeat for multi-source analysis.
     #[arg(long, value_name = "SOURCE=PATH")]
-    pub(crate) artifact: Vec<String>,
+    pub(crate) artifact: Vec<SourcePath>,
     /// Named half-open address range to classify.
     #[arg(long, value_name = "NAME=START..END")]
-    pub(crate) range: Vec<String>,
+    pub(crate) range: Vec<NamedAddressRange>,
     /// Restrict analyzed functions to this symbol prefix.
     #[arg(long, default_value = "")]
     pub(crate) symbol_prefix: String,
@@ -254,7 +257,7 @@ pub(crate) struct MmioDiscoverArgs {
 pub(crate) struct IrExportArgs {
     /// Named vendor artifact; repeat for a linked multi-source IR.
     #[arg(long, value_name = "SOURCE=PATH")]
-    pub(crate) artifact: Vec<String>,
+    pub(crate) artifact: Vec<SourcePath>,
     /// Companion image used to resolve symbols for a single primary artifact.
     #[arg(long)]
     pub(crate) companion: Vec<PathBuf>,
@@ -617,16 +620,16 @@ pub(crate) struct VerifySourceArgs {
 pub(crate) struct VerifyInventoryArgs {
     /// Vendor executable keyed by stable source identifier.
     #[arg(long, value_name = "SOURCE=PATH")]
-    pub(crate) source_artifact: Vec<String>,
+    pub(crate) source_artifact: Vec<SourcePath>,
     /// Vendor archive keyed by stable source identifier.
     #[arg(long, value_name = "SOURCE=PATH")]
-    pub(crate) source_inventory: Vec<String>,
+    pub(crate) source_inventory: Vec<SourcePath>,
     /// Companion image keyed by stable source identifier.
     #[arg(long, value_name = "SOURCE=PATH")]
-    pub(crate) source_companion: Vec<String>,
+    pub(crate) source_companion: Vec<SourcePath>,
     /// Per-source symbol prefix override.
     #[arg(long, value_name = "SOURCE=PREFIX")]
-    pub(crate) source_prefix: Vec<String>,
+    pub(crate) source_prefix: Vec<SourceValue>,
     /// Rust executable containing generated candidates.
     #[arg(long)]
     pub(crate) rust_artifact: Option<PathBuf>,

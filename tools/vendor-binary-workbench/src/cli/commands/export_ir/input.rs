@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, path::PathBuf};
 
-use crate::Result;
+use crate::{Result, cli::SourcePath, source_id::is_source_id};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct IrArtifactInput {
@@ -10,19 +10,13 @@ pub(super) struct IrArtifactInput {
     pub(super) path: PathBuf,
 }
 
-pub(super) fn valid_source_id(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-}
-
+#[cfg(test)]
 pub(super) fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput> {
     named_artifact_path(source, PathBuf::from(path))
 }
 
 pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtifactInput> {
-    if !valid_source_id(source) {
+    if !is_source_id(source) {
         return Err(format!("invalid artifact source id {source:?}").into());
     }
     if path.as_os_str().is_empty() {
@@ -34,11 +28,13 @@ pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtif
     })
 }
 
-pub(super) fn parse_artifact(value: &str) -> Result<IrArtifactInput> {
-    let (source, path) = value
-        .split_once('=')
-        .ok_or("--artifact requires SOURCE=PATH")?;
-    named_artifact(source, path)
+impl From<SourcePath> for IrArtifactInput {
+    fn from(value: SourcePath) -> Self {
+        Self {
+            source: value.source.into_string(),
+            path: value.path,
+        }
+    }
 }
 
 pub(super) fn validate_artifact_inputs(

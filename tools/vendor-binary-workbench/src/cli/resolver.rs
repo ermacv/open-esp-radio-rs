@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use super::{Command, CommandArguments, arguments};
-use crate::run_spec::RunSpec;
+use super::{Command, CommandArguments, SourcePath, arguments};
+use crate::run_spec::{InputRole, RunSpec};
 
 pub(super) fn apply_run_spec_defaults(
     command: Command,
@@ -18,29 +18,31 @@ pub(super) fn apply_run_spec_defaults(
         CommandArguments::DriverGenerate(arguments) => arguments.companion.is_empty(),
         _ => false,
     };
-    for (role, path) in run_spec.inputs() {
+    for input in run_spec.inputs() {
+        let role = &input.role;
+        let path = &input.path;
         if !command.accepts_run_input_role(role) {
             continue;
         }
         match arguments {
-            CommandArguments::ImageAudit(args) if role == "artifact" => {
+            CommandArguments::ImageAudit(args) if role == &InputRole::Artifact => {
                 args.artifact.get_or_insert_with(|| path.clone());
             }
             CommandArguments::MmioDiscover(args) => {
-                if let Some(source) = role.strip_prefix("source-artifact:") {
-                    push_named_path(&mut args.artifact, source, path);
+                if let InputRole::SourceArtifact(source) = role {
+                    push_source_path(&mut args.artifact, source, path);
                 }
             }
             CommandArguments::IrExport(args) => {
-                if let Some(source) = role.strip_prefix("source-artifact:") {
-                    push_named_path(&mut args.artifact, source, path);
-                } else if role == "companion" && use_default_companions {
+                if let InputRole::SourceArtifact(source) = role {
+                    push_source_path(&mut args.artifact, source, path);
+                } else if role == &InputRole::Companion && use_default_companions {
                     args.companion.push(path.clone());
                 }
             }
             CommandArguments::TraceInput(args) => apply_trace_input(args, role, path),
             CommandArguments::InspectCompare(args) => {
-                if role == "artifact" && args.artifact.is_none() {
+                if role == &InputRole::Artifact && args.artifact.is_none() {
                     args.artifact = Some(path.clone());
                 }
             }
@@ -81,78 +83,78 @@ pub(super) fn apply_run_spec_defaults(
                 );
             }
             CommandArguments::ExecuteRun(args) => {
-                if role == "artifact" && args.artifact.is_none() {
+                if role == &InputRole::Artifact && args.artifact.is_none() {
                     args.artifact = Some(path.clone());
-                } else if role == "companion" && args.companion.is_none() {
+                } else if role == &InputRole::Companion && args.companion.is_none() {
                     args.companion = Some(path.clone());
                 }
             }
-            CommandArguments::ExecuteCompare(args) => match role.as_str() {
-                "vendor-artifact" if args.vendor_artifact.is_none() => {
+            CommandArguments::ExecuteCompare(args) => match role {
+                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
-                "vendor-companion" if args.vendor_companion.is_none() => {
+                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
                     args.vendor_companion = Some(path.clone())
                 }
-                "rust-artifact" if args.rust_artifact.is_none() => {
+                InputRole::RustArtifact if args.rust_artifact.is_none() => {
                     args.rust_artifact = Some(path.clone())
                 }
-                "rust-companion" if args.rust_companion.is_none() => {
+                InputRole::RustCompanion if args.rust_companion.is_none() => {
                     args.rust_companion = Some(path.clone())
                 }
                 _ => {}
             },
-            CommandArguments::VerifyProfiles(args) => match role.as_str() {
-                "vendor-artifact" if args.vendor_artifact.is_none() => {
+            CommandArguments::VerifyProfiles(args) => match role {
+                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
-                "vendor-companion" if args.vendor_companion.is_none() => {
+                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
                     args.vendor_companion = Some(path.clone())
                 }
-                "rust-artifact" if args.rust_artifact.is_none() => {
+                InputRole::RustArtifact if args.rust_artifact.is_none() => {
                     args.rust_artifact = Some(path.clone())
                 }
-                "rust-companion" if args.rust_companion.is_none() => {
+                InputRole::RustCompanion if args.rust_companion.is_none() => {
                     args.rust_companion = Some(path.clone())
                 }
                 _ => {}
             },
-            CommandArguments::VerifySource(args) => match role.as_str() {
-                "vendor-artifact" if args.vendor_artifact.is_none() => {
+            CommandArguments::VerifySource(args) => match role {
+                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
-                "vendor-inventory" if args.vendor_inventory.is_none() => {
+                InputRole::VendorInventory if args.vendor_inventory.is_none() => {
                     args.vendor_inventory = Some(path.clone())
                 }
-                "vendor-companion" if args.vendor_companion.is_none() => {
+                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
                     args.vendor_companion = Some(path.clone())
                 }
-                "rust-artifact" if args.rust_artifact.is_none() => {
+                InputRole::RustArtifact if args.rust_artifact.is_none() => {
                     args.rust_artifact = Some(path.clone())
                 }
-                "rust-companion" if args.rust_companion.is_none() => {
+                InputRole::RustCompanion if args.rust_companion.is_none() => {
                     args.rust_companion = Some(path.clone())
                 }
                 _ => {}
             },
             CommandArguments::VerifyInventory(args) => {
-                if let Some(source) = role.strip_prefix("source-artifact:") {
-                    push_named_path(&mut args.source_artifact, source, path);
-                } else if let Some(source) = role.strip_prefix("source-inventory:") {
-                    push_named_path(&mut args.source_inventory, source, path);
-                } else if let Some(source) = role.strip_prefix("source-companion:") {
-                    push_named_path(&mut args.source_companion, source, path);
-                } else if role == "rust-artifact" && args.rust_artifact.is_none() {
+                if let InputRole::SourceArtifact(source) = role {
+                    push_source_path(&mut args.source_artifact, source, path);
+                } else if let InputRole::SourceInventory(source) = role {
+                    push_source_path(&mut args.source_inventory, source, path);
+                } else if let InputRole::SourceCompanion(source) = role {
+                    push_source_path(&mut args.source_companion, source, path);
+                } else if role == &InputRole::RustArtifact && args.rust_artifact.is_none() {
                     args.rust_artifact = Some(path.clone());
-                } else if role == "rust-companion" && args.rust_companion.is_none() {
+                } else if role == &InputRole::RustCompanion && args.rust_companion.is_none() {
                     args.rust_companion = Some(path.clone());
                 }
             }
-            CommandArguments::VerifyContract(args) => match role.as_str() {
-                "vendor-artifact" if args.vendor_artifact.is_none() => {
+            CommandArguments::VerifyContract(args) => match role {
+                InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }
-                "vendor-companion" if args.vendor_companion.is_none() => {
+                InputRole::VendorCompanion if args.vendor_companion.is_none() => {
                     args.vendor_companion = Some(path.clone())
                 }
                 _ => {}
@@ -164,10 +166,10 @@ pub(super) fn apply_run_spec_defaults(
 
 fn apply_trace_input(
     arguments: &mut arguments::TraceInputArgs,
-    role: &str,
+    role: &InputRole,
     path: &std::path::Path,
 ) {
-    if role == "artifact" && arguments.artifact.is_none() {
+    if role == &InputRole::Artifact && arguments.artifact.is_none() {
         arguments.artifact = Some(path.to_owned());
     }
 }
@@ -175,26 +177,29 @@ fn apply_trace_input(
 fn set_path_role(
     artifact: &mut Option<PathBuf>,
     companions: &mut Vec<PathBuf>,
-    role: &str,
+    role: &InputRole,
     path: &std::path::Path,
     use_default_companions: bool,
 ) {
-    if role == "artifact" && artifact.is_none() {
+    if role == &InputRole::Artifact && artifact.is_none() {
         *artifact = Some(path.to_owned());
-    } else if role == "companion" && use_default_companions {
+    } else if role == &InputRole::Companion && use_default_companions {
         companions.push(path.to_owned());
     }
 }
 
-fn push_named_path(values: &mut Vec<String>, name: &str, path: &std::path::Path) {
-    if values.iter().any(|value| {
-        value
-            .split_once('=')
-            .is_some_and(|(current, _)| current == name)
-    }) {
+fn push_source_path(
+    values: &mut Vec<SourcePath>,
+    source: &crate::source_id::SourceId,
+    path: &std::path::Path,
+) {
+    if values.iter().any(|value| value.source == *source) {
         return;
     }
-    values.push(format!("{name}={}", path.display()));
+    values.push(SourcePath {
+        source: source.clone(),
+        path: path.to_owned(),
+    });
 }
 
 #[cfg(test)]
@@ -258,7 +263,7 @@ mod tests {
             "input source-artifact:rom default-rom.elf\ninput source-artifact:archive archive.elf\n",
         );
         let mut arguments = CommandArguments::IrExport(IrExportArgs {
-            artifact: vec!["rom=explicit-rom.elf".to_owned()],
+            artifact: vec!["rom=explicit-rom.elf".parse().unwrap()],
             ..Default::default()
         });
         apply_run_spec_defaults(Command::ExportIr, &mut arguments, &run_spec);
@@ -266,12 +271,12 @@ mod tests {
         let CommandArguments::IrExport(arguments) = arguments else {
             panic!("unexpected argument type")
         };
-        assert_eq!(arguments.artifact[0], "rom=explicit-rom.elf");
-        assert!(
-            arguments.artifact[1]
-                .strip_prefix("archive=")
-                .unwrap()
-                .ends_with("archive.elf")
+        assert_eq!(arguments.artifact[0].source.as_str(), "rom");
+        assert_eq!(
+            arguments.artifact[0].path,
+            PathBuf::from("explicit-rom.elf")
         );
+        assert_eq!(arguments.artifact[1].source.as_str(), "archive");
+        assert!(arguments.artifact[1].path.ends_with("archive.elf"));
     }
 }

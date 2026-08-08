@@ -6,20 +6,25 @@ use super::*;
 
 #[test]
 fn artifact_input_requires_explicit_source_names() {
-    assert!(parse_artifact("vendor.a").is_err());
+    assert!("vendor.a".parse::<SourcePath>().is_err());
     assert_eq!(
-        parse_artifact("libphy=/tmp/vendor=archive.a").unwrap(),
+        IrArtifactInput::from(
+            "libphy=/tmp/vendor=archive.a"
+                .parse::<SourcePath>()
+                .unwrap()
+        ),
         IrArtifactInput {
             source: "libphy".to_owned(),
             path: PathBuf::from("/tmp/vendor=archive.a"),
         }
     );
-    assert!(parse_artifact("/tmp/vendor=archive.a").is_err());
+    assert!("/tmp/vendor=archive.a".parse::<SourcePath>().is_err());
 }
 
 #[test]
 fn artifact_source_ids_are_stable_machine_keys() {
-    assert!(named_artifact("wifi-rom.v1", "rom.elf").is_ok());
+    assert!(named_artifact("wifi-rom-v1", "rom.elf").is_ok());
+    assert!(named_artifact("wifi-rom.v1", "rom.elf").is_err());
     assert!(named_artifact("wifi/rom", "rom.elf").is_err());
     assert!(named_artifact("", "rom.elf").is_err());
 }

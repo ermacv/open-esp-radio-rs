@@ -8,7 +8,11 @@ use std::{
 
 use super::{MmioRegisterMap, Result, TargetSpec, export_ir};
 use crate::cli::IrBuildArgs;
-use crate::{project::ProjectSpec, project_ir::ProjectIrProfile, run_spec::RunSpec};
+use crate::{
+    project::ProjectSpec,
+    project_ir::ProjectIrProfile,
+    run_spec::{InputRole, RunSpec},
+};
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct BuildOptions {
@@ -115,18 +119,22 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
     let bound = run_spec
         .inputs()
         .iter()
-        .filter_map(|(role, path)| {
-            role.strip_prefix("source-artifact:")
-                .map(|source| (source, path))
+        .filter_map(|input| {
+            let InputRole::SourceArtifact(source) = &input.role else {
+                return None;
+            };
+            Some((source.as_str(), &input.path))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
     let artifacts = if profile.sources.is_empty() {
         run_spec
             .inputs()
             .iter()
-            .filter_map(|(role, path)| {
-                role.strip_prefix("source-artifact:")
-                    .map(|source| (source.to_owned(), path.clone()))
+            .filter_map(|input| {
+                let InputRole::SourceArtifact(source) = &input.role else {
+                    return None;
+                };
+                Some((source.to_string(), input.path.clone()))
             })
             .collect::<Vec<_>>()
     } else {
@@ -157,16 +165,20 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
 
     let mut companions = BTreeSet::new();
     if artifacts.len() == 1 {
-        let source_role = format!("source-companion:{}", artifacts[0].0);
-        for (role, path) in run_spec.inputs() {
-            if role == "companion" || role == &source_role {
-                companions.insert(path.clone());
+        for input in run_spec.inputs() {
+            if input.role == InputRole::Companion
+                || matches!(
+                    &input.role,
+                    InputRole::SourceCompanion(source) if source.as_str() == artifacts[0].0
+                )
+            {
+                companions.insert(input.path.clone());
             }
         }
     } else if run_spec
         .inputs()
         .iter()
-        .any(|(role, _)| role == "companion")
+        .any(|input| input.role == InputRole::Companion)
     {
         return Err(format!(
             "IR profile {:?} selects multiple sources but the run spec has a global companion",

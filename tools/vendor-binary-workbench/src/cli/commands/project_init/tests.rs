@@ -8,8 +8,8 @@ fn parses_generic_sources_ranges_and_defaults() {
     let options = resolve_options(ProjectInitArgs {
         directory: "project".into(),
         id: "radio-rev0".to_owned(),
-        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
-        source: vec!["rom".to_owned(), "archive".to_owned()],
+        mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
+        source: vec!["rom".parse().unwrap(), "archive".parse().unwrap()],
         rust_target: None,
         pac_crate_name: None,
         import_svd: None,
@@ -35,7 +35,7 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     let arguments = ProjectInitArgs {
         directory: directory.clone(),
         id: "radio".to_owned(),
-        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
         pac_crate_name: None,
@@ -85,8 +85,8 @@ fn rejects_overlapping_ranges_before_creating_a_directory() {
         directory: directory.clone(),
         id: "radio".to_owned(),
         mmio: vec![
-            "one=0x20000000..0x20001000".to_owned(),
-            "two=0x20000800..0x20002000".to_owned(),
+            "one=0x20000000..0x20001000".parse().unwrap(),
+            "two=0x20000800..0x20002000".parse().unwrap(),
         ],
         source: Vec::new(),
         rust_target: None,
@@ -139,7 +139,7 @@ fn imported_svd_must_fit_the_declared_mmio_map() {
     let error = run(ProjectInitArgs {
         directory: directory.clone(),
         id: "radio".to_owned(),
-        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
         pac_crate_name: None,

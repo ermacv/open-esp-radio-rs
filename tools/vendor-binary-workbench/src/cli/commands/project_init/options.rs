@@ -5,23 +5,16 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use crate::cli::ProjectInitArgs;
-use crate::{Result, parse_u32, source_id::validate_source_id};
+use crate::Result;
+use crate::cli::{NamedAddressRange, ProjectInitArgs};
 
 pub(super) const DEFAULT_RUST_TARGET: &str = "riscv32imac-unknown-none-elf";
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct MmioRange {
-    pub(super) name: String,
-    pub(super) start: u32,
-    pub(super) end: u32,
-}
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) struct Options {
     pub(super) directory: PathBuf,
     pub(super) id: String,
-    pub(super) ranges: Vec<MmioRange>,
+    pub(super) ranges: Vec<NamedAddressRange>,
     pub(super) sources: Vec<String>,
     pub(super) rust_target: String,
     pub(super) pac_crate_name: String,
@@ -31,14 +24,12 @@ pub(super) struct Options {
 pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
     let directory = arguments.directory;
     let id = arguments.id;
-    let mut ranges = Vec::new();
-    for range in arguments.mmio {
-        ranges.push(parse_range(&range)?);
-    }
-    let mut sources = arguments.source;
-    for source in &sources {
-        validate_source_id(source)?;
-    }
+    let ranges = arguments.mmio;
+    let mut sources = arguments
+        .source
+        .into_iter()
+        .map(|source| source.into_string())
+        .collect::<Vec<_>>();
     let rust_target = arguments.rust_target;
     let pac_crate_name = arguments.pac_crate_name;
     let import_svd = arguments.import_svd;
@@ -79,29 +70,7 @@ pub(super) fn resolve_options(arguments: ProjectInitArgs) -> Result<Options> {
     })
 }
 
-fn parse_range(value: &str) -> Result<MmioRange> {
-    let (name, bounds) = value
-        .split_once('=')
-        .filter(|(name, bounds)| !name.is_empty() && !bounds.is_empty())
-        .ok_or("--mmio requires NAME=START..END")?;
-    validate_stable_id(name, "MMIO range")?;
-    let (start, end) = bounds
-        .split_once("..")
-        .filter(|(start, end)| !start.is_empty() && !end.is_empty())
-        .ok_or("--mmio requires a half-open START..END interval")?;
-    let start = parse_u32(start).ok_or("invalid --mmio start")?;
-    let end = parse_u32(end).ok_or("invalid --mmio end")?;
-    if start >= end {
-        return Err("--mmio start must be less than its exclusive end".into());
-    }
-    Ok(MmioRange {
-        name: name.to_owned(),
-        start,
-        end,
-    })
-}
-
-fn validate_ranges(ranges: &[MmioRange]) -> Result<()> {
+fn validate_ranges(ranges: &[NamedAddressRange]) -> Result<()> {
     let mut names = BTreeSet::new();
     for range in ranges {
         if !names.insert(&range.name) {

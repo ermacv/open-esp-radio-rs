@@ -1,48 +1,6 @@
 //! Artifact-wide best-effort MMIO register discovery.
 
-use std::path::PathBuf;
-
 use super::super::*;
-
-fn stable_id(value: &str, kind: &str) -> Result<String> {
-    if value.is_empty()
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
-    {
-        return Err(format!("invalid {kind} id {value:?}").into());
-    }
-    Ok(value.to_owned())
-}
-
-fn parse_artifact(value: &str) -> Result<(String, PathBuf)> {
-    let (source, path) = value
-        .split_once('=')
-        .filter(|(source, path)| !source.is_empty() && !path.is_empty())
-        .ok_or("--artifact requires SOURCE=PATH")?;
-    Ok((stable_id(source, "artifact source")?, PathBuf::from(path)))
-}
-
-fn parse_range(value: &str) -> Result<DiscoveryRange> {
-    let (name, bounds) = value
-        .split_once('=')
-        .filter(|(name, bounds)| !name.is_empty() && !bounds.is_empty())
-        .ok_or("--range requires NAME=START..END")?;
-    let (start, end) = bounds
-        .split_once("..")
-        .filter(|(start, end)| !start.is_empty() && !end.is_empty())
-        .ok_or("--range requires a half-open START..END interval")?;
-    let start = parse_u32(start).ok_or("invalid --range start")?;
-    let end = parse_u32(end).ok_or("invalid --range end")?;
-    if start >= end {
-        return Err("--range start must be less than its exclusive end".into());
-    }
-    Ok(DiscoveryRange {
-        name: stable_id(name, "MMIO range")?,
-        start,
-        end,
-    })
-}
 
 pub(super) fn function_names(functions: &BTreeSet<DiscoveryFunction>) -> Vec<String> {
     functions.iter().map(DiscoveryFunction::canonical).collect()
@@ -164,14 +122,18 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioRegisterMap) -> Result<
     }
     let artifacts = arguments
         .artifact
-        .iter()
-        .map(|artifact| parse_artifact(artifact))
-        .collect::<Result<Vec<_>>>()?;
+        .into_iter()
+        .map(|artifact| (artifact.source.into_string(), artifact.path))
+        .collect::<Vec<_>>();
     let ranges = arguments
         .range
-        .iter()
-        .map(|range| parse_range(range))
-        .collect::<Result<Vec<_>>>()?;
+        .into_iter()
+        .map(|range| DiscoveryRange {
+            name: range.name,
+            start: range.start,
+            end: range.end,
+        })
+        .collect::<Vec<_>>();
     if artifacts.is_empty() {
         return Err("mmio discover requires at least one --artifact SOURCE=PATH".into());
     }
@@ -225,7 +187,14 @@ mod tests {
     #[test]
     fn parses_named_half_open_ranges() {
         assert_eq!(
-            parse_range("radio=0x20100000..0x20110000").unwrap(),
+            "radio=0x20100000..0x20110000"
+                .parse::<NamedAddressRange>()
+                .map(|range| DiscoveryRange {
+                    name: range.name,
+                    start: range.start,
+                    end: range.end,
+                })
+                .unwrap(),
             DiscoveryRange {
                 name: "radio".to_owned(),
                 start: 0x2010_0000,
@@ -242,9 +211,13 @@ mod tests {
 
     #[test]
     fn artifact_input_keeps_equals_signs_in_paths() {
+        let artifact = "libpp=/tmp/vendor=linked.elf"
+            .parse::<SourcePath>()
+            .unwrap();
+        assert_eq!(artifact.source.as_str(), "libpp");
         assert_eq!(
-            parse_artifact("libpp=/tmp/vendor=linked.elf").unwrap(),
-            ("libpp".to_owned(), PathBuf::from("/tmp/vendor=linked.elf"))
+            artifact.path,
+            std::path::PathBuf::from("/tmp/vendor=linked.elf")
         );
     }
 }

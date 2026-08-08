@@ -515,7 +515,9 @@ impl Command {
         )
     }
 
-    pub(crate) fn accepts_run_input_role(self, role: &str) -> bool {
+    pub(crate) fn accepts_run_input_role(self, role: &crate::run_spec::InputRole) -> bool {
+        use crate::run_spec::InputRole;
+
         match self {
             Self::ProjectInit
             | Self::ProjectConfigure
@@ -540,16 +542,9 @@ impl Command {
             | Self::InterfaceDiscover
             | Self::BuildIr
             | Self::VerifyEvidence => false,
-            Self::DiscoverMmio => role
-                .strip_prefix("source-artifact:")
-                .is_some_and(|source| !source.is_empty()),
-            Self::ExportIr => {
-                role == "companion"
-                    || role
-                        .strip_prefix("source-artifact:")
-                        .is_some_and(|source| !source.is_empty())
-            }
-            Self::AuditImageTargets => role == "artifact",
+            Self::DiscoverMmio => matches!(role, InputRole::SourceArtifact(_)),
+            Self::ExportIr => matches!(role, InputRole::Companion | InputRole::SourceArtifact(_)),
+            Self::AuditImageTargets => role == &InputRole::Artifact,
             _ => true,
         }
     }
@@ -608,7 +603,8 @@ mod tests {
         let CommandArguments::IrExport(arguments) = invocation.arguments else {
             panic!("unexpected argument type")
         };
-        assert_eq!(arguments.artifact, ["rom=rom.elf"]);
+        assert_eq!(arguments.artifact[0].source.as_str(), "rom");
+        assert_eq!(arguments.artifact[0].path, PathBuf::from("rom.elf"));
         assert!(arguments.include_reachable);
     }
 

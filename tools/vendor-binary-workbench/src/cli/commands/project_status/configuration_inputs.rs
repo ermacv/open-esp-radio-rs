@@ -96,13 +96,13 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     let mut incomplete = false;
     let mut ready = 0usize;
     let mut records = Vec::new();
-    for (role, path) in run_spec.inputs() {
-        let record = if !path.is_file() {
+    for input in run_spec.inputs() {
+        let record = if !input.path.is_file() {
             incomplete = true;
             ArtifactDetail {
-                role: role.to_owned(),
+                role: input.role.to_string(),
                 status: "missing",
-                path: path.display().to_string(),
+                path: input.path.display().to_string(),
                 container: None,
                 objects: None,
                 skipped_members: None,
@@ -110,7 +110,7 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                 error: None,
             }
         } else {
-            match artifact::inspect_artifact(path) {
+            match artifact::inspect_artifact(&input.path) {
                 Ok(inventory) => {
                     let symbols = inventory.symbols().count();
                     if symbols == 0 {
@@ -119,13 +119,13 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                         ready += 1;
                     }
                     ArtifactDetail {
-                        role: role.to_owned(),
+                        role: input.role.to_string(),
                         status: if symbols == 0 {
                             "readable-no-symbols"
                         } else {
                             "ready"
                         },
-                        path: path.display().to_string(),
+                        path: input.path.display().to_string(),
                         container: Some(inventory.container.label()),
                         objects: Some(inventory.objects.len()),
                         skipped_members: Some(inventory.skipped_members),
@@ -136,9 +136,9 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
                 Err(error) => {
                     invalid = true;
                     ArtifactDetail {
-                        role: role.to_owned(),
+                        role: input.role.to_string(),
                         status: "invalid",
-                        path: path.display().to_string(),
+                        path: input.path.display().to_string(),
                         container: None,
                         objects: None,
                         skipped_members: None,

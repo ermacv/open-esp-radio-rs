@@ -20,13 +20,6 @@ struct ResolvedSourceInput {
     prefix: String,
 }
 
-fn split_named<'a>(value: &'a str, option: &str) -> Result<(&'a str, &'a str)> {
-    value
-        .split_once('=')
-        .filter(|(name, value)| !name.is_empty() && !value.is_empty())
-        .ok_or_else(|| format!("{option} requires SOURCE=VALUE").into())
-}
-
 fn source_mut<'a>(
     sources: &'a mut BTreeMap<String, SourceInput>,
     id: &str,
@@ -35,8 +28,8 @@ fn source_mut<'a>(
     Ok(sources.entry(id.to_owned()).or_default())
 }
 
-fn set_path(slot: &mut Option<PathBuf>, value: String, option: &str) -> Result<()> {
-    if slot.replace(PathBuf::from(value)).is_some() {
+fn set_path(slot: &mut Option<PathBuf>, value: PathBuf, option: &str) -> Result<()> {
+    if slot.replace(value).is_some() {
         return Err(format!("duplicate {option}").into());
     }
     Ok(())
@@ -56,34 +49,30 @@ pub(super) fn run(
 ) -> Result<bool> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
     for value in arguments.source_artifact {
-        let (source, path) = split_named(&value, "--source-artifact")?;
         set_path(
-            &mut source_mut(&mut source_inputs, source)?.artifact,
-            path.to_owned(),
+            &mut source_mut(&mut source_inputs, value.source.as_str())?.artifact,
+            value.path,
             "--source-artifact",
         )?;
     }
     for value in arguments.source_inventory {
-        let (source, path) = split_named(&value, "--source-inventory")?;
         set_path(
-            &mut source_mut(&mut source_inputs, source)?.inventory,
-            path.to_owned(),
+            &mut source_mut(&mut source_inputs, value.source.as_str())?.inventory,
+            value.path,
             "--source-inventory",
         )?;
     }
     for value in arguments.source_companion {
-        let (source, path) = split_named(&value, "--source-companion")?;
         set_path(
-            &mut source_mut(&mut source_inputs, source)?.companion,
-            path.to_owned(),
+            &mut source_mut(&mut source_inputs, value.source.as_str())?.companion,
+            value.path,
             "--source-companion",
         )?;
     }
     for value in arguments.source_prefix {
-        let (source, prefix) = split_named(&value, "--source-prefix")?;
         set_string(
-            &mut source_mut(&mut source_inputs, source)?.prefix,
-            prefix.to_owned(),
+            &mut source_mut(&mut source_inputs, value.source.as_str())?.prefix,
+            value.value,
             "--source-prefix",
         )?;
     }

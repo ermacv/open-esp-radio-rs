@@ -16,7 +16,7 @@ fn initialized_project_reports_incomplete_without_mutating_owned_outputs() {
     super::super::project_init::run(ProjectInitArgs {
         directory: directory.clone(),
         id: "status-fixture".to_owned(),
-        mmio: vec!["radio=0x20000000..0x20010000".to_owned()],
+        mmio: vec!["radio=0x20000000..0x20010000".parse().unwrap()],
         source: Vec::new(),
         rust_target: None,
         pac_crate_name: None,

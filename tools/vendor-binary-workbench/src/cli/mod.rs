@@ -7,6 +7,7 @@ mod generated_output;
 mod output;
 mod resolver;
 mod ui;
+mod values;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,6 +18,7 @@ use crate::*;
 use args::{Command, CommandArguments, Invocation};
 pub(crate) use arguments::*;
 use resolver::apply_run_spec_defaults;
+pub(crate) use values::*;
 
 pub(crate) fn output_line(arguments: std::fmt::Arguments<'_>) {
     output::line(arguments);
@@ -196,9 +198,7 @@ pub(crate) fn run() -> Result<bool> {
         && arguments.range.is_empty()
     {
         for (name, start, end) in memory_map.mmio_ranges()? {
-            arguments
-                .range
-                .push(format!("{name}={start:#010x}..{end:#010x}"));
+            arguments.range.push(NamedAddressRange { name, start, end });
         }
     }
     if command == Command::DiscoverMmio

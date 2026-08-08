@@ -68,11 +68,9 @@ use std::{
 type Error = WorkbenchError;
 type Result<T> = error::Result<T>;
 pub fn main_entry() -> ExitCode {
-    let result = run();
-    let output_result = cli::finish_output();
-    let result = match (result, output_result) {
-        (Ok(value), Ok(())) => Ok(value),
-        (Err(error), _) | (Ok(_), Err(error)) => Err(error),
+    let result = match run() {
+        Ok(value) => cli::finish_output().map(|()| value),
+        Err(error) => Err(error),
     };
     match result {
         Ok(true) => ExitCode::SUCCESS,

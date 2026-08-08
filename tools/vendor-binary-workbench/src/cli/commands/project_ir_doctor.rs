@@ -3,8 +3,11 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    harnesses, project::ProjectSpec, project_ir_report::inspect_project_ir_report,
-    run_spec::RunSpec, target::TargetSpec,
+    harnesses,
+    project::ProjectSpec,
+    project_ir_report::inspect_project_ir_report,
+    run_spec::{InputRole, RunSpec},
+    target::TargetSpec,
 };
 
 pub(super) fn inspect(
@@ -19,7 +22,10 @@ pub(super) fn inspect(
     let available_sources = run_spec
         .into_iter()
         .flat_map(RunSpec::inputs)
-        .filter_map(|(role, _)| role.strip_prefix("source-artifact:"))
+        .filter_map(|input| match &input.role {
+            InputRole::SourceArtifact(source) => Some(source.as_str()),
+            _ => None,
+        })
         .collect::<BTreeSet<_>>();
     let linked_outputs = project
         .registers

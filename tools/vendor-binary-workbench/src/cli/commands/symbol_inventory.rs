@@ -266,7 +266,12 @@ fn write_json_report(path: &std::path::Path, document: &InventoryDocument<'_>) -
 }
 
 pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bool> {
-    let inventory = build_project_linkage_inventory(run_spec.inputs())?;
+    let inputs = run_spec
+        .inputs()
+        .iter()
+        .map(|input| (input.role.to_string(), input.path.clone()))
+        .collect::<Vec<_>>();
+    let inventory = build_project_linkage_inventory(&inputs)?;
     let document = document(&inventory, &options)?;
     if !crate::cli::output::structured("symbol-inventory", &document) {
         print_report(&inventory, &options);

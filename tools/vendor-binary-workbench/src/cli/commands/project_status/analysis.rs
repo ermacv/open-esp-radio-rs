@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     harnesses, interfaces::InterfaceFacts, project_ir_report::inspect_project_ir_report,
-    registers::RegisterFacts,
+    registers::RegisterFacts, run_spec::InputRole,
 };
 
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
@@ -30,7 +30,10 @@ fn linked_ir(context: &ProjectContext<'_>) -> Component {
         .run_spec
         .into_iter()
         .flat_map(crate::run_spec::RunSpec::inputs)
-        .filter_map(|(role, _)| role.strip_prefix("source-artifact:"))
+        .filter_map(|input| match &input.role {
+            InputRole::SourceArtifact(source) => Some(source.as_str()),
+            _ => None,
+        })
         .collect::<BTreeSet<_>>();
     let mut invalid = false;
     let mut incomplete = false;

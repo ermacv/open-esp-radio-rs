@@ -42,9 +42,9 @@ pub(super) fn run(
 ) -> Result<bool> {
     let artifacts = arguments
         .artifact
-        .iter()
-        .map(|artifact| parse_artifact(artifact))
-        .collect::<Result<Vec<_>>>()?;
+        .into_iter()
+        .map(IrArtifactInput::from)
+        .collect::<Vec<_>>();
     let (entry_contract, report) = analyze(
         &artifacts,
         &arguments.companion,

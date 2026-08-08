@@ -4,10 +4,14 @@ use std::path::Path;
 
 use super::{Command, CommandArguments, MmioRegisterMap, Result, TargetSpec};
 use crate::cli::{
-    InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, ProjectPipelineArgs, RegisterReviewArgs,
-    ReviewArgs, ValidationArgs,
+    InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectPipelineArgs,
+    RegisterReviewArgs, ReviewArgs, SourcePath, ValidationArgs,
 };
-use crate::{MemoryMap, project::ProjectSpec, run_spec::RunSpec};
+use crate::{
+    MemoryMap,
+    project::ProjectSpec,
+    run_spec::{InputRole, RunSpec},
+};
 
 pub(crate) mod status;
 
@@ -226,15 +230,18 @@ fn mmio_arguments(
     output: &Path,
 ) -> Result<MmioDiscoverArgs> {
     let mut artifacts = Vec::new();
-    for (role, path) in run_spec.inputs() {
-        let Some(source) = role.strip_prefix("source-artifact:") else {
+    for input in run_spec.inputs() {
+        let InputRole::SourceArtifact(source) = &input.role else {
             continue;
         };
-        artifacts.push(format!("{source}={}", path.display()));
+        artifacts.push(
+            SourcePath::new(source.clone(), input.path.clone())
+                .map_err(|message| -> crate::Error { message.into() })?,
+        );
     }
     let mut ranges = Vec::new();
     for (name, start, end) in memory_map.mmio_ranges()? {
-        ranges.push(format!("{name}={start:#010x}..{end:#010x}"));
+        ranges.push(NamedAddressRange { name, start, end });
     }
     Ok(MmioDiscoverArgs {
         artifact: artifacts,

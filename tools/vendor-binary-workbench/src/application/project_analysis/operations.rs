@@ -21,6 +21,110 @@ use crate::{
     run_spec::{InputRole, RunSpec},
 };
 
+use super::{
+    ProjectAnalysisInputs, ProjectAnalysisOperations, ProjectAnalysisReport, ProjectAnalysisRequest,
+};
+
+pub(crate) fn analyze_project(
+    project: &ProjectSpec,
+    request: ProjectAnalysisRequest,
+    run_spec: Option<&RunSpec>,
+    memory_map: Option<&MemoryMap>,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> ProjectAnalysisReport {
+    let inputs = ProjectAnalysisInputs {
+        run_spec: run_spec.is_some(),
+        memory_map: memory_map.is_some(),
+    };
+    let mut operations = ResolvedProjectAnalysisOperations {
+        project,
+        run_spec,
+        memory_map,
+        svd,
+        target,
+    };
+    super::run(project, request, inputs, &mut operations)
+}
+
+struct ResolvedProjectAnalysisOperations<'a> {
+    project: &'a ProjectSpec,
+    run_spec: Option<&'a RunSpec>,
+    memory_map: Option<&'a MemoryMap>,
+    svd: &'a MmioMap,
+    target: &'a TargetSpec,
+}
+
+impl ResolvedProjectAnalysisOperations<'_> {
+    fn run_spec(&self) -> Result<&RunSpec> {
+        self.run_spec
+            .ok_or_else(|| crate::Error::invalid("run-spec is not configured"))
+    }
+
+    fn memory_map(&self) -> Result<&MemoryMap> {
+        self.memory_map
+            .ok_or_else(|| crate::Error::invalid("memory-map is not configured"))
+    }
+}
+
+impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
+    fn symbol_inventory(&mut self, check: bool) -> Result<bool> {
+        build_symbol_inventory(self.project, self.run_spec()?, check)
+    }
+
+    fn discover_mmio(&mut self, check: bool) -> Result<bool> {
+        discover_project_mmio(
+            self.project,
+            self.run_spec()?,
+            self.memory_map()?,
+            self.svd,
+            check,
+        )
+    }
+
+    fn discover_interfaces(&mut self, check: bool) -> Result<bool> {
+        discover_project_interfaces_operation(self.project, self.run_spec()?, check)
+    }
+
+    fn build_linked_ir(&mut self, check: bool) -> Result<bool> {
+        crate::application::project_ir_build::build_project_ir(
+            crate::application::project_ir_build::ProjectIrBuildRequest {
+                profiles: Default::default(),
+                check,
+            },
+            self.project,
+            self.run_spec()?,
+            self.svd,
+            self.target,
+        )?;
+        Ok(true)
+    }
+
+    fn build_navigation(&mut self, check: bool) -> Result<bool> {
+        build_navigation(self.project, check)
+    }
+
+    fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool> {
+        validate_registers(self.project, self.memory_map, deny_unreviewed)
+    }
+
+    fn review_registers(&mut self, check: bool) -> Result<bool> {
+        review_registers(self.project, check)
+    }
+
+    fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<bool> {
+        validate_functions(self.project, deny_unreviewed)
+    }
+
+    fn review_functions(&mut self, check: bool) -> Result<bool> {
+        review_functions(self.project, self.target, check)
+    }
+
+    fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<bool> {
+        validate_interfaces(self.project, self.target, deny_unreviewed)
+    }
+}
+
 pub(crate) fn build_symbol_inventory(
     project: &ProjectSpec,
     run_spec: &RunSpec,

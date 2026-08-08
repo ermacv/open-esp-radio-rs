@@ -27,6 +27,7 @@ pub(crate) struct StoredSourceArtifact {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct StoredArtifactIdentity {
+    pub(crate) path: String,
     pub(crate) sha256: String,
 }
 
@@ -37,6 +38,7 @@ pub(crate) struct StoredFunction {
     pub(crate) member: Option<String>,
     pub(crate) symbol: String,
     pub(crate) selection: String,
+    pub(crate) object_offset: u32,
     pub(crate) complete: bool,
     pub(crate) calls: Vec<StoredCall>,
     pub(crate) mmio_accesses: Vec<StoredMmioAccess>,

@@ -1,16 +1,20 @@
 //! Deterministic cross-report join construction.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
-use super::{
-    model::{
-        ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
-        InventoryObservation, IrObservation, NavigationDocument, SCHEMA_VERSION, SummaryDocument,
-        SymbolDocument, SymbolKey, address, artifact, input, symbol,
-    },
-    reports::{InterfaceReport, InventoryReport, IrReport, read},
+use super::model::{
+    ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
+    InventoryObservation, IrObservation, NavigationDocument, SCHEMA_VERSION, SummaryDocument,
+    SymbolDocument, SymbolKey, address, artifact, input, symbol,
 };
-use crate::{Result, parse_u32, project::ProjectSpec};
+use crate::{
+    Result,
+    artifacts::{
+        LinkedIrStoredDocument, StoredInterfaceFacts, StoredInterfaceRoot, StoredSymbolInventory,
+    },
+    error::WorkbenchError,
+    project::ProjectSpec,
+};
 
 pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
     let symbols_spec = project
@@ -18,15 +22,11 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         .as_ref()
         .ok_or("project navigation requires [analysis.symbols]")
         .map_err(crate::Error::invalid)?;
-    let inventory: InventoryReport = read(&symbols_spec.output, "symbol inventory")?;
-    if inventory.schema_version != crate::artifacts::SYMBOL_INVENTORY.version
-        || inventory.command != crate::artifacts::SYMBOL_INVENTORY.command
-    {
-        return Err(crate::Error::invalid(format!(
-            "project navigation requires symbols inventory schema_version {}",
-            crate::artifacts::SYMBOL_INVENTORY.version
-        )));
-    }
+    let inventory: StoredSymbolInventory = read_artifact(
+        &symbols_spec.output,
+        "symbol inventory",
+        crate::artifacts::parse_symbol_inventory,
+    )?;
 
     let mut inputs = vec![input(
         "symbol-inventory",
@@ -117,16 +117,11 @@ fn add_linked_ir(
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
 ) -> Result<()> {
     for profile in &project.ir_profiles {
-        let report: IrReport = read(&profile.output, "linked-IR report")?;
-        if report.schema_version != crate::artifacts::LINKED_IR.version
-            || report.command != crate::artifacts::LINKED_IR.command
-        {
-            return Err(crate::Error::invalid(format!(
-                "project navigation requires linked-IR schema_version {} for profile {:?}",
-                crate::artifacts::LINKED_IR.version,
-                profile.id
-            )));
-        }
+        let report: LinkedIrStoredDocument = read_artifact(
+            &profile.output,
+            "linked-IR report",
+            crate::artifacts::parse_linked_ir,
+        )?;
         inputs.push(input("linked-ir", profile.id.clone(), &profile.output)?);
         let mut source_artifacts = BTreeMap::new();
         for item in report.artifacts {
@@ -172,15 +167,11 @@ fn add_interfaces(
     let Some(paths) = &project.interfaces else {
         return Ok(0);
     };
-    let report: InterfaceReport = read(&paths.facts, "interface facts")?;
-    if report.schema_version != crate::artifacts::INTERFACE_FACTS.version
-        || report.command != crate::artifacts::INTERFACE_FACTS.command
-    {
-        return Err(crate::Error::invalid(format!(
-            "project navigation requires interface facts schema_version {}",
-            crate::artifacts::INTERFACE_FACTS.version
-        )));
-    }
+    let report: StoredInterfaceFacts = read_artifact(
+        &paths.facts,
+        "interface facts",
+        crate::artifacts::parse_interface_facts,
+    )?;
     inputs.push(input(
         "interface-facts",
         "interfaces".to_owned(),
@@ -208,12 +199,12 @@ fn add_interfaces(
             artifact_sha256: sha256.clone(),
             member: call.member.clone(),
             name: call.function.clone(),
-            object_address: address(&call.function_address, "interface function")?,
+            object_address: call.function_address,
         };
         let caller = symbol(symbols, &caller_key);
         caller.sources.extend(sources.iter().cloned());
         caller.interface_calls.insert(InterfaceCallObservation {
-            site: call.site.clone(),
+            site: format!("{:#x}", call.site),
             kind: call.kind.clone(),
         });
 
@@ -221,21 +212,24 @@ fn add_interfaces(
             .keys()
             .filter(|key| {
                 key.artifact_sha256 == *sha256
-                    && match call.target.root.kind.as_str() {
-                        "relocated-symbol" => {
-                            key.member == call.target.root.member
-                                && call.target.root.symbol.as_ref() == Some(&key.name)
+                    && match &call.target.root {
+                        StoredInterfaceRoot::RelocatedSymbol { member, symbol, .. } => {
+                            key.member == *member && key.name == *symbol
                         }
-                        "absolute-address" => {
-                            call.target.root.address.as_deref().and_then(parse_u32)
-                                == Some(key.object_address)
+                        StoredInterfaceRoot::AbsoluteAddress { address } => {
+                            key.object_address == *address
                         }
-                        _ => false,
+                        StoredInterfaceRoot::FunctionArgument { .. } => false,
                     }
             })
             .cloned()
             .collect::<Vec<_>>();
-        if root_matches.is_empty() && call.target.root.kind != "function-argument" {
+        if root_matches.is_empty()
+            && !matches!(
+                call.target.root,
+                StoredInterfaceRoot::FunctionArgument { .. }
+            )
+        {
             unmatched_roots += 1;
         }
         for key in root_matches {
@@ -243,10 +237,27 @@ fn add_interfaces(
                 .interface_roots
                 .insert(InterfaceRootObservation {
                     function: call.function.clone(),
-                    site: call.site.clone(),
-                    kind: call.target.root.kind.clone(),
+                    site: format!("{:#x}", call.site),
+                    kind: interface_root_kind(&call.target.root).to_owned(),
                 });
         }
     }
     Ok(unmatched_roots)
+}
+
+fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {
+    match root {
+        StoredInterfaceRoot::RelocatedSymbol { .. } => "relocated-symbol",
+        StoredInterfaceRoot::FunctionArgument { .. } => "function-argument",
+        StoredInterfaceRoot::AbsoluteAddress { .. } => "absolute-address",
+    }
+}
+
+fn read_artifact<T>(
+    path: &Path,
+    kind: &'static str,
+    parse: impl FnOnce(&str) -> Result<T>,
+) -> Result<T> {
+    let input = std::fs::read_to_string(path)?;
+    parse(&input).map_err(|error| WorkbenchError::manifest_document(kind, path, &input, error))
 }

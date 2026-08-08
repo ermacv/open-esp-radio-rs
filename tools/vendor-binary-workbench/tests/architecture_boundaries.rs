@@ -57,6 +57,22 @@ fn cli_command_adapters_do_not_invoke_each_other() {
         violations.is_empty(),
         "CLI command adapters invoke sibling commands: {violations:#?}"
     );
+    let output =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/output.rs"))
+            .expect("read CLI output boundary");
+    assert!(
+        !output.contains("fn suppress") && !output.contains("SUPPRESSION_DEPTH"),
+        "CLI output suppression restored nested command composition"
+    );
+    let pipeline = fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/commands/project_pipeline.rs"),
+    )
+    .expect("read project analysis adapter");
+    assert!(
+        !pipeline.contains("impl ProjectAnalysisOperations")
+            && pipeline.contains("project_analysis::analyze_project"),
+        "project analysis dependency wiring escaped the application service"
+    );
 }
 
 #[test]
@@ -216,7 +232,11 @@ fn persistent_artifact_identities_have_one_owner() {
             "artifact consumer {relative} restored a handwritten JSON tree reader"
         );
     }
-    for removed in ["project_ir_report.rs", "symbol_inventory_report.rs"] {
+    for removed in [
+        "project_ir_report.rs",
+        "symbol_inventory_report.rs",
+        "navigation/reports.rs",
+    ] {
         assert!(
             !root.join(removed).exists(),
             "legacy persistent-artifact reader still exists: {removed}"

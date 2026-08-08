@@ -180,6 +180,52 @@ pub(crate) struct SymbolInventorySummary {
     pub(crate) unresolved_or_associated: usize,
 }
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct StoredSymbolInventory {
+    schema_version: u32,
+    command: String,
+    pub(crate) artifacts: Vec<StoredSymbolArtifact>,
+    pub(crate) symbols: Vec<StoredSymbolFact>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StoredSymbolArtifact {
+    pub(crate) index: usize,
+    pub(crate) artifact: StoredSymbolArtifactIdentity,
+    pub(crate) sources: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StoredSymbolArtifactIdentity {
+    pub(crate) path: String,
+    pub(crate) sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct StoredSymbolFact {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) name: String,
+    pub(crate) address: String,
+    pub(crate) table: String,
+    pub(crate) definition: String,
+    pub(crate) kind: String,
+    pub(crate) resolution: String,
+}
+
+pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolInventory> {
+    let document: StoredSymbolInventory = serde_json::from_str(input)?;
+    if document.schema_version != SYMBOL_INVENTORY.version
+        || document.command != SYMBOL_INVENTORY.command
+    {
+        return Err(crate::Error::invalid(format!(
+            "expected schema_version {} and command {:?}",
+            SYMBOL_INVENTORY.version, SYMBOL_INVENTORY.command
+        )));
+    }
+    Ok(document)
+}
+
 #[derive(Deserialize)]
 struct StoredInventoryDocument {
     schema_version: u32,

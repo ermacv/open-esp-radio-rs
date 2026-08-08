@@ -26,6 +26,7 @@ fn write_ir(path: &std::path::Path) {
       "member": null,
       "symbol": "vendor_irq",
       "selection": "symbol-prefix-root",
+      "object_offset": 256,
       "complete": true,
       "mmio_accesses": [],
       "calls": [
@@ -81,6 +82,7 @@ fn write_ir(path: &std::path::Path) {
       "member": null,
       "symbol": "vendor_helper",
       "selection": "reachable-internal",
+      "object_offset": 512,
       "complete": true,
       "mmio_accesses": [],
       "calls": [

@@ -16,6 +16,7 @@ pub(crate) struct StoredInterfaceFacts {
 #[derive(Debug, Deserialize)]
 pub(crate) struct StoredInterfaceArtifact {
     pub(crate) index: usize,
+    pub(crate) path: String,
     pub(crate) sources: Vec<String>,
     pub(crate) sha256: String,
 }

@@ -19,6 +19,8 @@ projections. They neither repeat numeric schema literals nor walk arbitrary
 `serde_json::Value` trees. Producer and consumer DTOs are separate only where
 the complete report directly serializes live analysis-domain structures;
 identity and supported claims are still validated once in the artifact layer.
+The navigation join consumes these projections directly; it has no shortened
+copies of the symbol, interface or linked-IR envelopes.
 
 Invocation reports such as `project analyze`, `project publish`, `ir build`
 and `project status` are deliberately separate typed models. Their `schema`

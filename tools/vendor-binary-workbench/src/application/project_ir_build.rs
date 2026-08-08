@@ -246,25 +246,19 @@ fn check_document(path: &Path, expected: &str, stale: &mut Vec<PathBuf>) {
 
 fn write_all(profiles: &[BuiltProfile<'_>]) -> Result<()> {
     for built in profiles {
-        write_document(&built.profile.output, &built.documents.json)?;
+        super::generated_file::write_or_check(
+            &built.profile.output,
+            &built.documents.json,
+            false,
+            "linked IR",
+        )?;
         if let (Some(path), Some(contents)) = (
             built.profile.pseudo_rust.as_deref(),
             built.documents.pseudo.as_deref(),
         ) {
-            write_document(path, contents)?;
+            super::generated_file::write_or_check(path, contents, false, "pseudo-Rust")?;
         }
     }
-    Ok(())
-}
-
-fn write_document(path: &Path, contents: &str) -> Result<()> {
-    if let Some(parent) = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-    {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(path, contents)?;
     Ok(())
 }
 

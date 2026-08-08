@@ -54,6 +54,10 @@ register asks the worker for `register_detail(address)` once per snapshot
 generation. The detail pane shows name provenance, width, review state,
 read/write/RMW counts, function users, write masks, field candidates,
 direct/transitive predicates, polls and linked semantic operations.
+Implementation state follows the same boundary: `tui/state/detail.rs` owns
+lazy caches, `state/filter.rs` owns matching and `state/navigation.rs` owns
+reviewed cross-links. Function, register, interface and comparison views are
+separate renderers; none performs project I/O or analysis.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
 an editable verification-profile draft with explicit TODO arguments; the

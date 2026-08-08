@@ -82,7 +82,7 @@ fn write_facts(path: &Path, digest: &str) {
             r#"{{
   "schema_version": 3,
   "command": "interfaces discover",
-  "artifacts": [{{"index":0,"sources":["libpp"],"sha256":"{digest}"}}],
+  "artifacts": [{{"index":0,"path":"libpp.a","sources":["libpp"],"sha256":"{digest}"}}],
   "calls": [{{
     "artifact":0,
     "member":"event.o",

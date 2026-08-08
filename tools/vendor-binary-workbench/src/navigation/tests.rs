@@ -78,9 +78,18 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "target": {"root": {
                     "kind": "relocated-symbol",
                     "member": null,
-                    "symbol": "g_table"
-                }}
-            }]
+                    "symbol": "g_table",
+                    "addend": 0,
+                    "addressing": "absolute"
+                },
+                "loads": [],
+                "container_depth": 0,
+                "slot_offset": null,
+                "jalr_offset": 0
+                },
+                "arguments": []
+            }],
+            "table_candidates": []
         }))
         .unwrap(),
     )

@@ -34,8 +34,9 @@ The implementation is split by responsibility:
 - `project_analysis` owns project-level generic analysis artifacts such as the
   complete symbol inventory and their output-collision invariants;
 - `navigation` builds and strictly validates the optional navigation-only join
-  over symbol, linked-IR and interface reports without feeding facts or
-  semantics back into those analyzers;
+  over the artifact layer's typed symbol, linked-IR and interface projections,
+  without private report DTOs and without feeding facts or semantics back into
+  those analyzers;
 - `verification` owns profiles, dispositions, evidence and comparisons;
 - `harnesses` owns one static descriptor registry; the optional
   `esp32s31-harness` feature contributes the ESP32-S31 descriptor and is the
@@ -97,6 +98,12 @@ dispatch path:
 | `cli/ui.rs` | miette diagnostics plus tracing/progress layer composition on stderr |
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
 | `cli/commands/*` | Thin application/domain adapters and human renderers; no adapter invokes another command adapter |
+
+`project analyze` resolves its request in the CLI and calls
+`application::project_analysis::analyze_project`. The application service owns
+both stage ordering and concrete operation wiring. The removed nested-command
+output suppression has no replacement: application operations do not emit CLI
+presentation.
 
 Explicit CLI values take precedence over run-spec values. Run-spec selection
 itself is explicit `--run-spec` > project manifest `run-spec` > an existing

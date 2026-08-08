@@ -3,7 +3,6 @@
 mod build;
 mod inspect;
 mod model;
-mod reports;
 #[cfg(test)]
 mod tests;
 

@@ -253,6 +253,7 @@ pub struct Esp32s31ConnectedControlCore {
     rx_block_ack: StaRxBlockAckSessions,
     tx_block_ack: StaTxBlockAckSessions,
     initial_tx_block_ack: [bool; 3],
+    tx_block_ack_attempts_remaining: [u8; 3],
     in_flight: Option<ControlInFlight>,
     beacon_monitor: Option<StaBeaconMonitor>,
     beacon_lost: bool,
@@ -269,6 +270,7 @@ impl Esp32s31ConnectedControlCore {
             rx_block_ack: StaRxBlockAckSessions::new(),
             tx_block_ack,
             initial_tx_block_ack: [false; 3],
+            tx_block_ack_attempts_remaining: [0; 3],
             in_flight: None,
             beacon_monitor: None,
             beacon_lost: false,
@@ -296,8 +298,13 @@ impl Esp32s31ConnectedControlCore {
         self.pending_doze_permit = None;
     }
 
-    pub fn queue_initial_tx_block_ack(&mut self) {
+    /// Queue a bounded number of ADDBA publications for each recovered STA
+    /// TID. A missing response or failed action-frame TX consumes one attempt
+    /// and leaves the next one pending; an explicit peer response is terminal.
+    pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
+        debug_assert!(attempt_limit != 0);
         self.initial_tx_block_ack.fill(true);
+        self.tx_block_ack_attempts_remaining.fill(attempt_limit);
     }
 
     pub const fn rx_block_ack(&self) -> &StaRxBlockAckSessions {
@@ -420,6 +427,7 @@ impl Esp32s31ConnectedControlCore {
             }
         }
         self.initial_tx_block_ack.fill(false);
+        self.tx_block_ack_attempts_remaining.fill(0);
         self.beacon_monitor = None;
         self.beacon_lost = false;
         self.power_save = None;
@@ -476,6 +484,13 @@ impl Esp32s31ConnectedControlCore {
                 ControlInFlight::TxAddba { tid } => {
                     self.tx_block_ack.stop(tid);
                     tx.set_tx_block_ack_operational(tid, false);
+                    if let Some(index) = STA_TX_BLOCK_ACK_TIDS
+                        .into_iter()
+                        .position(|candidate| candidate == tid)
+                        && self.tx_block_ack_attempts_remaining[index] != 0
+                    {
+                        self.initial_tx_block_ack[index] = true;
+                    }
                 }
                 ControlInFlight::PowerManagement(advertised) => {
                     let completion = StaPowerManagementTxCompletion {
@@ -524,6 +539,13 @@ impl Esp32s31ConnectedControlCore {
         if let Some(tid) = self.tx_block_ack.expire_next(now_micros) {
             tx.set_tx_block_ack_operational(tid, false);
             self.observations.last_expired_tid = Some(tid);
+            if let Some(index) = STA_TX_BLOCK_ACK_TIDS
+                .into_iter()
+                .position(|candidate| candidate == tid)
+                && self.tx_block_ack_attempts_remaining[index] != 0
+            {
+                self.initial_tx_block_ack[index] = true;
+            }
             return Ok(ConnectedControlProgress::More);
         }
         if self
@@ -567,6 +589,7 @@ impl Esp32s31ConnectedControlCore {
             .position(|pending| *pending)
         {
             self.initial_tx_block_ack[index] = false;
+            self.tx_block_ack_attempts_remaining[index] -= 1;
             let tid = STA_TX_BLOCK_ACK_TIDS[index];
             return self.start_tx_addba(hardware, tx, tid);
         }
@@ -649,6 +672,13 @@ impl Esp32s31ConnectedControlCore {
             BlockAckAction::AddbaResponse { .. } => {
                 let StaTxBlockAckResponse { tid, response } =
                     self.tx_block_ack.on_response_action(action)?;
+                if let Some(index) = STA_TX_BLOCK_ACK_TIDS
+                    .into_iter()
+                    .position(|candidate| candidate == tid)
+                {
+                    self.tx_block_ack_attempts_remaining[index] = 0;
+                    self.initial_tx_block_ack[index] = false;
+                }
                 let operational = matches!(response, TxBlockAckResponse::Operational(_));
                 tx.set_tx_block_ack_operational(tid, operational);
                 if let TxBlockAckResponse::Operational(agreement) = response {
@@ -807,6 +837,7 @@ mod tests {
         assert!(core.has_immediate_work(true));
 
         core.initial_tx_block_ack[1] = true;
+        core.tx_block_ack_attempts_remaining[1] = 1;
         assert!(core.has_immediate_work(false));
         assert!(core.has_pending_traffic(ConnectedControlContext::IDLE, false));
     }

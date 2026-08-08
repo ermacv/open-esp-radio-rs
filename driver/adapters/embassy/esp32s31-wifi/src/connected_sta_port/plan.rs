@@ -26,6 +26,7 @@ pub struct Esp32s31ConnectedStaConfig {
     pub aggregate_he_txop_limit: HeEdcaTxopLimit,
     pub tx_block_ack_window: u16,
     pub tx_block_ack_negotiation_timeout_us: u32,
+    pub tx_block_ack_negotiation_attempt_limit: u8,
     pub tid0_amsdu: bool,
     pub rx_block_ack_maximum_window: u16,
     pub beacon_miss_limit: u8,
@@ -49,6 +50,7 @@ pub enum Esp32s31ConnectedStaConfigError {
         capacity: usize,
     },
     ZeroUnicastAttemptLimit,
+    ZeroTxBlockAckNegotiationAttemptLimit,
     PeerDoesNotSupportQos,
     TxBlockAck(TxBlockAckError),
     RxBlockAck(StaRxBlockAckSessionsError),
@@ -218,6 +220,12 @@ impl Esp32s31ConnectedStaPort {
                 peer,
             });
         }
+        if config.tx_block_ack_negotiation_attempt_limit == 0 {
+            return Err(Esp32s31ConnectedStaPrepareFailure {
+                error: Esp32s31ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit,
+                peer,
+            });
+        }
         if !peer.link.peer_qos {
             return Err(Esp32s31ConnectedStaPrepareFailure {
                 error: Esp32s31ConnectedStaConfigError::PeerDoesNotSupportQos,
@@ -289,6 +297,7 @@ const fn sta_tx_rate_policy(
         } else {
             open_esp_radio_esp32s31_wifi_mac::rx::HeGuardIntervalAndLtf::TwoLtf800Ns
         },
+        peer_supports_ht_short_guard_interval: link.peer_supports_ht_short_guard_interval,
         peer_supports_ldpc: use_peer_capabilities && link.peer_supports_ldpc,
         peer_dcm_receive: if use_peer_capabilities {
             link.peer_dcm_receive

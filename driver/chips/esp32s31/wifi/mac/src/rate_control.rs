@@ -749,6 +749,8 @@ pub struct StaTxRatePolicy {
     /// ordinary HE MCS/GI overrides only when the peer capability admits it.
     pub he_dcm_override: Option<HeDcmRate>,
     pub he_800ns_gi_ltf: HeGuardIntervalAndLtf,
+    /// Capability for the exact HT width selected by `association_phy`.
+    pub peer_supports_ht_short_guard_interval: bool,
     pub peer_supports_ldpc: bool,
     pub peer_dcm_receive: HeDcmConstellation,
 }
@@ -759,6 +761,15 @@ impl StaTxRatePolicy {
             StaAssociationPhy::Ht40 => Some(HtChannelWidth::Mhz40),
             StaAssociationPhy::Ht20 | StaAssociationPhy::He20 => Some(HtChannelWidth::Mhz20),
             StaAssociationPhy::Legacy => None,
+        }
+    }
+
+    const fn qualify_ht_guard_interval(self, requested: HtGuardInterval) -> HtGuardInterval {
+        match requested {
+            HtGuardInterval::Short400Ns if !self.peer_supports_ht_short_guard_interval => {
+                HtGuardInterval::Long800Ns
+            }
+            guard_interval => guard_interval,
         }
     }
 
@@ -775,10 +786,11 @@ impl StaTxRatePolicy {
             Some(mcs) => mcs,
             None => self.fallback_ht_mcs,
         };
-        let guard_interval = match self.ht_guard_interval_override {
-            Some(guard_interval) => guard_interval,
-            None => self.fallback_ht_guard_interval,
-        };
+        let guard_interval =
+            self.qualify_ht_guard_interval(match self.ht_guard_interval_override {
+                Some(guard_interval) => guard_interval,
+                None => self.fallback_ht_guard_interval,
+            });
         TxPhyRate::Ht(HtRate::new(mcs, guard_interval, channel_width))
     }
 
@@ -806,8 +818,10 @@ impl StaTxRatePolicy {
         let rate = match rate {
             TxPhyRate::Ht(rate) => TxPhyRate::Ht(HtRate::new(
                 self.ht_mcs_override.unwrap_or(rate.mcs),
-                self.ht_guard_interval_override
-                    .unwrap_or(rate.guard_interval),
+                self.qualify_ht_guard_interval(
+                    self.ht_guard_interval_override
+                        .unwrap_or(rate.guard_interval),
+                ),
                 rate.channel_width,
             )),
             TxPhyRate::He(rate) => match self.he_dcm_override {
@@ -1454,6 +1468,7 @@ mod tests {
         he_guard_interval_and_ltf_override: None,
         he_dcm_override: None,
         he_800ns_gi_ltf: HeGuardIntervalAndLtf::TwoLtf800Ns,
+        peer_supports_ht_short_guard_interval: false,
         peer_supports_ldpc: true,
         peer_dcm_receive: HeDcmConstellation::Bpsk,
     };
@@ -1711,6 +1726,7 @@ mod tests {
         let ht40 = StaTxRatePolicy {
             association_phy: StaAssociationPhy::Ht40,
             ht_guard_interval_override: Some(HtGuardInterval::Short400Ns),
+            peer_supports_ht_short_guard_interval: true,
             peer_supports_ldpc: false,
             ..HE20_POLICY
         };
@@ -1768,6 +1784,7 @@ mod tests {
                         association_phy,
                         ht_mcs_override: Some(mcs),
                         ht_guard_interval_override: Some(guard_interval),
+                        peer_supports_ht_short_guard_interval: true,
                         peer_supports_ldpc: false,
                         ..HE20_POLICY
                     };
@@ -1778,6 +1795,33 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn sta_tx_policy_never_publishes_unadvertised_ht_short_gi() {
+        let policy = StaTxRatePolicy {
+            association_phy: StaAssociationPhy::Ht40,
+            fallback_ht_guard_interval: HtGuardInterval::Short400Ns,
+            ht_guard_interval_override: Some(HtGuardInterval::Short400Ns),
+            peer_supports_ht_short_guard_interval: false,
+            ..HE20_POLICY
+        };
+        assert_eq!(
+            policy.rate_for_schedule(RateScheduleRef::new(RateScheduleKind::Dot11N, 1).unwrap()),
+            TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
+        assert_eq!(
+            policy.fallback_rate(),
+            TxPhyRate::Ht(HtRate::new(
+                HtMcs::Mcs7,
+                HtGuardInterval::Long800Ns,
+                HtChannelWidth::Mhz40,
+            ))
+        );
     }
 
     #[test]

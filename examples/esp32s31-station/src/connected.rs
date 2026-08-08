@@ -404,6 +404,7 @@ const fn connected_config() -> Esp32s31ConnectedStaConfig {
         aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         tx_block_ack_window: 8,
         tx_block_ack_negotiation_timeout_us: 500_000,
+        tx_block_ack_negotiation_attempt_limit: 3,
         tid0_amsdu: false,
         rx_block_ack_maximum_window: RX_REORDER_WINDOW as u16,
         beacon_miss_limit: 10,

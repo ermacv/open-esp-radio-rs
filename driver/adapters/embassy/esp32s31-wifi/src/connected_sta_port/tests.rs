@@ -28,6 +28,7 @@ fn peer() -> Esp32s31ConnectedStaPeer {
             beacon_interval_tu: 100,
             peer_qos: true,
             association_phy: StaAssociationPhy::He20,
+            peer_supports_ht_short_guard_interval: false,
             peer_supports_one_ltf_800ns_gi: true,
             peer_supports_ldpc: true,
             peer_dcm_receive: HeDcmConstellation::Qam16,
@@ -67,6 +68,7 @@ fn config() -> Esp32s31ConnectedStaConfig {
         aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         tx_block_ack_window: 32,
         tx_block_ack_negotiation_timeout_us: 500_000,
+        tx_block_ack_negotiation_attempt_limit: 3,
         tid0_amsdu: false,
         rx_block_ack_maximum_window: 32,
         beacon_miss_limit: 10,
@@ -153,6 +155,20 @@ fn invalid_config_returns_the_exact_peer_before_owner_handoff() {
             limit: 33,
             capacity: 32,
         }
+    );
+    assert_eq!(failure.peer.link, link);
+}
+
+#[test]
+fn zero_tx_block_ack_attempt_limit_is_rejected_before_owner_handoff() {
+    let original = peer();
+    let link = original.link;
+    let mut invalid = config();
+    invalid.tx_block_ack_negotiation_attempt_limit = 0;
+    let failure = Esp32s31ConnectedStaPort::prepare::<32>(original, invalid).unwrap_err();
+    assert_eq!(
+        failure.error,
+        Esp32s31ConnectedStaConfigError::ZeroTxBlockAckNegotiationAttemptLimit
     );
     assert_eq!(failure.peer.link, link);
 }

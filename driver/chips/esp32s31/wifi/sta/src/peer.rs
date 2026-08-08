@@ -83,6 +83,9 @@ pub struct Esp32s31StaConnectedLink {
     pub beacon_interval_tu: u16,
     pub peer_qos: bool,
     pub association_phy: StaAssociationPhy,
+    /// The selected HT channel width is allowed to use a 400 ns guard
+    /// interval according to the AP's retained HT Capabilities IE.
+    pub peer_supports_ht_short_guard_interval: bool,
     pub peer_supports_one_ltf_800ns_gi: bool,
     pub peer_supports_ldpc: bool,
     pub peer_dcm_receive: HeDcmConstellation,
@@ -203,6 +206,15 @@ impl Esp32s31StaPeerPort {
             beacon_interval_tu: prepared.access_point.beacon_interval_tu,
             peer_qos: plan.peer_qos,
             association_phy: station.association_phy,
+            peer_supports_ht_short_guard_interval: match station.association_phy {
+                StaAssociationPhy::Ht20 => prepared
+                    .access_point
+                    .supports_ht_short_guard_interval_20mhz(),
+                StaAssociationPhy::Ht40 => prepared
+                    .access_point
+                    .supports_ht_short_guard_interval_40mhz(),
+                StaAssociationPhy::Legacy | StaAssociationPhy::He20 => false,
+            },
             peer_supports_one_ltf_800ns_gi: he_capabilities
                 .is_some_and(|capability| capability.supports_one_ltf_800ns_gi()),
             peer_supports_ldpc: he_capabilities
@@ -404,6 +416,7 @@ mod tests {
 
         assert_eq!(programmed.peer.link.bssid, access_point.bssid);
         assert_eq!(programmed.peer.link.association_id, 7);
+        assert!(!programmed.peer.link.peer_supports_ht_short_guard_interval);
         assert_eq!(programmed.report.link_metric.value(), 50);
         assert_eq!(
             programmed.peer.rate_control.current_schedule().kind,

@@ -124,8 +124,8 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.enable_power_save(policy);
     }
 
-    pub fn queue_initial_tx_block_ack(&mut self) {
-        self.core.queue_initial_tx_block_ack();
+    pub fn queue_initial_tx_block_ack(&mut self, attempt_limit: u8) {
+        self.core.queue_initial_tx_block_ack(attempt_limit);
     }
 
     pub const fn rx_block_ack(

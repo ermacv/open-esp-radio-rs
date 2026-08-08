@@ -1277,6 +1277,7 @@ const fn radio_hil_connected_sta_config() -> Esp32s31ConnectedStaConfig {
         aggregate_he_txop_limit: HeEdcaTxopLimit::DEFAULT,
         tx_block_ack_window: TX_BLOCK_ACK_WINDOW as u16,
         tx_block_ack_negotiation_timeout_us: 500_000,
+        tx_block_ack_negotiation_attempt_limit: 3,
         tid0_amsdu: OPEN_RADIO_AMSDU_BENCH || OPEN_RADIO_NETWORK_AMSDU_BENCH,
         rx_block_ack_maximum_window: RX_BLOCK_ACK_SOFTWARE_WINDOW as u16,
         beacon_miss_limit: CONNECTED_BEACON_MISS_LIMIT,

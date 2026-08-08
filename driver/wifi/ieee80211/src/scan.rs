@@ -149,6 +149,22 @@ impl ScanRecord {
             .then_some(&self.ht_operation_ie)
     }
 
+    /// Whether the AP advertises reception with a 400 ns guard interval on a
+    /// 20 MHz HT channel.
+    pub fn supports_ht_short_guard_interval_20mhz(&self) -> bool {
+        self.ht_capability_ie_bytes().is_some_and(|capability| {
+            u16::from_le_bytes([capability[2], capability[3]]) & (1 << 5) != 0
+        })
+    }
+
+    /// Whether the AP advertises reception with a 400 ns guard interval on a
+    /// 40 MHz HT channel.
+    pub fn supports_ht_short_guard_interval_40mhz(&self) -> bool {
+        self.ht_capability_ie_bytes().is_some_and(|capability| {
+            u16::from_le_bytes([capability[2], capability[3]]) & (1 << 6) != 0
+        })
+    }
+
     /// Return the AP's usable 40-MHz secondary-channel geometry.
     ///
     /// The HT Capabilities Supported Channel Width bit must be present, the
@@ -497,6 +513,21 @@ mod tests {
         );
         record.ht_capability_ie[2] = 0;
         assert_eq!(record.ht40_secondary_channel(), None);
+    }
+
+    #[test]
+    fn ht_short_guard_intervals_are_read_from_capability_info() {
+        let mut record = ScanRecord {
+            ht_capability_ie_present: true,
+            ..ScanRecord::EMPTY
+        };
+        record.ht_capability_ie[0..4].copy_from_slice(&[45, 26, 1 << 5, 0]);
+        assert!(record.supports_ht_short_guard_interval_20mhz());
+        assert!(!record.supports_ht_short_guard_interval_40mhz());
+
+        record.ht_capability_ie[2] = 1 << 6;
+        assert!(!record.supports_ht_short_guard_interval_20mhz());
+        assert!(record.supports_ht_short_guard_interval_40mhz());
     }
 
     #[test]

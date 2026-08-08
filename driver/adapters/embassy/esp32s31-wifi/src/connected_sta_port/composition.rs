@@ -196,7 +196,7 @@ impl Esp32s31ConnectedStaPort {
         if plan.config.request_initial_tx_block_ack
             && matches!(plan.aggregate_tx_rate, TxPhyRate::Ht(_) | TxPhyRate::He(_))
         {
-            control.queue_initial_tx_block_ack();
+            control.queue_initial_tx_block_ack(plan.config.tx_block_ack_negotiation_attempt_limit);
         }
         control
     }

@@ -54,6 +54,7 @@ const SCENARIO_ENVIRONMENT: &[&str] = &[
     "OPEN_RADIO_HE_DCM_HIL",
     "OPEN_RADIO_HE_TB_HIL",
     "OPEN_RADIO_HE_DELIMITER_HIL",
+    "OPEN_RADIO_HT_SGI",
 ];
 
 fn main() {
@@ -455,7 +456,11 @@ impl Scenario {
                 &[]
             }
             Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
-            Self::StationTxFault => &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_PERF_AP", "1")],
+            Self::StationTxFault => &[
+                ("OPEN_RADIO_TX_BENCH", "1"),
+                ("OPEN_RADIO_PERF_AP", "1"),
+                ("OPEN_RADIO_HT_SGI", "1"),
+            ],
             Self::Bidirectional => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
@@ -1168,7 +1173,11 @@ mod tests {
         );
         assert_eq!(
             Scenario::StationTxFault.environment(),
-            &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_PERF_AP", "1"),]
+            &[
+                ("OPEN_RADIO_TX_BENCH", "1"),
+                ("OPEN_RADIO_PERF_AP", "1"),
+                ("OPEN_RADIO_HT_SGI", "1"),
+            ]
         );
         assert_eq!(
             Scenario::Bidirectional.environment(),

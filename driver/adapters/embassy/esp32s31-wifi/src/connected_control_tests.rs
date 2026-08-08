@@ -269,7 +269,7 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
         true,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.queue_initial_tx_block_ack();
+    control.queue_initial_tx_block_ack(2);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -293,6 +293,21 @@ fn initial_tx_block_ack_requests_follow_zero_seven_five_and_arm_alarms() {
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WifiControlProgress::Idle)
     );
+
+    embassy_futures::block_on(control.wait_ready(&mut tx));
+    for tid in STA_TX_BLOCK_ACK_TIDS {
+        assert_eq!(
+            embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+            Ok(WifiControlProgress::More)
+        );
+        assert_eq!(control.last_expired_tid(), Some(tid));
+    }
+    assert_eq!(
+        embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
+        Ok(WifiControlProgress::TxPending),
+        "a missing ADDBA response consumes one bounded retry"
+    );
+    assert!(control.tx_block_ack().alarm(0).is_some());
 }
 
 #[test]
@@ -461,7 +476,7 @@ fn tx_addba_response_and_delba_toggle_he_tid_ownership() {
         true,
         StaTxBlockAckSessions::new(32, 100_000, true).unwrap(),
     );
-    control.queue_initial_tx_block_ack();
+    control.queue_initial_tx_block_ack(1);
     let mut slot = core::pin::pin!(TxSlot::<512>::new_model());
     let mut hardware = Hardware {
         prepare: true,
@@ -583,7 +598,7 @@ fn shutdown_clears_rx_tx_block_ack_and_discards_late_control_events() {
         Ok(WifiControlProgress::More)
     );
 
-    control.queue_initial_tx_block_ack();
+    control.queue_initial_tx_block_ack(1);
     assert_eq!(
         embassy_futures::block_on(control.service(&mut hardware, &mut tx)),
         Ok(WifiControlProgress::TxPending)

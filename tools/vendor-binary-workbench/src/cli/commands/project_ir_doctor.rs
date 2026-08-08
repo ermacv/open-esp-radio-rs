@@ -2,6 +2,8 @@
 
 use std::collections::BTreeSet;
 
+use serde::Serialize;
+
 use crate::{
     harnesses,
     project::ProjectSpec,
@@ -10,14 +12,107 @@ use crate::{
     target::TargetSpec,
 };
 
+#[derive(Serialize)]
+pub(super) struct IrDoctorReport {
+    status: &'static str,
+    profiles: Vec<IrProfileReport>,
+    errors: usize,
+    warnings: usize,
+}
+
+impl IrDoctorReport {
+    pub(super) const fn counts(&self) -> (usize, usize) {
+        (self.errors, self.warnings)
+    }
+
+    pub(super) fn render_tsv(&self) {
+        for profile in &self.profiles {
+            for diagnostic in &profile.diagnostics {
+                outputln!(
+                    "IR-PROFILE-DIAGNOSTIC\tid={}\tkind={}\terror={}",
+                    profile.id,
+                    diagnostic.kind,
+                    diagnostic.error
+                );
+            }
+            outputln!(
+                "IR-PROFILE\tid={}\tinputs={}\tsources={}\tmissing={}\tprefix={}\treachable={}\tcontract={}\tcontract-status={}\toutput-status={}\tfunctions={}\tregisters={}\tfield-candidates={}\treview-linked={}\toutput={}\tpseudo-status={}\tpseudo={}",
+                profile.id,
+                profile.input_status,
+                display_values(profile.sources.iter().map(String::as_str)),
+                display_values(profile.missing.iter().map(String::as_str)),
+                if profile.symbol_prefix.is_empty() {
+                    "<all>"
+                } else {
+                    &profile.symbol_prefix
+                },
+                profile.include_reachable,
+                profile.entry_contract,
+                profile.contract_status,
+                profile.output_status,
+                profile.functions,
+                profile.registers,
+                profile.field_candidates,
+                if profile.review_linked { "yes" } else { "no" },
+                profile.output.display(),
+                profile.pseudo_status,
+                profile
+                    .pseudo
+                    .as_deref()
+                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
+            );
+        }
+        outputln!(
+            "CAPABILITY\tir-build\t{}\tprofiles={}\terrors={}\twarnings={}",
+            self.status,
+            self.profiles.len(),
+            self.errors,
+            self.warnings
+        );
+    }
+}
+
+#[derive(Serialize)]
+struct IrProfileReport {
+    id: String,
+    input_status: &'static str,
+    sources: Vec<String>,
+    missing: Vec<String>,
+    symbol_prefix: String,
+    include_reachable: bool,
+    entry_contract: String,
+    contract_status: &'static str,
+    output_status: &'static str,
+    functions: usize,
+    registers: usize,
+    field_candidates: usize,
+    review_linked: bool,
+    output: std::path::PathBuf,
+    pseudo_status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pseudo: Option<std::path::PathBuf>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    diagnostics: Vec<IrProfileDiagnostic>,
+}
+
+#[derive(Serialize)]
+struct IrProfileDiagnostic {
+    kind: &'static str,
+    error: String,
+}
+
 pub(super) fn inspect(
     project: &ProjectSpec,
     run_spec: Option<&RunSpec>,
     target: &TargetSpec,
-) -> (usize, usize) {
+) -> IrDoctorReport {
     if project.ir_profiles.is_empty() {
-        outputln!("CAPABILITY\tir-build\tnot-configured");
-        return (0, 0);
+        return IrDoctorReport {
+            status: "not-configured",
+            profiles: Vec::new(),
+            errors: 0,
+            warnings: 0,
+        };
     }
     let available_sources = run_spec
         .into_iter()
@@ -35,6 +130,7 @@ pub(super) fn inspect(
         .collect::<BTreeSet<_>>();
     let mut errors = 0usize;
     let mut warnings = 0usize;
+    let mut profiles = Vec::with_capacity(project.ir_profiles.len());
     for profile in &project.ir_profiles {
         let requested = if profile.sources.is_empty() {
             available_sources.clone()
@@ -60,6 +156,7 @@ pub(super) fn inspect(
             errors += 1;
             "missing-sources"
         };
+        let mut diagnostics = Vec::new();
         let contract_status = match harnesses::entry_contract_or_neutral(
             target.harness.as_deref(),
             &profile.entry_contract,
@@ -67,10 +164,10 @@ pub(super) fn inspect(
             Ok(_) => "ready",
             Err(error) => {
                 errors += 1;
-                outputln!(
-                    "IR-PROFILE-DIAGNOSTIC\tid={}\tkind=entry-contract\terror={error}",
-                    profile.id
-                );
+                diagnostics.push(IrProfileDiagnostic {
+                    kind: "entry-contract",
+                    error: error.to_string(),
+                });
                 "invalid"
             }
         };
@@ -87,10 +184,10 @@ pub(super) fn inspect(
                 ),
                 Err(error) => {
                     errors += 1;
-                    outputln!(
-                        "IR-PROFILE-DIAGNOSTIC\tid={}\tkind=output\terror={error}",
-                        profile.id
-                    );
+                    diagnostics.push(IrProfileDiagnostic {
+                        kind: "output",
+                        error: error.to_string(),
+                    });
                     ("invalid", 0, 0, 0)
                 }
             }
@@ -103,44 +200,32 @@ pub(super) fn inspect(
                 "not-generated"
             }
         };
-        outputln!(
-            "IR-PROFILE\tid={}\tinputs={}\tsources={}\tmissing={}\tprefix={}\treachable={}\tcontract={}\tcontract-status={}\toutput-status={}\tfunctions={}\tregisters={}\tfield-candidates={}\treview-linked={}\toutput={}\tpseudo-status={}\tpseudo={}",
-            profile.id,
+        profiles.push(IrProfileReport {
+            id: profile.id.clone(),
             input_status,
-            display_values(requested.iter().copied()),
-            display_values(missing.iter().copied()),
-            if profile.symbol_prefix.is_empty() {
-                "<all>"
-            } else {
-                &profile.symbol_prefix
-            },
-            profile.include_reachable,
-            profile.entry_contract,
+            sources: requested.into_iter().map(str::to_owned).collect(),
+            missing: missing.into_iter().map(str::to_owned).collect(),
+            symbol_prefix: profile.symbol_prefix.clone(),
+            include_reachable: profile.include_reachable,
+            entry_contract: profile.entry_contract.clone(),
             contract_status,
             output_status,
             functions,
             registers,
-            fields,
-            if linked_outputs.contains(&profile.output) {
-                "yes"
-            } else {
-                "no"
-            },
-            profile.output.display(),
+            field_candidates: fields,
+            review_linked: linked_outputs.contains(&profile.output),
+            output: profile.output.clone(),
             pseudo_status,
-            profile
-                .pseudo_rust
-                .as_deref()
-                .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
-        );
+            pseudo: profile.pseudo_rust.clone(),
+            diagnostics,
+        });
     }
-    outputln!(
-        "CAPABILITY\tir-build\tconfigured\tprofiles={}\terrors={}\twarnings={}",
-        project.ir_profiles.len(),
+    IrDoctorReport {
+        status: "configured",
+        profiles,
         errors,
-        warnings
-    );
-    (errors, warnings)
+        warnings,
+    }
 }
 
 fn display_values<'a>(values: impl IntoIterator<Item = &'a str>) -> String {

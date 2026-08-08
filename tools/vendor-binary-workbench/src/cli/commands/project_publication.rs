@@ -1,12 +1,14 @@
 //! Project-owned publication of reviewed register artifacts.
 
 use super::{Command, CommandArguments, Result, registers};
+use serde::Serialize;
+
 use crate::MemoryMap;
-use crate::cli::{CheckArgs, ValidationArgs};
+use crate::cli::{CheckArgs, ValidationArgs, args::OutputFormat};
 use crate::project::{ProjectSpec, RegisterWorkspacePaths};
 
 use super::project_pipeline::status::{
-    PipelineSummary, StageOutcome, StageSuccess, execute, report,
+    PipelineSummary, StageOutcome, StageReport, StageSuccess, execute, print_stage_tsv, record,
 };
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -50,7 +52,7 @@ pub(super) fn run(
             memory_map,
         )
     });
-    report("register-validation", &validation, &mut summary);
+    record("register-validation", &validation, &mut summary);
 
     if validation.blocks_dependants() {
         report_blocked_publications(paths, &mut summary);
@@ -78,7 +80,7 @@ pub(super) fn run(
             Preparation::Failed(reason) => StageOutcome::Failed(reason),
             Preparation::NotConfigured(reason) => StageOutcome::NotConfigured(reason),
         };
-        report(stage.name, &outcome, &mut summary);
+        record(stage.name, &outcome, &mut summary);
     }
 
     finish(options.check, summary)
@@ -214,22 +216,88 @@ fn report_blocked_publications(paths: &RegisterWorkspacePaths, summary: &mut Pip
         } else {
             StageOutcome::NotConfigured(absent_reason.to_owned())
         };
-        report(name, &outcome, summary);
+        record(name, &outcome, summary);
     }
 }
 
+#[derive(Serialize)]
+struct PublicationDocument<'a> {
+    schema: u32,
+    command: &'static str,
+    mode: &'static str,
+    status: &'static str,
+    stages: &'a [StageReport],
+    written: usize,
+    verified: usize,
+    failed: usize,
+    blocked: usize,
+    #[serde(rename = "not-configured")]
+    not_configured: usize,
+}
+
 fn finish(check: bool, summary: PipelineSummary) -> Result<bool> {
+    let document = PublicationDocument {
+        schema: 1,
+        command: "project publish",
+        mode: if check { "check" } else { "write" },
+        status: if summary.succeeded() { "ok" } else { "failed" },
+        stages: summary.stages(),
+        written: summary.written,
+        verified: summary.verified,
+        failed: summary.failed,
+        blocked: summary.blocked,
+        not_configured: summary.not_configured,
+    };
+    if !crate::cli::output::structured("project-publication", &document) {
+        match crate::cli::output::format() {
+            OutputFormat::Human => print_human(&document),
+            OutputFormat::Tsv => print_tsv(&document),
+            OutputFormat::Json | OutputFormat::Jsonl => {
+                unreachable!("structured publication output was already emitted")
+            }
+        }
+    }
+    Ok(summary.succeeded())
+}
+
+fn print_human(document: &PublicationDocument<'_>) {
+    outputln!(
+        "Project publication: {} ({})",
+        document.status,
+        document.mode
+    );
+    for stage in document.stages {
+        outputln!(
+            "  {:<24} {:<14} {}",
+            stage.name,
+            stage.status,
+            stage.reason.as_deref().unwrap_or("")
+        );
+    }
+    outputln!(
+        "  written={} verified={} failed={} blocked={} not-configured={}",
+        document.written,
+        document.verified,
+        document.failed,
+        document.blocked,
+        document.not_configured
+    );
+}
+
+fn print_tsv(document: &PublicationDocument<'_>) {
+    for stage in document.stages {
+        print_stage_tsv(stage);
+    }
     outputln!(
         "PROJECT-PUBLICATION\tmode={}\tstatus={}\twritten={}\tverified={}\tfailed={}\tblocked={}\tnot-configured={}",
-        if check { "check" } else { "write" },
-        if summary.succeeded() { "ok" } else { "failed" },
-        summary.written,
-        summary.verified,
-        summary.failed,
-        summary.blocked,
-        summary.not_configured,
+        document.mode,
+        document.status,
+        document.written,
+        document.verified,
+        document.failed,
+        document.blocked,
+        document.not_configured,
     );
-    Ok(summary.succeeded())
 }
 
 #[cfg(test)]

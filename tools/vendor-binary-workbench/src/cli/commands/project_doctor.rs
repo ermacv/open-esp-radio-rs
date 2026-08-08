@@ -103,8 +103,9 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
         }
     }
 
-    let (ir_errors, ir_warnings) =
-        super::project_ir_doctor::inspect(context.project, context.run_spec, context.target);
+    let ir = super::project_ir_doctor::inspect(context.project, context.run_spec, context.target);
+    let (ir_errors, ir_warnings) = ir.counts();
+    ir.render_tsv();
     errors += ir_errors;
     warnings += ir_warnings;
 
@@ -169,8 +170,9 @@ pub(super) fn run(context: super::ProjectContext<'_>) -> Result<bool> {
         },
     }
 
-    let (function_errors, function_warnings) =
-        super::project_function_doctor::inspect(context.project);
+    let functions = super::project_function_doctor::inspect(context.project);
+    let (function_errors, function_warnings) = functions.counts();
+    functions.render_tsv();
     errors += function_errors;
     warnings += function_warnings;
 

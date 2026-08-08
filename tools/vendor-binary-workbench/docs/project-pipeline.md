@@ -79,7 +79,8 @@ the pipeline fail.
 The navigation index never feeds analysis or validation back into those
 roots. Its dependency arrows mean only that it must not join stale reports.
 
-Each stage emits a stable, single-line status:
+The default human view renders one compact project summary. For scripts,
+`--format tsv` emits a stable line for each stage:
 
 ```text
 PROJECT-STAGE name=mmio-discovery status=verified reason=-
@@ -95,10 +96,12 @@ The actual output uses tab separators. Status values are:
 - `blocked`: a required input or upstream stage was unavailable;
 - `not-configured`: the optional project feature is absent.
 
-The final `PROJECT-ANALYSIS` line aggregates all stages. In JSON and JSONL
+The final TSV `PROJECT-ANALYSIS` line aggregates all stages. In JSON and JSONL
 modes the same data is a typed `project-analysis` record with schema,
 `command`, `mode`, `status`, ordered `stages`, reasons and aggregate counts; it
-is not encoded as presentation text. A `failed` or `blocked` stage produces
+is not encoded as presentation text. Nested command presentation is suppressed
+so the project report is the sole stdout result; diagnostics and tracing remain
+on stderr. A `failed` or `blocked` stage produces
 the normal unsuccessful-result exit status. Detailed configuration parsing
 errors that prevent constructing the project at all are reported before the
 analysis begins.

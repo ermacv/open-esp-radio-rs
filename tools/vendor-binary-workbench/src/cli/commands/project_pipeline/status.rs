@@ -3,6 +3,7 @@
 use serde::Serialize;
 
 use super::Result;
+use crate::cli::args::OutputFormat;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Mode {
@@ -64,11 +65,11 @@ impl StageOutcome {
 }
 
 #[derive(Serialize)]
-struct StageReport {
-    name: String,
-    status: &'static str,
+pub(crate) struct StageReport {
+    pub(crate) name: String,
+    pub(crate) status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    reason: Option<String>,
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Default)]
@@ -101,6 +102,10 @@ impl PipelineSummary {
     pub(crate) const fn succeeded(&self) -> bool {
         self.failed == 0 && self.blocked == 0
     }
+
+    pub(crate) fn stages(&self) -> &[StageReport] {
+        &self.stages
+    }
 }
 
 pub(crate) fn execute(
@@ -111,7 +116,7 @@ pub(crate) fn execute(
     let span = tracing::info_span!("project_stage", stage = name);
     let _entered = span.enter();
     tracing::info!("started");
-    let outcome = match action() {
+    let outcome = match crate::cli::output::suppress(action) {
         Ok(true) => StageOutcome::Complete(success),
         Ok(false) => StageOutcome::Failed(format!("{name} reported an unsuccessful result")),
         Err(error) => StageOutcome::Failed(error.to_string()),
@@ -125,19 +130,8 @@ pub(crate) fn execute(
     outcome
 }
 
-pub(super) fn record(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
+pub(crate) fn record(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
     summary.record(name, outcome);
-}
-
-pub(crate) fn report(name: &str, outcome: &StageOutcome, summary: &mut PipelineSummary) {
-    summary.record(name, outcome);
-    let stage = summary
-        .stages
-        .last()
-        .expect("the reported stage was recorded");
-    if !crate::cli::output::structured("project-stage", stage) {
-        print_stage(stage);
-    }
 }
 
 pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
@@ -153,11 +147,40 @@ pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
         blocked: summary.blocked,
         not_configured: summary.not_configured,
     };
-    if crate::cli::output::structured("project-analysis", &document) {
-        return;
+    if !crate::cli::output::structured("project-analysis", &document) {
+        match crate::cli::output::format() {
+            OutputFormat::Human => print_human(&document),
+            OutputFormat::Tsv => print_tsv(&document),
+            OutputFormat::Json | OutputFormat::Jsonl => {
+                unreachable!("structured project analysis output was already emitted")
+            }
+        }
     }
-    for stage in &summary.stages {
-        print_stage(stage);
+}
+
+fn print_human(document: &AnalysisDocument<'_>) {
+    outputln!("Project analysis: {} ({})", document.status, document.mode);
+    for stage in document.stages {
+        outputln!(
+            "  {:<24} {:<14} {}",
+            stage.name,
+            stage.status,
+            stage.reason.as_deref().unwrap_or("")
+        );
+    }
+    outputln!(
+        "  written={} verified={} failed={} blocked={} not-configured={}",
+        document.written,
+        document.verified,
+        document.failed,
+        document.blocked,
+        document.not_configured
+    );
+}
+
+fn print_tsv(document: &AnalysisDocument<'_>) {
+    for stage in document.stages {
+        print_stage_tsv(stage);
     }
     outputln!(
         "PROJECT-ANALYSIS\tmode={}\tstatus={}\twritten={}\tverified={}\tfailed={}\tblocked={}\tnot-configured={}",
@@ -167,11 +190,11 @@ pub(super) fn render(mode: Mode, summary: &PipelineSummary) {
         document.verified,
         document.failed,
         document.blocked,
-        document.not_configured,
+        document.not_configured
     );
 }
 
-fn print_stage(stage: &StageReport) {
+pub(crate) fn print_stage_tsv(stage: &StageReport) {
     outputln!(
         "PROJECT-STAGE\tname={}\tstatus={}\treason={}",
         stage.name,

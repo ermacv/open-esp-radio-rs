@@ -96,6 +96,16 @@ Missing or different documents make `--check` fail and name every stale path.
 Artifact identities and digests remain embedded in the schema-v32 report, so a
 successful check also binds the generated view to the supplied local inputs.
 
+## Command result formats
+
+The default human view summarizes each selected profile, its function,
+register and field-candidate counts, and the generated paths. `--format tsv`
+retains the stable `IR-PROFILE` and aggregate `IR-BUILD` records for shell
+automation. `--format json` and `--format jsonl` emit one typed `ir-build`
+record with schema, mode, status, ordered profiles and document count. The
+generated linked-IR JSON remains a separate schema-v32 project artifact; the
+command result only describes the build operation.
+
 ## Register-review integration
 
 An IR profile does not automatically become hardware truth or a register-model

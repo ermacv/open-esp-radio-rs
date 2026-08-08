@@ -24,7 +24,7 @@ pub(super) enum ResolvedInvocation {
         arguments: CommandArguments,
         project_path: PathBuf,
     },
-    Command(ResolvedCommandInvocation),
+    Command(Box<ResolvedCommandInvocation>),
 }
 
 pub(super) struct ResolvedCommandInvocation {
@@ -167,19 +167,21 @@ fn resolve_from(
         return Err("command requires an MMIO region; add memory-map to the project".into());
     }
 
-    Ok(ResolvedInvocation::Command(ResolvedCommandInvocation {
-        command,
-        arguments: command_arguments,
-        project_path,
-        project,
-        target_path,
-        target,
-        run_spec_path,
-        run_spec,
-        memory_map,
-        svd_paths,
-        svd,
-    }))
+    Ok(ResolvedInvocation::Command(Box::new(
+        ResolvedCommandInvocation {
+            command,
+            arguments: command_arguments,
+            project_path,
+            project,
+            target_path,
+            target,
+            run_spec_path,
+            run_spec,
+            memory_map,
+            svd_paths,
+            svd,
+        },
+    )))
 }
 
 fn require_project(command: Command, project: Option<&ProjectSpec>) -> Result<()> {

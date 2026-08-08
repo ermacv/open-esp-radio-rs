@@ -14,7 +14,7 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             arguments,
             project_path,
         } => commands::run_project_configure(arguments, &project_path),
-        ResolvedInvocation::Command(invocation) => run_command(invocation),
+        ResolvedInvocation::Command(invocation) => run_command(*invocation),
     }
 }
 

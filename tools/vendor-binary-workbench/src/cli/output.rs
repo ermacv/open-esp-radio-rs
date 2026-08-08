@@ -1,6 +1,7 @@
 //! Process output boundary: command results on stdout, diagnostics elsewhere.
 
 use std::{
+    cell::Cell,
     fmt,
     io::{self, Write as _},
     path::Path,
@@ -14,6 +15,10 @@ use crate::Result;
 
 static FORMAT: OnceLock<OutputFormat> = OnceLock::new();
 static RECORDS: Mutex<Vec<OutputRecord>> = Mutex::new(Vec::new());
+
+thread_local! {
+    static SUPPRESSION_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
 
 #[derive(Serialize)]
 struct OutputRecord {
@@ -44,6 +49,26 @@ pub(super) fn init(format: OutputFormat) {
         .expect("the command output boundary must be initialized once");
 }
 
+pub(super) fn format() -> OutputFormat {
+    FORMAT.get().copied().unwrap_or_default()
+}
+
+/// Runs a nested command without letting its presentation leak into the
+/// enclosing command's report. Diagnostics and tracing remain unaffected.
+pub(super) fn suppress<T>(action: impl FnOnce() -> T) -> T {
+    struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            SUPPRESSION_DEPTH.with(|depth| depth.set(depth.get() - 1));
+        }
+    }
+
+    SUPPRESSION_DEPTH.with(|depth| depth.set(depth.get() + 1));
+    let _guard = Guard;
+    action()
+}
+
 pub(super) fn line(arguments: fmt::Arguments<'_>) {
     emit_text("line", arguments.to_string(), true);
 }
@@ -53,6 +78,9 @@ pub(super) fn text(value: impl Into<String>) {
 }
 
 pub(super) fn structured(kind: &'static str, value: &impl Serialize) -> bool {
+    if suppressed() {
+        return true;
+    }
     if matches!(
         FORMAT.get().copied().unwrap_or_default(),
         OutputFormat::Human | OutputFormat::Tsv
@@ -75,6 +103,9 @@ pub(super) fn file(kind: &'static str, path: &Path, status: &'static str) -> boo
 }
 
 fn emit_text(kind: &'static str, text: String, newline: bool) {
+    if suppressed() {
+        return;
+    }
     match FORMAT.get().copied().unwrap_or_default() {
         OutputFormat::Human | OutputFormat::Tsv => {
             let mut stdout = io::stdout().lock();
@@ -97,6 +128,10 @@ fn emit_text(kind: &'static str, text: String, newline: bool) {
             });
         }
     }
+}
+
+fn suppressed() -> bool {
+    SUPPRESSION_DEPTH.with(|depth| depth.get() != 0)
 }
 
 fn emit_record(record: OutputRecord) {

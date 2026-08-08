@@ -6,8 +6,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use serde::Serialize;
+
 use super::{MmioRegisterMap, Result, TargetSpec, export_ir};
-use crate::cli::IrBuildArgs;
+use crate::cli::{IrBuildArgs, args::OutputFormat};
 use crate::{
     project::ProjectSpec,
     project_ir::ProjectIrProfile,
@@ -28,6 +30,29 @@ struct BuiltProfile<'a> {
 struct ResolvedInputs {
     artifacts: Vec<(String, PathBuf)>,
     companions: Vec<PathBuf>,
+}
+
+#[derive(Serialize)]
+struct ProfileDocument<'a> {
+    id: &'a str,
+    status: &'static str,
+    sources: usize,
+    functions: usize,
+    registers: usize,
+    field_candidates: usize,
+    json: &'a Path,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pseudo: Option<&'a Path>,
+}
+
+#[derive(Serialize)]
+struct BuildDocument<'a> {
+    schema: u32,
+    command: &'static str,
+    mode: &'static str,
+    status: &'static str,
+    profiles: Vec<ProfileDocument<'a>>,
+    documents: usize,
 }
 
 pub(super) fn run(
@@ -60,33 +85,93 @@ pub(super) fn run(
     } else {
         write_all(&built)?;
     }
+    let status = if options.check { "verified" } else { "written" };
     let document_count = built
         .iter()
         .map(|built| 1 + usize::from(built.documents.pseudo.is_some()))
         .sum::<usize>();
-    for built in &built {
+    let document = BuildDocument {
+        schema: 1,
+        command: "ir build",
+        mode: if options.check { "check" } else { "write" },
+        status,
+        profiles: built
+            .iter()
+            .map(|built| ProfileDocument {
+                id: &built.profile.id,
+                status,
+                sources: built.documents.sources,
+                functions: built.documents.functions,
+                registers: built.documents.registers,
+                field_candidates: built.documents.field_candidates,
+                json: &built.profile.output,
+                pseudo: built.profile.pseudo_rust.as_deref(),
+            })
+            .collect(),
+        documents: document_count,
+    };
+    if !crate::cli::output::structured("ir-build", &document) {
+        match crate::cli::output::format() {
+            OutputFormat::Human => print_human(&document),
+            OutputFormat::Tsv => print_tsv(&document),
+            OutputFormat::Json | OutputFormat::Jsonl => {
+                unreachable!("structured IR build output was already emitted")
+            }
+        }
+    }
+    Ok(true)
+}
+
+fn print_human(document: &BuildDocument<'_>) {
+    outputln!(
+        "IR build: {} ({} profile{}, {} document{})",
+        document.status,
+        document.profiles.len(),
+        if document.profiles.len() == 1 {
+            ""
+        } else {
+            "s"
+        },
+        document.documents,
+        if document.documents == 1 { "" } else { "s" }
+    );
+    for profile in &document.profiles {
+        outputln!(
+            "  {:<20} functions={:<6} registers={:<5} fields={:<5} {}",
+            profile.id,
+            profile.functions,
+            profile.registers,
+            profile.field_candidates,
+            profile.json.display()
+        );
+        if let Some(pseudo) = profile.pseudo {
+            outputln!("  {:<20} pseudo={}", "", pseudo.display());
+        }
+    }
+}
+
+fn print_tsv(document: &BuildDocument<'_>) {
+    for profile in &document.profiles {
         outputln!(
             "IR-PROFILE\tstatus={}\tid={}\tsources={}\tfunctions={}\tregisters={}\tfield-candidates={}\tjson={}\tpseudo={}",
-            if options.check { "verified" } else { "written" },
-            built.profile.id,
-            built.documents.sources,
-            built.documents.functions,
-            built.documents.registers,
-            built.documents.field_candidates,
-            built.profile.output.display(),
-            built
-                .profile
-                .pseudo_rust
-                .as_deref()
+            profile.status,
+            profile.id,
+            profile.sources,
+            profile.functions,
+            profile.registers,
+            profile.field_candidates,
+            profile.json.display(),
+            profile
+                .pseudo
                 .map_or_else(|| "-".to_owned(), |path| path.display().to_string())
         );
     }
     outputln!(
-        "IR-BUILD\tstatus={}\tprofiles={}\tdocuments={document_count}",
-        if options.check { "verified" } else { "written" },
-        built.len()
+        "IR-BUILD\tstatus={}\tprofiles={}\tdocuments={}",
+        document.status,
+        document.profiles.len(),
+        document.documents
     );
-    Ok(true)
 }
 
 fn select_profiles<'a>(

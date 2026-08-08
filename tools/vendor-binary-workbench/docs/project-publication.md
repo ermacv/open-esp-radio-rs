@@ -54,8 +54,9 @@ portable multi-directory transaction.
 the configured file. Missing and stale files fail with the same diagnostics as
 the corresponding individual `registers ... --check` command.
 
-Each stage produces a stable tab-separated status line followed by one
-aggregate line:
+The default human view is a compact stage summary. For scripts, `--format tsv`
+produces one stable tab-separated line per stage followed by one aggregate
+line:
 
 ```text
 PROJECT-STAGE name=register-validation status=verified reason=-
@@ -67,6 +68,10 @@ PROJECT-PUBLICATION mode=check status=ok written=0 verified=4 failed=0 blocked=0
 
 Statuses are `written`, `verified`, `failed`, `blocked`, and
 `not-configured`. Any failed or blocked stage makes the process unsuccessful.
+`--format json` and `--format jsonl` emit one typed `project-publication`
+record containing the ordered stages and aggregate counts. Output from the
+nested validation and generation commands is intentionally suppressed at this
+composition boundary; diagnostics and tracing still go to stderr.
 
 ## Relationship to other commands
 

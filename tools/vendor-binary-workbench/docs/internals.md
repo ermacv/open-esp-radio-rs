@@ -114,7 +114,8 @@ mode; its diagnostic is rendered only on stderr.
 Machine output is a schema-1 stream of `{ kind, data }` records. Commands with
 stable domain reports emit those reports directly: project status, symbol
 inventory, MMIO and interface discovery, linked IR, artifact analysis, and
-batch reference generation, direct trace extraction/comparison and concrete
+project analysis/publication, project IR builds, batch reference generation,
+direct trace extraction/comparison and concrete
 single-symbol execution/comparison and profile verification do not serialize
 their human presentation. The verification evidence document is also a Serde
 model shared by stdout and file output; the former handwritten JSON encoder
@@ -123,6 +124,12 @@ remaining command renderers still enter the same boundary as explicit
 `line`/`text` records; no analysis or verification module writes directly to
 stdout. This makes the residual DTO migration visible without allowing raw
 text to corrupt JSON or JSONL output.
+
+`project doctor` is the next aggregate report to cross that boundary. Its IR
+profile and function-workspace inspectors already return serializable reports
+and keep TSV rendering separate from collection; the remaining capability and
+input inspectors still need to join one top-level doctor DTO before the legacy
+line records can be removed.
 
 ## Shared trace and effect-contract layout
 

@@ -1,0 +1,21 @@
+[package]
+name = "open-esp-radio-memory-report"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Target-neutral ELF memory ownership and placement analyzer"
+
+[dependencies]
+clap = { version = "=4.5.48", features = ["derive"] }
+object = { version = "=0.39.1", default-features = false, features = ["elf", "read", "std"] }
+rustc-demangle = "=0.1.28"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.151"
+thiserror = "=2.0.19"
+toml_edit = { version = "=0.25.13", features = ["serde"] }
+
+[lints]
+workspace = true

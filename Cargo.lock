@@ -1584,6 +1584,19 @@ name = "open-esp-radio-ieee80211"
 version = "0.1.0"
 
 [[package]]
+name = "open-esp-radio-memory-report"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "object 0.39.1",
+ "rustc-demangle",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "toml_edit",
+]
+
+[[package]]
 name = "open-esp-radio-qualification-check"
 version = "0.1.0"
 

@@ -19,6 +19,7 @@ members = [
     "driver/chips/esp32s31/pac",
     "hil/host/runner",
     "tools/qualification-check",
+    "tools/memory-report",
     "tools/register-model",
     "tools/vendor-binary-workbench",
     "tools/vendor-binary-workbench/crates/backend-riscv",

@@ -1,4 +1,5 @@
 [alias]
 hil = "run --quiet -p open-esp-radio-hil-runner --"
+memory = "run --quiet -p open-esp-radio-memory-report --"
 qualification = "run --quiet -p open-esp-radio-qualification-check --"
 vendor-binary-workbench = "run --quiet -p open-radio-vendor-binary-workbench --bin vendor-binary-workbench --"

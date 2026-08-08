@@ -1,0 +1,221 @@
+schema = 1
+
+[[regions]]
+id = "internal-sram"
+kind = "sram"
+start = 0x2f000000
+end = 0x2f07afc0
+
+[[regions]]
+id = "external-psram"
+kind = "psram"
+start = 0x50010000
+end = 0x51000000
+
+[[reserves]]
+id = "cpu0-stack"
+region = "internal-sram"
+start_symbol = "_stack_end"
+end_symbol = "_stack_start"
+reason = "stack"
+
+[[rules]]
+symbol = "OPEN_RADIO_RX_DMA_STORAGE"
+owner = "wifi.rx.dma"
+scope = "driver"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 32
+element_capacity = 1704
+optimization = "Descriptor count is a hardware-burst policy; payload storage cannot move to PSRAM."
+
+[[rules]]
+symbol = "OPEN_RADIO_RX_STAGE_POOL"
+owner = "wifi.rx.hot-staging"
+scope = "adapter"
+reason = "latency-critical"
+placement = "preferred-sram"
+region = "internal-sram"
+count = 64
+element_capacity = 1700
+optimization = "Evaluate fewer hot slots or a measured hot/cold split; moving all slots risks RX backpressure."
+
+[[rules]]
+symbol = "OPEN_RADIO_NETWORK_TX_POOL"
+owner = "wifi.tx.pinned-network"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 32
+element_capacity = 1648
+optimization = "Payload is read directly by Wi-Fi DMA; only queue depth is tunable."
+
+[[rules]]
+symbol = "OPEN_RADIO_TX_DMA_STORAGE"
+owner = "wifi.tx.control-dma"
+scope = "driver"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 1
+element_capacity = 1700
+
+[[rules]]
+symbol = "OPEN_RADIO_TX_AMPDU_STORAGE"
+owner = "wifi.tx.ampdu-state"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 64
+element_capacity = 0
+optimization = "Primary and standby banks contain descriptors and metadata, not duplicated payload arenas."
+
+[[rules]]
+symbol = "OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE"
+owner = "wifi.tx.ampdu-state"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 64
+element_capacity = 0
+
+[[rules]]
+symbol = "OPEN_RADIO_TX_AMPDU_DMA_STORAGE"
+owner = "wifi.tx.ampdu-state"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 64
+element_capacity = 0
+
+[[rules]]
+symbol = "OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE"
+owner = "wifi.tx.ampdu-state"
+scope = "adapter"
+reason = "hardware-dma"
+placement = "required-sram"
+region = "internal-sram"
+count = 64
+element_capacity = 0
+
+[[rules]]
+symbol = "*::APP_CORE_STACK"
+owner = "runtime.core1-stack"
+scope = "runtime"
+reason = "stack"
+placement = "required-sram"
+region = "internal-sram"
+count = 1
+element_capacity = 16384
+
+[[rules]]
+symbol = "*::OPEN_RADIO_RX_REORDER_STORAGE"
+owner = "wifi.rx.cold-reorder"
+scope = "adapter"
+reason = "cold-path"
+placement = "preferred-psram"
+region = "external-psram"
+count = 64
+element_capacity = 1700
+optimization = "Backing count can be reviewed independently from the negotiated 32-frame BlockAck window."
+
+[[rules]]
+symbol = "*::OPEN_RADIO_NETWORK_RESOURCES"
+owner = "network.rx-handoff"
+scope = "adapter"
+reason = "cpu-only"
+placement = "preferred-psram"
+region = "external-psram"
+count = 40
+element_capacity = 1600
+optimization = "RX queue depth is scenario policy; Wi-Fi DMA never addresses these slots."
+
+[[rules]]
+symbol = "*::OPEN_RADIO_STACK_RESOURCES"
+owner = "network.stack-resources"
+scope = "runtime"
+reason = "cpu-only"
+placement = "preferred-psram"
+region = "external-psram"
+[[rules]]
+symbol = "*::OPEN_RADIO_TCP_RX_BUFFER"
+owner = "hil.tcp.rx-window"
+scope = "hil"
+reason = "qualification-window"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 262144
+optimization = "HIL throughput window; production applications choose their own socket capacity."
+
+[[rules]]
+symbol = "*::OPEN_RADIO_TCP_TX_BUFFER"
+owner = "hil.tcp.tx-window"
+scope = "hil"
+reason = "qualification-window"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 65536
+
+[[rules]]
+symbol = "*::TCP_RX_PATTERN_BUFFER"
+owner = "hil.tcp.rx-pattern"
+scope = "hil"
+reason = "qualification-window"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 32768
+
+[[rules]]
+symbol = "*::TCP_TX_PATTERN_BUFFER"
+owner = "hil.tcp.tx-pattern"
+scope = "hil"
+reason = "qualification-window"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 32768
+
+[[rules]]
+symbol = "*task4POOL"
+owner = "runtime.embassy-task-state"
+scope = "runtime"
+reason = "generated-task-state"
+placement = "preferred-psram"
+region = "external-psram"
+optimization = "Large futures should be inspected when local arrays or owners unexpectedly enter task state."
+
+[[rules]]
+symbol = "*::SCAN_FRAME"
+owner = "hil.scan.frame"
+scope = "hil"
+reason = "cold-path"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 1700
+
+[[rules]]
+symbol = "*::ETHERNET_FRAME"
+owner = "hil.scan.ethernet-frame"
+scope = "hil"
+reason = "cold-path"
+placement = "preferred-psram"
+region = "external-psram"
+count = 1
+element_capacity = 1700
+
+[[rules]]
+symbol = "*::SCAN_TABLE"
+owner = "hil.scan.table"
+scope = "hil"
+reason = "cold-path"
+placement = "preferred-psram"
+region = "external-psram"

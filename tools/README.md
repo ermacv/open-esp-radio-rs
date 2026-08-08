@@ -4,6 +4,7 @@ This tree is limited to repository-wide generators and policy checks:
 
 | Path | Purpose |
 | --- | --- |
+| `memory-report/` | Target-neutral ELF memory ownership, placement policy and before/after analysis |
 | `register-model/` | Shared register model, clean SVD, PAC/evidence schemas and generic invariants |
 | `qualification-check/` | Fail-closed readiness manifest validation |
 | `vendor-binary-workbench/` | Vendor Binary Workbench implementation, reusable backends, models and platform harnesses |

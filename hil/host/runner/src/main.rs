@@ -396,11 +396,12 @@ enum Scenario {
     UdpTx,
     StationTxFault,
     Bidirectional,
+    BidirectionalRxOrderProfile,
     Tcp,
 }
 
 impl Scenario {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::BootSmoke,
         Self::Radio,
         Self::RadioPollProfile,
@@ -408,6 +409,7 @@ impl Scenario {
         Self::UdpTx,
         Self::StationTxFault,
         Self::Bidirectional,
+        Self::BidirectionalRxOrderProfile,
         Self::Tcp,
     ];
 
@@ -422,6 +424,9 @@ impl Scenario {
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
             "station-tx-fault" | "open-radio-station-tx-fault" => Ok(Self::StationTxFault),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
+            "bidirectional-rx-order-profile" | "open-radio-bidirectional-rx-order-profile" => {
+                Ok(Self::BidirectionalRxOrderProfile)
+            }
             "tcp" | "tcp-rx" | "open-radio-tcp" | "open-radio-tcp-rx" => Ok(Self::Tcp),
             _ => Err(format!(
                 "unsupported production-runner HIL scenario `{value}`; run `cargo hil scenarios` for the list"
@@ -439,6 +444,7 @@ impl Scenario {
             Self::UdpTx => "udp-tx",
             Self::StationTxFault => "station-tx-fault",
             Self::Bidirectional => "bidirectional",
+            Self::BidirectionalRxOrderProfile => "bidirectional-rx-order-profile",
             Self::Tcp => "tcp",
         }
     }
@@ -452,6 +458,7 @@ impl Scenario {
             Self::UdpTx => "open-radio-udp-tx",
             Self::StationTxFault => "open-radio-station-tx-fault",
             Self::Bidirectional => "open-radio-bidirectional",
+            Self::BidirectionalRxOrderProfile => "open-radio-bidirectional-rx-order-profile",
             Self::Tcp => "open-radio-tcp",
         }
     }
@@ -462,6 +469,7 @@ impl Scenario {
             Self::Radio => "open-radio-hil",
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
             Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
+            Self::BidirectionalRxOrderProfile => "open-radio-hil,rx-order-telemetry",
             Self::UdpTx | Self::StationTxFault | Self::Bidirectional | Self::Tcp => {
                 "open-radio-hil"
             }
@@ -479,7 +487,7 @@ impl Scenario {
                 ("OPEN_RADIO_PERF_AP", "1"),
                 ("OPEN_RADIO_HT_SGI", "1"),
             ],
-            Self::Bidirectional => &[
+            Self::Bidirectional | Self::BidirectionalRxOrderProfile => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
                 ("OPEN_RADIO_HT_SGI", "1"),
@@ -503,6 +511,9 @@ impl Scenario {
                 "connected TX reset frontier against the repository-controlled AP"
             }
             Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
+            Self::BidirectionalRxOrderProfile => {
+                "simultaneous RX/TX with UDP and 802.11 receive-order correlation"
+            }
             Self::Tcp => "production ConnectedRunner embassy-net TCP RX/TX/full-duplex throughput",
         }
     }

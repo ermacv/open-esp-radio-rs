@@ -174,7 +174,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         }
     });
     let delivery_failure =
-        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence)
+        validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)
             .err()
             .map(|error| error.to_string());
     let acceptance_failure = if host.throughput_bps() < minimum_bps {

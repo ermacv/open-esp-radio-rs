@@ -2378,7 +2378,7 @@ fn qualify(
         )
         .into());
     }
-    validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence)?;
+    validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)?;
     let (expected_width, expected_rate) = options.phy.expected_tx();
     qualify_tx_samples(report, expected_width, expected_rate)?;
     qualify_ampdu(report)?;
@@ -2389,6 +2389,7 @@ pub(crate) fn validate_exact_rx_delivery(
     host_datagrams: u64,
     received_datagrams: u64,
     sequence: UdpSequenceEvidence,
+    order: RxOrderEvidence,
 ) -> Result<()> {
     let expected_highest = host_datagrams.checked_sub(1);
     if received_datagrams != host_datagrams {
@@ -2406,9 +2407,10 @@ pub(crate) fn validate_exact_rx_delivery(
         || sequence.adjacent_duplicates != 0
         || sequence.unsequenced != 0
     {
+        let localization = rx_order_localization(sequence, order);
         return Err(format!(
             "device RX sequence defects: first={:?} highest={:?} next={:?} gaps={} \
-             missing={} backward={} duplicates={} unsequenced={}",
+             missing={} backward={} duplicates={} unsequenced={}; localization={localization}",
             sequence.first,
             sequence.highest,
             sequence.next,
@@ -2421,6 +2423,31 @@ pub(crate) fn validate_exact_rx_delivery(
         .into());
     }
     Ok(())
+}
+
+fn rx_order_localization(sequence: UdpSequenceEvidence, order: RxOrderEvidence) -> &'static str {
+    if sequence.backward == 0 {
+        return "no recovered late datagram is available for MAC-order correlation";
+    }
+    if order.intervals == 0 {
+        return "RX order telemetry was not enabled";
+    }
+    if order.backward == 0 {
+        return "reordering appeared after the pre-network ConnectedRx observer";
+    }
+    if order.backward != sequence.backward {
+        return "reordering spans more than one observed RX boundary";
+    }
+    if order.backward_mac_forward == order.backward {
+        return "all late UDP datagrams carried forward 802.11 sequence numbers; reordering predates the open driver's per-TID MAC/BlockAck boundary";
+    }
+    if order.backward_mac_backward != 0 {
+        return "at least one late UDP datagram carried a backward 802.11 sequence number; inspect the open driver's per-TID BlockAck reorder path";
+    }
+    if order.backward_mac_same != 0 {
+        return "at least one late UDP datagram shared an MPDU with its predecessor; inspect A-MSDU subframe order";
+    }
+    "MAC-order evidence is mixed or unavailable"
 }
 
 fn median(mut values: Vec<u64>) -> Option<u64> {
@@ -2514,7 +2541,7 @@ pub(crate) fn rx_order_markdown(order: RxOrderEvidence) -> String {
         return String::from(
             "## RX order correlation\n\n\
              Not collected in the ordinary throughput image. Use the explicit \
-             `radio-rx-order-profile` HIL scenario to correlate UDP and 802.11 ordering.\n\n",
+             RX-order profile for this traffic scenario to correlate UDP and 802.11 ordering.\n\n",
         );
     }
     let classified = order
@@ -2527,7 +2554,7 @@ pub(crate) fn rx_order_markdown(order: RxOrderEvidence) -> String {
         "## RX order correlation\n\n\
          - Observer interval records: `{}`; UDP gap events/forward-missing/backward/adjacent duplicates: `{}` / `{}` / `{}` / `{}`\n\
          - Backward UDP classified by 802.11 sequence: MAC-backward `{}`, same MPDU `{}`, MAC-forward `{}`, different TID `{}`, unavailable `{}`; classified `{classified}/{}`\n\
-         - A MAC-backward classification is direct evidence that an MPDU crossed the open driver out of its negotiated per-TID BlockAck order. Same-MPDU records can be distinct A-MSDU subframes.\n\n",
+         - MAC-backward is direct evidence that an MPDU crossed the open driver out of its negotiated per-TID BlockAck order. MAC-forward means the application order had already changed before the peer assigned 802.11 sequence numbers. Same-MPDU records can be distinct A-MSDU subframes.\n\n",
         order.intervals,
         order.gap_events,
         order.forward_missing,
@@ -2936,14 +2963,14 @@ mod tests {
             next: Some(4),
             ..UdpSequenceEvidence::default()
         };
-        assert!(validate_exact_rx_delivery(4, 4, exact).is_ok());
+        assert!(validate_exact_rx_delivery(4, 4, exact, RxOrderEvidence::default()).is_ok());
 
         let missing = UdpSequenceEvidence {
             gap_events: 1,
             forward_missing: 1,
             ..exact
         };
-        assert!(validate_exact_rx_delivery(4, 3, missing).is_err());
+        assert!(validate_exact_rx_delivery(4, 3, missing, RxOrderEvidence::default()).is_err());
 
         let reordered = UdpSequenceEvidence {
             gap_events: 1,
@@ -2951,7 +2978,41 @@ mod tests {
             backward: 1,
             ..exact
         };
-        assert!(validate_exact_rx_delivery(4, 4, reordered).is_err());
+        assert!(validate_exact_rx_delivery(4, 4, reordered, RxOrderEvidence::default()).is_err());
+    }
+
+    #[test]
+    fn localizes_recovered_udp_reordering_across_rx_boundaries() {
+        let sequence = UdpSequenceEvidence {
+            first: Some(0),
+            highest: Some(3),
+            next: Some(4),
+            gap_events: 1,
+            forward_missing: 1,
+            backward: 1,
+            ..UdpSequenceEvidence::default()
+        };
+        let before_mac = RxOrderEvidence {
+            intervals: 1,
+            gap_events: 1,
+            forward_missing: 1,
+            backward: 1,
+            backward_mac_forward: 1,
+            ..RxOrderEvidence::default()
+        };
+        let error = validate_exact_rx_delivery(4, 4, sequence, before_mac)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("predates the open driver's per-TID MAC/BlockAck boundary"));
+
+        let after_handoff = RxOrderEvidence {
+            intervals: 1,
+            ..RxOrderEvidence::default()
+        };
+        let error = validate_exact_rx_delivery(4, 4, sequence, after_handoff)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("after the pre-network ConnectedRx observer"));
     }
 
     #[test]

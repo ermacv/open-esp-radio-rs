@@ -361,6 +361,72 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         "fixture"
     );
 
+    let manifest_contents = std::fs::read_to_string(&manifest).unwrap().replace(
+        "[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+        "[interfaces]\nfacts = \"generated/interfaces.json\"\npack = \"interfaces/reviewed.toml\"\n\n[functions]\npack = \"functions/reviewed.toml\"\nprofiles = [\"fixture\"]\n",
+    );
+    std::fs::write(&manifest, manifest_contents).unwrap();
+    std::fs::create_dir_all(directory.join("interfaces")).unwrap();
+    std::fs::create_dir_all(directory.join("functions")).unwrap();
+
+    for (domain, kind) in [
+        ("interfaces", "interface-pack"),
+        ("functions", "function-pack"),
+    ] {
+        let output = workbench()
+            .current_dir(repository_root())
+            .args([domain, "init-pack", "--project"])
+            .arg(&manifest)
+            .args(["--format", "json", "--color", "never"])
+            .output()
+            .expect("initialize reviewed workspace pack");
+        assert!(
+            output.status.success(),
+            "{domain} init stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output["records"].as_array().unwrap().len(), 1);
+        assert_eq!(output["records"][0]["kind"], kind);
+        assert_eq!(output["records"][0]["data"]["status"], "created");
+    }
+
+    for (domain, kind) in [
+        ("interfaces", "interface-workspace"),
+        ("functions", "function-workspace"),
+    ] {
+        let output = workbench()
+            .current_dir(repository_root())
+            .args([domain, "validate", "--project"])
+            .arg(&manifest)
+            .args(["--format", "json", "--color", "never"])
+            .output()
+            .expect("validate reviewed workspace pack");
+        assert!(
+            output.status.success(),
+            "{domain} validate stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let output: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(output["records"].as_array().unwrap().len(), 1);
+        assert_eq!(output["records"][0]["kind"], kind);
+        assert_eq!(output["records"][0]["data"]["status"], "valid");
+    }
+
+    let denied = workbench()
+        .current_dir(repository_root())
+        .args(["functions", "validate", "--deny-unreviewed", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("enforce reviewed function coverage");
+    assert_eq!(denied.status.code(), Some(2));
+    let denied: serde_json::Value = serde_json::from_slice(&denied.stdout).unwrap();
+    assert_eq!(denied["records"].as_array().unwrap().len(), 1);
+    assert_eq!(denied["records"][0]["kind"], "function-workspace");
+    assert_eq!(denied["records"][0]["data"]["status"], "unreviewed");
+    assert_eq!(denied["records"][0]["data"]["deny_unreviewed"], true);
+
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
@@ -479,4 +545,54 @@ fn project_publication_json_is_one_typed_report() {
             .len(),
         4
     );
+}
+
+#[test]
+fn register_lifecycle_commands_emit_one_typed_report() {
+    let project = "verification/vendor/targets/esp32s31/vendor-project.toml";
+    for (arguments, kind, status) in [
+        (
+            vec!["registers", "validate", "--project", project],
+            "register-workspace",
+            "valid",
+        ),
+        (
+            vec!["registers", "export-svd", "--check", "--project", project],
+            "svd-publication",
+            "verified",
+        ),
+        (
+            vec!["registers", "generate-pac", "--check", "--project", project],
+            "pac-publication",
+            "verified",
+        ),
+        (
+            vec![
+                "registers",
+                "generate-bindings",
+                "--check",
+                "--project",
+                project,
+            ],
+            "binding-publication",
+            "verified",
+        ),
+    ] {
+        let mut command = workbench();
+        command
+            .current_dir(repository_root())
+            .args(arguments)
+            .args(["--format", "json", "--color", "never"]);
+        let output = command.output().expect("run register lifecycle command");
+        assert!(
+            output.status.success(),
+            "{kind} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(document["records"].as_array().unwrap().len(), 1);
+        assert_eq!(document["records"][0]["kind"], kind);
+        assert_eq!(document["records"][0]["data"]["schema"], 1);
+        assert_eq!(document["records"][0]["data"]["status"], status);
+    }
 }

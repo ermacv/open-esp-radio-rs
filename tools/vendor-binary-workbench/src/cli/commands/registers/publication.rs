@@ -4,6 +4,10 @@ use std::path::PathBuf;
 
 use super::*;
 
+mod report;
+
+use report::*;
+
 pub(crate) struct PreparedPublication {
     output: PathBuf,
     contents: String,
@@ -69,38 +73,24 @@ impl PreparedPublication {
         )?;
         let status = if check { "verified" } else { "written" };
         match &self.report {
-            PublicationReport::Svd { summary } => outputln!(
-                "SVD\tstatus={status}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
-                summary.peripherals,
-                summary.registers,
-                summary.fields,
-                self.output.display()
-            ),
+            PublicationReport::Svd { summary } => emit_svd(status, summary, &self.output),
             PublicationReport::Pac {
                 target,
                 edition,
                 summary,
                 api_pack,
-            } => outputln!(
-                "PAC\tstatus={status}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tapi-pack={}\tpath={}",
-                target.label(),
-                edition.label(),
-                summary.peripherals,
-                summary.registers,
-                api_pack
-                    .as_deref()
-                    .map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
-                self.output.display()
+            } => emit_pac(
+                status,
+                *target,
+                *edition,
+                summary,
+                api_pack.as_deref(),
+                &self.output,
             ),
             PublicationReport::Bindings {
                 crate_name,
                 summary,
-            } => outputln!(
-                "PAC-BINDINGS\tstatus={status}\tcrate={crate_name}\tperipherals={}\tregisters={}\tpath={}",
-                summary.peripherals,
-                summary.registers,
-                self.output.display()
-            ),
+            } => emit_bindings(status, crate_name, summary, &self.output),
         }
         Ok(true)
     }
@@ -201,7 +191,7 @@ pub(super) fn export_svd(
         .or(paths.svd_output.as_deref())
         .ok_or("registers export-svd requires --output PATH or [registers.svd] output")?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let workspace_summary = print_summary(&workspace, paths)?;
+    let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "release SVD denied {} unreviewed MMIO observations",
@@ -216,17 +206,14 @@ pub(super) fn export_svd(
         arguments.check,
         "SVD",
     )?;
-    outputln!(
-        "SVD\tstatus={}\tperipherals={}\tregisters={}\tfields={}\tpath={}",
+    emit_svd(
         if arguments.check {
             "verified"
         } else {
             "written"
         },
-        summary.peripherals,
-        summary.registers,
-        summary.fields,
-        output.display()
+        &summary,
+        output,
     );
     Ok(true)
 }
@@ -258,7 +245,7 @@ pub(super) fn generate_pac_source(
     };
     let api_pack = api_pack_path.map(PacApiPack::load).transpose()?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let workspace_summary = print_summary(&workspace, paths)?;
+    let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "PAC generation denied {} unreviewed MMIO observations",
@@ -269,19 +256,17 @@ pub(super) fn generate_pac_source(
     let (svd, svd_summary) = workspace.render_svd()?;
     let source = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
     super::super::super::generated_output::write_or_check(output, &source, arguments.check, "PAC")?;
-    outputln!(
-        "PAC\tstatus={}\ttarget={}\tedition={}\tperipherals={}\tregisters={}\tapi-pack={}\tpath={}",
+    emit_pac(
         if arguments.check {
             "verified"
         } else {
             "written"
         },
-        target.label(),
-        edition.label(),
-        svd_summary.peripherals,
-        svd_summary.registers,
-        api_pack_path.map_or_else(|| "-".to_owned(), |path| path.display().to_string()),
-        output.display()
+        target,
+        edition,
+        &svd_summary,
+        api_pack_path,
+        output,
     );
     Ok(true)
 }
@@ -305,7 +290,7 @@ pub(super) fn generate_bindings(
             "registers generate-bindings requires --crate-name NAME or [registers.bindings] crate-name",
         )?;
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let workspace_summary = print_summary(&workspace, paths)?;
+    let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(format!(
             "PAC binding generation denied {} unreviewed MMIO observations",
@@ -321,17 +306,15 @@ pub(super) fn generate_bindings(
         arguments.check,
         "PAC binding index",
     )?;
-    outputln!(
-        "PAC-BINDINGS\tstatus={}\tcrate={}\tperipherals={}\tregisters={}\tpath={}",
+    emit_bindings(
         if arguments.check {
             "verified"
         } else {
             "written"
         },
         crate_name,
-        svd_summary.peripherals,
-        svd_summary.registers,
-        output.display()
+        &svd_summary,
+        output,
     );
     Ok(true)
 }

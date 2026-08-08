@@ -68,6 +68,8 @@ dispatch path:
 | `cli/resolver/tests.rs` | Resolution precedence, discovery and path-origin contract tests |
 | `cli/dispatch.rs` | Exhaustive routing of fully resolved invocations into domain workflows |
 | `cli/output.rs` | Single stdout boundary and `human`, `json`, `jsonl`, and `tsv` result rendering |
+| `cli/commands/{function_pack,interface_pack,registers}/report.rs` | Typed reviewed-workspace DTOs plus human/TSV presentation |
+| `cli/commands/registers/publication/report.rs` | Typed SVD/PAC/binding leaf-publication results |
 | `cli/ui.rs` | miette diagnostics and tracing configuration on stderr |
 | `cli/mod.rs` | Thin parse → UI initialization → resolve → dispatch composition root |
 | `cli/commands/*` | Domain validation and execution; never reparses an argv vector |
@@ -115,7 +117,8 @@ Machine output is a schema-1 stream of `{ kind, data }` records. Commands with
 stable domain reports emit those reports directly: project status, symbol
 inventory, MMIO and interface discovery, linked IR, artifact analysis, and
 project diagnostics/analysis/publication, project IR builds, batch reference
-generation, direct trace extraction/comparison and concrete
+generation, reviewed register/function/interface workspace lifecycles, direct
+trace extraction/comparison and concrete
 single-symbol execution/comparison and profile verification do not serialize
 their human presentation. The verification evidence document is also a Serde
 model shared by stdout and file output; the former handwritten JSON encoder

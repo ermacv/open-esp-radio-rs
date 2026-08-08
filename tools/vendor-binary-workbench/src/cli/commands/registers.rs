@@ -4,12 +4,14 @@ use super::super::*;
 use crate::{project::ProjectSpec, registers::*};
 
 mod publication;
+mod report;
 
 pub(super) use publication::{
     PreparedPublication, PublicationReadiness, prepare_project_bindings, prepare_project_pac,
     prepare_project_svd,
 };
 use publication::{export_svd, generate_bindings, generate_pac_source};
+use report::*;
 
 pub(super) fn run(
     command: Command,
@@ -73,23 +75,30 @@ fn review(
         arguments.check,
         "register review",
     )?;
-    outputln!(
-        "REGISTER-REVIEW\tstatus={}\tobserved={}\treviewed={}\tunreviewed={}\tmodel-only={}\tdraft-field-partitions={}\tir-reports={}\tir-registers={}\tir-only-registers={}\tir-field-candidates={}\tpath={}",
-        if arguments.check {
+    let report = RegisterReviewDocument {
+        schema: 1,
+        command: "registers review",
+        status: if arguments.check {
             "verified"
         } else {
             "written"
         },
-        summary.observed,
-        summary.reviewed,
-        summary.unreviewed,
-        summary.model_only,
-        summary.field_candidates,
-        summary.ir_reports,
-        summary.ir_registers,
-        summary.ir_only_registers,
-        summary.ir_field_candidates,
-        output.display()
+        observed: summary.observed,
+        reviewed: summary.reviewed,
+        unreviewed: summary.unreviewed,
+        model_only: summary.model_only,
+        draft_field_partitions: summary.field_candidates,
+        ir_reports: summary.ir_reports,
+        ir_registers: summary.ir_registers,
+        ir_only_registers: summary.ir_only_registers,
+        ir_field_candidates: summary.ir_field_candidates,
+        path: output,
+    };
+    crate::cli::output::render_report(
+        "register-review",
+        &report,
+        || print_review_human(&report),
+        || print_review_tsv(&report),
     );
     Ok(true)
 }
@@ -109,13 +118,24 @@ fn init_model(
     };
     let facts = RegisterFacts::load(&paths.facts)?;
     let summary = init_register_model(&facts, output, &address_space, &project.id)?;
-    outputln!(
-        "REGISTER-MODEL\tstatus=created\tschema=2\tperipherals={}\tfragments={}\tobserved-registers={}\taddress-space={}\tmodel={}",
-        summary.peripherals,
-        summary.fragments,
-        facts.registers.len(),
-        address_space,
-        output.display()
+    let report = RegisterModelDocument {
+        schema: 1,
+        command: "registers init-model",
+        status: "created",
+        model_schema: 2,
+        peripherals: summary.peripherals,
+        fragments: summary.fragments,
+        observed_registers: facts.registers.len(),
+        annotations: None,
+        address_space: &address_space,
+        input: None,
+        model: output,
+    };
+    crate::cli::output::render_report(
+        "register-model",
+        &report,
+        || print_model_human(&report),
+        || print_model_tsv(&report),
     );
     Ok(true)
 }
@@ -134,14 +154,24 @@ fn import_svd(
             .unwrap_or_else(|| "cpu".to_owned()),
     };
     let summary = import_svd_model(&input, output, &address_space)?;
-    outputln!(
-        "REGISTER-MODEL\tstatus=imported\tschema=2\tperipherals={}\tfragments={}\tannotations={}\taddress-space={}\tinput={}\tmodel={}",
-        summary.peripherals,
-        summary.fragments,
-        summary.annotations,
-        address_space,
-        input.display(),
-        output.display()
+    let report = RegisterModelDocument {
+        schema: 1,
+        command: "registers import-svd",
+        status: "imported",
+        model_schema: 2,
+        peripherals: summary.peripherals,
+        fragments: summary.fragments,
+        observed_registers: 0,
+        annotations: Some(summary.annotations),
+        address_space: &address_space,
+        input: Some(&input),
+        model: output,
+    };
+    crate::cli::output::render_report(
+        "register-model",
+        &report,
+        || print_model_human(&report),
+        || print_model_tsv(&report),
     );
     Ok(true)
 }
@@ -152,76 +182,66 @@ fn validate(
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
     let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
-    let summary = print_summary(&workspace, paths)?;
+    let summary = workspace.summary()?;
     let api_pack = validate_pac_api(paths)?;
-    if let Some(pack) = &api_pack {
-        outputln!(
-            "PAC-API\tstatus=valid\tschema={}\toperations={}\tsources={}\tpack={}",
-            pack.schema,
-            pack.operation_count(),
-            pack.source_ids().len(),
-            paths
-                .api_pack
-                .as_deref()
-                .expect("loaded API pack has a configured path")
-                .display()
-        );
-    }
-    if let Some(pack) = validate_register_lints(paths)? {
-        outputln!(
-            "REGISTER-LINTS\tstatus=valid\tschema={}\tforbidden-field-name-substrings={}\tpack={}",
-            pack.schema,
-            pack.forbidden_field_name_substrings.len(),
-            paths
-                .lint_pack
-                .as_deref()
-                .expect("validated lint pack has a configured path")
-                .display()
-        );
-    }
-    if let Some(memory) = validate_register_memory_map(paths, memory_map)? {
-        outputln!(
-            "REGISTER-MEMORY\tstatus=valid\tregisters={}\tmmio-regions={}",
-            memory.registers,
-            memory.mmio_regions
-        );
-    }
-    if let Some(evidence) = validate_register_evidence(paths, memory_map)? {
-        outputln!(
-            "REGISTER-EVIDENCE\tstatus=valid\tcatalogs={}\tconfidence-levels={}\tsources={}\tranges={}",
-            paths.evidence_catalogs.len(),
-            evidence.confidence_levels.len(),
-            evidence.sources.len(),
-            evidence.ranges.len()
-        );
-    }
-    if arguments.deny_unreviewed && summary.unreviewed != 0 {
+    let lint_pack = validate_register_lints(paths)?;
+    let memory = validate_register_memory_map(paths, memory_map)?;
+    let evidence = validate_register_evidence(paths, memory_map)?;
+    let passed = !arguments.deny_unreviewed || summary.unreviewed == 0;
+    if !passed {
         tracing::warn!(
             unreviewed = summary.unreviewed,
             "register workspace contains unreviewed entries"
         );
-        return Ok(false);
     }
-    Ok(true)
-}
-
-fn print_summary(
-    workspace: &ProjectRegisterWorkspace,
-    paths: &crate::project::RegisterWorkspacePaths,
-) -> Result<RegisterWorkspaceSummary> {
-    let summary = workspace.summary()?;
-    outputln!(
-        "REGISTER-WORKSPACE\tstatus=valid\tformat={}\tranges={}\tobserved={}\treviewed={}\tignored={}\tmanual={}\tunreviewed={}\tfields={}\tfacts={}\tmodel={}",
-        workspace.format_label(),
-        summary.ranges,
-        summary.observed,
-        summary.reviewed,
-        summary.ignored,
-        summary.manual,
-        summary.unreviewed,
-        summary.fields,
-        paths.facts.display(),
-        paths.model.display()
+    let report = RegisterWorkspaceDocument {
+        schema: 1,
+        command: "registers validate",
+        status: if passed { "valid" } else { "unreviewed" },
+        deny_unreviewed: arguments.deny_unreviewed,
+        format: workspace.format_label(),
+        ranges: summary.ranges,
+        observed: summary.observed,
+        reviewed: summary.reviewed,
+        ignored: summary.ignored,
+        manual: summary.manual,
+        unreviewed: summary.unreviewed,
+        fields: summary.fields,
+        facts: &paths.facts,
+        model: &paths.model,
+        pac_api: api_pack.as_ref().map(|pack| PacApiDocument {
+            schema: pack.schema,
+            operations: pack.operation_count(),
+            sources: pack.source_ids().len(),
+            pack: paths
+                .api_pack
+                .as_deref()
+                .expect("loaded API pack has a configured path"),
+        }),
+        lints: lint_pack.as_ref().map(|pack| RegisterLintDocument {
+            schema: pack.schema,
+            forbidden_field_name_substrings: pack.forbidden_field_name_substrings.len(),
+            pack: paths
+                .lint_pack
+                .as_deref()
+                .expect("validated lint pack has a configured path"),
+        }),
+        memory: memory.map(|summary| RegisterMemoryDocument {
+            registers: summary.registers,
+            mmio_regions: summary.mmio_regions,
+        }),
+        evidence: evidence.as_ref().map(|evidence| RegisterEvidenceDocument {
+            catalogs: paths.evidence_catalogs.len(),
+            confidence_levels: evidence.confidence_levels.len(),
+            sources: evidence.sources.len(),
+            ranges: evidence.ranges.len(),
+        }),
+    };
+    crate::cli::output::render_report(
+        "register-workspace",
+        &report,
+        || print_workspace_human(&report),
+        || print_workspace_tsv(&report),
     );
-    Ok(summary)
+    Ok(passed)
 }

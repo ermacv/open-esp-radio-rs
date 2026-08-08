@@ -61,12 +61,16 @@ cargo vendor-binary-workbench interfaces validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-The command prints every resolved reviewed binding with its layout version,
+The command reports every resolved reviewed binding with its layout version,
 ABI, semantic operation, vendor functions, concrete call-site addresses, call
-kind, and recovered argument expressions. `INTERFACE-BINDING` is the slot
-summary; the following `INTERFACE-CALL` records are the site-level evidence.
+kind, and recovered argument expressions. The default view is human-oriented;
+`--format tsv` uses `INTERFACE-BINDING` plus following `INTERFACE-CALL` rows,
+while JSON/JSONL emits one `interface-workspace` record with nested bindings,
+calls and typed arguments. `interfaces init-pack` similarly emits one
+`interface-pack` result.
 Use `--deny-unreviewed` in CI to return a non-success status while any observed
-slot or declared anchor remains unreviewed.
+slot or declared anchor remains unreviewed. That policy failure is represented
+as `status = "unreviewed"`, not as a structurally valid result.
 
 Regenerating facts never modifies the pack. Validation reports stale slots,
 stale artifact guards, ambiguous selectors, and new unreviewed observations.

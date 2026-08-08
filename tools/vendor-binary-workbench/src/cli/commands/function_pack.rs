@@ -12,6 +12,10 @@ use crate::{
     project::{FunctionWorkspacePaths, ProjectSpec},
 };
 
+mod report;
+
+use report::*;
+
 pub(super) fn run(
     command: Command,
     arguments: CommandArguments,
@@ -41,16 +45,24 @@ fn init_pack(arguments: OutputArgs, project: &ProjectSpec, configured: &Path) ->
     let facts = FunctionFacts::load(&reports)?;
     let output = arguments.output.as_deref().unwrap_or(configured);
     write_function_pack_template(output, &facts, &project.id)?;
-    outputln!(
-        "FUNCTION-PACK\tstatus=created\tinputs={}\tfunctions={}\troot-functions={}\tcontext-fields={}\tpath={}",
-        facts.inputs.len(),
-        facts.functions.len(),
-        facts.root_functions().count(),
-        facts
+    let report = FunctionPackDocument {
+        schema: 1,
+        command: "functions init-pack",
+        status: "created",
+        inputs: facts.inputs.len(),
+        functions: facts.functions.len(),
+        root_functions: facts.root_functions().count(),
+        context_fields: facts
             .root_functions()
             .map(|function| function.context_fields.len())
             .sum::<usize>(),
-        output.display()
+        path: output,
+    };
+    crate::cli::output::render_report(
+        "function-pack",
+        &report,
+        || print_pack_human(&report),
+        || print_pack_tsv(&report),
     );
     Ok(true)
 }
@@ -59,26 +71,36 @@ fn validate(arguments: ValidationArgs, project: &ProjectSpec, pack: &Path) -> Re
     let reports = project.function_ir_reports()?;
     let workspace = FunctionWorkspace::load(&reports, pack)?;
     let summary = workspace.summary();
-    outputln!(
-        "FUNCTION-WORKSPACE\tstatus=valid\tinputs={}\tobserved-functions={}\treviewed-functions={}\tignored-functions={}\tunreviewed-functions={}\treviewed-contexts={}\tignored-contexts={}\tunreviewed-contexts={}\treviewed-fields={}\tignored-fields={}\tunreviewed-fields={}\taccepted-incomplete={}\tpack={}",
-        summary.inputs,
-        summary.observed_functions,
-        summary.reviewed_functions,
-        summary.ignored_functions,
-        summary.unreviewed_functions,
-        summary.reviewed_contexts,
-        summary.ignored_contexts,
-        summary.unreviewed_contexts,
-        summary.reviewed_fields,
-        summary.ignored_fields,
-        summary.unreviewed_fields,
-        summary.accepted_incomplete,
-        pack.display(),
-    );
-    Ok(!arguments.deny_unreviewed
+    let passed = !arguments.deny_unreviewed
         || (summary.unreviewed_functions == 0
             && summary.unreviewed_contexts == 0
-            && summary.unreviewed_fields == 0))
+            && summary.unreviewed_fields == 0);
+    let report = FunctionWorkspaceDocument {
+        schema: 1,
+        command: "functions validate",
+        status: if passed { "valid" } else { "unreviewed" },
+        deny_unreviewed: arguments.deny_unreviewed,
+        inputs: summary.inputs,
+        observed_functions: summary.observed_functions,
+        reviewed_functions: summary.reviewed_functions,
+        ignored_functions: summary.ignored_functions,
+        unreviewed_functions: summary.unreviewed_functions,
+        reviewed_contexts: summary.reviewed_contexts,
+        ignored_contexts: summary.ignored_contexts,
+        unreviewed_contexts: summary.unreviewed_contexts,
+        reviewed_fields: summary.reviewed_fields,
+        ignored_fields: summary.ignored_fields,
+        unreviewed_fields: summary.unreviewed_fields,
+        accepted_incomplete: summary.accepted_incomplete,
+        pack,
+    };
+    crate::cli::output::render_report(
+        "function-workspace",
+        &report,
+        || print_workspace_human(&report),
+        || print_workspace_tsv(&report),
+    );
+    Ok(passed)
 }
 
 fn review(
@@ -103,20 +125,27 @@ fn review(
         "function review",
     )?;
     let summary = workspace.summary();
-    outputln!(
-        "FUNCTION-REVIEW\tstatus={}\troot-functions={}\treviewed={}\tunreviewed={}\tcontexts={}\tfields={}\tinterface-links={}\toutput={}",
-        if arguments.check {
+    let report = FunctionReviewDocument {
+        schema: 1,
+        command: "functions review",
+        status: if arguments.check {
             "verified"
         } else {
             "written"
         },
-        summary.observed_functions,
-        summary.reviewed_functions,
-        summary.unreviewed_functions,
-        summary.reviewed_contexts,
-        summary.reviewed_fields,
-        interface_links.as_ref().map_or(0, Vec::len),
-        output.display()
+        root_functions: summary.observed_functions,
+        reviewed: summary.reviewed_functions,
+        unreviewed: summary.unreviewed_functions,
+        contexts: summary.reviewed_contexts,
+        fields: summary.reviewed_fields,
+        interface_links: interface_links.as_ref().map_or(0, Vec::len),
+        output,
+    };
+    crate::cli::output::render_report(
+        "function-review",
+        &report,
+        || print_review_human(&report),
+        || print_review_tsv(&report),
     );
     Ok(true)
 }

@@ -293,6 +293,12 @@ Analysis does not need the generated XML to exist, avoiding a bootstrap cycle.
 Additional read-only SVD catalogs may remain in the project-level `svd = [...]`
 list.
 
+Register lifecycle commands share the normal output contract: a compact human
+view, stable legacy rows under `--format tsv`, or one typed JSON/JSONL record.
+Workspace validation nests optional PAC API, lint, memory-map and evidence
+summaries inside `register-workspace`. A strict coverage failure is reported as
+`status = "unreviewed"` with a non-success exit code.
+
 ## Rust PAC generation
 
 ### Evidence catalogs
@@ -392,6 +398,10 @@ Use `--check --deny-unreviewed` in CI. `--output` and `--crate-name` override
 `[registers.bindings]`. The command validates the Rust crate identifier and
 does not require a generated SVD file: both SVD and index are rendered from the
 schema-2 model in memory.
+
+Direct SVD, PAC and binding generation emits one `svd-publication`,
+`pac-publication` or `binding-publication` record in JSON/JSONL mode. These are
+the same typed leaf results suppressed and aggregated by `project publish`.
 
 For ESP32-S31 this project-owned command reproduces
 `svd/esp32s31-radio.bindings` byte-for-byte.

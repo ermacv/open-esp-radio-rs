@@ -92,6 +92,26 @@ pub(super) fn structured(kind: &'static str, value: &impl Serialize) -> bool {
     true
 }
 
+/// Emits one typed command result and selects exactly one presentation
+/// renderer when stdout is intended for humans or TSV automation.
+pub(super) fn render_report(
+    kind: &'static str,
+    value: &impl Serialize,
+    human: impl FnOnce(),
+    tsv: impl FnOnce(),
+) {
+    if structured(kind, value) {
+        return;
+    }
+    match format() {
+        OutputFormat::Human => human(),
+        OutputFormat::Tsv => tsv(),
+        OutputFormat::Json | OutputFormat::Jsonl => {
+            unreachable!("structured command output was already emitted")
+        }
+    }
+}
+
 pub(super) fn file(kind: &'static str, path: &Path, status: &'static str) -> bool {
     structured(
         kind,

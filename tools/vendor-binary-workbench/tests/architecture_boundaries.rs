@@ -243,3 +243,44 @@ fn persistent_artifact_identities_have_one_owner() {
         );
     }
 }
+
+#[test]
+fn large_analysis_and_human_renderers_keep_functional_boundaries() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    for required in [
+        "analysis/linked_ir/register_index/build.rs",
+        "analysis/linked_ir/register_index/evidence.rs",
+        "analysis/linked_ir/summary/effect.rs",
+        "analysis/linked_ir/summary/event_dispatch.rs",
+        "analysis/linked_ir/summary/projection.rs",
+        "function_workspace/pack_validate/contexts.rs",
+        "function_workspace/pack_validate/primitives.rs",
+        "function_workspace/pack_validate/types.rs",
+        "cli/commands/export_ir/human/functions/effects.rs",
+        "cli/commands/export_ir/human/functions/local.rs",
+    ] {
+        assert!(
+            root.join(required).is_file(),
+            "missing module boundary {required}"
+        );
+    }
+
+    let human_root = root.join("cli/commands/export_ir/human");
+    let mut renderer_files = vec![
+        root.join("cli/commands/export_ir/human.rs"),
+        root.join("cli/render.rs"),
+    ];
+    rust_files(&human_root, &mut renderer_files);
+    rust_files(&root.join("cli/render"), &mut renderer_files);
+    let violations = renderer_files
+        .into_iter()
+        .filter_map(|path| {
+            let source = fs::read_to_string(&path).expect("read human renderer");
+            source.contains("outputln!").then_some(path)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        violations.is_empty(),
+        "shared or linked-IR section renderers write through the global line macro: {violations:#?}"
+    );
+}

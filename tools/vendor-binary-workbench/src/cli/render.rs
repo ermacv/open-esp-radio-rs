@@ -1,5 +1,7 @@
 //! Terminal renderers for typed domain reports.
 
+use std::fmt::Write as _;
+
 use crate::{FunctionAnalysis, verification::*};
 
 mod execution;
@@ -7,17 +9,26 @@ mod execution;
 pub(crate) use execution::print_execution_comparison;
 
 pub(crate) fn trace(trace: &FunctionAnalysis) {
-    outputln!("TRACE\t{}\texact={}", trace.symbol, trace.is_exact());
+    let mut output = String::new();
+    let _ = writeln!(
+        &mut output,
+        "TRACE\t{}\texact={}",
+        trace.symbol,
+        trace.is_exact()
+    );
     for (index, event) in trace.events.iter().enumerate() {
-        outputln!("{index}\t{}", event.canonical());
+        let _ = writeln!(&mut output, "{index}\t{}", event.canonical());
     }
     for blocker in &trace.blockers {
-        outputln!("BLOCKER\t{blocker}");
+        let _ = writeln!(&mut output, "BLOCKER\t{blocker}");
     }
+    crate::cli::output::text(output);
 }
 
 pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
-    outputln!(
+    let mut output = String::new();
+    let _ = writeln!(
+        &mut output,
         "{}: {}",
         report.command,
         if report.verification.passed {
@@ -27,7 +38,8 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
         }
     );
     for source in report.sources {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "  {}: {} functions, {} matched, {} mismatched, {} incomplete, {} missing",
             source.source,
             source.summary.vendor_functions,
@@ -37,7 +49,8 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
             source.summary.missing,
         );
         for function in &source.functions {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "    {}: {}",
                 function.vendor_symbol,
                 function.status.label()
@@ -45,7 +58,8 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
         }
     }
     if let Some(comparison) = report.evidence_comparison {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "  evidence baseline: {} ({} expected, {} actual, {} regressions)",
             if comparison.passed {
                 "passed"
@@ -58,13 +72,20 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
         );
     }
     if let Some(publication) = &report.report {
-        outputln!("  report: {} ({})", publication.path, publication.status);
+        let _ = writeln!(
+            &mut output,
+            "  report: {} ({})",
+            publication.path, publication.status
+        );
     }
+    crate::cli::output::text(output);
 }
 
 pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
+    let mut output = String::new();
     for regression in &comparison.regressions {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "EVIDENCE-REGRESSION\t{}\t{}\texpected={}\tactual={}",
             regression.source,
             regression.symbol,
@@ -73,19 +94,20 @@ pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
         );
     }
     for addition in &comparison.additions {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "EVIDENCE-ADDITION\t{}\t{}\t{}",
-            addition.source,
-            addition.symbol,
-            addition.kind
+            addition.source, addition.symbol, addition.kind
         );
     }
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "EVIDENCE-BASELINE\t{}\texpected={}\tactual={}",
         if comparison.passed { "PASS" } else { "FAIL" },
         comparison.expected,
         comparison.actual
     );
+    crate::cli::output::text(output);
 }
 
 pub(crate) fn branch_coverage(
@@ -94,13 +116,20 @@ pub(crate) fn branch_coverage(
     required: &std::collections::BTreeSet<(u32, bool)>,
     covered: &std::collections::BTreeSet<(u32, bool)>,
 ) -> usize {
+    let mut output = String::new();
     let mut uncovered = 0;
     for (site, taken) in required {
         let location = image.location(*site);
         if covered.contains(&(*site, *taken)) {
-            outputln!("COVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
+            let _ = writeln!(
+                &mut output,
+                "COVERED-BRANCH\t{side}\t{location}\ttaken={taken}"
+            );
         } else {
-            outputln!("UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}");
+            let _ = writeln!(
+                &mut output,
+                "UNCOVERED-BRANCH\t{side}\t{location}\ttaken={taken}"
+            );
             uncovered += 1;
         }
     }
@@ -108,11 +137,13 @@ pub(crate) fn branch_coverage(
         .iter()
         .map(|(site, _)| *site)
         .collect::<std::collections::BTreeSet<_>>();
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "SUMMARY-BRANCHES\t{side}\tsites={}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
         sites.len(),
         required.len(),
         required.len() - uncovered,
     );
+    crate::cli::output::text(output);
     uncovered
 }

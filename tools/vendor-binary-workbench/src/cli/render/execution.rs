@@ -1,5 +1,7 @@
 //! Terminal renderer for concrete execution comparisons.
 
+use std::fmt::Write as _;
+
 use crate::verification::*;
 
 fn trace_item_text(item: Option<&TraceItemReport>) -> String {
@@ -55,14 +57,16 @@ fn trace_item_text(item: Option<&TraceItemReport>) -> String {
     }
 }
 
-fn print_difference(case: &str, difference: &TraceDiffReport) {
-    outputln!(
+fn render_difference(mut output: &mut String, case: &str, difference: &TraceDiffReport) {
+    let _ = writeln!(
+        &mut output,
         "FIRST-DIFFERENCE\tcase={case}\tkind={}\tindex={}",
         difference.kind.label(),
         difference.first_difference
     );
     for item in &difference.context_before {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "DIFF-CONTEXT\tbefore\t{}\tequal={}\tvendor={}\trust={}",
             item.index,
             item.equal,
@@ -70,14 +74,16 @@ fn print_difference(case: &str, difference: &TraceDiffReport) {
             trace_item_text(item.rust.as_ref())
         );
     }
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "DIFF-ITEM\t{}\tvendor={}\trust={}",
         difference.first_difference,
         trace_item_text(difference.vendor.as_ref()),
         trace_item_text(difference.rust.as_ref())
     );
     for item in &difference.context_after {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "DIFF-CONTEXT\tafter\t{}\tequal={}\tvendor={}\trust={}",
             item.index,
             item.equal,
@@ -86,7 +92,8 @@ fn print_difference(case: &str, difference: &TraceDiffReport) {
         );
     }
     if let Some(path) = &difference.path {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "DIFF-PATH\tvendor-branches={}\trust-branches={}\tvendor-calls={}\trust-calls={}",
             path.vendor.branches.len(),
             path.rust.branches.len(),
@@ -96,12 +103,13 @@ fn print_difference(case: &str, difference: &TraceDiffReport) {
     }
 }
 
-fn print_coverage(side: &str, coverage: &CoverageReport) {
+fn render_coverage(mut output: &mut String, side: &str, coverage: &CoverageReport) {
     for call in &coverage.covered_calls {
-        outputln!("COVERED-CALL\t{side}\t{call}");
+        let _ = writeln!(&mut output, "COVERED-CALL\t{side}\t{call}");
     }
     for outcome in &coverage.branch_outcomes {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "{}\t{side}\t{}\ttaken={}",
             if outcome.covered {
                 "COVERED-BRANCH"
@@ -119,39 +127,46 @@ fn print_coverage(side: &str, coverage: &CoverageReport) {
         .collect::<std::collections::BTreeSet<_>>()
         .len();
     let uncovered = coverage.uncovered_branch_outcomes();
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "SUMMARY-BRANCHES\t{side}\tsites={sites}\toutcomes={}\tcovered={}\tuncovered={uncovered}",
         coverage.branch_outcomes.len(),
         coverage.branch_outcomes.len() - uncovered
     );
     for edge in &coverage.unresolved_control_flow {
         if edge.covered {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "COVERED-CONTROL-FLOW\t{side}\t{}\ttargets={}",
                 edge.location,
                 edge.targets.join(",")
             );
         } else {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "UNCOVERED-CONTROL-FLOW\t{side}\t{}\t{}",
-                edge.location,
-                edge.edge
+                edge.location, edge.edge
             );
         }
     }
     for address in &coverage.unnamed_mmio {
-        outputln!("UNNAMED-MMIO\t{side}\t{address:#010x}");
+        let _ = writeln!(&mut output, "UNNAMED-MMIO\t{side}\t{address:#010x}");
     }
 }
 
 pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
-    outputln!(
+    let mut output = String::new();
+    let _ = writeln!(
+        &mut output,
         "ORACLE\t{}\tsha256={}",
-        report.vendor.path,
-        report.vendor.sha256
+        report.vendor.path, report.vendor.sha256
     );
     if let Some(companion) = &report.vendor.companion {
-        outputln!("ORACLE\t{}\tsha256={}", companion.path, companion.sha256);
+        let _ = writeln!(
+            &mut output,
+            "ORACLE\t{}\tsha256={}",
+            companion.path, companion.sha256
+        );
     }
     for case in &report.cases {
         match case {
@@ -162,8 +177,9 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
                 memory_changes,
                 return_compared,
             } => {
-                print_table_environment(name, environment);
-                outputln!(
+                render_table_environment(&mut output, name, environment);
+                let _ = writeln!(
+                    &mut output,
                     "CASE\t{name}\tMATCH\tevents={events}\tmemory-changes={memory_changes}\treturn={}",
                     if *return_compared {
                         "checked"
@@ -178,8 +194,9 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
                 vendor_error,
                 rust_error,
             } => {
-                print_table_environment(name, environment);
-                outputln!(
+                render_table_environment(&mut output, name, environment);
+                let _ = writeln!(
+                    &mut output,
                     "CASE\t{name}\tINCOMPLETE\tvendor={}\trust={}",
                     vendor_error.as_deref().unwrap_or("complete"),
                     rust_error.as_deref().unwrap_or("complete")
@@ -190,23 +207,25 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
                 environment,
                 difference,
             } => {
-                print_table_environment(name, environment);
-                outputln!(
+                render_table_environment(&mut output, name, environment);
+                let _ = writeln!(
+                    &mut output,
                     "CASE\t{name}\tDIFF\tkind={}\tfirst-difference={}",
                     difference.kind.label(),
                     difference.first_difference,
                 );
-                print_difference(name, difference);
+                render_difference(&mut output, name, difference);
             }
         }
     }
     if let Some(gap) = &report.coverage_gap {
-        print_difference("coverage", gap);
+        render_difference(&mut output, "coverage", gap);
     }
-    print_coverage("vendor", &report.vendor_coverage);
-    print_coverage("rust", &report.rust_coverage);
+    render_coverage(&mut output, "vendor", &report.vendor_coverage);
+    render_coverage(&mut output, "rust", &report.rust_coverage);
     let summary = &report.summary;
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "SUMMARY\tcases={}\tmatched={}\tdifferent={}\tincomplete={}\tvendor-uncovered-branch-outcomes={}\trust-uncovered-branch-outcomes={}\tvendor-unresolved-control-flow={}\trust-unresolved-control-flow={}\tvendor-unnamed-mmio={}\trust-unnamed-mmio={}",
         summary.cases,
         summary.matched,
@@ -219,20 +238,27 @@ pub(crate) fn print_execution_comparison(report: &ExecutionComparisonReport) {
         summary.vendor_unnamed_mmio,
         summary.rust_unnamed_mmio
     );
-    outputln!(
+    let _ = writeln!(
+        &mut output,
         "VERDICT\tmode={}\t{}",
         report.mode.label(),
         report.verdict.label()
     );
+    crate::cli::output::text(output);
 }
 
-fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) {
+fn render_table_environment(
+    mut output: &mut String,
+    case: &str,
+    environment: &ScenarioEnvironmentReport,
+) {
     for (side, instances) in [
         ("vendor", &environment.vendor_tables),
         ("rust", &environment.rust_tables),
     ] {
         for instance in instances {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "TABLE-INSTANCE\tcase={case}\tside={side}\tlayout={}\tbase={:#010x}\tsize={:#x}\tpointer-cells={}\tslots={}",
                 instance.layout_id,
                 instance.base_address,
@@ -243,12 +269,10 @@ fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) 
         }
     }
     for device in &environment.device_models {
-        outputln!(
+        let _ = writeln!(
+            &mut output,
             "DEVICE-MODEL\tcase={case}\tid={}\tkind={}\tstart={:#010x}\tlength={:#x}",
-            device.id,
-            device.kind,
-            device.start,
-            device.length,
+            device.id, device.kind, device.start, device.length,
         );
     }
     for (side, coverage) in [
@@ -256,7 +280,8 @@ fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) 
         ("rust", &environment.rust_device_coverage),
     ] {
         for model in coverage {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "DEVICE-COVERAGE\tcase={case}\tside={side}\tid={}\tkind={}\tcomplete={}\treason={}",
                 model.id,
                 model.kind,
@@ -270,7 +295,8 @@ fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) 
         ("rust", &environment.rust_memory_instances),
     ] {
         for instance in instances {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "MEMORY-INSTANCE\tcase={case}\tside={side}\tid={}\tbase={:#010x}\tlength={:#x}\tbindings={}",
                 instance.id,
                 instance.base_address,
@@ -292,7 +318,8 @@ fn print_table_environment(case: &str, environment: &ScenarioEnvironmentReport) 
         ),
     ] {
         if let Some(complete) = complete {
-            outputln!(
+            let _ = writeln!(
+                &mut output,
                 "TABLE-LIFECYCLE\tcase={case}\tside={side}\tcomplete={complete}\tevents={}",
                 events.len()
             );

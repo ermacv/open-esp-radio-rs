@@ -447,8 +447,13 @@ project-linking reports. Its child modules own one analysis phase each:
 | `direct_trace.rs` | Direct call-graph exploration and guarded MMIO provenance |
 | `provenance.rs` | Return-bit provenance and wrapper traversal |
 | `effects.rs` | Direct MMIO, delay, and context-access extraction |
-| `summary.rs` | Reachable effect/context/event-dispatch projection |
-| `register_index.rs` | Register inventory and candidate-field aggregation |
+| `summary.rs` | Summary façade and shared internal call-edge model |
+| `summary/effect.rs` | Call-graph closure and transitive effect aggregation |
+| `summary/projection.rs` | Affine context and generalized memory-object projection |
+| `summary/event_dispatch.rs` | Reviewed semantic-action to event-dispatch projection |
+| `register_index.rs` | Report assembly and aggregate counts |
+| `register_index/build.rs` | Register inventory and candidate-field catalog construction |
+| `register_index/evidence.rs` | Bit-range, predicate, and semantic evidence accumulation |
 | `pseudo.rs` | Best-effort pseudo-Rust rendering |
 | `tests/...` | Tests grouped by calls, guards, MMIO flow, summaries, and recursion |
 
@@ -490,7 +495,10 @@ claims, validation, and presentation separate:
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
 | `pack.rs` | Editable pack and resolved workspace models |
 | `pack_parse.rs` | TOML syntax parsing without evidence interpretation |
-| `pack_validate.rs` | Provenance, stale-identity, completeness, and coverage rules |
+| `pack_validate.rs` | Validation orchestration and workspace coverage accounting |
+| `pack_validate/contexts.rs` | Input guards, function claims, contexts, and context fields |
+| `pack_validate/types.rs` | Logical-type bindings and observed memory-object fields |
+| `pack_validate/primitives.rs` | Shared identifier, digest, and one-line value rules |
 | `template.rs` | One-shot unreviewed pack initialization |
 | `review.rs` | Generated human reading view over validated facts and claims |
 | `tests.rs` | Pack lifecycle, stale provenance, coverage, and report tests |
@@ -531,7 +539,12 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
 | `artifacts/linked_ir_document.rs` | Persistent schema-v35 Serde document |
-| `cli/commands/export_ir/human.rs` | Terminal-only presentation |
+| `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
+| `cli/commands/export_ir/human/header.rs` | Project and artifact section |
+| `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |
+| `cli/commands/export_ir/human/registers.rs` | MMIO register and candidate-field section |
+| `cli/commands/export_ir/human/interfaces.rs` | Semantic boundary and trampoline section |
+| `cli/commands/export_ir/human/summary.rs` | Aggregate report section |
 | `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
 Schema v35 serializes the typed `LinkedIrReport` model directly; the removed
@@ -539,6 +552,12 @@ schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,
 pseudo-Rust, and terminal views consistent.
+The human renderer builds into a caller-owned string; section renderers do not
+write to process-global stdout. Only the façade crosses the CLI output boundary,
+which keeps progress suspension and machine-output invariants centralized.
+The shared trace, verification, branch-coverage, and execution-comparison
+renderers follow the same contract: helpers append to an owned buffer and each
+top-level renderer publishes that buffer once.
 
 ## Source boundary guards
 

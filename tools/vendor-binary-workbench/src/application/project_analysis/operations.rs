@@ -2,10 +2,13 @@
 
 use crate::{
     MemoryMap, MmioMap, Result, TargetSpec,
-    analysis::{DiscoveryRange, build_project_linkage_inventory, discover_mmio},
+    analysis::{
+        DiscoveryRange, ProjectInterfaceDiscoveryOptions, build_project_linkage_inventory,
+        discover_mmio, discover_project_interfaces,
+    },
     artifacts::{
-        build_mmio_facts as mmio_document, build_symbol_inventory_document, render_mmio_facts,
-        render_symbol_inventory,
+        build_interface_facts, build_mmio_facts as mmio_document, build_symbol_inventory_document,
+        render_interface_facts, render_mmio_facts, render_symbol_inventory,
     },
     function_workspace::{FunctionWorkspace, link_reviewed_interfaces, render_function_review},
     interfaces::InterfaceWorkspace,
@@ -78,6 +81,39 @@ pub(crate) fn discover_project_mmio(
         "MMIO discovery report",
     )?;
     Ok(true)
+}
+
+pub(crate) fn discover_project_interfaces_operation(
+    project: &ProjectSpec,
+    run_spec: &RunSpec,
+    check: bool,
+) -> Result<bool> {
+    let output = &project
+        .interfaces
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[interfaces] is absent"))?
+        .facts;
+    let inputs = run_spec
+        .inputs()
+        .iter()
+        .filter(|input| input.role.is_scannable())
+        .map(|input| (input.role.to_string(), input.path.clone()))
+        .collect::<Vec<_>>();
+    if inputs.is_empty() {
+        return Err(crate::Error::invalid(
+            "run spec has no artifact or inventory inputs for interface discovery",
+        ));
+    }
+    let discovery =
+        discover_project_interfaces(&inputs, &ProjectInterfaceDiscoveryOptions::default())?;
+    let document = build_interface_facts(&discovery)?;
+    super::super::generated_file::write_or_check(
+        output,
+        &render_interface_facts(&document)?,
+        check,
+        "interface discovery report",
+    )?;
+    Ok(discovery.failures.is_empty())
 }
 
 pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<bool> {

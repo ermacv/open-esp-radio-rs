@@ -1,7 +1,7 @@
 //! CLI adapter for project-owned analysis and review orchestration.
 
 use super::{MmioMap, Result, TargetSpec};
-use crate::cli::{InterfaceDiscoverArgs, IrBuildArgs, ProjectAnalyzeArgs};
+use crate::cli::{IrBuildArgs, ProjectAnalyzeArgs};
 use crate::{
     MemoryMap,
     application::project_analysis::{
@@ -83,20 +83,10 @@ impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
     }
 
     fn discover_interfaces(&mut self, check: bool) -> Result<bool> {
-        let output = self
-            .project
-            .interfaces
-            .as_ref()
-            .ok_or_else(|| crate::Error::invalid("[interfaces] is absent"))?
-            .facts
-            .clone();
-        super::interface_discovery::run(
-            InterfaceDiscoverArgs {
-                check,
-                json_report: Some(output),
-                ..Default::default()
-            },
+        crate::application::project_analysis::discover_project_interfaces_operation(
+            self.project,
             self.run_spec()?,
+            check,
         )
     }
 

@@ -4,12 +4,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
-use super::{
-    super::*,
-    interface_discovery::{DiscoveredCall, Discovery, root_linkage},
-};
 use crate::{
-    analysis::LinkageSymbolLocation,
+    Result,
+    analysis::{
+        DiscoveredInterfaceCall, LinkageSymbolLocation, ProjectInterfaceDiscovery,
+        interface_root_linkage,
+    },
     interface_discovery::{
         InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
         InterfacePointer, InterfaceRoot, InterfaceSlotSelector,
@@ -222,9 +222,12 @@ struct CallDocument {
     arguments: Vec<ArgumentDocument>,
 }
 
-fn call_document(discovery: &Discovery, discovered: &DiscoveredCall) -> CallDocument {
+fn call_document(
+    discovery: &ProjectInterfaceDiscovery,
+    discovered: &DiscoveredInterfaceCall,
+) -> CallDocument {
     let call = &discovered.call;
-    let linkage = root_linkage(discovery, discovered.artifact, &call.target.root);
+    let linkage = interface_root_linkage(discovery, discovered.artifact, &call.target.root);
     CallDocument {
         artifact: discovered.artifact,
         member: call.member.clone(),
@@ -281,7 +284,7 @@ struct TableGroupDocument {
     call_sites: usize,
 }
 
-fn table_group_documents(discovery: &Discovery) -> Vec<TableGroupDocument> {
+fn table_group_documents(discovery: &ProjectInterfaceDiscovery) -> Vec<TableGroupDocument> {
     type StepKey = (i32, u8, Option<InterfaceSlotSelector>);
     type GroupKey = (usize, InterfaceRoot, Vec<StepKey>);
     let mut groups = BTreeMap::<GroupKey, Vec<&InterfaceCallCandidate>>::new();
@@ -379,7 +382,7 @@ struct DecodeFailureDocument<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct InterfaceDiscoveryDocument<'a> {
+pub(crate) struct InterfaceFactsDocument<'a> {
     schema_version: u32,
     command: &'static str,
     analysis_scope: AnalysisScope,
@@ -389,10 +392,12 @@ pub(super) struct InterfaceDiscoveryDocument<'a> {
     decode_failures: Vec<DecodeFailureDocument<'a>>,
 }
 
-pub(super) fn document(discovery: &Discovery) -> Result<InterfaceDiscoveryDocument<'_>> {
-    Ok(InterfaceDiscoveryDocument {
-        schema_version: crate::artifacts::INTERFACE_FACTS.version,
-        command: crate::artifacts::INTERFACE_FACTS.command,
+pub(crate) fn build_interface_facts(
+    discovery: &ProjectInterfaceDiscovery,
+) -> Result<InterfaceFactsDocument<'_>> {
+    Ok(InterfaceFactsDocument {
+        schema_version: super::INTERFACE_FACTS.version,
+        command: super::INTERFACE_FACTS.command,
         analysis_scope: AnalysisScope {
             architecture: "riscv32",
             calling_convention: "riscv-ilp32",
@@ -439,6 +444,6 @@ pub(super) fn document(discovery: &Discovery) -> Result<InterfaceDiscoveryDocume
     })
 }
 
-pub(super) fn render_document(document: &InterfaceDiscoveryDocument<'_>) -> Result<String> {
+pub(crate) fn render_interface_facts(document: &InterfaceFactsDocument<'_>) -> Result<String> {
     Ok(serde_json::to_string_pretty(&document)? + "\n")
 }

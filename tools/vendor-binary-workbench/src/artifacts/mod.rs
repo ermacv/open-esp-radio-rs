@@ -4,10 +4,12 @@
 //! intentionally separate because they describe one invocation rather than a
 //! reusable project artifact.
 
+mod interface_facts;
 mod linked_ir;
 mod mmio_facts;
 mod symbol_inventory;
 
+pub(crate) use interface_facts::{build_interface_facts, render_interface_facts};
 pub(crate) use linked_ir::inspect_linked_ir;
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
 pub(crate) use symbol_inventory::{

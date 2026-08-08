@@ -13,7 +13,6 @@ mod inspect_analyze;
 mod inspect_compare;
 mod inspect_trace;
 mod interface_discovery;
-mod interface_discovery_json;
 mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;

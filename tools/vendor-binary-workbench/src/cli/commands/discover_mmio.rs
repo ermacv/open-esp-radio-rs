@@ -178,7 +178,7 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
     if let Some(path) = arguments.json_report.as_deref() {
         let stored_document = super::discover_mmio_json::document(&report, None)?;
         let output = super::discover_mmio_json::render_document(&stored_document)?;
-        super::super::generated_output::write_or_check(
+        crate::application::generated_file::write_or_check(
             path,
             &output,
             arguments.check,

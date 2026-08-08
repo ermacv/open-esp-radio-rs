@@ -320,7 +320,7 @@ pub(super) fn run(options: SymbolInventoryArgs, run_spec: &RunSpec) -> Result<bo
     if let Some(path) = options.json_report.as_deref() {
         let stored_document = document(&inventory, &options, None)?;
         let output = render_json_report(&stored_document)?;
-        super::super::generated_output::write_or_check(
+        crate::application::generated_file::write_or_check(
             path,
             &output,
             options.check,

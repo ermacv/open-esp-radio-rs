@@ -4,7 +4,7 @@ use std::{fs, path::Path};
 
 use crate::Result;
 
-pub(super) fn write_or_check(path: &Path, contents: &str, check: bool, kind: &str) -> Result<()> {
+pub(crate) fn write_or_check(path: &Path, contents: &str, check: bool, kind: &str) -> Result<()> {
     if check {
         let existing = fs::read_to_string(path)
             .map_err(|error| format!("cannot check generated {kind} {}: {error}", path.display()))

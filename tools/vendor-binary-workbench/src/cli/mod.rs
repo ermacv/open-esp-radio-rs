@@ -10,7 +10,6 @@ mod args;
 mod arguments;
 pub(crate) mod commands;
 mod dispatch;
-mod generated_output;
 mod output;
 mod progress;
 pub(crate) mod render;

@@ -235,7 +235,7 @@ pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Resul
     }
     if let Some(path) = options.json_report.as_deref() {
         let output = super::interface_discovery_json::render_document(&document)?;
-        super::super::generated_output::write_or_check(
+        crate::application::generated_file::write_or_check(
             path,
             &output,
             options.check,

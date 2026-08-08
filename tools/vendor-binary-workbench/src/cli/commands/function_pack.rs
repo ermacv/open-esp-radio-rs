@@ -109,7 +109,7 @@ fn review(
     let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
     let interface_links = reviewed_interface_links(project, target, &workspace)?;
     let contents = render_function_review(&workspace, interface_links.as_deref())?;
-    super::super::generated_output::write_or_check(
+    crate::application::generated_file::write_or_check(
         output,
         &contents,
         arguments.check,

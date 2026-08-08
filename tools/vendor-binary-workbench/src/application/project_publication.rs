@@ -2,8 +2,18 @@
 
 use serde::Serialize;
 
-use super::pipeline::{PipelineSummary, StageOutcome, StageSuccess, WorkflowMode, execute};
-use crate::{Result, project::RegisterWorkspacePaths};
+use super::pipeline::{
+    PipelineSummary, StageOutcome, StageSuccess, WorkflowMode, execute as execute_stage,
+};
+use crate::{
+    MemoryMap, Result,
+    project::RegisterWorkspacePaths,
+    registers::{
+        PreparedPublication, ProjectRegisterWorkspace, prepare_project_bindings,
+        prepare_project_pac, prepare_project_svd, validate_pac_api, validate_register_evidence,
+        validate_register_lints, validate_register_memory_map,
+    },
+};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct ProjectPublicationRequest {
@@ -52,7 +62,16 @@ struct PublicationStage<T> {
     preparation: Preparation<T>,
 }
 
-pub(crate) fn run<O: ProjectPublicationOperations>(
+pub(crate) fn execute(
+    paths: &RegisterWorkspacePaths,
+    memory_map: Option<&MemoryMap>,
+    request: ProjectPublicationRequest,
+) -> Result<ProjectPublicationReport> {
+    let mut operations = RegisterPublicationOperations { paths, memory_map };
+    run_with_operations(paths, request, &mut operations)
+}
+
+fn run_with_operations<O: ProjectPublicationOperations>(
     paths: &RegisterWorkspacePaths,
     request: ProjectPublicationRequest,
     operations: &mut O,
@@ -61,7 +80,7 @@ pub(crate) fn run<O: ProjectPublicationOperations>(
     let mode = WorkflowMode::from_check(request.check);
     let mut summary = PipelineSummary::default();
 
-    let validation = execute("register-validation", StageSuccess::Verified, || {
+    let validation = execute_stage("register-validation", StageSuccess::Verified, || {
         operations.validate_registers()
     });
     summary.record("register-validation", &validation);
@@ -101,7 +120,7 @@ pub(crate) fn run<O: ProjectPublicationOperations>(
                 StageOutcome::Blocked("publication preflight did not complete".to_owned())
             }
             Preparation::Ready(publication) => {
-                execute(stage.name, mode.generated_success(), || {
+                execute_stage(stage.name, mode.generated_success(), || {
                     operations.publish(&publication, mode.is_check())
                 })
             }
@@ -112,6 +131,47 @@ pub(crate) fn run<O: ProjectPublicationOperations>(
     }
 
     Ok(report(mode, summary))
+}
+
+struct RegisterPublicationOperations<'a> {
+    paths: &'a RegisterWorkspacePaths,
+    memory_map: Option<&'a MemoryMap>,
+}
+
+impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
+    type Prepared = PreparedPublication;
+
+    fn validate_registers(&mut self) -> Result<bool> {
+        let workspace = ProjectRegisterWorkspace::load(&self.paths.facts, &self.paths.model)?;
+        let summary = workspace.summary()?;
+        validate_pac_api(self.paths)?;
+        validate_register_lints(self.paths)?;
+        validate_register_memory_map(self.paths, self.memory_map)?;
+        validate_register_evidence(self.paths, self.memory_map)?;
+        Ok(summary.unreviewed == 0)
+    }
+
+    fn prepare_svd(&mut self) -> Result<Self::Prepared> {
+        prepare_project_svd(self.paths)
+    }
+
+    fn prepare_pac(&mut self) -> Result<Self::Prepared> {
+        prepare_project_pac(self.paths)
+    }
+
+    fn prepare_bindings(&mut self) -> Result<Self::Prepared> {
+        prepare_project_bindings(self.paths)
+    }
+
+    fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool> {
+        super::generated_file::write_or_check(
+            publication.output(),
+            publication.contents(),
+            check,
+            publication.kind(),
+        )?;
+        Ok(true)
+    }
 }
 
 fn report(mode: WorkflowMode, summary: PipelineSummary) -> ProjectPublicationReport {

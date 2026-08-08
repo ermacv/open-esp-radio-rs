@@ -1,6 +1,7 @@
 //! Stateful, CLI-independent application facade for interactive frontends.
 
 mod error;
+pub(crate) mod generated_file;
 mod model;
 mod operations;
 pub(crate) mod pipeline;

@@ -6,10 +6,6 @@ use crate::{cli::resolver::RegisterWorkspaceCommand, project::ProjectSpec, regis
 mod publication;
 mod report;
 
-pub(super) use crate::registers::{
-    PreparedPublication, prepare_project_bindings, prepare_project_pac, prepare_project_svd,
-};
-pub(super) use publication::write_prepared_publication;
 use publication::{export_svd, generate_bindings, generate_pac_source};
 use report::*;
 
@@ -61,7 +57,7 @@ fn review(
     }
     let (contents, summary) =
         render_register_review(&facts, &model, &ir_reports, &paths.facts, &paths.model)?;
-    super::super::generated_output::write_or_check(
+    crate::application::generated_file::write_or_check(
         output,
         &contents,
         arguments.check,

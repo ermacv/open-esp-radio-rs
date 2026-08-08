@@ -6,40 +6,6 @@ mod report;
 
 use report::*;
 
-pub(crate) fn write_prepared_publication(
-    publication: &PreparedPublication,
-    check: bool,
-) -> Result<bool> {
-    super::super::super::generated_output::write_or_check(
-        publication.output(),
-        publication.contents(),
-        check,
-        publication.kind(),
-    )?;
-    let status = if check { "verified" } else { "written" };
-    match publication.metadata() {
-        PublicationMetadata::Svd { summary } => emit_svd(status, summary, publication.output()),
-        PublicationMetadata::Pac {
-            target,
-            edition,
-            summary,
-            api_pack,
-        } => emit_pac(
-            status,
-            *target,
-            *edition,
-            summary,
-            api_pack.as_deref(),
-            publication.output(),
-        ),
-        PublicationMetadata::Bindings {
-            crate_name,
-            summary,
-        } => emit_bindings(status, crate_name, summary, publication.output()),
-    }
-    Ok(true)
-}
-
 #[tracing::instrument(name = "export_svd", skip_all)]
 pub(super) fn export_svd(
     arguments: RegisterExportArgs,
@@ -60,12 +26,7 @@ pub(super) fn export_svd(
         )));
     }
     let (contents, summary) = workspace.render_svd()?;
-    super::super::super::generated_output::write_or_check(
-        output,
-        &contents,
-        arguments.check,
-        "SVD",
-    )?;
+    crate::application::generated_file::write_or_check(output, &contents, arguments.check, "SVD")?;
     emit_svd(
         if arguments.check {
             "verified"
@@ -116,7 +77,7 @@ pub(super) fn generate_pac_source(
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let source = generate_pac_with_api(&svd, target, edition, api_pack.as_ref())?;
-    super::super::super::generated_output::write_or_check(output, &source, arguments.check, "PAC")?;
+    crate::application::generated_file::write_or_check(output, &source, arguments.check, "PAC")?;
     emit_pac(
         if arguments.check {
             "verified"
@@ -159,7 +120,7 @@ pub(super) fn generate_bindings(
     }
     let (svd, svd_summary) = workspace.render_svd()?;
     let contents = open_esp_radio_register_model::generate_pac_binding_index(&svd, crate_name)?;
-    super::super::super::generated_output::write_or_check(
+    crate::application::generated_file::write_or_check(
         output,
         &contents,
         arguments.check,

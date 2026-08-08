@@ -1,12 +1,10 @@
-//! CLI adapter and presentation for application-owned project publication.
+//! CLI presentation for application-owned project publication.
 
-use super::{Result, registers};
+use super::Result;
 use crate::{
     MemoryMap,
-    application::project_publication::{
-        ProjectPublicationOperations, ProjectPublicationReport, ProjectPublicationRequest,
-    },
-    cli::{CheckArgs, ValidationArgs, resolver::RegisterWorkspaceCommand},
+    application::project_publication::{ProjectPublicationReport, ProjectPublicationRequest},
+    cli::CheckArgs,
     project::ProjectSpec,
 };
 
@@ -20,71 +18,15 @@ pub(super) fn run(
         .as_ref()
         .ok_or("project publish requires a [registers] workspace")
         .map_err(crate::Error::invalid)?;
-    let mut operations = CliProjectPublicationOperations {
-        project,
+    let report = crate::application::project_publication::execute(
+        paths,
         memory_map,
-    };
-    let report = crate::cli::output::suppress(|| {
-        crate::application::project_publication::run(
-            paths,
-            ProjectPublicationRequest {
-                check: arguments.check,
-            },
-            &mut operations,
-        )
-    })?;
+        ProjectPublicationRequest {
+            check: arguments.check,
+        },
+    )?;
     render(&report);
     Ok(report.succeeded())
-}
-
-struct CliProjectPublicationOperations<'a> {
-    project: &'a ProjectSpec,
-    memory_map: Option<&'a MemoryMap>,
-}
-
-impl ProjectPublicationOperations for CliProjectPublicationOperations<'_> {
-    type Prepared = registers::PreparedPublication;
-
-    fn validate_registers(&mut self) -> Result<bool> {
-        registers::run(
-            RegisterWorkspaceCommand::Validate(ValidationArgs {
-                deny_unreviewed: true,
-            }),
-            self.project,
-            self.memory_map,
-        )
-    }
-
-    fn prepare_svd(&mut self) -> Result<Self::Prepared> {
-        registers::prepare_project_svd(
-            self.project
-                .registers
-                .as_ref()
-                .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?,
-        )
-    }
-
-    fn prepare_pac(&mut self) -> Result<Self::Prepared> {
-        registers::prepare_project_pac(
-            self.project
-                .registers
-                .as_ref()
-                .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?,
-        )
-    }
-
-    fn prepare_bindings(&mut self) -> Result<Self::Prepared> {
-        registers::prepare_project_bindings(
-            self.project
-                .registers
-                .as_ref()
-                .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?,
-        )
-    }
-
-    fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool> {
-        registers::write_prepared_publication(publication, check)
-    }
 }
 
 fn render(document: &ProjectPublicationReport) {

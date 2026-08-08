@@ -1,5 +1,9 @@
 //! Frontend-neutral orchestration of project-owned analysis and review stages.
 
+mod operations;
+
+pub(crate) use operations::*;
+
 use std::path::Path;
 
 use serde::Serialize;

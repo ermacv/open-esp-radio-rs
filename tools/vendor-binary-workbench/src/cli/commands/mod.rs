@@ -24,7 +24,6 @@ mod project_function_doctor;
 mod project_init;
 mod project_inputs;
 mod project_ir_doctor;
-mod project_navigation;
 mod project_pipeline;
 mod project_publication;
 pub(crate) mod project_status;

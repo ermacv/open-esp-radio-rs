@@ -5,8 +5,7 @@ use std::path::Path;
 use super::{MmioMap, Result, TargetSpec};
 use crate::cli::{
     InterfaceDiscoverArgs, IrBuildArgs, MmioDiscoverArgs, NamedAddressRange, ProjectAnalyzeArgs,
-    RegisterReviewArgs, ReviewArgs, SourcePath, SymbolInventoryArgs, ValidationArgs,
-    resolver::{FunctionWorkspaceCommand, InterfaceWorkspaceCommand, RegisterWorkspaceCommand},
+    SourcePath, SymbolInventoryArgs,
 };
 use crate::{
     MemoryMap,
@@ -133,58 +132,34 @@ impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
     }
 
     fn build_navigation(&mut self, check: bool) -> Result<bool> {
-        let output = &self
-            .project
-            .navigation_index
-            .as_ref()
-            .ok_or_else(|| crate::Error::invalid("[analysis.navigation] is absent"))?
-            .output;
-        super::project_navigation::run(self.project, output, check)
+        crate::application::project_analysis::build_navigation(self.project, check)
     }
 
     fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        super::registers::run(
-            RegisterWorkspaceCommand::Validate(ValidationArgs { deny_unreviewed }),
+        crate::application::project_analysis::validate_registers(
             self.project,
             self.memory_map,
+            deny_unreviewed,
         )
     }
 
     fn review_registers(&mut self, check: bool) -> Result<bool> {
-        super::registers::run(
-            RegisterWorkspaceCommand::Review(RegisterReviewArgs {
-                check,
-                ..Default::default()
-            }),
-            self.project,
-            self.memory_map,
-        )
+        crate::application::project_analysis::review_registers(self.project, check)
     }
 
     fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        super::function_pack::run(
-            FunctionWorkspaceCommand::Validate(ValidationArgs { deny_unreviewed }),
-            self.project,
-            self.target,
-        )
+        crate::application::project_analysis::validate_functions(self.project, deny_unreviewed)
     }
 
     fn review_functions(&mut self, check: bool) -> Result<bool> {
-        super::function_pack::run(
-            FunctionWorkspaceCommand::Review(ReviewArgs {
-                check,
-                ..Default::default()
-            }),
-            self.project,
-            self.target,
-        )
+        crate::application::project_analysis::review_functions(self.project, self.target, check)
     }
 
     fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        super::interface_pack::run(
-            InterfaceWorkspaceCommand::Validate(ValidationArgs { deny_unreviewed }),
+        crate::application::project_analysis::validate_interfaces(
             self.project,
             self.target,
+            deny_unreviewed,
         )
     }
 }

@@ -1,7 +1,7 @@
 //! CLI adapter for project-owned analysis and review orchestration.
 
 use super::{MmioMap, Result, TargetSpec};
-use crate::cli::{IrBuildArgs, ProjectAnalyzeArgs};
+use crate::cli::ProjectAnalyzeArgs;
 use crate::{
     MemoryMap,
     application::project_analysis::{
@@ -91,16 +91,17 @@ impl ProjectAnalysisOperations for CliProjectAnalysisOperations<'_> {
     }
 
     fn build_linked_ir(&mut self, check: bool) -> Result<bool> {
-        super::ir_build::run(
-            IrBuildArgs {
+        crate::application::project_ir_build::build_project_ir(
+            crate::application::project_ir_build::ProjectIrBuildRequest {
+                profiles: Default::default(),
                 check,
-                ..Default::default()
             },
             self.project,
             self.run_spec()?,
             self.svd,
             self.target,
-        )
+        )?;
+        Ok(true)
     }
 
     fn build_navigation(&mut self, check: bool) -> Result<bool> {

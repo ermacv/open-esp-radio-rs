@@ -36,6 +36,30 @@ fn domain_and_application_do_not_depend_on_cli_rendering() {
 }
 
 #[test]
+fn cli_command_adapters_do_not_invoke_each_other() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/commands");
+    let mut files = Vec::new();
+    rust_files(&root, &mut files);
+    let violations = files
+        .into_iter()
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("mod.rs"))
+        .filter(|path| path.file_name().and_then(|name| name.to_str()) != Some("tests.rs"))
+        .filter(|path| !path.components().any(|part| part.as_os_str() == "tests"))
+        .filter_map(|path| {
+            let source = fs::read_to_string(&path).expect("read CLI command adapter");
+            source
+                .lines()
+                .any(|line| line.contains("super::") && line.contains("::run("))
+                .then_some(path)
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        violations.is_empty(),
+        "CLI command adapters invoke sibling commands: {violations:#?}"
+    );
+}
+
+#[test]
 fn generic_cli_has_no_esp_phy_prefix_defaults() {
     let arguments =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/arguments.rs"))
@@ -124,22 +148,10 @@ fn cli_resolution_has_one_typed_command_axis() {
 fn persistent_artifact_identities_have_one_owner() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let required_uses = [
-        (
-            "cli/commands/symbol_inventory.rs",
-            "artifacts::SYMBOL_INVENTORY",
-        ),
-        (
-            "cli/commands/discover_mmio_json.rs",
-            "artifacts::MMIO_FACTS",
-        ),
-        (
-            "cli/commands/interface_discovery_json.rs",
-            "artifacts::INTERFACE_FACTS",
-        ),
-        (
-            "cli/commands/export_ir/json_report.rs",
-            "artifacts::LINKED_IR",
-        ),
+        ("artifacts/symbol_inventory.rs", "SYMBOL_INVENTORY"),
+        ("artifacts/mmio_facts.rs", "MMIO_FACTS"),
+        ("artifacts/interface_facts.rs", "INTERFACE_FACTS"),
+        ("artifacts/linked_ir_document.rs", "artifacts::LINKED_IR"),
         ("registers/facts.rs", "artifacts::MMIO_FACTS"),
         ("interfaces/facts/parse.rs", "artifacts::INTERFACE_FACTS"),
         ("function_workspace/facts/parse.rs", "artifacts::LINKED_IR"),

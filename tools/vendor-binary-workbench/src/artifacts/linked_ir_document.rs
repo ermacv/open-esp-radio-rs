@@ -4,7 +4,11 @@ use std::{path::Path, path::PathBuf};
 
 use serde::Serialize;
 
-use super::*;
+use crate::{
+    EntryContractRef, LinkedIrFunction, LinkedIrReport, LinkedMmioRegister, LinkedTrampolineSlot,
+    Result, SemanticBoundary,
+    linked_ir_export::{IrArtifactInput, field_candidate_summary, provenance_summary},
+};
 
 #[derive(Serialize)]
 struct ArtifactIdentity {
@@ -145,7 +149,7 @@ impl ReportSummary {
 }
 
 #[derive(Serialize)]
-pub(super) struct LinkedIrDocument<'a> {
+pub(crate) struct LinkedIrDocument<'a> {
     schema_version: u32,
     command: &'static str,
     analysis_mode: &'static str,
@@ -176,18 +180,15 @@ pub(super) struct LinkedIrDocument<'a> {
     semantic_boundaries: &'a [SemanticBoundary],
     trampoline_slots: &'a [LinkedTrampolineSlot],
     functions: &'a [LinkedIrFunction],
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    publications: Vec<crate::cli::output::Publication>,
 }
 
-pub(super) fn document<'a>(
+pub(crate) fn build_linked_ir_document<'a>(
     artifacts: &'a [IrArtifactInput],
     companions: &[PathBuf],
     symbol_prefix: &'a str,
     entry_contract: EntryContractRef,
     report: &'a LinkedIrReport,
     include_reachable: bool,
-    publications: Vec<crate::cli::output::Publication>,
 ) -> Result<LinkedIrDocument<'a>> {
     Ok(LinkedIrDocument {
         schema_version: crate::artifacts::LINKED_IR.version,
@@ -243,15 +244,14 @@ pub(super) fn document<'a>(
         semantic_boundaries: &report.semantic_boundaries,
         trampoline_slots: &report.trampoline_slots,
         functions: &report.functions,
-        publications,
     })
 }
 
-pub(super) fn render_document(document: &LinkedIrDocument<'_>) -> Result<String> {
+pub(crate) fn render_linked_ir(document: &LinkedIrDocument<'_>) -> Result<String> {
     Ok(serde_json::to_string_pretty(document)? + "\n")
 }
 
-pub(super) fn write_json_report(path: &Path, document: &LinkedIrDocument<'_>) -> Result<()> {
-    fs::write(path, render_document(document)?)?;
+pub(crate) fn write_linked_ir(path: &Path, document: &LinkedIrDocument<'_>) -> Result<()> {
+    std::fs::write(path, render_linked_ir(document)?)?;
     Ok(())
 }

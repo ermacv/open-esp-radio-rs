@@ -2,20 +2,20 @@
 
 use std::{collections::BTreeSet, path::PathBuf};
 
-use crate::{Result, cli::SourcePath, source_id::is_source_id};
+use crate::{Result, source_id::is_source_id};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct IrArtifactInput {
-    pub(super) source: String,
-    pub(super) path: PathBuf,
+pub(crate) struct IrArtifactInput {
+    pub(crate) source: String,
+    pub(crate) path: PathBuf,
 }
 
 #[cfg(test)]
-pub(super) fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput> {
+pub(crate) fn named_artifact(source: &str, path: &str) -> Result<IrArtifactInput> {
     named_artifact_path(source, PathBuf::from(path))
 }
 
-pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtifactInput> {
+pub(crate) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtifactInput> {
     if !is_source_id(source) {
         return Err(crate::Error::invalid(format!(
             "invalid artifact source id {source:?}"
@@ -30,16 +30,7 @@ pub(super) fn named_artifact_path(source: &str, path: PathBuf) -> Result<IrArtif
     })
 }
 
-impl From<SourcePath> for IrArtifactInput {
-    fn from(value: SourcePath) -> Self {
-        Self {
-            source: value.source.into_string(),
-            path: value.path,
-        }
-    }
-}
-
-pub(super) fn validate_artifact_inputs(
+pub(crate) fn validate_artifact_inputs(
     artifacts: &[IrArtifactInput],
     companions: &[PathBuf],
 ) -> Result<()> {

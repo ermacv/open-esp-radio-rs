@@ -1,8 +1,10 @@
 //! Shared formatting and guard-link traversal for all IR report views.
 
-use super::*;
+use std::collections::BTreeSet;
 
-pub(super) fn format_site_path(site_path: &[Option<u32>]) -> String {
+use crate::{LinkedCallGuardMmioSource, LinkedCallGuardPath, LinkedDirectMmioPredicateSource};
+
+pub(crate) fn format_site_path(site_path: &[Option<u32>]) -> String {
     site_path
         .iter()
         .map(|site| site.map_or_else(|| "unknown".to_owned(), |site| format!("{site:#010x}")))
@@ -10,11 +12,11 @@ pub(super) fn format_site_path(site_path: &[Option<u32>]) -> String {
         .join(" -> ")
 }
 
-pub(super) fn optional_hex_text(value: Option<u32>) -> String {
+pub(crate) fn optional_hex_text(value: Option<u32>) -> String {
     value.map_or_else(|| "-".to_owned(), |value| format!("{value:#010x}"))
 }
 
-pub(super) type ProducerMmioGuardLink = (
+pub(crate) type ProducerMmioGuardLink = (
     u32,
     String,
     &'static str,
@@ -26,7 +28,7 @@ pub(super) type ProducerMmioGuardLink = (
     LinkedCallGuardMmioSource,
 );
 
-pub(super) fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<ProducerMmioGuardLink> {
+pub(crate) fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<ProducerMmioGuardLink> {
     paths
         .iter()
         .flat_map(|path| &path.guards)
@@ -55,7 +57,7 @@ pub(super) fn guard_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<ProducerMmi
         .collect()
 }
 
-pub(super) type DirectMmioGuardLink = (
+pub(crate) type DirectMmioGuardLink = (
     u32,
     String,
     &'static str,
@@ -63,7 +65,7 @@ pub(super) type DirectMmioGuardLink = (
     LinkedDirectMmioPredicateSource,
 );
 
-pub(super) fn guard_direct_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<DirectMmioGuardLink> {
+pub(crate) fn guard_direct_mmio_links(paths: &[LinkedCallGuardPath]) -> Vec<DirectMmioGuardLink> {
     paths
         .iter()
         .flat_map(|path| &path.guards)

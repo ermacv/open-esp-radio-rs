@@ -12,6 +12,7 @@ mod error;
 mod function_workspace;
 mod harnesses;
 mod interfaces;
+mod linked_ir_export;
 mod memory_map;
 mod navigation;
 mod orchestration;

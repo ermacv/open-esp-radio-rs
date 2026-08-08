@@ -2,9 +2,17 @@
 
 use std::fmt::Write as _;
 
-use super::*;
+use std::{fs, path::Path};
 
-pub(super) fn render_pseudo(
+use crate::{
+    LinkedIrReport, LinkedMemoryObject, Result, effective_branch_operation, format_guard_paths,
+};
+
+use super::{
+    IrArtifactInput, format_site_path, guard_direct_mmio_links, guard_mmio_links, optional_hex_text,
+};
+
+pub(crate) fn render_pseudo(
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
     include_reachable: bool,
@@ -498,7 +506,7 @@ pub(super) fn render_pseudo(
     output
 }
 
-pub(super) fn write_pseudo(
+pub(crate) fn write_pseudo(
     path: &Path,
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,

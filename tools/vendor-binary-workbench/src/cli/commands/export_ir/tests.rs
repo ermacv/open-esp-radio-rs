@@ -7,12 +7,14 @@ use super::*;
 #[test]
 fn artifact_input_requires_explicit_source_names() {
     assert!("vendor.a".parse::<SourcePath>().is_err());
+    let parsed = "libphy=/tmp/vendor=archive.a"
+        .parse::<SourcePath>()
+        .unwrap();
     assert_eq!(
-        IrArtifactInput::from(
-            "libphy=/tmp/vendor=archive.a"
-                .parse::<SourcePath>()
-                .unwrap()
-        ),
+        IrArtifactInput {
+            source: parsed.source.into_string(),
+            path: parsed.path,
+        },
         IrArtifactInput {
             source: "libphy".to_owned(),
             path: PathBuf::from("/tmp/vendor=archive.a"),

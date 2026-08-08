@@ -38,14 +38,13 @@ blockers remain workbench types.
 
 ## Add when an owning workflow exists
 
-`addr2line`/`gimli` are appropriate optional enrichment after trace items retain
-the producing instruction PC separately from the compared observable effect.
-The comparison and TUI already load DWARF-bearing Rust artifacts, but an event
-currently identifies the bus operation rather than its producer; guessing a PC
-from the surrounding path would be misleading. Once that provenance field
-exists, DWARF may add file, line, function, and inline-frame labels. Missing or
-stale debug data must degrade to symbol/address output and cannot change a trace
-result.
+`addr2line`/`gimli` are now technically unblocked as optional enrichment:
+execution reports retain each event producer's PC, symbol and symbol-relative
+offset separately from the compared observable effect. DWARF may therefore add
+file, line, function and inline-frame labels without guessing from a surrounding
+path. The remaining prerequisite is an owning source-enrichment workflow and a
+stable presentation model. Missing or stale debug data must degrade to the
+existing symbol/address output and cannot change a trace result.
 
 `cargo_metadata` becomes appropriate when the workbench itself invokes Cargo
 to build a Rust probe. The build workflow should select the exact executable

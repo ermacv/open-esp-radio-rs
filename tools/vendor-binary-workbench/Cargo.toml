@@ -10,7 +10,7 @@ default-run = "vendor-binary-workbench"
 description = "Project-oriented analysis, reconstruction, publication and Rust conformance verification for compiled vendor binaries"
 
 [features]
-default = ["esp32s31-harness"]
+default = []
 esp32s31-harness = [
     "dep:open-radio-vendor-harness-esp32s31",
     "dep:open-radio-vendor-harness-esp32s31-semantic",

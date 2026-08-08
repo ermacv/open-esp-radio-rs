@@ -108,9 +108,9 @@ fn project_doctor_json_is_one_complete_typed_report() {
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("doctor stdout must be one JSON document");
     let report = &document;
-    assert_eq!(report["schema"], 1);
+    assert_eq!(report["schema"], 2);
     assert_eq!(report["command"], "project doctor");
-    assert_eq!(report["status"], "ok");
+    assert_eq!(report["status"], "valid-with-warnings");
     assert_eq!(report["project"]["id"], "generic-rv32-fixture");
     assert_eq!(report["target"]["id"], "generic-rv32");
     assert!(report["capabilities"].as_array().unwrap().len() > 10);
@@ -143,6 +143,26 @@ fn project_doctor_json_is_one_complete_typed_report() {
     assert_eq!(String::from_utf8_lossy(&jsonl.stdout).lines().count(), 1);
     let report: serde_json::Value = serde_json::from_slice(&jsonl.stdout).unwrap();
     assert_eq!(report["command"], "project doctor");
+}
+
+#[test]
+fn project_leaf_help_explains_validity_readiness_and_next_steps() {
+    for (command, expected) in [
+        ("init", "Next:"),
+        ("configure", "Next:"),
+        ("doctor", "validity, not workflow readiness"),
+        ("status", "project doctor"),
+        ("analyze", "--check"),
+        ("publish", "--check"),
+    ] {
+        let output = run(&["project", command, "--help"]);
+        assert!(output.status.success(), "help failed for {command}");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains(expected),
+            "project {command} help lacks {expected:?}: {stdout}"
+        );
+    }
 }
 
 #[test]

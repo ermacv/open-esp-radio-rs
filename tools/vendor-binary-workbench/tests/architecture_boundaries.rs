@@ -168,7 +168,10 @@ fn execution_environment_contracts_do_not_live_in_the_riscv_backend() {
 fn platform_harness_dependencies_are_optional_addons() {
     let manifest = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml"))
         .expect("read workbench manifest");
-    assert!(manifest.contains("default = [\"esp32s31-harness\"]"));
+    assert!(
+        manifest.contains("default = []"),
+        "generic workbench must not compile a chip harness by default"
+    );
     for dependency in [
         "open-radio-vendor-harness-esp32s31",
         "open-radio-vendor-harness-esp32s31-semantic",

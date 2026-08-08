@@ -126,7 +126,8 @@ resolver discovers that file automatically. Explicit `--run-spec` remains an
 override for CI or for credentials stored elsewhere. With neither source,
 `project analyze --check` reports analysis roots and their dependants as
 `blocked`. That is intentionally stricter than `project doctor`, where absent
-bindings are only a readiness warning.
+bindings are only a readiness warning and produce `valid-with-warnings`, not
+`invalid`.
 
 The artifact inventory and both discovery commands expose the same
 non-mutating primitive for narrow workflows:

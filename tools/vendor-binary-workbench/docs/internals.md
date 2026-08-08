@@ -49,8 +49,8 @@ crates. Chip-specific secondary-return recognition and reviewed summaries are
 supplied through the typed `RiscvHarnessSpec`; the backend contains no platform
 registry and does not own device or callback-table vocabulary. The neutral
 facade build has no production PHY/MAC dependency. The default build enables
-the optional ESP32-S31 descriptor, whose dependency ends at the ESP32-S31
-semantic harness boundary.
+no compiled harness. Enabling `esp32s31-harness` adds the optional ESP32-S31
+descriptor, whose dependency ends at the ESP32-S31 semantic harness boundary.
 
 Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may

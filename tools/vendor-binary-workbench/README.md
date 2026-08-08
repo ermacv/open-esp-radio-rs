@@ -10,6 +10,11 @@ contracts, and audit final images.
 The only executable is `vendor-binary-workbench`; removed product names and
 flat command aliases are intentionally rejected.
 
+The default build is architecture-generic and contains no compiled chip
+harness. Repository workflows that require the ESP32-S31 executable addon use
+`cargo vendor-binary-workbench-esp32s31`; data-only analysis remains available
+through the generic `cargo vendor-binary-workbench` alias.
+
 The backend reads ELF files and static archives directly with the Rust
 `object` crate and decodes RV32IMAC instructions from symbol bytes. It does
 not require binutils and does not scan source text for register addresses or

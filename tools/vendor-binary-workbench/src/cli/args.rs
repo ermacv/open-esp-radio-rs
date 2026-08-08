@@ -215,18 +215,42 @@ leaf_commands!(ToolingCommand {
 
 #[derive(Debug, Subcommand)]
 enum ProjectCommand {
+    /// Create a new project workspace and neutral target specification.
+    #[command(
+        after_long_help = "Next: run `vendor-binary-workbench project doctor --project PATH/vendor-project.toml`.\nThen add caller-owned binaries with `project inputs init`."
+    )]
     Init(ProjectInitArgs),
+    /// Attach or remove a reusable platform pack.
+    #[command(
+        after_long_help = "Next: run `vendor-binary-workbench project doctor --project PATH` to validate the resolved configuration."
+    )]
     Configure(ProjectConfigureArgs),
     /// Manage caller-owned artifact bindings.
     Inputs {
         #[command(subcommand)]
         command: ProjectInputsCommand,
     },
+    /// Validate configuration and report detailed diagnostics.
+    #[command(
+        after_long_help = "This checks validity, not workflow readiness. Use `project status` for readiness and `project analyze` to refresh evidence."
+    )]
     Doctor(EmptyArgs),
+    /// Summarize project workflow readiness without modifying artifacts.
+    #[command(
+        after_long_help = "Use `project doctor` for detailed configuration diagnostics, or `project analyze` to refresh generated evidence."
+    )]
     Status(ProjectStatusArgs),
     /// Browse the resolved project in a read-only terminal interface.
     Browse(EmptyArgs),
+    /// Generate or verify reproducible binary-analysis evidence.
+    #[command(
+        after_long_help = "Use `--check` in CI to compare generated evidence without writing it. Follow with `project status` to inspect readiness."
+    )]
     Analyze(ProjectAnalyzeArgs),
+    /// Generate or verify reviewed SVD, PAC and binding outputs.
+    #[command(
+        after_long_help = "Use `--check` in CI to validate publication outputs without writing them."
+    )]
     Publish(CheckArgs),
 }
 

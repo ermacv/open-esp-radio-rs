@@ -12,7 +12,7 @@ use super::super::{
 pub(super) struct DoctorReport {
     pub(super) schema: u32,
     pub(super) command: &'static str,
-    pub(super) status: &'static str,
+    pub(super) status: DoctorStatus,
     pub(super) project: IdentityReport,
     pub(super) target: IdentityReport,
     pub(super) capabilities: Vec<CapabilityReport>,
@@ -38,9 +38,9 @@ impl DoctorReport {
         run_spec: RunSpecReport,
     ) -> Self {
         Self {
-            schema: 1,
+            schema: 2,
             command: "project doctor",
-            status: "ok",
+            status: DoctorStatus::Valid,
             project: IdentityReport {
                 id: project_id.to_owned(),
                 path: project_path,
@@ -64,9 +64,7 @@ impl DoctorReport {
     pub(super) fn absorb(&mut self, errors: usize, warnings: usize) {
         self.errors += errors;
         self.warnings += warnings;
-        if self.errors != 0 {
-            self.status = "failed";
-        }
+        self.status = DoctorStatus::from_counts(self.errors, self.warnings);
     }
 
     pub(super) fn error(&mut self) {
@@ -74,11 +72,11 @@ impl DoctorReport {
     }
 
     pub(super) fn warning(&mut self, message: impl Into<String>) {
-        self.warnings += 1;
         self.diagnostics.push(DoctorDiagnostic {
             level: "warning",
             message: message.into(),
         });
+        self.absorb(0, 1);
     }
 
     pub(super) fn capability(&mut self, capability: CapabilityReport) {
@@ -87,6 +85,36 @@ impl DoctorReport {
 
     pub(super) const fn succeeded(&self) -> bool {
         self.errors == 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum DoctorStatus {
+    Valid,
+    ValidWithWarnings,
+    Invalid,
+}
+
+impl DoctorStatus {
+    const fn from_counts(errors: usize, warnings: usize) -> Self {
+        if errors != 0 {
+            Self::Invalid
+        } else if warnings != 0 {
+            Self::ValidWithWarnings
+        } else {
+            Self::Valid
+        }
+    }
+}
+
+impl fmt::Display for DoctorStatus {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Valid => "valid",
+            Self::ValidWithWarnings => "valid-with-warnings",
+            Self::Invalid => "invalid",
+        })
     }
 }
 

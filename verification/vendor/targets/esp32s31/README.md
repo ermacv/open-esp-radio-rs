@@ -1,5 +1,10 @@
 # ESP32-S31 vendor verification target
 
+Commands in this target guide use the explicit
+`cargo vendor-binary-workbench-esp32s31` alias so the compiled ESP32-S31
+harness is present. The ordinary `vendor-binary-workbench` build is generic
+and intentionally has an empty harness registry.
+
 `vendor-project.toml` is the preferred project entry point. It composes the
 existing target pack with `memory.toml`, whose MMIO regions are independent of
 SVD register names. The checked project deliberately omits private artifact
@@ -7,7 +12,7 @@ paths. Initialize an ignored sibling `local.run` from authenticated local
 artifacts:
 
 ```console
-cargo vendor-binary-workbench project inputs init \
+cargo vendor-binary-workbench-esp32s31 project inputs init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --bind source-artifact:rom=/path/to/esp32s31_rev0_rom.elf \
   --bind source-artifact:archive=/path/to/linked-libphy.elf \
@@ -15,7 +20,7 @@ cargo vendor-binary-workbench project inputs init \
   --bind source-companion:rom=/path/to/linked-libphy.elf \
   --bind source-companion:archive=/path/to/esp32s31_rev0_rom.elf
 
-cargo vendor-binary-workbench mmio discover \
+cargo vendor-binary-workbench-esp32s31 mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --json-report /tmp/esp32s31-mmio.json
 ```
@@ -29,9 +34,9 @@ The public project configuration can be checked without proprietary inputs:
 
 ```console
 cd verification/vendor/targets/esp32s31
-cargo vendor-binary-workbench project doctor
+cargo vendor-binary-workbench-esp32s31 project doctor
 
-cargo vendor-binary-workbench project status \
+cargo vendor-binary-workbench-esp32s31 project status \
   --project vendor-project.toml
 ```
 
@@ -43,10 +48,10 @@ run spec is supplied.
 Once sibling `local.run` exists, the complete generated-evidence workflow is:
 
 ```console
-cargo vendor-binary-workbench project analyze \
+cargo vendor-binary-workbench-esp32s31 project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench project analyze --check \
+cargo vendor-binary-workbench-esp32s31 project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -57,7 +62,7 @@ It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
 code. The public register release gate needs no private run spec:
 
 ```console
-cargo vendor-binary-workbench project publish \
+cargo vendor-binary-workbench-esp32s31 project publish \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check
 ```
@@ -78,10 +83,10 @@ their runtime ownership to this project.
 Inspect the model and generated review with:
 
 ```console
-cargo vendor-binary-workbench registers validate \
+cargo vendor-binary-workbench-esp32s31 registers validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench registers review \
+cargo vendor-binary-workbench-esp32s31 registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -98,10 +103,10 @@ profiles. Each primary input receives the other linked ELF as its reviewed
 companion through `local.run`, then register review merges both reports:
 
 ```console
-cargo vendor-binary-workbench ir build \
+cargo vendor-binary-workbench-esp32s31 ir build \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench registers review \
+cargo vendor-binary-workbench-esp32s31 registers review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -121,7 +126,7 @@ production gate. The PAC can still be checked directly when diagnosing that
 single stage:
 
 ```console
-cargo vendor-binary-workbench registers generate-pac \
+cargo vendor-binary-workbench-esp32s31 registers generate-pac \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check --deny-unreviewed
 ```
@@ -142,7 +147,7 @@ The project also owns the neutral PAC address/path index. Diagnose that stage
 independently of the production PAC with:
 
 ```console
-cargo vendor-binary-workbench registers generate-bindings \
+cargo vendor-binary-workbench-esp32s31 registers generate-bindings \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --check --deny-unreviewed
 ```
@@ -155,13 +160,13 @@ from a caller-owned run spec, initialize the reviewed pack once, and validate
 it after edits or vendor updates:
 
 ```console
-cargo vendor-binary-workbench interfaces discover \
+cargo vendor-binary-workbench-esp32s31 interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench interfaces init-pack \
+cargo vendor-binary-workbench-esp32s31 interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench interfaces validate \
+cargo vendor-binary-workbench-esp32s31 interfaces validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -179,13 +184,13 @@ profiles. Generate IR, initialize the pack once, then edit names and roles in
 `functions/reviewed.toml` and regenerate the reading view:
 
 ```console
-cargo vendor-binary-workbench functions init-pack \
+cargo vendor-binary-workbench-esp32s31 functions init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench functions validate \
+cargo vendor-binary-workbench-esp32s31 functions validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench functions review \
+cargo vendor-binary-workbench-esp32s31 functions review \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -252,7 +257,7 @@ Then run the focused regression gate. The caller supplies and authenticates
 all three vendor inputs; no artifact path or hash is embedded in the tool:
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -278,7 +283,7 @@ WDEVPWR enable mask at zero, so this boundary is ready for later power policy
 but does not enable modem sleep.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -305,7 +310,7 @@ before MMIO, and `RadioRegisters::configure_station_modem_wakeup` composes the
 same operations in vendor order without importing vendor PM context.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -328,7 +333,7 @@ disable branch: both branches set bit 21 at `0x2010_d830`, while only bit 29 at
 `0x2010_d858` follows the argument.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -352,7 +357,7 @@ production `RadioRegisters::station_tsf` specializes the same safe PAC
 register transaction to both output words.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "rom=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --source-prefix rom=hal_get_sta_tsf \
@@ -385,7 +390,7 @@ requires `embassy-tx-queue-ownership`, records
 statistics suffix to be omitted as unused instrumentation.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -414,7 +419,7 @@ the handwritten `RxRingStopped`/`RxRingLive` types retain lifecycle and
 descriptor memory ownership.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
@@ -449,7 +454,7 @@ Authentication/Association protocol state, accepts station configuration from
 its caller, and exposes the deadline to an Embassy executor.
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --target-spec verification/vendor/targets/esp32s31/target.spec \
   --source-artifact "libnet80211=$ESP32S31_LIBNET80211_LINKED_ELF" \
   --source-inventory "libnet80211=$OPEN_ESP_RADIO_ESP32S31_LIBNET80211_ARCHIVE" \

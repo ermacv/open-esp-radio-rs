@@ -86,6 +86,10 @@ outputs without invoking `project analyze` or `project publish`.
 shows exact input symbol counts, individual linked-IR diagnostics and
 workspace-specific errors useful while fixing a project; its JSON/JSONL form
 is one typed diagnostic report rather than a stream of presentation lines.
+Its overall validity is `valid`, `valid-with-warnings`, or `invalid`.
+Warnings such as absent private inputs or analysis facts do not make the
+manifest invalid; they describe work that may still be needed for a particular
+workflow.
 
 `project status` is the smaller automation contract: stable phase names,
 component states, structured counts and one overall result. It does not mutate

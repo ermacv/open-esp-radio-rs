@@ -75,7 +75,7 @@ async fn monitor_task(
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
     );
-    let (radio, runner) = new(spawner, platform, trng, config)
+    let (radio, runner) = new(spawner.make_send(), platform, trng, config)
         .await
         .expect("radio initialization must succeed once");
     let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {

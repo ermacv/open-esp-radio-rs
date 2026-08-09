@@ -4,13 +4,29 @@
 //! reusable driver owns PAC/DMA/IRQ and 802.11 protocol transitions; no HIL
 //! command, benchmark or qualification telemetry is part of this graph.
 
-use embassy_executor::{SpawnError, Spawner};
+#[cfg(feature = "qualification")]
+use core::{
+    cell::RefCell,
+    sync::atomic::{AtomicU32, Ordering},
+};
+
+use embassy_executor::{SendSpawner, SpawnError};
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     channel::{Channel, Receiver},
 };
+#[cfg(feature = "qualification")]
+use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Timer;
 use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
+#[cfg(feature = "qualification")]
+use open_esp_radio::esp32s31::wifi::mac::connected_rx::{
+    ConnectedRxEvent, ConnectedRxSink as MacConnectedRxSink,
+};
+#[cfg(feature = "qualification")]
+use open_esp_radio::esp32s31::wifi::mac::irq::{
+    IrqSink, MAC_INT_COLLISION, MAC_INT_RX_SUCCESS, MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT,
+};
 use open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity;
 use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::esp32s31::{
@@ -65,7 +81,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
         ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT as TX_AMPDU_FRAME_COUNT,
     },
     rx_dma_service::{Esp32s31ConnectedRx, Esp32s31RxEpochResources, Esp32s31StoppedRx},
-    rx_reorder::{RxReorderCommandResources, RxReorderFrameStorage},
+    rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
         ConnectedControlShutdown as Esp32s31ConnectedControlShutdown,
@@ -82,6 +98,8 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
 };
+#[cfg(feature = "qualification")]
+use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
@@ -149,13 +167,17 @@ pub(super) type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
 type ControlPublisher =
     ConnectedControlPublisher<'static, CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
-type ConnectedRxSink = EmbassyNetConnectedRxSink<
+type EmbassyConnectedRxSink = EmbassyNetConnectedRxSink<
     'static,
     CriticalSectionRawMutex,
     ControlPublisher,
     NETWORK_FRAME_CAPACITY,
     NETWORK_RX_QUEUE_DEPTH,
 >;
+#[cfg(feature = "qualification")]
+type ConnectedRxSink = ObservedConnectedRxSink<EmbassyConnectedRxSink>;
+#[cfg(not(feature = "qualification"))]
+type ConnectedRxSink = EmbassyConnectedRxSink;
 type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     'static,
     'static,
@@ -166,20 +188,20 @@ type ConnectedRxProtocol = Esp32s31ConnectedRxProtocol<
     RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
-    RX_REORDER_WINDOW,
+    RX_REORDER_BACKING_SLOT_COUNT,
 >;
 pub(super) type ConnectedRxProtocolStorage = Esp32s31ConnectedRxProtocolStorage<
     'static,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
-    RX_REORDER_WINDOW,
+    RX_REORDER_BACKING_SLOT_COUNT,
 >;
 type ConnectedRxProtocolStoppedOwner = Esp32s31ConnectedRxProtocolStopped<
     'static,
     'static,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
-    RX_REORDER_WINDOW,
+    RX_REORDER_BACKING_SLOT_COUNT,
 >;
 type ConnectedLiveRx = Esp32s31ConnectedRx<
     'static,
@@ -258,7 +280,7 @@ type ConnectedProtocolAssemblyResources = Esp32s31ConnectedStaRxProtocolResource
     RX_STAGE_SLOT_COUNT,
     RX_STAGE_CAPACITY,
     RX_STAGE_SLOT_COUNT,
-    RX_REORDER_WINDOW,
+    RX_REORDER_BACKING_SLOT_COUNT,
 >;
 type ConnectedControlAssemblyResources =
     Esp32s31ConnectedStaControlResources<'static, CriticalSectionRawMutex, CONTROL_QUEUE_DEPTH>;
@@ -330,6 +352,14 @@ pub type MacInterruptEpoch =
 static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> = EmbassyMacIrqRuntime::new();
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
+// Every admitted frame is copied here before its DMA descriptors are returned.
+// Keeping this bounded hot working set in internal SRAM avoids PSRAM cache
+// misses extending the hardware BUFFER_FULL interval under one 32-frame burst.
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain latency-critical RX staging in internal SRAM"
+)]
+#[unsafe(link_section = ".critical.bss.open_radio_rx_stage")]
 static RX_STAGE_POOL: RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY> = RxStagePool::new();
 static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
     'static,
@@ -340,7 +370,7 @@ static STAGED_RX_QUEUE: Esp32s31StagedRxQueue<
 > = Esp32s31StagedRxQueue::new();
 static RX_REORDER_COMMANDS: RxReorderCommandResources<CriticalSectionRawMutex> =
     RxReorderCommandResources::new();
-static RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY, RX_REORDER_WINDOW> =
+static RX_REORDER_STORAGE: RxReorderFrameStorage<RX_STAGE_CAPACITY, RX_REORDER_BACKING_SLOT_COUNT> =
     RxReorderFrameStorage::new();
 // Reorder machines and retained RX lease tokens are long-lived protocol
 // state. Keeping their arena static prevents this multi-kilobyte owner table
@@ -353,16 +383,43 @@ static CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
 // returned by value through an async task stack during startup.
 static NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
     ConstStaticCell::new(NetworkResources::new());
+// These pinned slots become the external backing addresses published through
+// ordinary and aggregate Wi-Fi TX descriptors. They must remain in the
+// ESP32-S31 Wi-Fi DMA aperture; CPU-only queue state stays in NETWORK_RESOURCES.
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain production network TX backing in DMA-visible SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
 static NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> = ConstStaticCell::new(NetworkTxPool::new());
 static TX_AMPDU_STORAGE: ConstStaticCell<
     HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>,
 > = ConstStaticCell::new(HtAmpduTxStorage::new());
+// BUFFER_SIZE is zero: only the hardware-walked descriptor array in this
+// allocation needs the internal DMA aperture. Frame bytes remain owned by the
+// separately pinned NETWORK_TX_POOL leases.
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain production A-MPDU descriptors in DMA-visible SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
 static TX_AMPDU_DMA_STORAGE: ConstStaticCell<AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>> =
     ConstStaticCell::new(AmpduDmaStorage::new());
 // Network lease tokens and their descriptor identities live for an entire
 // connected epoch. Keep this multi-slot arena static so it is borrowed by the
 // movable TX handle instead of being copied through nested async stack frames.
 static TX_AMPDU_RETENTION: StaticCell<ConnectedAmpduRetention> = StaticCell::new();
+#[cfg(feature = "qualification")]
+static MAC_IRQ_OBSERVER: Mutex<
+    CriticalSectionRawMutex,
+    RefCell<Option<fn(Esp32s31MacIrqObservation)>>,
+> = Mutex::new(RefCell::new(None));
+#[cfg(feature = "qualification")]
+static QUALIFICATION_LINK_BANDWIDTH_MHZ: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "qualification")]
+static QUALIFICATION_DATA_RATE_KBPS: AtomicU32 = AtomicU32::new(0);
+#[cfg(feature = "qualification")]
+static QUALIFICATION_AGGREGATE_RATE_KBPS: AtomicU32 = AtomicU32::new(0);
 static REGISTER_ARENA: ConstStaticCell<Esp32s31RadioRegistersArena> =
     ConstStaticCell::new(Esp32s31RadioRegistersArena::new());
 // Ethernet scratch belongs to the driver datapath. Application socket buffers
@@ -438,6 +495,96 @@ pub struct Esp32s31QualificationSnapshot {
 }
 
 #[cfg(feature = "qualification")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31QualificationTxVector {
+    pub bandwidth_mhz: u16,
+    pub data_rate_kbps: u32,
+    pub aggregate_rate_kbps: u32,
+}
+
+/// Observation-only connected RX hook available only in qualification
+/// firmware. The event is borrowed and is always forwarded unchanged to the
+/// production network sink after observation.
+#[cfg(feature = "qualification")]
+pub trait Esp32s31ConnectedRxObserver: Sync {
+    fn observe(&self, event: &ConnectedRxEvent<'_>);
+}
+
+/// Value-only hard-IRQ observation exported only by qualification builds.
+#[cfg(feature = "qualification")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31MacIrqObservation {
+    RxEpoch,
+    TxEpoch,
+    Entry {
+        first_status: u32,
+        observed_status: u32,
+        nonzero_snapshots: u8,
+    },
+}
+
+#[cfg(feature = "qualification")]
+pub(super) fn configure_mac_irq_observer(observer: fn(Esp32s31MacIrqObservation)) {
+    MAC_IRQ_OBSERVER.lock(|slot| {
+        *slot.borrow_mut() = Some(observer);
+    });
+}
+
+#[cfg(feature = "qualification")]
+#[inline]
+fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
+    MAC_IRQ_OBSERVER.lock(|slot| {
+        if let Some(observer) = *slot.borrow() {
+            observer(observation);
+        }
+    });
+}
+
+#[cfg(feature = "qualification")]
+struct QualificationMacIrqSink;
+
+#[cfg(feature = "qualification")]
+impl IrqSink for QualificationMacIrqSink {
+    #[inline]
+    fn post(&self, pending: u32) {
+        if pending & MAC_INT_RX_SUCCESS != 0 && !IRQ_RUNTIME.rx_signaled() {
+            observe_mac_irq(Esp32s31MacIrqObservation::RxEpoch);
+        }
+        const TX_EVENTS: u32 = MAC_INT_TX_COMPLETE | MAC_INT_TX_TIMEOUT | MAC_INT_COLLISION;
+        if pending & TX_EVENTS != 0 && !IRQ_RUNTIME.tx_signaled() {
+            observe_mac_irq(Esp32s31MacIrqObservation::TxEpoch);
+        }
+        IRQ_RUNTIME.publish(pending);
+    }
+
+    #[inline]
+    fn record_unhandled(&self, bits: u32) {
+        IRQ_RUNTIME.record_unhandled(bits);
+    }
+}
+
+#[cfg(feature = "qualification")]
+struct ObservedConnectedRxSink<S> {
+    inner: S,
+    observer: &'static dyn Esp32s31ConnectedRxObserver,
+}
+
+#[cfg(feature = "qualification")]
+impl<S: MacConnectedRxSink> MacConnectedRxSink for ObservedConnectedRxSink<S> {
+    fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        self.observer.observe(&event);
+        self.inner.publish(event);
+    }
+}
+
+#[cfg(feature = "qualification")]
+impl<S: ConnectedRxProtocolSink> ConnectedRxProtocolSink for ObservedConnectedRxSink<S> {
+    fn wait_ready(&mut self) -> impl core::future::Future<Output = ()> + '_ {
+        self.inner.wait_ready()
+    }
+}
+
+#[cfg(feature = "qualification")]
 impl Esp32s31QualificationSnapshot {
     /// Snapshot hardware RX counters only while a connected epoch owns the
     /// register arena. `None` means the role is stopped/transitioning or a
@@ -459,6 +606,17 @@ impl Esp32s31QualificationSnapshot {
     /// OR-image of MAC interrupt bits not owned by the qualified dispatcher.
     pub fn unhandled_interrupt_bits(self) -> u32 {
         IRQ_RUNTIME.observed_unhandled()
+    }
+
+    /// Current associated-link TX vector. `None` means no connected epoch
+    /// owns the datapath.
+    pub fn tx_vector(self) -> Option<Esp32s31QualificationTxVector> {
+        let bandwidth_mhz = QUALIFICATION_LINK_BANDWIDTH_MHZ.load(Ordering::Acquire);
+        (bandwidth_mhz != 0).then(|| Esp32s31QualificationTxVector {
+            bandwidth_mhz: bandwidth_mhz as u16,
+            data_rate_kbps: QUALIFICATION_DATA_RATE_KBPS.load(Ordering::Relaxed),
+            aggregate_rate_kbps: QUALIFICATION_AGGREGATE_RATE_KBPS.load(Ordering::Relaxed),
+        })
     }
 }
 
@@ -680,7 +838,16 @@ pub(super) fn initialize_connected_static_resources()
 )]
 #[unsafe(link_section = ".rwtext.open_radio_irq")]
 fn mac_interrupt() {
-    let _ = service_mac_interrupt(&IRQ_RUNTIME);
+    #[cfg(feature = "qualification")]
+    let report = service_mac_interrupt(&QualificationMacIrqSink);
+    #[cfg(not(feature = "qualification"))]
+    let _report = service_mac_interrupt(&IRQ_RUNTIME);
+    #[cfg(feature = "qualification")]
+    observe_mac_irq(Esp32s31MacIrqObservation::Entry {
+        first_status: report.first_status,
+        observed_status: report.observed_status,
+        nonzero_snapshots: report.nonzero_snapshots,
+    });
 }
 
 #[esp_hal::handler]
@@ -704,7 +871,7 @@ async fn rx_protocol_worker(
 }
 
 /// Start the owner-free RX protocol worker before the physical supervisor.
-pub(super) fn spawn_connected_workers(spawner: Spawner) -> Result<(), SpawnError> {
+pub(super) fn spawn_connected_workers(spawner: SendSpawner) -> Result<(), SpawnError> {
     let protocol = rx_protocol_worker(RX_PROTOCOL_START.receiver())?;
     spawner.spawn(protocol);
     Ok(())
@@ -951,10 +1118,29 @@ pub async fn run_connected<'state, 'security>(
         aggregate_tx: aggregate,
         control: control_resources,
     } = started;
+    #[cfg(feature = "qualification")]
+    let rx = rx.with_pipeline_observer(
+        qualification
+            .expect("qualification build must retain its configured pipeline observer")
+            .rx_pipeline,
+    );
 
     let network_rx = network_runner.rx_publisher();
     let (control_publisher, control_receiver) = control_resources.split();
     let rx_sink = EmbassyNetConnectedRxSink::new(network_rx, control_publisher);
+    #[cfg(feature = "qualification")]
+    let rx_sink = rx_sink.with_pipeline_observer(
+        qualification
+            .expect("qualification build must retain its configured pipeline observer")
+            .rx_pipeline,
+    );
+    #[cfg(feature = "qualification")]
+    let rx_sink = ObservedConnectedRxSink {
+        inner: rx_sink,
+        observer: qualification
+            .expect("qualification build must retain its configured connected RX observer")
+            .connected_rx,
+    };
     let (reorder_sender, reorder_receiver) = RX_REORDER_COMMANDS.split();
     let tx_sequences = sequences;
     let assembled =
@@ -1057,6 +1243,16 @@ pub async fn run_connected<'state, 'security>(
         report.data_tx_rate.nominal_kbps(),
         report.aggregate_tx_rate.nominal_kbps(),
     );
+    #[cfg(feature = "qualification")]
+    {
+        QUALIFICATION_DATA_RATE_KBPS.store(report.data_tx_rate.nominal_kbps(), Ordering::Relaxed);
+        QUALIFICATION_AGGREGATE_RATE_KBPS
+            .store(report.aggregate_tx_rate.nominal_kbps(), Ordering::Relaxed);
+        QUALIFICATION_LINK_BANDWIDTH_MHZ.store(
+            u32::from(report.link.association_phy.bandwidth_mhz()),
+            Ordering::Release,
+        );
+    }
 
     let mut observer = NoopEsp32s31ConnectedRunObserver;
     let stopped = match run_and_quiesce_esp32s31_connected_epoch(
@@ -1094,6 +1290,8 @@ pub async fn run_connected<'state, 'security>(
             }
         },
     };
+    #[cfg(feature = "qualification")]
+    QUALIFICATION_LINK_BANDWIDTH_MHZ.store(0, Ordering::Release);
     let outcome = stopped.exit;
     qualification_event!("open-radio: connected runner stopped: {outcome:?}");
     let shutdown = stopped.quiesced.tasks.shutdown();

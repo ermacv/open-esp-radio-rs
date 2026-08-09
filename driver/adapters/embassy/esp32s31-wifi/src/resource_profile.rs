@@ -1,8 +1,10 @@
-//! Named static-memory sizing for the normal ESP32-S31 Wi-Fi composition.
+//! Named static-memory sizing for the ESP32-S31 Wi-Fi composition.
 //!
-//! These values are board-independent defaults, not hardware capabilities and
-//! not qualification limits. A HIL or memory-constrained product may select a
-//! different explicit profile while using the same owner and lifecycle code.
+//! These values are integration policy, not hardware capabilities. The
+//! default compact profile fits a direct-to-flash application in internal
+//! SRAM. `high-throughput` selects the larger envelope used by qualification;
+//! that profile requires a product linker which places CPU-only state in
+//! initialized PSRAM while retaining DMA and latency-critical state in SRAM.
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -22,15 +24,36 @@ pub const ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY: usize = 1_700;
 pub const ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY: usize = 32;
 
 pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
+// These slots form the latency-critical copy-before-DMA-reload working set and
+// stay in SRAM. The high-throughput profile can retain one 32-descriptor burst
+// while earlier frames remain behind a BlockAck gap; the compact profile
+// deliberately accepts less burst elasticity.
+#[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 16;
+#[cfg(feature = "high-throughput")]
+pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 64;
 pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 8;
 pub const ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH: usize = 16;
 
 pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
+// The high-throughput queue retains a complete 32-frame RX burst plus overlap
+// with the network consumer. Its CPU-only bytes belong in PSRAM. The compact
+// queue trades burst elasticity for a direct-to-flash SRAM footprint.
+#[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 8;
+#[cfg(feature = "high-throughput")]
+pub const ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH: usize = 40;
+// The high-throughput profile represents a complete 32-member TX A-MPDU.
+// Compact builds retain eight members. TX frame backing is DMA-visible SRAM.
+#[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 8;
+#[cfg(feature = "high-throughput")]
+pub const ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH: usize = 32;
 pub const ESP32S31_DEFAULT_NETWORK_TX_TRAILER: usize = 12;
+#[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 8;
+#[cfg(feature = "high-throughput")]
+pub const ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT: usize = 32;
 
 /// Compact marker exposed to board composition and memory reporting.
 pub struct Esp32s31DefaultWifiResourceProfile;

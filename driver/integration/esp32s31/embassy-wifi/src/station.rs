@@ -11,7 +11,7 @@ use core::{
     pin::Pin,
 };
 
-use embassy_executor::Spawner;
+use embassy_executor::SendSpawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::supervisor::{
@@ -106,6 +106,8 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
 };
 use static_cell::StaticCell;
 
+#[cfg(feature = "qualification")]
+use crate::connected::configure_mac_irq_observer;
 use crate::connected::{
     ConnectedAmpduStorage, ConnectedDisconnectedEpoch, ConnectedReconnectedEpoch,
     ConnectedRunningNetwork, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
@@ -149,7 +151,15 @@ pub(super) type ProductionStationRuntime<'state> = Esp32s31StationRuntimeResourc
 >;
 // The complete board-independent DMA/scan/control arena is acquired as one
 // owner graph. This keeps large buffers out of the async task stack and avoids
-// partially taking several unrelated global cells.
+// partially taking several unrelated global cells. The aggregate currently
+// contains the RX and ordinary-TX allocations addressed directly by the
+// Wi-Fi DMA master, so the entire owner must remain in DMA-visible SRAM until
+// that storage type is split into independently placed sub-owners.
+#[allow(
+    unsafe_code,
+    reason = "the linker must retain the production Wi-Fi DMA owner in DMA-visible SRAM"
+)]
+#[unsafe(link_section = ".dma.bss.open_radio_station")]
 static STATION_MEMORY: Esp32s31DefaultStationMemory<CriticalSectionRawMutex> =
     Esp32s31DefaultStationMemory::new();
 // These two owners contain runtime-derived DMA and PHY values. StaticCell
@@ -1802,14 +1812,14 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
 /// owner-holding runner. This function does not start a Wi-Fi role and does
 /// not construct an IP stack.
 pub async fn new(
-    spawner: Spawner,
+    worker_spawner: SendSpawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
     config: crate::Esp32s31RadioConfig,
 ) -> Result<(Esp32s31Radio, Esp32s31RadioRunner), Esp32s31NewError> {
     qualification_event!("open-radio: cold PHY start");
 
-    let workers = match spawn_connected_workers(spawner) {
+    let workers = match spawn_connected_workers(worker_spawner) {
         Ok(workers) => workers,
         Err(_error) => return Err(Esp32s31NewError::WorkerUnavailable),
     };
@@ -1824,6 +1834,10 @@ pub async fn new(
         #[cfg(feature = "qualification")]
         qualification,
     } = config;
+    #[cfg(feature = "qualification")]
+    if let Some(hooks) = qualification {
+        configure_mac_irq_observer(hooks.mac_irq);
+    }
     let topology = WifiConfig::station(WifiStationConfig::new(station_mac));
 
     let owned = Radio::claim(platform).map_err(|_| Esp32s31NewError::RadioAlreadyClaimed)?;

@@ -3612,6 +3612,14 @@ fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
         })
     );
     assert_eq!(decode_normalized_rx_metadata(&metadata[..0x1c]), None);
+
+    metadata[0x1c] = 0;
+    assert_eq!(
+        decode_normalized_rx_metadata(&metadata)
+            .expect("complete metadata")
+            .channel,
+        MacRxEvidence::Unavailable,
+    );
 }
 
 #[test]

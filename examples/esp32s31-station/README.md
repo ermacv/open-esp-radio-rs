@@ -31,15 +31,11 @@ If no matching AP is present, each complete 13-channel cold scan returns its
 halted RX ring, waits 500 ms and prepares that same owner for the next scan.
 It does not recreate descriptors or panic after the first `NoCandidate` pass.
 
-The current internal-SRAM baseline intentionally uses 16 staged RX owners,
-8 RX network slots, 8 TX network slots and an 8-frame TX A-MPDU limit. A
-64/32/32 profile raised `.bss` from the current roughly 182 KiB baseline to
-about 405 KiB and caused
-pre-connected WPA2 progress to become unreliable on hardware. Large reorder
-or throughput profiles therefore need explicit memory placement and a linked
-image budget; they must not be enabled by changing queue constants alone. The
-reorder backing is separately sized to the configured eight-frame receive
-window instead of always reserving the vendor maximum of 64 slots.
+This direct-to-flash example selects the compact internal-SRAM resource
+profile: 16 staged RX owners, 8 network RX/TX slots and 8 TX A-MPDU members.
+The qualified `high-throughput` profile uses 64/40/32/32 and requires the
+product to place CPU-only owners in initialized PSRAM; the HIL target is the
+reference composition for that linker contract.
 
 The connected radio is a finite lifecycle epoch rather than a terminal task.
 Peer loss or an application controller request returns the IRQ, staged-RX,

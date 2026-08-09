@@ -23,9 +23,12 @@ mod facade;
 mod monitor;
 mod station;
 
-#[cfg(feature = "qualification")]
-pub use connected::Esp32s31QualificationSnapshot;
 pub use connected::Esp32s31WifiDevice;
+#[cfg(feature = "qualification")]
+pub use connected::{
+    Esp32s31ConnectedRxObserver, Esp32s31MacIrqObservation, Esp32s31QualificationSnapshot,
+    Esp32s31QualificationTxVector,
+};
 pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
@@ -97,4 +100,6 @@ impl Esp32s31RadioConfig {
 pub struct Esp32s31QualificationHooks {
     pub rx_pipeline: &'static dyn open_esp_radio_esp32s31_wifi_embassy::rx_pipeline_observer::RxPipelineObserver,
     pub aggregate_tx: &'static dyn open_esp_radio_esp32s31_wifi_embassy::aggregate_tx_observer::AggregateTxObserver,
+    pub connected_rx: &'static dyn Esp32s31ConnectedRxObserver,
+    pub mac_irq: fn(Esp32s31MacIrqObservation),
 }

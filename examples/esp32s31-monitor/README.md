@@ -9,6 +9,10 @@ The example prints only periodic aggregate counters and selected metadata; it
 does not serialize frames or PCAPNG on the embedded hot path. A host-side
 capture transport and PCAPNG writer belong to the HIL tooling.
 
+The example uses the compact internal-SRAM resource profile. The optional
+`high-throughput` profile requires product-owned initialized PSRAM placement;
+it is exercised by the HIL composition, not by this one-stage linker.
+
 Build with:
 
 ```text

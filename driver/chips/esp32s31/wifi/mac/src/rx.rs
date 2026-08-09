@@ -691,8 +691,12 @@ pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {
 /// an active BA agreement and the 802.11 Protected bit are not substitutes.
 pub fn decode_normalized_rx_metadata(buffer: &[u8]) -> Option<MacRxMetadata<RxPhyInfo>> {
     let rate = decode_rx_phy_info(buffer)?;
+    let channel = match *buffer.get(RX_PHY_CHANNEL_OFFSET)? {
+        channel @ 1..=14 => MacRxEvidence::HardwareObserved(channel),
+        _ => MacRxEvidence::Unavailable,
+    };
     Some(MacRxMetadata {
-        channel: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_CHANNEL_OFFSET)?),
+        channel,
         rate: MacRxEvidence::HardwareObserved(rate),
         rssi_dbm: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_RSSI_OFFSET)? as i8),
         crypto: MacRxEvidence::Unavailable,

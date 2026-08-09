@@ -60,26 +60,13 @@ impl<P> Esp32s31WifiStopped<P> {
             platform: self.platform,
             registers: self.registers,
             interrupt_setup: self.interrupt_setup,
-            phy: self.phy,
-            calibration_record: self.calibration_record,
-            start_report: self.start_report,
-            transition_report: self.transition_report,
-            current_channel: self.current_channel,
-        }
-    }
-
-    /// Reclaim the common owner after a role proves IRQ and DMA quiescence.
-    #[doc(hidden)]
-    pub fn from_runtime_parts(parts: Esp32s31WifiRuntimeParts<P>) -> Self {
-        Self {
-            platform: parts.platform,
-            registers: parts.registers,
-            interrupt_setup: parts.interrupt_setup,
-            phy: parts.phy,
-            calibration_record: parts.calibration_record,
-            start_report: parts.start_report,
-            transition_report: parts.transition_report,
-            current_channel: parts.current_channel,
+            context: Esp32s31WifiRuntimeContext {
+                phy: self.phy,
+                calibration_record: self.calibration_record,
+                start_report: self.start_report,
+                transition_report: self.transition_report,
+                current_channel: self.current_channel,
+            },
         }
     }
 }
@@ -93,11 +80,60 @@ pub struct Esp32s31WifiRuntimeParts<P> {
     pub platform: P,
     pub registers: RadioRegisters,
     pub interrupt_setup: MacInterruptSetup,
-    pub phy: PhyColdState,
-    pub calibration_record: Option<PhyCalibrationRecord>,
-    pub start_report: Esp32s31WifiMacStartReport,
-    pub transition_report: Esp32s31WifiRuntimeTransitionReport,
-    pub current_channel: WifiChannel,
+    pub context: Esp32s31WifiRuntimeContext,
+}
+
+/// Common Wi-Fi state retained beside one materialized role.
+///
+/// Register ownership and the interrupt setup token deliberately do not live
+/// in this value. A role can reconstruct [`Esp32s31WifiStopped`] only after
+/// its DMA/task graph returns the exact [`RadioRegisters`] and its interrupt
+/// route returns the exact [`MacInterruptSetup`].
+#[doc(hidden)]
+pub struct Esp32s31WifiRuntimeContext {
+    phy: PhyColdState,
+    calibration_record: Option<PhyCalibrationRecord>,
+    start_report: Esp32s31WifiMacStartReport,
+    transition_report: Esp32s31WifiRuntimeTransitionReport,
+    current_channel: WifiChannel,
+}
+
+impl Esp32s31WifiRuntimeContext {
+    pub fn phy_mut(&mut self) -> &mut PhyColdState {
+        &mut self.phy
+    }
+
+    pub const fn current_channel(&self) -> WifiChannel {
+        self.current_channel
+    }
+
+    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
+        self.calibration_record.as_ref()
+    }
+
+    pub fn set_current_channel(&mut self, channel: WifiChannel) {
+        self.current_channel = channel;
+    }
+
+    /// Reconstruct the role-neutral owner from independently proven DMA/task
+    /// and interrupt-route return edges.
+    pub fn into_stopped<P>(
+        self,
+        platform: P,
+        registers: RadioRegisters,
+        interrupt_setup: MacInterruptSetup,
+    ) -> Esp32s31WifiStopped<P> {
+        Esp32s31WifiStopped {
+            platform,
+            registers,
+            interrupt_setup,
+            phy: self.phy,
+            calibration_record: self.calibration_record,
+            start_report: self.start_report,
+            transition_report: self.transition_report,
+            current_channel: self.current_channel,
+        }
+    }
 }
 
 /// Close the cold polling phase and enter the reusable stopped-runtime state.

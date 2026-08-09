@@ -14,7 +14,8 @@ use open_esp_radio_esp32s31_registers::{
     MacTxCompletionRegisters, MacTxDetachOutcome, MacTxDetachReason, MacTxQueueDetached,
 };
 use open_esp_radio_esp32s31_wifi::register_arena::{
-    Esp32s31PublishedRadioRegisters, Esp32s31RadioRegistersAccess, Esp32s31RadioRegistersArenaError,
+    Esp32s31PublishedRadioRegisters, Esp32s31RadioRegistersAccess,
+    Esp32s31RadioRegistersArenaError, Esp32s31ReclaimedRadioRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::CcmpKeyHardware,
@@ -70,6 +71,17 @@ impl<'arena> CooperativeRadioHardware<'arena> {
     ) -> Result<RadioRegisters, (Self, Esp32s31RadioRegistersArenaError)> {
         match self.registers.try_reclaim() {
             Ok(registers) => Ok(registers),
+            Err((registers, error)) => Err((Self { registers }, error)),
+        }
+    }
+
+    /// Recover the PAC owner and its exact task-stable arena binding.
+    pub fn try_into_reclaimed_registers(
+        self,
+    ) -> Result<Esp32s31ReclaimedRadioRegisters<'arena>, (Self, Esp32s31RadioRegistersArenaError)>
+    {
+        match self.registers.try_reclaim_with_republish() {
+            Ok(reclaimed) => Ok(reclaimed),
             Err((registers, error)) => Err((Self { registers }, error)),
         }
     }

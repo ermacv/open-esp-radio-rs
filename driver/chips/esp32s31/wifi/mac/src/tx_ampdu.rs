@@ -50,6 +50,7 @@ pub use model::{
 pub(crate) use model::{
     TX_BUFFER_END_BIT, TX_DESCRIPTOR_HE_BIT, basic_ht_ampdu_protection_spacing,
 };
+pub use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::RetainedAmpduDmaStorage;
 pub use owner::{HtAmpduTxResources, RetainedDmaAmpduTx};
 pub use request::{
     AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,

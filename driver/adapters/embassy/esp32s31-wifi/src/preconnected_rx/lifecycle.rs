@@ -212,6 +212,22 @@ where
         }
     }
 
+    /// Consume a quiescent pre-connected owner and recover its halted ring.
+    ///
+    /// A prepared ring has not started DMA and can be demoted synchronously.
+    /// Live or vacant owners are returned unchanged: a caller must never use
+    /// this conversion as a substitute for stopping the walker.
+    pub fn try_into_halted(self) -> Result<RxRingHalted<'storage, COUNT>, Self> {
+        match self.state {
+            Esp32s31PreconnectedRxState::Halted(ring) => Ok(ring),
+            Esp32s31PreconnectedRxState::Prepared(ring) => Ok(ring.into_halted()),
+            state => Err(Self {
+                state,
+                _delay: PhantomData,
+            }),
+        }
+    }
+
     /// Consume a finite protocol owner, start its DMA frontier if necessary,
     /// and return the exact live ring required by connected RX.
     ///

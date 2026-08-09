@@ -7,7 +7,7 @@
 //! returns the exact owner supplied by the caller; it is never reconstructed
 //! from static storage or retained in an abandoned async task.
 
-use core::future::Future;
+use core::{future::Future, marker::PhantomData};
 
 use open_esp_radio_esp32s31_wifi_mac::tx::TxCompletion;
 use open_esp_radio_ieee80211::{
@@ -33,12 +33,70 @@ pub struct Esp32s31StaAttemptStation {
     pub association_preference: StaAssociationPreference,
 }
 
+/// Station identity and association policy before candidate selection.
+///
+/// Keeping this distinct from [`Esp32s31StaAttemptStation`] makes it
+/// impossible to enter Authentication/Association with a fabricated empty
+/// scan record merely to satisfy an owner layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31StaIdentity {
+    pub station_address: [u8; 6],
+    pub association_preference: StaAssociationPreference,
+}
+
+impl Esp32s31StaIdentity {
+    pub const fn select(self, access_point: ScanRecord) -> Esp32s31StaAttemptStation {
+        Esp32s31StaAttemptStation {
+            station_address: self.station_address,
+            access_point,
+            association_preference: self.association_preference,
+        }
+    }
+}
+
 /// Security and sequence ownership retained across every finite phase.
-pub struct Esp32s31StaAttemptSecurity<'security> {
-    pub pmk: &'security Pmk,
+///
+/// These values are owned, rather than borrowed from a composition root, so a
+/// complete station owner can move into an executor task without becoming
+/// self-referential. A supervisor can replace credentials only after this
+/// value returns through the finite task's terminal edge.
+pub struct Esp32s31StaAttemptSecurity<'role> {
+    pub pmk: Pmk,
     pub supplicant_nonce: [u8; 32],
-    pub sequences: &'security mut StaTxSequenceCounters,
+    pub sequences: StaTxSequenceCounters,
     pub message4_protection: Esp32s31Wpa2Message4Protection,
+    role: PhantomData<&'role mut ()>,
+}
+
+impl Esp32s31StaAttemptSecurity<'_> {
+    pub const fn new(
+        pmk: Pmk,
+        supplicant_nonce: [u8; 32],
+        sequences: StaTxSequenceCounters,
+        message4_protection: Esp32s31Wpa2Message4Protection,
+    ) -> Self {
+        Self {
+            pmk,
+            supplicant_nonce,
+            sequences,
+            message4_protection,
+            role: PhantomData,
+        }
+    }
+
+    /// Retag the owned security state for the next finite role scope.
+    ///
+    /// No borrow is extended: PMK and sequence counters move by value. The
+    /// marker only prevents a composition from accidentally mixing two live
+    /// role scopes while the wider station API still carries that lifetime.
+    pub fn into_role<'next>(self) -> Esp32s31StaAttemptSecurity<'next> {
+        Esp32s31StaAttemptSecurity::new(
+            self.pmk,
+            self.supplicant_nonce,
+            self.sequences,
+            self.message4_protection,
+        )
+    }
 }
 
 /// Internal state invariant failure. The complete outer owner is still

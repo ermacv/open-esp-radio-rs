@@ -601,11 +601,12 @@ same boundary through `Esp32s31ConnectedStaTeardownPort`; runtime CRC32
 finite hard-handler service, route quiescence and stale wake drain; runtime
 CRC32 `02cbd34c` completed three more cycles without increasing the encoded
 image. The bounded executor acknowledgement is now shared production behavior
-and has both host and repeated-board evidence. The remaining recovery gap is
-the platform action after `ResetRequired`, not another hardware-driver
-transition.
-Cold scan still precedes the outer station service, while running scan is now a
-real service phase. `Authenticate`, `Join`, `RunningScan` and `Reconnect`
+and has both host and repeated-board evidence. A contradictory hardware edge
+now remains an opaque faulted owner; whether the board resets, halts or records
+diagnostics is deliberately outside the hardware-driver transition graph.
+Cold and running scans are now real outer-station service phases. A cold owner
+contains only station identity until scan selects a candidate; `Authenticate`,
+`Join`, `RunningScan` and `Reconnect`
 deliberately retain different owner types instead of sharing a mutable
 vendor-style context.
 
@@ -659,6 +660,35 @@ ordinary TX, scan scratch and a fresh candidate; only then may
 test rediscovered the same AP, so cross-BSSID and changed-channel recovery are
 not yet separately qualified. The next bounded qualification debt remains the
 deterministic injected RX-fault HIL cell.
+
+The first connected-service composition cuts are also closed: production and
+HIL now share one run/classify/quiesce/teardown transaction, one explicit
+station VIF binding and one owner-preserving persistent-network start
+transition. HIL poll telemetry and fault classification are hooks on that
+transaction rather than an alternative shutdown sequence. Remaining
+composition debt is the duplicated initial static resource binding and task
+placement. RX/TX/control owners now enter one named assembly transaction which
+constructs the production driver, applies an optional statically dispatched
+service decorator and joins the persistent network runner. A failed TX handoff
+returns the network owner beside the complete composition failure. The staged
+RX protocol task also owns one shared stop/drain/observe/return transaction;
+example and HIL wrappers now choose only executor/core placement.
+
+Auxiliary connected tasks now use the same linear endpoint discipline. The
+common task-group combiner requests both protocol and auxiliary shutdown and
+does not reveal the returned protocol owner until both task endpoints have
+completed. HIL benchmark traffic no longer uses independent stop/stopped
+signals. A dropped endpoint poisons reuse and reaches an opaque quarantined
+frontier without manufacturing a stopped owner. Real hardware completed the full station/monitor/station
+stop round trip and three consecutive reconnect epochs with this contract.
+
+The cross-role source graph is now symmetric at the stopped frontier. The HIL
+station-stop cell carries the monitor-returned `WifiStopped` into a second real
+station task, performs scan/join/security through connected entry, stops that
+task cooperatively and reclaims the exact PAC, interrupt setup and role-local
+resources again. It remains an ownership qualification rather than a second
+traffic scenario. Current-board evidence now covers the complete extended
+round trip.
 
 ## Completion gate
 

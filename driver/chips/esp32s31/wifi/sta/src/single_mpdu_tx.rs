@@ -164,6 +164,16 @@ where
         self.ordinary.queue_state()
     }
 
+    /// Exact ordinary descriptor lifecycle retained for bounded diagnostics.
+    pub fn slot_state(&self) -> open_esp_radio_esp32s31_wifi_mac::tx::TxSlotState {
+        self.ordinary.slot_state()
+    }
+
+    /// Current ordinary descriptor ownership word retained for diagnostics.
+    pub fn descriptor_word0(&self) -> u32 {
+        self.ordinary.descriptor_word0()
+    }
+
     pub const fn policy(&self) -> &StaTxRuntimePolicy {
         self.ordinary.policy()
     }

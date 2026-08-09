@@ -168,13 +168,13 @@ where
         let (rx, rx_resources) = self.rx.split_for_reconnect::<D>();
         (
             self.network,
-            Esp32s31ReconnectedStaEpoch {
-                hardware: self.hardware,
+            Esp32s31ReconnectedStaEpoch::new(
+                self.hardware,
                 rx,
                 rx_resources,
-                aggregate_tx: self.aggregate_tx,
-                control: self.control,
-            },
+                self.aggregate_tx,
+                self.control,
+            ),
         )
     }
 }
@@ -217,6 +217,18 @@ pub struct Esp32s31ReconnectedStaEpoch<H, R, E, A, C> {
 }
 
 impl<H, R, E, A, C> Esp32s31ReconnectedStaEpoch<H, R, E, A, C> {
+    /// Reassemble the exact stopped reconnect frontier after a role-neutral
+    /// Wi-Fi transition returned and republished its hardware owner.
+    pub const fn new(hardware: H, rx: R, rx_resources: E, aggregate_tx: A, control: C) -> Self {
+        Self {
+            hardware,
+            rx,
+            rx_resources,
+            aggregate_tx,
+            control,
+        }
+    }
+
     /// Borrow the only resources finite join phases are allowed to mutate.
     pub fn hardware_and_rx_mut(&mut self) -> (&mut H, &mut R) {
         (&mut self.hardware, &mut self.rx)

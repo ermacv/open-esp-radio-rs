@@ -66,11 +66,13 @@ pub struct StaAttemptContext {
 
 /// Result of one complete backend attempt.
 ///
-/// Every variant returns the exact owner consumed by the attempt. A backend
-/// cannot report progress while retaining DMA, key or protocol ownership in a
-/// hidden task-local context.
+/// Every reusable variant returns the exact owner consumed by the attempt. A
+/// backend cannot report progress while retaining DMA, key or protocol
+/// ownership in a hidden task-local context. `Faulted` is deliberately a
+/// different owner type: it retains an exact non-reusable hardware frontier
+/// without pretending that it can re-enter the normal station lifecycle.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaAttemptOutcome<O, E> {
+pub enum StaAttemptOutcome<O, E, F = core::convert::Infallible> {
     /// A connected epoch ended and automatic reconnection may continue.
     Disconnected {
         owner: O,
@@ -83,6 +85,9 @@ pub enum StaAttemptOutcome<O, E> {
         owner: O,
         failure: StaAttemptFailure<E>,
     },
+    /// The attempt retained its hardware at a frontier which cannot be
+    /// represented by `O`. No reconnect or backoff transition is legal.
+    Faulted { fault: F },
 }
 
 /// Why the service is waiting before another attempt.
@@ -111,12 +116,13 @@ pub enum StaBackoffOutcome<O> {
 pub trait StaLifecycleBackend {
     type Owner;
     type Error;
+    type Fault;
 
     fn run_attempt(
         &mut self,
         owner: Self::Owner,
         context: StaAttemptContext,
-    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_;
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault>> + '_;
 
     fn wait_backoff(
         &mut self,
@@ -205,7 +211,7 @@ pub struct StaLifecycleProgress {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StaLifecycleExit<O, E> {
+pub enum StaLifecycleExit<O, E, F = core::convert::Infallible> {
     Stopped {
         owner: O,
         progress: StaLifecycleProgress,
@@ -219,6 +225,11 @@ pub enum StaLifecycleExit<O, E> {
         owner: O,
         progress: StaLifecycleProgress,
         failure: StaAttemptFailure<E>,
+    },
+    /// Exact non-reusable owner returned by a faulted backend transition.
+    Faulted {
+        fault: F,
+        progress: StaLifecycleProgress,
     },
 }
 
@@ -249,24 +260,14 @@ where
     }
 
     /// Run until caller stop, retry exhaustion or a terminal failure.
-    pub async fn run(&mut self, owner: B::Owner) -> StaLifecycleExit<B::Owner, B::Error> {
-        self.run_with_candidate(owner, StaNextCandidate::Refresh)
-            .await
-    }
-
-    /// Run from a caller-proven initial candidate frontier.
-    ///
-    /// A cold service normally uses [`Self::run`] and refreshes candidates.
-    /// A same-peer reassociation owner may explicitly start with `Reuse`; the
-    /// backend then cannot silently claim it performed another scan.
-    pub async fn run_with_candidate(
-        &mut self,
-        mut owner: B::Owner,
-        initial_candidate: StaNextCandidate,
-    ) -> StaLifecycleExit<B::Owner, B::Error> {
+    pub async fn run(&mut self, owner: B::Owner) -> StaLifecycleExit<B::Owner, B::Error, B::Fault> {
+        let mut owner = owner;
         let mut progress = StaLifecycleProgress::default();
         let mut generation_attempt = 1_u16;
-        let mut refresh_candidate = initial_candidate == StaNextCandidate::Refresh;
+        // A cold service never accepts a caller-proven candidate. Candidate
+        // reuse is legal only after this lifecycle itself returns a connected
+        // epoch with an explicit `StaNextCandidate::Reuse` disposition.
+        let mut refresh_candidate = true;
         loop {
             progress.attempts_started = progress.attempts_started.saturating_add(1);
             progress.final_generation_attempt = generation_attempt;
@@ -342,6 +343,9 @@ where
                     };
                     generation_attempt += 1;
                 }
+                StaAttemptOutcome::Faulted { fault } => {
+                    return StaLifecycleExit::Faulted { fault, progress };
+                }
             }
         }
     }
@@ -363,6 +367,7 @@ mod tests {
         Disconnected(StaNextCandidate),
         Stopped,
         Failed(StaLifecycleStage, StaFailureDisposition, u8),
+        Faulted(u64),
     }
 
     struct Backend {
@@ -375,12 +380,14 @@ mod tests {
     impl StaLifecycleBackend for Backend {
         type Owner = u32;
         type Error = u8;
+        type Fault = u64;
 
         fn run_attempt(
             &mut self,
             owner: Self::Owner,
             context: StaAttemptContext,
-        ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
+        ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault>> + '_
+        {
             async move {
                 self.contexts.push(context);
                 let owner = owner + 1;
@@ -394,6 +401,7 @@ mod tests {
                         owner,
                         failure: StaAttemptFailure::new(stage, disposition, error),
                     },
+                    Planned::Faulted(fault) => StaAttemptOutcome::Faulted { fault },
                 }
             }
         }
@@ -538,20 +546,30 @@ mod tests {
     }
 
     #[test]
-    fn same_peer_frontier_does_not_claim_an_unperformed_candidate_refresh() {
-        let backend = backend([Planned::Stopped]);
+    fn same_peer_reconnect_does_not_claim_an_unperformed_candidate_refresh() {
+        let backend = backend([
+            Planned::Disconnected(StaNextCandidate::Reuse),
+            Planned::Stopped,
+        ]);
         let mut service = StaLifecycleService::new(backend, policy(3));
 
-        let exit = block_on(service.run_with_candidate(7, StaNextCandidate::Reuse));
+        let exit = block_on(service.run(7));
 
-        assert!(matches!(exit, StaLifecycleExit::Stopped { owner: 8, .. }));
+        assert!(matches!(exit, StaLifecycleExit::Stopped { owner: 9, .. }));
         assert_eq!(
             service.backend().contexts,
-            [StaAttemptContext {
-                generation: 0,
-                attempt: 1,
-                refresh_candidate: false,
-            }]
+            [
+                StaAttemptContext {
+                    generation: 0,
+                    attempt: 1,
+                    refresh_candidate: true,
+                },
+                StaAttemptContext {
+                    generation: 1,
+                    attempt: 1,
+                    refresh_candidate: false,
+                },
+            ]
         );
     }
 
@@ -612,5 +630,26 @@ mod tests {
             block_on(service.run(30)),
             StaLifecycleExit::Stopped { owner: 31, .. }
         ));
+    }
+
+    #[test]
+    fn faulted_frontier_is_returned_without_retry_or_backoff() {
+        let backend = backend([Planned::Faulted(0xfeed_beef)]);
+        let mut service = StaLifecycleService::new(backend, policy(3));
+
+        assert_eq!(
+            block_on(service.run(40)),
+            StaLifecycleExit::Faulted {
+                fault: 0xfeed_beef,
+                progress: StaLifecycleProgress {
+                    connected_epochs: 0,
+                    attempts_started: 1,
+                    final_generation_attempt: 1,
+                    last_failure_stage: None,
+                },
+            }
+        );
+        assert!(service.backend().backoffs.is_empty());
+        assert_eq!(service.backend().contexts.len(), 1);
     }
 }

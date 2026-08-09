@@ -30,18 +30,19 @@ use super::{Esp32s31StationCommand, Esp32s31StationCommandReceiver};
 /// The future returned by [`run_attempt`](Self::run_attempt) may be cancelled
 /// when its enclosing station task is destroyed. Any live hardware token
 /// dropped on that path must therefore fail closed and poison its reusable
-/// arena or route for reset. A runner must never use `Drop` to claim a clean
-/// stop or make static DMA/ISR storage reusable.
+/// arena or route. A runner must never use `Drop` to claim a clean stop or
+/// make static DMA/ISR storage reusable. Recovery remains a supervisor policy.
 pub trait Esp32s31StationAttemptRunner<M: RawMutex> {
     type Owner;
     type Error;
+    type Fault;
 
     fn run_attempt<'a>(
         &'a mut self,
         owner: Self::Owner,
         context: StaAttemptContext,
         control: &'a mut Esp32s31StationCommandReceiver<'_, M>,
-    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + 'a;
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault>> + 'a;
 
     fn command_deferred(&mut self, _command: Esp32s31StationCommand, _accepted: bool) {}
 
@@ -85,12 +86,13 @@ where
 {
     type Owner = R::Owner;
     type Error = R::Error;
+    type Fault = R::Fault;
 
     fn run_attempt(
         &mut self,
         owner: Self::Owner,
         context: StaAttemptContext,
-    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error>> + '_ {
+    ) -> impl Future<Output = StaAttemptOutcome<Self::Owner, Self::Error, Self::Fault>> + '_ {
         async move {
             if let Some(command) = self.control.try_take() {
                 match command {

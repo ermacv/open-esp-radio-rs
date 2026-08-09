@@ -24,9 +24,12 @@ Reusable adapters
 ├── S31 Wi-Fi/Embassy   ──> adapter + S31 Wi-Fi MAC/HAL/registers
 └── S31 Wi-Fi/esp-hal   ──> S31 Wi-Fi MAC/PHY/HAL + esp-hal
 
+Product integration
+└── S31 Embassy Wi-Fi   ──> complete supervisor + STA + network lifecycle
+
 Production application
 └── examples/esp32s31-station
-    └──> facade + reusable adapters + Embassy executor/net
+    └──> product integration + board bootstrap/configuration
 
 Test harness (HIL)
 └── board + clocks + PSRAM/flash + executor + embassy-net/smoltcp
@@ -53,8 +56,9 @@ Test harness (HIL)
 | `adapters/embassy/esp32s31-platform` | Embassy executor/time ABI binding | Wi-Fi protocol, network or board policy |
 | `adapters/embassy/esp32s31-wifi` | Wi-Fi DMA epochs/network leases, async TX and IRQ wakeups | Chip DMA memory representation, board startup or network policy |
 | `adapters/esp-hal/esp32s31-wifi` | `esp-hal` singleton binding for the ESP32-S31 Wi-Fi backend | Board, PSRAM/flash or executor policy |
+| `integration/esp32s31/embassy-wifi` | Complete ESP32-S31 station supervisor, IRQ/task lifecycle and Embassy network composition | eFuse reads, credentials, board bootstrap or HIL qualification policy |
 | `radio` | Public composition and re-exports | Board/bootstrap policy |
-| `examples/esp32s31-station` | Normal board allocation, executor, credentials and application network services | HIL commands, benchmark policy or reusable radio behavior |
+| `examples/esp32s31-station` | Board bootstrap, eFuse identity, credentials and application station request | DMA/IRQ ownership, station engine or connected lifecycle composition |
 | `hil/targets/esp32s31` | Test board clocks, boot, memory placement, executor, real `embassy-net`/smoltcp scenarios | Reusable radio implementation |
 | `hil/targets/esp32s31/telemetry` | Atomic counters, IRQ correlation and qualification report snapshots for typed S31 observer events | Driver scheduling, ownership or protocol decisions |
 
@@ -189,8 +193,9 @@ represented through async ports. PAC and HAL do not depend on Embassy or any
 other executor. The optional `esp-hal` adapter binds platform singleton tokens
 and is reusable by non-test firmware. The separate Wi-Fi/Embassy crate owns
 executor-specific radio composition. Neither adapter is a composition root.
-Normal firmware chooses board memory, tasks and network policy in
-`examples/esp32s31-station`; HIL chooses its own board placement, traffic and
+Normal firmware chooses board identity, credentials and application policy in
+`examples/esp32s31-station`; the product integration owns the ordinary
+supervisor/network task graph. HIL chooses its own board placement, traffic and
 reporting policy under `hil/targets/esp32s31`. Only the HIL target may own qualification
 commands, fault injection or benchmark telemetry.
 
@@ -309,8 +314,8 @@ inputs, `owner` is the mutable attempt state, `port` is stateless, and
 The shared `preconnected_rx` owner is split by concern as well: `state` defines
 the hardware-valid frontier, `lifecycle` owns its finite DMA transitions and
 connected promotion, and `time` supplies only the executor settle edge.
-The persistent `PhyColdState`/platform/observer owner used for cold scan,
-running scan and reconnect is similarly defined in
+The persistent `PhyColdState`/platform/observer owner used for the initial
+runtime scan, reconnect scan and channel changes is similarly defined in
 `chips/esp32s31/wifi/sta::channel`; adapter modules only implement their scan
 and attempt traits for that owner.
 The finite scan transaction and mandatory RX cleanup order live in

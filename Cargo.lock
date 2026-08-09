@@ -901,7 +901,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1701,6 +1701,8 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
@@ -1805,6 +1807,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "static_cell",
 ]
 
 [[package]]
@@ -1908,8 +1911,11 @@ name = "open-esp-radio-wifi-embassy"
 version = "0.1.0"
 dependencies = [
  "critical-section",
+ "embassy-futures",
  "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-dma",
+ "open-esp-radio-embassy-net",
  "open-esp-radio-wifi-softmac",
 ]
 
@@ -2563,7 +2569,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2974,7 +2980,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3458,7 +3464,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

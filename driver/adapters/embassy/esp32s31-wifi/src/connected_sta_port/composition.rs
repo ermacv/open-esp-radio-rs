@@ -52,6 +52,7 @@ impl Esp32s31ConnectedStaPort {
             resources.sink,
             resources.mpdu,
             resources.ethernet,
+            resources.runtime,
         )
         .with_rx_reorder_commands(resources.reorder_commands)
         .with_rx_reorder_storage(resources.reorder_storage);
@@ -118,6 +119,7 @@ impl Esp32s31ConnectedStaPort {
         Esp32s31ConnectedStaTxHandoffFailure<
             'slot,
             'resources,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
             P,
             E,
             T,
@@ -201,6 +203,174 @@ impl Esp32s31ConnectedStaPort {
             );
         }
         control
+    }
+
+    /// Atomically compose the complete connected driver graph.
+    ///
+    /// TX is acquired first because it is the only fallible owner handoff
+    /// after plan validation. If it is still active, every untouched
+    /// hardware/RX/protocol/control owner is returned alongside the exact TX
+    /// frontier. Only a successful TX handoff may consume scratch and mailbox
+    /// resources into the long-running graph.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::type_complexity,
+        clippy::result_large_err
+    )]
+    pub fn compose<
+        'slot,
+        'resources,
+        'queue,
+        'pool,
+        'scratch,
+        'irq,
+        'control,
+        M,
+        S,
+        P,
+        E,
+        T,
+        H,
+        R,
+        const RX_DEPTH: usize,
+        const RX_CAPACITY: usize,
+        const RX_SLOTS: usize,
+        const REORDER_SLOTS: usize,
+        const FRAME_CAPACITY: usize,
+        const HEADROOM: usize,
+        const TRAILER: usize,
+        const TX_QUEUE_DEPTH: usize,
+        const AGGREGATE_SLOTS: usize,
+        const AGGREGATE_BUFFER_SIZE: usize,
+        const ORDINARY_BUFFER_SIZE: usize,
+        const CONTROL_CAPACITY: usize,
+    >(
+        plan: Esp32s31ConnectedStaPlan,
+        hardware: H,
+        rx: R,
+        protocol: Esp32s31ConnectedStaRxProtocolResources<
+            'queue,
+            'pool,
+            'scratch,
+            'irq,
+            M,
+            S,
+            RX_DEPTH,
+            RX_CAPACITY,
+            RX_SLOTS,
+            REORDER_SLOTS,
+        >,
+        tx: Esp32s31ConnectedStaTxResources<
+            'slot,
+            'resources,
+            M,
+            P,
+            E,
+            T,
+            FRAME_CAPACITY,
+            HEADROOM,
+            TRAILER,
+            TX_QUEUE_DEPTH,
+            AGGREGATE_SLOTS,
+            AGGREGATE_BUFFER_SIZE,
+            ORDINARY_BUFFER_SIZE,
+        >,
+        control: Esp32s31ConnectedStaControlResources<'control, M, CONTROL_CAPACITY>,
+    ) -> Result<
+        Esp32s31ConnectedStaDrivers<
+            H,
+            R,
+            Esp32s31ConnectedTx<
+                'slot,
+                'resources,
+                'resources,
+                M,
+                P,
+                E,
+                T,
+                FRAME_CAPACITY,
+                HEADROOM,
+                TRAILER,
+                TX_QUEUE_DEPTH,
+                AGGREGATE_SLOTS,
+                AGGREGATE_BUFFER_SIZE,
+                ORDINARY_BUFFER_SIZE,
+            >,
+            Esp32s31ConnectedControl<'control, M, CONTROL_CAPACITY>,
+            Esp32s31ConnectedRxProtocol<
+                'queue,
+                'pool,
+                'scratch,
+                'irq,
+                M,
+                S,
+                RX_DEPTH,
+                RX_CAPACITY,
+                RX_SLOTS,
+                REORDER_SLOTS,
+            >,
+        >,
+        Esp32s31ConnectedStaCompositionFailure<
+            H,
+            R,
+            Esp32s31ConnectedStaRxProtocolResources<
+                'queue,
+                'pool,
+                'scratch,
+                'irq,
+                M,
+                S,
+                RX_DEPTH,
+                RX_CAPACITY,
+                RX_SLOTS,
+                REORDER_SLOTS,
+            >,
+            Esp32s31ConnectedStaControlResources<'control, M, CONTROL_CAPACITY>,
+            Esp32s31ConnectedStaTxHandoffFailure<
+                'slot,
+                'resources,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, TX_QUEUE_DEPTH>,
+                P,
+                E,
+                T,
+                AGGREGATE_SLOTS,
+                AGGREGATE_BUFFER_SIZE,
+                ORDINARY_BUFFER_SIZE,
+            >,
+        >,
+    >
+    where
+        M: RawMutex,
+        S: ConnectedRxProtocolSink,
+        P: WifiTxPowerProfile,
+        E: WifiTxEntropy,
+        T: WifiTxTimer,
+    {
+        let tx = match Self::build_tx(&plan, tx) {
+            Ok(tx) => tx,
+            Err(tx) => {
+                return Err(Esp32s31ConnectedStaCompositionFailure {
+                    plan,
+                    hardware,
+                    rx,
+                    protocol,
+                    control,
+                    tx,
+                });
+            }
+        };
+        let protocol = Self::build_rx_protocol(&plan, protocol);
+        let control = Self::build_control(&plan, control);
+        Ok(Self::assemble(
+            plan,
+            Esp32s31ConnectedStaDriverParts {
+                hardware,
+                rx,
+                tx,
+                control,
+                protocol,
+            },
+        ))
     }
 
     /// Join the already prepared hardware/RX/TX/control owners into the only

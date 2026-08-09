@@ -34,6 +34,7 @@ pub mod network_rx;
 #[cfg(target_arch = "riscv32")]
 pub mod phy_delay;
 pub mod preconnected_rx;
+pub mod resource_profile;
 pub mod rx_dma_service;
 pub mod rx_pipeline_observer;
 pub mod rx_reorder;
@@ -49,7 +50,6 @@ mod sta_join_port;
 pub mod sta_tx_epoch;
 pub mod station;
 pub mod station_epoch;
-mod station_tasks;
 pub mod tx_time;
 #[cfg(target_arch = "riscv32")]
 mod wpa2_port;

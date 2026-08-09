@@ -8,19 +8,23 @@ const MONITOR_IDLE: u8 = 0;
 const MONITOR_RUNNING: u8 = 1;
 const MONITOR_STOPPED: u8 = 2;
 const MONITOR_FAULTED: u8 = 3;
+const NO_ENDPOINTS: u8 = 0;
+const MONITOR_ENDPOINTS: u8 = 2;
 
-/// A faulted control domain is sticky until board/radio reset reinitializes
-/// its static storage.
+/// A faulted control domain is sticky and cannot manufacture another task
+/// endpoint from storage whose hardware owner was not returned.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31MonitorControlError {
-    ResetRequired,
+    InUse,
+    Faulted,
 }
 
 /// Terminal state acknowledged by the task which owns IRQ and DMA.
 ///
 /// `Stopped` means both the interrupt epoch and RX walker were confirmed
 /// inactive. `Faulted` means the task retained the hardware owner for an
-/// explicit radio reset; it never means that active resources were released.
+/// board-level recovery policy; it never means that active resources were
+/// released or that the adapter requested reset.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31MonitorCompletion {
     Stopped,
@@ -49,6 +53,7 @@ impl Esp32s31MonitorCompletion {
 /// Hardware is deliberately absent from this value. Dropping the controller
 /// cannot affect IRQ routing, DMA descriptors or their backing storage.
 pub struct Esp32s31MonitorControlResources<M: RawMutex> {
+    endpoints: AtomicU8,
     stop_requested: AtomicBool,
     completion: AtomicU8,
     command_wake: Signal<M, ()>,
@@ -58,6 +63,7 @@ pub struct Esp32s31MonitorControlResources<M: RawMutex> {
 impl<M: RawMutex> Esp32s31MonitorControlResources<M> {
     pub const fn new() -> Self {
         Self {
+            endpoints: AtomicU8::new(NO_ENDPOINTS),
             stop_requested: AtomicBool::new(false),
             completion: AtomicU8::new(MONITOR_IDLE),
             command_wake: Signal::new(),
@@ -67,11 +73,11 @@ impl<M: RawMutex> Esp32s31MonitorControlResources<M> {
 
     /// Begin one monitor task epoch.
     ///
-    /// The mutable borrow proves that two command consumers cannot be created
-    /// for the same mailbox. Both returned endpoints may live for the complete
-    /// task epoch; only the runner endpoint can acknowledge completion.
+    /// An endpoint lease proves that two command consumers cannot be created
+    /// for the same mailbox. Both returned endpoints must be dropped before a
+    /// later clean monitor epoch can reuse static control storage.
     pub fn split(
-        &mut self,
+        &self,
     ) -> Result<
         (
             Esp32s31MonitorController<'_, M>,
@@ -80,19 +86,31 @@ impl<M: RawMutex> Esp32s31MonitorControlResources<M> {
         Esp32s31MonitorControlError,
     > {
         self.ensure_reusable()?;
+        if self
+            .endpoints
+            .compare_exchange(
+                NO_ENDPOINTS,
+                MONITOR_ENDPOINTS,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return Err(Esp32s31MonitorControlError::InUse);
+        }
         Ok(self.split_checked())
     }
 
     pub(crate) fn ensure_reusable(&self) -> Result<(), Esp32s31MonitorControlError> {
         if self.completion.load(Ordering::Acquire) == MONITOR_FAULTED {
-            Err(Esp32s31MonitorControlError::ResetRequired)
+            Err(Esp32s31MonitorControlError::Faulted)
         } else {
             Ok(())
         }
     }
 
-    pub(crate) fn split_checked(
-        &mut self,
+    fn split_checked(
+        &self,
     ) -> (
         Esp32s31MonitorController<'_, M>,
         Esp32s31MonitorCommandReceiver<'_, M>,
@@ -111,6 +129,11 @@ impl<M: RawMutex> Esp32s31MonitorControlResources<M> {
             },
         )
     }
+
+    fn release_endpoint(&self) {
+        let previous = self.endpoints.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous != NO_ENDPOINTS);
+    }
 }
 
 impl<M: RawMutex> Default for Esp32s31MonitorControlResources<M> {
@@ -127,8 +150,17 @@ pub struct Esp32s31MonitorController<'resources, M: RawMutex> {
     resources: &'resources Esp32s31MonitorControlResources<M>,
 }
 
+impl<M: RawMutex> Drop for Esp32s31MonitorController<'_, M> {
+    fn drop(&mut self) {
+        self.resources.release_endpoint();
+    }
+}
+
 impl<M: RawMutex> Esp32s31MonitorController<'_, M> {
     pub fn request_stop(&self) -> bool {
+        if self.resources.completion.load(Ordering::Acquire) != MONITOR_RUNNING {
+            return false;
+        }
         if self.resources.stop_requested.swap(true, Ordering::AcqRel) {
             return false;
         }
@@ -159,7 +191,11 @@ pub struct Esp32s31MonitorCommandReceiver<'resources, M: RawMutex> {
     completion_published: bool,
 }
 
-impl<M: RawMutex> Esp32s31MonitorCommandReceiver<'_, M> {
+impl<'resources, M: RawMutex> Esp32s31MonitorCommandReceiver<'resources, M> {
+    pub(crate) const fn resources(&self) -> &'resources Esp32s31MonitorControlResources<M> {
+        self.resources
+    }
+
     pub async fn wait_stop(&mut self) {
         loop {
             if self.resources.stop_requested.load(Ordering::Acquire) {
@@ -186,6 +222,7 @@ impl<M: RawMutex> Drop for Esp32s31MonitorCommandReceiver<'_, M> {
         if !self.completion_published {
             self.complete(Esp32s31MonitorCompletion::Faulted);
         }
+        self.resources.release_endpoint();
     }
 }
 
@@ -198,7 +235,7 @@ mod tests {
 
     #[test]
     fn request_is_idempotent_and_task_acknowledges_the_stop_edge() {
-        let mut resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
+        let resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
         let (mut controller, mut receiver) = resources.split().unwrap();
 
         assert!(controller.request_stop());
@@ -214,7 +251,7 @@ mod tests {
 
     #[test]
     fn dropping_the_application_handle_does_not_cancel_the_task_endpoint() {
-        let mut resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
+        let resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
         let (controller, mut receiver) = resources.split().unwrap();
 
         drop(controller);
@@ -230,7 +267,7 @@ mod tests {
 
     #[test]
     fn dropping_task_endpoint_publishes_sticky_fault() {
-        let mut resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
+        let resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
         let (mut controller, receiver) = resources.split().unwrap();
 
         drop(receiver);
@@ -241,7 +278,26 @@ mod tests {
         drop(controller);
         assert!(matches!(
             resources.split(),
-            Err(Esp32s31MonitorControlError::ResetRequired)
+            Err(Esp32s31MonitorControlError::Faulted)
         ));
+    }
+
+    #[test]
+    fn clean_epoch_is_reusable_only_after_both_endpoints_drop() {
+        let resources = Esp32s31MonitorControlResources::<NoopRawMutex>::new();
+        let (controller, mut receiver) = resources.split().unwrap();
+        assert!(matches!(
+            resources.split(),
+            Err(Esp32s31MonitorControlError::InUse)
+        ));
+
+        receiver.complete(Esp32s31MonitorCompletion::Stopped);
+        drop(receiver);
+        assert!(matches!(
+            resources.split(),
+            Err(Esp32s31MonitorControlError::InUse)
+        ));
+        drop(controller);
+        assert!(resources.split().is_ok());
     }
 }

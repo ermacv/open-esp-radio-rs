@@ -218,9 +218,10 @@ fn retained_dma_owner_cancels_reserved_storage_before_releasing_backing() {
         bytes[TX_AMPDU_METADATA_SIZE..TX_AMPDU_METADATA_SIZE + 32].fill(0x5a);
     });
     let backing = pool.claim_radio(index);
+    let mut retention = RetainedAmpduDmaStorage::new();
 
     {
-        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
+        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
         let cookie = owner.begin().unwrap();
         owner
             .commit_ht(
@@ -256,7 +257,8 @@ fn rejected_referenced_commit_rolls_back_the_lower_lease() {
     let backing = pool.claim_radio(index);
 
     {
-        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
         let cookie = owner.begin().unwrap();
         assert_eq!(
             owner.commit_ht(
@@ -295,7 +297,8 @@ fn retained_dma_owner_quarantines_hardware_owned_backing_without_drop_panic() {
     let backing = pool.claim_radio(index);
 
     {
-        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
+        let mut retention = RetainedAmpduDmaStorage::new();
+        let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
         let cookie = owner.begin().unwrap();
         let rate = HtRate::new(
             crate::tx::HtMcs::Mcs0,
@@ -335,7 +338,8 @@ fn retained_dma_owner_preserves_backing_identity_through_selective_retry() {
         crate::tx::HtGuardInterval::Long800Ns,
         crate::tx::HtChannelWidth::Mhz20,
     );
-    let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut()).unwrap();
+    let mut retention = RetainedAmpduDmaStorage::new();
+    let mut owner = RetainedDmaAmpduTx::new_model(storage.as_mut(), &mut retention).unwrap();
     let cookie = owner.begin().unwrap();
 
     for slot in 0..4 {

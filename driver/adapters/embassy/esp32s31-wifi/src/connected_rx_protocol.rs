@@ -18,6 +18,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     rx_pool::{NetworkRxFrame, VENDOR_LARGE_RX_PAYLOAD_CAPACITY, VENDOR_LARGE_RX_SLOT_COUNT},
 };
 use open_esp_radio_ieee80211::data::EthernetFrameParts;
+use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskEndpoint;
 use open_esp_radio_wifi_softmac::MacRxMetadata;
 
 use crate::{
@@ -46,22 +47,43 @@ pub struct ConnectedRxProtocolShutdown {
     pub active_reorders: usize,
 }
 
-/// Scratch ownership returned only after a staged RX protocol epoch stops.
-pub struct ConnectedRxProtocolStopped<'scratch> {
+/// Scratch and runtime-arena ownership returned only after a staged RX
+/// protocol epoch stops.
+///
+/// The runtime arena is part of the stopped value deliberately. Losing it
+/// would make a second connected epoch reinitialize one-shot static storage
+/// instead of reusing the quiesced protocol state.
+pub struct ConnectedRxProtocolStopped<'scratch, R> {
     shutdown: ConnectedRxProtocolShutdown,
     mpdu: &'scratch mut [u8],
     ethernet: &'scratch mut [u8],
+    runtime: R,
 }
 
-impl<'scratch> ConnectedRxProtocolStopped<'scratch> {
+impl<'scratch, R> ConnectedRxProtocolStopped<'scratch, R> {
     pub const fn shutdown(&self) -> ConnectedRxProtocolShutdown {
         self.shutdown
     }
 
-    pub fn into_scratch(self) -> (&'scratch mut [u8], &'scratch mut [u8]) {
-        (self.mpdu, self.ethernet)
+    pub fn into_parts(self) -> (&'scratch mut [u8], &'scratch mut [u8], R) {
+        (self.mpdu, self.ethernet, self.runtime)
     }
 }
+
+/// Concrete stopped owner returned by [`Esp32s31ConnectedRxProtocol`].
+///
+/// Composition roots should name this alias rather than restating the
+/// internal runtime-arena reference type in executor control resources.
+pub type Esp32s31ConnectedRxProtocolStopped<
+    'scratch,
+    'pool,
+    const CAPACITY: usize = VENDOR_LARGE_RX_PAYLOAD_CAPACITY,
+    const SLOTS: usize = VENDOR_LARGE_RX_SLOT_COUNT,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> = ConnectedRxProtocolStopped<
+    'scratch,
+    &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+>;
 
 /// Async admission edge required by the staged protocol consumer.
 ///
@@ -164,6 +186,46 @@ enum RetainedRxFrame<'pool, const CAPACITY: usize, const SLOTS: usize, const REO
     Cold(RxReorderFrame<'pool, CAPACITY, REORDER_SLOTS>),
 }
 
+/// Caller-owned state arena for one connected RX protocol instance.
+///
+/// This state is deliberately separate from [`Esp32s31ConnectedRxProtocol`]:
+/// the retained lease table and eight BlockAck reorder machines are large,
+/// long-lived data, while the protocol value is moved through composition and
+/// async task boundaries. Embedded composition roots should place this arena
+/// in static storage and pass a unique mutable borrow to each connected epoch.
+pub struct Esp32s31ConnectedRxProtocolStorage<
+    'pool,
+    const CAPACITY: usize,
+    const SLOTS: usize,
+    const REORDER_SLOTS: usize = RX_REORDER_BACKING_SLOT_COUNT,
+> {
+    reorders: [Option<RxBlockAckReorderState<RX_REORDER_SLOT_DOMAIN>>; RX_BLOCK_ACK_TID_COUNT],
+    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
+    gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
+    retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>>; REORDER_SLOTS],
+}
+
+impl<'pool, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usize>
+    Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>
+{
+    pub const fn new() -> Self {
+        Self {
+            reorders: [const { None }; RX_BLOCK_ACK_TID_COUNT],
+            reorder_first_starts: [None; RX_BLOCK_ACK_TID_COUNT],
+            gap_deadlines: [None; RX_BLOCK_ACK_TID_COUNT],
+            retained: [const { None }; REORDER_SLOTS],
+        }
+    }
+}
+
+impl<'pool, const CAPACITY: usize, const SLOTS: usize, const REORDER_SLOTS: usize> Default
+    for Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Static bounded storage for the radio-to-protocol ownership handoff.
 ///
 /// Queue depth is a memory/resource limit, not a per-poll processing budget.
@@ -238,10 +300,7 @@ pub struct Esp32s31ConnectedRxProtocol<
     reorder_commands: Option<RxReorderCommandReceiver<'queue, M>>,
     reorder_storage: Option<&'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>>,
     reorder_scratch: Option<&'scratch mut [u8]>,
-    reorders: [Option<RxBlockAckReorderState<RX_REORDER_SLOT_DOMAIN>>; RX_BLOCK_ACK_TID_COUNT],
-    reorder_first_starts: [Option<u16>; RX_BLOCK_ACK_TID_COUNT],
-    gap_deadlines: [Option<Instant>; RX_BLOCK_ACK_TID_COUNT],
-    retained: [Option<RetainedRxFrame<'pool, CAPACITY, SLOTS, REORDER_SLOTS>>; REORDER_SLOTS],
+    runtime: &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
 }
 
 mod dispatch;

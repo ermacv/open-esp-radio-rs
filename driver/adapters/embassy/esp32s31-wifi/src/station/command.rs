@@ -10,6 +10,8 @@ const NO_COMPLETION: u8 = 0;
 const STOPPED_COMPLETION: u8 = 1;
 const ENDED_COMPLETION: u8 = 2;
 const FAULTED_COMPLETION: u8 = 3;
+const NO_ENDPOINTS: u8 = 0;
+const STATION_ENDPOINTS: u8 = 2;
 
 /// Terminal acknowledgement published by the task which owns station
 /// hardware.
@@ -21,7 +23,8 @@ pub enum Esp32s31StationCompletion {
     /// The runner returned its owner through another terminal edge.
     Ended = ENDED_COMPLETION,
     /// The task future was destroyed before it returned a quiescent owner.
-    /// Lower hardware owners remain fail-closed and board reset is required.
+    /// Lower hardware owners remain fail-closed; no reusable station frontier
+    /// is claimed.
     Faulted = FAULTED_COMPLETION,
 }
 
@@ -29,9 +32,11 @@ pub enum Esp32s31StationCompletion {
 /// its hardware owner without proving quiescence.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31StationControlError {
-    /// The previous task was cancelled or destroyed. A board/radio reset is
-    /// required before any of its static DMA or ISR resources may be reused.
-    ResetRequired,
+    /// A controller or task endpoint from the preceding epoch still exists.
+    InUse,
+    /// The previous task was cancelled or destroyed, so its static DMA or ISR
+    /// resources cannot be reused through this control domain.
+    Faulted,
 }
 
 impl Esp32s31StationCompletion {
@@ -77,6 +82,7 @@ impl Esp32s31StationCommand {
 /// placed in ordinary static storage and reused after the previous runner has
 /// returned its owner.
 pub struct Esp32s31StationControlResources<M: RawMutex> {
+    endpoints: AtomicU8,
     pending: AtomicU8,
     terminal: AtomicU8,
     completion: AtomicU8,
@@ -87,6 +93,7 @@ pub struct Esp32s31StationControlResources<M: RawMutex> {
 impl<M: RawMutex> Esp32s31StationControlResources<M> {
     pub const fn new() -> Self {
         Self {
+            endpoints: AtomicU8::new(NO_ENDPOINTS),
             pending: AtomicU8::new(NO_COMMAND),
             terminal: AtomicU8::new(NO_COMMAND),
             completion: AtomicU8::new(NO_COMPLETION),
@@ -97,10 +104,12 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
 
     /// Start one station session and create its single command consumer.
     ///
-    /// The mutable borrow prevents two runners from being constructed from the
-    /// same command slot or terminal-completion waiter.
+    /// An atomic endpoint lease prevents two runners from being constructed
+    /// from the same command slot or terminal-completion waiter. This permits
+    /// a cleanly returned static resource to start a later station epoch while
+    /// still rejecting overlap and preserving sticky cancellation poison.
     pub fn split(
-        &mut self,
+        &self,
     ) -> Result<
         (
             Esp32s31StationController<'_, M>,
@@ -111,7 +120,19 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
         if Esp32s31StationCompletion::decode(self.completion.load(Ordering::Acquire))
             == Some(Esp32s31StationCompletion::Faulted)
         {
-            return Err(Esp32s31StationControlError::ResetRequired);
+            return Err(Esp32s31StationControlError::Faulted);
+        }
+        if self
+            .endpoints
+            .compare_exchange(
+                NO_ENDPOINTS,
+                STATION_ENDPOINTS,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_err()
+        {
+            return Err(Esp32s31StationControlError::InUse);
         }
         self.pending.store(NO_COMMAND, Ordering::Release);
         self.terminal.store(NO_COMMAND, Ordering::Release);
@@ -126,6 +147,9 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
     }
 
     fn request(&self, command: Esp32s31StationCommand) -> bool {
+        if self.completion.load(Ordering::Acquire) != NO_COMPLETION {
+            return false;
+        }
         let requested = command as u8;
         let mut observed = self.pending.load(Ordering::Acquire);
         loop {
@@ -166,6 +190,11 @@ impl<M: RawMutex> Esp32s31StationControlResources<M> {
         self.completion.store(completion as u8, Ordering::Release);
         self.completion_wake.signal(());
     }
+
+    fn release_endpoint(&self) {
+        let previous = self.endpoints.fetch_sub(1, Ordering::AcqRel);
+        debug_assert!(previous != NO_ENDPOINTS);
+    }
 }
 
 impl<M: RawMutex> Default for Esp32s31StationControlResources<M> {
@@ -181,6 +210,12 @@ impl<M: RawMutex> Default for Esp32s31StationControlResources<M> {
 /// cannot accidentally be observed by concurrent stop futures.
 pub struct Esp32s31StationController<'resources, M: RawMutex> {
     resources: &'resources Esp32s31StationControlResources<M>,
+}
+
+impl<M: RawMutex> Drop for Esp32s31StationController<'_, M> {
+    fn drop(&mut self) {
+        self.resources.release_endpoint();
+    }
 }
 
 impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
@@ -203,8 +238,9 @@ impl<'resources, M: RawMutex> Esp32s31StationController<'resources, M> {
     ///
     /// [`Esp32s31StationCompletion::Stopped`] proves the owner returned
     /// through the controlled lifecycle edge. `Faulted` reports cancellation
-    /// or destruction of the task future and requires reset; it deliberately
-    /// does not claim that ISR, DMA or protocol tasks are stopped. Merely
+    /// or destruction of the task future and permanently quarantines that
+    /// owner; it deliberately does not claim that ISR, DMA or protocol tasks
+    /// are stopped and exposes no recovery operation. Merely
     /// publishing [`request_stop`](Self::request_stop) proves neither outcome.
     pub async fn wait_completion(&mut self) -> Esp32s31StationCompletion {
         loop {
@@ -244,6 +280,7 @@ impl<M: RawMutex> Drop for Esp32s31StationCommandReceiver<'_, M> {
             self.resources
                 .publish_completion(Esp32s31StationCompletion::Faulted);
         }
+        self.resources.release_endpoint();
     }
 }
 

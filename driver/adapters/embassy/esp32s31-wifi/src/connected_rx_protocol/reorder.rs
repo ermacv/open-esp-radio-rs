@@ -35,10 +35,10 @@ where
             return Some(self.dispatch_owned_frame(frame).await);
         };
         let tid = usize::from(key.tid);
-        if tid >= self.reorders.len() || self.reorders[tid].is_none() {
+        if tid >= self.runtime.reorders.len() || self.runtime.reorders[tid].is_none() {
             return Some(self.dispatch_owned_frame(frame).await);
         }
-        if let Some(start) = self.reorder_first_starts[tid].take()
+        if let Some(start) = self.runtime.reorder_first_starts[tid].take()
             && let Some(observer) = self.pipeline_observer
         {
             observer.observe(RxPipelineObservation::ReorderFirst {
@@ -48,7 +48,7 @@ where
             });
         }
 
-        let retain = match self.reorders[tid]
+        let retain = match self.runtime.reorders[tid]
             .as_ref()
             .expect("active TID was checked above")
             .retains_on_ingest(key.sequence)
@@ -102,7 +102,7 @@ where
             sequence: key.sequence,
             slot: slot as u8,
         };
-        let release = match self.reorders[tid]
+        let release = match self.runtime.reorders[tid]
             .as_mut()
             .expect("active TID was checked above")
             .ingest(mpdu)
@@ -123,21 +123,21 @@ where
         self.record_reorder_occupied();
         if release.buffered {
             if retain_hot {
-                debug_assert!(slot < self.retained.len());
-                debug_assert!(self.retained[slot].is_none());
-                self.retained[slot] = Some(RetainedRxFrame::Hot(frame));
+                debug_assert!(slot < self.runtime.retained.len());
+                debug_assert!(self.runtime.retained[slot].is_none());
+                self.runtime.retained[slot] = Some(RetainedRxFrame::Hot(frame));
                 return self.dispatch_release(release).await;
             }
             let reservation = reservation.expect("predicted retained frame owns backing");
             let retained = match reservation.copy_from(frame.segment()) {
                 Ok(retained) => retained,
                 Err((_error, reservation)) => {
-                    let mut reorder = self.reorders[tid]
+                    let mut reorder = self.runtime.reorders[tid]
                         .take()
                         .expect("active reorder owns the failed retained copy");
                     let rollback = reorder.stop();
-                    self.gap_deadlines[tid] = None;
-                    self.reorder_first_starts[tid] = None;
+                    self.runtime.gap_deadlines[tid] = None;
+                    self.runtime.reorder_first_starts[tid] = None;
                     drop(reservation);
                     return self
                         .dispatch_release_with_current(rollback, slot, frame)
@@ -146,8 +146,8 @@ where
                 }
             };
             debug_assert_eq!(retained.slot(), slot);
-            debug_assert!(self.retained[slot].is_none());
-            self.retained[slot] = Some(RetainedRxFrame::Cold(retained));
+            debug_assert!(self.runtime.retained[slot].is_none());
+            self.runtime.retained[slot] = Some(RetainedRxFrame::Cold(retained));
             drop(frame);
             self.irq.notify_rx_capacity();
             self.dispatch_release(release).await
@@ -169,17 +169,17 @@ where
                 window,
             } => {
                 let tid = usize::from(tid);
-                if tid >= self.reorders.len() {
+                if tid >= self.runtime.reorders.len() {
                     return None;
                 }
                 let released = self.stop_reorder(tid).await;
-                self.reorders[tid] = RxBlockAckReorderState::<RX_REORDER_SLOT_DOMAIN>::new(
+                self.runtime.reorders[tid] = RxBlockAckReorderState::<RX_REORDER_SLOT_DOMAIN>::new(
                     starting_sequence,
                     window,
                 )
                 .ok();
-                self.reorder_first_starts[tid] = Some(starting_sequence);
-                self.gap_deadlines[tid] = None;
+                self.runtime.reorder_first_starts[tid] = Some(starting_sequence);
+                self.runtime.gap_deadlines[tid] = None;
                 if let Some(observer) = self.pipeline_observer {
                     observer.observe(RxPipelineObservation::ReorderStarted {
                         tid: tid as u8,
@@ -191,7 +191,7 @@ where
             }
             RxReorderCommand::Stop { tid } => {
                 let tid = usize::from(tid);
-                if tid >= self.reorders.len() {
+                if tid >= self.runtime.reorders.len() {
                     None
                 } else {
                     self.stop_reorder(tid).await
@@ -199,7 +199,7 @@ where
             }
             RxReorderCommand::StopAll => {
                 let mut result = None;
-                for tid in 0..self.reorders.len() {
+                for tid in 0..self.runtime.reorders.len() {
                     if let Some(released) = self.stop_reorder(tid).await {
                         result = Some(released);
                     }
@@ -210,9 +210,9 @@ where
     }
 
     async fn stop_reorder(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
-        self.gap_deadlines[tid] = None;
-        self.reorder_first_starts[tid] = None;
-        let mut reorder = self.reorders[tid].take()?;
+        self.runtime.gap_deadlines[tid] = None;
+        self.runtime.reorder_first_starts[tid] = None;
+        let mut reorder = self.runtime.reorders[tid].take()?;
         let release = reorder.stop();
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderStopped);
@@ -222,7 +222,8 @@ where
     }
 
     pub(super) fn next_gap_deadline(&self) -> Option<(usize, Instant)> {
-        self.gap_deadlines
+        self.runtime
+            .gap_deadlines
             .iter()
             .copied()
             .enumerate()
@@ -231,21 +232,21 @@ where
     }
 
     fn update_gap_deadline(&mut self, tid: usize) {
-        if self.reorders[tid]
+        if self.runtime.reorders[tid]
             .as_ref()
             .is_some_and(|reorder| reorder.occupied() != 0)
         {
-            self.gap_deadlines[tid].get_or_insert_with(|| {
+            self.runtime.gap_deadlines[tid].get_or_insert_with(|| {
                 Instant::now() + Duration::from_micros(RX_REORDER_GAP_TIMEOUT_MICROS)
             });
         } else {
-            self.gap_deadlines[tid] = None;
+            self.runtime.gap_deadlines[tid] = None;
         }
     }
 
     pub(super) async fn expire_reorder_gap(&mut self, tid: usize) -> Option<ConnectedRxDispatch> {
-        self.gap_deadlines[tid] = None;
-        let release = self.reorders[tid].as_mut()?.expire_gap();
+        self.runtime.gap_deadlines[tid] = None;
+        let release = self.runtime.reorders[tid].as_mut()?.expire_gap();
         if let Some(observer) = self.pipeline_observer {
             observer.observe(RxPipelineObservation::ReorderGapExpired);
         }
@@ -259,6 +260,7 @@ where
             return;
         };
         let occupied = self
+            .runtime
             .reorders
             .iter()
             .flatten()
@@ -279,7 +281,7 @@ where
         let mut result = None;
         for released in release.iter() {
             let slot = usize::from(released.slot);
-            let frame = self.retained[slot]
+            let frame = self.runtime.retained[slot]
                 .take()
                 .expect("reorder release must reference one retained frame lease");
             result = Some(self.dispatch_retained_frame(frame).await);
@@ -317,7 +319,7 @@ where
                 )
                 .await
             } else {
-                let frame = self.retained[slot]
+                let frame = self.runtime.retained[slot]
                     .take()
                     .expect("reorder release references retained cold backing");
                 self.dispatch_retained_frame(frame).await
@@ -338,7 +340,7 @@ where
     }
 
     fn release_retained_slot(&mut self, slot: usize) {
-        if let Some(frame) = self.retained[slot].take() {
+        if let Some(frame) = self.runtime.retained[slot].take() {
             let hot = matches!(&frame, RetainedRxFrame::Hot(_));
             drop(frame);
             if hot {

@@ -124,13 +124,36 @@ where
     pub async fn run_until_stopped<F: Future<Output = ()>>(
         mut self,
         stop: F,
-    ) -> ConnectedRxProtocolStopped<'scratch> {
+    ) -> Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS> {
         let shutdown = self.run_until(stop).await;
-        let (mpdu, ethernet) = self.into_scratch();
+        let (mpdu, ethernet, runtime) = self.into_stopped_parts();
         ConnectedRxProtocolStopped {
             shutdown,
             mpdu,
             ethernet,
+            runtime,
         }
+    }
+
+    /// Run one executor-owned protocol epoch and return its exact scratch
+    /// through the shared task-control capability.
+    ///
+    /// The observation receives value-only shutdown evidence before the task
+    /// endpoint publishes completion. Dropping this future instead poisons the
+    /// endpoint, so a caller cannot confuse cancellation with owner return.
+    pub async fn run_controlled_task<O>(
+        self,
+        endpoint: ConnectedTaskEndpoint<
+            '_,
+            M,
+            Esp32s31ConnectedRxProtocolStopped<'scratch, 'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+        >,
+        observe_shutdown: O,
+    ) where
+        O: FnOnce(ConnectedRxProtocolShutdown),
+    {
+        let stopped = self.run_until_stopped(endpoint.wait_for_stop()).await;
+        observe_shutdown(stopped.shutdown());
+        endpoint.complete(stopped);
     }
 }

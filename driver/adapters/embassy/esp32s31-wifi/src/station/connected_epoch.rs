@@ -1,7 +1,17 @@
 use embassy_sync::blocking_mutex::raw::RawMutex;
 use open_esp_radio_embassy_net::RawMutex as NetworkRawMutex;
+use open_esp_radio_esp32s31_wifi_mac::crypto::{StaGroupCcmpSlot, StaPairwiseCcmpSlot};
+use open_esp_radio_esp32s31_wifi_mac::{init::MAC_COLD_RX_INTERRUPT_MASK, irq::MacInterruptRoute};
+use open_esp_radio_esp32s31_wifi_sta::{
+    attempt::Esp32s31StaAttemptSecurity, peer::Esp32s31ConnectedStaPeer,
+};
+use open_esp_radio_wifi_softmac::interface::BoundVirtualInterface;
 
-use crate::connected_runner::{ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices};
+use crate::connected_sta_port::Esp32s31ConnectedStaConfig;
+use crate::{
+    connected_runner::{ConnectedRunner, ConnectedRunnerExit, ConnectedRunnerServices},
+    embassy_irq::{Esp32s31MacInterruptEpoch, Esp32s31MacInterruptEpochActivateError},
+};
 
 use super::{Esp32s31StationCommand, Esp32s31StationCommandReceiver};
 
@@ -27,6 +37,114 @@ pub enum Esp32s31ConnectedStationExit<E> {
     },
     StationStopped(Esp32s31StationCommand),
     HardwareFailure(E),
+}
+
+/// Hardware/RX frontier accepted by one connected station epoch.
+///
+/// The initial variant consumes the runtime register owner and the halted
+/// pre-connected ring. A later epoch can only be constructed from the exact
+/// disconnected owners returned by the preceding teardown.
+pub enum Esp32s31ConnectedEpochResources<H, R, E> {
+    Initial { hardware: H, receive: R },
+    Reconnected(E),
+}
+
+impl<H, R, E> Esp32s31ConnectedEpochResources<H, R, E> {
+    pub const fn is_reconnected(&self) -> bool {
+        matches!(self, Self::Reconnected(_))
+    }
+}
+
+/// Complete owner handoff from a successful join into one connected service.
+///
+/// `R` is the role-wide runtime resource graph, `E` is the initial or
+/// reconnected hardware frontier, and `N` is the one-time/running network
+/// owner. Security is moved as one value so PMK, nonce and sequence spaces
+/// cannot be split across competing composition roots.
+pub struct Esp32s31ConnectedServiceResources<'security, R, E, N> {
+    runtime: R,
+    epoch: E,
+    network: N,
+    interface: BoundVirtualInterface,
+    config: Esp32s31ConnectedStaConfig,
+    peer: Esp32s31ConnectedStaPeer,
+    pairwise: StaPairwiseCcmpSlot,
+    group: StaGroupCcmpSlot,
+    security: Esp32s31StaAttemptSecurity<'security>,
+}
+
+impl<'security, R, E, N> Esp32s31ConnectedServiceResources<'security, R, E, N> {
+    pub const fn new(
+        runtime: R,
+        epoch: E,
+        network: N,
+        interface: BoundVirtualInterface,
+        config: Esp32s31ConnectedStaConfig,
+        peer: Esp32s31ConnectedStaPeer,
+        pairwise: StaPairwiseCcmpSlot,
+        group: StaGroupCcmpSlot,
+        security: Esp32s31StaAttemptSecurity<'security>,
+    ) -> Self {
+        Self {
+            runtime,
+            epoch,
+            network,
+            interface,
+            config,
+            peer,
+            pairwise,
+            group,
+            security,
+        }
+    }
+
+    pub fn into_parts(self) -> Esp32s31ConnectedServiceParts<'security, R, E, N> {
+        Esp32s31ConnectedServiceParts {
+            runtime: self.runtime,
+            epoch: self.epoch,
+            network: self.network,
+            interface: self.interface,
+            config: self.config,
+            peer: self.peer,
+            pairwise: self.pairwise,
+            group: self.group,
+            security: self.security,
+        }
+    }
+}
+
+/// Named decomposition visible only after the connected service consumes the
+/// complete join handoff.
+pub struct Esp32s31ConnectedServiceParts<'security, R, E, N> {
+    pub runtime: R,
+    pub epoch: E,
+    pub network: N,
+    pub interface: BoundVirtualInterface,
+    pub config: Esp32s31ConnectedStaConfig,
+    pub peer: Esp32s31ConnectedStaPeer,
+    pub pairwise: StaPairwiseCcmpSlot,
+    pub group: StaGroupCcmpSlot,
+    pub security: Esp32s31StaAttemptSecurity<'security>,
+}
+
+/// Open the production connected interrupt route and publish one durable RX
+/// handoff probe.
+///
+/// Scan and join intentionally run with the route masked. A descriptor may
+/// complete between their last polling observation and route activation; the
+/// coalesced probe guarantees the connected runner checks that frontier even
+/// when hardware produces no later edge.
+pub fn activate_esp32s31_connected_epoch<'runtime, R, M>(
+    interrupt: &mut Esp32s31MacInterruptEpoch<'runtime, R, M>,
+    platform: &R::Platform,
+) -> Result<(), Esp32s31MacInterruptEpochActivateError<R::Error>>
+where
+    R: MacInterruptRoute,
+    M: RawMutex,
+{
+    interrupt.activate(platform, MAC_COLD_RX_INTERRUPT_MASK)?;
+    interrupt.mac_runtime().notify_rx_handoff();
+    Ok(())
 }
 
 pub(super) fn coalesce_disconnected_station_command<E, M: RawMutex>(

@@ -17,7 +17,12 @@ wifi = [
     "dep:open-esp-radio-wpa2",
 ]
 adapter-embassy-net = ["dep:open-esp-radio-embassy-net"]
-adapter-embassy-wifi = ["wifi", "dep:open-esp-radio-wifi-embassy"]
+adapter-embassy-wifi = [
+    "wifi",
+    "dep:embassy-futures",
+    "dep:embassy-sync",
+    "dep:open-esp-radio-wifi-embassy",
+]
 esp32s31 = [
     "dep:open-esp-radio-esp32s31-hal",
     "dep:open-esp-radio-esp32s31-pac",
@@ -44,6 +49,8 @@ validation-raw-dma = [
 ]
 
 [dependencies]
+embassy-futures = { version = "0.1.2", optional = true }
+embassy-sync = { version = "0.8.0", optional = true }
 open-esp-radio-embassy-net = { path = "../adapters/embassy-net", optional = true }
 open-esp-radio-esp32s31-hal = { path = "../chips/esp32s31/hal", optional = true }
 open-esp-radio-esp32s31-pac = { path = "../chips/esp32s31/pac", optional = true }

@@ -40,7 +40,12 @@ where
 {
     pub fn new(
         ordinary: Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-        ampdu: impl Into<AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>>,
+        ampdu: AggregateTxResources<
+            'ampdu,
+            PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+            SLOTS,
+            AMPDU_BUFFER_SIZE,
+        >,
         config: AggregateTxConfig,
     ) -> Result<Self, AggregateTxError> {
         if SLOTS == 0
@@ -59,20 +64,27 @@ where
         if config.attempt_limit == 0 {
             return Err(AmpduRetryError::ZeroAttemptLimit.into());
         }
-        let AggregateTxResources { primary, standby } = ampdu.into();
-        let mut ampdu = RetainedDmaAmpduTx::new(primary);
+        let AggregateTxResources {
+            primary,
+            primary_retention,
+            standby,
+            standby_retention,
+        } = ampdu;
+        let mut ampdu = RetainedDmaAmpduTx::new(primary, primary_retention);
         ampdu.configure_max_aggregate_bytes(
             ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
         )?;
-        let standby_ampdu = standby.map(|resources| {
-            let mut owner = RetainedDmaAmpduTx::new(resources);
-            owner
-                .configure_max_aggregate_bytes(
-                    ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
-                )
-                .expect("idle standby arena accepts validated association byte limit");
-            owner
-        });
+        let standby_ampdu = standby
+            .zip(standby_retention)
+            .map(|(resources, retention)| {
+                let mut owner = RetainedDmaAmpduTx::new(resources, retention);
+                owner
+                    .configure_max_aggregate_bytes(
+                        ordinary.policy().ht_ampdu().maximum_aggregate_bytes(),
+                    )
+                    .expect("idle standby arena accepts validated association byte limit");
+                owner
+            });
         Ok(Self {
             ordinary: TeardownResource::new(ordinary),
             ampdu: TeardownResource::new(ampdu),
@@ -165,6 +177,55 @@ where
         }
     }
 
+    /// Exact ordinary descriptor state for ownership-failure diagnostics.
+    pub fn ordinary_slot_state(&self) -> TxSlotState {
+        self.ordinary.slot_state()
+    }
+
+    /// Hardware-visible ownership word of the ordinary descriptor.
+    pub fn ordinary_descriptor_word0(&self) -> u32 {
+        self.ordinary.descriptor_word0()
+    }
+
+    /// Primary aggregate metadata lifecycle state.
+    pub fn aggregate_slot_state(&self) -> TxSlotState {
+        self.ampdu.state()
+    }
+
+    pub fn aggregate_slot_state_code(&self) -> u8 {
+        match self.ampdu.state() {
+            TxSlotState::Free => 0,
+            TxSlotState::Reserved => 1,
+            TxSlotState::HardwareOwned => 2,
+            TxSlotState::Completed => 3,
+            TxSlotState::ResetRequired => 4,
+        }
+    }
+
+    pub fn aggregate_metadata_is_free(&self) -> bool {
+        self.ampdu.state() == TxSlotState::Free
+    }
+
+    /// Whether the primary aggregate DMA arena is independently idle.
+    pub fn aggregate_dma_is_free(&self) -> bool {
+        self.ampdu.dma_is_free()
+    }
+
+    /// Standby aggregate metadata/DMA idle state when pipelining is present.
+    pub fn standby_aggregate_is_fully_free(&self) -> Option<bool> {
+        self.standby_ampdu
+            .as_ref()
+            .map(|standby| standby.is_fully_free())
+    }
+
+    pub fn aggregate_held_backings(&self) -> usize {
+        self.ampdu.held_backing_count()
+    }
+
+    pub fn aggregate_metadata_address(&self) -> usize {
+        self.ampdu.metadata_address()
+    }
+
     /// Whether either hardware-visible TX owner has been quarantined pending
     /// a platform radio reset.
     ///
@@ -187,13 +248,19 @@ where
     ) -> Result<
         (
             Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<
+                'ampdu,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+                SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
         ),
         Self,
     > {
         if self.active()
             || self.ordinary.active()
-            || self.ampdu.held_backing_count() != 0
+            || self.ordinary.queue_state() != MacTxQueueState::Ready
+            || !self.ampdu.is_fully_free()
             || self.cookie.is_some()
             || self.standby_prepared.is_some()
             || self.standby_cookie.is_some()
@@ -201,12 +268,12 @@ where
             || self
                 .standby_ampdu
                 .as_ref()
-                .is_some_and(|owner| owner.held_backing_count() != 0)
+                .is_some_and(|owner| !owner.is_fully_free())
         {
             return Err(self);
         }
         let ordinary = self.ordinary.take();
-        let ampdu = match self.ampdu.take().try_into_resources() {
+        let (ampdu, primary_retention) = match self.ampdu.take().try_into_resources() {
             Ok(resources) => resources,
             Err(_) => unreachable!("idle retained DMA owner must return its storage"),
         };
@@ -215,11 +282,16 @@ where
                 .try_into_resources()
                 .unwrap_or_else(|_| unreachable!("idle standby owner must return its storage"))
         });
+        let (standby, standby_retention) = standby.map_or((None, None), |(storage, retention)| {
+            (Some(storage), Some(retention))
+        });
         Ok((
             ordinary,
             AggregateTxResources {
                 primary: ampdu,
+                primary_retention,
                 standby,
+                standby_retention,
             },
         ))
     }
@@ -236,7 +308,12 @@ where
         (
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
             ConnectedTxHandoff,
-            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<
+                'ampdu,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+                SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
         ),
         Self,
     > {
@@ -259,7 +336,12 @@ where
     ) -> Result<
         Esp32s31ConnectedTxTeardownParts<
             WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-            AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>,
+            AggregateTxResources<
+                'ampdu,
+                PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+                SLOTS,
+                AMPDU_BUFFER_SIZE,
+            >,
         >,
         Self,
     > {

@@ -174,7 +174,7 @@ where
 
         let result = self.prepare_reserved(first, network, first_sequence, cookie);
         if result.is_err() {
-            self.cancel_prepared();
+            self.cancel_current_reservation();
         }
         result
     }
@@ -322,7 +322,12 @@ where
     }
 
     pub(super) fn can_prepare_network_tx(&self) -> bool {
-        let base = self.active()
+        // The second arena pipelines only the batch after an aggregate that
+        // is already hardware-owned. An ordinary transaction may be a
+        // control frame sharing sequence/key policy with this owner; letting
+        // network preparation cross that boundary would mutate the next data
+        // batch while connected control still owns the transaction.
+        let base = matches!(self.active, ConnectedTxActive::Aggregate(_))
             && self.standby_ampdu.is_some()
             && self.standby_error.is_none()
             && self.block_ack_operational(DATA_TID)
@@ -409,7 +414,7 @@ where
         };
         let elapsed = started.map(|started| self.ordinary.now_micros().wrapping_sub(started));
         if result.is_err() && self.cookie.is_some() {
-            self.cancel_prepared();
+            self.cancel_current_reservation();
         }
         core::mem::swap(&mut self.cookie, &mut self.standby_cookie);
         core::mem::swap(&mut *self.ampdu, &mut standby);

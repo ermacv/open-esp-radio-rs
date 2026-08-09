@@ -149,6 +149,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         self.core.last_tx_failure()
     }
 
+    pub const fn tx_in_flight(&self) -> bool {
+        self.core.tx_in_flight()
+    }
+
     pub const fn last_expired_tid(&self) -> Option<u8> {
         self.core.last_expired_tid()
     }

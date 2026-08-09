@@ -11,7 +11,7 @@ use open_esp_radio_esp32s31_phy::{
     switch_phy_channel_with_mac_restart,
 };
 
-/// Persistent PHY authority used by either a cold scan or a running rescan.
+/// Persistent PHY authority used by either an initial scan or a reconnect scan.
 ///
 /// `PhyColdState` is the recovered PHY state image created by registration;
 /// despite its historical name, the same unique value carries mutable channel

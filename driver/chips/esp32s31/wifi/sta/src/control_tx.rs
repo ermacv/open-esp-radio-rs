@@ -293,7 +293,7 @@ where
         self,
         handoff: ConnectedTxHandoff,
     ) -> Result<Esp32s31SingleMpduTx<'slot, P, E, T, BUFFER_SIZE>, (Self, ConnectedTxHandoff)> {
-        if self.ordinary.active() {
+        if self.ordinary.queue_state() != open_esp_radio_wifi_softmac::MacTxQueueState::Ready {
             return Err((self, handoff));
         }
         let ConnectedTxHandoff {

@@ -34,6 +34,12 @@ where
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
+        runtime: &'pool mut Esp32s31ConnectedRxProtocolStorage<
+            'pool,
+            CAPACITY,
+            SLOTS,
+            REORDER_SLOTS,
+        >,
     ) -> Self {
         assert!(
             CAPACITY <= usize::from(u16::MAX),
@@ -67,10 +73,7 @@ where
             reorder_commands: None,
             reorder_storage: None,
             reorder_scratch: None,
-            reorders: core::array::from_fn(|_| None),
-            reorder_first_starts: [None; RX_BLOCK_ACK_TID_COUNT],
-            gap_deadlines: [None; RX_BLOCK_ACK_TID_COUNT],
-            retained: core::array::from_fn(|_| None),
+            runtime,
         }
     }
 
@@ -143,14 +146,14 @@ where
                 shutdown.reorder_commands = shutdown.reorder_commands.saturating_add(1);
             }
         }
-        for reorder in &mut self.reorders {
+        for reorder in &mut self.runtime.reorders {
             if reorder.take().is_some() {
                 shutdown.active_reorders = shutdown.active_reorders.saturating_add(1);
             }
         }
-        self.reorder_first_starts.fill(None);
-        self.gap_deadlines.fill(None);
-        for retained in &mut self.retained {
+        self.runtime.reorder_first_starts.fill(None);
+        self.runtime.gap_deadlines.fill(None);
+        for retained in &mut self.runtime.retained {
             if retained.take().is_some() {
                 shutdown.retained_frames = shutdown.retained_frames.saturating_add(1);
             }
@@ -161,8 +164,14 @@ where
         shutdown
     }
 
-    pub(super) fn into_scratch(self) -> (&'scratch mut [u8], &'scratch mut [u8]) {
-        (self.mpdu, self.ethernet)
+    pub(super) fn into_stopped_parts(
+        self,
+    ) -> (
+        &'scratch mut [u8],
+        &'scratch mut [u8],
+        &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
+    ) {
+        (self.mpdu, self.ethernet, self.runtime)
     }
 }
 
@@ -200,7 +209,13 @@ where
         sink: S,
         mpdu: &'scratch mut [u8],
         ethernet: &'scratch mut [u8],
+        runtime: &'pool mut Esp32s31ConnectedRxProtocolStorage<
+            'pool,
+            CAPACITY,
+            SLOTS,
+            RX_REORDER_BACKING_SLOT_COUNT,
+        >,
     ) -> Self {
-        Self::new_with_reorder_slots(frames, irq, dispatcher, sink, mpdu, ethernet)
+        Self::new_with_reorder_slots(frames, irq, dispatcher, sink, mpdu, ethernet, runtime)
     }
 }

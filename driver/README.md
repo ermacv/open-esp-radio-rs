@@ -25,6 +25,8 @@ driver/
 │           ├── mac/        safe Wi-Fi MAC backend: IRQ, queues and TX/RX policy
 │           └── sta/        executor-independent S31 station composition
 └── adapters/               reusable runtime and ecosystem adapters
+└── integration/
+    └── esp32s31/embassy-wifi complete product STA/supervisor composition
 ```
 
 Dependencies point down this list of responsibilities:
@@ -113,17 +115,19 @@ application-facing controller contains no PAC, DMA or IRQ capability. Its
 `stop().await` returns only after the task has disabled the IRQ route, waited
 through transient DMA `Busy` and acknowledged the stopped edge. Dropping the
 controller never stops or destroys hardware. A private fail-closed destructor
-is reserved for abnormal task destruction and never spins or panics; it retains
-owners for reset whenever synchronous quiescence cannot be proved. Cancellation
-also poisons the static RX arena and role-control mailbox, so neither can be
-silently reused before reset.
+is reserved for abnormal task destruction and never spins or panics; it
+quarantines owners whenever synchronous quiescence cannot be proved. The
+public supervisor path does not expose this cancellation operation.
+Cancellation also poisons the static RX arena and role-control mailbox, so
+neither can be silently reused or presented as a stopped owner.
 
 The station actor follows the same request/acknowledgement rule. Its task
 publishes `Stopped` only after the outer lifecycle returns the exact owner. If
 the station run future itself is cancelled, the controller receives `Faulted`
 instead of waiting forever or receiving a false stopped claim; active lower
-owners retain/quarantine their hardware-visible state until reset, and the
-same control storage refuses to construct a replacement task.
+owners remain quarantined, and the same control storage refuses to construct a
+replacement task. Recovery is an explicit board concern, not an operation
+encoded by this fault frontier.
 
 The `radio` facade exposes a two-phase application configuration API.
 `RadioConfig` selects Wi-Fi, Bluetooth and IEEE 802.15.4 subsystems, while
@@ -140,11 +144,15 @@ The normative lifecycle above these crate boundaries is documented in
 [`RADIO_LIFECYCLE_AND_OWNERSHIP.md`](../docs/RADIO_LIFECYCLE_AND_OWNERSHIP.md).
 It distinguishes the unique physical owner, protocol subsystem owners, the
 future coex scheduler and Wi-Fi role topologies. The current S31 station and
-standalone-monitor graphs are not yet symmetric: a clean monitor task can now
-return the common stopped Wi-Fi owner and its separate role resources, while
-station teardown still returns its application-specific owner. Cross-role
-switching therefore remains intentionally unavailable until station consumes
-and returns the same common owner.
+standalone-monitor graphs both consume and return the common stopped Wi-Fi
+owner with their separate role resources. HIL has proved a finite station to
+monitor transition using those returned capabilities. Source now also carries
+the monitor-returned owner into a second real station task, requires that task
+to reach a connected epoch, stops it cooperatively and reclaims the exact PAC,
+IRQ and role resources again. That extended round trip still needs a
+current-board run. The hardware-free supervisor API and local actor execution
+contract now exist, but cross-role switching is not yet exposed by the default
+production ESP32-S31 epoch runner.
 
 The remaining `wifi/ieee80211` frame/HMAC split should change only together
 with its public contracts. A directory-only rename would hide the coupling
@@ -167,15 +175,57 @@ not driver API.
 ## Next extraction order
 
 The remaining large `adapters/embassy/esp32s31-wifi` crate is not yet a
-clean adapter. Continue with dependency cuts, not bulk file moves:
+complete application adapter. Continue with dependency cuts, not bulk file
+moves:
 
-1. split the large connected adapter files by mechanism: aggregation,
-   control/BA/power events, RX DMA/staging, task lifecycle and network leases;
-   channels, signals, task spawning, async timers and IRQ wakeups remain in
-   `wifi-embassy`;
-2. split frame codecs from common HMAC only when the new HMAC contract has a
+1. extract one board-independent station composer for initial scan,
+   Authentication/Association, WPA2, connected execution, reconnect and clean
+   stop. Its shared phase owner, outer dispatcher and concrete scan/join
+   transactions, including actor-owned initial scan, are implemented and used
+   by both example and HIL. Connected runner observation, exit classification,
+   IRQ/task quiescence and driver teardown are now one transaction for both
+   consumers. Persistent network startup is now the same owner-preserving
+   transition for both consumers. RX/TX/control composition and network-runner
+   assembly are now one named owner transaction with a static HIL decoration
+   hook; next close the remaining role task wiring so consumers supply only
+   resources and policy;
+2. close internal connected/scan/attempt modules after both consumers use that
+   composer, then expose station and monitor through one radio supervisor;
+3. split frame codecs from common HMAC only when the new HMAC contract has a
    real STA consumer and a simulated test backend;
-3. add AP MLME as a peer of `wifi/sta`, and monitor as a non-blocking MAC tap.
+4. add AP MLME as a peer of `wifi/sta`, and monitor as a non-blocking MAC tap.
+
+The hardware-free supervisor boundary now includes the complete control
+chain. `StationRequest` owns binary SSID, derived PMK and scan/reconnect/power
+policy; `MonitorRequest` owns tap/filter/channel/capture policy.
+`WifiSupervisorConfiguration` describes which role resource graphs were
+provisioned and validates an independent `WifiPlan` for every start, so
+sequential STA/monitor use does not falsely require concurrent STA+monitor
+hardware support. `WifiServiceRequest` then joins that checked topology to
+its owned role policy.
+
+The Embassy mailbox exposes the intended
+`radio.wifi().start_station(...)`/`stop()`/`start_monitor(...)` API without
+placing PAC, DMA or IRQ owners in the controller. It rejects stale endpoint
+reuse and wakes an in-flight caller if the owner task disappears. This remains
+a subsystem topology rather than one global radio-mode enum, so a future
+physical supervisor can own Wi-Fi, Bluetooth and IEEE 802.15.4 children plus
+coex. The discarded detached-service scaffold has not been retained as a
+second supervisor model. Instead, the S31 adapter exposes local drivers for
+the real station and standalone-monitor owner futures. Both keep the
+hardware-free controller beside the pinned role future and return its exact
+terminal owner to the physical actor. The common actor shell retains stopped
+owners across epochs, validates plans before owner movement and keeps a
+faulted owner permanently quarantined. The complete radio owner is intentionally
+`!Send`, so the physical supervisor must construct, pin and poll the selected
+station or monitor future inside its own local actor task rather than transfer
+the owner through a synchronized task-output channel. While active, ownership
+is transitive: the role future contains the unique owner and the supervisor
+contains the role future. `stop()` may respond only after that future returns
+a quiescent owner. Station security now owns its PMK and
+sequence counters by value. They move into the role future with the request
+and return only at its finite terminal edge, avoiding both a self-referential
+task and external mutable credential storage.
 
 The WPA2 deadline/key-publication runner now lives in portable `wifi/wpa2`.
 `adapters/embassy/esp32s31-wifi` retains only the Embassy clock plus the

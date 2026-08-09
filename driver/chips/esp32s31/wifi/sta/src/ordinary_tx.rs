@@ -162,6 +162,16 @@ where
         self.active.is_some()
     }
 
+    /// Exact descriptor lifecycle state retained for ownership diagnostics.
+    pub(crate) fn slot_state(&self) -> TxSlotState {
+        self.slot.as_ref().get_ref().state()
+    }
+
+    /// Current hardware-visible descriptor ownership word.
+    pub(crate) fn descriptor_word0(&self) -> u32 {
+        self.slot.as_ref().get_ref().descriptor_word0()
+    }
+
     /// Portable distinction between normal queue pressure and a quarantined
     /// descriptor that requires a new radio epoch.
     pub fn queue_state(&self) -> MacTxQueueState {
@@ -196,7 +206,7 @@ where
     pub(crate) fn try_into_resources(
         self,
     ) -> Result<WifiTxResources<'slot, P, E, T, BUFFER_SIZE>, Self> {
-        if self.active() {
+        if self.queue_state() != MacTxQueueState::Ready {
             return Err(self);
         }
         let Self {

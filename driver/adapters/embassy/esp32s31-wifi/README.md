@@ -47,20 +47,54 @@ transitions. The concrete scan adapter then has three non-overlapping pieces:
 - `scan_rx` owns management-frame observation over that ring owner;
 - `open_esp_radio_esp32s31_wifi_sta::scan_tx` owns active Probe Request
   publication and passive fallback;
-- `scan_port` composes PHY, RX, TX, storage and the executor dwell timer;
-- `scan_target` implements those ports for cold and cooperative RISC-V owners.
+- `scan_port` composes PHY, RX, TX, storage and the port dwell timer;
+- `scan_target` implements those ports for the runtime RISC-V register owner.
 
-There is no separate `running_scan` facade: cold scan and reconnect scan use
-the same `Esp32s31ScanPort` with different typed resource owners.
+There is no separate reconnect-scan facade: the initial scan and reconnect
+scan use the same `Esp32s31ScanPort`. The common cold-to-runtime transition is
+completed before either scan starts.
 
 Ordinary retry/deadline ownership, single-MPDU encoding and the pre-connected
 control transmitter likewise live in
 `open_esp_radio_esp32s31_wifi_sta::{ordinary_tx,single_mpdu_tx,control_tx}`.
 The same chip crate implements its join, peer and WPA2 transmit ports. The
-adapter supplies only executor bindings such as `tx_time::EmbassyWifiTxTimer`;
+adapter supplies only port bindings such as `tx_time::EmbassyWifiTxTimer`;
 no TX state machine is re-exported through this crate.
 
-RX descriptor and DMA-buffer storage is executor-independent and lives in
+`station::Esp32s31StationRuntimeResources` is the common production
+composition frontier used by the standalone station target and HIL. It keeps
+three independently returned groups:
+
+- PHY/platform/interrupt authority;
+- DMA, TX epoch, scan storage and protocol scratch frames;
+- board services such as task spawners, network bindings and observers.
+
+The grouping is an ownership contract, not the complete station service.
+`station::connected_start` is now the sole transition from the raw first-join
+PAC owner or an exact reconnected epoch into the uniform cooperative-hardware,
+live-RX, aggregate-TX and control owner set. Its initial resource factory runs
+only once; publication and RX-arm failures return the exact reached frontier.
+The chip-independent `open_esp_radio_wifi_embassy::station_network`
+transition likewise consumes the network device exactly once, publishes the
+connected link edge, and carries the resulting stack plus radio runner across
+ESP32-S31 reassociation epochs without making that lifetime chip-specific.
+Its sibling `connected_tasks` module owns the reusable parent/task split for
+port shutdown. Only the task endpoint can publish the stopped protocol
+owner; dropping either half before completion permanently poisons reuse, and
+there is no signal-reset escape hatch.
+Its task-group combiner also withholds that primary owner until every
+auxiliary epoch task acknowledges a separate linear endpoint. HIL traffic can
+therefore decorate the production service, but cannot manufacture teardown
+completion with an unrelated event bit.
+The connected service also owns atomic RX/TX/control graph construction, the
+fixed interrupt activation plus durable RX handoff probe, and the ordered
+runner -> IRQ -> port-task -> control/RX/TX/key teardown transaction. Both
+success and every quarantined failure retain the network, task and exact driver
+owners together. The remaining extraction work is board-facing task spawning
+and the outer scan/join/WPA2/reconnect composer, leaving examples as board
+wiring and HIL as protocol, measurement and fault-injection policy.
+
+RX descriptor and DMA-buffer storage is port-independent and lives in
 `open_esp_radio_esp32s31_wifi_dma::rx_storage`. The local `rx_dma_service`
 chooses the production large-RX dimensions and combines that arena with
 reload waits, staging leases and optional observations. Network publication
@@ -106,7 +140,7 @@ This is still an Embassy integration component because it retains pinned
 chip MAC/DMA crates; the module split does not introduce another MAC layer.
 
 Interrupt integration has the same boundary. `embassy_irq::mac_runtime`
-coalesces classified MAC work into RX/TX executor wakes,
+coalesces classified MAC work into RX/TX port wakes,
 `power_runtime` preserves an opaque acknowledged power-event image, and
 `epoch` owns activation/quiescence of the platform route plus stale-wake
 draining. Hardware status reads, acknowledgement and classification remain in
@@ -154,11 +188,12 @@ terminal acknowledgement. That acknowledgement is `Stopped` only after the
 IRQ route and DMA walker both confirm quiescence. A transient RX-DMA `Busy`
 therefore yields cooperatively rather than becoming an error. A broken route or
 ring invariant is reported as `Faulted` while the task retains the complete
-hardware frontier for reset. The destructor is not the normal shutdown path:
+hardware frontier in quarantine. The destructor is not the normal shutdown path:
 it makes at most one non-blocking stop observation and retains active owners if
 quiescence cannot be proved; it neither spins nor panics. That fault is sticky
 in both the control mailbox and static RX arena: a later materialization is
-rejected with `ResetRequired` instead of erasing the abandoned epoch.
+rejected as quarantined instead of erasing the abandoned epoch. The board may
+choose reset, but the adapter neither requests it nor exposes a reusable owner.
 After a clean acknowledgement, consuming `try_into_stopped` decomposes the
 inactive interrupt epoch, discards only the halted RX-ring transaction and
 returns `Esp32s31WifiStopped` together with reusable monitor memory, sink,
@@ -166,7 +201,7 @@ route and wake runtimes. Active or faulted hardware has no such consuming
 transition and the complete task owner is returned unchanged.
 
 WPA2 protocol deadlines and atomic key-publication rollback live in
-`open_esp_radio_wpa2::runner`, while the executor-independent ESP32-S31
+`open_esp_radio_wpa2::runner`, while the port-independent ESP32-S31
 handshake/key ports live in `open_esp_radio_esp32s31_wifi_sta::wpa2`. The local
 private `wpa2_time` and `wpa2_port` modules now provide only Embassy
 time, retained DMA RX and control-TX bindings.
@@ -187,6 +222,27 @@ names the caller-supplied owners, `owner` retains mutable attempt state, `port`
 is the stateless trait handle, and `service` implements the finite attempt
 phases.
 
+`station::join` is the single production composition of that target. It
+temporarily borrows PHY/platform, hardware, RX, TX and scratch from the outer
+role owner, runs channel selection through WPA2 connected entry, and returns
+only the pre-connected RX, station/security state, peer, keys and value-only
+report after every hardware borrow has ended. The normal station image and HIL
+use this same transaction; their observers can record evidence but cannot
+reassemble or replace join policy. All of those inputs now enter as one
+`Esp32s31StationJoinResources` owner bundle; neither consumer maintains a
+parallel positional join ABI.
+
+`station::scan` is the corresponding single composition for both the cold
+candidate scan and the disconnected reconnect scan. It accepts one grouped
+PHY/hardware/RX/control-TX/storage owner set, constructs the concrete scan
+port, runs exactly one finite channel plan and returns every owner together
+with a typed decision, TX summary and bounded telemetry. Production firmware
+and HIL use this same transaction for both scan forms; only their observers,
+failure policy and role-specific RX handoff differ.
+The retry/terminal distinction for a failed production scan is also common:
+failed probe publication and RX-stop are fail-closed terminal frontiers, while
+the remaining owner-preserving failures may request a candidate refresh.
+
 The RX frontier shared by Authentication, Association and WPA2 is exposed by
 the `preconnected_rx` facade. `time` contains only the Embassy settle-delay
 adapter, `state` defines the halted/prepared/live/vacant owner vocabulary, and
@@ -194,25 +250,42 @@ adapter, `state` defines the halted/prepared/live/vacant owner vocabulary, and
 
 The application-facing station entry points are in `station`:
 
+- `resource_profile::Esp32s31DefaultStationMemory` groups the default RX/TX
+  DMA arenas, descriptor-address storage, scan scratch and station control
+  domain behind one atomic `claim()`. A board cannot partially acquire these
+  large statics or accidentally construct them on an async task stack;
+
 - `station::command` owns the severity-ordered reconnect/disconnect/stop
   mailbox and its single consumer;
 - `station::connected_epoch` coalesces those commands with peer loss only at a
   transaction-safe connected-runner boundary;
+- `station::connected_transaction` is the single run-to-stopped transaction
+  used by firmware and HIL. Observation is statically dispatched, exit policy
+  is evaluated while the runner is intact, and no reusable owner is exposed
+  before IRQ publication and every attached port task are quiescent. The
+  classified exit remains attached through driver teardown;
 - `station::backend` owns command priority and the cancellable reconnect
-  backoff. Board firmware and HIL now implement only the concrete finite
-  scan/join/connected attempt through `Esp32s31StationAttemptRunner`; neither
-  may replace the common controller protocol or report `Stopped` before its
-  DMA and interrupt owners are quiescent;
+  backoff;
+- `station::composer` owns the shared `InitialScan`/`InitialJoin`/`RunningScan`/
+  `Reconnected` phase owner and the only production phase dispatcher. The cold
+  phase carries only station identity; candidate selection creates the first
+  join owner and cannot be bypassed by a caller-proven scan record. Board
+  firmware and HIL both use `Esp32s31StationEngine`, including the same owned
+  binary SSID and scan policy; hardware ports bind finite owner transactions,
+  while a separate read-only observer carries HIL telemetry. Neither can
+  replace the candidate-refresh contract or command protocol;
 - `station::lifecycle` owns the outer finite scan/join/connected/reconnect
   service and always returns its exact hardware owner. Its public boundary is
   `prepare_esp32s31_station_task`, which returns a hardware-free controller
   and one task-owned lifecycle. The names intentionally match standalone
   monitor materialization: requesting stop is not the same event as the task
   acknowledging quiescence. Cancellation of the station run future publishes
-  `Faulted`, while lower DMA/IRQ owners remain fail-closed for reset. The
-  station control resource preserves that poison and refuses another split;
-- `stop_esp32s31_connected_task_group` returns all spawned-task ownership or a
-  distinct reset-required outcome under one deadline.
+  `Faulted`, while lower DMA/IRQ owners remain fail-closed. The station
+  control resource preserves that fault and refuses another split; recovery
+  is chosen only by the physical supervisor or board policy;
+- chip-neutral `stop_connected_task_group` keeps the epoch in `Stopping` until
+  every spawned task returns its exact owner. The optional deadline-bounded
+  observation reports only `Pending`; it does not manufacture a reset frontier.
 
 Run the host-side composition example with:
 
@@ -221,10 +294,24 @@ cargo run -p open-esp-radio-esp32s31-wifi-embassy --example station_service
 ```
 
 The example deliberately supplies a small deterministic attempt runner. A
-real RISC-V board application binds the same facade to
-`Esp32s31StaAttemptTargetPort`, its static DMA/network storage, its executor
-spawners and the ESP-HAL interrupt adapter. A following materialization pass
-still needs to group that concrete scan/join/connected backend so normal board
-code does not assemble its intermediate phase owners manually. Board memory
-placement and task placement remain explicit policy rather than global HIL
-state.
+real RISC-V board application binds the same facade to the common station join
+transaction, its static DMA/network storage, its port spawners and the
+ESP-HAL interrupt adapter. Production firmware and HIL now share the outer
+phase dispatcher, exact owner vocabulary, concrete scan/join transactions and
+the persistent network-owner start transition. Connected RX/TX/control and the
+network runner now also enter one named assembly transaction; qualification
+faults are a statically dispatched service decorator rather than a second
+composition. Station shutdown and restart additionally share owner-preserving
+runtime reclaim, phase restore and fresh-request rebind transactions. Rebind
+discards an old candidate by returning to initial or running scan while
+retaining persistent network, RX and aggregate resources. Task preparation
+also returns its owner and runner when the control domain is busy or poisoned.
+The physical supervisor polls the active role future in its own
+local task: the complete radio owner is intentionally `!Send` and must not
+cross an port-task boundary through a synchronized channel. The facade now
+provides local drivers for both station and monitor futures plus the common
+actor shell. A following extraction pass still needs to bind them to a default
+production ESP32-S31 resource-profile implementation of the epoch-runner
+contract so normal board code does not assemble intermediate owners manually.
+Board memory placement and task placement remain explicit policy rather than
+global HIL state.

@@ -24,6 +24,7 @@ struct PendingBackend;
 impl Esp32s31StationAttemptRunner<NoopRawMutex> for PendingBackend {
     type Owner = u32;
     type Error = u8;
+    type Fault = core::convert::Infallible;
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -41,6 +42,7 @@ impl Esp32s31StationAttemptRunner<NoopRawMutex> for PendingBackend {
 impl Esp32s31StationAttemptRunner<NoopRawMutex> for Backend {
     type Owner = u32;
     type Error = u8;
+    type Fault = core::convert::Infallible;
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -70,7 +72,7 @@ fn policy(attempt_limit: u16) -> StaReconnectPolicy {
 
 #[test]
 fn command_priority_never_downgrades_a_pending_stop() {
-    let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (controller, mut receiver) = resources.split().unwrap();
     assert!(controller.request_reconnect());
     assert!(controller.request_disconnect());
@@ -82,7 +84,7 @@ fn command_priority_never_downgrades_a_pending_stop() {
 
 #[test]
 fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
-    let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (controller, mut receiver) = resources.split().unwrap();
     assert!(controller.request_reconnect());
     assert!(matches!(
@@ -96,7 +98,7 @@ fn peer_disconnect_coalesces_a_pending_reconnect_without_leaking_it() {
 
 #[test]
 fn terminal_connected_command_records_the_public_stop_reason() {
-    let mut resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let resources = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (_controller, mut receiver) = resources.split().unwrap();
     assert!(matches!(
         complete_connected_station_command::<(), _>(Esp32s31StationCommand::Stop, &mut receiver,),
@@ -107,11 +109,11 @@ fn terminal_connected_command_records_the_public_stop_reason() {
 
 #[test]
 fn controller_stop_returns_the_exact_owner_and_reason() {
-    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (mut controller, runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(2)),
         Esp32s31StationStartResources::new(41),
-        &mut control,
+        &control,
         Backend { fail: false },
     )
     .unwrap();
@@ -137,11 +139,11 @@ fn controller_stop_returns_the_exact_owner_and_reason() {
 
 #[test]
 fn retry_exhaustion_preserves_failure_and_owner() {
-    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (mut controller, runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(77),
-        &mut control,
+        &control,
         Backend { fail: true },
     )
     .unwrap();
@@ -168,11 +170,11 @@ fn retry_exhaustion_preserves_failure_and_owner() {
 
 #[test]
 fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
-    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (mut controller, task) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(99),
-        &mut control,
+        &control,
         PendingBackend,
     )
     .unwrap();
@@ -188,17 +190,17 @@ fn cancelled_station_task_reports_fault_instead_of_claiming_quiescence() {
     drop(controller);
     assert!(matches!(
         control.split(),
-        Err(Esp32s31StationControlError::ResetRequired)
+        Err(Esp32s31StationControlError::Faulted)
     ));
 }
 
 #[test]
 fn clean_station_completion_allows_a_later_epoch() {
-    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (mut controller, task) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy(1)),
         Esp32s31StationStartResources::new(17),
-        &mut control,
+        &control,
         Backend { fail: false },
     )
     .unwrap();
@@ -207,4 +209,49 @@ fn clean_station_completion_allows_a_later_epoch() {
     drop(controller);
 
     assert!(control.split().is_ok());
+}
+
+#[test]
+fn later_epoch_waits_for_both_previous_control_endpoints_to_drop() {
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (controller, task) = prepare_esp32s31_station_task(
+        Esp32s31StationConfig::new(policy(1)),
+        Esp32s31StationStartResources::new(23),
+        &control,
+        Backend { fail: false },
+    )
+    .unwrap();
+
+    assert!(matches!(
+        control.split(),
+        Err(Esp32s31StationControlError::InUse)
+    ));
+    let _exit = block_on(task.run());
+    assert!(matches!(
+        control.split(),
+        Err(Esp32s31StationControlError::InUse)
+    ));
+    drop(controller);
+    assert!(control.split().is_ok());
+}
+
+#[test]
+fn failed_task_prepare_returns_owner_policy_and_runner() {
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let (_occupied_controller, _occupied_receiver) = control.split().unwrap();
+    let config = Esp32s31StationConfig::new(policy(2));
+    let failure = match prepare_esp32s31_station_task(
+        config,
+        Esp32s31StationStartResources::new(29),
+        &control,
+        Backend { fail: true },
+    ) {
+        Ok(_) => panic!("an occupied command domain must reject another station task"),
+        Err(failure) => failure,
+    };
+    let (error, returned_config, resources, runner) = failure.into_parts();
+    assert_eq!(error, Esp32s31StationControlError::InUse);
+    assert_eq!(returned_config, config);
+    assert_eq!(resources.into_owner(), 29);
+    assert!(runner.fail);
 }

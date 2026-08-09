@@ -38,11 +38,22 @@ where
     E: WifiTxEntropy,
     T: WifiTxTimer,
 {
-    pub(super) fn cancel_prepared(&mut self) {
+    /// Cancel the arena currently selected by `self.ampdu` without changing
+    /// the logical transaction stored in `self.active`.
+    ///
+    /// Standby preparation temporarily swaps the secondary arena into this
+    /// field while the primary aggregate remains hardware-owned. Clearing
+    /// `active` from that nested operation loses the primary transaction and
+    /// leaves its metadata outside the completion state machine.
+    pub(super) fn cancel_current_reservation(&mut self) {
         if let Some(cookie) = self.cookie.take() {
             let _ = self.ampdu.cancel(cookie);
         }
         self.release_frames();
+    }
+
+    pub(super) fn cancel_prepared(&mut self) {
+        self.cancel_current_reservation();
         self.active = ConnectedTxActive::Idle;
     }
 

@@ -6,6 +6,7 @@
 //! recover descriptor/sequence resources and clear both association keys.
 
 use embassy_sync::blocking_mutex::raw::RawMutex;
+use open_esp_radio_embassy_net::PinnedTxFrame;
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, StaCcmpClearReport, StaGroupCcmpSlot, clear_sta_ccmp_slots},
     rx::{RxDma, RxRingError},
@@ -159,7 +160,12 @@ where
     T: WifiTxTimer,
 {
     type Resources = WifiTxResources<'slot, P, E, T, ORDINARY_BUFFER_SIZE>;
-    type Aggregate = AggregateTxResources<'ampdu, SLOTS, AMPDU_BUFFER_SIZE>;
+    type Aggregate = AggregateTxResources<
+        'ampdu,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        SLOTS,
+        AMPDU_BUFFER_SIZE,
+    >;
 
     fn try_return(
         self,
@@ -180,8 +186,8 @@ pub struct Esp32s31ConnectedStaTeardownSuccess<H, R, T, A, C> {
 }
 
 /// Owner-preserving failure at the exact teardown stage that could not
-/// complete. A reset policy can consume these values without guessing which
-/// hardware frontier remains live.
+/// complete. A board-level fault policy can retain these values without
+/// guessing which hardware frontier remains live.
 pub enum Esp32s31ConnectedStaTeardownFailure<H, R, S, X, C, CE, RE> {
     Control {
         error: CE,

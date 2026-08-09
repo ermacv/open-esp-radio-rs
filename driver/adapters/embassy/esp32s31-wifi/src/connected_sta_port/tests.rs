@@ -9,6 +9,7 @@ use open_esp_radio_wifi_softmac::{
     WifiConfig, WifiMacAddress, WifiMonitorConfig, WifiStationConfig,
     interface::{BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface},
 };
+use std::boxed::Box;
 
 use crate::{
     connected_rx_protocol::{AlwaysReadyConnectedRxSink, Esp32s31StagedRxQueue},
@@ -134,6 +135,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
     let (reorder_sender, reorder_receiver) = reorder_commands.split();
     let mut mpdu = [0_u8; 128];
     let mut ethernet = [0_u8; 128];
+    let protocol_runtime = Box::leak(Box::new(Esp32s31ConnectedRxProtocolStorage::new()));
     let protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
         &plan,
         Esp32s31ConnectedStaRxProtocolResources {
@@ -144,6 +146,7 @@ fn port_binds_rx_and_control_to_one_validated_peer_plan() {
             ethernet: &mut ethernet,
             reorder_commands: reorder_receiver,
             reorder_storage: &reorder_storage,
+            runtime: protocol_runtime,
             reorder_scratch: None,
             pipeline_observer: None,
         },

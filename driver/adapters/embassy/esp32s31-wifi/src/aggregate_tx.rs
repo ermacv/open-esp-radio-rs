@@ -22,7 +22,8 @@ use open_esp_radio_esp32s31_wifi_mac::{
     },
     tx_ampdu::{
         AmpduFrameLayout, AmpduFrameSize, HeAmpduFrameRequest, HeAmpduPolicy, HtAmpduFrameRequest,
-        HtAmpduHardware, HtAmpduTxError, HtAmpduTxResources, RetainedDmaAmpduTx,
+        HtAmpduHardware, HtAmpduTxError, HtAmpduTxResources, RetainedAmpduDmaStorage,
+        RetainedDmaAmpduTx,
     },
     tx_runtime::{AmpduRetryDecision, AmpduRetryError, AmpduRetryPolicy, AmpduRetryState},
 };
@@ -68,29 +69,44 @@ pub struct Esp32s31ConnectedTxTeardownParts<R, A> {
 /// `primary` is the only arena which may become hardware-owned. `standby`,
 /// when present, may be filled while `primary` is in flight but remains in the
 /// software-owned `Reserved` state until the outer scheduler admits its
-/// publication.
-pub struct AggregateTxResources<'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
+/// publication. The separate retention arenas hold the comparatively large
+/// network-lease and descriptor-identity tables. Embedded composition roots
+/// should allocate those arenas statically so this movable resource handle
+/// remains small across async boundaries.
+pub struct AggregateTxResources<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
+{
     primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+    primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
     standby: Option<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>,
+    standby_retention: Option<&'storage mut RetainedAmpduDmaStorage<B, SLOTS>>,
 }
 
-impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
-    AggregateTxResources<'storage, SLOTS, BUFFER_SIZE>
+impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
+    AggregateTxResources<'storage, B, SLOTS, BUFFER_SIZE>
 {
-    pub const fn single(primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>) -> Self {
+    pub const fn single(
+        primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
+    ) -> Self {
         Self {
             primary,
+            primary_retention,
             standby: None,
+            standby_retention: None,
         }
     }
 
     pub const fn pipelined(
         primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        primary_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
         standby: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        standby_retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
     ) -> Self {
         Self {
             primary,
+            primary_retention,
             standby: Some(standby),
+            standby_retention: Some(standby_retention),
         }
     }
 
@@ -100,15 +116,6 @@ impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
 
     pub const fn standby(&self) -> Option<&HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>> {
         self.standby.as_ref()
-    }
-}
-
-impl<'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
-    From<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>>
-    for AggregateTxResources<'storage, SLOTS, BUFFER_SIZE>
-{
-    fn from(primary: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>) -> Self {
-        Self::single(primary)
     }
 }
 
@@ -277,7 +284,9 @@ pub struct Esp32s31ConnectedTx<
     const SLOTS: usize,
     const AMPDU_BUFFER_SIZE: usize,
     const ORDINARY_BUFFER_SIZE: usize,
-> {
+> where
+    'resources: 'ampdu,
+{
     ordinary: TeardownResource<Esp32s31SingleMpduTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>>,
     ampdu: TeardownResource<
         RetainedDmaAmpduTx<

@@ -13,8 +13,9 @@ pub use control::{
 #[cfg(target_arch = "riscv32")]
 pub use crate::monitor_builder::{
     Esp32s31MonitorBuildError, Esp32s31MonitorBuildReport, Esp32s31MonitorChannelSwitchError,
-    Esp32s31MonitorInterrupts, Esp32s31MonitorMemory, Esp32s31MonitorStopped,
-    Esp32s31MonitorStoppedResources, Esp32s31MonitorTask, Esp32s31MonitorTaskBuildFailure,
+    Esp32s31MonitorInterruptParts, Esp32s31MonitorInterrupts, Esp32s31MonitorMemory,
+    Esp32s31MonitorStopped, Esp32s31MonitorStoppedResourceParts, Esp32s31MonitorStoppedResources,
+    Esp32s31MonitorTask, Esp32s31MonitorTaskBuildFailure, Esp32s31MonitorTaskExit,
     Esp32s31MonitorTaskResources, prepare_esp32s31_monitor_task,
 };
 pub use crate::monitor_rx::{

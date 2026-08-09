@@ -20,6 +20,8 @@ pub struct Esp32s31ConnectedStaRxProtocolResources<
     pub ethernet: &'scratch mut [u8],
     pub reorder_commands: RxReorderCommandReceiver<'queue, M>,
     pub reorder_storage: &'pool RxReorderFrameStorage<CAPACITY, REORDER_SLOTS>,
+    pub runtime:
+        &'pool mut Esp32s31ConnectedRxProtocolStorage<'pool, CAPACITY, SLOTS, REORDER_SLOTS>,
     pub reorder_scratch: Option<&'scratch mut [u8]>,
     /// Optional observation-only counters used by qualification fixtures.
     pub pipeline_observer: Option<&'queue dyn RxPipelineObserver>,
@@ -42,7 +44,12 @@ pub struct Esp32s31ConnectedStaTxResources<
     const ORDINARY_BUFFER_SIZE: usize,
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
-    pub aggregate: AggregateTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub aggregate: AggregateTxResources<
+        'resources,
+        PinnedTxFrame<'resources, M, FRAME_CAPACITY, HEADROOM, TRAILER, QUEUE_DEPTH>,
+        AGGREGATE_SLOTS,
+        AGGREGATE_BUFFER_SIZE,
+    >,
     pub pairwise_key: open_esp_radio_esp32s31_wifi_mac::crypto::StaPairwiseCcmpSlot,
     pub sequences: StaTxSequenceCounters,
     /// Optional observation-only hook supplied by the composition root.
@@ -131,6 +138,7 @@ impl<
 pub struct Esp32s31ConnectedStaTxHandoffFailure<
     'slot,
     'resources,
+    B: 'resources,
     P: WifiTxPowerProfile,
     E: WifiTxEntropy,
     T: WifiTxTimer,
@@ -140,7 +148,7 @@ pub struct Esp32s31ConnectedStaTxHandoffFailure<
 > {
     pub control: Esp32s31ControlTx<'slot, P, E, T, ORDINARY_BUFFER_SIZE>,
     pub handoff: ConnectedTxHandoff,
-    pub aggregate: AggregateTxResources<'resources, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
+    pub aggregate: AggregateTxResources<'resources, B, AGGREGATE_SLOTS, AGGREGATE_BUFFER_SIZE>,
     pub aggregate_tx_observer: Option<&'resources dyn AggregateTxObserver>,
 }
 
@@ -157,6 +165,21 @@ pub struct Esp32s31ConnectedStaDriverParts<H, R, X, C, P> {
     pub tx: X,
     pub control: C,
     pub protocol: P,
+}
+
+/// Complete owner return when the atomic connected graph composition cannot
+/// acquire the ordinary TX owner.
+///
+/// RX protocol and control resources remain unbuilt, so scratch buffers,
+/// queues and hardware owners remain together with the returned TX frontier.
+/// They cannot be mistaken for a reusable disconnected station owner.
+pub struct Esp32s31ConnectedStaCompositionFailure<H, R, P, C, X> {
+    pub plan: Esp32s31ConnectedStaPlan,
+    pub hardware: H,
+    pub rx: R,
+    pub protocol: P,
+    pub control: C,
+    pub tx: X,
 }
 
 /// Driver composition returned to the executor/application layer.

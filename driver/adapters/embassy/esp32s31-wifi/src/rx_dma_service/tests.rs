@@ -12,6 +12,7 @@ use open_esp_radio_esp32s31_wifi_mac::{
     connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher, ConnectedRxEvent, ConnectedRxSink},
     rx::{PUBLIC_HEADER_SIZE, RxDmaBinding, RxIngressConfig, RxRingStopped},
 };
+use std::boxed::Box;
 
 use super::*;
 use crate::{
@@ -194,6 +195,9 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
     let irq = EmbassyMacIrqRuntime::<NoopRawMutex>::new();
     let mut mpdu = [0; ESP32S31_RX_BUFFER_SIZE];
     let mut ethernet = [0; ESP32S31_RX_BUFFER_SIZE];
+    let protocol_runtime = Box::leak(Box::new(
+        crate::connected_rx_protocol::Esp32s31ConnectedRxProtocolStorage::new(),
+    ));
     let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
     let mut protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
@@ -202,6 +206,7 @@ fn finite_service_uses_queue_credits_and_protocol_dispatch_returns_ownership() {
         crate::connected_rx_protocol::AlwaysReadyConnectedRxSink(Observer::default()),
         &mut mpdu,
         &mut ethernet,
+        protocol_runtime,
     );
 
     assert_eq!(
@@ -436,6 +441,9 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
     let mut mpdu = [0; STAGE_CAPACITY];
     let mut ethernet = [0; STAGE_CAPACITY];
     let mut reorder_scratch = [0; STAGE_CAPACITY];
+    let protocol_runtime = Box::leak(Box::new(
+        crate::connected_rx_protocol::Esp32s31ConnectedRxProtocolStorage::new(),
+    ));
     let mut service = Esp32s31ConnectedRx::new(ring, &storage, &pool, NoDelay, sender);
     let mut protocol = Esp32s31ConnectedRxProtocol::new(
         receiver,
@@ -444,6 +452,7 @@ fn negotiated_rx_block_ack_releases_staged_leases_in_sequence_order() {
         crate::connected_rx_protocol::AlwaysReadyConnectedRxSink(OrderObserver::default()),
         &mut mpdu,
         &mut ethernet,
+        protocol_runtime,
     )
     .with_rx_reorder_commands(reorder_receiver)
     .with_rx_reorder_storage(&reorder_storage)

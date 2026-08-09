@@ -34,6 +34,7 @@ members = [
 ]
 exclude = [
     "driver/adapters/embassy/esp32s31-platform",
+    "driver/integration/esp32s31/embassy-wifi",
     "examples/esp32s31-station",
     "hil/targets/esp32s31",
     "verification/vendor/targets/esp32s31/oracle-firmware",

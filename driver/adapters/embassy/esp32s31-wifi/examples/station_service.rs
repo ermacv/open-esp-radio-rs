@@ -9,13 +9,12 @@ use core::future::{Future, ready};
 
 use embassy_futures::block_on;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
-use embassy_time::Duration;
 use open_esp_radio_esp32s31_wifi_embassy::station::{
-    Esp32s31ConnectedTaskGroup, Esp32s31ConnectedTaskStopOutcome, Esp32s31StationAttemptRunner,
-    Esp32s31StationCommandReceiver, Esp32s31StationConfig, Esp32s31StationControlResources,
-    Esp32s31StationExit, Esp32s31StationStartResources, Esp32s31StationStopReason,
-    prepare_esp32s31_station_task, stop_esp32s31_connected_task_group,
+    Esp32s31StationAttemptRunner, Esp32s31StationCommandReceiver, Esp32s31StationConfig,
+    Esp32s31StationControlResources, Esp32s31StationExit, Esp32s31StationStartResources,
+    Esp32s31StationStopReason, prepare_esp32s31_station_task,
 };
+use open_esp_radio_wifi_embassy::connected_tasks::{ConnectedTaskGroup, stop_connected_task_group};
 use open_esp_radio_wifi_sta::station::{StaAttemptContext, StaAttemptOutcome, StaReconnectPolicy};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -28,6 +27,7 @@ struct ExampleRunner;
 impl Esp32s31StationAttemptRunner<NoopRawMutex> for ExampleRunner {
     type Owner = StationOwner;
     type Error = ();
+    type Fault = core::convert::Infallible;
 
     fn run_attempt<'a>(
         &'a mut self,
@@ -44,29 +44,30 @@ struct ProtocolTasks {
     scratch: Option<[u8; 32]>,
 }
 
-impl Esp32s31ConnectedTaskGroup for ProtocolTasks {
+impl ConnectedTaskGroup for ProtocolTasks {
     type Stopped = [u8; 32];
 
     fn request_stop(&mut self) {
         self.stop_requested = true;
     }
 
-    fn wait_stopped(&mut self) -> impl Future<Output = Self::Stopped> + '_ {
+    async fn wait_stopped(&mut self) -> Self::Stopped {
         ready(
             self.scratch
                 .take()
                 .expect("connected task scratch is returned once"),
         )
+        .await
     }
 }
 
 fn main() {
     let policy = StaReconnectPolicy::new(3, 100, 1_000, 100).unwrap();
-    let mut control = Esp32s31StationControlResources::<NoopRawMutex>::new();
+    let control = Esp32s31StationControlResources::<NoopRawMutex>::new();
     let (controller, runner) = prepare_esp32s31_station_task(
         Esp32s31StationConfig::new(policy),
         Esp32s31StationStartResources::new(StationOwner { dma_generation: 7 }),
-        &mut control,
+        &control,
         ExampleRunner,
     )
     .expect("fresh station control resources must accept one task");
@@ -88,13 +89,7 @@ fn main() {
         stop_requested: false,
         scratch: Some([0; 32]),
     };
-    let outcome = block_on(stop_esp32s31_connected_task_group(
-        &mut tasks,
-        Duration::from_secs(2),
-    ));
-    let Esp32s31ConnectedTaskStopOutcome::Stopped(scratch) = outcome else {
-        panic!("the application must reset instead of reusing a timed-out epoch");
-    };
+    let scratch = block_on(stop_connected_task_group(&mut tasks));
     assert!(tasks.stop_requested);
     assert_eq!(scratch.len(), 32);
 }

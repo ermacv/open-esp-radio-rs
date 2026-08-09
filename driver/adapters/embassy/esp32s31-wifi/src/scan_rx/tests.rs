@@ -345,7 +345,7 @@ fn monitor_only_wifi_plan_materializes_the_promiscuous_ring_owner() {
 }
 
 #[test]
-fn complete_cold_scan_can_prepare_the_same_ring_for_a_retry() {
+fn complete_initial_scan_can_prepare_the_same_ring_for_a_retry() {
     let storage =
         Esp32s31RxDmaStorage::<RX_TEST_COUNT, RX_TEST_BUFFER_SIZE, RX_TEST_STORAGE_SIZE>::new();
     let mut hardware = MockRxDma::default();

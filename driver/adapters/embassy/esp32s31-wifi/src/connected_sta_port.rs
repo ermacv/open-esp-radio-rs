@@ -6,7 +6,7 @@
 //! ordinary/A-MPDU TX, BlockAck control and the final [`Esp32s31ConnectedServices`].
 
 use embassy_sync::channel::Receiver;
-use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_embassy_net::{PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_mac::{
     capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     connected_rx::{ConnectedRxConfig, ConnectedRxDispatcher},
@@ -41,7 +41,8 @@ use crate::{
     aggregate_tx_observer::AggregateTxObserver,
     connected_control::Esp32s31ConnectedControl,
     connected_rx_protocol::{
-        ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxFrame,
+        ConnectedRxProtocolSink, Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStorage,
+        Esp32s31StagedRxFrame,
     },
     connected_services::Esp32s31ConnectedServices,
     control_mailbox::ConnectedControlReceiver,
@@ -65,8 +66,9 @@ pub use plan::{
     Esp32s31ConnectedStaRateConfig, Esp32s31ConnectedStaRxPolicy, Esp32s31ConnectedStaTxPolicy,
 };
 pub use resources::{
-    Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
-    Esp32s31ConnectedStaDrivers, Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaReport,
+    Esp32s31ConnectedStaCompositionFailure, Esp32s31ConnectedStaControlResources,
+    Esp32s31ConnectedStaDriverParts, Esp32s31ConnectedStaDrivers,
+    Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaReport,
     Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxHandoffFailure,
     Esp32s31ConnectedStaTxResources,
 };

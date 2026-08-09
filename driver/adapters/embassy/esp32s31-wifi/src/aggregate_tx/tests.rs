@@ -24,8 +24,9 @@ use open_esp_radio_esp32s31_wifi_mac::{
     tx_runtime::StaTxRuntimePolicy,
 };
 use open_esp_radio_esp32s31_wifi_sta::{
+    connected_control::ConnectedControlTx,
     ordinary_tx::{WifiTxPowerPair, WifiTxResources},
-    single_mpdu_tx::{ConnectedTxHandoff, SingleMpduTxConfig},
+    single_mpdu_tx::{ActionTxConfig, ConnectedTxHandoff, SingleMpduTxConfig},
 };
 use open_esp_radio_ieee80211::station::{
     STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaTxSequenceCounters,
@@ -240,6 +241,13 @@ fn send_frame(device: &mut Device, marker: u8) {
         });
 }
 
+fn send_short_frame(device: &mut Device) {
+    device
+        .transmit(&mut context())
+        .expect("free pinned network slot")
+        .consume(8, |frame| frame.fill(0));
+}
+
 fn aggregate_completion(starting_sequence: u16, bitmap: u64) -> MacHtAmpduCompletionRegisters {
     MacHtAmpduCompletionRegisters {
         tx: MacTxCompletionRegisters {
@@ -328,7 +336,10 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         TEST_BUFFER_SIZE,
     >::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
@@ -338,6 +349,10 @@ fn idle_aggregate_returns_ordinary_and_storage_for_station_teardown() {
         },
     )
     .unwrap();
+    assert!(
+        core::mem::size_of_val(&tx) < 2_048,
+        "connected TX must remain a movable handle over external retention arenas"
+    );
 
     let returned = match tx.try_into_station_parts() {
         Ok(parts) => parts,
@@ -361,7 +376,10 @@ fn first_frame_outside_fresh_aggregate_txop_falls_back_to_ordinary_tx() {
     let observer = RecordingAggregateTxObserver::default();
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs0, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
@@ -441,7 +459,10 @@ fn production_sized_he_frame_fits_a_fresh_default_txop_aggregate() {
     let observer = RecordingAggregateTxObserver::default();
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::He(HeRate::new(HeMcs::Mcs9, HeGuardIntervalAndLtf::TwoLtf800Ns)),
             frame_limit: TEST_SLOTS as u8,
@@ -516,7 +537,9 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
         ordinary,
         AggregateTxResources::pipelined(
             HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
             HtAmpduTxResources::new_model(standby.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
         ),
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
@@ -644,6 +667,105 @@ fn pipelined_arena_survives_current_retry_and_publishes_at_next_boundary() {
 }
 
 #[test]
+fn ordinary_control_tx_cannot_admit_a_standby_aggregate() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = resources.split(pool, STATION);
+    send_frame(&mut device, 1);
+
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        AggregateTxResources::pipelined(
+            HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+            HtAmpduTxResources::new_model(standby.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_operational(0, true);
+
+    assert_eq!(
+        ConnectedControlTx::start_action(
+            &mut tx,
+            &mut hardware,
+            &[3, 0],
+            ActionTxConfig::VENDOR_MANAGEMENT,
+        ),
+        Ok(WifiControlProgress::TxPending),
+    );
+    assert!(tx.active());
+    assert!(!tx.can_prepare_network_tx());
+
+    let frame = network.try_receive_tx().unwrap();
+    tx.prepare_network_standby(frame, &network.tx_consumer());
+    assert!(!tx.has_prepared_network_tx());
+}
+
+#[test]
+fn rejected_standby_preparation_preserves_the_hardware_owned_primary() {
+    let resources = std::boxed::Box::leak(std::boxed::Box::new(Resources::new()));
+    let pool = Pool::pin_static(std::boxed::Box::leak(std::boxed::Box::new(Pool::new())));
+    let (mut device, network) = resources.split(pool, STATION);
+    send_frame(&mut device, 1);
+    send_frame(&mut device, 2);
+
+    let mut hardware = Hardware::default();
+    let mut slot = core::pin::pin!(TxSlot::<TEST_BUFFER_SIZE>::new_model());
+    let ordinary = make_ordinary(slot.as_mut(), &mut hardware);
+    let mut primary = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut standby = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
+    let mut tx = Esp32s31ConnectedTx::new(
+        ordinary,
+        AggregateTxResources::pipelined(
+            HtAmpduTxResources::new_model(primary.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+            HtAmpduTxResources::new_model(standby.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
+        AggregateTxConfig {
+            rate: TxPhyRate::Ht(TEST_RATE),
+            frame_limit: TEST_SLOTS as u8,
+            attempt_limit: 2,
+            completion_timeout_us: 250_000,
+            he_txop_limit: HeEdcaTxopLimit::DEFAULT,
+        },
+    )
+    .unwrap();
+    tx.set_block_ack_operational(0, true);
+
+    let first = network.try_receive_tx().unwrap();
+    assert_eq!(
+        tx.start_network(&mut hardware, first, &network.tx_consumer()),
+        Ok(WifiTxProgress::Pending),
+    );
+    assert!(tx.active());
+    assert_eq!(tx.aggregate_slot_state(), TxSlotState::HardwareOwned);
+
+    // A malformed software-owned next batch must be cancelled in the standby
+    // arena without erasing the independently live primary transaction.
+    send_short_frame(&mut device);
+    let short = network.try_receive_tx().unwrap();
+    tx.prepare_network_standby(short, &network.tx_consumer());
+
+    assert!(tx.active());
+    assert_eq!(tx.aggregate_slot_state(), TxSlotState::HardwareOwned);
+    assert_eq!(tx.standby_aggregate_is_fully_free(), Some(true));
+}
+
+#[test]
 fn block_ack_completion_releases_all_referenced_network_leases() {
     let (mut device, network) = make_network();
     send_frame(&mut device, 1);
@@ -655,7 +777,10 @@ fn block_ack_completion_releases_all_referenced_network_leases() {
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
@@ -720,7 +845,10 @@ fn partial_block_ack_retains_missing_frames_across_one_republication() {
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,
@@ -792,7 +920,10 @@ fn one_missing_ht_mpdu_moves_to_ordinary_retry_without_new_sequence_or_pn() {
     let mut ampdu = core::pin::pin!(HtAmpduTxStorage::<TEST_SLOTS, 0>::new());
     let mut tx = Esp32s31ConnectedTx::new(
         ordinary,
-        HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+        AggregateTxResources::single(
+            HtAmpduTxResources::new_model(ampdu.as_mut()).unwrap(),
+            std::boxed::Box::leak(std::boxed::Box::new(RetainedAmpduDmaStorage::new())),
+        ),
         AggregateTxConfig {
             rate: TxPhyRate::Ht(TEST_RATE),
             frame_limit: TEST_SLOTS as u8,

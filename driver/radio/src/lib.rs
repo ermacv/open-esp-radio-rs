@@ -6,6 +6,12 @@ extern crate std;
 
 #[cfg(feature = "wifi")]
 pub mod config;
+#[cfg(feature = "adapter-embassy-wifi")]
+pub mod embassy_supervisor;
+#[cfg(feature = "wifi")]
+pub mod requests;
+#[cfg(feature = "wifi")]
+pub mod supervisor;
 
 #[cfg(feature = "wifi")]
 pub use config::{
@@ -14,10 +20,35 @@ pub use config::{
     WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan,
     WifiStationConfig,
 };
+#[cfg(feature = "adapter-embassy-wifi")]
+pub use embassy_supervisor::{
+    EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
+    EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
+    EmbassyWifiStoppedDispatch, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorControlError,
+    EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
+    EmbassyWifiSupervisorEndpoints, EmbassyWifiSupervisorError, EmbassyWifiSupervisorPort,
+    EmbassyWifiSupervisorPrepareFailure, EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask,
+    dispatch_embassy_wifi_stopped_command, drive_embassy_wifi_active_role,
+    finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
+    run_embassy_wifi_supervisor_actor,
+};
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
     MonitorDropReason, MonitorFilter, MonitorFrame, MonitorFrameType, MonitorFrameTypeMask,
     MonitorPublishOutcome, MonitorSink,
+};
+#[cfg(feature = "wifi")]
+pub use requests::{
+    MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationPowerPolicy, StationRequest,
+    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiServicePlanningError,
+    WifiServicePlanningFailure, WifiServiceRequest, WifiServiceRequestError,
+    WifiServiceRequestFailure, WifiSsid, WifiSsidError, WifiSupervisorConfiguration,
+};
+#[cfg(feature = "wifi")]
+pub use supervisor::{
+    RadioController, RadioSubsystemGeneration, WifiController, WifiStartFailure, WifiStartReport,
+    WifiStartResult, WifiStopReport, WifiSupervisorPort,
 };
 
 #[cfg(feature = "wifi")]
@@ -57,6 +88,43 @@ pub mod esp32s31 {
 
         #[cfg(feature = "esp32s31-wifi-embassy")]
         pub mod embassy {
+            pub mod resources {
+                pub use open_esp_radio_esp32s31_wifi_embassy::resource_profile::{
+                    ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH, ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY,
+                    ESP32S31_DEFAULT_NETWORK_RX_QUEUE_DEPTH,
+                    ESP32S31_DEFAULT_NETWORK_TX_QUEUE_DEPTH, ESP32S31_DEFAULT_NETWORK_TX_TRAILER,
+                    ESP32S31_DEFAULT_RX_BUFFER_SIZE, ESP32S31_DEFAULT_RX_BUFFER_STORAGE_SIZE,
+                    ESP32S31_DEFAULT_RX_DESCRIPTOR_COUNT, ESP32S31_DEFAULT_RX_REORDER_WINDOW,
+                    ESP32S31_DEFAULT_RX_STAGE_CAPACITY, ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT,
+                    ESP32S31_DEFAULT_SCAN_FRAME_CAPACITY, ESP32S31_DEFAULT_SCAN_RECORD_CAPACITY,
+                    ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT, ESP32S31_DEFAULT_TX_BUFFER_SIZE,
+                    Esp32s31DefaultRxDmaStorage, Esp32s31DefaultScanTable,
+                    Esp32s31DefaultStationMemory, Esp32s31DefaultStationMemoryError,
+                    Esp32s31DefaultStationMemoryLease, Esp32s31DefaultWifiResourceProfile,
+                };
+            }
+
+            pub mod station {
+                pub use open_esp_radio_esp32s31_wifi_embassy::station::{
+                    Esp32s31StationCommand, Esp32s31StationCompletion, Esp32s31StationConfig,
+                    Esp32s31StationControlError, Esp32s31StationControlResources,
+                    Esp32s31StationController, Esp32s31StationExit, Esp32s31StationPrepareFailure,
+                    Esp32s31StationReturnedResources, Esp32s31StationStartResources,
+                    Esp32s31StationStopReason, Esp32s31StationTask, prepare_esp32s31_station_task,
+                };
+                #[cfg(target_arch = "riscv32")]
+                pub use open_esp_radio_esp32s31_wifi_embassy::station::{
+                    Esp32s31StationMaterialized, Esp32s31StationPhaseRebindFailure,
+                    Esp32s31StationPhaseReclaimFailure, Esp32s31StationPhaseReclaimed,
+                    Esp32s31StationPhaseRestoreFailure, Esp32s31StationRoleOwner,
+                    Esp32s31StationRuntimeReclaimFailure, Esp32s31StationRuntimeReclaimed,
+                    Esp32s31StationStopped, Esp32s31StationStoppedPhaseResources,
+                    materialize_esp32s31_station, try_rebind_esp32s31_station_phase,
+                    try_reclaim_esp32s31_station_phase, try_reclaim_esp32s31_station_runtime,
+                    try_restore_esp32s31_station_phase,
+                };
+            }
+
             pub mod monitor {
                 pub use open_esp_radio_esp32s31_wifi_embassy::monitor::{
                     Esp32s31MonitorCompletion, Esp32s31MonitorConfigError,
@@ -76,8 +144,8 @@ pub mod esp32s31 {
                         Esp32s31MonitorChannelSwitchError, Esp32s31MonitorInterrupts,
                         Esp32s31MonitorMemory, Esp32s31MonitorStopped,
                         Esp32s31MonitorStoppedResources, Esp32s31MonitorTask,
-                        Esp32s31MonitorTaskBuildFailure, Esp32s31MonitorTaskResources,
-                        prepare_esp32s31_monitor_task,
+                        Esp32s31MonitorTaskBuildFailure, Esp32s31MonitorTaskExit,
+                        Esp32s31MonitorTaskResources, prepare_esp32s31_monitor_task,
                     },
                     phy_delay::EmbassyEsp32s31PhyDelay,
                 };
@@ -88,6 +156,9 @@ pub mod esp32s31 {
             }
         }
     }
+
+    #[cfg(all(feature = "esp32s31-wifi-embassy", target_arch = "riscv32"))]
+    pub mod supervisor;
 
     #[cfg(feature = "esp32s31-wifi")]
     pub const RADIO_CAPABILITIES: crate::RadioCapabilities = crate::RadioCapabilities::wifi_only(
@@ -101,7 +172,7 @@ pub mod esp32s31 {
         Esp32s31MonitorMacStartFailure, Esp32s31MonitorReady, Esp32s31PreparedMonitor,
         Esp32s31PreparedStation, Esp32s31RadioStartConfig, Esp32s31RadioStartFailure,
         Esp32s31RoleMaterializationFailure, Esp32s31RoleMaterializationReason,
-        Esp32s31StartedRadio, Esp32s31StationMacReady, Esp32s31StationMacStartFailure,
+        Esp32s31StartedRadio, Esp32s31StationMacStartFailure, Esp32s31StationReady,
         Esp32s31WifiMacPlatform, Esp32s31WifiMacReady, Esp32s31WifiMacStartConfig,
         Esp32s31WifiMacStartFailure, Esp32s31WifiMacStartReport,
         Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStart, Esp32s31WifiStartConfig,

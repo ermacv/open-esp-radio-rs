@@ -10,6 +10,9 @@
 //! the selected chip can access that memory; the Embassy channel stores only
 //! leases and metadata, not frame-sized arrays.
 
+pub mod connected_tasks;
+pub mod station_network;
+
 #[cfg(test)]
 extern crate std;
 

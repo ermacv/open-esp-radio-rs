@@ -291,7 +291,7 @@ where
                         association_security_ies: selected_rsn.as_bytes(),
                         authenticator_rsn_ie: owner.station.access_point.rsn_ie_bytes(),
                         authenticator_rsnxe: owner.station.access_point.rsnxe_bytes(),
-                        pmk: owner.security.pmk,
+                        pmk: &owner.security.pmk,
                     },
                     &mut next_sequence,
                 )
@@ -336,7 +336,7 @@ where
                 Esp32s31Wpa2KeySession::new(
                     Esp32s31Wpa2Station::new(link.station_address, link.bssid),
                     link.peer_qos,
-                    &mut *owner.security.sequences,
+                    &mut owner.security.sequences,
                     owner.security.message4_protection,
                 ),
             );

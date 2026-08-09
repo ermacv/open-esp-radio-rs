@@ -5,13 +5,12 @@
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::RadioRegisters;
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError,
-    phy_cold::{PhyCalibrationRecord, PhyColdState},
+    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyCalibrationRecord,
 };
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
-    runtime::{Esp32s31WifiRuntimeParts, Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStopped},
+    runtime::{Esp32s31WifiRuntimeContext, Esp32s31WifiStopped},
     switch_esp32s31_wifi_channel,
 };
 use open_esp_radio_esp32s31_wifi_dma::rx_storage::RxDmaStorageError;
@@ -78,6 +77,17 @@ where
     power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
 }
 
+/// Exact platform route and wake runtimes returned by a stopped monitor.
+pub struct Esp32s31MonitorInterruptParts<'runtime, R, M: RawMutex>
+where
+    R: MacInterruptRoute<Setup = MacInterruptSetup>,
+    R::Platform: Sized,
+{
+    pub route: R,
+    pub mac_runtime: &'runtime EmbassyMacIrqRuntime<M>,
+    pub power_runtime: &'runtime EmbassyPowerIrqRuntime<M>,
+}
+
 impl<'runtime, R, M: RawMutex> Esp32s31MonitorInterrupts<'runtime, R, M>
 where
     R: MacInterruptRoute<Setup = MacInterruptSetup>,
@@ -92,6 +102,14 @@ where
             route,
             mac_runtime,
             power_runtime,
+        }
+    }
+
+    pub fn into_parts(self) -> Esp32s31MonitorInterruptParts<'runtime, R, M> {
+        Esp32s31MonitorInterruptParts {
+            route: self.route,
+            mac_runtime: self.mac_runtime,
+            power_runtime: self.power_runtime,
         }
     }
 }
@@ -224,10 +242,8 @@ struct Esp32s31MonitorOwner<
         DMA_BUFFER_SIZE,
         DMA_STORAGE_SIZE,
     >,
-    phy: PhyColdState,
-    calibration_record: Option<PhyCalibrationRecord>,
+    context: Esp32s31WifiRuntimeContext,
     report: Esp32s31MonitorBuildReport,
-    current_channel: WifiChannel,
     plan: WifiStandaloneMonitorPlan,
     memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
 }
@@ -252,27 +268,26 @@ where
     }
 
     pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.calibration_record.as_ref()
+        self.context.calibration_record()
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
-        self.current_channel
+        self.context.current_channel()
     }
 
     /// Return the common Wi-Fi owner and every reusable monitor resource only
     /// after IRQ routing and RX DMA are both proven inactive.
     fn try_into_stopped(
         self,
+        control: &'runtime Esp32s31MonitorControlResources<M>,
     ) -> Result<
         Esp32s31MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         Self,
     > {
         let Self {
             service,
-            phy,
-            calibration_record,
+            context,
             report,
-            current_channel,
             plan,
             memory,
         } = self;
@@ -281,10 +296,8 @@ where
             Err(service) => {
                 return Err(Self {
                     service,
-                    phy,
-                    calibration_record,
+                    context,
                     report,
-                    current_channel,
                     plan,
                     memory,
                 });
@@ -300,18 +313,7 @@ where
         let _halted = receive
             .into_halted()
             .unwrap_or_else(|_| unreachable!("a decomposable monitor service has stopped RX"));
-        let wifi = Esp32s31WifiStopped::from_runtime_parts(Esp32s31WifiRuntimeParts {
-            platform,
-            registers,
-            interrupt_setup,
-            phy,
-            calibration_record,
-            start_report: report.start,
-            transition_report: Esp32s31WifiRuntimeTransitionReport {
-                cold_interrupt_mask: report.cold_interrupt_mask,
-            },
-            current_channel,
-        });
+        let wifi = context.into_stopped(platform, registers, interrupt_setup);
         Ok(Esp32s31MonitorStopped {
             wifi,
             plan,
@@ -319,6 +321,7 @@ where
                 memory,
                 sink,
                 interrupts: Esp32s31MonitorInterrupts::new(route, mac_runtime, power_runtime),
+                control,
             },
         })
     }
@@ -326,7 +329,7 @@ where
     /// Run inside the long-lived role task until its application handle asks
     /// for shutdown. Completion is published only after IRQ and DMA are
     /// confirmed quiescent, or as `Faulted` while this task still retains every
-    /// hardware-visible owner for reset.
+    /// hardware-visible owner in quarantine for explicit board recovery.
     pub async fn run_controlled(
         &mut self,
         control: &mut Esp32s31MonitorCommandReceiver<'_, M>,
@@ -358,7 +361,7 @@ where
             .stopped_radio_mut()
             .map_err(Esp32s31MonitorChannelSwitchError::Active)?;
         switch_esp32s31_wifi_channel::<D, _, _>(
-            &mut self.phy,
+            self.context.phy_mut(),
             channel,
             platform,
             registers,
@@ -366,7 +369,7 @@ where
         )
         .await
         .map_err(Esp32s31MonitorChannelSwitchError::Phy)?;
-        self.current_channel = channel;
+        self.context.set_current_channel(channel);
         Ok(())
     }
 }
@@ -428,7 +431,6 @@ where
     };
     let start = wifi.start_report();
     let runtime = wifi.into_runtime_parts();
-    let current_channel = runtime.current_channel;
     let interrupts = Esp32s31MacInterruptEpoch::new(
         resources.route,
         runtime.interrupt_setup,
@@ -444,14 +446,12 @@ where
     );
     Ok(Esp32s31MonitorOwner {
         service,
-        phy: runtime.phy,
-        calibration_record: runtime.calibration_record,
+        context: runtime.context,
         report: Esp32s31MonitorBuildReport {
             start,
             cold_interrupt_mask,
             descriptor_base: resources.dma.descriptor_base,
         },
-        current_channel,
         plan,
         memory: resources.dma,
     })
@@ -477,7 +477,7 @@ pub struct Esp32s31MonitorTaskResources<
     S: MonitorSink<RxPhyInfo>,
 {
     runtime: Esp32s31MonitorResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
-    control: &'runtime mut Esp32s31MonitorControlResources<M>,
+    control: &'runtime Esp32s31MonitorControlResources<M>,
 }
 
 impl<
@@ -498,7 +498,7 @@ where
         memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
         sink: S,
         interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
-        control: &'runtime mut Esp32s31MonitorControlResources<M>,
+        control: &'runtime Esp32s31MonitorControlResources<M>,
     ) -> Self {
         Self {
             runtime: Esp32s31MonitorResources::new(
@@ -534,6 +534,28 @@ pub struct Esp32s31MonitorStoppedResources<
     memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
     sink: S,
     interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
+    control: &'runtime Esp32s31MonitorControlResources<M>,
+}
+
+/// Named role-local owner set returned when monitor resources are rebound to a
+/// different Wi-Fi role by a supervisor or qualification harness.
+pub struct Esp32s31MonitorStoppedResourceParts<
+    'runtime,
+    R,
+    M: RawMutex,
+    S,
+    const COUNT: usize,
+    const DMA_BUFFER_SIZE: usize,
+    const DMA_STORAGE_SIZE: usize,
+> where
+    R: MacInterruptRoute<Setup = MacInterruptSetup>,
+    R::Platform: Sized,
+    S: MonitorSink<RxPhyInfo>,
+{
+    pub memory: Esp32s31MonitorMemory<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+    pub sink: S,
+    pub interrupts: Esp32s31MonitorInterrupts<'runtime, R, M>,
+    pub control: &'runtime Esp32s31MonitorControlResources<M>,
 }
 
 impl<
@@ -550,13 +572,31 @@ where
     R::Platform: Sized,
     S: MonitorSink<RxPhyInfo>,
 {
-    /// Bind a fresh control mailbox before materializing another monitor task.
-    pub fn with_control(
+    pub fn into_parts(
         self,
-        control: &'runtime mut Esp32s31MonitorControlResources<M>,
+    ) -> Esp32s31MonitorStoppedResourceParts<
+        'runtime,
+        R,
+        M,
+        S,
+        COUNT,
+        DMA_BUFFER_SIZE,
+        DMA_STORAGE_SIZE,
+    > {
+        Esp32s31MonitorStoppedResourceParts {
+            memory: self.memory,
+            sink: self.sink,
+            interrupts: self.interrupts,
+            control: self.control,
+        }
+    }
+
+    /// Rebind the exact returned role-local resources to another monitor task.
+    pub fn into_task_resources(
+        self,
     ) -> Esp32s31MonitorTaskResources<'runtime, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>
     {
-        Esp32s31MonitorTaskResources::new(self.memory, self.sink, self.interrupts, control)
+        Esp32s31MonitorTaskResources::new(self.memory, self.sink, self.interrupts, self.control)
     }
 }
 
@@ -637,6 +677,23 @@ pub struct Esp32s31MonitorTask<
     control: Esp32s31MonitorCommandReceiver<'runtime, M>,
 }
 
+/// Terminal output of one consuming standalone-monitor task epoch.
+///
+/// A returned stopped owner proves that IRQ routing and RX DMA are both
+/// inactive. `Faulted` deliberately retains the complete task at its exact
+/// hardware frontier; callers may only hand it to reset policy and cannot
+/// misclassify a run error as reusable stopped Wi-Fi.
+pub enum Esp32s31MonitorTaskExit<S, T, E> {
+    Stopped {
+        stopped: S,
+        result: Result<Esp32s31MonitorRunReport, Esp32s31MonitorRunFailure<E>>,
+    },
+    Faulted {
+        task: T,
+        result: Result<Esp32s31MonitorRunReport, Esp32s31MonitorRunFailure<E>>,
+    },
+}
+
 impl<
     'runtime,
     P,
@@ -672,6 +729,27 @@ where
         self.owner.run_controlled(&mut self.control).await
     }
 
+    /// Run and consume one complete role epoch for a supervisor task wrapper.
+    ///
+    /// The run result and hardware ownership are intentionally independent:
+    /// an operational error can still leave a safely stopped owner, while an
+    /// apparently completed control exchange must not permit reuse if the
+    /// IRQ/DMA owners did not return.
+    #[allow(clippy::type_complexity)]
+    pub async fn run_to_exit(
+        mut self,
+    ) -> Esp32s31MonitorTaskExit<
+        Esp32s31MonitorStopped<'runtime, P, R, M, S, COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE>,
+        Self,
+        R::Error,
+    > {
+        let result = self.run().await;
+        match self.try_into_stopped() {
+            Ok(stopped) => Esp32s31MonitorTaskExit::Stopped { stopped, result },
+            Err(task) => Esp32s31MonitorTaskExit::Faulted { task, result },
+        }
+    }
+
     /// Consume a task only after its hardware epoch is fully stopped.
     ///
     /// Success acknowledges `Stopped` to the paired controller and returns
@@ -684,7 +762,8 @@ where
         Self,
     > {
         let Self { owner, mut control } = self;
-        match owner.try_into_stopped() {
+        let control_resources = control.resources();
+        match owner.try_into_stopped(control_resources) {
             Ok(stopped) => {
                 control.complete(Esp32s31MonitorCompletion::Stopped);
                 drop(control);
@@ -748,33 +827,40 @@ where
     S: MonitorSink<RxPhyInfo>,
 {
     let Esp32s31MonitorTaskResources { runtime, control } = resources;
-    if let Err(error) = control.ensure_reusable() {
-        return Err(Esp32s31MonitorTaskBuildFailure {
-            error: Esp32s31MonitorBuildError::Control(error),
-            plan,
-            wifi,
-            resources: Esp32s31MonitorTaskResources { runtime, control },
-        });
-    }
-    match prepare_esp32s31_monitor(plan, wifi, runtime) {
-        Ok(owner) => {
-            let (controller, receiver) = control.split_checked();
-            Ok((
-                controller,
-                Esp32s31MonitorTask {
-                    owner,
-                    control: receiver,
-                },
-            ))
+    let (controller, mut receiver) = match control.split() {
+        Ok(endpoints) => endpoints,
+        Err(error) => {
+            return Err(Esp32s31MonitorTaskBuildFailure {
+                error: Esp32s31MonitorBuildError::Control(error),
+                plan,
+                wifi,
+                resources: Esp32s31MonitorTaskResources { runtime, control },
+            });
         }
-        Err(failure) => Err(Esp32s31MonitorTaskBuildFailure {
-            error: failure.error,
-            plan: failure.plan,
-            wifi: failure.wifi,
-            resources: Esp32s31MonitorTaskResources {
-                runtime: failure.resources,
-                control,
+    };
+    match prepare_esp32s31_monitor(plan, wifi, runtime) {
+        Ok(owner) => Ok((
+            controller,
+            Esp32s31MonitorTask {
+                owner,
+                control: receiver,
             },
-        }),
+        )),
+        Err(failure) => {
+            // No task or live IRQ/DMA epoch was created. Return the control
+            // lease cleanly so the exact build resources remain retryable.
+            receiver.complete(Esp32s31MonitorCompletion::Stopped);
+            drop(receiver);
+            drop(controller);
+            Err(Esp32s31MonitorTaskBuildFailure {
+                error: failure.error,
+                plan: failure.plan,
+                wifi: failure.wifi,
+                resources: Esp32s31MonitorTaskResources {
+                    runtime: failure.resources,
+                    control,
+                },
+            })
+        }
     }
 }

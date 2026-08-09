@@ -2165,6 +2165,18 @@ bit-width = 1
 access = "read-write"
 
 [[registers]]
+address = 537922580
+width = 32
+access = "read-write"
+identity = "PHY_FEDATA_WIFI_RECOVERED.CFO_CONFIG_WORD_0_OPAQUE"
+peripheral = "PHY_FEDATA_WIFI_RECOVERED"
+peripheral-type = "PhyFedataWifiRecovered"
+peripheral-module = "phy_fedata_wifi_recovered"
+scope = []
+register-method = "cfo_config_word_0_opaque"
+fields = []
+
+[[registers]]
 address = 537922584
 width = 32
 access = "read-write"
@@ -2604,6 +2616,31 @@ method = "high_address_unknown"
 bit-offset = 16
 bit-width = 8
 access = "read-write"
+
+[[registers]]
+address = 537935916
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1"
+peripheral = "WIFI_MAC_HE_INIT_SUFFIX"
+peripheral-type = "WifiMacHeInitSuffix"
+peripheral-module = "wifi_mac_he_init_suffix"
+scope = []
+register-method = "multi_bssid_control_interface_1"
+
+[[registers.fields]]
+svd-name = "BSS_COLOR"
+method = "bss_color"
+bit-offset = 21
+bit-width = 6
+access = "read-only"
+
+[[registers.fields]]
+svd-name = "BSS_COLOR_ENABLE"
+method = "bss_color_enable"
+bit-offset = 27
+bit-width = 1
+access = "read-only"
 
 [[registers]]
 address = 537935928
@@ -12611,6 +12648,78 @@ method = "image_unknown"
 bit-offset = 20
 bit-width = 12
 access = "read-write"
+
+[[registers]]
+address = 537939440
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_CONTROL"
+peripheral = "WIFI_MAC_COLD_HANDSHAKE"
+peripheral-type = "WifiMacColdHandshake"
+peripheral-module = "wifi_mac_cold_handshake"
+scope = []
+register-method = "wdev_timer_target_0_control"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537939444
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_VALUE"
+peripheral = "WIFI_MAC_COLD_HANDSHAKE"
+peripheral-type = "WifiMacColdHandshake"
+peripheral-module = "wifi_mac_cold_handshake"
+scope = []
+register-method = "wdev_timer_target_0_value"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
+
+[[registers]]
+address = 537939448
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_CONTROL"
+peripheral = "WIFI_MAC_COLD_HANDSHAKE"
+peripheral-type = "WifiMacColdHandshake"
+peripheral-module = "wifi_mac_cold_handshake"
+scope = []
+register-method = "wdev_timer_target_1_control"
+
+[[registers.fields]]
+svd-name = "ENABLE"
+method = "enable"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537939452
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_VALUE"
+peripheral = "WIFI_MAC_COLD_HANDSHAKE"
+peripheral-type = "WifiMacColdHandshake"
+peripheral-module = "wifi_mac_cold_handshake"
+scope = []
+register-method = "wdev_timer_target_1_value"
+
+[[registers.fields]]
+svd-name = "VALUE"
+method = "value"
+bit-offset = 0
+bit-width = 32
+access = "write-only"
 
 [[registers]]
 address = 537939456
@@ -26672,6 +26781,48 @@ bit-width = 1
 access = "read-write"
 
 [[registers]]
+address = 537949232
+width = 32
+access = "read-write"
+identity = "PHY_AGC_RECOVERED_GAPS.CFO_CONFIG_WORD_1_OPAQUE"
+peripheral = "PHY_AGC_RECOVERED_GAPS"
+peripheral-type = "PhyAgcRecoveredGaps"
+peripheral-module = "phy_agc_recovered_gaps"
+scope = []
+register-method = "cfo_config_word_1_opaque"
+
+[[registers.fields]]
+svd-name = "BIT_27_CONTROL_UNKNOWN"
+method = "bit_27_control_unknown"
+bit-offset = 27
+bit-width = 1
+access = "read-write"
+
+[[registers]]
+address = 537949236
+width = 32
+access = "read-write"
+identity = "PHY_AGC_RECOVERED_GAPS.CFO_CONFIG_WORD_2_OPAQUE"
+peripheral = "PHY_AGC_RECOVERED_GAPS"
+peripheral-type = "PhyAgcRecoveredGaps"
+peripheral-module = "phy_agc_recovered_gaps"
+scope = []
+register-method = "cfo_config_word_2_opaque"
+fields = []
+
+[[registers]]
+address = 537949240
+width = 32
+access = "read-write"
+identity = "PHY_AGC_RECOVERED_GAPS.CFO_CONFIG_WORD_3_OPAQUE"
+peripheral = "PHY_AGC_RECOVERED_GAPS"
+peripheral-type = "PhyAgcRecoveredGaps"
+peripheral-module = "phy_agc_recovered_gaps"
+scope = []
+register-method = "cfo_config_word_3_opaque"
+fields = []
+
+[[registers]]
 address = 537949244
 width = 32
 access = "read-write"
@@ -26999,6 +27150,18 @@ register-method = "backup_word_0c_opaque"
 fields = []
 
 [[registers]]
+address = 537950256
+width = 32
+access = "read-write"
+identity = "PHY_NRX_RECOVERED_GAPS.ONE_TONE_SPUR_CONTROL_OPAQUE"
+peripheral = "PHY_NRX_RECOVERED_GAPS"
+peripheral-type = "PhyNrxRecoveredGaps"
+peripheral-module = "phy_nrx_recovered_gaps"
+scope = []
+register-method = "one_tone_spur_control_opaque"
+fields = []
+
+[[registers]]
 address = 537950280
 width = 32
 access = "read-write"
@@ -27078,6 +27241,24 @@ peripheral-module = "phy_agc_oracle"
 scope = []
 register-method = "agc_update_78a4_opaque"
 fields = []
+
+[[registers]]
+address = 537950392
+width = 32
+access = "read-write"
+identity = "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE"
+peripheral = "PHY_NRX_RECOVERED_GAPS"
+peripheral-type = "PhyNrxRecoveredGaps"
+peripheral-module = "phy_nrx_recovered_gaps"
+scope = []
+register-method = "cfo_high_control_opaque"
+
+[[registers.fields]]
+svd-name = "HIGH_MODE_UNKNOWN"
+method = "high_mode_unknown"
+bit-offset = 29
+bit-width = 3
+access = "read-write"
 
 [[registers]]
 address = 537950408
@@ -27270,6 +27451,24 @@ peripheral-module = "phy_baseband_config_oracle"
 scope = []
 register-method = "baseband_watchdog_status"
 fields = []
+
+[[registers]]
+address = 537951252
+width = 32
+access = "read-write"
+identity = "PHY_BB_RECOVERED_GAPS.SPUR_COEFFICIENT_CONTROL_0_OPAQUE"
+peripheral = "PHY_BB_RECOVERED_GAPS"
+peripheral-type = "PhyBbRecoveredGaps"
+peripheral-module = "phy_bb_recovered_gaps"
+scope = []
+register-method = "spur_coefficient_control_0_opaque"
+
+[[registers.fields]]
+svd-name = "BIT_13_CONTROL_UNKNOWN"
+method = "bit_13_control_unknown"
+bit-offset = 13
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537951280
@@ -27549,6 +27748,36 @@ bit-width = 1
 access = "read-write"
 
 [[registers]]
+address = 537951464
+width = 32
+access = "read-write"
+identity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_4_OPAQUE"
+peripheral = "PHY_BB_RECOVERED_GAPS"
+peripheral-type = "PhyBbRecoveredGaps"
+peripheral-module = "phy_bb_recovered_gaps"
+scope = []
+register-method = "cfo_config_word_4_opaque"
+fields = []
+
+[[registers]]
+address = 537951468
+width = 32
+access = "read-write"
+identity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_5_OPAQUE"
+peripheral = "PHY_BB_RECOVERED_GAPS"
+peripheral-type = "PhyBbRecoveredGaps"
+peripheral-module = "phy_bb_recovered_gaps"
+scope = []
+register-method = "cfo_config_word_5_opaque"
+
+[[registers.fields]]
+svd-name = "BIT_12_CONTROL_UNKNOWN"
+method = "bit_12_control_unknown"
+bit-offset = 12
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 537951564
 width = 32
 access = "read-write"
@@ -27785,6 +28014,24 @@ bit-width = 1
 access = "read-only"
 
 [[registers]]
+address = 537974800
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TSF_STATUS.WAKEUP_SIGNAL_CLEAR"
+peripheral = "WIFI_MAC_TSF_STATUS"
+peripheral-type = "WifiMacTsfStatus"
+peripheral-module = "wifi_mac_tsf_status"
+scope = []
+register-method = "wakeup_signal_clear"
+
+[[registers.fields]]
+svd-name = "CLEAR"
+method = "clear"
+bit-offset = 0
+bit-width = 1
+access = "read-write"
+
+[[registers]]
 address = 537974804
 width = 32
 access = "read-write"
@@ -27880,6 +28127,38 @@ method = "value"
 bit-offset = 0
 bit-width = 32
 access = "read-only"
+
+[[registers]]
+address = 537974824
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL"
+peripheral = "WIFI_MAC_STA_TSF_LOAD"
+peripheral-type = "WifiMacStaTsfLoad"
+peripheral-module = "wifi_mac_sta_tsf_load"
+scope = []
+register-method = "tsf_deviation_control"
+
+[[registers.fields]]
+svd-name = "DEVIATION"
+method = "deviation"
+bit-offset = 0
+bit-width = 16
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "RX_BEACON_ABORT_SYNC_ENABLE"
+method = "rx_beacon_abort_sync_enable"
+bit-offset = 16
+bit-width = 1
+access = "read-write"
+
+[[registers.fields]]
+svd-name = "DEVIATION_SYNC_ENABLE"
+method = "deviation_sync_enable"
+bit-offset = 19
+bit-width = 1
+access = "read-write"
 
 [[registers]]
 address = 537974828
@@ -28092,6 +28371,24 @@ svd-name = "TIME"
 method = "time"
 bit-offset = 16
 bit-width = 16
+access = "read-write"
+
+[[registers]]
+address = 537974852
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_RTC_TIMER_UPDATE.TBTT_RF_CONTROL_WAIT_CYCLES"
+peripheral = "WIFI_MAC_RTC_TIMER_UPDATE"
+peripheral-type = "WifiMacRtcTimerUpdate"
+peripheral-module = "wifi_mac_rtc_timer_update"
+scope = []
+register-method = "tbtt_rf_control_wait_cycles"
+
+[[registers.fields]]
+svd-name = "WAIT_CYCLES"
+method = "wait_cycles"
+bit-offset = 0
+bit-width = 24
 access = "read-write"
 
 [[registers]]

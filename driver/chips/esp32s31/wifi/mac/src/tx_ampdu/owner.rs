@@ -11,6 +11,7 @@ use open_esp_radio_dma::StableDmaBacking;
 use open_esp_radio_esp32s31_registers::{MacTxDetachOutcome, MacTxDetachReason};
 use open_esp_radio_esp32s31_wifi_dma::tx_ampdu_storage::{
     AmpduDmaState, AmpduDmaStorage, AmpduDmaStorageError, PinnedAmpduDmaStorage, RetainedAmpduDma,
+    RetainedAmpduDmaStorage,
 };
 
 use crate::tx::{HeAmpduTxConfig, HtAmpduTxConfig, LegacyTxQueue, TxCookie, TxSlotState};
@@ -92,27 +93,34 @@ impl<const SLOTS: usize, const BUFFER_SIZE: usize> HtAmpduTxResources<'static, S
 /// network allocation while hardware can still follow its descriptor. Safe
 /// callers append owned [`StableDmaBacking`] leases; release is admitted only
 /// after the underlying storage has returned to [`TxSlotState::Free`].
-pub struct RetainedDmaAmpduTx<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize> {
+pub struct RetainedDmaAmpduTx<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize> {
     storage: Option<Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>>,
-    dma: Option<RetainedAmpduDma<B, SLOTS, 0>>,
+    dma: Option<RetainedAmpduDma<'storage, B, SLOTS, 0>>,
 }
 
-impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
+impl<'storage, B: 'storage, const SLOTS: usize, const BUFFER_SIZE: usize>
     RetainedDmaAmpduTx<'storage, B, SLOTS, BUFFER_SIZE>
 {
-    pub fn new(resources: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>) -> Self {
+    pub fn new(
+        resources: HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+        retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
+    ) -> Self {
         let HtAmpduTxResources { metadata, dma } = resources;
         Self {
             storage: Some(metadata),
-            dma: Some(RetainedAmpduDma::new(dma)),
+            dma: Some(RetainedAmpduDma::new(dma, retention)),
         }
     }
 
     #[cfg(not(target_pointer_width = "32"))]
     pub fn new_model(
         storage: Pin<&'storage mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>>,
+        retention: &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
     ) -> Result<Self, HtAmpduTxError> {
-        Ok(Self::new(HtAmpduTxResources::new_model(storage)?))
+        Ok(Self::new(
+            HtAmpduTxResources::new_model(storage)?,
+            retention,
+        ))
     }
 
     pub fn as_ref(&self) -> Pin<&HtAmpduTxStorage<SLOTS, BUFFER_SIZE>> {
@@ -122,6 +130,11 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .as_ref()
     }
 
+    /// Stable address of the metadata allocation behind this movable owner.
+    pub fn metadata_address(&self) -> usize {
+        core::ptr::from_ref(self.as_ref().get_ref()).addr()
+    }
+
     fn metadata_mut(&mut self) -> Pin<&mut HtAmpduTxStorage<SLOTS, BUFFER_SIZE>> {
         self.storage
             .as_mut()
@@ -129,7 +142,7 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .as_mut()
     }
 
-    fn dma_mut(&mut self) -> &mut RetainedAmpduDma<B, SLOTS, 0> {
+    fn dma_mut(&mut self) -> &mut RetainedAmpduDma<'storage, B, SLOTS, 0> {
         self.dma
             .as_mut()
             .expect("retained DMA owner keeps descriptor storage until teardown")
@@ -140,6 +153,27 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .as_ref()
             .expect("retained DMA owner keeps descriptor storage until teardown")
             .held_backing_count()
+    }
+
+    /// Whether both the protocol metadata and DMA descriptor arena are idle.
+    ///
+    /// Teardown must check both halves: a zero backing count alone does not
+    /// prove that a partially prepared or quarantined descriptor arena can be
+    /// republished into a later radio epoch.
+    pub fn is_fully_free(&self) -> bool {
+        self.state() == TxSlotState::Free
+            && self
+                .dma
+                .as_ref()
+                .is_some_and(|dma| dma.state() == AmpduDmaState::Free)
+            && self.held_backing_count() == 0
+    }
+
+    /// Whether the lower descriptor arena, independently of MAC metadata, is idle.
+    pub fn dma_is_free(&self) -> bool {
+        self.dma
+            .as_ref()
+            .is_some_and(|dma| dma.state() == AmpduDmaState::Free)
     }
 
     /// Confirm that every lease has already crossed a safe release edge.
@@ -162,7 +196,13 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
     #[allow(clippy::result_large_err)]
     pub fn try_into_resources(
         mut self,
-    ) -> Result<HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>, Self> {
+    ) -> Result<
+        (
+            HtAmpduTxResources<'storage, SLOTS, BUFFER_SIZE>,
+            &'storage mut RetainedAmpduDmaStorage<B, SLOTS>,
+        ),
+        Self,
+    > {
         if self.state() != TxSlotState::Free || self.held_backing_count() != 0 {
             return Err(self);
         }
@@ -170,8 +210,8 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .dma
             .take()
             .expect("retained DMA owner contains descriptor storage");
-        let dma = match dma_owner.try_into_dma() {
-            Ok(dma) => dma,
+        let (dma, retention) = match dma_owner.try_into_parts() {
+            Ok(parts) => parts,
             Err(dma_owner) => {
                 self.dma = Some(dma_owner);
                 return Err(self);
@@ -181,7 +221,7 @@ impl<'storage, B, const SLOTS: usize, const BUFFER_SIZE: usize>
             .storage
             .take()
             .expect("retained DMA owner contains teardown metadata");
-        Ok(HtAmpduTxResources { metadata, dma })
+        Ok((HtAmpduTxResources { metadata, dma }, retention))
     }
 
     /// Begin a fresh aggregate in both protocol and descriptor owners.

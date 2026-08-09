@@ -146,7 +146,7 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedStation<P> {
         self,
         handshake_sample_limit: u32,
         access_point_hardware_address: WifiMacAddress,
-    ) -> Result<Esp32s31StationMacReady<P>, Esp32s31StationMacStartFailure<P>> {
+    ) -> Result<Esp32s31StationReady<P>, Esp32s31StationMacStartFailure<P>> {
         let station_hardware_address = WifiMacAddress::new(self.interface.interface.address)
             .expect("a validated station plan contains a unicast address");
         match start_esp32s31_wifi_mac(
@@ -157,10 +157,10 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedStation<P> {
                 access_point_hardware_address,
             ),
         ) {
-            Ok(mac) => Ok(Esp32s31StationMacReady {
+            Ok(mac) => Ok(Esp32s31StationReady {
                 interface: self.interface,
                 plan: self.plan,
-                mac,
+                wifi: enter_esp32s31_wifi_runtime(mac),
             }),
             Err(failure) => Err(Esp32s31StationMacStartFailure {
                 interface: self.interface,
@@ -171,14 +171,18 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedStation<P> {
     }
 }
 
-/// Station topology and powered MAC owner ready for scan/DMA resources.
-pub struct Esp32s31StationMacReady<P> {
+/// Station topology joined to the common stopped Wi-Fi runtime owner.
+///
+/// Scan, join, DMA and IRQ resources remain role-local. Materializing any
+/// station epoch must consume the contained [`Esp32s31WifiStopped`] and a
+/// clean station shutdown must reconstruct that same role-neutral frontier.
+pub struct Esp32s31StationReady<P> {
     interface: BoundVirtualInterface,
     plan: WifiPlan,
-    mac: Esp32s31WifiMacReady<P>,
+    wifi: Esp32s31WifiStopped<P>,
 }
 
-impl<P> Esp32s31StationMacReady<P> {
+impl<P> Esp32s31StationReady<P> {
     pub const fn interface(&self) -> BoundVirtualInterface {
         self.interface
     }
@@ -187,8 +191,8 @@ impl<P> Esp32s31StationMacReady<P> {
         self.plan
     }
 
-    pub fn into_parts(self) -> (WifiPlan, Esp32s31WifiMacReady<P>) {
-        (self.plan, self.mac)
+    pub fn into_parts(self) -> (WifiPlan, Esp32s31WifiStopped<P>) {
+        (self.plan, self.wifi)
     }
 }
 

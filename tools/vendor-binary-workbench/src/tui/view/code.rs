@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Row, Table},
 };
 
-use super::{columns, detail_paragraph, field, heading, list_rows, selected_style};
+use super::{columns, detail_paragraph, field, heading, selected_style, table_rows};
 use crate::tui::state::BrowserState;
 
 pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
@@ -19,8 +19,8 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .iter()
         .enumerate()
         .filter(|(index, _)| state.is_visible(*index))
-        .skip(state.viewport_start(list_rows(list)))
-        .take(list_rows(list))
+        .skip(state.viewport_start(table_rows(list)))
+        .take(table_rows(list))
         .map(|(index, boundary)| {
             Row::new([
                 boundary

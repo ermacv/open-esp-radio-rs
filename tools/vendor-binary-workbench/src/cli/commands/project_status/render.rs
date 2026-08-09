@@ -1,4 +1,4 @@
-//! Stable human summary and schema-1 JSON document.
+//! Stable human summary and schema-2 JSON document.
 
 use std::collections::BTreeMap;
 
@@ -22,6 +22,8 @@ struct ComponentDocument<'a> {
     status: Readiness,
     #[serde(skip_serializing_if = "Option::is_none")]
     diagnostic: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_action: Option<&'a str>,
     #[serde(flatten)]
     details: &'a BTreeMap<String, DetailValue>,
 }
@@ -76,6 +78,24 @@ pub(super) fn print_text(report: &ProjectStatusReport) {
     let mut table = rows.build();
     table.with(Style::rounded());
     outputln!("{table}");
+
+    let mut actions = BTreeMap::<&str, Vec<String>>::new();
+    for phase in &report.phases {
+        for component in &phase.components {
+            if let Some(action) = component.next_action.as_deref() {
+                actions
+                    .entry(action)
+                    .or_default()
+                    .push(format!("{}/{}", phase.name, component.name));
+            }
+        }
+    }
+    if !actions.is_empty() {
+        outputln!("\nNext actions:");
+        for (action, components) in actions {
+            outputln!("  {}: {}", components.join(", "), sanitize(action));
+        }
+    }
 }
 
 pub(super) fn document(
@@ -93,6 +113,7 @@ pub(super) fn document(
                     name: &component.name,
                     status: component.status,
                     diagnostic: component.diagnostic.as_deref(),
+                    next_action: component.next_action.as_deref(),
                     details: &component.details,
                 })
                 .collect::<Vec<_>>();
@@ -106,7 +127,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 1,
+        schema: 2,
         command: "project status",
         project: ProjectIdentity {
             id: &report.project_id,
@@ -155,16 +176,24 @@ mod tests {
             },
             vec![Phase::collect(
                 "analysis",
-                vec![Component::new("linked_ir", Readiness::Incomplete).detail("profiles", 2usize)],
+                vec![
+                    Component::new("linked_ir", Readiness::Incomplete)
+                        .detail("profiles", 2usize)
+                        .next_action("run ir build"),
+                ],
             )],
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 1);
+        assert_eq!(document["schema"], 2);
         assert_eq!(document["overall"], "incomplete");
         assert_eq!(
             document["phases"]["analysis"]["components"][0]["profiles"],
             2
+        );
+        assert_eq!(
+            document["phases"]["analysis"]["components"][0]["next_action"],
+            "run ir build"
         );
     }
 }

@@ -12,7 +12,12 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
                 "calling_convention",
                 context.target.calling_convention.label(),
             ),
-        Err(error) => Component::new("backend", Readiness::Invalid).diagnostic(error),
+        Err(error) => Component::new("backend", Readiness::Invalid)
+            .diagnostic(error)
+            .next_action(format!(
+                "select a compiled backend in {}",
+                context.project_path.display()
+            )),
     };
     let platform = context.project.platform_pack.as_ref().map_or_else(
         || Component::new("platform_pack", Readiness::NotConfigured),
@@ -35,12 +40,21 @@ pub(super) fn configuration(context: &ProjectContext<'_>) -> Phase {
         None => Component::new("harness", Readiness::NotConfigured),
         Some(_) => match context.target.require_available_harness() {
             Ok(id) => Component::new("harness", Readiness::Ready).detail("id", id),
-            Err(error) => Component::new("harness", Readiness::Invalid).diagnostic(error),
+            Err(error) => Component::new("harness", Readiness::Invalid)
+                .diagnostic(error)
+                .next_action(format!(
+                    "rebuild the workbench with the feature that registers this target harness; the target is selected by {}",
+                    context.project_path.display()
+                )),
         },
     };
     let memory = match context.memory_map {
         None => Component::new("memory_map", Readiness::Incomplete)
-            .diagnostic("project has no memory map"),
+            .diagnostic("project has no memory map")
+            .next_action(format!(
+                "configure memory-map in {}",
+                context.project_path.display()
+            )),
         Some(memory) => {
             let mmio = memory
                 .regions
@@ -87,7 +101,11 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
             Readiness::NotConfigured
         };
         let mut component = Component::new("run_spec", status)
-            .diagnostic("caller-owned artifact bindings are unavailable");
+            .diagnostic("caller-owned artifact bindings are unavailable")
+            .next_action(format!(
+                "vendor-binary-workbench project inputs init --project {}",
+                context.project_path.display()
+            ));
         if let Some(path) = context.run_spec_path {
             component = component.detail("path", path.display().to_string());
         }
@@ -159,20 +177,22 @@ pub(super) fn inputs(context: &ProjectContext<'_>) -> Phase {
     } else {
         Readiness::Ready
     };
-    Phase::collect(
-        "inputs",
-        vec![
-            Component::new("artifacts", status)
-                .detail(
-                    "run_spec",
-                    context
-                        .run_spec_path
-                        .map(|path| path.display().to_string())
-                        .unwrap_or_default(),
-                )
-                .detail("configured", records.len())
-                .detail("ready", ready)
-                .detail("items", records),
-        ],
-    )
+    let mut component = Component::new("artifacts", status)
+        .detail(
+            "run_spec",
+            context
+                .run_spec_path
+                .map(|path| path.display().to_string())
+                .unwrap_or_default(),
+        )
+        .detail("configured", records.len())
+        .detail("ready", ready)
+        .detail("items", records);
+    if status != Readiness::Ready {
+        component = component.next_action(format!(
+            "repair local artifact bindings with `vendor-binary-workbench project inputs init --check --project {}`",
+            context.project_path.display()
+        ));
+    }
+    Phase::collect("inputs", vec![component])
 }

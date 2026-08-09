@@ -139,6 +139,8 @@ pub struct Component {
     pub status: Readiness,
     pub details: BTreeMap<String, DetailValue>,
     pub diagnostic: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_action: Option<String>,
 }
 
 impl Component {
@@ -148,6 +150,7 @@ impl Component {
             status,
             details: BTreeMap::new(),
             diagnostic: None,
+            next_action: None,
         }
     }
 
@@ -158,6 +161,11 @@ impl Component {
 
     pub(crate) fn diagnostic(mut self, value: impl ToString) -> Self {
         self.diagnostic = Some(value.to_string());
+        self
+    }
+
+    pub(crate) fn next_action(mut self, value: impl ToString) -> Self {
+        self.next_action = Some(value.to_string());
         self
     }
 }

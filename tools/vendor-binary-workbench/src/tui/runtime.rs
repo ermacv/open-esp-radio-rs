@@ -35,8 +35,10 @@ fn event_loop(
     state: &mut BrowserState,
     worker: &Worker,
 ) -> io::Result<()> {
+    let mut dirty = true;
     loop {
         while let Some(event) = worker.poll() {
+            dirty = true;
             match event {
                 worker::Event::Snapshot(snapshot) => state.replace_snapshot(*snapshot),
                 worker::Event::Comparison { name, report } => {
@@ -52,26 +54,35 @@ fn event_loop(
             }
         }
         request_details(state, worker);
-        terminal.draw(|frame| super::view::render(frame, state))?;
-        if event::poll(Duration::from_millis(75))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match handle_key(state, key) {
-                Action::Continue => {}
-                Action::Reload => {
-                    if let Err(error) = worker.reload() {
-                        state.operation_failed(error.to_string());
+        if dirty {
+            terminal.draw(|frame| super::view::render(frame, state))?;
+            dirty = false;
+        }
+        if event::poll(Duration::from_millis(75))? {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    dirty = true;
+                    match handle_key(state, key) {
+                        Action::Continue => {}
+                        Action::Reload => {
+                            if let Err(error) = worker.reload() {
+                                state.operation_failed(error.to_string());
+                            }
+                        }
+                        Action::Compare(name) => {
+                            if let Err(error) = worker.compare(name) {
+                                state.operation_failed(error.to_string());
+                            }
+                        }
+                        Action::Quit => return Ok(()),
                     }
+                    request_details(state, worker);
                 }
-                Action::Compare(name) => {
-                    if let Err(error) = worker.compare(name) {
-                        state.operation_failed(error.to_string());
-                    }
+                Event::Resize(_, _) => {
+                    dirty = true;
                 }
-                Action::Quit => return Ok(()),
+                _ => {}
             }
-            request_details(state, worker);
         }
     }
 }

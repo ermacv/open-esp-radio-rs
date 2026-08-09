@@ -38,6 +38,12 @@ that every user must learn.
 - [ ] Define and test what "analyze all functions" means for ELF, linked ELF,
   archive members, local/internal symbols, recovered code boundaries, aliases,
   overlapping symbols and decode failures.
+- [ ] Cover the ISA selected by the real target. ESP32-S31 declares
+  `riscv32imafc`, while the current `rv-asm` boundary only decodes I/M/A/C;
+  the 2026-08-09 inventory retained 155 fail-closed decode blockers, including
+  valid floating-point, CSR and vendor/system instructions. Unsupported
+  instructions must remain explicit blockers, but one instruction must not
+  discard the rest of an otherwise recoverable function.
 - [x] Make project IR root selection explicit: `roots = "all"` is the normal
   full-symbol mode and `roots = "symbol-prefix"` requires a non-empty prefix;
   an empty-string convention is not part of project configuration.
@@ -47,6 +53,10 @@ that every user must learn.
 - [ ] Make the generated register inventory a practical review loop: address,
   width, read/write/RMW patterns, bit candidates, callers, evidence and a clear
   path into the editable register model.
+- [ ] Classify diagnostic bulk MMIO reads separately from operational driver
+  accesses without hiding them. On ESP32-S31, `phy_reg_check` deliberately
+  walks hundreds of consecutive registers for logging; these are real reads,
+  but they should not look equivalent to control-path dependencies.
 - [x] Separate project-owned register ranges from external MMIO observations;
   external system-register evidence remains visible but cannot block the
   radio-only SVD/PAC publication gate.
@@ -63,6 +73,11 @@ that every user must learn.
 - [ ] Exercise the read-only TUI on the real ESP32-S31 project and make it a
   useful optional frontend over the same reports; it must not introduce a
   second analysis implementation.
+- [x] Verify the real ESP32-S31 Overview, Functions and Registers views at
+  80×24; keep compact tabs/status/help visible, redraw only on change, and use
+  distinct header-aware table viewport math so active Register and Comparison
+  rows cannot scroll into a border. Functions remains a header-free list and
+  has its own long-scroll regression case.
 
 ## P1 — generic model gaps
 
@@ -96,6 +111,10 @@ that every user must learn.
   or generated evidence.
 - [ ] Ensure every failed/blocked project stage prints one concrete next action
   and the exact responsible file.
+- [x] Add typed per-component `next_action` data to project status and collapse
+  duplicate actions in the human frontend. The real ESP32-S31 status now links
+  register, interface and function review counts to their report and editable
+  pack, and explains the common publication blocker once.
 - [ ] Keep human output bounded and task-oriented; JSON/JSONL retain complete
   machine evidence on stdout, while diagnostics/progress remain on stderr.
 - [x] Bound `ir export` human function rows after the real all-ROM run emitted

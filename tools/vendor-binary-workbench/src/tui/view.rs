@@ -23,6 +23,15 @@ const SELECTED: Style = Style::new()
     .add_modifier(Modifier::BOLD);
 
 pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
+    if frame.area().width < 64 || frame.area().height < 16 {
+        frame.render_widget(
+            Paragraph::new("Vendor Binary Workbench needs at least a 64×16 terminal")
+                .alignment(Alignment::Center)
+                .wrap(Wrap { trim: true }),
+            frame.area(),
+        );
+        return;
+    }
     let [header, tabs, content, footer] = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -50,19 +59,28 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
 fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     let project = &state.snapshot.project_status;
     let readiness = readiness(project.overall);
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(
-            "Vendor Binary Workbench",
+            if area.width < 100 {
+                "Workbench"
+            } else {
+                "Vendor Binary Workbench"
+            },
             Style::new().add_modifier(Modifier::BOLD),
         ),
         Span::raw("  "),
         Span::raw(&project.project_id),
-        Span::raw("  target="),
-        Span::raw(&project.target.id),
         Span::raw("  "),
         Span::styled(readiness.0, Style::new().fg(readiness.1)),
-        Span::raw(format!("  generation={}", state.snapshot.generation)),
-    ]);
+    ];
+    if area.width >= 100 {
+        spans.extend([
+            Span::raw("  target="),
+            Span::raw(&project.target.id),
+            Span::raw(format!("  generation={}", state.snapshot.generation)),
+        ]);
+    }
+    let line = Line::from(spans);
     frame.render_widget(
         Paragraph::new(line).block(Block::default().borders(Borders::ALL)),
         area,
@@ -70,9 +88,10 @@ fn render_header(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
 }
 
 fn render_tabs(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
+    let compact = area.width < 110;
     let titles = Section::ALL
         .iter()
-        .map(|section| Line::from(section.title()))
+        .map(|section| Line::from(section_title(*section, compact)))
         .collect::<Vec<_>>();
     let selected = Section::ALL
         .iter()
@@ -97,8 +116,8 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .iter()
         .enumerate()
         .filter(|(index, _)| state.is_visible(*index))
-        .skip(state.viewport_start(list_rows(list)))
-        .take(list_rows(list))
+        .skip(state.viewport_start(table_rows(list)))
+        .take(table_rows(list))
         .map(|(index, phase)| {
             let readiness = readiness(phase.status);
             Row::new([
@@ -112,9 +131,9 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Table::new(
             rows,
             [
-                Constraint::Percentage(52),
-                Constraint::Percentage(30),
-                Constraint::Percentage(18),
+                Constraint::Min(12),
+                Constraint::Length(12),
+                Constraint::Length(5),
             ],
         )
         .header(Row::new(["Phase", "Status", "Parts"]).style(heading()))
@@ -147,6 +166,12 @@ fn render_overview(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                             diagnostic,
                             Style::new().fg(Color::Yellow),
                         )));
+                    }
+                    if let Some(action) = &component.next_action {
+                        lines.push(Line::from(vec![
+                            Span::styled("Next: ", Style::new().fg(Color::Cyan)),
+                            Span::raw(action),
+                        ]));
                     }
                     lines
                 })
@@ -225,8 +250,8 @@ fn render_types(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         .iter()
         .enumerate()
         .filter(|(index, _)| state.is_visible(*index))
-        .skip(state.viewport_start(list_rows(list)))
-        .take(list_rows(list))
+        .skip(state.viewport_start(table_rows(list)))
+        .take(table_rows(list))
         .map(|(index, logical_type)| {
             Row::new([
                 logical_type.name.clone(),
@@ -316,8 +341,13 @@ fn render_footer(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
     } else if state.busy {
         "Working...".to_owned()
     } else {
-        "Tab/←/→ section  j/k select  / search  PgUp/PgDn detail  Enter/c compare  r reload  q quit"
-            .to_owned()
+        if area.width < 100 {
+            "Tab tabs  j/k move  / find  d/u detail  Enter open  c compare  r reload  q quit"
+                .to_owned()
+        } else {
+            "Tab/←/→ section  j/k select  / search  PgUp/PgDn detail  Enter/c compare  r reload  q quit"
+                .to_owned()
+        }
     };
     frame.render_widget(
         Paragraph::new(status)
@@ -329,6 +359,22 @@ fn render_footer(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             })),
         area,
     );
+}
+
+fn section_title(section: Section, compact: bool) -> &'static str {
+    if !compact {
+        return section.title();
+    }
+    match section {
+        Section::Overview => "Overview",
+        Section::Code => "Code",
+        Section::Functions => "Funcs",
+        Section::Registers => "Regs",
+        Section::Interfaces => "APIs",
+        Section::Comparisons => "Compare",
+        Section::Diagnostics => "Diag",
+        Section::Types => "Types",
+    }
 }
 
 pub(super) fn columns(area: Rect) -> [Rect; 2] {
@@ -351,6 +397,10 @@ pub(super) fn detail_paragraph<'a>(
 
 pub(super) fn list_rows(area: Rect) -> usize {
     usize::from(area.height.saturating_sub(2)).max(1)
+}
+
+pub(super) fn table_rows(area: Rect) -> usize {
+    usize::from(area.height.saturating_sub(3)).max(1)
 }
 
 pub(super) fn heading() -> Style {
@@ -391,9 +441,9 @@ mod tests {
     use super::*;
     use crate::{
         CodeWorkspaceReport, ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport,
-        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterWorkspaceReport,
-        ScenarioArgumentSummary, ScenarioSuggestionSummary, ScenarioSuggestionVariantSummary,
-        WorkspaceSnapshot,
+        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterSummary,
+        RegisterWorkspaceReport, ScenarioArgumentSummary, ScenarioSuggestionSummary,
+        ScenarioSuggestionVariantSummary, WorkspaceSnapshot,
     };
 
     #[test]
@@ -476,6 +526,24 @@ mod tests {
         assert!(rendered.contains("analysis"));
         assert!(rendered.contains("generation=7"));
 
+        let mut compact_terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        compact_terminal
+            .draw(|frame| render(frame, &state))
+            .unwrap();
+        let compact = compact_terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(compact.contains("Workbench"));
+        assert!(compact.contains("incomplete"));
+        assert!(compact.contains("Compare"));
+        assert!(compact.contains("Types"));
+        assert!(compact.contains("d/u detail"));
+        assert!(compact.contains("q quit"));
+
         let function = FunctionSummary {
             profile: "phy".to_owned(),
             source: "rom".to_owned(),
@@ -538,5 +606,57 @@ mod tests {
             .collect::<String>();
         assert!(rendered.contains("trace-init"));
         assert!(rendered.contains("Press Enter or c"));
+
+        for index in 1..30_u32 {
+            let mut item = state.snapshot.functions[0].clone();
+            item.identity = format!("rom::function-{index:02}");
+            item.symbol = format!("function-{index:02}");
+            state.snapshot.functions.push(item);
+            state.snapshot.registers.registers.push(RegisterSummary {
+                address: 0x2010_0000 + index * 4,
+                name: format!("REGISTER_{index:02}"),
+            });
+            let mut comparison = state.snapshot.comparisons[0].clone();
+            comparison.name = format!("case-{index:02}");
+            state.snapshot.comparisons.push(comparison);
+        }
+        state.snapshot.registers.registers.insert(
+            0,
+            RegisterSummary {
+                address: 0x2010_0000,
+                name: "REGISTER_00".to_owned(),
+            },
+        );
+
+        state.section = Section::Functions;
+        state.select_last();
+        compact_terminal
+            .draw(|frame| render(frame, &state))
+            .unwrap();
+        assert!(buffer_text(&compact_terminal).contains("function-29"));
+
+        state.section = Section::Registers;
+        state.select_last();
+        compact_terminal
+            .draw(|frame| render(frame, &state))
+            .unwrap();
+        assert!(buffer_text(&compact_terminal).contains("0x20100074"));
+
+        state.section = Section::Comparisons;
+        state.select_last();
+        compact_terminal
+            .draw(|frame| render(frame, &state))
+            .unwrap();
+        assert!(buffer_text(&compact_terminal).contains("case-29"));
+    }
+
+    fn buffer_text(terminal: &Terminal<TestBackend>) -> String {
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect()
     }
 }

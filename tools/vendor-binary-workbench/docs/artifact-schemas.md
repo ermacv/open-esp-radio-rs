@@ -37,3 +37,7 @@ and `project status` are deliberately separate typed models. Their `schema`
 field versions a command result, not a stored evidence artifact. Publication
 metadata belongs to those command reports and is not embedded into persistent
 symbol/MMIO/interface/linked-IR data.
+
+`project status` currently emits command-result schema 2. Each non-ready
+component may carry a typed `next_action`; human output groups identical
+actions while JSON keeps the action attached to every responsible component.

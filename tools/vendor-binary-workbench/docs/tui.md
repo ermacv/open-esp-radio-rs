@@ -11,7 +11,9 @@ cargo vendor-binary-workbench project browse \
 The browser requires interactive stdin and stdout. It accepts only the human
 output mode and deliberately rejects `--target-spec`, `--run-spec` and `--svd`:
 the checked-in project is its single configuration root. Use the ordinary CLI
-for standalone target/backend experiments and machine-readable output.
+for standalone target/backend experiments and machine-readable output. The
+minimum terminal size is 64×16; an 80×24 terminal uses compact headers, tabs
+and key hints without hiding a readiness state or exit key.
 
 ## Views and keys
 
@@ -45,8 +47,11 @@ generation, and failure leaves the old generation intact with an on-screen
 message. Terminal input and drawing stay on one thread.
 
 Long lists use a selection-following viewport, while the right-hand detail
-pane has independent vertical scrolling. Filtering changes only the visible
-index and never discards snapshot data. Function index rows and heavy details
+pane has independent vertical scrolling. Table viewports account separately
+for borders and their header row, so the active register/comparison cannot be
+scrolled into the lower border. List views such as Functions use the additional
+header-free row. Filtering changes only the visible index and never discards
+snapshot data. Function index rows and heavy details
 (contexts, memory fields, scenario candidates and pseudo-Rust) are separate
 typed DTOs keyed by stable function identity. The worker loads one detail on
 selection and the current snapshot generation owns the resulting cache.
@@ -62,6 +67,8 @@ Implementation state follows the same boundary: `tui/state/detail.rs` owns
 lazy caches, `state/filter.rs` owns matching and `state/navigation.rs` owns
 reviewed cross-links. Code, function, register, interface and comparison views are
 separate renderers; none performs project I/O or analysis.
+The terminal redraws only after input, resize or a worker result; the periodic
+worker poll does not repaint an unchanged frame.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
 an editable verification-profile draft with explicit TODO arguments; the

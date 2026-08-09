@@ -68,6 +68,10 @@ impl BrowserState {
                         .semantic_operations
                         .iter()
                         .any(|value| contains(value))
+                    || function
+                        .decode_blocker_classes
+                        .iter()
+                        .any(|value| contains(value))
             }),
             Section::Registers => {
                 self.snapshot

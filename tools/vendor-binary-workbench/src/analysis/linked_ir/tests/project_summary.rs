@@ -42,7 +42,8 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         regions: Vec::new(),
     };
 
-    let report = build_linked_ir_for_source(&resolver, "private_", &map, "primary", false, false);
+    let report =
+        build_linked_ir_for_source(&resolver, "private_", &map, "primary", false, false, 0);
 
     assert_eq!(report.exported_functions, 0);
     assert_eq!(report.local_functions, 2);
@@ -59,8 +60,8 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     );
 
     let project_report = merge_linked_ir(vec![
-        build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true, false),
-        build_linked_ir_for_source(&resolver, "private_", &map, "rom", true, false),
+        build_linked_ir_for_source(&resolver, "private_", &map, "libphy", true, false, 0),
+        build_linked_ir_for_source(&resolver, "private_", &map, "rom", true, false, 0),
     ]);
     assert_eq!(project_report.functions.len(), 4);
     assert_eq!(
@@ -76,6 +77,26 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
             ("rom", "rom::private_helper@0x00002000"),
         ]
     );
+
+    let serial = summarize_linked_ir(build_linked_functions_for_roots(
+        &resolver,
+        resolver.symbols.clone(),
+        "",
+        &map,
+        "primary",
+        "primary",
+        false,
+        false,
+    ));
+    let parallel = summarize_linked_ir(build_all_linked_functions_parallel(
+        &resolver,
+        resolver.symbols.clone(),
+        &map,
+        "primary",
+        false,
+        2,
+    ));
+    assert_eq!(parallel, serial);
 }
 
 #[test]

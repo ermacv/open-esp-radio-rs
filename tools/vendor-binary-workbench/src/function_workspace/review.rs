@@ -8,6 +8,8 @@ use super::{
 };
 use crate::Result;
 
+const DECODE_BLOCKER_PREVIEW_LIMIT: usize = 16;
+
 pub(crate) fn render_function_review(
     workspace: &FunctionWorkspace,
     interface_links: Option<&[FunctionInterfaceLink]>,
@@ -296,6 +298,45 @@ fn write_function(
                 .join(", ")
         )
         .expect("writing to String cannot fail");
+    }
+    if !fact.decode_blockers.is_empty() {
+        writeln!(
+            output,
+            "- Decode blockers: {} total{}",
+            fact.decode_blockers.len(),
+            (fact.decode_blockers.len() > DECODE_BLOCKER_PREVIEW_LIMIT)
+                .then_some("; first 16 shown")
+                .unwrap_or("")
+        )
+        .expect("writing to String cannot fail");
+        for blocker in fact
+            .decode_blockers
+            .iter()
+            .take(DECODE_BLOCKER_PREVIEW_LIMIT)
+        {
+            writeln!(
+                output,
+                "  - `{}` at `{:#x}`, width {}, raw `{:#010x}`, flow `{}`",
+                markdown_code(&blocker.class),
+                blocker.address,
+                blocker.width,
+                blocker.raw,
+                if blocker.linear_control_flow {
+                    "linear"
+                } else {
+                    "blocked"
+                }
+            )
+            .expect("writing to String cannot fail");
+        }
+        if fact.decode_blockers.len() > DECODE_BLOCKER_PREVIEW_LIMIT {
+            writeln!(
+                output,
+                "  - {} more; inspect linked IR or the TUI for complete per-PC evidence",
+                fact.decode_blockers.len() - DECODE_BLOCKER_PREVIEW_LIMIT
+            )
+            .expect("writing to String cannot fail");
+        }
     }
     writeln!(
         output,

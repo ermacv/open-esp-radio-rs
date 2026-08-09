@@ -17,10 +17,16 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
+    if arguments.jobs > 8 {
+        return Err(crate::Error::invalid(
+            "ir build --jobs accepts 0 (safe automatic mode) or 1..=8",
+        ));
+    }
     let document = build_project_ir(
         ProjectIrBuildRequest {
             profiles: arguments.profile.into_iter().collect::<BTreeSet<_>>(),
             check: arguments.check,
+            jobs: usize::from(arguments.jobs),
         },
         project,
         run_spec,

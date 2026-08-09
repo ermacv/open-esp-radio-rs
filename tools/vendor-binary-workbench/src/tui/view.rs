@@ -557,6 +557,8 @@ mod tests {
             summary: None,
             complete: false,
             blockers: Vec::new(),
+            decode_blockers: 1,
+            decode_blocker_classes: vec!["zero-fill-or-illegal-trap".to_owned()],
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 0,
@@ -568,6 +570,13 @@ mod tests {
                 registers: Vec::new(),
                 contexts: Vec::new(),
                 memory_fields: Vec::new(),
+                decode_blockers: vec![crate::FunctionDecodeBlockerSummary {
+                    address: 0x1020,
+                    width: 2,
+                    raw: 0,
+                    class: "zero-fill-or-illegal-trap".to_owned(),
+                    linear_control_flow: false,
+                }],
                 scenario_suggestions: vec![ScenarioSuggestionSummary {
                     kind: "argument-branch".to_owned(),
                     site: Some(0x1010),
@@ -584,6 +593,17 @@ mod tests {
         );
         state.snapshot.functions.push(function);
         state.section = Section::Functions;
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
+        assert!(rendered.contains("zero-fill-or-illegal-trap"));
+
+        state.scroll_detail_down(8);
         terminal.draw(|frame| render(frame, &state)).unwrap();
         let rendered = terminal
             .backend()

@@ -15,6 +15,11 @@ pub(super) fn run(
     target: &TargetSpec,
     project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
+    if arguments.jobs > 8 {
+        return Err(crate::Error::invalid(
+            "ir export --jobs accepts 0 (safe automatic mode) or 1..=8",
+        ));
+    }
     let mut artifacts = arguments
         .artifact
         .into_iter()
@@ -40,6 +45,7 @@ pub(super) fn run(
         &arguments.entry_contract,
         svd,
         target,
+        usize::from(arguments.jobs),
     )?;
 
     let publications = arguments

@@ -89,11 +89,12 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         discover_project_interfaces_operation(self.project, self.run_spec()?, check)
     }
 
-    fn build_linked_ir(&mut self, check: bool) -> Result<bool> {
+    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<bool> {
         crate::application::project_ir_build::build_project_ir(
             crate::application::project_ir_build::ProjectIrBuildRequest {
                 profiles: Default::default(),
                 check,
+                jobs,
             },
             self.project,
             self.run_spec()?,

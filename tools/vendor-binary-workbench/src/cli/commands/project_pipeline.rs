@@ -25,7 +25,7 @@ pub(super) fn run(
     let request = ProjectAnalysisRequest {
         check: arguments.check,
         deny_unreviewed: arguments.deny_unreviewed,
-        mmio_jobs: usize::from(arguments.jobs),
+        jobs: usize::from(arguments.jobs),
     };
     let report = crate::application::project_analysis::analyze_project(
         project, request, run_spec, memory_map, svd, target,

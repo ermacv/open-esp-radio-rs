@@ -20,6 +20,7 @@ use crate::{
 pub(crate) struct ProjectIrBuildRequest {
     pub(crate) profiles: BTreeSet<String>,
     pub(crate) check: bool,
+    pub(crate) jobs: usize,
 }
 
 struct BuiltProfileSummary<'a> {
@@ -81,6 +82,7 @@ pub(crate) fn build_project_ir<'a>(
             svd,
             target,
             &effective_code,
+            request.jobs,
         )?;
         if request.check {
             check_profile(profile, &documents, &mut stale);
@@ -289,9 +291,11 @@ mod tests {
         let options = ProjectIrBuildRequest {
             profiles: ["phy".to_owned()].into(),
             check: true,
+            jobs: 2,
         };
         assert_eq!(options.profiles, ["phy".to_owned()].into());
         assert!(options.check);
+        assert_eq!(options.jobs, 2);
         let profiles = [profile("all"), profile("phy")];
         assert_eq!(
             select_profiles(&profiles, &options.profiles)

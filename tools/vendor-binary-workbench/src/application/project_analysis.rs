@@ -15,7 +15,7 @@ use crate::{Result, project::ProjectSpec};
 pub(crate) struct ProjectAnalysisRequest {
     pub(crate) check: bool,
     pub(crate) deny_unreviewed: bool,
-    pub(crate) mmio_jobs: usize,
+    pub(crate) jobs: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -32,7 +32,7 @@ pub(crate) trait ProjectAnalysisOperations {
     fn symbol_inventory(&mut self, check: bool) -> Result<bool>;
     fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<bool>;
     fn discover_interfaces(&mut self, check: bool) -> Result<bool>;
-    fn build_linked_ir(&mut self, check: bool) -> Result<bool>;
+    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<bool>;
     fn build_navigation(&mut self, check: bool) -> Result<bool>;
     fn validate_code(&mut self, deny_unreviewed: bool) -> Result<bool>;
     fn review_code(&mut self, check: bool) -> Result<bool>;
@@ -94,7 +94,7 @@ pub(crate) fn run(
             StageOutcome::Blocked("memory-map is not configured".to_owned())
         }
         Some(_) => execute("mmio-discovery", generated, || {
-            operations.discover_mmio(mode.is_check(), request.mmio_jobs)
+            operations.discover_mmio(mode.is_check(), request.jobs)
         }),
     };
     summary.record("mmio-discovery", &mmio);
@@ -116,7 +116,7 @@ pub(crate) fn run(
         StageOutcome::Blocked("run-spec is not configured".to_owned())
     } else {
         execute("linked-ir", generated, || {
-            operations.build_linked_ir(mode.is_check())
+            operations.build_linked_ir(mode.is_check(), request.jobs)
         })
     };
     summary.record("linked-ir", &ir);
@@ -294,7 +294,7 @@ mod tests {
             self.called("interfaces")
         }
 
-        fn build_linked_ir(&mut self, _: bool) -> Result<bool> {
+        fn build_linked_ir(&mut self, _: bool, _: usize) -> Result<bool> {
             self.called("ir")
         }
 

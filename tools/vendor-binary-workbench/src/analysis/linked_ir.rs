@@ -1,6 +1,10 @@
 //! Best-effort linked function/call IR for manual vendor-code analysis.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    sync::mpsc::sync_channel,
+    thread,
+};
 
 use indicatif::ProgressStyle;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
@@ -17,6 +21,9 @@ const MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE: usize = 4_096;
 const MAX_CALL_GRAPH_EVENTS_PER_TRACE: usize = 1_024;
 const MAX_CONTEXT_PROJECTION_STATES: usize = 4_096;
 const LINKED_CONTEXT_ARGUMENTS: u8 = 16;
+const MAX_LINKED_IR_JOBS: usize = 8;
+const AUTO_LINKED_IR_JOBS: usize = 4;
+const LINKED_IR_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 mod model;
 
@@ -128,22 +135,63 @@ pub(crate) fn build_linked_ir_for_source(
     source: &str,
     namespace_identities: bool,
     include_reachable: bool,
+    jobs: usize,
 ) -> LinkedIrReport {
+    let mut root_keys = BTreeSet::new();
+    let roots = resolver
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol.name.starts_with(symbol_prefix) && root_keys.insert(symbol_key(symbol))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let jobs = linked_ir_worker_count(jobs, roots.len());
+    let functions = if jobs > 1 && symbol_prefix.is_empty() {
+        build_all_linked_functions_parallel(
+            resolver,
+            roots,
+            svd,
+            source,
+            namespace_identities,
+            jobs,
+        )
+    } else {
+        build_linked_functions_for_roots(
+            resolver,
+            roots,
+            symbol_prefix,
+            svd,
+            source,
+            source,
+            namespace_identities,
+            include_reachable,
+        )
+    };
+    summarize_linked_ir(functions)
+}
+
+fn build_linked_functions_for_roots(
+    resolver: &ReferenceResolver,
+    roots: Vec<artifact::ArtifactSymbolDefinition>,
+    symbol_prefix: &str,
+    svd: &MmioMap,
+    source: &str,
+    progress_label: &str,
+    namespace_identities: bool,
+    include_reachable: bool,
+) -> Vec<LinkedIrFunction> {
     let mut functions = Vec::new();
     let identities = IrIdentityCatalog::new(resolver, namespace_identities.then_some(source));
     let mut scheduled = BTreeSet::<SymbolKey>::new();
     let mut pending = VecDeque::new();
-    for symbol in resolver
-        .symbols
-        .iter()
-        .filter(|symbol| symbol.name.starts_with(symbol_prefix))
-    {
-        if scheduled.insert(symbol_key(symbol)) {
-            pending.push_back(symbol.clone());
+    for symbol in roots {
+        if scheduled.insert(symbol_key(&symbol)) {
+            pending.push_back(symbol);
         }
     }
 
-    let progress = linked_ir_progress_span(source, scheduled.len());
+    let progress = linked_ir_progress_span(progress_label, scheduled.len());
 
     while let Some(symbol) = pending.pop_front() {
         let selection = if symbol.name.starts_with(symbol_prefix) {
@@ -343,7 +391,88 @@ pub(crate) fn build_linked_ir_for_source(
 
     progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", functions.len()));
 
-    summarize_linked_ir(functions)
+    functions
+}
+
+fn linked_ir_worker_count(requested: usize, functions: usize) -> usize {
+    let available = thread::available_parallelism().map_or(1, usize::from);
+    let requested = if requested == 0 {
+        available.min(AUTO_LINKED_IR_JOBS)
+    } else {
+        requested.min(MAX_LINKED_IR_JOBS).min(available)
+    };
+    requested.max(1).min(functions.max(1))
+}
+
+fn build_all_linked_functions_parallel(
+    resolver: &ReferenceResolver,
+    mut roots: Vec<artifact::ArtifactSymbolDefinition>,
+    svd: &MmioMap,
+    source: &str,
+    namespace_identities: bool,
+    jobs: usize,
+) -> Vec<LinkedIrFunction> {
+    // Long ROM routines dominate short thunks. Greedily balancing byte counts
+    // gives every worker comparable input while retaining deterministic
+    // partitioning and final identity order.
+    roots.sort_by(|left, right| {
+        right
+            .bytes
+            .len()
+            .cmp(&left.bytes.len())
+            .then_with(|| symbol_key(left).cmp(&symbol_key(right)))
+    });
+    let mut buckets = (0..jobs).map(|_| (0_usize, Vec::new())).collect::<Vec<_>>();
+    for root in roots {
+        let bucket = buckets
+            .iter()
+            .enumerate()
+            .min_by_key(|(index, (bytes, _))| (*bytes, *index))
+            .map(|(index, _)| index)
+            .expect("at least one linked-IR worker bucket");
+        buckets[bucket].0 += root.bytes.len();
+        buckets[bucket].1.push(root);
+    }
+
+    let (sender, receiver) = sync_channel::<(usize, Vec<LinkedIrFunction>)>(jobs);
+    thread::scope(|scope| {
+        for (worker, (_, roots)) in buckets.into_iter().enumerate() {
+            let sender = sender.clone();
+            let progress_label = format!("{source} worker {}", worker + 1);
+            thread::Builder::new()
+                .name(format!("linked-ir-{worker}"))
+                .stack_size(LINKED_IR_WORKER_STACK_BYTES)
+                .spawn_scoped(scope, move || {
+                    let functions = build_linked_functions_for_roots(
+                        resolver,
+                        roots,
+                        "",
+                        svd,
+                        source,
+                        &progress_label,
+                        namespace_identities,
+                        false,
+                    );
+                    sender
+                        .send((worker, functions))
+                        .expect("linked-IR result receiver remains alive");
+                })
+                .expect("spawning a bounded linked-IR worker");
+        }
+        drop(sender);
+        let mut chunks = (0..jobs)
+            .map(|_| {
+                receiver
+                    .recv()
+                    .expect("every linked-IR worker publishes one result")
+            })
+            .collect::<Vec<_>>();
+        chunks.sort_by_key(|(worker, _)| *worker);
+        chunks
+            .into_iter()
+            .flat_map(|(_, functions)| functions)
+            .collect()
+    })
 }
 
 fn linked_ir_progress_span(source: &str, functions: usize) -> tracing::Span {

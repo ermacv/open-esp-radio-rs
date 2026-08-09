@@ -29,7 +29,7 @@ use crate::{
 const MAX_DISCOVERY_STATES: usize = 127;
 const MAX_DISCOVERY_BRANCH_DECISIONS: usize = 12;
 const MAX_DISCOVERY_JOBS: usize = 8;
-const AUTO_DISCOVERY_JOBS: usize = 1;
+const AUTO_DISCOVERY_JOBS: usize = 4;
 const MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE: usize = 4_096;
 const MAX_DISCOVERY_EVENTS_PER_TRACE: usize = 1_024;
 const MAX_DISCOVERY_EVENTS_PER_FUNCTION: usize = 2_048;
@@ -41,7 +41,7 @@ const DISCOVERY_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct MmioDiscoveryOptions {
-    /// Zero selects the conservative automatic worker count.
+    /// Zero selects up to four available workers.
     pub(crate) jobs: usize,
 }
 

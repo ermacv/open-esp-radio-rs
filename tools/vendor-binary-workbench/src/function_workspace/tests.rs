@@ -138,7 +138,7 @@ fn write_ir(path: &std::path::Path) {
         reference_blockers: Vec::new(),
         pseudo: pseudo.to_owned(),
     };
-    let functions = vec![
+    let mut functions = vec![
         function(
             "rom::vendor_irq",
             "vendor_irq",
@@ -179,6 +179,15 @@ fn write_ir(path: &std::path::Path) {
             "fn vendor_helper() { semantic.rtos_queue_send_from_isr(); }",
         ),
     ];
+    functions[0]
+        .decode_blockers
+        .push(crate::LinkedDecodeBlocker {
+            address: 0x118,
+            width: 2,
+            raw: 0,
+            class: "zero-fill-or-illegal-trap",
+            linear_control_flow: false,
+        });
     let mut document: serde_json::Value = serde_json::from_str(
         &crate::artifacts::render_linked_ir_fixture(functions, Vec::new()),
     )
@@ -203,6 +212,14 @@ fn generated_template_is_valid_unreviewed_workspace() {
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
     let facts = FunctionFacts::load(&reports).unwrap();
+    let irq = facts
+        .functions
+        .iter()
+        .find(|function| function.identity == "rom::vendor_irq")
+        .unwrap();
+    assert_eq!(irq.decode_blockers.len(), 1);
+    assert_eq!(irq.decode_blockers[0].class, "zero-fill-or-illegal-trap");
+    assert_eq!(irq.decode_blockers[0].address, 0x118);
     write_function_pack_template(&pack, &facts, "fixture").unwrap();
     let workspace = FunctionWorkspace::load(&reports, &pack).unwrap();
     let summary = workspace.summary();
@@ -373,6 +390,8 @@ display-type = "u16"
     assert!(report_text.contains("`pending_events`"));
     assert!(report_text.contains("`state`: `VendorState`"));
     assert!(report_text.contains("`rtos.queue.send`"));
+    assert!(report_text.contains("Decode blockers: 1 total"));
+    assert!(report_text.contains("`zero-fill-or-illegal-trap` at `0x118`"));
     assert!(report_text.contains("Validated interface call sites"));
     assert!(report_text.contains("a1=0x0000002a"));
     assert!(report_text.contains("(arg0 & 0x00000001) != 0"));

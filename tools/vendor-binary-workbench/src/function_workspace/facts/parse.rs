@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 use crate::{Result, artifacts::StoredMemoryObject};
 
 use super::{
-    FunctionCallFact, FunctionContextFieldFact, FunctionFact, FunctionInputFact,
-    FunctionMemoryFieldFact, FunctionMemoryObjectFact, ScenarioArgumentFact, ScenarioMmioReadFact,
-    ScenarioSuggestionFact, ScenarioSuggestionVariantFact,
+    FunctionCallFact, FunctionContextFieldFact, FunctionDecodeBlockerFact, FunctionFact,
+    FunctionInputFact, FunctionMemoryFieldFact, FunctionMemoryObjectFact, ScenarioArgumentFact,
+    ScenarioMmioReadFact, ScenarioSuggestionFact, ScenarioSuggestionVariantFact,
 };
 
 pub(super) fn parse_report(
@@ -48,6 +48,17 @@ pub(super) fn parse_report(
                 call_graph_closed: summary.call_graph_closed,
                 context_projection_complete: summary.context_projection_complete,
                 context_projection_blockers: summary.context_projection_blockers,
+                decode_blockers: function
+                    .decode_blockers
+                    .into_iter()
+                    .map(|blocker| FunctionDecodeBlockerFact {
+                        address: blocker.address,
+                        width: blocker.width,
+                        raw: blocker.raw,
+                        class: blocker.class,
+                        linear_control_flow: blocker.linear_control_flow,
+                    })
+                    .collect(),
                 reachable_functions: summary.reachable_functions,
                 calls: function.calls.into_iter().map(call_fact).collect(),
                 mmio_addresses: function

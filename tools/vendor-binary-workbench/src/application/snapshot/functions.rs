@@ -65,6 +65,14 @@ pub(super) fn collect(
                 summary: reviewed.and_then(|function| function.summary.clone()),
                 complete: fact.review_complete(),
                 blockers,
+                decode_blockers: fact.decode_blockers.len(),
+                decode_blocker_classes: fact
+                    .decode_blockers
+                    .iter()
+                    .map(|blocker| blocker.class.clone())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 semantic_operations: fact.semantic_operations.clone(),
                 registers: fact.mmio_addresses.clone(),
                 calls: fact.calls.len(),

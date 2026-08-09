@@ -85,7 +85,7 @@ pub(crate) struct ProjectAnalyzeArgs {
     /// Treat unreviewed generated material as a pipeline failure.
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
-    /// Worker threads for independent MMIO functions; zero selects conservative automatic mode.
+    /// Worker threads for independent analysis; zero selects up to four available workers.
     #[arg(long, default_value_t = 0, value_name = "N")]
     pub(crate) jobs: u8,
 }
@@ -282,7 +282,7 @@ pub(crate) struct MmioDiscoverArgs {
     /// Select which matching function symbols become MMIO analysis roots.
     #[arg(long, value_enum, default_value_t)]
     pub(crate) code_symbols: CodeSymbolSelectionArg,
-    /// Worker threads used for independent function analysis; zero selects a conservative auto value.
+    /// Worker threads used for independent function analysis; zero selects up to four available workers.
     #[arg(long, default_value_t = 0, value_name = "N")]
     pub(crate) jobs: u8,
     /// Write the machine-readable MMIO discovery report.
@@ -307,6 +307,9 @@ pub(crate) struct IrExportArgs {
     /// Include functions reachable from the selected roots.
     #[arg(long)]
     pub(crate) include_reachable: bool,
+    /// Worker threads for artifact-wide independent functions; zero selects up to four available workers.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) jobs: u8,
     /// Registered entry contract used at the binary boundary.
     #[arg(long, default_value = "none")]
     pub(crate) entry_contract: String,
@@ -326,6 +329,9 @@ pub(crate) struct IrBuildArgs {
     /// Verify all selected profile outputs without modifying them.
     #[arg(long)]
     pub(crate) check: bool,
+    /// Worker threads for independent function-local analysis; zero selects up to four available workers.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) jobs: u8,
 }
 
 #[derive(Clone, Debug, Default, Args)]

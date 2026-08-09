@@ -93,6 +93,15 @@ pub(crate) struct ScenarioSuggestionFact {
     pub(crate) variants: Vec<ScenarioSuggestionVariantFact>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct FunctionDecodeBlockerFact {
+    pub(crate) address: u64,
+    pub(crate) width: u8,
+    pub(crate) raw: u32,
+    pub(crate) class: String,
+    pub(crate) linear_control_flow: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct FunctionFact {
     pub(crate) profile: String,
@@ -105,6 +114,7 @@ pub(crate) struct FunctionFact {
     pub(crate) call_graph_closed: bool,
     pub(crate) context_projection_complete: bool,
     pub(crate) context_projection_blockers: Vec<String>,
+    pub(crate) decode_blockers: Vec<FunctionDecodeBlockerFact>,
     pub(crate) reachable_functions: Vec<String>,
     pub(crate) calls: Vec<FunctionCallFact>,
     pub(crate) mmio_addresses: Vec<u32>,

@@ -110,10 +110,13 @@ Unsupported instructions do not erase all interface evidence from their
 owning function. Schema 5 records each one in `decode_blockers` with its exact
 PC, raw encoding, width and classification. F and CSR instructions have known
 linear control flow, so discovery continues after conservatively invalidating
-any possible integer destination. System, vendor-custom, unknown-extension and
-invalid encodings terminate only that CFG path because their successor cannot
-be proven. A blocker always prevents a completeness claim; it is never modeled
-as a no-op. Truncated or structurally malformed code remains a separate
+any possible integer destination. System, vendor-custom, unknown-extension,
+zero-fill/illegal-trap and invalid encodings terminate only that CFG path
+because their successor cannot be proven. Zero is kept in its own ambiguous
+class because it can be an intentional illegal trap or unreachable
+linker/compiler fill; it does not invalidate the owning ELF function boundary.
+A blocker always prevents a completeness claim; it is never modeled as a
+no-op. Truncated or structurally malformed code remains a separate
 `analysis_failures` entry.
 
 ## Linkage boundary

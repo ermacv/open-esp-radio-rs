@@ -50,8 +50,9 @@ that every user must learn.
 - [x] Preserve unsupported instructions as per-PC fail-closed blockers instead
   of discarding the entire function. F/CSR permit conservative linear
   continuation; system/vendor/invalid instructions stop only their current CFG
-  path. Concrete execution remains strict and cannot consume this tolerant
-  structural stream.
+  path. All-zero illegal encodings are distinguished as ambiguous
+  zero-fill/trap evidence instead of decoder failures. Concrete execution
+  remains strict and cannot consume this tolerant structural stream.
 - [x] Make project IR root selection explicit: `roots = "all"` is the normal
   full-symbol mode and `roots = "symbol-prefix"` requires a non-empty prefix;
   an empty-string convention is not part of project configuration.
@@ -71,6 +72,8 @@ that every user must learn.
 - [ ] Make pseudo-code/function review practical for full artifacts: navigation
   by source and function, calls, MMIO, contexts, blockers and exact evidence,
   without treating best-effort reconstruction as decompilation proof.
+  The TUI and generated function review now expose typed per-PC decode blockers;
+  navigation and filtering across the full set still need a real-project pass.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
@@ -140,14 +143,21 @@ that every user must learn.
   retained diagnostics after reproducing multi-gigabyte growth on the real
   ESP32-S31 project.
 - [x] Add bounded MMIO-function workers and verify serial/parallel result
-  equality. Keep conservative automatic mode; expose explicit `--jobs N`.
+  equality. Automatic mode uses up to four available workers after the real
+  optimized project stayed below 400 MiB; expose explicit `--jobs N`.
+- [x] Add bounded function-local linked-IR workers for artifact-wide roots.
+  Workers cover symbols across ROM ELF and archive members, then join before
+  deterministic SCC/fixed-point summaries and publication. Prefix-discovered
+  reachable closures remain serial.
 - [x] Add a small real-project resource regression record for the supported
   analysis path so later changes cannot silently restore unbounded RAM use.
-- [ ] Consider parallel linked-IR profiles because profiles are independent.
-  Implement only after measuring per-profile peak memory and defining a total
-  memory/concurrency budget.
-- [ ] Do not parallelize mutation of one linked-IR reachable graph until its
-  shared summaries have an explicit deterministic ownership model.
+- [x] Measure profile-level parallelism before implementing it. `rom-all`
+  dominates `archive-all` (47.32 s versus 10.71 s in debug), so profile workers
+  would save at most the smaller profile while retaining both large documents;
+  function-local scheduling gives better load balance.
+- [x] Keep mutation of linked-IR shared summaries serial. Parallel workers emit
+  function-local facts only; call-graph linking, SCC/fixed-point summaries,
+  indexing and rendering happen after the deterministic join.
 - [x] Use `petgraph` for standard SCC analysis through an adapter while keeping
   the serialized/domain graph model independent of the crate.
 - [ ] Consider debug/source enrichment and property-based executor testing
@@ -164,8 +174,8 @@ that every user must learn.
 
 ## Real-project resource baseline
 
-Recorded 2026-08-09 with the already-built feature-enabled debug binary, so
-Cargo compilation/linking is excluded:
+Recorded 2026-08-09. The old feature-enabled debug path, excluding Cargo
+compilation/linking, was:
 
 ```console
 /usr/bin/time -f 'elapsed=%e max_rss_kb=%M' \
@@ -180,11 +190,22 @@ the same workload retained every generated JSON/pseudo document and peaked at
 about 2.5 GiB; `ir build` now drops each profile's documents before generating
 the next one.
 
+The normal optimized incremental alias now completes the same twelve-stage
+check in 15.11 s at 288,764 KiB with `--jobs 1`, 8.90–9.06 s at roughly
+345–355 MiB with `--jobs 2`, and 5.50 s at 379,420 KiB with `--jobs 4` (the
+automatic ceiling). An explicit eight workers measured 4.66 s at 456,204 KiB.
+The isolated `rom-all` profile takes 6.61 s / 269,252 KiB serial and 4.51 s /
+348,432 KiB with two function workers. Generated output is byte-identical in
+all runs. The first `workbench` profile compilation is an explicit one-time
+build cost; subsequent source changes remain incremental.
+
 ROM IR contains 1,935 roots, 492 MMIO identities and 416 complete functions;
 schema 37 inventories 945 unsupported instruction sites across exactly 155
-functions. The linked archive image contains 171 roots, 106 MMIO identities,
-66 complete functions and no decode blockers. Interface schema 5 retains 593
-reached blocker sites across all three scanned containers and reports zero
-analysis failures. These are regression references, not universal performance
-promises: artifact hashes, build profile and host matter, and best-effort
-partial functions remain incomplete.
+functions. Of those sites, 464 are all-zero illegal encodings now separated as
+`zero-fill-or-illegal-trap`; no site remains in the generic `invalid` class.
+The linked archive image contains 171 roots, 106 MMIO identities, 66 complete
+functions and no decode blockers. Interface schema 5 retains 593 reached
+blocker sites across all three scanned containers, including 116 zero/trap
+sites, and reports zero analysis failures. These are regression references,
+not universal performance promises: artifact hashes, build profile and host
+matter, and best-effort partial functions remain incomplete.

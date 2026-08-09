@@ -57,6 +57,16 @@ debug = true
 lto = "fat"
 codegen-units = 1
 
+# Host-side binary analysis is prohibitively slow at dev opt-level 0. Keep a
+# separate incremental profile for the normal workbench aliases so firmware
+# development and unit tests retain their ordinary dev/release behavior.
+[profile.workbench]
+inherits = "dev"
+opt-level = 3
+debug = 1
+incremental = true
+codegen-units = 16
+
 # The ESP32-S31 async-platform branch uses register accessor fixes that are
 # still carried by the matching PAC fork.
 [patch."https://github.com/esp-rs/esp-pacs"]

@@ -33,6 +33,11 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         Color::Yellow
                     }),
                 ),
+                Span::raw(if function.decode_blockers == 0 {
+                    String::new()
+                } else {
+                    format!("  decode:{}", function.decode_blockers)
+                }),
             ]))
             .style(selected_style(index, state.selected()))
         });
@@ -61,6 +66,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 field("Profile", &function.profile),
                 field("Selection", function.selection.label()),
                 field("Calls", function.calls.to_string()),
+                field("Decode blockers", function.decode_blockers),
                 field("Registers", function.registers.len()),
                 field(
                     "Contexts",
@@ -90,6 +96,29 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         .iter()
                         .map(|blocker| Line::from(format!("- {blocker}"))),
                 );
+            }
+            if let Some(detail) =
+                function_detail.filter(|detail| !detail.decode_blockers.is_empty())
+            {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Decode blockers",
+                    Style::new().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                )));
+                lines.extend(detail.decode_blockers.iter().map(|blocker| {
+                    Line::from(format!(
+                        "- {:#010x}: {} width={} raw={:#010x} flow={}",
+                        blocker.address,
+                        blocker.class,
+                        blocker.width,
+                        blocker.raw,
+                        if blocker.linear_control_flow {
+                            "linear"
+                        } else {
+                            "blocked"
+                        }
+                    ))
+                }));
             }
             if let Some(detail) = function_detail.filter(|detail| !detail.memory_fields.is_empty())
             {

@@ -20,7 +20,10 @@ reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
 Interface schema 5 replaces symbol-wide decode failures with per-instruction
 `decode_blockers` carrying PC, raw word, width, extension class and whether
 linear continuation is architecturally safe. Malformed artifact failures are
-kept separately as `analysis_failures`.
+kept separately as `analysis_failures`. The classification vocabulary keeps an
+all-zero illegal encoding distinct as `zero-fill-or-illegal-trap`: it may be a
+deliberate trap or unreachable fill, but is not evidence that the decoder lost
+an otherwise valid instruction.
 
 `artifacts/mod.rs` is the only owner of these version/command constants.
 Domain workspaces and navigation use the corresponding typed Serde consumer

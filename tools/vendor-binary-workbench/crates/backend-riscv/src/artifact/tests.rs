@@ -258,6 +258,30 @@ fn analysis_decoder_classifies_compressed_float_memory_operations() {
 }
 
 #[test]
+fn analysis_decoder_preserves_zero_fill_as_ambiguous_trap_evidence() {
+    let symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "zero_fill".to_owned(),
+        address: 0x3800,
+        bytes: 0_u16.to_le_bytes().to_vec(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let decoded = decode_symbol_for_analysis(&symbol).unwrap();
+    assert!(matches!(
+        decoded.as_slice(),
+        [AnalysisInstruction::Unsupported(UnsupportedInstruction {
+            class: UnsupportedInstructionClass::ZeroFillOrIllegalTrap,
+            width: 2,
+            raw: 0,
+            linear_control_flow: false,
+            ..
+        })]
+    ));
+}
+
+#[test]
 fn analysis_decoder_distinguishes_standard_float_and_vendor_csrs() {
     let csr = |address: u32| (address << 20) | (2 << 12) | (10 << 7) | 0x73;
     let symbol = ArtifactSymbolDefinition {

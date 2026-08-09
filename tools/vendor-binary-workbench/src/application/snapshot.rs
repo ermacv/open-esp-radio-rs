@@ -205,6 +205,17 @@ fn function_detail_summary(
                 write_mask: field.write_mask,
             })
             .collect(),
+        decode_blockers: fact
+            .decode_blockers
+            .iter()
+            .map(|blocker| FunctionDecodeBlockerSummary {
+                address: blocker.address,
+                width: blocker.width,
+                raw: blocker.raw,
+                class: blocker.class.clone(),
+                linear_control_flow: blocker.linear_control_flow,
+            })
+            .collect(),
         profile_draft: profile_draft(fact, &scenario_suggestions),
         scenario_suggestions,
         pseudo_rust: reviewed_pseudo(fact, reviewed, logical_types),
@@ -439,6 +450,7 @@ mod tests {
             call_graph_closed: true,
             context_projection_complete: true,
             context_projection_blockers: Vec::new(),
+            decode_blockers: Vec::new(),
             reachable_functions: Vec::new(),
             calls: Vec::new(),
             mmio_addresses: vec![0x4000],

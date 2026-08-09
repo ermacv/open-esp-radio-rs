@@ -17,10 +17,19 @@ cargo vendor-binary-workbench project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-`--jobs N` applies bounded concurrency to the independent MMIO-function stage.
-Linked-IR reachability and its transitive summaries remain deterministic and
-serial. Zero is the conservative automatic default; use `--jobs 2` as the
-first explicit setting on a multi-core host.
+`--jobs N` applies bounded concurrency to independent MMIO functions and to
+function-local linked-IR recovery when a profile selects all named symbols.
+Workers analyze individual functions across ELF/ROM symbols and archive
+members; they do not mutate the shared call graph. Results are joined first,
+then reachability/SCC effect summaries, indexes and serialization run in one
+deterministic order. Prefix-root reachability remains serial because its root
+set grows during discovery. Zero automatically uses up to four available
+workers; use `--jobs 1` for minimum memory or an explicit `2..=8` after
+measuring the target project.
+
+The repository cargo aliases use the optimized incremental `workbench`
+profile. Artifact-wide analysis at dev `opt-level=0` is intentionally not the
+normal product path: it is useful for debugging but is several times slower.
 
 Use `project doctor` first when diagnosing configuration, backend, catalog, or
 private-artifact readiness. Use write mode after changing inputs or the

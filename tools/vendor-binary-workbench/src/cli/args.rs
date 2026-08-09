@@ -582,6 +582,35 @@ mod tests {
     }
 
     #[test]
+    fn linked_ir_commands_accept_explicit_function_workers() {
+        let invocation = ParsedInvocation::parse([
+            "ir".to_owned(),
+            "build".to_owned(),
+            "--jobs".to_owned(),
+            "3".to_owned(),
+        ])
+        .unwrap();
+        let Command::BuildIr(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.jobs, 3);
+
+        let invocation = ParsedInvocation::parse([
+            "ir".to_owned(),
+            "export".to_owned(),
+            "--artifact".to_owned(),
+            "rom=rom.elf".to_owned(),
+            "--jobs".to_owned(),
+            "2".to_owned(),
+        ])
+        .unwrap();
+        let Command::ExportIr(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.jobs, 2);
+    }
+
+    #[test]
     fn project_inputs_exposes_typed_non_overwriting_setup() {
         let invocation = ParsedInvocation::parse([
             "project".to_owned(),

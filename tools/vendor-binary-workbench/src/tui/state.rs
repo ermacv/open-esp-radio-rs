@@ -427,6 +427,8 @@ mod tests {
             summary: None,
             complete: true,
             blockers: Vec::new(),
+            decode_blockers: 1,
+            decode_blocker_classes: vec!["zero-fill-or-illegal-trap".to_owned()],
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 1,
@@ -449,6 +451,14 @@ mod tests {
         });
         let mut state = BrowserState::new(workspace);
         state.section = Section::Functions;
+
+        state.begin_search();
+        for character in "illegal-trap".chars() {
+            state.push_search(character);
+        }
+        state.finish_search();
+        assert_eq!(state.visible_count(), 1);
+        state.clear_search();
 
         assert_eq!(state.activate(), Action::Continue);
         assert_eq!(state.section, Section::Interfaces);
@@ -474,6 +484,8 @@ mod tests {
             summary: None,
             complete: true,
             blockers: Vec::new(),
+            decode_blockers: 0,
+            decode_blocker_classes: Vec::new(),
             semantic_operations: Vec::new(),
             registers: vec![0x4000],
             calls: 0,
@@ -508,6 +520,8 @@ mod tests {
             summary: None,
             complete: true,
             blockers: Vec::new(),
+            decode_blockers: 0,
+            decode_blocker_classes: Vec::new(),
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 0,

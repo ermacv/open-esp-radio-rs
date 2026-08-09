@@ -41,6 +41,31 @@ may therefore preserve useful later integer/MMIO evidence, but any blocker
 still makes the function incomplete. Concrete verification uses the strict
 decoder and never executes an unsupported instruction.
 
+An all-zero halfword is classified as `zero-fill-or-illegal-trap`, not as a
+generic decoder failure. RISC-V makes that encoding illegal, while real
+toolchains also place it in unreachable fill after branches and noreturn
+calls. The artifact alone cannot prove which intent applies, so the workbench
+preserves the exact site, stops that path and does not reject the surrounding
+ELF function symbol.
+
+## Bounded function workers
+
+Artifact-wide roots can be analyzed with `ir build --jobs N` or
+`ir export --jobs N`. The work unit is a function, not a whole archive: this
+also distributes symbols from one large ROM ELF and avoids making a single
+large object member the scheduling bottleneck. Roots are greedily balanced by
+code size. Each worker produces only function-local decode, CFG, call, MMIO,
+context and pseudo facts. The joined function set is then sorted by stable
+identity before shared guard linking, SCC/fixed-point effect summaries and
+register indexing.
+
+The parallel path is used only when every named symbol is already a root.
+Prefix-root `--include-reachable` analysis remains serial because discovered
+callee roots change the pending set. `--jobs 0` uses up to four available
+workers; explicit parallelism is bounded to eight workers. Serial and
+parallel reports are byte-identical and concrete verification semantics are
+unchanged.
+
 A project inventory can aggregate several independently linked or relocatable
 inputs in one report. Multiple inputs must have stable source names:
 

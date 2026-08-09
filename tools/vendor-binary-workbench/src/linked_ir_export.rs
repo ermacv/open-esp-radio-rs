@@ -38,6 +38,7 @@ pub(crate) fn generate_project_profile(
     svd: &MmioMap,
     target: &TargetSpec,
     effective_code: &crate::analysis::EffectiveCodeCatalog,
+    jobs: usize,
 ) -> Result<ProjectIrDocuments> {
     let mut artifacts = inputs
         .into_iter()
@@ -55,6 +56,7 @@ pub(crate) fn generate_project_profile(
         &profile.entry_contract,
         svd,
         target,
+        jobs,
     )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
     let decode_blockers = report
@@ -103,6 +105,7 @@ pub(crate) fn analyze(
     entry_contract_id: &str,
     svd: &MmioMap,
     target: &TargetSpec,
+    jobs: usize,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let harness = target.harness.as_deref();
     let riscv_harness = harnesses::riscv_or_neutral(harness)?;
@@ -124,6 +127,7 @@ pub(crate) fn analyze(
             &artifact.source,
             true,
             include_reachable,
+            jobs,
         ));
     }
     if artifacts.len() > 1 {

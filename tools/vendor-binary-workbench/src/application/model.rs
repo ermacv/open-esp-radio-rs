@@ -143,9 +143,20 @@ pub struct FunctionSummary {
     pub summary: Option<String>,
     pub complete: bool,
     pub blockers: Vec<String>,
+    pub decode_blockers: usize,
+    pub decode_blocker_classes: Vec<String>,
     pub semantic_operations: Vec<String>,
     pub registers: Vec<u32>,
     pub calls: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FunctionDecodeBlockerSummary {
+    pub address: u64,
+    pub width: u8,
+    pub raw: u32,
+    pub class: String,
+    pub linear_control_flow: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -154,6 +165,7 @@ pub struct FunctionDetailSummary {
     pub registers: Vec<u32>,
     pub contexts: Vec<FunctionContextSummary>,
     pub memory_fields: Vec<FunctionMemoryFieldSummary>,
+    pub decode_blockers: Vec<FunctionDecodeBlockerSummary>,
     pub scenario_suggestions: Vec<ScenarioSuggestionSummary>,
     pub profile_draft: Option<String>,
     pub pseudo_rust: String,

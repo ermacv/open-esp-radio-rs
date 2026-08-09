@@ -150,7 +150,7 @@ pub(crate) struct StoredFunction {
     call_graph_diagnostics: Vec<StoredDiagnostic>,
     direct_diagnostics: Vec<StoredDiagnostic>,
     reference_diagnostics: Vec<StoredDiagnostic>,
-    decode_blockers: Vec<StoredDecodeBlocker>,
+    pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
     call_graph_blockers: Vec<String>,
     direct_blockers: Vec<String>,
     reference_blockers: Vec<String>,
@@ -159,12 +159,12 @@ pub(crate) struct StoredFunction {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDecodeBlocker {
-    address: u64,
-    width: u8,
-    raw: u32,
-    class: String,
-    linear_control_flow: bool,
+pub(crate) struct StoredDecodeBlocker {
+    pub(crate) address: u64,
+    pub(crate) width: u8,
+    pub(crate) raw: u32,
+    pub(crate) class: String,
+    pub(crate) linear_control_flow: bool,
 }
 
 #[derive(Debug, Deserialize)]

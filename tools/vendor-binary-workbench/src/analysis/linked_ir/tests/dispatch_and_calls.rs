@@ -197,12 +197,12 @@ fn direct_call_graph_survives_reference_summary_inlining() {
     );
 
     let roots_only =
-        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, false);
+        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, false, 0);
     assert_eq!(roots_only.functions.len(), 1);
     assert_eq!(roots_only.functions[0].symbol, "vendor_parent");
 
     let report =
-        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, true);
+        build_linked_ir_for_source(&resolver, "vendor_parent", &map, "primary", false, true, 0);
     assert_eq!(
         report
             .functions

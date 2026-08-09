@@ -21,7 +21,7 @@ and key hints without hiding a readiness state or exit key.
 | --- | --- |
 | Overview | Lifecycle phases, readiness, component diagnostics |
 | Code | Generated executable-gap candidates, reviewed boundaries, artifact guards and control-flow evidence |
-| Functions | Recovered functions, review status, blockers, replay-required scenario candidates and pseudo-Rust |
+| Functions | Recovered functions, review status, typed per-PC decode blockers, replay-required scenario candidates and pseudo-Rust |
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
 | Interfaces | Resolved table slots, ABI, semantics, execution models and sites |
 | Comparisons | Project profiles, concrete MATCH/DIFF/INCOMPLETE, first trace difference, artifact provenance, model evidence and blockers |
@@ -55,6 +55,12 @@ snapshot data. Function index rows and heavy details
 (contexts, memory fields, scenario candidates and pseudo-Rust) are separate
 typed DTOs keyed by stable function identity. The worker loads one detail on
 selection and the current snapshot generation owns the resulting cache.
+Function rows retain a bounded blocker count; the lazy detail shows each
+blocker's PC, width, raw encoding, class and whether architectural linear
+continuation was safe. A specific unsupported instruction is therefore not
+collapsed into the generic `analysis incomplete` state. Function search also
+matches blocker classes such as `floating-point` or
+`zero-fill-or-illegal-trap` without loading the heavy detail.
 Register rows and heavyweight detail use the same arrangement. Selecting a
 register asks the worker for `register_detail(address)` once per snapshot
 generation. The detail pane shows name provenance, width, review state,

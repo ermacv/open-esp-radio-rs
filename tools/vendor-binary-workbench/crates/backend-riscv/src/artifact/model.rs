@@ -418,6 +418,7 @@ pub struct DecodedInstruction {
 /// RV32 semantic backend cannot lift.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnsupportedInstructionClass {
+    ZeroFillOrIllegalTrap,
     FloatingPoint,
     FloatingPointCsr,
     Csr,
@@ -431,6 +432,7 @@ pub enum UnsupportedInstructionClass {
 impl UnsupportedInstructionClass {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::ZeroFillOrIllegalTrap => "zero-fill-or-illegal-trap",
             Self::FloatingPoint => "floating-point",
             Self::FloatingPointCsr => "floating-point-csr",
             Self::Csr => "csr",

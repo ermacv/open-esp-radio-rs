@@ -117,7 +117,16 @@ pub fn decode_symbol_for_analysis(
 }
 
 fn classify_unsupported(address: u64, width: u8, raw: u32) -> UnsupportedInstruction {
-    let (class, integer_destination, linear_control_flow) = if width == 2 {
+    let (class, integer_destination, linear_control_flow) = if raw == 0 {
+        // All-zero halfwords are illegal RISC-V encodings. Toolchains also use
+        // them as fill after noreturn calls or branches, so preserve the site
+        // without claiming either reachability or a decoding defect.
+        (
+            UnsupportedInstructionClass::ZeroFillOrIllegalTrap,
+            None,
+            false,
+        )
+    } else if width == 2 {
         // RV32 C.FLW/C.FSW and their stack-pointer forms use funct3 011/111.
         let funct3 = (raw >> 13) & 0x7;
         let quadrant = raw & 0x3;

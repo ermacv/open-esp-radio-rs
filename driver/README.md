@@ -70,6 +70,11 @@ are not implemented and therefore have no placeholder public owner types.
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.
 
+The default resource profile fits a direct-to-flash internal-SRAM image.
+`high-throughput` selects the qualified 64-stage/40-RX/32-TX/32-A-MPDU
+envelope and requires product-owned initialized PSRAM placement for CPU-only
+state. DMA-visible and latency-critical owners remain in internal SRAM.
+
 ## Safety
 
 Safe code above the generated PAC, DMA leaves and minimal platform runtime

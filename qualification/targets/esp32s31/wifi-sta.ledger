@@ -309,9 +309,10 @@ hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-interrup
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-loss.md HIL_ESP32S31_STA_AP_LOSS_2026_08_04
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-ap-absence.md HIL_ESP32S31_STA_AP_ABSENCE_2026_08_04
 hil-evidence qualification/targets/esp32s31/records/2026-08-04-esp32s31-station-tx-fault.md HIL_ESP32S31_STA_TX_FAULT_2026_08_04
+hil-evidence qualification/targets/esp32s31/records/2026-08-09-wifi-role-roundtrip.md HIL_ESP32S31_WIFI_ROLE_ROUNDTRIP_2026_08_09
 depends-on rx-tx-dma
 depends-on power-management
 gap implementation connected-task-timeout-platform-reset-action-missing
 gap implementation running-scan-stop-failure-needs-reset-owner
 gap vendor failure-cleanup-contracts-incomplete
-gap hil injected-rx-fault-cell-missing
+gap hil faulted-quiescence-cell-missing

@@ -20,5 +20,6 @@ Not implemented:
 - AP/AP+STA, power save, raw injection, BLE/BT/802.15.4/coexistence;
 - ESP32-C5 backend.
 
-Before declaring the lifecycle change qualified, rerun UDP/TCP RX, TX and
-bidirectional cells plus ICMP, reconnect and STA/monitor/STA owner round trips.
+The typed STA -> idle -> scan -> monitor -> idle -> STA ownership round trip is
+qualified. UDP/TCP/ICMP throughput and faulted-quiescence remain independent
+qualification cells; a role transition does not imply datapath performance.

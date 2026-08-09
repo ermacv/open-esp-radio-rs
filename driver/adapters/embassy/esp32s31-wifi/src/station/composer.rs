@@ -584,6 +584,10 @@ impl<P> Esp32s31StationEngine<'_, P, NoopEsp32s31StationEngineObserver> {
 }
 
 impl<P, O> Esp32s31StationEngine<'_, P, O> {
+    pub const fn port(&self) -> &P {
+        &self.port
+    }
+
     pub const fn with_observer(port: P, discovery: StationDiscovery, observer: O) -> Self {
         Self {
             port,

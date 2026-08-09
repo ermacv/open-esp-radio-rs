@@ -207,3 +207,42 @@ fn concrete_port_returns_every_owner_after_selected_candidate() {
     assert_eq!(parts.table.summary().records, 1);
     assert_eq!(parts.frame.len(), 128);
 }
+
+#[test]
+fn standalone_scan_records_matching_bss_without_selecting_it() {
+    let mut table = ScanTable::<4>::new();
+    let mut frame = [0_u8; 128];
+    let mut sequence = StaSequenceCounter::new(7);
+    let port = Esp32s31ScanPort::new(
+        Esp32s31ScanRadio::new(Phy(11), Hardware::default(), Receive(22), Transmit(33)),
+        Esp32s31ScanStorage::new(&mut table, &mut frame, Observer::default(), &mut sequence),
+        Esp32s31ScanStation::new([7; 6], b"test", &[0x82, 0x84])
+            .with_descriptor_capacity(88)
+            .with_candidate_selection(false),
+        DwellTimer::default(),
+    );
+    let backend = Esp32s31StaScanBackend::new(Esp32s31StaScanConfig::new(2).unwrap());
+    let mut service = StaCandidateScanService::new(backend);
+    let exit = block_on(service.run(port, &[11]));
+    let owner = match exit {
+        StaCandidateScanExit::NoCandidate { owner, .. } => owner,
+        StaCandidateScanExit::Selected { .. } => {
+            panic!("standalone scan must never select an association candidate")
+        }
+        StaCandidateScanExit::Failed { error, .. } => {
+            panic!("standalone scan failed: {error:?}")
+        }
+        StaCandidateScanExit::Stopped { .. } => panic!("standalone scan stopped"),
+        StaCandidateScanExit::InvalidPlan { error, .. } => {
+            panic!("standalone scan plan failed: {error:?}")
+        }
+    };
+
+    let parts = owner.into_parts();
+    assert_eq!(parts.table.summary().records, 1);
+    let record = &parts.table.records()[0];
+    assert_eq!(&record.ssid[..usize::from(record.ssid_len)], b"test");
+    assert_eq!(parts.table.records()[0].channel, 11);
+    assert_eq!(parts.sequence.peek(), 8);
+    assert_eq!(parts.hardware.actions.last(), Some(&Action::Stop));
+}

@@ -25,8 +25,8 @@ use open_esp_radio_hil_protocol::{
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
     ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationFaultEvidence, StationLifecycleEvent, StationStopEvidence,
-    Transport, TransportEvidence, evidence_crc32c, startup_artifact_crc32c,
+    StationEpochEvidence, StationLifecycleEvent, StationStopEvidence, Transport, TransportEvidence,
+    evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -358,11 +358,6 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
     }
 }
 
-/// Reliably publish the exact terminal owner frontier of one requested fault.
-pub async fn publish_station_fault(request_id: u32, evidence: StationFaultEvidence) {
-    publish_event_reliably(0, request_id, Event::StationFault(evidence)).await;
-}
-
 /// Hands a completed in-memory measurement back to the protocol owner.
 ///
 /// USB serialization happens in another task and therefore cannot extend the
@@ -636,23 +631,6 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         } else if STATION_CONTROL_REQUESTS
                             .try_send(StationControlRequest::Stop { request_id })
                             .is_err()
-                        {
-                            Event::Rejected(RejectReason::Busy)
-                        } else {
-                            Event::Accepted
-                        };
-                        publish_event_reliably(session_id, request_id, response).await;
-                    }
-                    Command::InjectStationFault(injection) => {
-                        let response = if !capabilities.features.station_fault_injection {
-                            Event::Rejected(RejectReason::Unsupported)
-                        } else if !network_provisioned
-                            || state != SessionState::Idle
-                            || session_id != 0
-                        {
-                            Event::Rejected(RejectReason::InvalidState)
-                        } else if !crate::radio_fault::STATION_FAULT_CONTROL
-                            .try_arm(request_id, injection)
                         {
                             Event::Rejected(RejectReason::Busy)
                         } else {

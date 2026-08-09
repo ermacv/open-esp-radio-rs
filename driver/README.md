@@ -50,6 +50,7 @@ hardware.
 ```text
 Radio runner: Starting -> Ready -> Faulted
 Wi-Fi:        Idle -> Station -> Idle
+              Idle -> Scan -> Idle
               Idle -> Monitor -> Idle
 ```
 
@@ -59,9 +60,10 @@ the source, drained pending IRQ work, completed or quarantined TX, stopped RX,
 detached queues and published link down. If quiescence cannot be proved, the
 runner enters a terminal fault and no reusable idle owner is fabricated.
 
-Station owns its scan/authentication/association/WPA2/connected/reconnect
-policy. A separate finite scan operation is the next lifecycle addition;
-until then applications cannot request scan without starting STA. Monitor is
+`WifiIdle::scan` is a finite operation: it consumes idle, actively scans the
+requested channels, returns a bounded value-only report and restores idle.
+It cannot associate. Station owns its separate candidate scan plus
+authentication, association, WPA2, connected and reconnect policy. Monitor is
 an exclusive capture role. AP, BLE, Bluetooth, IEEE 802.15.4 and coexistence
 are not implemented and therefore have no placeholder public owner types.
 

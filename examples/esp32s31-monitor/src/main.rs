@@ -78,7 +78,15 @@ async fn monitor_task(
     let (radio, runner) = new(spawner, platform, trng, config)
         .await
         .expect("radio initialization must succeed once");
-    let (wifi, _device, frames) = radio.into_wifi().into_parts();
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
+        wifi,
+        initialization: _,
+    } = radio.into_parts();
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
+        control: wifi,
+        device: _,
+        monitor_frames: frames,
+    } = wifi.into_parts();
     let application = async move {
         let _monitor = wifi
             .start_monitor(MonitorRequest::new(

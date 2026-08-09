@@ -3,40 +3,12 @@ use std::{env, path::PathBuf};
 const BIN: &str = "open-esp-radio-hil-esp32s31-runtime";
 
 fn main() {
-    // `radio_hil` consumes these values through `option_env!`. Explicitly
-    // tracking them prevents Cargo from reusing an image configured for a
-    // previous PHY vector or traffic mode. Network credentials are provisioned
-    // at runtime over the HIL protocol and must not affect image identity.
+    // The product HIL uses compile-time switches only where a workload changes
+    // static socket-buffer geometry. Credentials and network policy are sent
+    // at runtime and must not affect image identity.
     for variable in [
-        "OPEN_RADIO_AMPDU_COALESCE_US",
-        "OPEN_RADIO_AMPDU_LIMIT",
-        "OPEN_RADIO_AMSDU_BENCH",
         "OPEN_RADIO_BIDIRECTIONAL_BENCH",
-        "OPEN_RADIO_FORCE_HT20",
-        "OPEN_RADIO_FORCE_HE20",
-        "OPEN_RADIO_FORCE_LEGACY_TX",
-        "OPEN_RADIO_HT_MCS",
-        "OPEN_RADIO_HT_SGI",
-        "OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM",
-        "OPEN_RADIO_NETWORK_AMSDU_BENCH",
-        "OPEN_RADIO_TX_BENCH_RATE_KBPS",
-        "OPEN_RADIO_TX_BENCH_TARGET_IPV4",
-        "OPEN_RADIO_HE_GI_LTF",
-        "OPEN_RADIO_HE_DCM_HIL",
-        "OPEN_RADIO_HE_DCM_LDPC",
-        "OPEN_RADIO_HE_DCM_MCS",
-        "OPEN_RADIO_HE_DCM_DATA_POWER_CODE",
-        "OPEN_RADIO_HE_DELIMITER_HIL",
-        "OPEN_RADIO_HE_LDPC_HIL",
-        "OPEN_RADIO_HE_MATRIX_HIL",
-        "OPEN_RADIO_HE_MCS",
-        "OPEN_RADIO_HE_TB_HIL",
-        "OPEN_RADIO_LEGACY_RATE_MBIT",
-        "OPEN_RADIO_LAN_PROBE_IPV4",
-        "OPEN_RADIO_PERF_AP",
-        "OPEN_RADIO_RAW_MAC_BENCH",
-        "OPEN_RADIO_STA_CHANNEL",
-        "OPEN_RADIO_STA_GATEWAY_IPV4",
+        "OPEN_RADIO_TCP_BENCH",
         "OPEN_RADIO_TX_BENCH",
     ] {
         println!("cargo:rerun-if-env-changed={variable}");

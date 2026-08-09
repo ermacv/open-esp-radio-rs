@@ -121,6 +121,7 @@ pub struct Esp32s31StationScanRequest<'ssid, 'rates, 'channels> {
     pub target_ssid: &'ssid [u8],
     pub supported_rates: &'rates [u8],
     pub descriptor_capacity: Option<u32>,
+    pub select_candidate: bool,
 }
 
 impl<'ssid, 'rates, 'channels> Esp32s31StationScanRequest<'ssid, 'rates, 'channels> {
@@ -138,11 +139,18 @@ impl<'ssid, 'rates, 'channels> Esp32s31StationScanRequest<'ssid, 'rates, 'channe
             target_ssid,
             supported_rates,
             descriptor_capacity: None,
+            select_candidate: true,
         }
     }
 
     pub const fn with_descriptor_capacity(mut self, capacity: u32) -> Self {
         self.descriptor_capacity = Some(capacity);
+        self
+    }
+
+    /// Collect observations without selecting a peer for association.
+    pub const fn without_candidate_selection(mut self) -> Self {
+        self.select_candidate = false;
         self
     }
 }
@@ -489,7 +497,8 @@ where
             request.target_ssid,
             request.supported_rates,
         ),
-    };
+    }
+    .with_candidate_selection(request.select_candidate);
     let owner = Esp32s31ScanPort::new(
         Esp32s31ScanRadio::new(
             Esp32s31ScanPhy::<_, _, D>::new(phy, platform, phy_observer),

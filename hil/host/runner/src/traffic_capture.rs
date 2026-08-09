@@ -17,9 +17,8 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
     SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
-    StartupArtifactStatus, StateChange, StationEpochEvidence, StationFaultEvidence,
-    StationFaultInjection, StationLifecycleEvent, StationStopEvidence, Transport,
-    TransportEvidence, evidence_crc32c,
+    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
+    StationStopEvidence, Transport, TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -83,12 +82,6 @@ pub(crate) struct StationEpochHandle {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StationStopHandle {
-    request_id: u32,
-    first_event: usize,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct StationFaultHandle {
     request_id: u32,
     first_event: usize,
 }
@@ -609,47 +602,6 @@ impl SerialCapture {
                     _ => None,
                 }
             })
-    }
-
-    /// Arm one fault below the station facade and retain its correlation ID.
-    pub(crate) fn request_station_fault_injection(
-        &self,
-        injection: StationFaultInjection,
-    ) -> Result<StationFaultHandle> {
-        let first_event = self.protocol_event_count();
-        let response = self.send_command(
-            0,
-            Command::InjectStationFault(injection),
-            PROTOCOL_READY_TIMEOUT,
-        )?;
-        match response.body {
-            Event::Accepted => Ok(StationFaultHandle {
-                request_id: response.request_id,
-                first_event,
-            }),
-            Event::Rejected(reason) => {
-                Err(format!("device rejected station fault injection: {reason:?}").into())
-            }
-            _ => Err("device returned an invalid station fault response".into()),
-        }
-    }
-
-    /// Wait for the reliable owner frontier correlated with one fault command.
-    pub(crate) fn wait_station_fault(
-        &self,
-        handle: StationFaultHandle,
-        timeout: Duration,
-    ) -> Result<StationFaultEvidence> {
-        let event = self
-            .wait_for_protocol_after(handle.first_event, timeout, |message| {
-                message.request_id == handle.request_id
-                    && matches!(message.body, Event::StationFault(_))
-            })
-            .ok_or("device did not publish the requested station fault frontier")?;
-        match event.body {
-            Event::StationFault(evidence) => Ok(evidence),
-            _ => unreachable!("station fault predicate accepted only StationFault"),
-        }
     }
 
     /// Cursor for reliable unsolicited station lifecycle events.

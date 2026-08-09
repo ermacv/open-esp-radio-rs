@@ -45,7 +45,6 @@ correlated completion only after the production owner returns:
   connected generation;
 - `StopStation`: child tasks, IRQ and DMA quiesced and role-neutral owner
   reconstructed;
-- fault injection: typed recoverable discard or terminal quarantined owner;
 - unsolicited lifecycle: connected, peer loss, attempt failure and retry
   exhaustion.
 

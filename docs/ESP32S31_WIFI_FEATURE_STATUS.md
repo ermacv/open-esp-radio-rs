@@ -7,6 +7,8 @@ Implemented:
 
 - PAC-backed RF/PHY start, retained calibration and channel selection;
 - WPA2 STA scan/join/reconnect and an application-owned `embassy-net` stack;
+- finite application scan with a bounded report and `Idle -> Scan -> Idle`
+  ownership round trip;
 - QoS, BlockAck, bounded TX A-MPDU and RX reorder/handoff;
 - exclusive normalized monitor capture with bounded, non-blocking overflow;
 - one public `Radio -> Wifi -> STA|Monitor` lifecycle and one runner owning
@@ -15,7 +17,6 @@ Implemented:
 
 Not implemented:
 
-- application-requested finite scan while Wi-Fi is idle;
 - AP/AP+STA, power save, raw injection, BLE/BT/802.15.4/coexistence;
 - ESP32-C5 backend.
 

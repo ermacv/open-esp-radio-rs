@@ -28,15 +28,17 @@ pub use open_esp_radio_wifi_softmac::{
 pub use requests::{
     MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationPowerPolicy, StationRequest,
     StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
-    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiServicePlanningError,
-    WifiServicePlanningFailure, WifiServiceRequest, WifiServiceRequestError,
-    WifiServiceRequestFailure, WifiSsid, WifiSsidError, WifiSupervisorConfiguration,
+    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
+    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
+    WifiServiceRequestError, WifiServiceRequestFailure, WifiSsid, WifiSsidError,
+    WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]
 pub use supervisor::{
-    RadioController, RadioSubsystemGeneration, WifiIdle, WifiMonitor, WifiRoleStartFailure,
-    WifiRoleStopFailure, WifiStartFailure, WifiStartReport, WifiStartResult, WifiStation,
-    WifiStopReport, WifiSupervisorPort,
+    RadioController, RadioSubsystemGeneration, WIFI_SCAN_RESULT_CAPACITY, WifiIdle, WifiMonitor,
+    WifiRoleStartFailure, WifiRoleStopFailure, WifiScanCompleted, WifiScanFailure,
+    WifiScanOperationFailure, WifiScanReport, WifiScanResult, WifiStartFailure, WifiStartReport,
+    WifiStartResult, WifiStation, WifiStopReport, WifiSupervisorPort,
 };
 
 #[cfg(feature = "wifi")]

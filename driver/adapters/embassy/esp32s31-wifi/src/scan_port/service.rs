@@ -113,6 +113,9 @@ where
     }
 
     fn select_candidate(&mut self) -> Result<Option<Self::Candidate>, Self::Error> {
+        if !self.station.select_candidate {
+            return Ok(None);
+        }
         Ok(best_matching_ssid(self.storage.table.records(), self.station.target_ssid).copied())
     }
 }

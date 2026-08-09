@@ -38,9 +38,7 @@ use static_cell::StaticCell;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 #[cfg(feature = "open-radio-hil")]
-mod radio_fault;
-#[cfg(feature = "open-radio-hil")]
-mod radio_hil;
+mod product_hil;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
@@ -228,7 +226,7 @@ _runtime_start:
 fn panic(info: &core::panic::PanicInfo<'_>) -> ! {
     #[cfg(feature = "open-radio-hil")]
     {
-        let (stage, action) = radio_hil::diagnostic_snapshot();
+        let (stage, action) = product_hil::diagnostic_snapshot();
         console::emergency_log(format_args!(
             "OPEN_RADIO_HIL panic stage={stage} action={action} info={info}"
         ));
@@ -336,7 +334,7 @@ extern "C" fn runtime_main() -> ! {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=logger-allocation\r\n");
             };
             spawner.spawn(logger);
-            let Ok(protocol) = console::protocol_task(radio_hil::hil_capabilities()) else {
+            let Ok(protocol) = console::protocol_task(product_hil::hil_capabilities()) else {
                 fail(c"OPEN_RADIO_HIL runtime=FAIL reason=protocol-allocation\r\n");
             };
             spawner.spawn(protocol);
@@ -369,7 +367,7 @@ async fn open_radio_hil_task(
     trng: esp_hal::rng::Trng,
     _trng_source: esp_hal::rng::TrngSource<'static>,
 ) {
-    radio_hil::run(spawner, protocol_spawner, radio, trng).await;
+    product_hil::run(spawner, protocol_spawner, radio, trng).await;
 }
 
 fn validate_runtime_layout() {

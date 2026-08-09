@@ -32,8 +32,7 @@ protocol and never select firmware source. Scenario manifests contain only
 non-secret build policy. Dated results belong under
 `qualification/targets/esp32s31/records/`.
 
-Current migration constraint: `runtime/src/radio_hil/` still contains a
-second target composition for custom resource profiles and instrumentation.
-It is not a production API and must be deleted after equivalent typed
-qualification hooks cover cold-start evidence, traffic counters and injected
-faults. New radio behavior must not be added there.
+The product HIL starts the same public constructor and sole runner as an
+application. Qualification hooks observe that path; HIL contains no second
+radio, station, DMA or ISR composition. A future low-level layer probe must be
+a separate target package and must not compose station or `embassy-net`.

@@ -19,17 +19,19 @@ macro_rules! qualification_event {
 }
 
 mod connected;
+mod facade;
 mod monitor;
 mod station;
 
 #[cfg(feature = "qualification")]
 pub use connected::Esp32s31QualificationSnapshot;
 pub use connected::Esp32s31WifiDevice;
-pub use monitor::Esp32s31MonitorFrames;
-pub use station::{
+pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
-    Esp32s31RadioRunner, Esp32s31Wifi, Esp32s31WifiControl, new,
+    Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
+pub use monitor::Esp32s31MonitorFrames;
+pub use station::{Esp32s31RadioRunner, new};
 
 /// Board-derived radio identity. Reading eFuse remains an application
 /// responsibility; credentials are supplied separately to `start_station`.

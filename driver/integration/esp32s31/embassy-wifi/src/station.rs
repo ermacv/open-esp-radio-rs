@@ -4,7 +4,12 @@
 //! transition is supplied by a PAC-backed driver or reusable integration
 //! owner; no HIL protocol, telemetry or benchmark configuration is linked.
 
-use core::{cell::RefCell, future::Future, marker::PhantomData, pin::Pin};
+use core::{
+    cell::{Cell, RefCell},
+    future::Future,
+    marker::PhantomData,
+    pin::Pin,
+};
 
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -21,13 +26,14 @@ use open_esp_radio::esp32s31::wifi::sta::attempt::{
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
-    StationDiscovery, StationRequest, StationSecurity, WifiConfig, WifiIdle,
-    WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStartReport,
-    WifiStationConfig, WifiSupervisorConfiguration,
+    StationDiscovery, StationRequest, StationScanPolicy, StationSecurity,
+    WIFI_SCAN_RESULT_CAPACITY, WifiConfig, WifiScanFailure, WifiScanReport, WifiScanRequest,
+    WifiScanResult, WifiServicePlanningError, WifiServiceRequest, WifiSsid, WifiStartFailure,
+    WifiStartReport, WifiStationConfig, WifiSupervisorConfiguration,
     embassy_supervisor::{
         EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
-        EmbassyWifiStartKind, EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-        EmbassyWifiSupervisorPort, EmbassyWifiSupervisorResponse, finish_embassy_wifi_active_role,
+        EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
+        EmbassyWifiSupervisorResponse, finish_embassy_wifi_active_role,
     },
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31WifiStartConfig,
@@ -50,8 +56,9 @@ use open_esp_radio::{
         softmac::interface::BoundVirtualInterface,
         sta::station::{
             StaAttemptContext, StaAttemptFailure, StaAttemptOutcome, StaFailureDisposition,
-            StaNextCandidate,
+            StaNextCandidate, StaReconnectPolicy,
         },
+        wpa2::Pmk,
     },
 };
 use open_esp_radio_esp32s31_wifi_embassy::embassy_irq::{
@@ -110,9 +117,11 @@ use crate::connected::{
     mac_interrupt_epoch, run_connected, spawn_connected_workers,
 };
 use crate::monitor::{
-    CaptureResources, Esp32s31MonitorFrames, MonitorMemory, MonitorResourcesError,
-    ProductionMonitorBuildFailure, ProductionMonitorResources, ProductionMonitorTask,
-    initialize_monitor_resources,
+    CaptureResources, MonitorMemory, MonitorResourcesError, ProductionMonitorBuildFailure,
+    ProductionMonitorResources, ProductionMonitorTask, initialize_monitor_resources,
+};
+use crate::{
+    Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization, Esp32s31Wifi,
 };
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
@@ -279,29 +288,6 @@ type ProductionSupervisorStopped = Esp32s31WifiSupervisorStopped<
     ProductionMonitorResources,
 >;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31RadioError {
-    Planning(WifiServicePlanningError),
-    RoleActive(EmbassyWifiStartKind),
-    UnsupportedPowerPolicy,
-    HardwareFault,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Esp32s31NewError {
-    WorkerUnavailable,
-    RadioAlreadyClaimed,
-    RadioStart,
-    StationRole,
-    MacStart,
-    StationMemoryInUse,
-    RxDmaLayout,
-    TxDmaLayout,
-    ConnectedResources,
-    MonitorResources,
-    SupervisorInUse,
-}
-
 static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
     CriticalSectionRawMutex,
     Esp32s31RadioError,
@@ -312,66 +298,6 @@ struct ProductionWifiEpochRunner {
     station_control: &'static Esp32s31StationControlResources<CriticalSectionRawMutex>,
     monitor_capture: &'static CaptureResources,
     parked_monitor: RefCell<Option<ProductionMonitorResources>>,
-}
-
-/// Hardware-free Wi-Fi typestate root for the sole ESP32-S31 radio runner.
-pub type Esp32s31WifiControl =
-    WifiIdle<EmbassyWifiSupervisorPort<'static, CriticalSectionRawMutex, Esp32s31RadioError>>;
-
-/// Materialized Wi-Fi application resources. The network device and monitor
-/// capture stream are independent consumers of the same supervised radio.
-pub struct Esp32s31Wifi {
-    control: Esp32s31WifiControl,
-    device: crate::Esp32s31WifiDevice,
-    monitor_frames: Esp32s31MonitorFrames,
-    #[cfg(feature = "qualification")]
-    qualification: crate::Esp32s31QualificationSnapshot,
-}
-
-impl Esp32s31Wifi {
-    pub fn into_parts(
-        self,
-    ) -> (
-        Esp32s31WifiControl,
-        crate::Esp32s31WifiDevice,
-        Esp32s31MonitorFrames,
-    ) {
-        (self.control, self.device, self.monitor_frames)
-    }
-
-    /// Value-only hardware evidence for HIL builds. Production firmware has
-    /// no corresponding field or method.
-    #[cfg(feature = "qualification")]
-    pub const fn qualification(&self) -> crate::Esp32s31QualificationSnapshot {
-        self.qualification
-    }
-}
-
-/// Sole application radio root. Consuming it materializes Wi-Fi exactly once;
-/// future BLE/802.15.4 roots remain owned by this boundary until implemented.
-pub struct Esp32s31Radio {
-    wifi: Esp32s31Wifi,
-    initialization: Esp32s31RadioInitialization,
-}
-
-impl Esp32s31Radio {
-    pub const fn initialization(&self) -> &Esp32s31RadioInitialization {
-        &self.initialization
-    }
-
-    pub fn into_wifi(self) -> Esp32s31Wifi {
-        self.wifi
-    }
-}
-
-/// Value-only cold-start evidence available to applications and HIL without
-/// exposing PHY, register or calibration owners.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Esp32s31RadioInitialization {
-    pub start: open_esp_radio::esp32s31::Esp32s31WifiMacStartReport,
-    pub transition: open_esp_radio::esp32s31::Esp32s31WifiRuntimeTransitionReport,
-    pub calibration_record:
-        Option<[u8; open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN]>,
 }
 
 /// Eternal owner-holding task. PAC, DMA and ISR capabilities never leave this
@@ -541,14 +467,30 @@ pub(super) struct ProductionStationBoardResources {
 }
 
 struct ProductionStationEnginePort<O> {
+    scan_only: bool,
+    scan_completed: Cell<bool>,
     _owner: PhantomData<fn() -> O>,
 }
 
 impl<O> ProductionStationEnginePort<O> {
     fn new() -> Self {
         Self {
+            scan_only: false,
+            scan_completed: Cell::new(false),
             _owner: PhantomData,
         }
+    }
+
+    fn standalone_scan() -> Self {
+        Self {
+            scan_only: true,
+            scan_completed: Cell::new(false),
+            _owner: PhantomData,
+        }
+    }
+
+    fn scan_completed(&self) -> bool {
+        self.scan_completed.get()
     }
 }
 
@@ -608,6 +550,12 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             .setup()
             .expect("initial scan requires a quiesced interrupt epoch");
         let scan_plan = Esp32s31StationScanPlan::new(discovery, None);
+        let scan_request = scan_plan.request(identity.station_address);
+        let scan_request = if self.scan_only {
+            scan_request.without_candidate_selection()
+        } else {
+            scan_request
+        };
         let scan = run_esp32s31_station_scan(
             Esp32s31StationScanResources {
                 phy,
@@ -624,10 +572,13 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 sequence: security.sequences.non_qos_mut(),
                 timer: EmbassyEsp32s31ScanTimer,
             },
-            scan_plan.request(identity.station_address),
+            scan_request,
         )
         .await;
         let decision = scan.decision;
+        if self.scan_only && matches!(decision, Esp32s31StationScanDecision::NoCandidate { .. }) {
+            self.scan_completed.set(true);
+        }
         let open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationScanReturned {
             hardware,
             receive,
@@ -784,6 +735,12 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
             .setup()
             .expect("running scan requires a quiesced interrupt epoch");
         let scan_plan = Esp32s31StationScanPlan::new(discovery, None);
+        let scan_request = scan_plan.request(station.station_address);
+        let scan_request = if self.scan_only {
+            scan_request.without_candidate_selection()
+        } else {
+            scan_request
+        };
         let scan = run_esp32s31_station_scan(
             Esp32s31StationScanResources {
                 phy,
@@ -800,9 +757,13 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 sequence: security.sequences.non_qos_mut(),
                 timer: EmbassyEsp32s31ScanTimer,
             },
-            scan_plan.request(station.station_address),
+            scan_request,
         )
         .await;
+        let scan_completed = matches!(
+            &scan.decision,
+            Esp32s31StationScanDecision::NoCandidate { .. }
+        );
         let scan_result = match scan.decision {
             Esp32s31StationScanDecision::Selected { candidate, .. } => {
                 Esp32s31StationRunningScanCompletion::Selected(candidate)
@@ -830,6 +791,9 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                 }
             }
         };
+        if self.scan_only && scan_completed {
+            self.scan_completed.set(true);
+        }
         let open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationScanReturned {
             hardware,
             receive,
@@ -1322,6 +1286,7 @@ impl ProductionWifiEpochRunner {
         &self,
         stopped: ProductionSupervisorStopped,
         request: StationRequest,
+        scan_only: bool,
     ) -> Result<(ProductionStationControl, ProductionStationTask), ProductionWifiFault> {
         let (discovery, security, reconnect, _validated_power) = request.into_parts();
         let (wifi, station_resources, monitor_resources) = stopped.into_parts();
@@ -1459,10 +1424,64 @@ impl ProductionWifiEpochRunner {
             Esp32s31StationConfig::new(reconnect),
             Esp32s31StationStartResources::new(owner),
             self.station_control,
-            ProductionStationRunner::new(ProductionStationEnginePort::new(), discovery),
+            ProductionStationRunner::new(
+                if scan_only {
+                    ProductionStationEnginePort::standalone_scan()
+                } else {
+                    ProductionStationEnginePort::new()
+                },
+                discovery,
+            ),
         )
         .map_err(|failure| ProductionWifiFault::TaskPreparation { _failure: failure })
     }
+}
+
+fn standalone_scan_station_request(request: WifiScanRequest) -> StationRequest {
+    let ssid = WifiSsid::new(b"open-radio-standalone-scan")
+        .expect("the private scan-only SSID is bounded");
+    StationRequest::new(
+        ssid,
+        StationSecurity::wpa2_personal(Pmk::from_bytes([0; 32])),
+        StaReconnectPolicy::new(1, 1, 1, 1).expect("one finite scan attempt is valid"),
+        StationScanPolicy::new(
+            request.channels(),
+            core::num::NonZeroU16::new(request.dwell_millis())
+                .expect("WifiScanRequest stores a nonzero dwell"),
+            open_esp_radio::wifi::ieee80211::station::StaAssociationPreference::PreferHe20,
+        ),
+    )
+}
+
+fn standalone_scan_report(
+    owner: &mut ProductionStationOwner<'static, 'static>,
+    generation: open_esp_radio::RadioSubsystemGeneration,
+) -> WifiScanReport {
+    let (_, storage, _) = owner.runtime.split_mut();
+    let table = storage.parts().2;
+    let summary = table.summary();
+    let mut results = [WifiScanResult::EMPTY; WIFI_SCAN_RESULT_CAPACITY];
+    for (destination, source) in results.iter_mut().zip(table.records()) {
+        *destination = WifiScanResult::new(
+            source.ssid,
+            source.ssid_len,
+            source.bssid,
+            source.channel,
+            source.rssi,
+            source.privacy,
+            source.rsn,
+            source.legacy_wpa,
+            source.ht_capability_ie_present,
+            source.he_capability_ie_len != 0,
+        );
+    }
+    WifiScanReport::new(
+        generation,
+        results,
+        summary.records as u8,
+        summary.observed_frames,
+        summary.dropped_unique_bss,
+    )
 }
 
 impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
@@ -1488,6 +1507,97 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
             match service {
+                WifiServiceRequest::StandaloneScan { request, .. } => {
+                    let (controller, task) = match self.prepare_station_task(
+                        stopped,
+                        standalone_scan_station_request(request),
+                        true,
+                    ) {
+                        Ok(prepared) => prepared,
+                        Err(faulted) => {
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                                    WifiScanFailure::Faulted {
+                                        error: self.fault_error(&faulted),
+                                    },
+                                )))
+                                .await;
+                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        }
+                    };
+                    let output = task.run().await;
+                    drop(controller);
+                    let resources = match output {
+                        Esp32s31StationExit::Stopped { resources, .. }
+                        | Esp32s31StationExit::RetryExhausted { resources, .. }
+                        | Esp32s31StationExit::Terminal { resources, .. } => resources,
+                        Esp32s31StationExit::Faulted { fault, runner, .. } => {
+                            let faulted = ProductionWifiFault::Station {
+                                _fault: fault,
+                                _runner: runner,
+                            };
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                                    WifiScanFailure::Faulted {
+                                        error: self.fault_error(&faulted),
+                                    },
+                                )))
+                                .await;
+                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        }
+                    };
+                    let (mut owner, runner) = resources.into_parts();
+                    let completed = runner.port().scan_completed();
+                    let report = standalone_scan_report(&mut owner, generation);
+                    let stopped = match try_reclaim_production_station(owner) {
+                        Ok(stopped) => stopped,
+                        Err(failure) => {
+                            let faulted = ProductionWifiFault::Reclaim {
+                                _station: failure,
+                                _runner: runner,
+                            };
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                                    WifiScanFailure::Faulted {
+                                        error: self.fault_error(&faulted),
+                                    },
+                                )))
+                                .await;
+                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        }
+                    };
+                    let Some(monitor) = self.parked_monitor.borrow_mut().take() else {
+                        let faulted = ProductionWifiFault::StationResourceInvariant {
+                            _stopped: stopped,
+                            _runner: runner,
+                        };
+                        endpoint
+                            .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                                WifiScanFailure::Faulted {
+                                    error: self.fault_error(&faulted),
+                                },
+                            )))
+                            .await;
+                        return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                    };
+                    let stopped = Esp32s31WifiSupervisorStopped::new(
+                        stopped.wifi,
+                        ProductionStationResources::Returned(stopped.resources),
+                        monitor,
+                    );
+                    let response = if completed {
+                        Ok(report)
+                    } else {
+                        Err(WifiScanFailure::Returned {
+                            request,
+                            error: Esp32s31RadioError::HardwareFault,
+                        })
+                    };
+                    endpoint
+                        .respond(EmbassyWifiSupervisorResponse::Scan(response))
+                        .await;
+                    EmbassyWifiRoleEpochOutcome::Stopped(stopped)
+                }
                 WifiServiceRequest::StandaloneMonitor { plan, request } => {
                     let Some(monitor_plan) = plan.standalone_monitor() else {
                         endpoint
@@ -1598,7 +1708,9 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     run_esp32s31_station_supervisor_epoch(
                         endpoint,
                         Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
-                        |stopped, request| station_runner.prepare_station_task(stopped, request),
+                        |stopped, request| {
+                            station_runner.prepare_station_task(stopped, request, false)
+                        },
                         Esp32s31StationSupervisorHooks::new(
                             |output| {
                                 let resources = match output {
@@ -1812,6 +1924,7 @@ pub async fn new(
         open_esp_radio::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     )
     .with_station(WifiStationConfig::new(station_mac))
+    .with_standalone_scan()
     .with_standalone_monitor();
     let (controller, supervisor) = match prepare_esp32s31_radio_supervisor(
         &RADIO_SUPERVISOR_CONTROL,
@@ -1831,16 +1944,16 @@ pub async fn new(
         Err(_failure) => return Err(Esp32s31NewError::SupervisorInUse),
     };
     Ok((
-        Esp32s31Radio {
-            wifi: Esp32s31Wifi {
-                control: controller.into_wifi(),
-                device: network_device,
-                monitor_frames: monitor.frames,
+        Esp32s31Radio::new(
+            Esp32s31Wifi::new(
+                controller.into_wifi(),
+                network_device,
+                monitor.frames,
                 #[cfg(feature = "qualification")]
-                qualification: qualification_snapshot,
-            },
+                qualification_snapshot,
+            ),
             initialization,
-        },
+        ),
         Esp32s31RadioRunner { supervisor },
     ))
 }

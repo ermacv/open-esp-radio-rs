@@ -3,9 +3,6 @@
 use embassy_futures::yield_now;
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
-use open_esp_radio::{
-    esp32s31::wifi::mac::tx::TxPhyRate, wifi::ieee80211::station::StaAssociationPhy,
-};
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
@@ -15,7 +12,7 @@ use open_esp_radio_hil_protocol::{
 use super::UdpSocketBuffers;
 use crate::{
     console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
-    radio_hil::connected_traffic::{
+    product_hil::traffic::{
         BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
         complete_open_radio_bidirectional_direction, log_open_radio_ampdu_interval,
         wait_session_link_requirements,
@@ -23,8 +20,7 @@ use crate::{
 };
 
 #[derive(Clone, Copy)]
-pub(in crate::radio_hil) enum UdpTxSessionSource {
-    Standalone,
+pub(in crate::product_hil) enum UdpTxSessionSource {
     Console,
     Bidirectional {
         sessions: &'static BidirectionalSessionChannel,
@@ -33,14 +29,10 @@ pub(in crate::radio_hil) enum UdpTxSessionSource {
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::radio_hil) struct UdpTxBenchmarkConfig {
+pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     pub source_port: u16,
     pub queue_depth: usize,
     pub payload_capacity: usize,
-    pub default_target: [u8; 4],
-    pub default_port: u16,
-    pub default_duration: Duration,
-    pub default_offered_rate_bps: Option<u64>,
     /// Maximum application datagrams admitted before enforcing the next
     /// absolute offered-rate deadline. The composition root derives this from
     /// the active plus prepared-ahead A-MPDU arenas, not an arbitrary poll
@@ -52,10 +44,8 @@ pub(in crate::radio_hil) struct UdpTxBenchmarkConfig {
 }
 
 /// Device-to-host UDP load through Embassy and the open TX scheduler.
-pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
+pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
     stack: Stack<'a>,
-    association_phy: StaAssociationPhy,
-    data_tx_rate: TxPhyRate,
     buffers: UdpSocketBuffers<'a>,
     packet: &mut [u8],
     config: UdpTxBenchmarkConfig,
@@ -96,99 +86,60 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         }),
     )
     .await;
-    if !matches!(config.session_source, UdpTxSessionSource::Standalone) {
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
-             source_port={} queue={} payload_capacity={} \
-             tx_mode=ampdu runtime_session=1 rate_code={:#04x} rate_kbps={}",
-            config.source_port,
-            config.queue_depth,
-            config.payload_capacity,
-            data_tx_rate.code(),
-            data_tx_rate.nominal_kbps(),
-        ));
-    } else {
-        let server = Ipv4Address::from_octets(config.default_target);
-        emergency_log(format_args!(
-            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
-             target={server}:{} queue={} payload={} tx_mode=ampdu \
-             offered_tx_kbps={:?} rate_code={:#04x} rate_kbps={}",
-            config.default_port,
-            config.queue_depth,
-            config.payload_capacity,
-            config.default_offered_rate_bps.map(|rate| rate / 1_000),
-            data_tx_rate.code(),
-            data_tx_rate.nominal_kbps(),
-        ));
-    }
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-ready \
+         source_port={} queue={} payload_capacity={} tx_mode=ampdu runtime_session=1",
+        config.source_port, config.queue_depth, config.payload_capacity,
+    ));
     loop {
         let session = match config.session_source {
-            UdpTxSessionSource::Standalone => None,
-            UdpTxSessionSource::Console => Some(receive_session_start().await),
-            UdpTxSessionSource::Bidirectional { sessions, .. } => Some(sessions.receive().await),
+            UdpTxSessionSource::Console => receive_session_start().await,
+            UdpTxSessionSource::Bidirectional { sessions, .. } => sessions.receive().await,
         };
-        if let Some(session) = session {
-            wait_session_link_requirements(session.config.link_requirements, aggregate_counters)
-                .await;
-            publish_event_reliably(
-                session.session_id,
-                0,
-                HilEvent::SessionReady(SessionReady {
-                    direction: HilDirection::Tx,
-                    tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
-                }),
-            )
-            .await;
-        }
-        let (server, server_port, payload_bytes, duration, offered_rate_bps) =
-            if let Some(session) = session {
-                let peer = session
-                    .config
-                    .peer
-                    .expect("validated TX session carries a peer");
-                let flow = session
-                    .config
-                    .target_tx
-                    .expect("validated TX session carries a target TX flow");
-                let duration_millis = match session.config.completion {
-                    HilCompletion::DurationMillis(duration) => duration,
-                    HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
-                        unreachable!("protocol owner accepts only duration-completed sessions")
-                    }
-                };
-                (
-                    Ipv4Address::from_octets(peer.address),
-                    peer.port,
-                    usize::from(flow.payload_bytes),
-                    Duration::from_millis(u64::from(duration_millis)),
-                    flow.offered_rate_bps,
-                )
-            } else {
-                (
-                    Ipv4Address::from_octets(config.default_target),
-                    config.default_port,
-                    config.payload_capacity,
-                    config.default_duration,
-                    config.default_offered_rate_bps,
-                )
-            };
-        if let Some(session) = session {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
-                 session={} target={server}:{server_port} payload={payload_bytes} \
-                 duration_ms={} offered_bps={offered_rate_bps:?}",
-                session.session_id,
-                duration.as_millis(),
-            ));
-        }
+        wait_session_link_requirements(session.config.link_requirements, aggregate_counters).await;
+        publish_event_reliably(
+            session.session_id,
+            0,
+            HilEvent::SessionReady(SessionReady {
+                direction: HilDirection::Tx,
+                tx_block_ack_tid: session.config.link_requirements.tx_block_ack_tid,
+            }),
+        )
+        .await;
+        let peer = session
+            .config
+            .peer
+            .expect("validated TX session carries a peer");
+        let flow = session
+            .config
+            .target_tx
+            .expect("validated TX session carries a target TX flow");
+        let duration_millis = match session.config.completion {
+            HilCompletion::DurationMillis(duration) => duration,
+            HilCompletion::TransferBytes(_) | HilCompletion::HostStop => {
+                unreachable!("protocol owner accepts only duration-completed sessions")
+            }
+        };
+        let server = Ipv4Address::from_octets(peer.address);
+        let server_port = peer.port;
+        let payload_bytes = usize::from(flow.payload_bytes);
+        let duration = Duration::from_millis(u64::from(duration_millis));
+        let offered_rate_bps = flow.offered_rate_bps;
+        emergency_log(format_args!(
+            "OPEN_RADIO_PHY_HIL result=PASS stage=udp-tx-session-start \
+             session={} target={server}:{server_port} payload={payload_bytes} \
+             duration_ms={} offered_bps={offered_rate_bps:?}",
+            session.session_id,
+            duration.as_millis(),
+        ));
         let started = Instant::now();
         // TX owns A-MPDU evidence because its post-measurement drain proves
         // that the last publication reached a terminal BlockAck outcome.
         // The RX sibling can finish on the host terminal datagram while a
         // target aggregate is still in flight, so sampling there can tear one
         // logical publication across independent diagnostic atomics.
-        let aggregate_start = match (config.session_source, session) {
-            (UdpTxSessionSource::Bidirectional { .. }, Some(session))
+        let aggregate_start = match config.session_source {
+            UdpTxSessionSource::Bidirectional { .. }
                 if session.config.direction == HilDirection::Rx =>
             {
                 None
@@ -199,8 +150,7 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         let mut bytes = 0_u64;
         let mut datagrams = 0_u64;
         let mut send_errors = 0_u32;
-        let cooperative_bidirectional =
-            session.is_some_and(|session| session.config.direction == HilDirection::Bidirectional);
+        let cooperative_bidirectional = session.config.direction == HilDirection::Bidirectional;
         while started.elapsed() < duration {
             packet[..4].copy_from_slice(&(datagrams as u32).to_be_bytes());
             match socket
@@ -251,59 +201,39 @@ pub(in crate::radio_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // UDP enqueue completion precedes MAC acknowledgement. Keep draining
         // outside the measured interval so the structured result cannot race
         // the final network queue and A-MPDU exchange.
-        if session.is_some() {
-            Timer::after(config.drain).await;
-        }
+        Timer::after(config.drain).await;
         emergency_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
-             e={send_errors} p={} pg={} w={} r={} g={} x={} l={} a={}",
+             e={send_errors} p={} pg={} code={}",
             offered_rate_bps.unwrap_or(0) / 1_000,
             config.pacing_group_datagrams,
-            association_phy.bandwidth_mhz(),
-            data_tx_rate.nominal_kbps(),
-            match data_tx_rate {
-                TxPhyRate::He(rate) => rate.guard_interval_and_ltf().encoding(),
-                TxPhyRate::Legacy(_) | TxPhyRate::Ht(_) => u8::MAX,
-            },
-            match data_tx_rate {
-                TxPhyRate::He(rate) => rate.is_dcm() as u8,
-                TxPhyRate::Legacy(_) | TxPhyRate::Ht(_) => u8::MAX,
-            },
-            match data_tx_rate {
-                TxPhyRate::He(rate) => rate.is_ldpc() as u8,
-                TxPhyRate::Legacy(_) | TxPhyRate::Ht(_) => u8::MAX,
-            },
             config.code_address,
         ));
         if let Some(aggregate_start) = aggregate_start {
             log_open_radio_ampdu_interval(aggregate_start, aggregate_counters);
         }
-        if let Some(session) = session {
-            let evidence = TransportEvidence {
-                rx_bytes: 0,
-                tx_bytes: bytes,
-                rx_units: 0,
-                tx_units: datagrams,
-                elapsed_micros: elapsed_us,
-                transport_errors: send_errors,
-            };
-            match config.session_source {
-                UdpTxSessionSource::Bidirectional { results, .. } => {
-                    complete_open_radio_bidirectional_direction(
-                        results,
-                        session.session_id,
-                        OpenRadioBidirectionalDirection::Tx,
-                        evidence,
-                        send_errors == 0,
-                    )
-                    .await;
-                }
-                UdpTxSessionSource::Console | UdpTxSessionSource::Standalone => {
-                    complete_session(session.session_id, evidence, send_errors == 0).await;
-                }
+        let evidence = TransportEvidence {
+            rx_bytes: 0,
+            tx_bytes: bytes,
+            rx_units: 0,
+            tx_units: datagrams,
+            elapsed_micros: elapsed_us,
+            transport_errors: send_errors,
+        };
+        match config.session_source {
+            UdpTxSessionSource::Bidirectional { results, .. } => {
+                complete_open_radio_bidirectional_direction(
+                    results,
+                    session.session_id,
+                    OpenRadioBidirectionalDirection::Tx,
+                    evidence,
+                    send_errors == 0,
+                )
+                .await;
             }
-        } else {
-            Timer::after_secs(2).await;
+            UdpTxSessionSource::Console => {
+                complete_session(session.session_id, evidence, send_errors == 0).await;
+            }
         }
     }
 }

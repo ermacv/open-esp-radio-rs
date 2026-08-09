@@ -6,7 +6,148 @@
 
 use core::{fmt, future::Future};
 
-use crate::{MonitorRequest, StationRequest};
+use crate::{MonitorRequest, StationRequest, WifiScanRequest};
+
+pub const WIFI_SCAN_RESULT_CAPACITY: usize = 32;
+
+/// Application-facing subset of one BSS observation.
+///
+/// Association-specific IEs remain in the internal scan table. A later
+/// station request performs its own fresh candidate scan instead of trusting
+/// a stale application snapshot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiScanResult {
+    ssid: [u8; 32],
+    ssid_len: u8,
+    pub bssid: [u8; 6],
+    pub channel: u8,
+    pub rssi_dbm: i8,
+    pub privacy: bool,
+    pub rsn: bool,
+    pub legacy_wpa: bool,
+    pub ht: bool,
+    pub he: bool,
+}
+
+impl WifiScanResult {
+    pub const EMPTY: Self = Self {
+        ssid: [0; 32],
+        ssid_len: 0,
+        bssid: [0; 6],
+        channel: 0,
+        rssi_dbm: i8::MIN,
+        privacy: false,
+        rsn: false,
+        legacy_wpa: false,
+        ht: false,
+        he: false,
+    };
+
+    #[allow(clippy::too_many_arguments)]
+    pub const fn new(
+        ssid: [u8; 32],
+        ssid_len: u8,
+        bssid: [u8; 6],
+        channel: u8,
+        rssi_dbm: i8,
+        privacy: bool,
+        rsn: bool,
+        legacy_wpa: bool,
+        ht: bool,
+        he: bool,
+    ) -> Self {
+        Self {
+            ssid,
+            ssid_len: if ssid_len > 32 { 32 } else { ssid_len },
+            bssid,
+            channel,
+            rssi_dbm,
+            privacy,
+            rsn,
+            legacy_wpa,
+            ht,
+            he,
+        }
+    }
+
+    pub fn ssid(&self) -> &[u8] {
+        &self.ssid[..usize::from(self.ssid_len)]
+    }
+}
+
+/// Complete bounded result of one finite standalone scan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiScanReport {
+    generation: RadioSubsystemGeneration,
+    results: [WifiScanResult; WIFI_SCAN_RESULT_CAPACITY],
+    result_count: u8,
+    pub observed_frames: u32,
+    pub dropped_unique_bss: u32,
+}
+
+impl WifiScanReport {
+    pub const fn new(
+        generation: RadioSubsystemGeneration,
+        results: [WifiScanResult; WIFI_SCAN_RESULT_CAPACITY],
+        result_count: u8,
+        observed_frames: u32,
+        dropped_unique_bss: u32,
+    ) -> Self {
+        Self {
+            generation,
+            results,
+            result_count: if result_count as usize > WIFI_SCAN_RESULT_CAPACITY {
+                WIFI_SCAN_RESULT_CAPACITY as u8
+            } else {
+                result_count
+            },
+            observed_frames,
+            dropped_unique_bss,
+        }
+    }
+
+    pub const fn generation(&self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+
+    pub fn results(&self) -> &[WifiScanResult] {
+        &self.results[..usize::from(self.result_count)]
+    }
+}
+
+/// Driver-side result of a finite scan request.
+#[derive(Debug)]
+pub enum WifiScanFailure<R, E> {
+    Rejected { request: R, error: E },
+    Returned { request: R, error: E },
+    Faulted { error: E },
+}
+
+/// Application-side scan failure with role-neutral Wi-Fi returned whenever
+/// the supervisor proved the complete owner graph reusable.
+pub enum WifiScanOperationFailure<W, R, E> {
+    Rejected { wifi: W, request: R, error: E },
+    Failed { wifi: W, request: R, error: E },
+    Faulted { error: E },
+}
+
+impl<W, R: fmt::Debug, E: fmt::Debug> fmt::Debug for WifiScanOperationFailure<W, R, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected { request, error, .. } => formatter
+                .debug_struct("Rejected")
+                .field("request", request)
+                .field("error", error)
+                .finish(),
+            Self::Failed { request, error, .. } => formatter
+                .debug_struct("Failed")
+                .field("request", request)
+                .field("error", error)
+                .finish(),
+            Self::Faulted { error } => formatter.debug_tuple("Faulted").field(error).finish(),
+        }
+    }
+}
 
 /// Wrapping identity of one successfully started Wi-Fi service epoch.
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
@@ -91,6 +232,11 @@ impl<R, E> WifiStartFailure<R, E> {
 pub trait WifiSupervisorPort {
     type Error;
 
+    fn scan(
+        &mut self,
+        request: WifiScanRequest,
+    ) -> impl Future<Output = Result<WifiScanReport, WifiScanFailure<WifiScanRequest, Self::Error>>> + '_;
+
     fn start_station(
         &mut self,
         request: StationRequest,
@@ -123,6 +269,33 @@ impl<P> WifiIdle<P> {
 }
 
 impl<P: WifiSupervisorPort> WifiIdle<P> {
+    pub async fn scan(
+        mut self,
+        request: WifiScanRequest,
+    ) -> Result<WifiScanCompleted<P>, WifiScanOperationFailure<Self, WifiScanRequest, P::Error>>
+    {
+        match self.port.scan(request).await {
+            Ok(report) => Ok(WifiScanCompleted { wifi: self, report }),
+            Err(WifiScanFailure::Rejected { request, error }) => {
+                Err(WifiScanOperationFailure::Rejected {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiScanFailure::Returned { request, error }) => {
+                Err(WifiScanOperationFailure::Failed {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiScanFailure::Faulted { error }) => {
+                Err(WifiScanOperationFailure::Faulted { error })
+            }
+        }
+    }
+
     pub async fn start_station(
         mut self,
         request: StationRequest,
@@ -165,6 +338,18 @@ impl<P: WifiSupervisorPort> WifiIdle<P> {
                 Err(WifiRoleStartFailure::Faulted { error })
             }
         }
+    }
+}
+
+/// Returned role-neutral owner and value-only observations from one scan.
+pub struct WifiScanCompleted<P> {
+    pub wifi: WifiIdle<P>,
+    pub report: WifiScanReport,
+}
+
+impl<P> WifiScanCompleted<P> {
+    pub fn into_parts(self) -> (WifiIdle<P>, WifiScanReport) {
+        (self.wifi, self.report)
     }
 }
 

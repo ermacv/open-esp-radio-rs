@@ -14,15 +14,12 @@ mod icmp_latency;
 mod paced_tcp;
 mod paced_udp;
 mod packet_socket;
-mod pcapng;
 mod rx_traffic;
 mod startup_artifact;
 mod station_ap_absence;
 mod station_ap_loss;
 mod station_lifecycle;
-mod station_rx_fault;
 mod station_stop;
-mod station_tx_fault;
 mod tcp_traffic;
 mod traffic_capture;
 mod trigger;
@@ -58,18 +55,8 @@ const OTA_DATA_SIZE: usize = 0x2000;
 
 const SCENARIO_ENVIRONMENT: &[&str] = &[
     "OPEN_RADIO_BIDIRECTIONAL_BENCH",
-    "OPEN_RADIO_RAW_MAC_BENCH",
     "OPEN_RADIO_TX_BENCH",
-    "OPEN_RADIO_PERF_AP",
     "OPEN_RADIO_TCP_BENCH",
-    "OPEN_RADIO_AMSDU_BENCH",
-    "OPEN_RADIO_NETWORK_AMSDU_BENCH",
-    "OPEN_RADIO_HE_MATRIX_HIL",
-    "OPEN_RADIO_HE_LDPC_HIL",
-    "OPEN_RADIO_HE_DCM_HIL",
-    "OPEN_RADIO_HE_TB_HIL",
-    "OPEN_RADIO_HE_DELIMITER_HIL",
-    "OPEN_RADIO_HT_SGI",
 ];
 
 fn main() {
@@ -144,11 +131,9 @@ fn run() -> Result<()> {
             Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root),
             Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root),
             Some("reconnect") => station_lifecycle::run(arguments.collect(), &root),
-            Some("rx-fault") => station_rx_fault::run(arguments.collect(), &root),
             Some("stop") => station_stop::run(arguments.collect(), &root),
-            Some("tx-fault") => station_tx_fault::run(arguments.collect(), &root),
             _ => Err("usage: cargo hil station \
-                 <reconnect|stop|ap-loss|ap-absence|rx-fault|tx-fault> [options]"
+                 <reconnect|stop|ap-loss|ap-absence> [options]"
                 .into()),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
@@ -210,9 +195,7 @@ fn print_help() {
          cargo hil station ap-absence [options]\n\
          cargo hil station ap-loss [options]\n\
          cargo hil station reconnect [options]\n\
-         cargo hil station rx-fault [options]\n\
          cargo hil station stop [options]\n\
-         cargo hil station tx-fault [options]\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \
@@ -398,20 +381,18 @@ enum Scenario {
     RadioPollProfile,
     RadioRxOrderProfile,
     UdpTx,
-    StationTxFault,
     Bidirectional,
     BidirectionalRxOrderProfile,
     Tcp,
 }
 
 impl Scenario {
-    const ALL: [Self; 9] = [
+    const ALL: [Self; 8] = [
         Self::BootSmoke,
         Self::Radio,
         Self::RadioPollProfile,
         Self::RadioRxOrderProfile,
         Self::UdpTx,
-        Self::StationTxFault,
         Self::Bidirectional,
         Self::BidirectionalRxOrderProfile,
         Self::Tcp,
@@ -426,7 +407,6 @@ impl Scenario {
                 Ok(Self::RadioRxOrderProfile)
             }
             "udp-tx" | "open-radio-udp-tx" => Ok(Self::UdpTx),
-            "station-tx-fault" | "open-radio-station-tx-fault" => Ok(Self::StationTxFault),
             "bidirectional" | "open-radio-bidirectional" => Ok(Self::Bidirectional),
             "bidirectional-rx-order-profile" | "open-radio-bidirectional-rx-order-profile" => {
                 Ok(Self::BidirectionalRxOrderProfile)
@@ -446,7 +426,6 @@ impl Scenario {
             Self::RadioPollProfile => "radio-poll-profile",
             Self::RadioRxOrderProfile => "radio-rx-order-profile",
             Self::UdpTx => "udp-tx",
-            Self::StationTxFault => "station-tx-fault",
             Self::Bidirectional => "bidirectional",
             Self::BidirectionalRxOrderProfile => "bidirectional-rx-order-profile",
             Self::Tcp => "tcp",
@@ -460,7 +439,6 @@ impl Scenario {
             Self::RadioPollProfile => "open-radio-poll-profile",
             Self::RadioRxOrderProfile => "open-radio-rx-order-profile",
             Self::UdpTx => "open-radio-udp-tx",
-            Self::StationTxFault => "open-radio-station-tx-fault",
             Self::Bidirectional => "open-radio-bidirectional",
             Self::BidirectionalRxOrderProfile => "open-radio-bidirectional-rx-order-profile",
             Self::Tcp => "open-radio-tcp",
@@ -474,9 +452,7 @@ impl Scenario {
             Self::RadioPollProfile => "open-radio-hil,task-poll-telemetry",
             Self::RadioRxOrderProfile => "open-radio-hil,rx-order-telemetry",
             Self::BidirectionalRxOrderProfile => "open-radio-hil,rx-order-telemetry",
-            Self::UdpTx | Self::StationTxFault | Self::Bidirectional | Self::Tcp => {
-                "open-radio-hil"
-            }
+            Self::UdpTx | Self::Bidirectional | Self::Tcp => "open-radio-hil",
         }
     }
 
@@ -485,18 +461,12 @@ impl Scenario {
             Self::BootSmoke | Self::Radio | Self::RadioPollProfile | Self::RadioRxOrderProfile => {
                 &[]
             }
-            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1")],
-            Self::StationTxFault => &[
-                ("OPEN_RADIO_TX_BENCH", "1"),
-                ("OPEN_RADIO_PERF_AP", "1"),
-                ("OPEN_RADIO_HT_SGI", "1"),
-            ],
+            Self::UdpTx => &[("OPEN_RADIO_TX_BENCH", "1")],
             Self::Bidirectional | Self::BidirectionalRxOrderProfile => &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
-                ("OPEN_RADIO_HT_SGI", "1"),
             ],
-            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1")],
+            Self::Tcp => &[("OPEN_RADIO_TCP_BENCH", "1")],
         }
     }
 
@@ -511,9 +481,6 @@ impl Scenario {
                 "radio HIL correlating UDP and 802.11 receive sequence order"
             }
             Self::UdpTx => "production ConnectedRunner embassy-net UDP throughput",
-            Self::StationTxFault => {
-                "connected TX reset frontier against the repository-controlled AP"
-            }
             Self::Bidirectional => "production ConnectedRunner simultaneous RX/TX throughput",
             Self::BidirectionalRxOrderProfile => {
                 "simultaneous RX/TX with UDP and 802.11 receive-order correlation"
@@ -1174,10 +1141,6 @@ mod tests {
         );
         assert_eq!(Scenario::parse("udp-tx").unwrap(), Scenario::UdpTx);
         assert_eq!(
-            Scenario::parse("station-tx-fault").unwrap(),
-            Scenario::StationTxFault
-        );
-        assert_eq!(
             Scenario::parse("bidirectional").unwrap(),
             Scenario::Bidirectional
         );
@@ -1203,27 +1166,18 @@ mod tests {
         assert!(Scenario::RadioRxOrderProfile.environment().is_empty());
         assert_eq!(
             Scenario::UdpTx.environment(),
-            &[("OPEN_RADIO_TX_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1"),]
-        );
-        assert_eq!(
-            Scenario::StationTxFault.environment(),
-            &[
-                ("OPEN_RADIO_TX_BENCH", "1"),
-                ("OPEN_RADIO_PERF_AP", "1"),
-                ("OPEN_RADIO_HT_SGI", "1"),
-            ]
+            &[("OPEN_RADIO_TX_BENCH", "1")]
         );
         assert_eq!(
             Scenario::Bidirectional.environment(),
             &[
                 ("OPEN_RADIO_TX_BENCH", "1"),
                 ("OPEN_RADIO_BIDIRECTIONAL_BENCH", "1"),
-                ("OPEN_RADIO_HT_SGI", "1"),
             ]
         );
         assert_eq!(
             Scenario::Tcp.environment(),
-            &[("OPEN_RADIO_TCP_BENCH", "1"), ("OPEN_RADIO_HT_SGI", "1"),]
+            &[("OPEN_RADIO_TCP_BENCH", "1")]
         );
         for scenario in Scenario::ALL {
             for (variable, _) in scenario.environment() {

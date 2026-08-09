@@ -12,9 +12,9 @@ use embassy_sync::{
 };
 
 use crate::{
-    MonitorRequest, RadioController, StationRequest, WifiIdle, WifiServicePlanningError,
-    WifiServiceRequest, WifiStartFailure, WifiStartResult, WifiStopReport,
-    WifiSupervisorConfiguration, WifiSupervisorPort,
+    MonitorRequest, RadioController, StationRequest, WifiIdle, WifiScanFailure, WifiScanReport,
+    WifiScanRequest, WifiServicePlanningError, WifiServiceRequest, WifiStartFailure,
+    WifiStartResult, WifiStopReport, WifiSupervisorConfiguration, WifiSupervisorPort,
 };
 
 /// Exactly one command is outstanding because the public controller requires
@@ -23,6 +23,7 @@ const MAILBOX_CAPACITY: usize = 1;
 
 /// Request transported to the sole owner-holding radio-supervisor task.
 pub enum EmbassyWifiSupervisorCommand {
+    Scan(WifiScanRequest),
     StartStation(StationRequest),
     StartMonitor(MonitorRequest),
     Stop,
@@ -31,6 +32,7 @@ pub enum EmbassyWifiSupervisorCommand {
 /// Role requested while another Wi-Fi role graph is already active.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EmbassyWifiStartKind {
+    StandaloneScan,
     Station,
     StandaloneMonitor,
 }
@@ -87,6 +89,7 @@ pub trait EmbassyWifiRoleEpochRunner<M: RawMutex> {
 
 /// Typed completion transported back to the application controller.
 pub enum EmbassyWifiSupervisorResponse<E> {
+    Scan(Result<WifiScanReport, WifiScanFailure<WifiScanRequest, E>>),
     Station(WifiStartResult<StationRequest, E>),
     Monitor(WifiStartResult<MonitorRequest, E>),
     Stop(Result<WifiStopReport, E>),
@@ -351,6 +354,29 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
 impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> {
     type Error = EmbassyWifiSupervisorError<E>;
 
+    async fn scan(
+        &mut self,
+        request: WifiScanRequest,
+    ) -> Result<WifiScanReport, WifiScanFailure<WifiScanRequest, Self::Error>> {
+        if !self.supervisor_available() {
+            return Err(WifiScanFailure::Rejected {
+                request,
+                error: EmbassyWifiSupervisorError::SupervisorUnavailable,
+            });
+        }
+        self.publish(EmbassyWifiSupervisorCommand::Scan(request))
+            .await;
+        match self.completion().await {
+            EmbassyWifiSupervisorResponse::Scan(result) => result.map_err(map_scan_failure),
+            EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiScanFailure::Faulted {
+                error: EmbassyWifiSupervisorError::SupervisorUnavailable,
+            }),
+            _ => Err(WifiScanFailure::Faulted {
+                error: EmbassyWifiSupervisorError::ResponseMismatch,
+            }),
+        }
+    }
+
     async fn start_station(
         &mut self,
         request: StationRequest,
@@ -427,6 +453,24 @@ fn map_start_failure<R, E>(
     }
 }
 
+fn map_scan_failure<R, E>(
+    failure: WifiScanFailure<R, E>,
+) -> WifiScanFailure<R, EmbassyWifiSupervisorError<E>> {
+    match failure {
+        WifiScanFailure::Rejected { request, error } => WifiScanFailure::Rejected {
+            request,
+            error: EmbassyWifiSupervisorError::Service(error),
+        },
+        WifiScanFailure::Returned { request, error } => WifiScanFailure::Returned {
+            request,
+            error: EmbassyWifiSupervisorError::Service(error),
+        },
+        WifiScanFailure::Faulted { error } => WifiScanFailure::Faulted {
+            error: EmbassyWifiSupervisorError::Service(error),
+        },
+    }
+}
+
 /// Sole command endpoint held by the task which owns the radio state machine.
 pub struct EmbassyWifiSupervisorEndpoint<'resources, M: RawMutex, E> {
     commands: Receiver<'resources, M, EmbassyWifiSupervisorCommand, MAILBOX_CAPACITY>,
@@ -461,6 +505,20 @@ where
     PlanningError: FnMut(WifiServicePlanningError) -> E,
 {
     match endpoint.receive().await {
+        EmbassyWifiSupervisorCommand::Scan(request) => match configuration.plan_scan(request) {
+            Ok(service) => EmbassyWifiStoppedDispatch::Start(service),
+            Err(failure) => {
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                        WifiScanFailure::Rejected {
+                            request: failure.request,
+                            error: planning_error(failure.error),
+                        },
+                    )))
+                    .await;
+                EmbassyWifiStoppedDispatch::Handled
+            }
+        },
         EmbassyWifiSupervisorCommand::StartStation(request) => {
             match configuration.plan_station(request) {
                 Ok(service) => EmbassyWifiStoppedDispatch::Start(service),
@@ -564,6 +622,12 @@ where
 {
     loop {
         let response = match endpoint.receive().await {
+            EmbassyWifiSupervisorCommand::Scan(request) => {
+                EmbassyWifiSupervisorResponse::Scan(Err(WifiScanFailure::Rejected {
+                    request,
+                    error: runner.fault_error(&faulted),
+                }))
+            }
             EmbassyWifiSupervisorCommand::StartStation(request) => {
                 EmbassyWifiSupervisorResponse::Station(Err(WifiStartFailure::rejected(
                     request,
@@ -624,6 +688,14 @@ where
                     control.request_stop();
                     stop_requested = true;
                 }
+            }
+            Either::Second(EmbassyWifiSupervisorCommand::Scan(request)) => {
+                let error = active_start_error(EmbassyWifiStartKind::StandaloneScan);
+                endpoint
+                    .respond(EmbassyWifiSupervisorResponse::Scan(Err(
+                        WifiScanFailure::Rejected { request, error },
+                    )))
+                    .await;
             }
             Either::Second(EmbassyWifiSupervisorCommand::StartStation(request)) => {
                 let error = active_start_error(EmbassyWifiStartKind::Station);
@@ -711,7 +783,8 @@ mod tests {
 
     use crate::{
         MonitorCapturePolicy, StationScanChannels, StationScanPolicy, StationSecurity,
-        WifiMacAddress, WifiMonitorConfig, WifiSsid, WifiStartReport, WifiStationConfig,
+        WIFI_SCAN_RESULT_CAPACITY, WifiMacAddress, WifiMonitorConfig, WifiScanResult, WifiSsid,
+        WifiStartReport, WifiStationConfig,
     };
 
     use super::*;
@@ -726,6 +799,13 @@ mod tests {
                 NonZeroU16::new(10).unwrap(),
                 StaAssociationPreference::Automatic,
             ),
+        )
+    }
+
+    fn scan_request() -> WifiScanRequest {
+        WifiScanRequest::new(
+            StationScanChannels::CHANNELS_1_TO_13,
+            NonZeroU16::new(10).unwrap(),
         )
     }
 
@@ -770,6 +850,20 @@ mod tests {
         {
             async move {
                 stopped.set(stopped.get() + 1);
+                if service.scan_request().is_some() {
+                    endpoint
+                        .respond(EmbassyWifiSupervisorResponse::Scan(Ok(
+                            WifiScanReport::new(
+                                generation,
+                                [WifiScanResult::EMPTY; WIFI_SCAN_RESULT_CAPACITY],
+                                0,
+                                0,
+                                0,
+                            ),
+                        )))
+                        .await;
+                    return EmbassyWifiRoleEpochOutcome::Stopped(stopped);
+                }
                 let response = if service.station_request().is_some() {
                     EmbassyWifiSupervisorResponse::Station(Ok(WifiStartReport::new(generation)))
                 } else if service.monitor_request().is_some() {
@@ -912,6 +1006,7 @@ mod tests {
         .with_station(WifiStationConfig::new(
             WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap(),
         ))
+        .with_standalone_scan()
         .with_standalone_monitor();
         let owner = Rc::new(Cell::new(0));
         let observed_owner = Rc::clone(&owner);
@@ -926,11 +1021,9 @@ mod tests {
         };
 
         let application = async {
-            let station = radio
-                .into_wifi()
-                .start_station(station_request())
-                .await
-                .unwrap();
+            let scan = radio.into_wifi().scan(scan_request()).await.unwrap();
+            let scan_generation = scan.report.generation().value();
+            let station = scan.wifi.start_station(station_request()).await.unwrap();
             let station_generation = station.generation().value();
             let wifi = station.stop().await.unwrap();
             let monitor = wifi
@@ -942,11 +1035,11 @@ mod tests {
                 .unwrap();
             let monitor_generation = monitor.generation().value();
             let _wifi = monitor.stop().await.unwrap();
-            (station_generation, monitor_generation)
+            (scan_generation, station_generation, monitor_generation)
         };
         let Either::First(generations) = run(select(application, task.run()));
-        assert_eq!(generations, (1, 2));
-        assert_eq!(observed_owner.get(), 2);
+        assert_eq!(generations, (1, 2, 3));
+        assert_eq!(observed_owner.get(), 3);
     }
 
     #[test]

@@ -89,6 +89,15 @@ pub struct PtkContext {
 pub struct Pmk([u8; 32]);
 
 impl Pmk {
+    /// Import an already-derived 256-bit PSK.
+    ///
+    /// This avoids retaining a passphrase in applications which provision raw
+    /// key material. The owned bytes receive the same zeroize-on-drop policy
+    /// as a locally derived key.
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub fn derive(passphrase: &[u8], ssid: &[u8]) -> Result<Self, Wpa2CryptoError> {
         if !(WPA2_PASSPHRASE_MIN_LEN..=WPA2_PASSPHRASE_MAX_LEN).contains(&passphrase.len()) {
             return Err(Wpa2CryptoError::InvalidPassphraseLength);

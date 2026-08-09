@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 16;
+pub const PROTOCOL_VERSION: u16 = 17;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -136,10 +136,6 @@ pub struct FeatureCapabilities {
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
-    /// This image can inject one fault below the station lifecycle, after a
-    /// real LMAC transaction has acquired hardware ownership, and report the
-    /// exact terminal owner frontier.
-    pub station_fault_injection: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -428,121 +424,10 @@ pub enum Command {
     /// Stop the complete station role after all child tasks, DMA and interrupt
     /// routing have returned their exact owners.
     StopStation,
-    /// Arm one deterministic fault below the station lifecycle facade.
-    /// Injection is one-shot and occurs only after the named production
-    /// transaction has crossed its hardware-ownership edge.
-    InjectStationFault(StationFaultInjection),
     Stop,
     Abort,
     GetLastResult,
     AcknowledgeResult,
-}
-
-/// Production transaction edge selected by a HIL fault cell.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum StationFaultInjection {
-    /// After a connected network TX has published a real descriptor, feed its
-    /// service path a contradictory completion/timeout edge. The ordinary or
-    /// aggregate owner must quarantine the descriptor for platform reset.
-    ConnectedTxAfterPublication,
-    /// After the RX owner has taken a real completed DMA unit but before it
-    /// allocates/copies a staging lease, narrow admission so that unit follows
-    /// the production over-capacity discard/reload path.
-    ConnectedRxBeforeStagingOverCapacity,
-}
-
-/// Target-independent classification of a completed fault injection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum StationFaultClassification {
-    /// The LMAC transaction rejected continued use of the radio and marked
-    /// its descriptor owner reset-required.
-    RadioResetRequired,
-    /// The completed frame was deliberately discarded, every descriptor was
-    /// reloaded, and the same live ring staged a following unit.
-    RecoverableFrameDiscard,
-    /// The requested injection returned through a different frontier and must
-    /// fail qualification rather than being mislabeled as either recovery or
-    /// reset-required quarantine.
-    ContractViolation,
-}
-
-/// Reliable evidence for one station fault cell.
-///
-/// Terminal TX quarantine and recoverable RX discard deliberately use
-/// different variants. This prevents a dropped frame from acquiring reset
-/// semantics, or an ambiguous hardware owner from being mislabeled as a
-/// recoverable data-plane loss.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum StationFaultEvidence {
-    ConnectedTxResetRequired {
-        classification: StationFaultClassification,
-        runner_returned: bool,
-        executor_tasks_stopped: bool,
-        rx_dma_stopped: bool,
-        tx_owner_reset_required: bool,
-    },
-    ConnectedRxOverCapacityRecovered {
-        classification: StationFaultClassification,
-        descriptor_reloaded: bool,
-        following_unit_staged: bool,
-        same_ring_live: bool,
-        service_result_ok: bool,
-    },
-}
-
-impl StationFaultEvidence {
-    pub const fn injection(self) -> StationFaultInjection {
-        match self {
-            Self::ConnectedTxResetRequired { .. } => {
-                StationFaultInjection::ConnectedTxAfterPublication
-            }
-            Self::ConnectedRxOverCapacityRecovered { .. } => {
-                StationFaultInjection::ConnectedRxBeforeStagingOverCapacity
-            }
-        }
-    }
-
-    pub const fn classification(self) -> StationFaultClassification {
-        match self {
-            Self::ConnectedTxResetRequired { classification, .. }
-            | Self::ConnectedRxOverCapacityRecovered { classification, .. } => classification,
-        }
-    }
-
-    pub const fn is_complete(self) -> bool {
-        match self {
-            Self::ConnectedTxResetRequired {
-                classification,
-                runner_returned,
-                executor_tasks_stopped,
-                rx_dma_stopped,
-                tx_owner_reset_required,
-            } => {
-                matches!(
-                    classification,
-                    StationFaultClassification::RadioResetRequired
-                ) && runner_returned
-                    && executor_tasks_stopped
-                    && rx_dma_stopped
-                    && tx_owner_reset_required
-            }
-            Self::ConnectedRxOverCapacityRecovered {
-                classification,
-                descriptor_reloaded,
-                following_unit_staged,
-                same_ring_live,
-                service_result_ok,
-            } => {
-                matches!(
-                    classification,
-                    StationFaultClassification::RecoverableFrameDiscard
-                ) && descriptor_reloaded
-                    && following_unit_staged
-                    && same_ring_live
-                    && service_result_ok
-            }
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -817,9 +702,6 @@ pub enum Event {
     StationStopped(StationStopEvidence),
     /// Unsolicited, reliable station generation/link transition.
     StationLifecycle(StationLifecycleEvent),
-    /// Reliable terminal frontier for a requested station fault injection.
-    /// The envelope request ID matches `InjectStationFault`.
-    StationFault(StationFaultEvidence),
     NetworkReady(NetworkInfo),
     ServiceReady(ServiceInfo),
     /// The selected data-plane worker has consumed the session configuration

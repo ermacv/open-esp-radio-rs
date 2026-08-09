@@ -7,7 +7,7 @@ use embassy_net::{
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, mutex::Mutex, signal::Signal};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
-use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersAccess;
+use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_pipeline::RxPipelineCounters;
 use open_esp_radio_hil_protocol::{
@@ -19,12 +19,12 @@ use open_esp_radio_hil_protocol::{
 use crate::console::{
     complete_session, emergency_log, publish_event_reliably, receive_session_start,
 };
-use crate::radio_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
+use crate::product_hil::OPEN_RADIO_TCP_CHUNK_CAPACITY;
 
 use super::{log_open_radio_ampdu_interval, wait_session_link_requirements};
 
 #[derive(Clone, Copy)]
-pub(in crate::radio_hil) struct TcpBenchmarkConfig {
+pub(in crate::product_hil) struct TcpBenchmarkConfig {
     pub local_port: u16,
     pub maximum_payload_bytes: u16,
     pub receive_buffer_capacity: usize,
@@ -66,7 +66,7 @@ static TCP_TX_PATTERN_RESULT: Signal<CriticalSectionRawMutex, ()> = Signal::new(
 /// Validate received stream bytes on Core 1 while Core 0 keeps servicing the
 /// radio, embassy-net and the TCP socket owner.
 #[embassy_executor::task]
-pub(in crate::radio_hil) async fn tcp_rx_pattern_worker_task() {
+pub(in crate::product_hil) async fn tcp_rx_pattern_worker_task() {
     loop {
         let job = TCP_RX_PATTERN_JOB.wait().await;
         let buffer = TCP_RX_PATTERN_BUFFER.lock().await;
@@ -79,7 +79,7 @@ pub(in crate::radio_hil) async fn tcp_rx_pattern_worker_task() {
 /// Prepare transmitted stream bytes on Core 1 while Core 0 keeps servicing
 /// the radio, embassy-net and the TCP socket owner.
 #[embassy_executor::task]
-pub(in crate::radio_hil) async fn tcp_tx_pattern_worker_task() {
+pub(in crate::product_hil) async fn tcp_tx_pattern_worker_task() {
     loop {
         let job = TCP_TX_PATTERN_JOB.wait().await;
         let mut buffer = TCP_TX_PATTERN_BUFFER.lock().await;
@@ -89,9 +89,9 @@ pub(in crate::radio_hil) async fn tcp_tx_pattern_worker_task() {
     }
 }
 
-pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
+pub(in crate::product_hil) async fn run_open_radio_tcp_benchmark<'a>(
     stack: Stack<'a>,
-    registers: Esp32s31RadioRegistersAccess<'a>,
+    qualification: Esp32s31QualificationSnapshot,
     rx_buffer: &'a mut [u8],
     tx_buffer: &'a mut [u8],
     config: TcpBenchmarkConfig,
@@ -155,8 +155,7 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
             session.session_id, session.config.direction, duration_millis,
         ));
 
-        let hardware_start =
-            registers.with_ref(|registers| registers.rx_statistics_snapshot().primary);
+        let hardware_start = qualification.rx_statistics().map(|value| value.primary);
         let pipeline_start = pipeline_counters.snapshot();
         let aggregate_start = aggregate_counters.snapshot();
         let connection_timeout = duration + Duration::from_secs(5);
@@ -261,11 +260,12 @@ pub(in crate::radio_hil) async fn run_open_radio_tcp_benchmark<'a>(
         let elapsed_us = started.elapsed().as_micros().max(1);
         socket.abort();
 
-        let hardware_delta = registers
-            .borrow()
-            .rx_statistics_snapshot()
-            .primary
-            .wrapping_delta_since(hardware_start);
+        let hardware_delta = qualification
+            .rx_statistics()
+            .map(|value| value.primary)
+            .zip(hardware_start)
+            .map(|(current, earlier)| current.wrapping_delta_since(earlier))
+            .unwrap_or_default();
         let pipeline_end = pipeline_counters.snapshot();
         let enqueued = pipeline_end
             .network_enqueued

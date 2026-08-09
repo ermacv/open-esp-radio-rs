@@ -263,8 +263,8 @@ mod tests {
     use crate::{
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
         SessionLinkRequirements, StartupArtifactChunk, StationAttemptFailureReason,
-        StationDisconnectReason, StationFailureStage, StationFaultClassification,
-        StationFaultEvidence, StationLifecycleEvent, StationStopEvidence, Transport,
+        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, StationStopEvidence,
+        Transport,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -474,52 +474,6 @@ mod tests {
             0,
             42,
             Event::StationStopped(StationStopEvidence::COMPLETE),
-        );
-        let mut encoder = FrameEncoder::new();
-        let frame = encoder.encode(&expected).unwrap();
-        let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(frame, |result| observed = Some(result.unwrap()));
-        assert_eq!(observed, Some(expected));
-    }
-
-    #[test]
-    fn station_fault_frontier_round_trips_with_request_identity() {
-        let expected = Envelope::new(
-            7,
-            5,
-            0,
-            91,
-            Event::StationFault(StationFaultEvidence::ConnectedTxResetRequired {
-                classification: StationFaultClassification::RadioResetRequired,
-                runner_returned: true,
-                executor_tasks_stopped: true,
-                rx_dma_stopped: true,
-                tx_owner_reset_required: true,
-            }),
-        );
-        let mut encoder = FrameEncoder::new();
-        let frame = encoder.encode(&expected).unwrap();
-        let mut decoder = FrameDecoder::new();
-        let mut observed = None;
-        decoder.feed(frame, |result| observed = Some(result.unwrap()));
-        assert_eq!(observed, Some(expected));
-    }
-
-    #[test]
-    fn recoverable_rx_fault_round_trips_without_reset_semantics() {
-        let expected = Envelope::new(
-            7,
-            6,
-            0,
-            92,
-            Event::StationFault(StationFaultEvidence::ConnectedRxOverCapacityRecovered {
-                classification: StationFaultClassification::RecoverableFrameDiscard,
-                descriptor_reloaded: true,
-                following_unit_staged: true,
-                same_ring_live: true,
-                service_result_ok: true,
-            }),
         );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();

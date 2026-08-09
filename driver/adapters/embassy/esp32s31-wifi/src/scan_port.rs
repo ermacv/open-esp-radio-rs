@@ -147,6 +147,7 @@ pub struct Esp32s31ScanStation<'ssid, 'rates> {
     target_ssid: &'ssid [u8],
     supported_rates: &'rates [u8],
     descriptor_capacity: Option<u32>,
+    select_candidate: bool,
 }
 
 impl<'ssid, 'rates> Esp32s31ScanStation<'ssid, 'rates> {
@@ -160,11 +161,17 @@ impl<'ssid, 'rates> Esp32s31ScanStation<'ssid, 'rates> {
             target_ssid,
             supported_rates,
             descriptor_capacity: None,
+            select_candidate: true,
         }
     }
 
     pub const fn with_descriptor_capacity(mut self, capacity: u32) -> Self {
         self.descriptor_capacity = Some(capacity);
+        self
+    }
+
+    pub const fn with_candidate_selection(mut self, enabled: bool) -> Self {
+        self.select_candidate = enabled;
         self
     }
 }

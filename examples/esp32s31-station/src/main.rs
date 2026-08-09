@@ -122,7 +122,15 @@ async fn station_task(
         open_esp_radio_esp32s31_embassy_wifi::new(spawner, radio, trng, config)
             .await
             .expect("radio initialization must succeed once");
-    let (wifi, device, _monitor_frames) = radio.into_wifi().into_parts();
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioParts {
+        wifi,
+        initialization: _,
+    } = radio.into_parts();
+    let open_esp_radio_esp32s31_embassy_wifi::Esp32s31WifiParts {
+        control: wifi,
+        device,
+        monitor_frames: _,
+    } = wifi.into_parts();
     let network = async move {
         let (stack, mut runner) = embassy_net::new(
             device,

@@ -20,6 +20,34 @@ use open_esp_radio_wpa2::Pmk;
 
 use crate::{WifiMonitorConfig, WifiPlan};
 
+/// Finite standalone scan policy.
+///
+/// The current backend sends a broadcast Probe Request on every selected
+/// channel and continues receiving for the complete dwell. It neither joins a
+/// BSS nor materializes the station role.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct WifiScanRequest {
+    channels: StationScanChannels,
+    dwell_millis: NonZeroU16,
+}
+
+impl WifiScanRequest {
+    pub const fn new(channels: StationScanChannels, dwell_millis: NonZeroU16) -> Self {
+        Self {
+            channels,
+            dwell_millis,
+        }
+    }
+
+    pub const fn channels(self) -> StationScanChannels {
+        self.channels
+    }
+
+    pub const fn dwell_millis(self) -> u16 {
+        self.dwell_millis.get()
+    }
+}
+
 /// Security material owned by one station runtime request.
 ///
 /// The current production station path implements WPA2-Personal. The request
@@ -235,6 +263,10 @@ impl fmt::Debug for MonitorRequest {
 /// monitor-tap compositions require their own explicit variants and lifecycle
 /// contracts rather than combinations of optional fields.
 pub enum WifiServiceRequest {
+    StandaloneScan {
+        plan: WifiPlan,
+        request: WifiScanRequest,
+    },
     Station {
         plan: WifiPlan,
         request: StationRequest,
@@ -246,6 +278,26 @@ pub enum WifiServiceRequest {
 }
 
 impl WifiServiceRequest {
+    /// Join a finite scan request to the station-capable hardware topology.
+    pub fn standalone_scan(
+        plan: WifiPlan,
+        request: WifiScanRequest,
+    ) -> Result<Self, WifiServiceRequestFailure<WifiScanRequest>> {
+        if plan.station().is_none() {
+            return Err(WifiServiceRequestFailure::new(
+                request,
+                WifiServiceRequestError::MissingScanTopology,
+            ));
+        }
+        if plan.access_point().is_some() || plan.monitor().is_some() {
+            return Err(WifiServiceRequestFailure::new(
+                request,
+                WifiServiceRequestError::UnexpectedTopologyRole,
+            ));
+        }
+        Ok(Self::StandaloneScan { plan, request })
+    }
+
     /// Join a checked station-only topology to its runtime policy.
     pub fn station(
         plan: WifiPlan,
@@ -288,12 +340,22 @@ impl WifiServiceRequest {
 
     pub const fn plan(&self) -> WifiPlan {
         match self {
-            Self::Station { plan, .. } | Self::StandaloneMonitor { plan, .. } => *plan,
+            Self::StandaloneScan { plan, .. }
+            | Self::Station { plan, .. }
+            | Self::StandaloneMonitor { plan, .. } => *plan,
+        }
+    }
+
+    pub const fn scan_request(&self) -> Option<&WifiScanRequest> {
+        match self {
+            Self::StandaloneScan { request, .. } => Some(request),
+            Self::Station { .. } | Self::StandaloneMonitor { .. } => None,
         }
     }
 
     pub const fn station_request(&self) -> Option<&StationRequest> {
         match self {
+            Self::StandaloneScan { .. } => None,
             Self::Station { request, .. } => Some(request),
             Self::StandaloneMonitor { .. } => None,
         }
@@ -301,7 +363,7 @@ impl WifiServiceRequest {
 
     pub const fn monitor_request(&self) -> Option<&MonitorRequest> {
         match self {
-            Self::Station { .. } => None,
+            Self::StandaloneScan { .. } | Self::Station { .. } => None,
             Self::StandaloneMonitor { request, .. } => Some(request),
         }
     }
@@ -310,6 +372,11 @@ impl WifiServiceRequest {
 impl fmt::Debug for WifiServiceRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::StandaloneScan { plan, request } => formatter
+                .debug_struct("StandaloneScan")
+                .field("plan", plan)
+                .field("request", request)
+                .finish(),
             Self::Station { plan, request } => formatter
                 .debug_struct("Station")
                 .field("plan", plan)
@@ -327,6 +394,7 @@ impl fmt::Debug for WifiServiceRequest {
 /// Runtime request does not match its independently checked owner topology.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WifiServiceRequestError {
+    MissingScanTopology,
     MissingStationTopology,
     UnexpectedTopologyRole,
     NotStandaloneMonitorTopology,
@@ -336,6 +404,9 @@ pub enum WifiServiceRequestError {
 impl fmt::Display for WifiServiceRequestError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
+            Self::MissingScanTopology => {
+                "standalone scan requires a checked station-capable topology"
+            }
             Self::MissingStationTopology => {
                 "station service request requires a checked station topology"
             }
@@ -377,6 +448,7 @@ impl<R> WifiServiceRequestFailure<R> {
 pub struct WifiSupervisorConfiguration {
     capabilities: MacServiceCapabilities,
     station: Option<WifiStationConfig>,
+    standalone_scan: bool,
     standalone_monitor: bool,
 }
 
@@ -385,6 +457,7 @@ impl WifiSupervisorConfiguration {
         Self {
             capabilities,
             station: None,
+            standalone_scan: false,
             standalone_monitor: false,
         }
     }
@@ -392,6 +465,44 @@ impl WifiSupervisorConfiguration {
     pub const fn with_station(mut self, station: WifiStationConfig) -> Self {
         self.station = Some(station);
         self
+    }
+
+    pub const fn with_standalone_scan(mut self) -> Self {
+        self.standalone_scan = true;
+        self
+    }
+
+    pub fn plan_scan(
+        self,
+        request: WifiScanRequest,
+    ) -> Result<WifiServiceRequest, WifiServicePlanningFailure<WifiScanRequest>> {
+        if !self.standalone_scan {
+            return Err(WifiServicePlanningFailure {
+                request,
+                error: WifiServicePlanningError::ScanNotProvisioned,
+            });
+        }
+        let Some(station) = self.station else {
+            return Err(WifiServicePlanningFailure {
+                request,
+                error: WifiServicePlanningError::StationNotProvisioned,
+            });
+        };
+        let plan = match WifiConfig::station(station).validate(self.capabilities) {
+            Ok(plan) => plan,
+            Err(error) => {
+                return Err(WifiServicePlanningFailure {
+                    request,
+                    error: WifiServicePlanningError::Topology(error),
+                });
+            }
+        };
+        WifiServiceRequest::standalone_scan(plan, request).map_err(|failure| {
+            WifiServicePlanningFailure {
+                request: failure.request,
+                error: WifiServicePlanningError::Request(failure.error),
+            }
+        })
     }
 
     pub const fn with_standalone_monitor(mut self) -> Self {
@@ -455,6 +566,7 @@ impl WifiSupervisorConfiguration {
 /// Why a provisioned supervisor cannot construct a checked service request.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WifiServicePlanningError {
+    ScanNotProvisioned,
     StationNotProvisioned,
     MonitorNotProvisioned,
     Topology(WifiConfigError),
@@ -587,6 +699,36 @@ mod tests {
         let monitor = configuration.plan_monitor(monitor_request).unwrap();
         assert!(monitor.plan().station().is_none());
         assert!(monitor.plan().standalone_monitor().is_some());
+    }
+
+    #[test]
+    fn supervisor_provisions_finite_scan_on_the_station_owner_graph() {
+        let address = WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap();
+        let request = WifiScanRequest::new(
+            StationScanChannels::CHANNELS_1_TO_13,
+            NonZeroU16::new(20).unwrap(),
+        );
+        let configuration = WifiSupervisorConfiguration::new(TEST_CAPABILITIES)
+            .with_station(WifiStationConfig::new(address))
+            .with_standalone_scan();
+
+        let scan = configuration.plan_scan(request).unwrap();
+        assert!(scan.plan().station().is_some());
+        assert!(scan.scan_request().is_some());
+        assert!(scan.station_request().is_none());
+    }
+
+    #[test]
+    fn unprovisioned_scan_is_rejected_before_materialization() {
+        let request = WifiScanRequest::new(
+            StationScanChannels::CHANNELS_1_TO_13,
+            NonZeroU16::new(37).unwrap(),
+        );
+        let failure = WifiSupervisorConfiguration::new(TEST_CAPABILITIES)
+            .plan_scan(request)
+            .unwrap_err();
+        assert_eq!(failure.error, WifiServicePlanningError::ScanNotProvisioned);
+        assert_eq!(failure.request.dwell_millis(), 37);
     }
 
     #[test]

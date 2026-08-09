@@ -5,26 +5,26 @@ use open_esp_radio_hil_protocol::{Direction, TransportEvidence};
 
 use crate::console::{ActiveSession, complete_session, receive_session_start};
 
-pub(in crate::radio_hil) type BidirectionalSessionChannel =
+pub(in crate::product_hil) type BidirectionalSessionChannel =
     Channel<CriticalSectionRawMutex, ActiveSession, 1>;
-pub(in crate::radio_hil) type BidirectionalResultChannel =
+pub(in crate::product_hil) type BidirectionalResultChannel =
     Channel<CriticalSectionRawMutex, OpenRadioBidirectionalResult, 2>;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
-pub(in crate::radio_hil) enum OpenRadioBidirectionalDirection {
+pub(in crate::product_hil) enum OpenRadioBidirectionalDirection {
     Rx,
     Tx,
 }
 
 #[derive(Clone, Copy)]
-pub(in crate::radio_hil) struct OpenRadioBidirectionalResult {
+pub(in crate::product_hil) struct OpenRadioBidirectionalResult {
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,
     evidence: TransportEvidence,
     passed: bool,
 }
 
-pub(in crate::radio_hil) async fn run_open_radio_bidirectional_session_coordinator(
+pub(in crate::product_hil) async fn run_open_radio_bidirectional_session_coordinator(
     rx_sessions: &'static BidirectionalSessionChannel,
     tx_sessions: &'static BidirectionalSessionChannel,
     results: &'static BidirectionalResultChannel,
@@ -107,7 +107,7 @@ async fn complete_single_direction(
     complete_session(session_id, evidence, valid && result.passed).await;
 }
 
-pub(in crate::radio_hil) async fn complete_open_radio_bidirectional_direction(
+pub(in crate::product_hil) async fn complete_open_radio_bidirectional_direction(
     results: &'static BidirectionalResultChannel,
     session_id: u64,
     direction: OpenRadioBidirectionalDirection,

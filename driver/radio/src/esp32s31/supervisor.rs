@@ -17,14 +17,16 @@ use open_esp_radio_esp32s31_wifi_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
 use open_esp_radio_wifi_softmac::MonitorSink;
 
 use crate::{
-    EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
-    EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
-    EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-    EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure, EmbassyWifiSupervisorResponse,
-    EmbassyWifiSupervisorTask, RadioController, RadioSubsystemGeneration, StationPowerPolicy,
-    StationRequest, WifiStartFailure, WifiStartReport, WifiSupervisorConfiguration,
-    drive_embassy_wifi_active_role, finish_embassy_wifi_active_role,
-    prepare_embassy_wifi_supervisor,
+    RadioController, RadioSubsystemGeneration, StationPowerPolicy, StationRequest,
+    WifiStartFailure, WifiStartReport, WifiSupervisorConfiguration,
+    embassy_supervisor::{
+        EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
+        EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
+        EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
+        EmbassyWifiSupervisorPort, EmbassyWifiSupervisorPrepareFailure,
+        EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask, drive_embassy_wifi_active_role,
+        finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
+    },
 };
 
 /// Application-facing ESP32-S31 radio actor. Internal supervisor endpoints

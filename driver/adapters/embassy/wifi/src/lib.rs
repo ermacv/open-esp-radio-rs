@@ -31,6 +31,8 @@ use open_esp_radio_wifi_softmac::{
 /// Metadata copied alongside one independently retained monitor frame.
 #[derive(Clone, Copy, Debug)]
 pub struct MonitorCaptureMetadata<Rate> {
+    /// Supervisor generation which produced this frame.
+    pub generation: u32,
     pub tap: MonitorTapPoint,
     pub channel_context: ChannelContextId,
     pub rx: MacRxMetadata<Rate>,
@@ -105,8 +107,13 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
     fn try_capture<'pool, Rate>(
         &'pool self,
         frame: MonitorFrame<'_, Rate>,
+        generation: u32,
+        snapshot_length: Option<usize>,
     ) -> Result<MonitorCaptureFrame<'pool, Rate, CAPACITY>, MonitorDropReason> {
-        if frame.bytes.len() > CAPACITY {
+        let captured_length = snapshot_length
+            .unwrap_or(frame.bytes.len())
+            .min(frame.bytes.len());
+        if captured_length > CAPACITY {
             return Err(MonitorDropReason::TooLong);
         }
         let mut radio = self
@@ -114,11 +121,12 @@ impl<const CAPACITY: usize, const SLOTS: usize> MonitorCapturePool<CAPACITY, SLO
             .try_claim_radio()
             .ok_or(MonitorDropReason::Full)?;
         radio
-            .frame_prefix_mut(frame.bytes.len())
-            .copy_from_slice(frame.bytes);
+            .frame_prefix_mut(captured_length)
+            .copy_from_slice(&frame.bytes[..captured_length]);
         Ok(MonitorCaptureFrame {
-            lease: radio.into_network(frame.bytes.len()),
+            lease: radio.into_network(captured_length),
             metadata: MonitorCaptureMetadata {
+                generation,
                 tap: frame.tap,
                 channel_context: frame.channel_context,
                 rx: frame.metadata,
@@ -178,11 +186,23 @@ impl<'pool, M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const 
             MonitorCaptureSink {
                 pool: self.pool,
                 sender: self.frames.sender(),
+                generation: 0,
+                snapshot_length: None,
             },
             MonitorCaptureReceiver {
                 receiver: self.frames.receiver(),
             },
         )
+    }
+
+    /// Drop captures which were queued by a completed monitor generation.
+    pub fn discard_queued(&self) -> usize {
+        let mut discarded = 0_usize;
+        while let Ok(frame) = self.frames.try_receive() {
+            drop(frame);
+            discarded = discarded.saturating_add(1);
+        }
+        discarded
     }
 }
 
@@ -198,6 +218,18 @@ pub struct MonitorCaptureSink<
 > {
     pool: &'pool MonitorCapturePool<CAPACITY, SLOTS>,
     sender: Sender<'queue, M, MonitorCaptureFrame<'pool, Rate, CAPACITY>, DEPTH>,
+    generation: u32,
+    snapshot_length: Option<usize>,
+}
+
+impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
+    MonitorCaptureSink<'_, '_, M, Rate, DEPTH, CAPACITY, SLOTS>
+{
+    /// Bind a reusable sink to one supervisor generation and capture policy.
+    pub fn configure(&mut self, generation: u32, snapshot_length: Option<usize>) {
+        self.generation = generation;
+        self.snapshot_length = snapshot_length;
+    }
 }
 
 impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: usize>
@@ -210,7 +242,10 @@ impl<M: RawMutex, Rate, const DEPTH: usize, const CAPACITY: usize, const SLOTS: 
         if self.sender.is_full() {
             return MonitorPublishOutcome::Dropped(MonitorDropReason::Full);
         }
-        let captured = match self.pool.try_capture(frame) {
+        let captured = match self
+            .pool
+            .try_capture(frame, self.generation, self.snapshot_length)
+        {
             Ok(captured) => captured,
             Err(reason) => return MonitorPublishOutcome::Dropped(reason),
         };
@@ -388,6 +423,24 @@ mod tests {
         assert!(!captured.is_complete());
         assert_eq!(captured.metadata().logical_length, 12);
         assert_eq!(captured.captured_length(), 4);
+    }
+
+    #[test]
+    fn epoch_policy_tags_and_truncates_without_changing_logical_length() {
+        let pool = MonitorCapturePool::<8, 1>::new();
+        let resources = MonitorCaptureResources::<NoopRawMutex, (), 1, 8, 1>::new(&pool);
+        let (mut sink, receiver) = resources.split();
+        sink.configure(17, Some(3));
+
+        assert_eq!(
+            sink.try_publish(frame(&[1, 2, 3, 4, 5])),
+            MonitorPublishOutcome::Published
+        );
+        let captured = receiver.try_receive().expect("one truncated capture");
+        assert_eq!(captured.bytes(), &[1, 2, 3]);
+        assert_eq!(captured.metadata().generation, 17);
+        assert_eq!(captured.metadata().logical_length, 5);
+        assert!(!captured.is_complete());
     }
 
     #[test]

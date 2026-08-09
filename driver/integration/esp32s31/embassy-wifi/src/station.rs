@@ -4,15 +4,15 @@
 //! transition is supplied by a PAC-backed driver or reusable integration
 //! owner; no HIL protocol, telemetry or benchmark configuration is linked.
 
-use core::{future::Future, marker::PhantomData, pin::Pin};
+use core::{cell::RefCell, future::Future, marker::PhantomData, pin::Pin};
 
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_time::Timer;
 use esp_hal::rng::{Rng, Trng};
 use open_esp_radio::esp32s31::supervisor::{
-    Esp32s31StationSupervisorEpoch, Esp32s31StationSupervisorHooks, Esp32s31WifiSupervisorStopped,
-    prepare_esp32s31_radio_supervisor, run_esp32s31_station_supervisor_epoch,
+    Esp32s31RadioSupervisorTask, Esp32s31StationSupervisorEpoch, Esp32s31StationSupervisorHooks,
+    Esp32s31WifiSupervisorStopped, drive_esp32s31_monitor_role, prepare_esp32s31_radio_supervisor,
+    run_esp32s31_station_supervisor_epoch,
 };
 use open_esp_radio::esp32s31::wifi::sta::attempt::{
     Esp32s31StaAttemptObserver, Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStage,
@@ -21,16 +21,23 @@ use open_esp_radio::esp32s31::wifi::sta::attempt::{
 use open_esp_radio::esp32s31::wifi::sta::tx::ControlTxConfig;
 use open_esp_radio::esp32s31::wifi::sta::tx_epoch::Esp32s31StaTxEpoch;
 use open_esp_radio::{
-    EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
-    EmbassyWifiStartKind, EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-    EmbassyWifiSupervisorResponse, RadioConfig, StationDiscovery, StationRequest, StationSecurity,
-    WifiConfig, WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStationConfig,
-    WifiSupervisorConfiguration,
+    StationDiscovery, StationRequest, StationSecurity, WifiConfig, WifiIdle,
+    WifiServicePlanningError, WifiServiceRequest, WifiStartFailure, WifiStartReport,
+    WifiStationConfig, WifiSupervisorConfiguration,
+    embassy_supervisor::{
+        EmbassyWifiRoleEpochOutcome, EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier,
+        EmbassyWifiStartKind, EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
+        EmbassyWifiSupervisorPort, EmbassyWifiSupervisorResponse, finish_embassy_wifi_active_role,
+    },
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31WifiStartConfig,
         hal::{Radio, RadioRegisters},
         phy::{NoopPhyTargetObserver, PhyTxTargetPowerProfile},
         start_esp32s31_radio,
+        wifi::embassy::monitor::{
+            Esp32s31MonitorChannelSwitchError, Esp32s31MonitorTaskExit,
+            prepare_esp32s31_monitor_task,
+        },
         wifi::mac::{init::activate_promiscuous_receive, tx::TxSlot},
         wifi::sta::control_tx::Esp32s31ControlTx,
     },
@@ -102,6 +109,11 @@ use crate::connected::{
     initialize_connected_static_resources, initialize_ethernet_frame, initialize_station_network,
     mac_interrupt_epoch, run_connected, spawn_connected_workers,
 };
+use crate::monitor::{
+    CaptureResources, Esp32s31MonitorFrames, MonitorMemory, MonitorResourcesError,
+    ProductionMonitorBuildFailure, ProductionMonitorResources, ProductionMonitorTask,
+    initialize_monitor_resources,
+};
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
 const TX_COMPLETION_TIMEOUT_US: u64 = 250_000;
@@ -149,11 +161,11 @@ struct ProductionAttemptObserver;
 
 impl Esp32s31StaAttemptObserver for ProductionAttemptObserver {
     fn stage_started(&mut self, stage: Esp32s31StaAttemptStage) {
-        esp_println::println!("open-radio: attempt stage={stage:?} state=start");
+        qualification_event!("open-radio: attempt stage={stage:?} state=start");
     }
 
     fn stage_completed(&mut self, stage: Esp32s31StaAttemptStage) {
-        esp_println::println!("open-radio: attempt stage={stage:?} state=complete");
+        qualification_event!("open-radio: attempt stage={stage:?} state=complete");
     }
 }
 
@@ -261,25 +273,118 @@ enum ProductionStationResources {
     Returned(ProductionStationReusableResources<'static>),
 }
 
-type ProductionSupervisorStopped =
-    Esp32s31WifiSupervisorStopped<EspHalRadioPeripheral, ProductionStationResources, ()>;
+type ProductionSupervisorStopped = Esp32s31WifiSupervisorStopped<
+    EspHalRadioPeripheral,
+    ProductionStationResources,
+    ProductionMonitorResources,
+>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ProductionRadioError {
+pub enum Esp32s31RadioError {
     Planning(WifiServicePlanningError),
     RoleActive(EmbassyWifiStartKind),
     UnsupportedPowerPolicy,
     HardwareFault,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Esp32s31NewError {
+    WorkerUnavailable,
+    RadioAlreadyClaimed,
+    RadioStart,
+    StationRole,
+    MacStart,
+    StationMemoryInUse,
+    RxDmaLayout,
+    TxDmaLayout,
+    ConnectedResources,
+    MonitorResources,
+    SupervisorInUse,
+}
+
 static RADIO_SUPERVISOR_CONTROL: EmbassyWifiSupervisorControlResources<
     CriticalSectionRawMutex,
-    ProductionRadioError,
+    Esp32s31RadioError,
 > = EmbassyWifiSupervisorControlResources::new();
 
 struct ProductionWifiEpochRunner {
     trng: Trng,
     station_control: &'static Esp32s31StationControlResources<CriticalSectionRawMutex>,
+    monitor_capture: &'static CaptureResources,
+    parked_monitor: RefCell<Option<ProductionMonitorResources>>,
+}
+
+/// Hardware-free Wi-Fi typestate root for the sole ESP32-S31 radio runner.
+pub type Esp32s31WifiControl =
+    WifiIdle<EmbassyWifiSupervisorPort<'static, CriticalSectionRawMutex, Esp32s31RadioError>>;
+
+/// Materialized Wi-Fi application resources. The network device and monitor
+/// capture stream are independent consumers of the same supervised radio.
+pub struct Esp32s31Wifi {
+    control: Esp32s31WifiControl,
+    device: crate::Esp32s31WifiDevice,
+    monitor_frames: Esp32s31MonitorFrames,
+    #[cfg(feature = "qualification")]
+    qualification: crate::Esp32s31QualificationSnapshot,
+}
+
+impl Esp32s31Wifi {
+    pub fn into_parts(
+        self,
+    ) -> (
+        Esp32s31WifiControl,
+        crate::Esp32s31WifiDevice,
+        Esp32s31MonitorFrames,
+    ) {
+        (self.control, self.device, self.monitor_frames)
+    }
+
+    /// Value-only hardware evidence for HIL builds. Production firmware has
+    /// no corresponding field or method.
+    #[cfg(feature = "qualification")]
+    pub const fn qualification(&self) -> crate::Esp32s31QualificationSnapshot {
+        self.qualification
+    }
+}
+
+/// Sole application radio root. Consuming it materializes Wi-Fi exactly once;
+/// future BLE/802.15.4 roots remain owned by this boundary until implemented.
+pub struct Esp32s31Radio {
+    wifi: Esp32s31Wifi,
+    initialization: Esp32s31RadioInitialization,
+}
+
+impl Esp32s31Radio {
+    pub const fn initialization(&self) -> &Esp32s31RadioInitialization {
+        &self.initialization
+    }
+
+    pub fn into_wifi(self) -> Esp32s31Wifi {
+        self.wifi
+    }
+}
+
+/// Value-only cold-start evidence available to applications and HIL without
+/// exposing PHY, register or calibration owners.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Esp32s31RadioInitialization {
+    pub start: open_esp_radio::esp32s31::Esp32s31WifiMacStartReport,
+    pub transition: open_esp_radio::esp32s31::Esp32s31WifiRuntimeTransitionReport,
+    pub calibration_record:
+        Option<[u8; open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN]>,
+}
+
+/// Eternal owner-holding task. PAC, DMA and ISR capabilities never leave this
+/// value or the futures it drives.
+pub struct Esp32s31RadioRunner {
+    supervisor:
+        Esp32s31RadioSupervisorTask<'static, CriticalSectionRawMutex, ProductionWifiEpochRunner>,
+}
+
+impl Esp32s31RadioRunner {
+    pub async fn run(self) -> ! {
+        self.supervisor.run().await
+    }
 }
 
 enum ProductionStationReclaimFault<'security> {
@@ -317,6 +422,23 @@ enum ProductionWifiFault {
     },
     Resume {
         _fault: ProductionStationResumeFault,
+    },
+    MonitorBuild {
+        _failure: ProductionMonitorBuildFailure,
+        _station: ProductionStationResources,
+    },
+    MonitorChannel {
+        _error: Esp32s31MonitorChannelSwitchError,
+        _task: ProductionMonitorTask,
+        _station: ProductionStationResources,
+    },
+    MonitorRuntime {
+        _task: ProductionMonitorTask,
+        _station: ProductionStationResources,
+    },
+    StationResourceInvariant {
+        _stopped: ProductionStationStopped<'static>,
+        _runner: ProductionStationRunner<'static, 'static>,
     },
 }
 
@@ -414,6 +536,8 @@ pub(super) struct ProductionStationBoardResources {
     pub(super) rx_protocol_runtime: &'static mut ConnectedRxProtocolStorage,
     pub(super) initial_connected: Option<InitialConnectedStaticResources>,
     pub(super) workers: ConnectedWorkerPublishers,
+    #[cfg(feature = "qualification")]
+    pub(super) qualification: Option<crate::Esp32s31QualificationHooks>,
 }
 
 struct ProductionStationEnginePort<O> {
@@ -449,7 +573,7 @@ pub(super) fn production_station_runtime<'state>(
 
 impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'state, 'security>> {
     async fn run_initial_scan_epoch(
-        &mut self,
+        &self,
         phase: Esp32s31StationInitialScanPhase<
             'security,
             ProductionStationRuntime<'state>,
@@ -773,7 +897,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
         'state: 'a,
     {
         async move {
-            esp_println::println!(
+            qualification_event!(
                 "open-radio: station lifecycle attempt generation={} attempt={}",
                 context.generation,
                 context.attempt
@@ -830,7 +954,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                             progress,
                             ..
                         } => {
-                            esp_println::println!(
+                            qualification_event!(
                                 "open-radio: station attempt failed stage={stage:?} \
                                  disposition={disposition:?} completed={} error={error:?}",
                                 progress.completed_count()
@@ -861,7 +985,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                             report,
                             progress,
                         } => {
-                            esp_println::println!(
+                            qualification_event!(
                                 "open-radio: station joined phases={} auth={} assoc={} wpa2={} m4={}",
                                 progress.completed_count(),
                                 report.authentication.is_some(),
@@ -953,7 +1077,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                             progress,
                             ..
                         } => {
-                            esp_println::println!(
+                            qualification_event!(
                                 "open-radio: reconnect attempt failed stage={stage:?} \
                                  disposition={disposition:?} completed={} error={error:?}",
                                 progress.completed_count()
@@ -985,7 +1109,7 @@ impl<'state, 'security> ProductionStationEnginePort<ProductionStationOwner<'stat
                             report,
                             progress,
                         } => {
-                            esp_println::println!(
+                            qualification_event!(
                                 "open-radio: station rejoined phases={} auth={} assoc={} wpa2={} m4={}",
                                 progress.completed_count(),
                                 report.authentication.is_some(),
@@ -1201,7 +1325,8 @@ impl ProductionWifiEpochRunner {
     ) -> Result<(ProductionStationControl, ProductionStationTask), ProductionWifiFault> {
         let (discovery, security, reconnect, _validated_power) = request.into_parts();
         let (wifi, station_resources, monitor_resources) = stopped.into_parts();
-        let _retained_monitor_resources = monitor_resources;
+        let previous = self.parked_monitor.replace(Some(monitor_resources));
+        debug_assert!(previous.is_none(), "only one Wi-Fi role may be active");
         let security = self.fresh_security(security);
         let owner = match station_resources {
             ProductionStationResources::Fresh(fresh) => {
@@ -1343,15 +1468,15 @@ impl ProductionWifiEpochRunner {
 impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpochRunner {
     type Stopped = ProductionSupervisorStopped;
     type Faulted = ProductionWifiFault;
-    type Error = ProductionRadioError;
+    type Error = Esp32s31RadioError;
 
     fn planning_error(&mut self, error: WifiServicePlanningError) -> Self::Error {
-        ProductionRadioError::Planning(error)
+        Esp32s31RadioError::Planning(error)
     }
 
     fn fault_error(&mut self, faulted: &Self::Faulted) -> Self::Error {
         let _ = faulted;
-        ProductionRadioError::HardwareFault
+        Esp32s31RadioError::HardwareFault
     }
 
     fn run_epoch<'a>(
@@ -1362,186 +1487,286 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
         generation: open_esp_radio::RadioSubsystemGeneration,
     ) -> impl Future<Output = EmbassyWifiRoleEpochOutcome<Self::Stopped, Self::Faulted>> + 'a {
         async move {
-            let (_plan, station, monitor) = service.into_parts();
-            let Some(request) = station else {
-                if let Some(request) = monitor {
-                    endpoint
-                        .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
-                            WifiStartFailure::rejected(
-                                request,
-                                ProductionRadioError::Planning(
-                                    WifiServicePlanningError::MonitorNotProvisioned,
+            match service {
+                WifiServiceRequest::StandaloneMonitor { plan, request } => {
+                    let Some(monitor_plan) = plan.standalone_monitor() else {
+                        endpoint
+                            .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                                WifiStartFailure::rejected(
+                                    request,
+                                    Esp32s31RadioError::Planning(
+                                        WifiServicePlanningError::Request(
+                                            open_esp_radio::WifiServiceRequestError::NotStandaloneMonitorTopology,
+                                        ),
+                                    ),
                                 ),
-                            ),
+                            )))
+                            .await;
+                        return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
+                    };
+                    let channel = request.channel();
+                    let snapshot_length = request.capture_policy().snapshot_length();
+                    let (wifi, station_resources, monitor_resources) = stopped.into_parts();
+                    self.monitor_capture.discard_queued();
+                    let (mut controller, mut task) = match prepare_esp32s31_monitor_task(
+                        monitor_plan,
+                        wifi,
+                        monitor_resources.bind(generation, snapshot_length),
+                    ) {
+                        Ok(prepared) => prepared,
+                        Err(failure) => {
+                            let faulted = ProductionWifiFault::MonitorBuild {
+                                _failure: failure,
+                                _station: station_resources,
+                            };
+                            endpoint
+                                .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                                    WifiStartFailure::faulted(self.fault_error(&faulted)),
+                                )))
+                                .await;
+                            return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                        }
+                    };
+                    let mut observer = NoopPhyTargetObserver;
+                    if let Err(error) = task
+                        .switch_channel::<EmbassyEsp32s31PhyDelay, _>(channel, &mut observer)
+                        .await
+                    {
+                        let faulted = ProductionWifiFault::MonitorChannel {
+                            _error: error,
+                            _task: task,
+                            _station: station_resources,
+                        };
+                        endpoint
+                            .respond(EmbassyWifiSupervisorResponse::Monitor(Err(
+                                WifiStartFailure::faulted(self.fault_error(&faulted)),
+                            )))
+                            .await;
+                        return EmbassyWifiRoleEpochOutcome::Faulted(faulted);
+                    }
+                    endpoint
+                        .respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
+                            WifiStartReport::new(generation),
                         )))
                         .await;
-                }
-                return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
-            };
-            run_esp32s31_station_supervisor_epoch(
-                endpoint,
-                Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
-                |stopped, request| self.prepare_station_task(stopped, request),
-                Esp32s31StationSupervisorHooks::new(
-                    |output| {
-                        let resources = match output {
-                        Esp32s31StationExit::Stopped {
-                            resources,
-                            progress,
-                            reason,
-                        } => {
-                            esp_println::println!(
-                                "open-radio: station epoch stopped attempts={} connected_epochs={} reason={reason:?}",
-                                progress.attempts_started,
-                                progress.connected_epochs,
-                            );
-                            resources
-                        }
-                        Esp32s31StationExit::RetryExhausted {
-                            resources,
-                            progress,
-                            failure,
-                        } => {
-                            esp_println::println!(
-                                "open-radio: station epoch exhausted attempts={} stage={:?}",
-                                progress.attempts_started,
-                                failure.stage,
-                            );
-                            resources
-                        }
-                        Esp32s31StationExit::Terminal {
-                            resources,
-                            progress,
-                            failure,
-                        } => {
-                            esp_println::println!(
-                                "open-radio: station epoch ended attempts={} stage={:?}",
-                                progress.attempts_started,
-                                failure.stage,
-                            );
-                            resources
-                        }
-                        Esp32s31StationExit::Faulted { fault, runner, .. } => {
-                            return EmbassyWifiRoleFrontier::Faulted(
-                                ProductionWifiFault::Station {
-                                    _fault: fault,
-                                    _runner: runner,
-                                },
-                            );
-                        }
-                        };
-                        let (owner, runner) = resources.into_parts();
-                        match try_reclaim_production_station(owner) {
-                            Ok(stopped) => EmbassyWifiRoleFrontier::Stopped(
-                                Esp32s31WifiSupervisorStopped::new(
-                                    stopped.wifi,
-                                    ProductionStationResources::Returned(stopped.resources),
-                                    (),
-                                ),
-                            ),
-                            Err(failure) => {
-                                EmbassyWifiRoleFrontier::Faulted(ProductionWifiFault::Reclaim {
-                                    _station: failure,
-                                    _runner: runner,
-                                })
+                    let exit = drive_esp32s31_monitor_role(
+                        endpoint,
+                        &mut controller,
+                        task,
+                        Esp32s31RadioError::RoleActive,
+                    )
+                    .await;
+                    let frontier = finish_embassy_wifi_active_role(
+                        endpoint,
+                        generation,
+                        exit,
+                        |output| match output {
+                            Esp32s31MonitorTaskExit::Stopped { stopped, .. } => {
+                                self.monitor_capture.discard_queued();
+                                EmbassyWifiRoleFrontier::Stopped(
+                                    Esp32s31WifiSupervisorStopped::new(
+                                        stopped.wifi,
+                                        station_resources,
+                                        ProductionMonitorResources::from_stopped(stopped.resources),
+                                    ),
+                                )
                             }
+                            Esp32s31MonitorTaskExit::Faulted { task, .. } => {
+                                EmbassyWifiRoleFrontier::Faulted(
+                                    ProductionWifiFault::MonitorRuntime {
+                                        _task: task,
+                                        _station: station_resources,
+                                    },
+                                )
+                            }
+                        },
+                        |_faulted| Esp32s31RadioError::HardwareFault,
+                    )
+                    .await;
+                    return match frontier {
+                        EmbassyWifiRoleFrontier::Stopped(stopped) => {
+                            EmbassyWifiRoleEpochOutcome::Stopped(stopped)
                         }
-                    },
-                    || ProductionRadioError::UnsupportedPowerPolicy,
-                    ProductionRadioError::RoleActive,
-                    |_faulted: &ProductionWifiFault| ProductionRadioError::HardwareFault,
-                ),
-            )
-            .await
+                        EmbassyWifiRoleFrontier::Faulted(faulted) => {
+                            EmbassyWifiRoleEpochOutcome::Faulted(faulted)
+                        }
+                    };
+                }
+                WifiServiceRequest::Station { request, .. } => {
+                    let station_runner: &ProductionWifiEpochRunner = self;
+                    let parked_monitor = &self.parked_monitor;
+                    run_esp32s31_station_supervisor_epoch(
+                        endpoint,
+                        Esp32s31StationSupervisorEpoch::new(stopped, request, generation),
+                        |stopped, request| station_runner.prepare_station_task(stopped, request),
+                        Esp32s31StationSupervisorHooks::new(
+                            |output| {
+                                let resources = match output {
+                                    Esp32s31StationExit::Stopped {
+                                        resources,
+                                        progress,
+                                        reason,
+                                    } => {
+                                        qualification_event!(
+                                            "open-radio: station epoch stopped attempts={} connected_epochs={} reason={reason:?}",
+                                            progress.attempts_started,
+                                            progress.connected_epochs,
+                                        );
+                                        resources
+                                    }
+                                    Esp32s31StationExit::RetryExhausted {
+                                        resources,
+                                        progress,
+                                        failure,
+                                    } => {
+                                        qualification_event!(
+                                            "open-radio: station epoch exhausted attempts={} stage={:?}",
+                                            progress.attempts_started,
+                                            failure.stage,
+                                        );
+                                        resources
+                                    }
+                                    Esp32s31StationExit::Terminal {
+                                        resources,
+                                        progress,
+                                        failure,
+                                    } => {
+                                        qualification_event!(
+                                            "open-radio: station epoch ended attempts={} stage={:?}",
+                                            progress.attempts_started,
+                                            failure.stage,
+                                        );
+                                        resources
+                                    }
+                                    Esp32s31StationExit::Faulted { fault, runner, .. } => {
+                                        return EmbassyWifiRoleFrontier::Faulted(
+                                            ProductionWifiFault::Station {
+                                                _fault: fault,
+                                                _runner: runner,
+                                            },
+                                        );
+                                    }
+                                };
+                                let (owner, runner) = resources.into_parts();
+                                match try_reclaim_production_station(owner) {
+                                    Ok(stopped) => match parked_monitor.borrow_mut().take() {
+                                        Some(monitor) => EmbassyWifiRoleFrontier::Stopped(
+                                            Esp32s31WifiSupervisorStopped::new(
+                                                stopped.wifi,
+                                                ProductionStationResources::Returned(
+                                                    stopped.resources,
+                                                ),
+                                                monitor,
+                                            ),
+                                        ),
+                                        None => EmbassyWifiRoleFrontier::Faulted(
+                                            ProductionWifiFault::StationResourceInvariant {
+                                                _stopped: stopped,
+                                                _runner: runner,
+                                            },
+                                        ),
+                                    },
+                                    Err(failure) => EmbassyWifiRoleFrontier::Faulted(
+                                        ProductionWifiFault::Reclaim {
+                                            _station: failure,
+                                            _runner: runner,
+                                        },
+                                    ),
+                                }
+                            },
+                            || Esp32s31RadioError::UnsupportedPowerPolicy,
+                            Esp32s31RadioError::RoleActive,
+                            |_faulted: &ProductionWifiFault| Esp32s31RadioError::HardwareFault,
+                        ),
+                    )
+                    .await
+                }
+            }
         }
     }
 }
 
-pub async fn run<A, AF>(
+/// Materialize the public controller, persistent network device and sole
+/// owner-holding runner. This function does not start a Wi-Fi role and does
+/// not construct an IP stack.
+pub async fn new(
     spawner: Spawner,
     platform: EspHalRadioPeripheral,
     trng: Trng,
-    config: crate::Esp32s31StationServiceConfig,
-    network_application: A,
-) -> !
-where
-    A: FnOnce(crate::Esp32s31StationNetworkEvents) -> AF,
-    AF: Future<Output = ()>,
-{
-    esp_println::println!("open-radio: cold PHY start");
+    config: crate::Esp32s31RadioConfig,
+) -> Result<(Esp32s31Radio, Esp32s31RadioRunner), Esp32s31NewError> {
+    qualification_event!("open-radio: cold PHY start");
 
-    let (workers, network_events) = match spawn_connected_workers(spawner) {
+    let workers = match spawn_connected_workers(spawner) {
         Ok(workers) => workers,
-        Err(error) => {
-            esp_println::println!(
-                "open-radio: connected worker unavailable before radio start: {error:?}"
-            );
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
+        Err(_error) => return Err(Esp32s31NewError::WorkerUnavailable),
     };
 
-    let crate::Esp32s31StationServiceConfig {
+    let crate::Esp32s31RadioConfig {
         station_mac,
         access_point_mac,
         calibration,
         initial_channel,
-        request,
+        calibration_record,
+        maximum_tx_power_quarter_dbm,
+        #[cfg(feature = "qualification")]
+        qualification,
     } = config;
-    let topology = RadioConfig::wifi(WifiConfig::station(WifiStationConfig::new(station_mac)));
+    let topology = WifiConfig::station(WifiStationConfig::new(station_mac));
 
-    let owned = Radio::claim(platform)
-        .unwrap_or_else(|_| panic!("open-radio register singleton was already claimed"));
+    let owned = Radio::claim(platform).map_err(|_| Esp32s31NewError::RadioAlreadyClaimed)?;
+    let mut wifi_start = Esp32s31WifiStartConfig::new(calibration, initial_channel);
+    if let Some(maximum) = maximum_tx_power_quarter_dbm {
+        wifi_start = wifi_start.with_maximum_tx_power_quarter_dbm(maximum);
+    }
     let started = start_esp32s31_radio::<_, EmbassyEsp32s31PhyDelay, _>(
         owned,
-        Esp32s31RadioStartConfig::new(
-            topology,
-            Esp32s31WifiStartConfig::new(calibration, initial_channel),
-        ),
-        None,
+        Esp32s31RadioStartConfig::new(topology, wifi_start),
+        calibration_record,
         NoopPhyTargetObserver,
     )
     .await
-    .unwrap_or_else(|_| panic!("ESP32-S31 radio start failed"));
+    .map_err(|_| Esp32s31NewError::RadioStart)?;
     let station = started
         .try_into_station()
-        .unwrap_or_else(|_| panic!("validated radio topology did not materialize a station"));
+        .map_err(|_| Esp32s31NewError::StationRole)?;
     let station = station
         .start_mac(MAC_HANDSHAKE_SAMPLE_LIMIT, access_point_mac)
-        .unwrap_or_else(|_| panic!("cold MAC initialization failed"));
+        .map_err(|_| Esp32s31NewError::MacStart)?;
     let station_interface = station.interface();
     let station_address = station_interface.interface.address;
     let (_wifi_plan, wifi) = station.into_parts();
-    let report = wifi.start_report();
-    let transition = wifi.transition_report();
-    esp_println::println!(
+    let initialization = Esp32s31RadioInitialization {
+        start: wifi.start_report(),
+        transition: wifi.transition_report(),
+        calibration_record: wifi.calibration_record().map(|record| *record.bytes()),
+    };
+    qualification_event!(
         "open-radio: cold PHY ready, full_calibration={}",
-        report.wifi.registration.full_calibration_performed
+        initialization
+            .start
+            .wifi
+            .registration
+            .full_calibration_performed
     );
 
     let memory = match STATION_MEMORY.claim() {
         Ok(memory) => memory,
-        Err(error) => {
-            esp_println::println!("open-radio: station memory is already active: {error:?}");
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
+        Err(_error) => return Err(Esp32s31NewError::StationMemoryInUse),
     };
     let rx_storage = memory.rx_dma;
     let buffer_addresses = memory.rx_buffer_addresses;
-    let descriptor_base = rx_storage
-        .dma_layout(buffer_addresses)
-        .expect("RX DMA storage must be addressable by ESP32-S31");
+    let monitor_memory = MonitorMemory::new(rx_storage, buffer_addresses)
+        .map_err(|_| Esp32s31NewError::RxDmaLayout)?;
+    let descriptor_base = monitor_memory.descriptor_base();
     let tx_dma =
         open_esp_radio::esp32s31::wifi::dma::tx_storage::TxDmaStorage::pin_static(memory.tx_dma)
-            .expect("TX DMA storage must be addressable by ESP32-S31");
+            .map_err(|_| Esp32s31NewError::TxDmaLayout)?;
     let tx_slot = Pin::static_mut(TX_SLOT_STORAGE.init_with(|| TxSlot::from_dma(tx_dma)));
-    esp_println::println!(
+    qualification_event!(
         "open-radio: MAC ready handshake_samples={} interrupt_mask={:#010x}",
-        report.mac.handshake_samples,
-        transition.cold_interrupt_mask
+        initialization.start.mac.handshake_samples,
+        initialization.transition.cold_interrupt_mask
     );
 
     let scan_table = memory.scan_table;
@@ -1550,39 +1775,45 @@ where
 
     let initial_connected = match initialize_connected_static_resources() {
         Ok(resources) => resources,
-        Err(error) => {
-            esp_println::println!(
-                "open-radio: connected DMA resource binding failed before supervisor start: {error:?}"
-            );
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
+        Err(_error) => return Err(Esp32s31NewError::ConnectedResources),
     };
+    #[cfg(feature = "qualification")]
+    let qualification_snapshot = initial_connected.qualification;
+    let initial_connected = initial_connected.resources;
+    let (network_device, station_network) = initialize_station_network(station_address);
+    let monitor = initialize_monitor_resources(monitor_memory)
+        .map_err(|MonitorResourcesError::InUse| Esp32s31NewError::MonitorResources)?;
     let stopped = Esp32s31WifiSupervisorStopped::new(
         wifi,
         ProductionStationResources::Fresh(ProductionStationFreshResources {
-            dma: Esp32s31StationDmaResources::new(rx_storage, descriptor_base, buffer_addresses),
+            dma: Esp32s31StationDmaResources::new(
+                monitor_memory.storage(),
+                descriptor_base,
+                monitor_memory.buffer_addresses(),
+            ),
             tx_slot,
             scan_table,
             scan_frame,
             ethernet: initialize_ethernet_frame(),
-            network: initialize_station_network(station_address),
+            network: station_network,
             board: ProductionStationBoardResources {
                 interface: station_interface,
                 rx_protocol_runtime: initialize_connected_rx_protocol_runtime(),
                 initial_connected: Some(initial_connected),
                 workers,
+                #[cfg(feature = "qualification")]
+                qualification,
             },
             station_address,
         }),
-        (),
+        monitor.role,
     );
     let configuration = WifiSupervisorConfiguration::new(
         open_esp_radio::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
     )
-    .with_station(WifiStationConfig::new(station_mac));
-    let (mut controller, supervisor) = match prepare_esp32s31_radio_supervisor(
+    .with_station(WifiStationConfig::new(station_mac))
+    .with_standalone_monitor();
+    let (controller, supervisor) = match prepare_esp32s31_radio_supervisor(
         &RADIO_SUPERVISOR_CONTROL,
         configuration,
         ProductionWifiEpochRunner {
@@ -1591,42 +1822,25 @@ where
             // epoch. Only its static reference is acquired once; each epoch
             // leases fresh controller/task endpoints through `split()`.
             station_control: memory.station_control,
+            monitor_capture: monitor.capture,
+            parked_monitor: RefCell::new(None),
         },
         stopped,
     ) {
         Ok(prepared) => prepared,
-        Err(failure) => {
-            esp_println::println!(
-                "open-radio: radio supervisor control is already active: {:?}",
-                failure.error(),
-            );
-            // Retain the exact stopped radio and role resources forever. A
-            // second physical actor cannot safely consume this frontier.
-            let _retained = failure;
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
+        Err(_failure) => return Err(Esp32s31NewError::SupervisorInUse),
     };
-    let application = async move {
-        match controller.wifi().start_station(request).await {
-            Ok(report) => esp_println::println!(
-                "open-radio: station supervisor accepted generation={}",
-                report.generation().value(),
-            ),
-            Err(error) => {
-                esp_println::println!("open-radio: station supervisor rejected start: {error:?}")
-            }
-        }
-        loop {
-            Timer::after_secs(60).await;
-        }
-    };
-    let (_application, never, _network_application) = embassy_futures::join::join3(
-        application,
-        supervisor.run(),
-        network_application(network_events),
-    )
-    .await;
-    match never {}
+    Ok((
+        Esp32s31Radio {
+            wifi: Esp32s31Wifi {
+                control: controller.into_wifi(),
+                device: network_device,
+                monitor_frames: monitor.frames,
+                #[cfg(feature = "qualification")]
+                qualification: qualification_snapshot,
+            },
+            initialization,
+        },
+        Esp32s31RadioRunner { supervisor },
+    ))
 }

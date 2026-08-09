@@ -772,6 +772,18 @@ version = "0.4.0"
 source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
 
 [[package]]
+name = "esp-println"
+version = "0.17.0"
+source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
+dependencies = [
+ "document-features",
+ "esp-metadata-generated",
+ "esp-sync",
+ "log",
+ "portable-atomic",
+]
+
+[[package]]
 name = "esp-riscv-rt"
 version = "0.14.0"
 source = "git+https://github.com/ermacv/esp-hal?branch=esp32s31-async-platform#4d42ec36249a4f10a43cc5fb63f54eb24252feea"
@@ -1253,9 +1265,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
@@ -1294,6 +1304,24 @@ dependencies = [
  "esp-sync",
  "portable-atomic",
  "riscv 0.15.0",
+]
+
+[[package]]
+name = "open-esp-radio-esp32s31-embassy-wifi"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "esp-hal",
+ "esp-println",
+ "open-esp-radio",
+ "open-esp-radio-embassy-net",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-esp-hal",
+ "open-esp-radio-wifi-embassy",
+ "static_cell",
 ]
 
 [[package]]
@@ -1441,11 +1469,14 @@ dependencies = [
  "esp-hal",
  "log",
  "open-esp-radio",
+ "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-embassy-runtime",
+ "open-esp-radio-esp32s31-embassy-wifi",
  "open-esp-radio-esp32s31-wifi-embassy",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-hil-esp32s31-telemetry",
  "open-esp-radio-hil-protocol",
+ "open-esp-radio-wifi-embassy",
  "static_cell",
 ]
 

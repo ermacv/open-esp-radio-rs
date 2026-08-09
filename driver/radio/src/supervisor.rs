@@ -4,7 +4,7 @@
 //! only value reports and a controller over an implementation-provided port;
 //! it deliberately does not model a detached owner-holding service.
 
-use core::future::Future;
+use core::{fmt, future::Future};
 
 use crate::{MonitorRequest, StationRequest};
 
@@ -104,12 +104,15 @@ pub trait WifiSupervisorPort {
     fn stop(&mut self) -> impl Future<Output = Result<WifiStopReport, Self::Error>> + '_;
 }
 
-/// Wi-Fi view exposed by [`RadioController`].
-pub struct WifiController<P> {
+/// Role-neutral Wi-Fi control capability.
+///
+/// This is the only state from which a role can be started. Starting a role
+/// consumes it, so station and monitor ownership cannot overlap in safe code.
+pub struct WifiIdle<P> {
     port: P,
 }
 
-impl<P> WifiController<P> {
+impl<P> WifiIdle<P> {
     pub const fn new(port: P) -> Self {
         Self { port }
     }
@@ -119,26 +122,122 @@ impl<P> WifiController<P> {
     }
 }
 
-impl<P: WifiSupervisorPort> WifiController<P> {
+impl<P: WifiSupervisorPort> WifiIdle<P> {
     pub async fn start_station(
-        &mut self,
+        mut self,
         request: StationRequest,
-    ) -> Result<WifiStartReport, WifiStartFailure<StationRequest, P::Error>> {
-        self.port.start_station(request).await
+    ) -> Result<WifiStation<P>, WifiRoleStartFailure<Self, StationRequest, P::Error>> {
+        match self.port.start_station(request).await {
+            Ok(report) => Ok(WifiStation {
+                port: self.port,
+                generation: report.generation(),
+            }),
+            Err(WifiStartFailure::Rejected { request, error }) => {
+                Err(WifiRoleStartFailure::Rejected {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiStartFailure::Faulted { error }) => {
+                Err(WifiRoleStartFailure::Faulted { error })
+            }
+        }
     }
 
     pub async fn start_monitor(
-        &mut self,
+        mut self,
         request: MonitorRequest,
-    ) -> Result<WifiStartReport, WifiStartFailure<MonitorRequest, P::Error>> {
-        self.port.start_monitor(request).await
+    ) -> Result<WifiMonitor<P>, WifiRoleStartFailure<Self, MonitorRequest, P::Error>> {
+        match self.port.start_monitor(request).await {
+            Ok(report) => Ok(WifiMonitor {
+                port: self.port,
+                generation: report.generation(),
+            }),
+            Err(WifiStartFailure::Rejected { request, error }) => {
+                Err(WifiRoleStartFailure::Rejected {
+                    wifi: self,
+                    request,
+                    error,
+                })
+            }
+            Err(WifiStartFailure::Faulted { error }) => {
+                Err(WifiRoleStartFailure::Faulted { error })
+            }
+        }
+    }
+}
+
+/// Failed role start. A request rejected before hardware moved returns both
+/// the request and the idle capability; a terminal hardware fault returns
+/// neither because it is not legal to start another role.
+pub enum WifiRoleStartFailure<W, R, E> {
+    Rejected { wifi: W, request: R, error: E },
+    Faulted { error: E },
+}
+
+impl<W, R: fmt::Debug, E: fmt::Debug> fmt::Debug for WifiRoleStartFailure<W, R, E> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Rejected { request, error, .. } => formatter
+                .debug_struct("Rejected")
+                .field("request", request)
+                .field("error", error)
+                .finish(),
+            Self::Faulted { error } => formatter
+                .debug_struct("Faulted")
+                .field("error", error)
+                .finish(),
+        }
+    }
+}
+
+/// Active station role. It is neither `Clone` nor `Copy`; stopping consumes it
+/// and returns [`WifiIdle`] only after the runner confirms quiescence.
+pub struct WifiStation<P> {
+    port: P,
+    generation: RadioSubsystemGeneration,
+}
+
+impl<P: WifiSupervisorPort> WifiStation<P> {
+    pub const fn generation(&self) -> RadioSubsystemGeneration {
+        self.generation
     }
 
-    /// Completion means the owner-holding actor confirmed quiescence. Merely
-    /// publishing stop intent is never returned as success.
-    pub async fn stop(&mut self) -> Result<WifiStopReport, P::Error> {
-        self.port.stop().await
+    pub async fn stop(mut self) -> Result<WifiIdle<P>, WifiRoleStopFailure<P::Error>> {
+        match self.port.stop().await {
+            Ok(report) if report.generation() == self.generation => Ok(WifiIdle::new(self.port)),
+            Ok(_) => Err(WifiRoleStopFailure::GenerationMismatch),
+            Err(error) => Err(WifiRoleStopFailure::Faulted(error)),
+        }
     }
+}
+
+/// Active standalone monitor role.
+pub struct WifiMonitor<P> {
+    port: P,
+    generation: RadioSubsystemGeneration,
+}
+
+impl<P: WifiSupervisorPort> WifiMonitor<P> {
+    pub const fn generation(&self) -> RadioSubsystemGeneration {
+        self.generation
+    }
+
+    pub async fn stop(mut self) -> Result<WifiIdle<P>, WifiRoleStopFailure<P::Error>> {
+        match self.port.stop().await {
+            Ok(report) if report.generation() == self.generation => Ok(WifiIdle::new(self.port)),
+            Ok(_) => Err(WifiRoleStopFailure::GenerationMismatch),
+            Err(error) => Err(WifiRoleStopFailure::Faulted(error)),
+        }
+    }
+}
+
+/// A role can return to idle only through a matching quiesced completion.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiRoleStopFailure<E> {
+    GenerationMismatch,
+    Faulted(E),
 }
 
 /// Application radio handle containing control capability only.
@@ -146,19 +245,17 @@ impl<P: WifiSupervisorPort> WifiController<P> {
 /// Physical RF, protocol owners, PAC, DMA and interrupt epochs remain in the
 /// supervisor actor and cannot be extracted through this value.
 pub struct RadioController<W> {
-    wifi: WifiController<W>,
+    wifi: WifiIdle<W>,
 }
 
 impl<W> RadioController<W> {
-    pub const fn new(wifi: WifiController<W>) -> Self {
+    pub const fn new(wifi: WifiIdle<W>) -> Self {
         Self { wifi }
     }
 
-    pub const fn wifi(&mut self) -> &mut WifiController<W> {
-        &mut self.wifi
-    }
-
-    pub fn into_wifi(self) -> WifiController<W> {
+    /// Materialize the sole Wi-Fi control capability. The radio controller is
+    /// consumed so a second Wi-Fi root cannot be produced.
+    pub fn into_wifi(self) -> WifiIdle<W> {
         self.wifi
     }
 }

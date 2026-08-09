@@ -6,7 +6,8 @@ extern crate std;
 
 #[cfg(feature = "wifi")]
 pub mod config;
-#[cfg(feature = "adapter-embassy-wifi")]
+#[cfg(feature = "esp32s31-wifi-embassy")]
+#[doc(hidden)]
 pub mod embassy_supervisor;
 #[cfg(feature = "wifi")]
 pub mod requests;
@@ -15,22 +16,8 @@ pub mod supervisor;
 
 #[cfg(feature = "wifi")]
 pub use config::{
-    RadioCapabilities, RadioCoexistenceCapabilities, RadioConfig, RadioConfigError, RadioPlan,
-    RadioSubsystem, RadioSubsystems, WifiAccessPointConfig, WifiConfig, WifiConfigError,
-    WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan,
-    WifiStationConfig,
-};
-#[cfg(feature = "adapter-embassy-wifi")]
-pub use embassy_supervisor::{
-    EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
-    EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
-    EmbassyWifiStoppedDispatch, EmbassyWifiSupervisorCommand, EmbassyWifiSupervisorControlError,
-    EmbassyWifiSupervisorControlResources, EmbassyWifiSupervisorEndpoint,
-    EmbassyWifiSupervisorEndpoints, EmbassyWifiSupervisorError, EmbassyWifiSupervisorPort,
-    EmbassyWifiSupervisorPrepareFailure, EmbassyWifiSupervisorResponse, EmbassyWifiSupervisorTask,
-    dispatch_embassy_wifi_stopped_command, drive_embassy_wifi_active_role,
-    finish_embassy_wifi_active_role, prepare_embassy_wifi_supervisor,
-    run_embassy_wifi_supervisor_actor,
+    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
+    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
@@ -47,8 +34,9 @@ pub use requests::{
 };
 #[cfg(feature = "wifi")]
 pub use supervisor::{
-    RadioController, RadioSubsystemGeneration, WifiController, WifiStartFailure, WifiStartReport,
-    WifiStartResult, WifiStopReport, WifiSupervisorPort,
+    RadioController, RadioSubsystemGeneration, WifiIdle, WifiMonitor, WifiRoleStartFailure,
+    WifiRoleStopFailure, WifiStartFailure, WifiStartReport, WifiStartResult, WifiStation,
+    WifiStopReport, WifiSupervisorPort,
 };
 
 #[cfg(feature = "wifi")]
@@ -59,23 +47,9 @@ pub mod wifi {
     pub use open_esp_radio_wpa2 as wpa2;
 }
 
-#[cfg(any(feature = "adapter-embassy-net", feature = "adapter-embassy-wifi"))]
-pub mod adapters {
-    #[cfg(feature = "adapter-embassy-net")]
-    pub mod network {
-        pub use open_esp_radio_embassy_net as embassy_net;
-    }
-
-    #[cfg(feature = "adapter-embassy-wifi")]
-    pub mod wifi {
-        pub use open_esp_radio_wifi_embassy as embassy;
-    }
-}
-
 #[cfg(feature = "esp32s31")]
 pub mod esp32s31 {
     pub use open_esp_radio_esp32s31_hal as hal;
-    pub use open_esp_radio_esp32s31_pac as pac;
     pub use open_esp_radio_esp32s31_phy as phy;
     pub use open_esp_radio_esp32s31_registers as registers;
 
@@ -159,11 +133,6 @@ pub mod esp32s31 {
 
     #[cfg(all(feature = "esp32s31-wifi-embassy", target_arch = "riscv32"))]
     pub mod supervisor;
-
-    #[cfg(feature = "esp32s31-wifi")]
-    pub const RADIO_CAPABILITIES: crate::RadioCapabilities = crate::RadioCapabilities::wifi_only(
-        open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
-    );
 
     #[cfg(all(feature = "esp32s31-wifi", target_arch = "riscv32"))]
     mod start;

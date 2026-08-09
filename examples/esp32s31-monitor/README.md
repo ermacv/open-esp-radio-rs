@@ -1,9 +1,8 @@
 # ESP32-S31 standalone monitor
 
-This example starts the source-only radio through the public topology facade,
-materializes the common MAC once, and hands a checked standalone-monitor plan
-to the Embassy monitor builder. RX DMA, the CPU interrupt route, capture pool,
-and PHY state remain in one finite owner graph.
+This example uses the same public constructor and eternal runner as STA, then
+consumes `WifiIdle` to start an exclusive monitor epoch. No PAC, DMA or ISR
+owner appears in the application.
 
 Captured frames are copied into bounded independent slots before DMA recycle.
 The example prints only periodic aggregate counters and selected metadata; it

@@ -1703,9 +1703,7 @@ version = "0.1.0"
 dependencies = [
  "embassy-futures",
  "embassy-sync 0.8.0",
- "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
- "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
  "open-esp-radio-esp32s31-wifi",
@@ -1893,6 +1891,10 @@ dependencies = [
 [[package]]
 name = "open-esp-radio-qualification-check"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml_edit",
+]
 
 [[package]]
 name = "open-esp-radio-register-model"

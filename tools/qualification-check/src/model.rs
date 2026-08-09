@@ -4,6 +4,8 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+use serde::Deserialize;
+
 use crate::Result;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -192,7 +194,7 @@ impl CapabilityBuilder {
 #[derive(Clone, Debug)]
 pub(crate) struct Ledger {
     pub(crate) target: String,
-    pub(crate) disposition_manifest: PathBuf,
+    pub(crate) verification_project: PathBuf,
     pub(crate) capabilities: BTreeMap<String, Capability>,
 }
 
@@ -269,7 +271,7 @@ impl Ledger {
     fn parse(input: &str) -> Result<Self> {
         let mut version = None;
         let mut target = None;
-        let mut disposition_manifest = None;
+        let mut verification_project = None;
         let mut required_capabilities = BTreeSet::new();
         let mut capabilities = BTreeMap::new();
         let mut current: Option<CapabilityBuilder> = None;
@@ -319,8 +321,8 @@ impl Ledger {
                     "target" => {
                         set_once(&mut target, slug(value, "target", line)?, directive, line)?
                     }
-                    "disposition-manifest" => set_once(
-                        &mut disposition_manifest,
+                    "verification-project" => set_once(
+                        &mut verification_project,
                         relative_path(value, line)?,
                         directive,
                         line,
@@ -418,8 +420,8 @@ impl Ledger {
         }
         version.ok_or("ledger has no ledger-version")?;
         let target = target.ok_or("ledger has no target")?;
-        let disposition_manifest =
-            disposition_manifest.ok_or("ledger has no disposition-manifest")?;
+        let verification_project =
+            verification_project.ok_or("ledger has no verification-project")?;
         for required in &required_capabilities {
             if !capabilities.contains_key(required) {
                 return Err(format!("required capability {required} is missing").into());
@@ -439,7 +441,7 @@ impl Ledger {
         }
         Ok(Self {
             target,
-            disposition_manifest,
+            verification_project,
             capabilities,
         })
     }
@@ -448,7 +450,7 @@ impl Ledger {
         if !root.is_dir() {
             return Err(format!("repository root {} is not a directory", root.display()).into());
         }
-        let dispositions = DispositionIndex::load(&root.join(&self.disposition_manifest))?;
+        let dispositions = DispositionIndex::load_project(&root.join(&self.verification_project))?;
         let mut files = BTreeMap::new();
         for capability in self.capabilities.values() {
             validate_capability(capability, root, &dispositions, &mut files)?;
@@ -473,7 +475,7 @@ impl Ledger {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 struct DispositionEntry {
     has_rust_component: bool,
     has_contract: bool,
@@ -482,58 +484,105 @@ struct DispositionEntry {
 #[derive(Debug)]
 struct DispositionIndex(BTreeMap<(String, String), DispositionEntry>);
 
+#[derive(Deserialize)]
+struct VerificationProjectDocument {
+    verification: VerificationProjectSection,
+}
+
+#[derive(Deserialize)]
+struct VerificationProjectSection {
+    #[serde(default)]
+    suites: Vec<VerificationSuiteDocument>,
+}
+
+#[derive(Deserialize)]
+struct VerificationSuiteDocument {
+    #[serde(default)]
+    dispositions: Vec<PathBuf>,
+}
+
+#[derive(Deserialize)]
+struct DispositionDocument {
+    #[serde(default)]
+    functions: Vec<DispositionFunctionDocument>,
+}
+
+#[derive(Deserialize)]
+struct DispositionFunctionDocument {
+    source: String,
+    symbol: String,
+    #[serde(rename = "rust-component")]
+    rust_component: Option<String>,
+    #[serde(rename = "semantic-contract")]
+    semantic_contract: Option<String>,
+    #[serde(rename = "effect-contract")]
+    effect_contract: Option<String>,
+}
+
 impl DispositionIndex {
-    fn load(path: &Path) -> Result<Self> {
+    fn load_project(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path).map_err(|error| {
             format!(
-                "cannot read disposition manifest {}: {error}",
+                "cannot read verification project {}: {error}",
                 path.display()
             )
         })?;
+        let project: VerificationProjectDocument =
+            toml_edit::de::from_str(&input).map_err(|error| {
+                format!(
+                    "cannot parse verification project {}: {error}",
+                    path.display()
+                )
+            })?;
+        let base = path
+            .parent()
+            .ok_or_else(|| format!("verification project has no parent: {}", path.display()))?;
         let mut entries = BTreeMap::new();
-        let mut current: Option<((String, String), DispositionEntry)> = None;
-        let finish = |entry: ((String, String), DispositionEntry),
-                      entries: &mut BTreeMap<_, _>|
-         -> Result<()> {
-            if entries.insert(entry.0.clone(), entry.1).is_some() {
-                return Err(
-                    format!("duplicate disposition entry {} {}", entry.0.0, entry.0.1).into(),
-                );
-            }
-            Ok(())
-        };
-        for (index, raw_line) in input.lines().enumerate() {
-            let line = index + 1;
-            let input = raw_line.split('#').next().unwrap_or_default().trim();
-            if input.is_empty() {
-                continue;
-            }
-            let (directive, value) = input
-                .split_once(char::is_whitespace)
-                .map(|(directive, value)| (directive, value.trim()))
-                .ok_or_else(|| format!("invalid disposition line {line}"))?;
-            if directive == "function" {
-                if let Some(entry) = current.take() {
-                    finish(entry, &mut entries)?;
+        for suite in project.verification.suites {
+            for relative in suite.dispositions {
+                if relative.is_absolute()
+                    || relative
+                        .components()
+                        .any(|component| !matches!(component, Component::Normal(_)))
+                {
+                    return Err(format!(
+                        "unsafe disposition path {:?} in {}",
+                        relative,
+                        path.display()
+                    )
+                    .into());
                 }
-                let words = words_exact(value, 2, directive, line)?;
-                current = Some((
-                    (words[0].to_owned(), words[1].to_owned()),
-                    DispositionEntry {
-                        has_rust_component: false,
-                        has_contract: false,
-                    },
-                ));
-            } else if let Some((_, entry)) = current.as_mut() {
-                match directive {
-                    "rust-component" => entry.has_rust_component = true,
-                    "semantic-contract" | "effect-contract" => entry.has_contract = true,
-                    _ => {}
+                let disposition_path = base.join(relative);
+                let input = fs::read_to_string(&disposition_path).map_err(|error| {
+                    format!(
+                        "cannot read disposition pack {}: {error}",
+                        disposition_path.display()
+                    )
+                })?;
+                let document: DispositionDocument =
+                    toml_edit::de::from_str(&input).map_err(|error| {
+                        format!(
+                            "cannot parse disposition pack {}: {error}",
+                            disposition_path.display()
+                        )
+                    })?;
+                for function in document.functions {
+                    let key = (function.source, function.symbol);
+                    let entry = DispositionEntry {
+                        has_rust_component: function.rust_component.is_some(),
+                        has_contract: function.semantic_contract.is_some()
+                            || function.effect_contract.is_some(),
+                    };
+                    if let Some(previous) = entries.insert(key.clone(), entry)
+                        && (previous.has_rust_component != entry.has_rust_component
+                            || previous.has_contract != entry.has_contract)
+                    {
+                        return Err(
+                            format!("conflicting disposition entry {} {}", key.0, key.1).into()
+                        );
+                    }
                 }
             }
-        }
-        if let Some(entry) = current {
-            finish(entry, &mut entries)?;
         }
         Ok(Self(entries))
     }
@@ -883,7 +932,7 @@ mod tests {
     const COMPLETE: &str = r#"
 ledger-version 1
 target test-radio
-disposition-manifest tools/dispositions
+verification-project tools/verification-project.toml
 require-capability channel-switch
 
 capability channel-switch

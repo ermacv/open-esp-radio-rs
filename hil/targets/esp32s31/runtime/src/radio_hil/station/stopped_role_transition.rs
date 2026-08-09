@@ -3,11 +3,8 @@
 use embassy_executor::Spawner;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use open_esp_radio::{
-    RadioConfig, WifiConfig, WifiMonitorConfig,
-    esp32s31::{
-        RADIO_CAPABILITIES,
-        wifi::{device::runtime::Esp32s31WifiStopped, mac::rx::RxPhyInfo},
-    },
+    WifiConfig, WifiMonitorConfig,
+    esp32s31::wifi::{device::runtime::Esp32s31WifiStopped, mac::rx::RxPhyInfo},
     wifi::{
         softmac::{MonitorDropReason, MonitorFrame, MonitorPublishOutcome, MonitorSink},
         sta::station::StaReconnectPolicy,
@@ -103,10 +100,12 @@ pub(in crate::radio_hil) async fn qualify_station_monitor_station_owner_round_tr
             return false;
         }
     };
-    let plan = RadioConfig::wifi(WifiConfig::monitor(WifiMonitorConfig::normalized()))
-        .validate(RADIO_CAPABILITIES)
+    let plan = WifiConfig::monitor(WifiMonitorConfig::normalized())
+        .validate(
+            open_esp_radio::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
+        )
         .expect("ESP32-S31 capabilities accept normalized standalone monitor")
-        .standalone_wifi_monitor()
+        .standalone_monitor()
         .expect("monitor-only topology materializes a standalone monitor plan");
     let storage = OPEN_RADIO_ROLE_TRANSITION_MONITOR_RX.take();
     let addresses = TRANSITION_MONITOR_ADDRESSES.take();

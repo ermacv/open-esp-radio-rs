@@ -33,9 +33,10 @@ or integration boundary named by that record changes. Promotion back to
 new immutable record (or an explicit current-revision addendum).
 
 Owner, test, source-anchor and HIL references are checked against their real
-repository files. A `vendor-root` must be an explicit entry in the PHY
-disposition manifest; `vendor-proof qualified` additionally requires its Rust
-component and executable semantic/effect contract.
+repository files. A `vendor-root` must be an explicit entry in a disposition
+pack selected by the target verification project; `vendor-proof qualified`
+additionally requires its Rust component and executable semantic/effect
+contract.
 
 Dated, immutable ESP32-S31 hardware evidence lives in
 [`targets/esp32s31/records/`](targets/esp32s31/records/README.md). The ledger

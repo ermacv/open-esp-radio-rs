@@ -4,6 +4,7 @@
 use core::num::NonZeroU16;
 
 use embassy_executor::Spawner;
+use embassy_net::{Config, StackResources};
 use esp_backtrace as _;
 use esp_hal::{
     clock::CpuClock,
@@ -30,6 +31,10 @@ use open_esp_radio::{
 esp_bootloader_esp_idf::esp_app_desc!();
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
+// Socket/IP state belongs to the application, not to the radio driver. Static
+// placement avoids moving the stack arena through the executor task frame.
+static NETWORK_RESOURCES: static_cell::ConstStaticCell<StackResources<4>> =
+    static_cell::ConstStaticCell::new(StackResources::new());
 
 const STA_SSID: &str = match option_env!("ESP32S31_WIFI_SSID") {
     Some(value) => value,
@@ -103,7 +108,7 @@ async fn station_task(
             StaAssociationPreference::PreferHe20,
         ),
     );
-    let config = open_esp_radio_esp32s31_embassy_wifi::Esp32s31StationServiceConfig::new(
+    let config = open_esp_radio_esp32s31_embassy_wifi::Esp32s31RadioConfig::new(
         station_mac,
         access_point_mac,
         PhyCalibrationIdentity {
@@ -112,17 +117,45 @@ async fn station_task(
             mac_sys1: efuse_registers.rd_mac_sys1().read().bits(),
         },
         WifiChannel::mhz20(1).expect("initial channel is valid"),
-        request,
     );
-    open_esp_radio_esp32s31_embassy_wifi::run(
-        spawner,
-        radio,
-        trng,
-        config,
-        |mut network| async move {
-            let _stack = network.wait_connected().await;
-            core::future::pending::<()>().await;
-        },
-    )
-    .await
+    let (radio, radio_runner) =
+        open_esp_radio_esp32s31_embassy_wifi::new(spawner, radio, trng, config)
+            .await
+            .expect("radio initialization must succeed once");
+    let (wifi, device, _monitor_frames) = radio.into_wifi().into_parts();
+    let network = async move {
+        let (stack, mut runner) = embassy_net::new(
+            device,
+            Config::dhcpv4(Default::default()),
+            NETWORK_RESOURCES.take(),
+            u64::from_le_bytes([
+                station_address[0],
+                station_address[1],
+                station_address[2],
+                station_address[3],
+                station_address[4],
+                station_address[5],
+                0xa5,
+                0x31,
+            ]),
+        );
+        let _stack = stack;
+        runner.run().await;
+    };
+    let application = async move {
+        match wifi.start_station(request).await {
+            Ok(station) => {
+                esp_println::println!(
+                    "open-radio: station active generation={}",
+                    station.generation().value(),
+                );
+                let _station = station;
+            }
+            Err(error) => esp_println::println!("open-radio: station start failed: {error:?}"),
+        }
+        core::future::pending::<()>().await;
+    };
+    let (_application, never, _network) =
+        embassy_futures::join::join3(application, radio_runner.run(), network).await;
+    match never {}
 }

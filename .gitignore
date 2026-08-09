@@ -1,5 +1,6 @@
 /target/
 **/target/
+driver/integration/**/Cargo.lock
 **/*.swp
 **/*.swo
 /_oracles/

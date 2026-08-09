@@ -8,6 +8,8 @@ publish = false
 
 [dependencies]
 embassy-executor = { version = "0.10.0", default-features = false }
+embassy-futures = "0.1.2"
+embassy-net = { version = "0.9.0", features = ["dhcpv4", "medium-ethernet"] }
 esp-backtrace = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "panic-handler", "println"] }
 esp-bootloader-esp-idf = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31"] }
 esp-hal = { git = "https://github.com/ermacv/esp-hal", branch = "esp32s31-async-platform", default-features = false, features = ["esp32s31", "rt", "unstable"] }

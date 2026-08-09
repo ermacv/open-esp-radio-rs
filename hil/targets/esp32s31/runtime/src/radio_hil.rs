@@ -20,14 +20,7 @@ use open_esp_radio::esp32s31::wifi::sta::{
     tx_epoch::Esp32s31StaTxEpoch, wpa2::Esp32s31Wpa2Message4Protection,
 };
 use open_esp_radio::{
-    RadioConfig, WifiConfig, WifiMacAddress, WifiStationConfig,
-    adapters::network::embassy_net::{
-        PinnedTxFrame as OpenRadioPinnedTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
-        SplitPinnedDevice as OpenRadioNetworkDevice,
-        SplitPinnedRadioRunner as OpenRadioNetworkRunner,
-        SplitPinnedResources as OpenRadioNetworkResources,
-    },
-    adapters::wifi::embassy::connected_tasks::ConnectedTaskControlResources,
+    WifiConfig, WifiMacAddress, WifiStationConfig,
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31RadioStartFailure, Esp32s31WifiStartConfig,
         Esp32s31WifiStartFailure,
@@ -58,6 +51,12 @@ use open_esp_radio::{
         scan::ScanTable,
         station::{STA_PROTECTED_QOS_ETHERNET_HEADROOM, StaAssociationPreference},
     },
+};
+use open_esp_radio_embassy_net::{
+    PinnedTxFrame as OpenRadioPinnedTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
+    SplitPinnedDevice as OpenRadioNetworkDevice,
+    SplitPinnedRadioRunner as OpenRadioNetworkRunner,
+    SplitPinnedResources as OpenRadioNetworkResources,
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
     aggregate_tx::AggregateTxResources,
@@ -95,6 +94,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
         EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
     },
 };
+use open_esp_radio_wifi_embassy::connected_tasks::ConnectedTaskControlResources;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_esp32s31_telemetry::mac_irq::MacIrqClassificationCounters;
 use open_esp_radio_hil_esp32s31_telemetry::rx_evidence::{
@@ -1175,9 +1175,7 @@ fn connected_epoch_bindings(
         primary_metadata,
         primary_dma,
     )
-    .map_err(|error| RadioHilConnectedStaticResourceError::PrimaryAmpduInvalid {
-        _error: error,
-    })?;
+    .map_err(|error| RadioHilConnectedStaticResourceError::PrimaryAmpduInvalid { _error: error })?;
     let standby_metadata = OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE
         .try_take()
         .ok_or(RadioHilConnectedStaticResourceError::StandbyMetadataUnavailable)?;
@@ -1188,9 +1186,7 @@ fn connected_epoch_bindings(
         standby_metadata,
         standby_dma,
     )
-    .map_err(|error| RadioHilConnectedStaticResourceError::StandbyAmpduInvalid {
-        _error: error,
-    })?;
+    .map_err(|error| RadioHilConnectedStaticResourceError::StandbyAmpduInvalid { _error: error })?;
     let primary_retention = OPEN_RADIO_TX_AMPDU_RETENTION
         .try_init_with(RetainedAmpduDmaStorage::new)
         .ok_or(RadioHilConnectedStaticResourceError::PrimaryRetentionUnavailable)?;
@@ -1441,7 +1437,7 @@ pub async fn run(
         .copy_from_slice(efuse::interface_mac_address(InterfaceMacAddress::AccessPoint).as_bytes());
     let access_point_address = WifiMacAddress::new(access_point_address)
         .expect("the access-point eFuse must contain a unicast MAC address");
-    let topology = RadioConfig::wifi(WifiConfig::station(WifiStationConfig::new(station_address)));
+    let topology = WifiConfig::station(WifiStationConfig::new(station_address));
     let phy_started = Instant::now();
     set_diagnostic_stage(30);
     set_diagnostic_stage(100);

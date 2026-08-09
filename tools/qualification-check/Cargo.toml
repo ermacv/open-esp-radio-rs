@@ -8,5 +8,9 @@ repository.workspace = true
 publish = false
 description = "Fail-closed qualification manifest checker for the open radio driver"
 
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+toml_edit = { version = "=0.25.13", features = ["serde"] }
+
 [lints]
 workspace = true

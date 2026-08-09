@@ -19,25 +19,26 @@ pub use open_esp_radio_esp32s31_wifi::runtime::{
     Esp32s31WifiRuntimeTransitionReport, Esp32s31WifiStopped, enter_esp32s31_wifi_runtime,
 };
 
-use crate::{RadioConfig, RadioConfigError, RadioPlan, WifiMacAddress};
-use open_esp_radio_wifi_softmac::{
-    WifiPlan, WifiStandaloneMonitorPlan, interface::BoundVirtualInterface,
-};
+use crate::{WifiConfig, WifiConfigError, WifiMacAddress, WifiPlan};
+use open_esp_radio_wifi_softmac::{WifiStandaloneMonitorPlan, interface::BoundVirtualInterface};
 
 /// Application inputs for topology validation and the common Wi-Fi cold start.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31RadioStartConfig {
-    topology: RadioConfig,
+    wifi_topology: WifiConfig,
     wifi: Esp32s31WifiStartConfig,
 }
 
 impl Esp32s31RadioStartConfig {
-    pub const fn new(topology: RadioConfig, wifi: Esp32s31WifiStartConfig) -> Self {
-        Self { topology, wifi }
+    pub const fn new(wifi_topology: WifiConfig, wifi: Esp32s31WifiStartConfig) -> Self {
+        Self {
+            wifi_topology,
+            wifi,
+        }
     }
 
-    pub const fn topology(self) -> RadioConfig {
-        self.topology
+    pub const fn wifi_topology(self) -> WifiConfig {
+        self.wifi_topology
     }
 
     pub const fn wifi(self) -> Esp32s31WifiStartConfig {
@@ -47,7 +48,7 @@ impl Esp32s31RadioStartConfig {
 
 /// Powered/calibrated ESP32-S31 radio together with its exact owner topology.
 pub struct Esp32s31StartedRadio<P> {
-    plan: RadioPlan,
+    plan: WifiPlan,
     wifi: Esp32s31WifiStart<P>,
 }
 
@@ -57,12 +58,7 @@ impl<P> Esp32s31StartedRadio<P> {
     pub fn try_into_station(
         self,
     ) -> Result<Esp32s31PreparedStation<P>, Esp32s31RoleMaterializationFailure<P>> {
-        let Some(wifi_plan) = self.plan.wifi() else {
-            return Err(Esp32s31RoleMaterializationFailure {
-                reason: Esp32s31RoleMaterializationReason::MissingWifi,
-                started: self,
-            });
-        };
+        let wifi_plan = self.plan;
         let Some(interface) = wifi_plan.station() else {
             return Err(Esp32s31RoleMaterializationFailure {
                 reason: Esp32s31RoleMaterializationReason::MissingStation,
@@ -81,7 +77,7 @@ impl<P> Esp32s31StartedRadio<P> {
     pub fn try_into_standalone_monitor(
         self,
     ) -> Result<Esp32s31PreparedMonitor<P>, Esp32s31RoleMaterializationFailure<P>> {
-        let Some(plan) = self.plan.standalone_wifi_monitor() else {
+        let Some(plan) = self.plan.standalone_monitor() else {
             return Err(Esp32s31RoleMaterializationFailure {
                 reason: Esp32s31RoleMaterializationReason::NotStandaloneMonitor,
                 started: self,
@@ -99,7 +95,6 @@ impl<P> Esp32s31StartedRadio<P> {
 /// explicit recovery policy.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Esp32s31RoleMaterializationReason {
-    MissingWifi,
     MissingStation,
     NotStandaloneMonitor,
 }
@@ -300,13 +295,13 @@ impl<P> Esp32s31MonitorMacStartFailure<P> {
 pub enum Esp32s31RadioStartFailure<P> {
     Configuration {
         radio: Radio<P>,
-        error: RadioConfigError,
+        error: WifiConfigError,
     },
     Wifi(Esp32s31WifiStartFailure<P>),
 }
 
 impl<P> Esp32s31RadioStartFailure<P> {
-    pub const fn configuration_error(&self) -> Option<RadioConfigError> {
+    pub const fn configuration_error(&self) -> Option<WifiConfigError> {
         match self {
             Self::Configuration { error, .. } => Some(*error),
             Self::Wifi(_) => None,
@@ -336,7 +331,10 @@ where
     D: PhyAsyncDelay,
     O: PhyTargetObserver + Clone,
 {
-    let plan = match config.topology.validate(super::RADIO_CAPABILITIES) {
+    let plan = match config
+        .wifi_topology
+        .validate(open_esp_radio_esp32s31_wifi_mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES)
+    {
         Ok(plan) => plan,
         Err(error) => {
             return Err(Esp32s31RadioStartFailure::Configuration { radio, error });

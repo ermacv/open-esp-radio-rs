@@ -130,6 +130,37 @@ impl Esp32s31RadioRegistersArena {
         Esp32s31RadioRegistersArenaState::decode(self.state.load(Ordering::Acquire))
     }
 
+    /// Run one fallible, bounded observation without creating a copyable raw
+    /// register capability.
+    ///
+    /// This is intended for value-only diagnostics at the integration
+    /// boundary. It reports an inactive or synchronously borrowed arena
+    /// instead of panicking, and the closure cannot retain the borrow across
+    /// an async suspension.
+    #[doc(hidden)]
+    pub fn try_with_ref<T>(
+        &self,
+        transaction: impl FnOnce(&RadioRegisters) -> T,
+    ) -> Result<T, Esp32s31RadioRegistersArenaError> {
+        match self.state() {
+            Esp32s31RadioRegistersArenaState::Empty => {
+                return Err(Esp32s31RadioRegistersArenaError::MissingOwner);
+            }
+            Esp32s31RadioRegistersArenaState::ResetRequired => {
+                return Err(Esp32s31RadioRegistersArenaError::ResetRequired);
+            }
+            Esp32s31RadioRegistersArenaState::Published => {}
+        }
+        let slot = self
+            .registers
+            .try_borrow()
+            .map_err(|_| Esp32s31RadioRegistersArenaError::Borrowed)?;
+        let registers = slot
+            .as_ref()
+            .ok_or(Esp32s31RadioRegistersArenaError::MissingOwner)?;
+        Ok(transaction(registers))
+    }
+
     /// Move one register owner into stable storage for a finite task epoch.
     pub fn publish(
         &self,

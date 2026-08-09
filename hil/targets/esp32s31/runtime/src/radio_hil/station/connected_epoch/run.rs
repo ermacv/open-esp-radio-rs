@@ -5,7 +5,6 @@ use core::{future::Future, sync::atomic::Ordering};
 use embassy_net::{Config as NetworkConfig, Ipv4Address, Ipv4Cidr, StaticConfigV4};
 use embassy_time::Timer;
 use open_esp_radio::{
-    adapters::wifi::embassy::station_network::RunningStationNetwork,
     esp32s31::wifi::{
         mac::{
             crypto::CcmpKeyHardware,
@@ -14,6 +13,7 @@ use open_esp_radio::{
         sta::peer::Esp32s31StaConnectedLink,
     },
 };
+use open_esp_radio_wifi_embassy::station_network::RunningStationNetwork;
 use open_esp_radio_esp32s31_wifi_embassy::{
     connected_sta_port::{
         Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaNetworkTxDomain,

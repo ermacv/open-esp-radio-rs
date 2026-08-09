@@ -35,8 +35,7 @@ There are currently no accepted parity exceptions. If one becomes necessary,
 it must be a typed, reviewable rule in the verifier with a failing regression
 test for any scope outside that rule; it must not be hidden in prose.
 
-The chip/protocol boundary is documented in
-[`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), register provenance in
-[`docs/esp32s31-radio-register-provenance.md`](../esp32s31-radio-register-provenance.md),
-and hardware results under the
+The chip/protocol boundary is documented in the
+[driver architecture](../../driver/README.md), structured register evidence is
+under `verification/vendor/targets/esp32s31/registers`, and hardware results under the
 [ESP32-S31 qualification records](../../qualification/targets/esp32s31/records/README.md).

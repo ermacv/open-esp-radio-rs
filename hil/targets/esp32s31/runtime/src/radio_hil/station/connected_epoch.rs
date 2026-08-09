@@ -4,11 +4,11 @@ mod bindings;
 mod run;
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use open_esp_radio::adapters::wifi::embassy::connected_tasks::{
+use open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSet;
+use open_esp_radio_wifi_embassy::connected_tasks::{
     ConnectedTaskControlError, ConnectedTaskControlResources, ConnectedTaskController,
     ConnectedTaskEndpoint, ConnectedTaskGroupWithAuxiliary,
 };
-use open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSet;
 
 use crate::{
     console::emergency_log,

@@ -8,8 +8,8 @@
 
 use core::sync::atomic::{AtomicU8, AtomicU32, Ordering};
 
-use open_esp_radio::adapters::network::embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio::esp32s31::wifi::mac::irq::{MAC_INT_TX_COMPLETE, MAC_INT_TX_TIMEOUT};
+use open_esp_radio_embassy_net::{PinnedTxConsumer, PinnedTxFrame, RawMutex};
 use open_esp_radio_esp32s31_wifi_embassy::connected_runner::{
     ConnectedRunnerServices, WifiControlContext, WifiControlProgress, WifiRxProgress,
     WifiTxProgress, WifiTxWake,

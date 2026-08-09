@@ -12,7 +12,7 @@ use embassy_sync::{
 };
 
 use crate::{
-    MonitorRequest, RadioController, StationRequest, WifiController, WifiServicePlanningError,
+    MonitorRequest, RadioController, StationRequest, WifiIdle, WifiServicePlanningError,
     WifiServiceRequest, WifiStartFailure, WifiStartResult, WifiStopReport,
     WifiSupervisorConfiguration, WifiSupervisorPort,
 };
@@ -283,13 +283,14 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorControlResources<M, E> {
             commands: self.commands.sender(),
             responses: self.responses.receiver(),
             supervisor_alive: &self.supervisor_alive,
+            completion_pending: false,
         };
         let endpoint = EmbassyWifiSupervisorEndpoint {
             commands: self.commands.receiver(),
             responses: self.responses.sender(),
             supervisor_alive: &self.supervisor_alive,
         };
-        Ok((RadioController::new(WifiController::new(port)), endpoint))
+        Ok((RadioController::new(WifiIdle::new(port)), endpoint))
     }
 }
 
@@ -309,6 +310,7 @@ pub struct EmbassyWifiSupervisorPort<'resources, M: RawMutex, E> {
     commands: Sender<'resources, M, EmbassyWifiSupervisorCommand, MAILBOX_CAPACITY>,
     responses: Receiver<'resources, M, EmbassyWifiSupervisorResponse<E>, MAILBOX_CAPACITY>,
     supervisor_alive: &'resources AtomicBool,
+    completion_pending: bool,
 }
 
 impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
@@ -318,6 +320,31 @@ impl<M: RawMutex, E> EmbassyWifiSupervisorPort<'_, M, E> {
 
     fn supervisor_available(&self) -> bool {
         self.supervisor_alive.load(Ordering::Acquire)
+    }
+
+    /// Consume the completion of a command whose caller future was dropped.
+    ///
+    /// The public role API consumes its capability, so this path principally
+    /// protects direct internal users of the transport. The mailbox remains a
+    /// strict one-command transaction: a later request is never paired with a
+    /// stale completion.
+    async fn reconcile_cancelled_command(&mut self) {
+        if self.completion_pending {
+            let _ = self.response().await;
+            self.completion_pending = false;
+        }
+    }
+
+    async fn publish(&mut self, command: EmbassyWifiSupervisorCommand) {
+        self.reconcile_cancelled_command().await;
+        self.commands.send(command).await;
+        self.completion_pending = true;
+    }
+
+    async fn completion(&mut self) -> EmbassyWifiSupervisorResponse<E> {
+        let response = self.response().await;
+        self.completion_pending = false;
+        response
     }
 }
 
@@ -334,10 +361,9 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
                 EmbassyWifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        self.commands
-            .send(EmbassyWifiSupervisorCommand::StartStation(request))
+        self.publish(EmbassyWifiSupervisorCommand::StartStation(request))
             .await;
-        match self.response().await {
+        match self.completion().await {
             EmbassyWifiSupervisorResponse::Station(result) => result.map_err(map_start_failure),
             EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
                 EmbassyWifiSupervisorError::SupervisorUnavailable,
@@ -358,10 +384,9 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
                 EmbassyWifiSupervisorError::SupervisorUnavailable,
             ));
         }
-        self.commands
-            .send(EmbassyWifiSupervisorCommand::StartMonitor(request))
+        self.publish(EmbassyWifiSupervisorCommand::StartMonitor(request))
             .await;
-        match self.response().await {
+        match self.completion().await {
             EmbassyWifiSupervisorResponse::Monitor(result) => result.map_err(map_start_failure),
             EmbassyWifiSupervisorResponse::SupervisorUnavailable => Err(WifiStartFailure::faulted(
                 EmbassyWifiSupervisorError::SupervisorUnavailable,
@@ -376,8 +401,8 @@ impl<M: RawMutex, E> WifiSupervisorPort for EmbassyWifiSupervisorPort<'_, M, E> 
         if !self.supervisor_available() {
             return Err(EmbassyWifiSupervisorError::SupervisorUnavailable);
         }
-        self.commands.send(EmbassyWifiSupervisorCommand::Stop).await;
-        match self.response().await {
+        self.publish(EmbassyWifiSupervisorCommand::Stop).await;
+        match self.completion().await {
             EmbassyWifiSupervisorResponse::Stop(result) => {
                 result.map_err(EmbassyWifiSupervisorError::Service)
             }
@@ -775,9 +800,15 @@ mod tests {
     #[test]
     fn controller_and_supervisor_exchange_typed_station_completion() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
 
-        let application = async { radio.wifi().start_station(station_request()).await.unwrap() };
+        let application = async {
+            radio
+                .into_wifi()
+                .start_station(station_request())
+                .await
+                .unwrap()
+        };
         let supervisor = async {
             let EmbassyWifiSupervisorCommand::StartStation(request) = endpoint.receive().await
             else {
@@ -800,7 +831,7 @@ mod tests {
     #[test]
     fn stopped_dispatch_validates_before_returning_a_start_transaction() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, ()>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let configuration = WifiSupervisorConfiguration::new(
             crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         )
@@ -808,7 +839,13 @@ mod tests {
             WifiMacAddress::new([0x02, 0, 0, 0, 0, 1]).unwrap(),
         ));
 
-        let application = async { radio.wifi().start_station(station_request()).await.unwrap() };
+        let application = async {
+            radio
+                .into_wifi()
+                .start_station(station_request())
+                .await
+                .unwrap()
+        };
         let supervisor = async {
             let dispatch = dispatch_embassy_wifi_stopped_command(
                 &mut endpoint,
@@ -838,12 +875,12 @@ mod tests {
     fn stopped_dispatch_rejects_unprovisioned_start_without_moving_a_request() {
         let resources =
             EmbassyWifiSupervisorControlResources::<NoopRawMutex, WifiServicePlanningError>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let configuration = WifiSupervisorConfiguration::new(
             crate::esp32s31::wifi::mac::capabilities::ESP32S31_MAC_SERVICE_CAPABILITIES,
         );
 
-        let application = async { radio.wifi().start_station(station_request()).await };
+        let application = async { radio.into_wifi().start_station(station_request()).await };
         let supervisor = async {
             let dispatch = dispatch_embassy_wifi_stopped_command(
                 &mut endpoint,
@@ -856,7 +893,8 @@ mod tests {
         };
         let (result, ()) = run(join(application, supervisor));
         match result {
-            Err(WifiStartFailure::Rejected {
+            Err(crate::WifiRoleStartFailure::Rejected {
+                wifi: _,
                 request,
                 error:
                     EmbassyWifiSupervisorError::Service(WifiServicePlanningError::StationNotProvisioned),
@@ -877,7 +915,7 @@ mod tests {
         .with_standalone_monitor();
         let owner = Rc::new(Cell::new(0));
         let observed_owner = Rc::clone(&owner);
-        let (mut radio, task) = match prepare_embassy_wifi_supervisor(
+        let (radio, task) = match prepare_embassy_wifi_supervisor(
             &resources,
             configuration,
             FakeLocalEpochRunner,
@@ -888,26 +926,26 @@ mod tests {
         };
 
         let application = async {
-            let station = radio.wifi().start_station(station_request()).await.unwrap();
-            let station_stop = radio.wifi().stop().await.unwrap();
-            let monitor = radio
-                .wifi()
+            let station = radio
+                .into_wifi()
+                .start_station(station_request())
+                .await
+                .unwrap();
+            let station_generation = station.generation().value();
+            let wifi = station.stop().await.unwrap();
+            let monitor = wifi
                 .start_monitor(MonitorRequest::new(
                     WifiChannel::mhz20(6).unwrap(),
                     WifiMonitorConfig::normalized(),
                 ))
                 .await
                 .unwrap();
-            let monitor_stop = radio.wifi().stop().await.unwrap();
-            (
-                station.generation().value(),
-                station_stop.generation().value(),
-                monitor.generation().value(),
-                monitor_stop.generation().value(),
-            )
+            let monitor_generation = monitor.generation().value();
+            let _wifi = monitor.stop().await.unwrap();
+            (station_generation, monitor_generation)
         };
         let Either::First(generations) = run(select(application, task.run()));
-        assert_eq!(generations, (1, 1, 2, 2));
+        assert_eq!(generations, (1, 2));
         assert_eq!(observed_owner.get(), 2);
     }
 
@@ -944,8 +982,8 @@ mod tests {
     #[test]
     fn disappearing_supervisor_wakes_an_inflight_controller() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, ()>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
-        let application = async { radio.wifi().start_station(station_request()).await };
+        let (radio, mut endpoint) = resources.split().unwrap();
+        let application = async { radio.into_wifi().start_station(station_request()).await };
         let supervisor = async {
             let _ = endpoint.receive().await;
             drop(endpoint);
@@ -953,16 +991,67 @@ mod tests {
         let (result, ()) = run(join(application, supervisor));
         assert!(matches!(
             result,
-            Err(WifiStartFailure::Faulted {
+            Err(crate::WifiRoleStartFailure::Faulted {
                 error: EmbassyWifiSupervisorError::SupervisorUnavailable
             })
         ));
     }
 
     #[test]
+    fn cancelled_transport_future_cannot_poison_the_next_command() {
+        let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, ()>::new();
+        let (radio, mut endpoint) = resources.split().unwrap();
+        let mut port = radio.into_wifi().into_port();
+        let cancel = Signal::<NoopRawMutex, ()>::new();
+        let cancelled = Signal::<NoopRawMutex, ()>::new();
+
+        let application = async {
+            let first = port.start_station(station_request());
+            assert!(matches!(
+                select(first, cancel.wait()).await,
+                Either::Second(())
+            ));
+            cancelled.signal(());
+
+            let result = port
+                .start_monitor(MonitorRequest::new(
+                    WifiChannel::mhz20(6).unwrap(),
+                    WifiMonitorConfig::normalized(),
+                ))
+                .await;
+            assert!(result.is_ok());
+        };
+        let supervisor = async {
+            assert!(matches!(
+                endpoint.receive().await,
+                EmbassyWifiSupervisorCommand::StartStation(_)
+            ));
+            cancel.signal(());
+            cancelled.wait().await;
+            endpoint
+                .respond(EmbassyWifiSupervisorResponse::Station(Ok(
+                    WifiStartReport::new(crate::RadioSubsystemGeneration::INITIAL),
+                )))
+                .await;
+
+            assert!(matches!(
+                endpoint.receive().await,
+                EmbassyWifiSupervisorCommand::StartMonitor(_)
+            ));
+            endpoint
+                .respond(EmbassyWifiSupervisorResponse::Monitor(Ok(
+                    WifiStartReport::new(crate::RadioSubsystemGeneration::INITIAL.next()),
+                )))
+                .await;
+        };
+
+        run(join(application, supervisor));
+    }
+
+    #[test]
     fn monitor_policy_remains_an_owned_typed_command() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, ()>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let request = MonitorRequest::new(
             WifiChannel::mhz20(11).unwrap(),
             WifiMonitorConfig::normalized(),
@@ -970,7 +1059,7 @@ mod tests {
         .with_capture_policy(MonitorCapturePolicy::truncate_at(
             NonZeroU16::new(256).unwrap(),
         ));
-        let application = async { radio.wifi().start_monitor(request).await };
+        let application = async { radio.into_wifi().start_monitor(request).await };
         let supervisor = async {
             let EmbassyWifiSupervisorCommand::StartMonitor(request) = endpoint.receive().await
             else {
@@ -991,7 +1080,7 @@ mod tests {
     #[test]
     fn active_role_stop_is_acknowledged_only_after_owner_future_returns() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let stop = Signal::<NoopRawMutex, ()>::new();
         let stage = AtomicU8::new(0);
         let mut control = TestRoleControl {
@@ -999,7 +1088,10 @@ mod tests {
             stage: &stage,
         };
 
-        let application = async { radio.wifi().stop().await.unwrap() };
+        let application = async {
+            let mut port = radio.into_wifi().into_port();
+            port.stop().await.unwrap()
+        };
         let supervisor = async {
             let role = async {
                 stop.wait().await;
@@ -1037,7 +1129,7 @@ mod tests {
     #[test]
     fn faulted_role_never_produces_a_successful_stop_response() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let stop = Signal::<NoopRawMutex, ()>::new();
         let stage = AtomicU8::new(0);
         let mut control = TestRoleControl {
@@ -1045,7 +1137,10 @@ mod tests {
             stage: &stage,
         };
 
-        let application = async { radio.wifi().stop().await };
+        let application = async {
+            let mut port = radio.into_wifi().into_port();
+            port.stop().await
+        };
         let supervisor = async {
             let role = async {
                 stop.wait().await;
@@ -1079,7 +1174,7 @@ mod tests {
     #[test]
     fn active_role_rejects_a_new_start_with_the_untouched_request() {
         let resources = EmbassyWifiSupervisorControlResources::<NoopRawMutex, &'static str>::new();
-        let (mut radio, mut endpoint) = resources.split().unwrap();
+        let (radio, mut endpoint) = resources.split().unwrap();
         let stop = Signal::<NoopRawMutex, ()>::new();
         let finish = Signal::<NoopRawMutex, ()>::new();
         let stage = AtomicU8::new(0);
@@ -1088,7 +1183,7 @@ mod tests {
             stage: &stage,
         };
 
-        let application = async { radio.wifi().start_station(station_request()).await };
+        let application = async { radio.into_wifi().start_station(station_request()).await };
         let supervisor = async {
             let role = async {
                 finish.wait().await;
@@ -1106,7 +1201,8 @@ mod tests {
 
         let (result, ()) = run(join(application, supervisor));
         match result {
-            Err(WifiStartFailure::Rejected {
+            Err(crate::WifiRoleStartFailure::Rejected {
+                wifi: _,
                 request,
                 error: EmbassyWifiSupervisorError::Service("already-running"),
             }) => assert_eq!(request.ssid().as_bytes(), b"mailbox"),

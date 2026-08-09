@@ -3,9 +3,6 @@
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use open_esp_radio::adapters::wifi::embassy::station_network::{
-    RunningStationNetwork, StationNetworkResources,
-};
 use open_esp_radio::esp32s31::{
     hal::RadioRegisters,
     wifi::device::register_arena::Esp32s31RadioRegistersArenaError,
@@ -28,6 +25,9 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
+use open_esp_radio_wifi_embassy::station_network::{
+    RunningStationNetwork, StationNetworkResources,
+};
 
 use super::super::{
     ConnectedAmpduStorage, ConnectedRxEpochResources, ConnectedStoppedRx, ControlResources,

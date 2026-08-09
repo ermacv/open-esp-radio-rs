@@ -12,6 +12,7 @@ audited_unsafe_leaves=(
     "driver/common/dma"
     "driver/chips/esp32s31/wifi/dma"
     "driver/adapters/embassy/esp32s31-platform"
+    "driver/integration/esp32s31/embassy-wifi"
 )
 
 is_audited_unsafe_leaf() {
@@ -77,7 +78,7 @@ if ! perl -0777 -ne '
     exit 1
 fi
 
-# Only the three handwritten leaves may reopen the lint. Safe crates use
+# Only the audited handwritten leaves may reopen the lint. Safe crates use
 # `forbid`, but this textual check makes the whitelist violation fail before a
 # potentially expensive target build.
 mapfile -t all_allowing_sources < <(

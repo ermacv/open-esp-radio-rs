@@ -228,16 +228,21 @@ impl fmt::Debug for MonitorRequest {
     }
 }
 
-/// Runtime policies joined to one already capability-checked Wi-Fi topology.
+/// One capability-checked Wi-Fi owner graph requested from the supervisor.
 ///
-/// Optional fields describe independently composable role services; this is
-/// deliberately not a mutually exclusive station/monitor mode enum. A later
-/// STA+AP owner graph can carry both service requests, and a monitor tap can
-/// accompany either when the checked [`WifiPlan`] permits it.
-pub struct WifiServiceRequest {
-    plan: WifiPlan,
-    station: Option<StationRequest>,
-    monitor: Option<MonitorRequest>,
+/// The implemented station and standalone-monitor graphs are physically
+/// exclusive, so invalid mixtures are unrepresentable. Future STA+AP or
+/// monitor-tap compositions require their own explicit variants and lifecycle
+/// contracts rather than combinations of optional fields.
+pub enum WifiServiceRequest {
+    Station {
+        plan: WifiPlan,
+        request: StationRequest,
+    },
+    StandaloneMonitor {
+        plan: WifiPlan,
+        request: MonitorRequest,
+    },
 }
 
 impl WifiServiceRequest {
@@ -258,11 +263,7 @@ impl WifiServiceRequest {
                 WifiServiceRequestError::UnexpectedTopologyRole,
             ));
         }
-        Ok(Self {
-            plan,
-            station: Some(request),
-            monitor: None,
-        })
+        Ok(Self::Station { plan, request })
     }
 
     /// Join a checked standalone-monitor topology to its runtime policy.
@@ -282,38 +283,44 @@ impl WifiServiceRequest {
                 WifiServiceRequestError::MonitorPolicyMismatch,
             ));
         }
-        Ok(Self {
-            plan,
-            station: None,
-            monitor: Some(request),
-        })
+        Ok(Self::StandaloneMonitor { plan, request })
     }
 
     pub const fn plan(&self) -> WifiPlan {
-        self.plan
+        match self {
+            Self::Station { plan, .. } | Self::StandaloneMonitor { plan, .. } => *plan,
+        }
     }
 
     pub const fn station_request(&self) -> Option<&StationRequest> {
-        self.station.as_ref()
+        match self {
+            Self::Station { request, .. } => Some(request),
+            Self::StandaloneMonitor { .. } => None,
+        }
     }
 
     pub const fn monitor_request(&self) -> Option<&MonitorRequest> {
-        self.monitor.as_ref()
-    }
-
-    pub fn into_parts(self) -> (WifiPlan, Option<StationRequest>, Option<MonitorRequest>) {
-        (self.plan, self.station, self.monitor)
+        match self {
+            Self::Station { .. } => None,
+            Self::StandaloneMonitor { request, .. } => Some(request),
+        }
     }
 }
 
 impl fmt::Debug for WifiServiceRequest {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("WifiServiceRequest")
-            .field("plan", &self.plan)
-            .field("station", &self.station)
-            .field("monitor", &self.monitor)
-            .finish()
+        match self {
+            Self::Station { plan, request } => formatter
+                .debug_struct("Station")
+                .field("plan", plan)
+                .field("request", request)
+                .finish(),
+            Self::StandaloneMonitor { plan, request } => formatter
+                .debug_struct("StandaloneMonitor")
+                .field("plan", plan)
+                .field("request", request)
+                .finish(),
+        }
     }
 }
 

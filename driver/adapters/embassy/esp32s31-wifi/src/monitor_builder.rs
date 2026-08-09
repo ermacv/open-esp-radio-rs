@@ -64,6 +64,22 @@ impl<const COUNT: usize, const DMA_BUFFER_SIZE: usize, const DMA_STORAGE_SIZE: u
             descriptor_base,
         })
     }
+
+    /// Reborrow the common RX arena for another role-local stopped resource
+    /// graph. A physical supervisor must still enforce exclusive activation.
+    pub const fn storage(
+        self,
+    ) -> &'static Esp32s31RxDmaStorage<COUNT, DMA_BUFFER_SIZE, DMA_STORAGE_SIZE> {
+        self.storage
+    }
+
+    pub const fn buffer_addresses(self) -> &'static [u32; COUNT] {
+        self.buffer_addresses
+    }
+
+    pub const fn descriptor_base(self) -> u32 {
+        self.descriptor_base
+    }
 }
 
 /// Platform interrupt binding for one monitor task epoch.

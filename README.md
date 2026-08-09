@@ -1,10 +1,9 @@
 # open-esp-radio-rs
 
-Source-only, `no_std` radio research and driver workspace for Espressif chips.
-The current implementation target is the ESP32-S31 Wi-Fi station path; the
-qualification ledger distinguishes historical hardware results from qualification
-of the current tree. Future chips and Bluetooth/BLE, IEEE 802.15.4 and
-coexistence work are part of the intended scope. The normal workspace and HIL
+Source-only, `no_std` Embassy radio driver and verification workspace for
+Espressif chips. The current implementation target is ESP32-S31 Wi-Fi STA and
+standalone monitor. AP, ESP32-C5, Bluetooth/BLE, IEEE 802.15.4 and coexistence
+are future work, not placeholder public APIs. The normal workspace and HIL
 do not link `esp-wifi-sys`, vendor Wi-Fi
 archives, or a radio/Wi-Fi ROM ABI. The isolated vendor-oracle workspace is the
 only opt-in exception.
@@ -14,16 +13,16 @@ only opt-in exception.
 | Path | Purpose |
 | --- | --- |
 | [`driver/`](driver/README.md) | All shipping driver code and its architecture map |
-| `driver/radio` | Feature-selecting `open-esp-radio` facade and re-exports |
+| `driver/radio` | Public requests and typed radio/Wi-Fi lifecycle |
 | `driver/common/dma` | Shared audited DMA ownership primitives |
 | `driver/wifi/` | Chip-independent Wi-Fi protocols and policy |
 | `driver/wifi/softmac` | Executor-independent SoftMAC service, VIF and status contract |
 | `driver/wifi/sta` | Chip/executor-independent STA MLME, scan/reconnect, beacon-loss and power-save policy |
-| `driver/adapters/` | Reusable network, runtime and ecosystem adapters |
-| `driver/adapters/embassy-net` | Executor-neutral `embassy-net-driver` frame ownership |
+| `driver/adapters/embassy-net` | Internal persistent `embassy-net-driver` frame ownership |
 | `driver/adapters/embassy/esp32s31-platform` | ESP32-S31 Embassy executor/time platform binding |
-| `driver/adapters/embassy/esp32s31-wifi` | ESP32-S31 Wi-Fi/Embassy runtime composition |
-| `driver/adapters/esp-hal/esp32s31-wifi` | Optional `esp-hal` Wi-Fi singleton adapter |
+| `driver/adapters/embassy/esp32s31-wifi` | Internal ESP32-S31 Wi-Fi Embassy implementation |
+| `driver/adapters/esp-hal/esp32s31-wifi` | ESP32-S31 `esp-hal` peripheral binding |
+| `driver/integration/esp32s31/embassy-wifi` | Production station/monitor composition |
 | `driver/chips/esp32s31/pac` | Generated peripheral-access crate |
 | `driver/chips/esp32s31/registers` | Handwritten typed radio register transactions |
 | `driver/chips/esp32s31/hal` | Finite hardware operations and async boundaries |
@@ -44,22 +43,14 @@ only opt-in exception.
 | [`tools/`](tools/README.md) | Qualification checker, register model, Vendor Binary Workbench and repository policy audits |
 | `svd` | Published clean ESP32-S31 hardware descriptions and PAC binding indices |
 
-Chip package names follow `open-esp-radio-<chip>-<layer>`; protocol-specific
-hardware inserts the protocol before the layer, as in
-`open-esp-radio-esp32s31-wifi-mac`.
+Applications own board startup, credentials, `embassy-net::Stack`, DHCP and
+sockets. The driver returns an `embassy-net-driver::Driver`; its eternal runner
+owns PAC, DMA and ISR state. Shared cross-chip code is extracted only after a
+second backend demonstrates the same semantic operation.
 
-The core workspace does not own board startup, PSRAM/flash placement or a
-network executor. Reusable adapters live under `driver/adapters/`; concrete
-board policy and the real `embassy-net`/smoltcp test application live under
-`hil/`. The source tree remains chip-first (`driver/chips/esp32s31/phy`) so one chip's
-PAC, radio PHY and protocol backends evolve together. A cross-chip PHY core
-will be extracted only after another backend establishes a concrete shared API.
-
-See [the architecture guide](docs/ARCHITECTURE.md) for dependency direction
-and crate boundaries, [the radio lifecycle and ownership model](docs/RADIO_LIFECYCLE_AND_OWNERSHIP.md)
-for physical/subsystem/role transitions, [the naming and layout contract](docs/NAMING_AND_LAYOUT.md)
-for canonical terminology and the target tree, and [the documentation index](docs/README.md)
-for current status, reference material and archived migration reports.
+See the canonical [driver architecture](driver/README.md), concise
+[feature status](docs/ESP32S31_WIFI_FEATURE_STATUS.md), and
+[documentation index](docs/README.md).
 
 ## Verification
 

@@ -1,6 +1,6 @@
 use super::*;
 use object::{SectionKind, SymbolKind};
-use rv_asm::{Inst, IsCompressed, Xlen};
+use rv_asm::{Inst, IsCompressed, Reg, Xlen};
 
 use super::model::riscv_relocation_kind;
 
@@ -279,6 +279,178 @@ fn analysis_decoder_preserves_zero_fill_as_ambiguous_trap_evidence() {
             ..
         })]
     ));
+}
+
+#[test]
+fn reachable_blockers_exclude_padding_after_return() {
+    let symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "entry".to_owned(),
+        address: 0x3900,
+        bytes: [
+            0x0020_29f3_u32.to_le_bytes().as_slice(),
+            [0x67, 0x80, 0x00, 0x00].as_slice(),
+            [0x00, 0x00, 0x00, 0x00].as_slice(),
+        ]
+        .concat(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let blockers = reachable_unsupported_instructions(&symbol).unwrap();
+
+    assert_eq!(blockers.len(), 1);
+    assert_eq!(blockers[0].address, symbol.address);
+    assert_eq!(
+        blockers[0].class,
+        UnsupportedInstructionClass::FloatingPointCsr
+    );
+}
+
+#[test]
+fn unsupported_mnemonics_make_review_evidence_actionable() {
+    assert_eq!(unsupported_instruction_mnemonic(4, 0x0005_2787), "flw");
+    assert_eq!(unsupported_instruction_mnemonic(4, 0x00f5_2027), "fsw");
+    assert_eq!(unsupported_instruction_mnemonic(4, 0xa0b5_27d3), "feq.s");
+    assert_eq!(unsupported_instruction_mnemonic(4, 0x0020_29f3), "csrrs");
+    assert_eq!(unsupported_instruction_mnemonic(2, 0), "illegal-zero");
+}
+
+#[test]
+fn floating_memory_decoder_handles_standard_and_compressed_forms() {
+    let blocker = |width, raw| UnsupportedInstruction {
+        address: 0x2000,
+        width,
+        raw,
+        class: UnsupportedInstructionClass::FloatingPoint,
+        integer_destination: None,
+        linear_control_flow: true,
+    };
+    let flw = (4_u32 << 20) | (10 << 15) | (2 << 12) | (15 << 7) | 0x07;
+    let fsw = (15_u32 << 20) | (10 << 15) | (2 << 12) | (8 << 7) | 0x27;
+
+    assert_eq!(
+        decode_floating_memory_instruction(blocker(4, flw)),
+        Some(FloatingMemoryInstruction {
+            address: 0x2000,
+            instruction_width: 4,
+            access: FloatingMemoryAccess::Load,
+            floating_register: 15,
+            base: Reg::A0,
+            offset: 4,
+        })
+    );
+    assert_eq!(
+        decode_floating_memory_instruction(blocker(4, fsw)),
+        Some(FloatingMemoryInstruction {
+            address: 0x2000,
+            instruction_width: 4,
+            access: FloatingMemoryAccess::Store,
+            floating_register: 15,
+            base: Reg::A0,
+            offset: 8,
+        })
+    );
+    assert_eq!(
+        decode_floating_memory_instruction(blocker(2, 0xec26)),
+        Some(FloatingMemoryInstruction {
+            address: 0x2000,
+            instruction_width: 2,
+            access: FloatingMemoryAccess::Store,
+            floating_register: 9,
+            base: Reg::SP,
+            offset: 24,
+        })
+    );
+    assert_eq!(
+        decode_floating_memory_instruction(blocker(2, 0x7d00)),
+        Some(FloatingMemoryInstruction {
+            address: 0x2000,
+            instruction_width: 2,
+            access: FloatingMemoryAccess::Load,
+            floating_register: 8,
+            base: Reg::A0,
+            offset: 56,
+        })
+    );
+}
+
+#[test]
+fn floating_decoder_only_invalidates_real_integer_destinations() {
+    let instruction = |funct7: u32| {
+        let raw = (funct7 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (15 << 7) | 0x53;
+        let symbol = ArtifactSymbolDefinition {
+            member: None,
+            name: "floating_destination".to_owned(),
+            address: 0,
+            bytes: raw.to_le_bytes().to_vec(),
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let decoded = decode_symbol_for_analysis(&symbol).unwrap();
+        let [AnalysisInstruction::Unsupported(blocker)] = decoded.as_slice() else {
+            panic!("expected one floating blocker");
+        };
+        *blocker
+    };
+
+    assert_eq!(instruction(0x00).integer_destination, None); // fadd.s f15, f10, f11
+    assert_eq!(instruction(0x50).integer_destination, Some(15)); // feq.s x15, f10, f11
+}
+
+#[test]
+fn floating_data_decoder_accepts_exact_structural_operations() {
+    let blocker = |raw| UnsupportedInstruction {
+        address: 0,
+        width: 4,
+        raw,
+        class: UnsupportedInstructionClass::FloatingPoint,
+        integer_destination: None,
+        linear_control_flow: true,
+    };
+    let encode = |funct7: u32, funct3: u32, destination: u32, source1: u32, source2: u32| {
+        (funct7 << 25)
+            | (source2 << 20)
+            | (source1 << 15)
+            | (funct3 << 12)
+            | (destination << 7)
+            | 0x53
+    };
+
+    assert_eq!(
+        decode_floating_data_instruction(blocker(encode(0x78, 0, 10, 11, 0))),
+        Some(FloatingDataInstruction {
+            operation: FloatingDataOperation::MoveFromInteger,
+            destination: 10,
+            source1: 11,
+            source2: 0,
+        })
+    );
+    assert_eq!(
+        decode_floating_data_instruction(blocker(encode(0x10, 2, 10, 11, 12))),
+        Some(FloatingDataInstruction {
+            operation: FloatingDataOperation::SignXor,
+            destination: 10,
+            source1: 11,
+            source2: 12,
+        })
+    );
+    assert_eq!(
+        decode_floating_data_instruction(blocker(encode(0x50, 2, 10, 11, 12))),
+        Some(FloatingDataInstruction {
+            operation: FloatingDataOperation::CompareEqual,
+            destination: 10,
+            source1: 11,
+            source2: 12,
+        })
+    );
+    assert_eq!(
+        decode_floating_data_instruction(blocker(encode(0x00, 0, 10, 11, 12))),
+        None,
+        "fadd.s is arithmetic, not a bit-preserving operation"
+    );
 }
 
 #[test]

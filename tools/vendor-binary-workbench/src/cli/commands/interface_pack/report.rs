@@ -16,6 +16,21 @@ pub(super) struct InterfacePackDocument<'a> {
 }
 
 #[derive(Serialize)]
+pub(super) struct InterfacePackSyncDocument<'a> {
+    pub(super) schema: u32,
+    pub(super) command: &'static str,
+    pub(super) status: &'static str,
+    pub(super) check: bool,
+    pub(super) added_anchors: usize,
+    pub(super) refreshed_anchors: usize,
+    pub(super) removed_anchors: usize,
+    pub(super) added_slots: usize,
+    pub(super) removed_slots: usize,
+    pub(super) facts: &'a Path,
+    pub(super) pack: &'a Path,
+}
+
+#[derive(Serialize)]
 pub(super) struct InterfaceWorkspaceDocument<'a> {
     pub(super) schema: u32,
     pub(super) command: &'static str,
@@ -164,6 +179,34 @@ pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
                 report.observed_slots.to_string(),
                 report.observed_calls.to_string(),
             ]],
+        )
+    );
+}
+
+pub(super) fn print_sync_human(report: &InterfacePackSyncDocument<'_>) {
+    outputln!(
+        "Interface pack synchronization: {} — {}",
+        report.status,
+        report.pack.display()
+    );
+    outputln!(
+        "{}",
+        crate::cli::table::render(
+            ["Scope", "Added", "Refreshed", "Removed"],
+            [
+                [
+                    "Anchors".to_owned(),
+                    report.added_anchors.to_string(),
+                    report.refreshed_anchors.to_string(),
+                    report.removed_anchors.to_string(),
+                ],
+                [
+                    "Slots".to_owned(),
+                    report.added_slots.to_string(),
+                    "-".to_owned(),
+                    report.removed_slots.to_string(),
+                ],
+            ],
         )
     );
 }

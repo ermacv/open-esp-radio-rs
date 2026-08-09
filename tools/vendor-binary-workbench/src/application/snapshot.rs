@@ -213,6 +213,11 @@ fn function_detail_summary(
                 width: blocker.width,
                 raw: blocker.raw,
                 class: blocker.class.clone(),
+                operation: crate::artifact::unsupported_instruction_mnemonic(
+                    blocker.width,
+                    blocker.raw,
+                )
+                .to_owned(),
                 linear_control_flow: blocker.linear_control_flow,
             })
             .collect(),

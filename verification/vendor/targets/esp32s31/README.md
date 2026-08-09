@@ -123,10 +123,20 @@ copyable drafts for gaps. Users edit reviewed names, fields, access rules,
 reset values and enumerations only in `registers/peripherals/*.toml`; the
 generated report never feeds SVD or PAC generation.
 
+The project treats `archive:phy_reg_check` as a reviewed diagnostic-only
+reader. Registers seen only in that complete dump remain raw evidence under
+the `non-operational-only` state and do not enter the public PAC. Any address
+also touched by operational ROM or archive code still requires a reviewed
+identity. MODEM_SYSCON, MODEM_LPCON and I2C_ANA_MST are separate platform-owned
+memory regions and are likewise visible to discovery without being owned by
+the radio SVD.
+
 The checked project defines artifact-wide `rom-all` and `archive-all`
 linked-IR profiles. Every named code symbol is a root; one unsupported
-instruction becomes a per-PC decode blocker instead of discarding the whole
-function. Illegal all-zero halfwords remain explicit
+instruction reached by the conservative function CFG becomes a per-PC decode
+blocker instead of discarding the whole function. Unsupported bytes after a
+return or other path terminator do not pollute function review. Illegal
+all-zero halfwords remain explicit
 `zero-fill-or-illegal-trap` evidence because ROM functions use them both as
 trap encodings and unreachable fill; they are not treated as false function
 boundaries. Each primary input receives the other linked ELF as its reviewed
@@ -196,6 +206,9 @@ cargo vendor-binary-workbench-esp32s31 interfaces discover \
 cargo vendor-binary-workbench-esp32s31 interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
+cargo vendor-binary-workbench-esp32s31 interfaces sync-pack \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
 cargo vendor-binary-workbench-esp32s31 interfaces validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
@@ -208,6 +221,20 @@ only ESP32-S31 anchors, layout versions, and slot ABI. Validation also retains
 the generic discovery evidence for each concrete call site and recovered
 argument expression; those facts do not make the reviewed semantic a runtime
 execution claim.
+Use `interfaces sync-pack --check` in CI after refreshing discovery. The write
+form changes only unreviewed observed anchors/slots; reviewed and manual
+claims remain entirely human-owned.
+
+The first reviewed table is the ROM Wi-Fi OS adapter v9 reached through
+`g_osi_funcs_p`: the pack records its 0x200-byte layout, version and magic
+guards, 41 observed ABI slots, 11 documented manual slots and 18 explicit
+execution-model links. `_esp_timer_get_time` remains unreviewed because its
+64-bit RV32 return ABI is not yet represented by the generic slot schema.
+Interface validation resolves 158 concrete ROM call sites against this table.
+The structural tracer still obtains its executable table registry from the
+compiled harness, so reviewed slots without an execution model can still
+appear as `unregistered-external-abi-slot` in pseudo-code; migrating that
+registry to resolved interface contracts is the next generic backend step.
 
 The same project configures a reviewed function/context workspace over both IR
 profiles. Generate IR, initialize the pack once, then edit names and roles in
@@ -258,11 +285,13 @@ recognize these explicit variables:
 - `OPEN_ESP_RADIO_ESP32S31_LIBPHY_ARCHIVE`
 - `OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE`
 
-Legacy executable ABI fixtures and lifecycle entry contracts remain compiled
-in the ESP32-S31 semantic harness. New callback-table discovery and review use
-the project interface pack so names and layouts do not enter the generic
-backend. Typed executable contracts live in the generic semantic crate and
-ESP32-S31 verification adapters live in the target semantic harness. See
+Executable call models and lifecycle entry contracts remain compiled in the
+ESP32-S31 semantic harness. Callback-table discovery and reviewed identity use
+the project interface pack; until the structural registry migration described
+above, the harness temporarily duplicates the Wi-Fi OSI table identity needed
+to execute those models. Typed executable contracts live in the generic
+semantic crate and ESP32-S31 verification adapters live in the target semantic
+harness. See
 [`docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md`](../../../../docs/VENDOR_BINARY_WORKBENCH_ARCHITECTURE.md).
 
 ## libpp interrupt pilot

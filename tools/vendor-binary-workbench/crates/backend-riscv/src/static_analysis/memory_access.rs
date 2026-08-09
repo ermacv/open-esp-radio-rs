@@ -2,6 +2,58 @@
 
 use super::state::StructuralTraceState;
 use super::*;
+use rv_asm::Imm;
+
+pub(super) fn apply_floating_memory_instruction(
+    blocker: artifact::UnsupportedInstruction,
+    symbol: &artifact::ArtifactSymbolDefinition,
+    pointer_context: &StructuralPointerContext,
+    svd: &MmioMap,
+    state: &mut StructuralTraceState,
+) -> bool {
+    let Some(instruction) = artifact::decode_floating_memory_instruction(blocker) else {
+        return false;
+    };
+    let scratch = if instruction.base == Reg::T6 {
+        Reg::T5
+    } else {
+        Reg::T6
+    };
+    let saved = state.values[usize::from(scratch.0)].clone();
+    let integer_instruction = match instruction.access {
+        artifact::FloatingMemoryAccess::Load => Inst::Lw {
+            offset: Imm::new_i32(instruction.offset),
+            dest: scratch,
+            base: instruction.base,
+        },
+        artifact::FloatingMemoryAccess::Store => {
+            state.values[usize::from(scratch.0)] =
+                state.floating_values[usize::from(instruction.floating_register)].clone();
+            Inst::Sw {
+                offset: Imm::new_i32(instruction.offset),
+                src: scratch,
+                base: instruction.base,
+            }
+        }
+    };
+    let applied = apply_memory_instruction(
+        artifact::DecodedInstruction {
+            address: instruction.address,
+            width: instruction.instruction_width,
+            instruction: integer_instruction,
+        },
+        symbol,
+        pointer_context,
+        svd,
+        state,
+    );
+    if instruction.access == artifact::FloatingMemoryAccess::Load {
+        state.floating_values[usize::from(instruction.floating_register)] =
+            state.values[usize::from(scratch.0)].clone();
+    }
+    state.values[usize::from(scratch.0)] = saved;
+    applied
+}
 
 pub(super) fn apply_memory_instruction(
     decoded: artifact::DecodedInstruction,

@@ -2,7 +2,7 @@ schema = 2
 
 [[peripherals]]
 name = "WIFI_MAC_COLD_HANDSHAKE"
-description = "Cold MAC initialization request/ready handshake at the complete hal_init prefix."
+description = "Cold MAC initialization request/ready handshake and the adjacent two WDEV timer targets recovered from complete ROM leaves."
 baseAddress = 0x20104DE0
 
 [[peripherals.registers]]
@@ -32,6 +32,62 @@ name = "UNKNOWN"
 bitOffset = 2
 bitWidth = 30
 
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "WDEV_TIMER_TARGET_0_CONTROL"
+description = "hal_wdev_timer_target_enable selects timer zero with argument zero and replaces enable bit zero."
+addressOffset = 0x10
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "WDEV_TIMER_TARGET_0_VALUE"
+description = "hal_wdev_timer_set_target selects timer zero with argument zero and writes the supplied 32-bit target."
+addressOffset = 0x14
+size = 32
+access = "write-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+bitOffset = 0
+bitWidth = 32
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "WDEV_TIMER_TARGET_1_CONTROL"
+description = "hal_wdev_timer_target_enable selects timer one with argument one and replaces enable bit zero."
+addressOffset = 0x18
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "ENABLE"
+bitOffset = 0
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "WDEV_TIMER_TARGET_1_VALUE"
+description = "hal_wdev_timer_set_target selects timer one with argument one and writes the supplied 32-bit target."
+addressOffset = 0x1C
+size = 32
+access = "write-only"
+
+[[peripherals.registers.register.fields]]
+name = "VALUE"
+bitOffset = 0
+bitWidth = 32
+
 [[review]]
 entity = "WIFI_MAC_COLD_HANDSHAKE"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
@@ -51,3 +107,23 @@ confidence = "instruction-exact"
 entity = "WIFI_MAC_COLD_HANDSHAKE.CONTROL.REQUEST"
 sources = ["BLOB_LIBPP_HAL_INIT_PREFIX"]
 confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_CONTROL"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_0_VALUE"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_CONTROL"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_COLD_HANDSHAKE.WDEV_TIMER_TARGET_1_VALUE"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"

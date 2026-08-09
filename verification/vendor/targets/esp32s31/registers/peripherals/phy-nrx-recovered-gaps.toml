@@ -26,11 +26,34 @@ access = "read-write"
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "ONE_TONE_SPUR_CONTROL_OPAQUE"
+description = "Complete phy_spur_reg_write_one_tone reads and replaces this word on three control-flow paths; individual hardware fields remain unnamed."
+addressOffset = 0x30
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "FREQUENCY_CORRECTION_CONTROL_OPAQUE"
 description = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."
 addressOffset = 0x98
 size = 32
 access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CFO_HIGH_CONTROL_OPAQUE"
+description = "Complete phy_bb_cfo_cfg replaces bits 31:29 with the observed constant pattern while preserving bits 28:0; the hardware field meaning remains unknown."
+addressOffset = 0xB8
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "HIGH_MODE_UNKNOWN"
+bitOffset = 29
+bitWidth = 3
 
 [[peripherals.registers]]
 
@@ -58,8 +81,16 @@ entity = "PHY_NRX_RECOVERED_GAPS.BACKUP_WORD_0C_OPAQUE"
 sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 
 [[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.ONE_TONE_SPUR_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
+
+[[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.FREQUENCY_CORRECTION_CONTROL_OPAQUE"
 sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+
+[[review]]
+entity = "PHY_NRX_RECOVERED_GAPS.CFO_HIGH_CONTROL_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_NRX_RECOVERED_GAPS.CHANNEL_FILTER_CONTROL_OPAQUE"

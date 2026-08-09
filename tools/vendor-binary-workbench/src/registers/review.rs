@@ -19,6 +19,7 @@ pub(crate) struct RegisterReviewSummary {
     pub(crate) observed: usize,
     pub(crate) reviewed: usize,
     pub(crate) ignored: usize,
+    pub(crate) non_operational: usize,
     pub(crate) unreviewed: usize,
     pub(crate) model_only: usize,
     pub(crate) field_candidates: usize,
@@ -49,6 +50,7 @@ pub(crate) fn render_register_review(
     model: &RegisterModel,
     ir_paths: &[PathBuf],
     owned_ranges: &[String],
+    non_operational_functions: &[String],
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
@@ -59,6 +61,7 @@ pub(crate) fn render_register_review(
         model.review(),
         &ir,
         owned_ranges,
+        non_operational_functions,
         facts_path,
         model_path,
     )
@@ -70,6 +73,7 @@ fn render_report(
     annotations: &[ReviewAnnotation],
     ir: &RegisterReviewIr,
     owned_ranges: &[String],
+    non_operational_functions: &[String],
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
@@ -78,10 +82,16 @@ fn render_report(
         .iter()
         .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
         .collect::<BTreeSet<_>>();
+    let model_keys = identities.keys().copied().collect::<BTreeSet<_>>();
     let owned_ranges = owned_ranges
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
+    let non_operational_functions = non_operational_functions
+        .iter()
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    super::workspace::validate_non_operational_functions(facts, &non_operational_functions)?;
     let owned_fact_keys = facts
         .registers
         .iter()
@@ -90,6 +100,13 @@ fn render_report(
                 range.contains(fact.address) && owned_ranges.contains(range.name.as_str())
             })
         })
+        .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
+        .collect::<BTreeSet<_>>();
+    let non_operational_fact_keys = facts
+        .registers
+        .iter()
+        .filter(|fact| owned_fact_keys.contains(&(u64::from(fact.address), u32::from(fact.width))))
+        .filter(|fact| super::workspace::fact_is_non_operational(fact, &non_operational_functions))
         .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
         .collect::<BTreeSet<_>>();
     let reviewed = owned_fact_keys
@@ -104,6 +121,9 @@ fn render_report(
         .registers
         .iter()
         .filter(|fact| owned_fact_keys.contains(&(u64::from(fact.address), u32::from(fact.width))))
+        .filter(|fact| {
+            !non_operational_fact_keys.contains(&(u64::from(fact.address), u32::from(fact.width)))
+        })
         .map(|fact| candidate_fields(fact, ir.register(fact.address, fact.width)))
         .map(|fields| fields.len())
         .sum();
@@ -116,7 +136,11 @@ fn render_report(
         observed: facts.registers.len(),
         reviewed,
         ignored: fact_keys.len() - owned_fact_keys.len(),
-        unreviewed: owned_fact_keys.len() - reviewed,
+        non_operational: non_operational_fact_keys.difference(&model_keys).count(),
+        unreviewed: owned_fact_keys
+            .difference(&model_keys)
+            .filter(|key| !non_operational_fact_keys.contains(key))
+            .count(),
         model_only,
         field_candidates,
         ir_reports: ir.reports.len(),
@@ -162,6 +186,12 @@ fn render_report(
         output,
         "- Outside the publication scope: {}",
         summary.ignored
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Non-operational-only observations: {}",
+        summary.non_operational
     )
     .expect("writing to String cannot fail");
     writeln!(output, "- Awaiting review: {}", summary.unreviewed)
@@ -230,6 +260,8 @@ fn render_report(
         registers.sort_by_key(|fact| (fact.address, fact.width));
         for fact in &registers {
             let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let non_operational = non_operational_fact_keys
+                .contains(&(u64::from(fact.address), u32::from(fact.width)));
             let masks = fact
                 .candidate_masks
                 .iter()
@@ -246,6 +278,8 @@ fn render_report(
                     "ignored"
                 } else if identity.is_some() {
                     "reviewed"
+                } else if non_operational {
+                    "non-operational-only"
                 } else {
                     "unreviewed"
                 },
@@ -263,6 +297,8 @@ fn render_report(
 
         for fact in registers {
             let identity = identities.get(&(u64::from(fact.address), u32::from(fact.width)));
+            let non_operational = non_operational_fact_keys
+                .contains(&(u64::from(fact.address), u32::from(fact.width)));
             let ir_register = ir.register(fact.address, fact.width);
             writeln!(
                 output,
@@ -271,11 +307,18 @@ fn render_report(
                 fact.width,
                 if !owned {
                     "outside publication scope"
+                } else if non_operational && identity.is_none() {
+                    "non-operational-only"
                 } else {
                     identity.map_or("unreviewed", String::as_str)
                 }
             )
             .expect("writing to String cannot fail");
+            if non_operational && identity.is_none() {
+                output.push_str(
+                    "This observation is produced exclusively by a function explicitly classified as non-operational in the project review policy. Raw evidence is retained, but it does not create publication review debt.\n\n",
+                );
+            }
             writeln!(
                 output,
                 "Mechanical access: `{}`. Read users: {}. Write users: {}.",
@@ -330,7 +373,7 @@ fn render_report(
                 output.push('\n');
                 write_ir_evidence(&mut output, ir_register);
             }
-            if owned && identity.is_none() {
+            if owned && identity.is_none() && !non_operational {
                 write_draft(&mut output, fact, range.start, ir_register);
             }
         }
@@ -430,6 +473,7 @@ mod tests {
             &[],
             &RegisterReviewIr::default(),
             &["radio".to_owned()],
+            &[],
             Path::new("mmio.json"),
             Path::new("device.toml"),
         )

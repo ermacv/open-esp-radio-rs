@@ -80,6 +80,7 @@ owned-ranges = ["radio"]
 [registers.review]
 output = "generated/register-review.md"
 linked-ir = ["generated/vendor.ir.json"]
+non-operational-functions = ["archive:register_dump"]
 
 [registers.svd]
 output = "generated/device.svd"
@@ -164,6 +165,7 @@ profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
             facts: directory.join("generated/mmio.json"),
             model: directory.join("registers/reviewed.toml"),
             owned_ranges: vec!["radio".to_owned()],
+            non_operational_functions: vec!["archive:register_dump".to_owned()],
             review_output: Some(directory.join("generated/register-review.md")),
             review_ir_reports: vec![directory.join("generated/vendor.ir.json")],
             svd_output: Some(directory.join("generated/device.svd")),

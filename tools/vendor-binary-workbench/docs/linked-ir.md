@@ -35,11 +35,26 @@ Schema v37 also inventories unsupported instructions explicitly. Every
 function has a typed `decode_blockers` array containing the instruction PC,
 width, raw encoding, extension class and whether the base ISA proves linear
 continuation. The summary counts both blockers and affected functions. These
-records cover the complete symbol byte range, while `direct_blockers` retain
-only blockers reached by structural CFG exploration. F and CSR instructions
-may therefore preserve useful later integer/MMIO evidence, but any blocker
-still makes the function incomplete. Concrete verification uses the strict
-decoder and never executes an unsupported instruction.
+records are restricted to instructions reachable from the function entry by
+the conservative CFG walk; padding and embedded bytes after a return are not
+reported as blockers. F and CSR instructions may therefore preserve useful
+later integer/MMIO evidence, but any reached blocker still makes the function
+incomplete. Concrete verification uses the strict decoder and never executes
+an unsupported instruction.
+
+RV32F word loads and stores are a narrower exception at the structural layer:
+the backend decodes `flw`/`fsw` (including compressed forms), tracks their
+addresses through the ordinary integer base register and carries loaded bit
+provenance through a separate floating-register state. This recovers MMIO,
+stack and reviewed memory-object accesses without claiming floating-point
+arithmetic semantics. The original F blocker remains, so this extra evidence
+cannot make the function verification-eligible.
+
+Bit-preserving RV32F moves (`fmv.w.x`, `fmv.x.w` and the `fsgnj*` family) also
+carry exact provenance between integer and floating registers. This includes
+the assembler aliases `fmv.s`, `fabs.s` and `fneg.s`. Call boundaries
+invalidate caller-saved floating registers while retaining the ABI-defined
+callee-saved set. Arithmetic, conversions and comparisons remain blockers.
 
 An all-zero halfword is classified as `zero-fill-or-illegal-trap`, not as a
 generic decoder failure. RISC-V makes that encoding illegal, while real
@@ -101,6 +116,16 @@ global definitions remain ambiguous, and local definitions are never selected.
 `project_call_linkage` records this policy. The edge is useful for navigation,
 but arguments, return propagation and addresses are not substituted, so the
 original reference blocker and incomplete function status remain intact.
+
+An unresolved returning relocation or indirect `jalr ra` is also an opaque ABI
+boundary for function-local structural analysis. The analyzer records an
+explicit completeness blocker, invalidates caller-saved integer and floating
+registers, treats private stack passed to the call as potentially modified and
+continues at the return address. It does not invent a target, return value or
+side effects. This preserves later accesses through callee-saved context
+registers for manual review without making the trace reference-eligible.
+Unknown tail jumps and other unresolved indirect control-flow shapes still
+terminate the current path.
 
 ## Calls, summaries, and return provenance
 

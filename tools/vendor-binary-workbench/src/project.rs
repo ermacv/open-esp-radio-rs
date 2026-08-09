@@ -108,6 +108,7 @@ pub(crate) struct RegisterWorkspacePaths {
     pub(crate) facts: PathBuf,
     pub(crate) model: PathBuf,
     pub(crate) owned_ranges: Vec<String>,
+    pub(crate) non_operational_functions: Vec<String>,
     pub(crate) review_output: Option<PathBuf>,
     pub(crate) review_ir_reports: Vec<PathBuf>,
     pub(crate) svd_output: Option<PathBuf>,

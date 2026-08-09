@@ -145,6 +145,7 @@ pub struct FunctionSummary {
     pub blockers: Vec<String>,
     pub decode_blockers: usize,
     pub decode_blocker_classes: Vec<String>,
+    pub decode_blocker_operations: Vec<String>,
     pub semantic_operations: Vec<String>,
     pub registers: Vec<u32>,
     pub calls: usize,
@@ -156,6 +157,7 @@ pub struct FunctionDecodeBlockerSummary {
     pub width: u8,
     pub raw: u32,
     pub class: String,
+    pub operation: String,
     pub linear_control_flow: bool,
 }
 
@@ -249,6 +251,7 @@ pub enum RegisterReviewState {
     Reviewed,
     Manual,
     Ignored,
+    NonOperational,
     Unreviewed,
 }
 
@@ -258,6 +261,7 @@ impl RegisterReviewState {
             Self::Reviewed => "reviewed",
             Self::Manual => "manual",
             Self::Ignored => "ignored",
+            Self::NonOperational => "non-operational-only",
             Self::Unreviewed => "unreviewed",
         }
     }
@@ -350,6 +354,7 @@ pub struct RegisterWorkspaceReport {
     pub observed: usize,
     pub reviewed: usize,
     pub ignored: usize,
+    pub non_operational: usize,
     pub manual: usize,
     pub unreviewed: usize,
     pub fields: usize,
@@ -369,6 +374,22 @@ pub struct InterfaceContractSummary {
     pub slots: Vec<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InterfaceReviewState {
+    Reviewed,
+    Unreviewed,
+}
+
+impl InterfaceReviewState {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Reviewed => "reviewed",
+            Self::Unreviewed => "unreviewed",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct InterfaceSlotSummary {
     pub id: String,
@@ -376,6 +397,8 @@ pub struct InterfaceSlotSummary {
     pub offset: i32,
     pub width: u8,
     pub name: String,
+    pub review_state: InterfaceReviewState,
+    pub selector: Option<String>,
     pub arguments: Vec<String>,
     pub return_type: String,
     pub variadic: bool,

@@ -23,7 +23,7 @@ and key hints without hiding a readiness state or exit key.
 | Code | Generated executable-gap candidates, reviewed boundaries, artifact guards and control-flow evidence |
 | Functions | Recovered functions, review status, typed per-PC decode blockers, replay-required scenario candidates and pseudo-Rust |
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
-| Interfaces | Resolved table slots, ABI, semantics, execution models and sites |
+| Interfaces | Reviewed table slots plus unreviewed discovered slot evidence, ABI, semantics, execution models and sites |
 | Comparisons | Project profiles, concrete MATCH/DIFF/INCOMPLETE, first trace difference, artifact provenance, model evidence and blockers |
 | Diagnostics | Missing, incomplete and invalid component details |
 | Types | Reviewed logical types, their exact memory-object bindings and fields |
@@ -55,17 +55,25 @@ snapshot data. Function index rows and heavy details
 (contexts, memory fields, scenario candidates and pseudo-Rust) are separate
 typed DTOs keyed by stable function identity. The worker loads one detail on
 selection and the current snapshot generation owns the resulting cache.
-Function rows retain a bounded blocker count; the lazy detail shows each
-blocker's PC, width, raw encoding, class and whether architectural linear
-continuation was safe. A specific unsupported instruction is therefore not
-collapsed into the generic `analysis incomplete` state. Function search also
-matches blocker classes such as `floating-point` or
+Function rows retain a bounded CFG-reachable blocker count; the lazy detail shows each
+blocker's PC, best-effort mnemonic, width, raw encoding, class and whether
+architectural linear continuation was safe. The mnemonic is review evidence,
+not a claim that instruction semantics are implemented. A specific unsupported
+instruction is therefore not collapsed into the generic `analysis incomplete`
+state. Function search also matches blocker operations such as `flw` and
+classes such as `floating-point` or
 `zero-fill-or-illegal-trap` without loading the heavy detail.
 Register rows and heavyweight detail use the same arrangement. Selecting a
 register asks the worker for `register_detail(address)` once per snapshot
 generation. The detail pane shows name provenance, width, review state,
 read/write/RMW counts, function users, write masks, field candidates,
 direct/transitive predicates, polls and linked semantic operations.
+The Interfaces view includes every discovered slot that remains unreviewed,
+not only semantic bindings already accepted by the interface pack. Such rows
+are explicitly labelled `unreviewed`, show their offset, optional indexed
+selector, functions and call sites, and keep ABI/semantics unknown. Reviewing
+the corresponding TOML pack is the only operation that can promote them to a
+named ABI or executable model.
 Code boundaries are kept in the light snapshot and can be filtered by source,
 section, address, reviewed name, symbol evidence, reason, or caller. The view
 is read-only: edit `code/boundaries.toml`, validate it, then reload.

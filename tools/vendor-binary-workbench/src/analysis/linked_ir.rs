@@ -128,6 +128,25 @@ fn annotate_direct_semantic_calls(
     }
 }
 
+fn reachable_decode_blockers(
+    symbol: &artifact::ArtifactSymbolDefinition,
+) -> Vec<LinkedDecodeBlocker> {
+    artifact::reachable_unsupported_instructions(symbol)
+        .map(|blockers| {
+            blockers
+                .into_iter()
+                .map(|blocker| LinkedDecodeBlocker {
+                    address: blocker.address,
+                    width: blocker.width,
+                    raw: blocker.raw,
+                    class: blocker.class.as_str(),
+                    linear_control_flow: blocker.linear_control_flow,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(crate) fn build_linked_ir_for_source(
     resolver: &ReferenceResolver,
     symbol_prefix: &str,
@@ -205,25 +224,7 @@ fn build_linked_functions_for_roots(
         } else {
             "local"
         };
-        let decode_blockers = artifact::decode_symbol_for_analysis(&symbol)
-            .map(|instructions| {
-                instructions
-                    .into_iter()
-                    .filter_map(|instruction| match instruction {
-                        artifact::AnalysisInstruction::Supported(_) => None,
-                        artifact::AnalysisInstruction::Unsupported(blocker) => {
-                            Some(LinkedDecodeBlocker {
-                                address: blocker.address,
-                                width: blocker.width,
-                                raw: blocker.raw,
-                                class: blocker.class.as_str(),
-                                linear_control_flow: blocker.linear_control_flow,
-                            })
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let decode_blockers = reachable_decode_blockers(&symbol);
         let DirectCallGraph {
             calls: direct_calls,
             direct_mmio_predicates,

@@ -193,6 +193,14 @@ pub(super) fn resolve_command(
                 target,
             }
         }
+        Command::InterfaceSyncPack(arguments) => {
+            let (project, target) = environment.into_project_target()?;
+            ResolvedInvocation::InterfaceWorkspace {
+                command: InterfaceWorkspaceCommand::SyncPack(arguments),
+                project,
+                target,
+            }
+        }
         Command::InterfaceValidate(arguments) => {
             let (project, target) = environment.into_project_target()?;
             ResolvedInvocation::InterfaceWorkspace {

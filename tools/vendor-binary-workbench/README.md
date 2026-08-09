@@ -64,7 +64,7 @@ pass them directly or through an untracked project-local `local.toml`.
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `code init-pack` / `validate` / `review` | Review conservative function-boundary candidates recovered inside executable-code gaps | [Reviewed code boundaries](docs/code-boundaries.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
-| `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
+| `interfaces init-pack` / `sync-pack` / `validate` | Initialize or safely synchronize observations, review table layouts and ABI, then bind reusable semantics | [Interface packs](docs/interface-packs.md) |
 | `functions init-pack` / `validate` / `review` | Review function roles and context layouts, then render a source-like reading view | [Function and context packs](docs/function-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
 | `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` / `generate-bindings` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC/binding outputs | [Register workspace](docs/register-workspace.md) |

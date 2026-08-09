@@ -88,12 +88,12 @@ fn event_dispatch_metadata_references_the_reviewed_typed_signature() {
 fn replacement_boundaries_use_reviewed_v9_offsets() {
     for (offset, operation) in [
         (0x068, "rtos.queue.send-from-isr"),
-        (0x09c, "rtos.task.delay"),
+        (0x09c, "time.blocking-delay"),
         (0x0b4, "rtos.event.post"),
         (0x0f0, "timer.arm-micros"),
-        (0x124, "nvs.open"),
-        (0x130, "nvs.blob.write"),
-        (0x134, "nvs.blob.read"),
+        (0x124, "storage.nvs.open"),
+        (0x130, "storage.nvs.blob.write"),
+        (0x134, "storage.nvs.blob.read"),
         (0x150, "logging.write-format"),
     ] {
         let function = WIFI_OSI_V9.function_at(offset).unwrap();

@@ -60,6 +60,7 @@ fn review(
         &model,
         &ir_reports,
         &paths.owned_ranges,
+        &paths.non_operational_functions,
         &paths.facts,
         &paths.model,
     )?;
@@ -80,6 +81,7 @@ fn review(
         observed: summary.observed,
         reviewed: summary.reviewed,
         ignored: summary.ignored,
+        non_operational: summary.non_operational,
         unreviewed: summary.unreviewed,
         model_only: summary.model_only,
         draft_field_partitions: summary.field_candidates,
@@ -186,6 +188,7 @@ fn validate(
         observed: summary.observed,
         reviewed: summary.reviewed,
         ignored: summary.ignored,
+        non_operational: summary.non_operational,
         manual: summary.manual,
         unreviewed: summary.unreviewed,
         fields: summary.fields,

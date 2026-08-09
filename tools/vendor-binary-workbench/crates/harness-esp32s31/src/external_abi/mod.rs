@@ -375,7 +375,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 1,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "rtos.task.delay",
+            operation: "time.blocking-delay",
             arguments: TASK_DELAY_ARGUMENTS,
             return_type: "void",
             replacement: Some("Rust async timer"),
@@ -422,7 +422,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 3,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.open",
+            operation: "storage.nvs.open",
             arguments: NVS_OPEN_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
@@ -436,7 +436,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 1,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.close",
+            operation: "storage.nvs.close",
             arguments: NVS_HANDLE_ARGUMENTS,
             return_type: "void",
             replacement: Some("typed Rust persistence provider"),
@@ -450,7 +450,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 1,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.commit",
+            operation: "storage.nvs.commit",
             arguments: NVS_HANDLE_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
@@ -464,7 +464,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 4,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.blob.write",
+            operation: "storage.nvs.blob.write",
             arguments: NVS_BLOB_SET_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
@@ -478,7 +478,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 4,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.blob.read",
+            operation: "storage.nvs.blob.read",
             arguments: NVS_BLOB_GET_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),
@@ -492,7 +492,7 @@ const ESP32S31_WIFI_OSI_V9_FUNCTIONS: &[ExternalFunctionSpec] = &[
         argument_count: 2,
         return_model: ExternalReturnModel::Unmodeled,
         semantic: ExternalSemanticSpec {
-            operation: "nvs.key.erase",
+            operation: "storage.nvs.key.erase",
             arguments: NVS_ERASE_ARGUMENTS,
             return_type: "status i32",
             replacement: Some("typed Rust persistence provider"),

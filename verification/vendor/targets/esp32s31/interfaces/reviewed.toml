@@ -153,6 +153,18 @@ kind = "artifact-sha256"
 sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 
 [[anchors.slots]]
+offset = -504
+width = 32
+status = "unreviewed"
+origin = "observed"
+
+[[anchors.slots]]
+offset = -500
+width = 32
+status = "unreviewed"
+origin = "observed"
+
+[[anchors.slots]]
 offset = 508
 width = 32
 status = "unreviewed"
@@ -1064,316 +1076,548 @@ origin = "observed"
 # execution-model = "operation-id" # requires anchor execution-contract
 
 [[anchors]]
-id = "rom-address-2f080000-5"
-status = "unreviewed"
+id = "wifi-osi-v9"
+status = "reviewed"
 origin = "observed"
 source = "rom"
 root-kind = "absolute-address"
 address = 0x2f080000
 container-path = [{ offset = -188, width = 32 }]
-layout-version = "unreviewed"
+layout-version = "esp-idf-wifi-osi-v9"
 pointer-width = 32
-layout-size = 484
+layout-size = 0x200
 slot-stride = 4
-# execution-contract = "platform.table-v1" # optional compiled harness table ID
+execution-contract = "esp32s31-wifi-osi-v9"
 
 [[anchors.guards]]
 kind = "artifact-sha256"
 sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
 
-[[anchors.slots]]
-offset = 4
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "version"
+offset = 0
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+mask = 0xffffffff
+value = 9
+
+[[anchors.guards]]
+kind = "runtime-value"
+purpose = "magic"
+offset = 0x1fc
+width = 32
+mask = 0xffffffff
+value = 0xdeadbeaf
 
 [[anchors.slots]]
-offset = 40
+offset = 0x004
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "env_is_chip"
+arguments = []
+return = "bool"
+semantic = "target.is-real-chip"
+execution-model = "env-is-chip"
 
 [[anchors.slots]]
-offset = 44
+offset = 0x028
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_int_disable"
+arguments = ["mut-ptr"]
+return = "u32"
+semantic = "critical-section.enter"
+execution-model = "wifi-int-disable"
 
 [[anchors.slots]]
-offset = 48
+offset = 0x02c
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_int_restore"
+arguments = ["mut-ptr", "u32"]
+return = "void"
+semantic = "critical-section.exit"
+execution-model = "wifi-int-restore"
 
 [[anchors.slots]]
-offset = 64
+offset = 0x030
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "task_yield_from_isr"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 84
+offset = 0x040
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "semphr_give"
+arguments = ["opaque-handle"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 88
+offset = 0x054
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "mutex_lock"
+arguments = ["opaque-handle"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 100
+offset = 0x058
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "mutex_unlock"
+arguments = ["opaque-handle"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 104
+offset = 0x064
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "queue_send"
+arguments = ["opaque-handle", "mut-ptr", "u32"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 116
+offset = 0x068
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "queue_send_from_isr"
+arguments = ["opaque-handle", "mut-ptr", "out-ptr"]
+return = "i32"
+semantic = "rtos.queue.send-from-isr"
+execution-model = "queue-send-from-isr"
 
 [[anchors.slots]]
-offset = 120
+offset = 0x074
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "queue_recv"
+arguments = ["opaque-handle", "mut-ptr", "u32"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 152
+offset = 0x078
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "queue_msg_waiting"
+arguments = ["opaque-handle"]
+return = "u32"
 
 [[anchors.slots]]
-offset = 160
+offset = 0x098
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "task_delete"
+arguments = ["opaque-handle"]
+return = "void"
 
 [[anchors.slots]]
-offset = 176
+offset = 0x09c
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "task_delay"
+arguments = ["u32"]
+return = "void"
+semantic = "time.blocking-delay"
+execution-model = "task-delay"
 
 [[anchors.slots]]
-offset = 188
+offset = 0x0a0
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "task_ms_to_tick"
+arguments = ["u32"]
+return = "i32"
 
 [[anchors.slots]]
-offset = 200
+offset = 0x0b0
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "free"
+arguments = ["mut-ptr"]
+return = "void"
 
 [[anchors.slots]]
-offset = 204
+offset = 0x0b4
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "event_post"
+arguments = ["const-ptr", "i32", "const-ptr", "usize", "u32"]
+return = "i32"
+semantic = "rtos.event.post"
+execution-model = "event-post"
 
 [[anchors.slots]]
-offset = 208
+offset = 0x0bc
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "rand"
+arguments = []
+return = "u32"
+semantic = "random.next-u32"
+execution-model = "rand"
 
 [[anchors.slots]]
-offset = 212
+offset = 0x0c8
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_pm_sleep_lock_acquire"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 224
+offset = 0x0cc
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_pm_sleep_lock_release"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 228
+offset = 0x0d0
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "phy_disable"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 232
+offset = 0x0d4
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "phy_enable"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 240
+offset = 0x0e0
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "timer_arm"
+arguments = ["mut-ptr", "u32", "bool"]
+return = "void"
 
 [[anchors.slots]]
-offset = 248
+offset = 0x0e4
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "timer_disarm"
+arguments = ["mut-ptr"]
+return = "void"
 
 [[anchors.slots]]
-offset = 252
+offset = 0x0e8
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "timer_done"
+arguments = ["mut-ptr"]
+return = "void"
 
 [[anchors.slots]]
-offset = 264
+offset = 0x0f0
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "timer_arm_us"
+arguments = ["mut-ptr", "u32", "bool"]
+return = "void"
+semantic = "timer.arm-micros"
+execution-model = "timer-arm-us"
 
 [[anchors.slots]]
-offset = 356
+offset = 0x0f8
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_clock_enable"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 360
+offset = 0x0fc
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_clock_disable"
+arguments = []
+return = "void"
 
 [[anchors.slots]]
-offset = 372
+offset = 0x108
 width = 32
 status = "unreviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
 
 [[anchors.slots]]
-offset = 380
+offset = 0x124
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_open"
+arguments = ["const-ptr", "u32", "out-ptr"]
+return = "i32"
+semantic = "storage.nvs.open"
+execution-model = "nvs-open"
 
 [[anchors.slots]]
-offset = 400
+offset = 0x128
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_close"
+arguments = ["u32"]
+return = "void"
+semantic = "storage.nvs.close"
+execution-model = "nvs-close"
 
 [[anchors.slots]]
-offset = 408
+offset = 0x12c
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_commit"
+arguments = ["u32"]
+return = "i32"
+semantic = "storage.nvs.commit"
+execution-model = "nvs-commit"
 
 [[anchors.slots]]
-offset = 412
+offset = 0x130
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_set_blob"
+arguments = ["u32", "const-ptr", "const-ptr", "usize"]
+return = "i32"
+semantic = "storage.nvs.blob.write"
+execution-model = "nvs-set-blob"
 
 [[anchors.slots]]
-offset = 420
+offset = 0x134
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_get_blob"
+arguments = ["u32", "const-ptr", "out-ptr", "mut-ptr"]
+return = "i32"
+semantic = "storage.nvs.blob.read"
+execution-model = "nvs-get-blob"
 
 [[anchors.slots]]
-offset = 424
+offset = 0x138
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "nvs_erase_key"
+arguments = ["u32", "const-ptr"]
+return = "i32"
+semantic = "storage.nvs.key.erase"
+execution-model = "nvs-erase-key"
 
 [[anchors.slots]]
-offset = 436
+offset = 0x144
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "random"
+arguments = []
+return = "u32"
+semantic = "random.next-u32"
+execution-model = "random"
 
 [[anchors.slots]]
-offset = 440
+offset = 0x148
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "slowclk_cal_get"
+arguments = []
+return = "u32"
+semantic = "clock.slow-calibration.get"
+execution-model = "slow-clock-calibration-get"
 
 [[anchors.slots]]
-offset = 444
+offset = 0x150
 width = 32
-status = "unreviewed"
-origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+status = "reviewed"
+origin = "manual"
+name = "log_writev"
+arguments = ["u32", "const-ptr", "const-ptr", "ptr"]
+return = "void"
+semantic = "logging.write-format"
+execution-model = "log-writev"
 
 [[anchors.slots]]
-offset = 464
+offset = 0x164
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "zalloc_internal"
+arguments = ["usize"]
+return = "mut-ptr"
 
 [[anchors.slots]]
-offset = 472
+offset = 0x168
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_malloc"
+arguments = ["usize"]
+return = "mut-ptr"
 
 [[anchors.slots]]
-offset = 476
+offset = 0x174
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_zalloc"
+arguments = ["usize"]
+return = "mut-ptr"
 
 [[anchors.slots]]
-offset = 480
+offset = 0x17c
 width = 32
-status = "unreviewed"
+status = "reviewed"
 origin = "observed"
-# execution-model = "operation-id" # requires anchor execution-contract
+name = "wifi_delete_queue"
+arguments = ["opaque-handle"]
+return = "void"
+
+[[anchors.slots]]
+offset = 0x190
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_status_get"
+arguments = []
+return = "u32"
+
+[[anchors.slots]]
+offset = 0x198
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_wifi_request"
+arguments = ["u32", "u32", "u32"]
+return = "i32"
+
+[[anchors.slots]]
+offset = 0x19c
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_wifi_release"
+arguments = ["u32"]
+return = "i32"
+
+[[anchors.slots]]
+offset = 0x1a4
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_event_duration_get"
+arguments = ["u32", "out-ptr"]
+return = "i32"
+
+[[anchors.slots]]
+offset = 0x1a8
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_pti_get"
+arguments = ["u32", "out-ptr"]
+return = "i32"
+semantic = "coexistence.pti.query"
+execution-model = "coex-pti-get"
+
+[[anchors.slots]]
+offset = 0x1b4
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_interval_set"
+arguments = ["u32"]
+return = "i32"
+
+[[anchors.slots]]
+offset = 0x1b8
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_interval_get"
+arguments = []
+return = "u32"
+
+[[anchors.slots]]
+offset = 0x1bc
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_curr_period_get"
+arguments = []
+return = "u8"
+
+[[anchors.slots]]
+offset = 0x1d0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "regdma_link_set_write_wait_content"
+arguments = ["mut-ptr", "u32", "u32"]
+return = "void"
+
+[[anchors.slots]]
+offset = 0x1d8
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_flexible_period_set"
+arguments = ["u8"]
+return = "i32"
+
+[[anchors.slots]]
+offset = 0x1dc
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_flexible_period_get"
+arguments = []
+return = "u8"
+
+[[anchors.slots]]
+offset = 0x1e0
+width = 32
+status = "reviewed"
+origin = "observed"
+name = "coex_schm_get_phase_by_idx"
+arguments = ["i32"]
+return = "mut-ptr"
 
 [[anchors]]
 id = "rom-address-2f080000-6"
@@ -3551,6 +3795,27 @@ origin = "observed"
 
 [[anchors.slots]]
 offset = 1508
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1512
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1516
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1524
 width = 32
 status = "unreviewed"
 origin = "observed"

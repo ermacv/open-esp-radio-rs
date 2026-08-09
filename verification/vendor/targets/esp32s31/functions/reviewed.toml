@@ -18195,44 +18195,6 @@ offset = 28
 width = 32
 status = "unreviewed"
 
-[[functions.contexts]]
-argument = 1
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 0
-width = 32
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 4
-width = 32
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 8
-width = 32
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 12
-width = 32
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 16
-width = 32
-status = "unreviewed"
-
-[[functions.contexts]]
-argument = 11
-status = "unreviewed"
-
-[[functions.contexts.fields]]
-offset = 0
-width = 32
-status = "unreviewed"
-
 [[functions]]
 profile = "rom-all"
 source = "rom"

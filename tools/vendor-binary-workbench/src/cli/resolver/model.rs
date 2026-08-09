@@ -111,6 +111,7 @@ pub(in crate::cli) enum RegisterWorkspaceCommand {
 
 pub(in crate::cli) enum InterfaceWorkspaceCommand {
     InitPack(OutputArgs),
+    SyncPack(CheckArgs),
     Validate(ValidationArgs),
 }
 

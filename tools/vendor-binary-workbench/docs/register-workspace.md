@@ -21,6 +21,7 @@ owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/reports/register-review.md"
+non-operational-functions = ["archive:register_dump"]
 linked-ir = [
     "generated/findings/rom.ir.json",
     "generated/findings/libraries.ir.json",
@@ -58,6 +59,14 @@ configured MMIO region. Observations outside this list remain visible as
 `ignored` evidence, but they do not become radio-model review debt and do not
 block SVD/PAC publication. An unmatched observation inside an owned range
 remains `unreviewed` and does block strict publication.
+
+`non-operational-functions` is an optional reviewed policy for diagnostic or
+introspection-only code such as a complete register dump. An observation is
+classified `non-operational-only` only when every function that reads or
+writes it is in this list. Mixed-use addresses remain ordinary operational
+review debt, and stale function names are rejected. The raw observation,
+functions and access patterns stay in the report; this policy only prevents a
+diagnostic sweep from forcing otherwise unused words into the published SVD.
 Review reports are generated and should normally stay under an ignored
 `generated/` directory.
 

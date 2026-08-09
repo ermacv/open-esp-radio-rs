@@ -25,7 +25,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             Row::new([
                 slot.name.clone(),
                 format!("{:+#x}", slot.offset),
-                slot.semantic.clone().unwrap_or_else(|| "-".to_owned()),
+                slot.review_state.label().to_owned(),
             ])
             .style(selected_style(index, state.selected()))
         });
@@ -33,16 +33,16 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         Table::new(
             rows,
             [
-                Constraint::Percentage(40),
+                Constraint::Min(8),
+                Constraint::Length(9),
                 Constraint::Length(10),
-                Constraint::Percentage(60),
             ],
         )
-        .header(Row::new(["Slot", "Offset", "Semantic"]).style(heading()))
+        .header(Row::new(["Slot", "Offset", "Review"]).style(heading()))
         .block(
             Block::default()
                 .title(format!(
-                    " Resolved slots ({}/{}) ",
+                    " Interface slots ({}/{}) ",
                     state.visible_count(),
                     state.snapshot.interfaces.slots.len()
                 ))
@@ -59,15 +59,26 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             let mut lines = vec![
                 field("ID", &slot.id),
                 field("Contract", &slot.contract),
+                field("Review", slot.review_state.label()),
                 field(
                     "ABI",
-                    format!("({}) -> {}", slot.arguments.join(", "), slot.return_type),
+                    if slot.review_state == crate::InterfaceReviewState::Reviewed {
+                        format!("({}) -> {}", slot.arguments.join(", "), slot.return_type)
+                    } else {
+                        "unknown until reviewed".to_owned()
+                    },
                 ),
                 field("Width", slot.width),
                 field("Variadic", slot.variadic),
                 field("Call sites", slot.call_sites.len()),
                 field("Functions", slot.functions.len()),
             ];
+            if let Some(selector) = &slot.selector {
+                lines.push(field("Selector", selector));
+            }
+            if let Some(semantic) = &slot.semantic {
+                lines.push(field("Semantic", semantic));
+            }
             if let Some(model) = &slot.execution_model {
                 lines.push(field("Execution model", model));
             }

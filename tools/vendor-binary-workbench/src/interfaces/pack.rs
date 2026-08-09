@@ -8,7 +8,7 @@ use super::{
     InterfaceRootSelector, InterfaceWorkspaceSummary, PackOrigin,
     ResolvedExternalCallExecutionModel, ResolvedInterfaceContract,
     ResolvedInterfaceExecutionContract, ResolvedInterfaceSlot, ResolvedSemanticAnnotation,
-    ReviewStatus, SemanticCatalogs, validate_dotted_id,
+    ReviewStatus, SemanticCatalogs, UnreviewedInterfaceObservation, validate_dotted_id,
 };
 use crate::{ExternalTableRef, HarnessContractSpec};
 
@@ -23,6 +23,7 @@ impl InterfacePack {
         InterfaceWorkspaceSummary,
         Vec<ResolvedInterfaceContract>,
         Vec<ResolvedInterfaceSlot>,
+        Vec<UnreviewedInterfaceObservation>,
     )> {
         validate_dotted_id(&self.id, "interface pack id")
             .map_err(|error| ValidationError::pack("id", error.to_string()))?;
@@ -117,6 +118,7 @@ impl InterfacePack {
         }
         let execution_tables = resolve_execution_tables(self, execution_contracts)?;
         let bindings = build_bindings(self, facts, catalogs, &matches_by_anchor, &execution_tables);
+        let unreviewed_observations = build_unreviewed_observations(self, facts, &matched_by);
         let contracts = build_contracts(self, &bindings, &execution_tables);
         let mut summary = build_summary(self, facts, catalogs, &matched_by, &matches_by_anchor);
         summary.resolved_calls = bindings.iter().map(|binding| binding.calls.len()).sum();
@@ -128,7 +130,7 @@ impl InterfacePack {
             .iter()
             .filter(|binding| binding.execution_model.is_some())
             .count();
-        Ok((summary, contracts, bindings))
+        Ok((summary, contracts, bindings, unreviewed_observations))
     }
 }
 
@@ -282,7 +284,7 @@ fn validate_anchor_evidence(
     Ok(())
 }
 
-fn anchor_matches_without_digest(
+pub(super) fn anchor_matches_without_digest(
     anchor: &InterfaceAnchor,
     facts: &InterfaceFacts,
     fact: &super::InterfaceTableFact,
@@ -294,7 +296,7 @@ fn anchor_matches_without_digest(
         && anchor.container_path == fact.container_path
 }
 
-fn anchor_digest_matches(
+pub(super) fn anchor_digest_matches(
     anchor: &InterfaceAnchor,
     facts: &InterfaceFacts,
     fact: &super::InterfaceTableFact,
@@ -445,6 +447,118 @@ fn build_summary(
     }
     debug_assert_eq!(pack.anchors.len(), matches_by_anchor.len());
     summary
+}
+
+fn build_unreviewed_observations(
+    pack: &InterfacePack,
+    facts: &InterfaceFacts,
+    matched_by: &[Option<&str>],
+) -> Vec<UnreviewedInterfaceObservation> {
+    let anchors_by_id = pack
+        .anchors
+        .iter()
+        .map(|anchor| (anchor.id.as_str(), anchor))
+        .collect::<BTreeMap<_, _>>();
+    let mut observations = Vec::new();
+    for (fact_index, fact) in facts.tables.iter().enumerate() {
+        let anchor = matched_by[fact_index].and_then(|id| anchors_by_id.get(id).copied());
+        if anchor.is_some_and(|anchor| anchor.status == ReviewStatus::Ignored) {
+            continue;
+        }
+        let artifact = facts
+            .artifact(fact.artifact)
+            .expect("validated interface facts reference an artifact");
+        let source = artifact
+            .sources
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(",");
+        let contract = anchor.map_or_else(
+            || format!("unmatched:{source}:{}", fact.root.kind()),
+            |anchor| format!("{}::{}", pack.id, anchor.id),
+        );
+        for observed in &fact.slots {
+            let classified = anchor.is_some_and(|anchor| {
+                observed.selector.map_or_else(
+                    || {
+                        anchor.slots.iter().any(|slot| {
+                            slot.origin == PackOrigin::Observed
+                                && slot.offset == observed.offset
+                                && slot.width == observed.width
+                                && slot.status != ReviewStatus::Unreviewed
+                        })
+                    },
+                    |selector| {
+                        let candidates = indexed_candidate_offsets(
+                            anchor,
+                            observed.offset,
+                            observed.width,
+                            selector,
+                        );
+                        !candidates.is_empty()
+                            && candidates.into_iter().all(|offset| {
+                                anchor.slots.iter().any(|slot| {
+                                    slot.offset == offset
+                                        && slot.width == observed.width
+                                        && slot.status != ReviewStatus::Unreviewed
+                                })
+                            })
+                    },
+                )
+            });
+            if classified {
+                continue;
+            }
+            let call_sites = facts
+                .calls
+                .iter()
+                .filter(|call| {
+                    let Some((call_slot, container)) = call.loads.split_last() else {
+                        return false;
+                    };
+                    call.artifact == fact.artifact
+                        && call.root == fact.root
+                        && container == fact.container_path
+                        && call_slot.offset == observed.offset
+                        && call_slot.width == observed.width
+                        && call_slot.selector == observed.selector
+                })
+                .map(|call| call.site)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>();
+            let selector = observed
+                .selector
+                .map(super::InterfaceFactSelector::canonical);
+            observations.push(UnreviewedInterfaceObservation {
+                id: format!(
+                    "{contract}::fact-{fact_index}@{:+#x}/{}{}",
+                    observed.offset,
+                    observed.width,
+                    selector
+                        .as_deref()
+                        .map_or_else(String::new, |selector| format!("[{selector}]")),
+                ),
+                contract: contract.clone(),
+                source: source.clone(),
+                offset: observed.offset,
+                width: observed.width,
+                selector,
+                functions: observed.functions.iter().cloned().collect(),
+                call_sites,
+            });
+        }
+    }
+    observations.sort_by(|left, right| {
+        (&left.source, &left.contract, left.offset, &left.selector).cmp(&(
+            &right.source,
+            &right.contract,
+            right.offset,
+            &right.selector,
+        ))
+    });
+    observations
 }
 
 fn build_bindings(

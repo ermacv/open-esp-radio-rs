@@ -341,6 +341,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
         &model,
         &paths.review_ir_reports,
         &paths.owned_ranges,
+        &paths.non_operational_functions,
         &paths.facts,
         &paths.model,
     )?;

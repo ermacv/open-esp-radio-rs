@@ -100,6 +100,49 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
 }
 
 #[test]
+fn decode_blockers_only_include_cfg_reachable_instructions() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "entry".to_owned(),
+        address: 0x1000,
+        bytes: [
+            0x0020_29f3_u32.to_le_bytes().as_slice(),
+            [0x67, 0x80, 0x00, 0x00].as_slice(),
+            [0x00, 0x00, 0x00, 0x00].as_slice(),
+        ]
+        .concat(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let resolver = ReferenceResolver {
+        symbols: vec![symbol.clone()],
+        symbols_by_address: BTreeMap::from([(symbol.address as u32, symbol.clone())]),
+        symbol_ids: BTreeMap::from([(
+            (None, symbol.name.clone(), symbol.address),
+            symbol.address as u32,
+        )]),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: BTreeMap::new(),
+        pointer_context: direct::StructuralPointerContext::default(),
+    };
+
+    let map = MmioMap {
+        registers: Vec::new(),
+        regions: Vec::new(),
+    };
+    let report = build_linked_ir_for_source(&resolver, "", &map, "primary", false, false, 1);
+
+    assert_eq!(report.functions.len(), 1);
+    assert_eq!(report.functions[0].decode_blockers.len(), 1);
+    assert_eq!(report.functions[0].decode_blockers[0].address, 0x1000);
+    assert_eq!(
+        report.functions[0].decode_blockers[0].class,
+        "floating-point-csr"
+    );
+}
+
+#[test]
 fn project_call_linking_requires_one_exported_definition() {
     let unresolved = || LinkedCall {
         kind: "unresolved",

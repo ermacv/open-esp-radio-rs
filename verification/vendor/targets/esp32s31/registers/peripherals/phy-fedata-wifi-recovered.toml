@@ -8,6 +8,15 @@ baseAddress = 0x20100C00
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "CFO_CONFIG_WORD_0_OPAQUE"
+description = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "FREQUENCY_CORRECTION_WORD_0_OPAQUE"
 description = "Complete phy_freq_correct read-modify-writes this word; individual fields remain unnamed."
 addressOffset = 0x18
@@ -30,6 +39,10 @@ sources = [
     "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
 ]
 confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_FEDATA_WIFI_RECOVERED.CFO_CONFIG_WORD_0_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_FEDATA_WIFI_RECOVERED.FREQUENCY_CORRECTION_WORD_0_OPAQUE"

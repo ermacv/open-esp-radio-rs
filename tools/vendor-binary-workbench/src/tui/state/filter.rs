@@ -72,6 +72,10 @@ impl BrowserState {
                         .decode_blocker_classes
                         .iter()
                         .any(|value| contains(value))
+                    || function
+                        .decode_blocker_operations
+                        .iter()
+                        .any(|value| contains(value))
             }),
             Section::Registers => {
                 self.snapshot
@@ -90,6 +94,8 @@ impl BrowserState {
                 .is_some_and(|slot| {
                     contains(&slot.id)
                         || contains(&slot.name)
+                        || contains(slot.review_state.label())
+                        || slot.selector.as_deref().is_some_and(&contains)
                         || slot.semantic.as_deref().is_some_and(&contains)
                         || slot.functions.iter().any(|value| contains(value))
                 }),

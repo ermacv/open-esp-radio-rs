@@ -11,7 +11,10 @@ mod sections;
 mod symbols;
 
 pub use decode::{
-    andi_immediate, decode_symbol, decode_symbol_for_analysis, relocated_call_is_tail,
+    FloatingDataInstruction, FloatingDataOperation, FloatingMemoryAccess,
+    FloatingMemoryInstruction, andi_immediate, decode_floating_data_instruction,
+    decode_floating_memory_instruction, decode_symbol, decode_symbol_for_analysis,
+    reachable_unsupported_instructions, relocated_call_is_tail, unsupported_instruction_mnemonic,
 };
 pub use inventory::inspect_artifact;
 pub use model::{

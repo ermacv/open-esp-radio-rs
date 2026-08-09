@@ -27,7 +27,7 @@ use alu::apply_alu_instruction;
 use calls::{StructuralCallControl, apply_call_instruction, apply_relocated_call};
 pub use context::{StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls};
 use memory::*;
-use memory_access::apply_memory_instruction;
+use memory_access::{apply_floating_memory_instruction, apply_memory_instruction};
 use poll::*;
 pub use stack::SymbolicStack;
 use stack::structural_call_arguments;
@@ -97,6 +97,72 @@ fn structural_set(values: &mut [SymbolicValue; 32], register: Reg, value: Symbol
     if register != Reg::ZERO {
         values[usize::from(register.0)] = value;
     }
+}
+
+fn apply_floating_data_instruction(
+    blocker: artifact::UnsupportedInstruction,
+    state: &mut StructuralTraceState,
+) -> bool {
+    let Some(instruction) = artifact::decode_floating_data_instruction(blocker) else {
+        return false;
+    };
+    match instruction.operation {
+        artifact::FloatingDataOperation::MoveFromInteger => {
+            state.floating_values[usize::from(instruction.destination)] =
+                state.values[usize::from(instruction.source1)].clone();
+        }
+        artifact::FloatingDataOperation::MoveToInteger => {
+            if instruction.destination != 0 {
+                state.values[usize::from(instruction.destination)] =
+                    state.floating_values[usize::from(instruction.source1)].clone();
+            }
+        }
+        operation => {
+            if matches!(
+                operation,
+                artifact::FloatingDataOperation::CompareLessOrEqual
+                    | artifact::FloatingDataOperation::CompareLess
+                    | artifact::FloatingDataOperation::CompareEqual
+            ) {
+                let left = state.floating_values[usize::from(instruction.source1)].as_constant();
+                let right = state.floating_values[usize::from(instruction.source2)].as_constant();
+                let value = left
+                    .zip(right)
+                    .map(|(left, right)| {
+                        let left = f32::from_bits(left);
+                        let right = f32::from_bits(right);
+                        u32::from(match operation {
+                            artifact::FloatingDataOperation::CompareLessOrEqual => left <= right,
+                            artifact::FloatingDataOperation::CompareLess => left < right,
+                            artifact::FloatingDataOperation::CompareEqual => left == right,
+                            _ => unreachable!(),
+                        })
+                    })
+                    .map_or(SymbolicValue::Unknown, SymbolicValue::Constant);
+                structural_set(&mut state.values, Reg(instruction.destination), value);
+                return true;
+            }
+            let magnitude = state.floating_values[usize::from(instruction.source1)]
+                .clone()
+                .and(0x7fff_ffff);
+            let source_sign = state.floating_values[usize::from(instruction.source2)]
+                .clone()
+                .and(0x8000_0000);
+            let sign = match operation {
+                artifact::FloatingDataOperation::SignCopy => source_sign,
+                artifact::FloatingDataOperation::SignNegate => source_sign.xor(0x8000_0000),
+                artifact::FloatingDataOperation::SignXor => state.floating_values
+                    [usize::from(instruction.source1)]
+                .clone()
+                .and(0x8000_0000)
+                .symbolic_bitxor(source_sign),
+                _ => unreachable!(),
+            };
+            state.floating_values[usize::from(instruction.destination)] =
+                magnitude.symbolic_bitor(sign);
+        }
+    }
+    true
 }
 
 pub fn trace_binary_symbol(
@@ -215,9 +281,11 @@ pub fn trace_binary_symbol_with_branches_bounded(
                 unreachable!();
             };
             state.blockers.push(blocker.to_string());
+            apply_floating_memory_instruction(blocker, symbol, pointer_context, svd, &mut state);
             if let Some(destination) = blocker.integer_destination {
                 state.values[usize::from(destination)] = SymbolicValue::Unknown;
             }
+            apply_floating_data_instruction(blocker, &mut state);
             state.values[0] = SymbolicValue::Constant(0);
             if blocker.linear_control_flow {
                 instruction_index += 1;
@@ -238,6 +306,7 @@ pub fn trace_binary_symbol_with_branches_bounded(
         ) {
             StructuralCallControl::NotCall => {}
             StructuralCallControl::Advance(count) => {
+                state.invalidate_floating_call_clobbers();
                 state.values[0] = SymbolicValue::Constant(0);
                 instruction_index += count;
                 continue;
@@ -262,6 +331,7 @@ pub fn trace_binary_symbol_with_branches_bounded(
         match apply_call_instruction(decoded, symbol, pointer_context, &mut state) {
             StructuralCallControl::NotCall => {}
             StructuralCallControl::Advance(count) => {
+                state.invalidate_floating_call_clobbers();
                 state.values[0] = SymbolicValue::Constant(0);
                 instruction_index += count;
                 continue;

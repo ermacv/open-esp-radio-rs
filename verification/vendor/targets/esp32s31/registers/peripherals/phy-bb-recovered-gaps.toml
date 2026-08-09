@@ -8,6 +8,20 @@ baseAddress = 0x20107C00
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "SPUR_COEFFICIENT_CONTROL_0_OPAQUE"
+description = "Complete phy_spur_coef_cfg clears bit 13 through two read-modify-write paths; all hardware field names remain unknown."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BIT_13_CONTROL_UNKNOWN"
+bitOffset = 13
+bitWidth = 1
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "CCA_COUNTER_CONTROL_OPAQUE"
 description = "Complete phy_set_cca_cnt read-modify-writes this word; individual fields remain unnamed."
 addressOffset = 0x58
@@ -30,6 +44,29 @@ description = "Complete phy_get_cca_cnt reads this word; hardware access semanti
 addressOffset = 0x60
 size = 32
 
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CFO_CONFIG_WORD_4_OPAQUE"
+description = "Complete phy_bb_cfo_cfg reads and replaces this word; individual hardware fields remain unnamed."
+addressOffset = 0xE8
+size = 32
+access = "read-write"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "CFO_CONFIG_WORD_5_OPAQUE"
+description = "Complete phy_bb_cfo_cfg replaces this word and independently read-modify-writes bit 12; the hardware field meaning remains unknown."
+addressOffset = 0xEC
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "BIT_12_CONTROL_UNKNOWN"
+bitOffset = 12
+bitWidth = 1
+
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS"
 sources = [
@@ -37,6 +74,10 @@ sources = [
     "BLOB_LIBPHY_PHY_DEBUG_REG_CHECK",
 ]
 confidence = "block-exact-register-semantics-opaque"
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.SPUR_COEFFICIENT_CONTROL_0_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
 
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_CONTROL_OPAQUE"
@@ -49,3 +90,11 @@ sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
 [[review]]
 entity = "PHY_BB_RECOVERED_GAPS.CCA_COUNTER_STATUS_1_OPAQUE"
 sources = ["ROM_REV0_PHY_WORKBENCH_GAPS"]
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_4_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]
+
+[[review]]
+entity = "PHY_BB_RECOVERED_GAPS.CFO_CONFIG_WORD_5_OPAQUE"
+sources = ["ROM_REV0_PHY_CFO_SPUR_CONTROLS"]

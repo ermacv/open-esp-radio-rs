@@ -90,6 +90,30 @@ name = "VALUE"
 bitOffset = 0
 bitWidth = 32
 
+[[peripherals.registers]]
+
+[peripherals.registers.register]
+name = "TSF_DEVIATION_CONTROL"
+description = "Complete ROM leaves independently replace the TSF deviation value and set two synchronization controls; omitted bits remain semantically unknown."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "DEVIATION"
+bitOffset = 0
+bitWidth = 16
+
+[[peripherals.registers.register.fields]]
+name = "RX_BEACON_ABORT_SYNC_ENABLE"
+bitOffset = 16
+bitWidth = 1
+
+[[peripherals.registers.register.fields]]
+name = "DEVIATION_SYNC_ENABLE"
+bitOffset = 19
+bitWidth = 1
+
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD"
 sources = [
@@ -134,4 +158,24 @@ confidence = "instruction-exact"
 [[review]]
 entity = "WIFI_MAC_STA_TSF_LOAD.SNAPSHOT_HIGH"
 sources = ["ROM_REV0_HAL_GET_STA_TSF"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.RX_BEACON_ABORT_SYNC_ENABLE"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_STA_TSF_LOAD.TSF_DEVIATION_CONTROL.DEVIATION_SYNC_ENABLE"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
 confidence = "instruction-exact"

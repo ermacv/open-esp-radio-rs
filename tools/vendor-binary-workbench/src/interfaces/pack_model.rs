@@ -177,6 +177,21 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) calls: Vec<ResolvedInterfaceCall>,
 }
 
+/// Discovered slot evidence that has not yet been classified by a reviewed
+/// slot claim. It is deliberately descriptive only: no ABI, semantic or
+/// executable behavior can be attached until the pack is reviewed.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct UnreviewedInterfaceObservation {
+    pub(crate) id: String,
+    pub(crate) contract: String,
+    pub(crate) source: String,
+    pub(crate) offset: i32,
+    pub(crate) width: u8,
+    pub(crate) selector: Option<String>,
+    pub(crate) functions: Vec<String>,
+    pub(crate) call_sites: Vec<u32>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedSemanticAnnotation {
     pub(crate) operation: String,
@@ -235,6 +250,7 @@ pub(crate) struct InterfaceWorkspace {
     summary: InterfaceWorkspaceSummary,
     contracts: Vec<ResolvedInterfaceContract>,
     bindings: Vec<ResolvedInterfaceSlot>,
+    unreviewed_observations: Vec<UnreviewedInterfaceObservation>,
 }
 
 impl InterfaceWorkspace {
@@ -248,7 +264,7 @@ impl InterfaceWorkspace {
         let facts = InterfaceFacts::load(facts_path)?;
         let catalogs = SemanticCatalogs::load(semantic_paths)?;
         let pack = InterfacePack::load(pack_path)?;
-        let (summary, contracts, bindings) = pack
+        let (summary, contracts, bindings, unreviewed_observations) = pack
             .value
             .validate(&facts, &catalogs, calling_convention, execution_contracts)
             .map_err(|error| {
@@ -264,6 +280,7 @@ impl InterfaceWorkspace {
             summary,
             contracts,
             bindings,
+            unreviewed_observations,
         })
     }
 
@@ -273,6 +290,10 @@ impl InterfaceWorkspace {
 
     pub(crate) fn bindings(&self) -> &[ResolvedInterfaceSlot] {
         &self.bindings
+    }
+
+    pub(crate) fn unreviewed_observations(&self) -> &[UnreviewedInterfaceObservation] {
+        &self.unreviewed_observations
     }
 
     pub(crate) fn contracts(&self) -> &[ResolvedInterfaceContract] {

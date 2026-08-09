@@ -58,6 +58,7 @@ owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/reports/register-review.md"
+non-operational-functions = ["archive:register_dump"]
 linked-ir = ["generated/findings/vendor.ir.json"]
 
 [registers.svd]
@@ -182,6 +183,11 @@ The required `owned-ranges` list names memory-map MMIO regions that belong in
 that published model. Facts from other MMIO regions remain inspectable but are
 classified outside the publication scope instead of blocking an unrelated
 SVD/PAC.
+Diagnostic-only readers may be named by
+`[registers.review].non-operational-functions`. Their exclusive observations
+remain visible with a distinct `non-operational-only` state but do not create
+publication debt; an address also used by any other function is still
+operational and must be reviewed.
 `registers init-model` bootstraps it from discovery ranges,
 `registers import-svd` migrates an existing catalog, and `registers review`
 joins generated functions/write patterns to reviewed model identities without

@@ -34,6 +34,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::RegisterGenerateBindings(_) => "PAC binding generation",
         Command::SymbolInventory(_) => "Symbol inventory",
         Command::InterfaceDiscover(_) => "Interface discovery",
+        Command::InterfaceSyncPack(_) => "Interface pack synchronization",
         Command::InterfaceValidate(_) => "Interface validation",
         Command::AuditImageTargets(_) => "Linked-image audit",
         Command::DiscoverMmio(_) => "MMIO discovery",

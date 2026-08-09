@@ -40,7 +40,11 @@ pseudo-rust = "generated/reports/archive-all.pseudo.rs"
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
-owned-ranges = ["modem-radio-core"]
+owned-ranges = [
+    "modem-radio-core-low",
+    "modem-radio-core-mid",
+    "modem-radio-core-high",
+]
 
 [registers.review]
 output = "generated/reports/register-review.md"
@@ -48,6 +52,11 @@ linked-ir = [
     "generated/findings/rom-all.ir.json",
     "generated/findings/archive-all.ir.json",
 ]
+# `phy_reg_check` is a diagnostic register dump: it reads every word in broad
+# MMIO windows and prints the values without using them to control hardware.
+# Preserve those raw observations, but do not make diagnostic-only addresses
+# part of the release register-model review debt.
+non-operational-functions = ["archive:phy_reg_check"]
 
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"

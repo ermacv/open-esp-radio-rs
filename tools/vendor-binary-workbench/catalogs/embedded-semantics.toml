@@ -64,3 +64,138 @@ argument-roles = ["iterations"]
 return-role = "none"
 effects = ["time.busy-wait"]
 replacement = "async.timer-after-calibrated"
+
+[[operations]]
+id = "target.is-real-chip"
+domain = "target"
+summary = "Report whether execution is running on the physical target rather than an emulator"
+argument-roles = []
+return-role = "capability"
+effects = ["target.capability-query"]
+replacement = "target.compile-time-capability"
+
+[[operations]]
+id = "critical-section.enter"
+domain = "critical-section"
+summary = "Enter an interrupt critical section and return the state required to restore it"
+argument-roles = ["interrupt-mux"]
+return-role = "restore-state"
+effects = ["scheduler.interrupt-mask"]
+replacement = "critical-section.guard-enter"
+
+[[operations]]
+id = "critical-section.exit"
+domain = "critical-section"
+summary = "Leave an interrupt critical section using a previously returned restore state"
+argument-roles = ["interrupt-mux", "restore-state"]
+return-role = "none"
+effects = ["scheduler.interrupt-restore"]
+replacement = "critical-section.guard-exit"
+
+[[operations]]
+id = "random.next-u32"
+domain = "random"
+summary = "Obtain the next platform-provided 32-bit random value"
+argument-roles = []
+return-role = "value"
+effects = ["random.consume"]
+replacement = "random.provider-next-u32"
+
+[[operations]]
+id = "clock.slow-calibration.get"
+domain = "clock"
+summary = "Read the platform slow-clock calibration value"
+argument-roles = []
+return-role = "calibration"
+effects = ["clock.calibration-query"]
+replacement = "clock.slow-calibration-provider"
+
+[[operations]]
+id = "coexistence.pti.query"
+domain = "coexistence"
+summary = "Query coexistence priority information and write it to caller-owned storage"
+argument-roles = ["priority-kind", "priority-out"]
+return-role = "status"
+effects = ["coexistence.policy-query", "memory.output-write"]
+replacement = "coexistence.typed-policy-provider"
+
+[[operations]]
+id = "rtos.event.post"
+domain = "rtos"
+summary = "Post a typed payload to the platform event loop"
+argument-roles = ["event-base", "event-id", "payload", "payload-size", "wait-duration"]
+return-role = "status"
+effects = ["scheduler.event-post"]
+replacement = "async.typed-event-dispatch"
+
+[[operations]]
+id = "timer.arm-micros"
+domain = "timer"
+summary = "Arm a platform timer with a microsecond duration and optional repetition"
+argument-roles = ["timer", "duration-micros", "repeat"]
+return-role = "none"
+effects = ["time.timer-arm"]
+replacement = "async.timer-registration"
+
+[[operations]]
+id = "storage.nvs.open"
+domain = "storage"
+summary = "Open a named non-volatile storage namespace and return a handle"
+argument-roles = ["namespace", "open-mode", "handle-out"]
+return-role = "status"
+effects = ["storage.namespace-open", "memory.output-write"]
+replacement = "storage.typed-provider-open"
+
+[[operations]]
+id = "storage.nvs.close"
+domain = "storage"
+summary = "Close a non-volatile storage handle"
+argument-roles = ["handle"]
+return-role = "none"
+effects = ["storage.namespace-close"]
+replacement = "storage.typed-provider-close"
+
+[[operations]]
+id = "storage.nvs.commit"
+domain = "storage"
+summary = "Commit pending writes made through a non-volatile storage handle"
+argument-roles = ["handle"]
+return-role = "status"
+effects = ["storage.commit"]
+replacement = "storage.typed-provider-commit"
+
+[[operations]]
+id = "storage.nvs.blob.write"
+domain = "storage"
+summary = "Store a named byte sequence through a non-volatile storage handle"
+argument-roles = ["handle", "key", "buffer", "length"]
+return-role = "status"
+effects = ["storage.write"]
+replacement = "storage.async-write"
+
+[[operations]]
+id = "storage.nvs.blob.read"
+domain = "storage"
+summary = "Read a named byte sequence and its resulting length into caller-owned storage"
+argument-roles = ["handle", "key", "buffer-out", "length-inout"]
+return-role = "status"
+effects = ["storage.read", "memory.output-write"]
+replacement = "storage.async-read"
+
+[[operations]]
+id = "storage.nvs.key.erase"
+domain = "storage"
+summary = "Erase a named value through a non-volatile storage handle"
+argument-roles = ["handle", "key"]
+return-role = "status"
+effects = ["storage.erase"]
+replacement = "storage.async-erase"
+
+[[operations]]
+id = "logging.write-format"
+domain = "logging"
+summary = "Emit a formatted diagnostic record using an explicit argument-list object"
+argument-roles = ["level", "tag", "format", "argument-list"]
+return-role = "none"
+effects = ["diagnostic.emit"]
+replacement = "logging.formatted-record"

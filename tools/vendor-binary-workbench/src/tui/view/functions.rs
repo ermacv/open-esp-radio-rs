@@ -107,8 +107,9 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 )));
                 lines.extend(detail.decode_blockers.iter().map(|blocker| {
                     Line::from(format!(
-                        "- {:#010x}: {} width={} raw={:#010x} flow={}",
+                        "- {:#010x}: {} ({}) width={} raw={:#010x} flow={}",
                         blocker.address,
+                        blocker.operation,
                         blocker.class,
                         blocker.width,
                         blocker.raw,

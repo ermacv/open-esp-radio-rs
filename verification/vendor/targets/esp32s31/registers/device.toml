@@ -78,7 +78,7 @@ fragments = [
 
 [device]
 name = "ESP32S31_RADIO"
-version = "3.51"
+version = "3.52"
 description = """
 Recovered ESP32-S31 modem/radio core plus the minimum LP-system and
     LP-peripheral dependencies not yet delegated to the official platform PAC.

@@ -12,6 +12,7 @@ pub(super) struct RegisterReviewDocument<'a> {
     pub(super) observed: usize,
     pub(super) reviewed: usize,
     pub(super) ignored: usize,
+    pub(super) non_operational: usize,
     pub(super) unreviewed: usize,
     pub(super) model_only: usize,
     pub(super) draft_field_partitions: usize,
@@ -50,6 +51,7 @@ pub(super) struct RegisterWorkspaceDocument<'a> {
     pub(super) observed: usize,
     pub(super) reviewed: usize,
     pub(super) ignored: usize,
+    pub(super) non_operational: usize,
     pub(super) manual: usize,
     pub(super) unreviewed: usize,
     pub(super) fields: usize,
@@ -110,6 +112,10 @@ pub(super) fn print_review_human(report: &RegisterReviewDocument<'_>) {
                 [
                     "Outside publication scope".into(),
                     report.ignored.to_string()
+                ],
+                [
+                    "Non-operational only".into(),
+                    report.non_operational.to_string(),
                 ],
                 ["Unreviewed registers".into(), report.unreviewed.to_string()],
                 ["Model-only registers".into(), report.model_only.to_string()],
@@ -174,7 +180,8 @@ pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
             [
                 "Observed",
                 "Reviewed",
-                "Ignored",
+                "Outside scope",
+                "Non-operational",
                 "Manual",
                 "Unreviewed",
                 "Fields"
@@ -183,6 +190,7 @@ pub(super) fn print_workspace_human(report: &RegisterWorkspaceDocument<'_>) {
                 report.observed.to_string(),
                 report.reviewed.to_string(),
                 report.ignored.to_string(),
+                report.non_operational.to_string(),
                 report.manual.to_string(),
                 report.unreviewed.to_string(),
                 report.fields.to_string(),

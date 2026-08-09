@@ -131,6 +131,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             let review_output = nested_output_path(table, base, "review", source)?;
             let review_ir_reports =
                 nested_path_array(table, base, "review", "linked-ir", source)?;
+            let non_operational_functions =
+                nested_string_array(table, "review", "non-operational-functions", source)?;
             let svd_output = nested_output_path(table, base, "svd", source)?;
             let pac = table
                 .get("pac")
@@ -207,6 +209,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 ),
                 model: resolve_path(base, &model),
                 owned_ranges,
+                non_operational_functions,
                 review_output,
                 review_ir_reports,
                 svd_output,
@@ -618,6 +621,60 @@ fn nested_path_array(
                 ));
             }
             Ok(path)
+        })
+        .collect()
+}
+
+fn nested_string_array(
+    table: &toml_edit::Table,
+    table_name: &str,
+    key: &str,
+    source: ProjectSource<'_>,
+) -> Result<Vec<String>> {
+    let Some(item) = table.get(table_name) else {
+        return Ok(Vec::new());
+    };
+    let table = item.as_table().ok_or_else(|| {
+        source.item(
+            Some(item),
+            format!("project registers.{table_name} must be a table"),
+        )
+    })?;
+    let Some(item) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    let values = item.as_array().ok_or_else(|| {
+        source.item(
+            Some(item),
+            format!("project registers.{table_name}.{key} must be an array"),
+        )
+    })?;
+    let mut seen = std::collections::BTreeSet::new();
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let span = value.span();
+            let value = value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    source.error(
+                        span.clone(),
+                        format!(
+                            "project registers.{table_name}.{key}[{index}] must be a non-empty string"
+                        ),
+                    )
+                })?;
+            if !seen.insert(value) {
+                return Err(source.error(
+                    span,
+                    format!(
+                        "duplicate project registers.{table_name}.{key} function {value:?}"
+                    ),
+                ));
+            }
+            Ok(value.to_owned())
         })
         .collect()
 }

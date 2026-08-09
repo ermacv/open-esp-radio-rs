@@ -63,6 +63,7 @@ impl ResolutionNeeds {
             | Command::CodeValidate(_)
             | Command::CodeReview(_)
             | Command::InterfaceInitPack(_)
+            | Command::InterfaceSyncPack(_)
             | Command::InterfaceValidate(_)
             | Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)

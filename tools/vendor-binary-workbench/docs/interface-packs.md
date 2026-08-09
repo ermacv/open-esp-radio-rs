@@ -50,6 +50,28 @@ current facts. It includes the artifact SHA-256 emitted by discovery and
 refuses to overwrite an existing pack. `--output PATH` creates a separate
 draft.
 
+After discovery changes, synchronize only the machine-owned unreviewed layer:
+
+```console
+cargo vendor-binary-workbench interfaces sync-pack \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench interfaces sync-pack --check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+```
+
+`sync-pack` adds new observed anchors/slots and removes observations that
+disappeared only when their current pack entries are both
+`origin = "observed"` and `status = "unreviewed"`. It may refresh the digest
+and layout size of an unreviewed observed anchor. Reviewed, ignored and manual
+claims are never rewritten or removed. `--check` performs the same comparison
+without changing the file and fails with the exact repair command when the
+pack is out of date. Synchronization does not assign names, ABI, semantics or
+execution models.
+If a manual entry becomes observable, a protected observed entry disappears,
+or a new slot falls outside a reviewed layout, synchronization stops before
+writing and requires the reviewer to resolve the ownership/layout change.
+
 If one physical artifact was deliberately bound to several logical source
 IDs, initialize from a `interfaces discover --source ID` report. The template
 generator refuses to choose one identity arbitrarily.
@@ -73,7 +95,9 @@ slot or declared anchor remains unreviewed. That policy failure is represented
 as `status = "unreviewed"`, not as a structurally valid result.
 
 Regenerating facts never modifies the pack. Validation reports stale slots,
-stale artifact guards, ambiguous selectors, and new unreviewed observations.
+stale artifact guards, ambiguous selectors, and new unreviewed observations;
+the explicit `sync-pack` command is the only generated-evidence reconciliation
+step.
 
 ## Anchor and layout format
 

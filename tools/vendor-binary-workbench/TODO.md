@@ -45,27 +45,58 @@ that every user must learn.
 - [ ] Implement semantics for the remaining ISA selected by the real target.
   ESP32-S31 declares
   `riscv32imafc`, while the current `rv-asm` boundary only decodes I/M/A/C;
-  the 2026-08-09 inventory found 155 affected interface functions, including
+  the 2026-08-09 inventory found 155 affected ROM function definitions, including
   valid floating-point, CSR and vendor/system instructions.
+- [x] Recover structural memory effects for RV32F `flw`/`fsw`, including all
+  compressed forms used by the ROM. Addresses reuse integer base provenance;
+  loaded bits flow through a separate floating-register state, while the F
+  blocker remains until arithmetic semantics are modeled.
+- [x] Preserve exact bit provenance for `fmv.w.x`, `fmv.x.w` and `fsgnj*`
+  (`fmv.s`/`fabs.s`/`fneg.s` aliases), with ABI caller-saved invalidation at
+  calls. These operations remain visible F blockers but no longer destroy an
+  unrelated integer register or force a later `fsw` value to unknown.
+- [x] Recover `fle.s`, `flt.s` and `feq.s` integer results when both source bit
+  patterns are exact. IEEE NaN comparison behavior is preserved; the reached
+  F instruction remains a blocker because exception flags and full floating
+  execution are not modeled.
+- [x] Continue structural analysis past unresolved returning relocations and
+  indirect `jalr ra` calls as opaque ABI boundaries. Caller-saved integer and
+  floating registers are invalidated, escaped private-stack pointers remain
+  conservative, and an explicit reference blocker prevents proof-quality use;
+  callee-saved context pointers can still expose later memory/MMIO evidence.
 - [x] Preserve unsupported instructions as per-PC fail-closed blockers instead
   of discarding the entire function. F/CSR permit conservative linear
   continuation; system/vendor/invalid instructions stop only their current CFG
   path. All-zero illegal encodings are distinguished as ambiguous
   zero-fill/trap evidence instead of decoder failures. Concrete execution
   remains strict and cannot consume this tolerant structural stream.
+- [x] Restrict linked-IR decode blockers to instructions reachable from the
+  function entry with a lightweight address-only CFG walk. Do not call the
+  provenance-heavy interface analysis from parallel IR workers: that trial
+  reproduced a ~2.9 GiB peak, while the dedicated pass retained the normal
+  ~355 MiB resource envelope.
+- [x] Decode review-only mnemonics for the remaining F/CSR/system encodings so
+  the TUI can distinguish `flw`, `fsw`, comparisons, arithmetic and CSR access
+  instead of showing only a class plus raw word. Mnemonic recognition does not
+  promote the instruction to modeled semantics.
 - [x] Make project IR root selection explicit: `roots = "all"` is the normal
   full-symbol mode and `roots = "symbol-prefix"` requires a non-empty prefix;
   an empty-string convention is not part of project configuration.
-- [ ] Make classified physical MMIO usable without requiring SVD names. SVD or
+- [x] Make classified physical MMIO usable without requiring SVD names. SVD or
   the reviewed register model should enrich an exact address, not decide
-  whether the observed access exists.
+  whether the observed access exists. Concrete execution records unnamed
+  accesses inside a declared MMIO region as ordered effects; comparison keeps
+  their addresses in coverage diagnostics but does not make them incomplete.
 - [ ] Make the generated register inventory a practical review loop: address,
   width, read/write/RMW patterns, bit candidates, callers, evidence and a clear
   path into the editable register model.
-- [ ] Classify diagnostic bulk MMIO reads separately from operational driver
+- [x] Classify diagnostic bulk MMIO reads separately from operational driver
   accesses without hiding them. On ESP32-S31, `phy_reg_check` deliberately
   walks hundreds of consecutive registers for logging; these are real reads,
-  but they should not look equivalent to control-path dependencies.
+  but they should not look equivalent to control-path dependencies. The
+  reviewed non-operational function policy now classifies an address only when
+  every observed reader/writer is non-operational; mixed-use addresses remain
+  operational and stale function identities fail validation.
 - [x] Separate project-owned register ranges from external MMIO observations;
   external system-register evidence remains visible but cannot block the
   radio-only SVD/PAC publication gate.
@@ -100,6 +131,14 @@ that every user must learn.
   retain lifecycle evidence for slot and pointer installation.
 - [x] Represent bounded indexed table calls (`base + index * stride`) through
   reviewed index domains without guessing a single fixed slot.
+- [ ] Make resolved reviewed interface contracts the structural ABI registry.
+  Every reviewed slot must become a named opaque external call in linked IR;
+  only slots with an explicit compiled call model become executable semantic
+  actions. Remove table layout, version, magic and ordinary ABI-slot identity
+  from compiled harnesses once the backend consumes this registry. The real
+  ESP32-S31 Wi-Fi OSI v9 pack currently resolves 158 calls, while direct
+  pseudo-IR still reports reviewed non-modeled slots as
+  `unregistered-external-abi-slot`.
 - [ ] Treat a linked ELF as authoritative link selection and archives as source
   inventory; add origin provenance instead of implementing a linker.
 - [x] Add pluggable peripheral execution models for W1C, read-to-clear,
@@ -133,6 +172,10 @@ that every user must learn.
 - [x] Apply a matching `source-companion:ID` to leaf IR export when its resolved
   run spec contains exactly one primary source; never attach source companions
   ambiguously to a multi-primary analysis.
+- [x] Add explicit `interfaces sync-pack [--check]` reconciliation. It updates
+  only unreviewed observed anchors/slots and preserves every reviewed, ignored
+  or manual claim; discovery and `project analyze` remain non-mutating with
+  respect to human-owned packs.
 - [ ] Decide whether large reviewed function/interface packs need composable
   fragments by source or subsystem. Split only with stable identity, validation
   across fragments and one project-level view.
@@ -199,10 +242,18 @@ The isolated `rom-all` profile takes 6.61 s / 269,252 KiB serial and 4.51 s /
 all runs. The first `workbench` profile compilation is an explicit one-time
 build cost; subsequent source changes remain incremental.
 
+After CFG-reachable blocker filtering, floating-memory provenance and opaque
+returning-call continuation, the same optimized `--jobs 4` check completed in
+5.30 s at 435,624 KiB on 2026-08-09. This is the current functional baseline;
+Cargo compilation remains excluded.
+
 ROM IR contains 1,935 roots, 492 MMIO identities and 416 complete functions;
-schema 37 inventories 945 unsupported instruction sites across exactly 155
-functions. Of those sites, 464 are all-zero illegal encodings now separated as
-`zero-fill-or-illegal-trap`; no site remains in the generic `invalid` class.
+schema 37 inventories 593 CFG-reachable unsupported instruction sites across
+exactly 155 functions. Of those sites, 116 are all-zero illegal encodings now
+separated as `zero-fill-or-illegal-trap`; no site remains in the generic
+`invalid` class. A whole-symbol scan found 945 unsupported byte sequences, but
+352 occur after a return or another path terminator and are intentionally not
+presented as function blockers.
 The linked archive image contains 171 roots, 106 MMIO identities, 66 complete
 functions and no decode blockers. Interface schema 5 retains 593 reached
 blocker sites across all three scanned containers, including 116 zero/trap

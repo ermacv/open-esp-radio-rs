@@ -140,6 +140,20 @@ bitWidth = 16
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "TBTT_RF_CONTROL_WAIT_CYCLES"
+description = "Complete tsf_hal_set_tbtt_rf_ctrl_wait_cycles replaces the low twenty-four bits; units and hardware transition behavior remain unknown."
+addressOffset = 0x14
+size = 32
+access = "read-write"
+
+[[peripherals.registers.register.fields]]
+name = "WAIT_CYCLES"
+bitOffset = 0
+bitWidth = 24
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "RX_BEACON_TIME_LOW"
 description = "Complete hal_set_rx_beacon_time and pwr_hal_set_mac_modem_beacon_miss_timeout independently replace the same low sixteen bits. The mode-dependent hardware interpretation is not inferred."
 addressOffset = 0x24
@@ -337,6 +351,11 @@ confidence = "instruction-exact-semantics-unknown"
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.STA_LIGHT_SLEEP_WAKE_AHEAD"
 sources = ["BLOB_LIBPP_HAL_TSF_RUNTIME"]
 confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_RTC_TIMER_UPDATE.TBTT_RF_CONTROL_WAIT_CYCLES"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
 
 [[review]]
 entity = "WIFI_MAC_RTC_TIMER_UPDATE.RX_BEACON_TIME_LOW"

@@ -603,3 +603,100 @@ fn unresolved_call_relocation_fails_closed() {
             .any(|blocker| blocker.contains("unresolved-call-relocation"))
     );
 }
+
+#[test]
+fn unresolved_returning_relocation_continues_with_abi_clobbers() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "unresolved_returning_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0x17, 0x03, 0x00, 0x00, // auipc t1, 0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x23, 0x22, 0xb4, 0x00, // sw a1, 4(s0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let relocations = BTreeMap::from([(
+        StructuralCallSite::new(&parent, 0x1004),
+        ("missing_child".to_owned(), None),
+    )]);
+
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &relocations,
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("unresolved-call-relocation"))
+    );
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address,
+        value,
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!("expected the post-call context write");
+    };
+    assert!(address.canonical().contains("arg0"));
+    assert_eq!(value, &Some(SymbolicValue::Unknown));
+}
+
+#[test]
+fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "unresolved_indirect_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x23, 0x22, 0xb4, 0x00, // sw a1, 4(s0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &parent,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("unresolved-indirect-call"))
+    );
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address,
+        value,
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!("expected the post-call context write");
+    };
+    assert!(address.canonical().contains("arg0"));
+    assert_eq!(value, &Some(SymbolicValue::Unknown));
+}

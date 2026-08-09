@@ -486,6 +486,7 @@ mod tests {
                 observed: 0,
                 reviewed: 0,
                 ignored: 0,
+                non_operational: 0,
                 manual: 0,
                 unreviewed: 0,
                 fields: 0,
@@ -559,6 +560,7 @@ mod tests {
             blockers: Vec::new(),
             decode_blockers: 1,
             decode_blocker_classes: vec!["zero-fill-or-illegal-trap".to_owned()],
+            decode_blocker_operations: vec!["illegal-zero".to_owned()],
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 0,
@@ -575,6 +577,7 @@ mod tests {
                     width: 2,
                     raw: 0,
                     class: "zero-fill-or-illegal-trap".to_owned(),
+                    operation: "illegal-zero".to_owned(),
                     linear_control_flow: false,
                 }],
                 scenario_suggestions: vec![ScenarioSuggestionSummary {

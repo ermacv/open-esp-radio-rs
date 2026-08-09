@@ -63,6 +63,18 @@ fn structural_finish_call_with_result(
     structural_set(values, Reg::A0, result);
 }
 
+fn structural_prepare_opaque_call(state: &mut StructuralTraceState, return_address: u32) {
+    let arguments = structural_call_arguments(
+        &state.values,
+        &state.stack,
+        state.private_stack_may_be_modified_by_call,
+    );
+    state.private_stack_may_be_modified_by_call |= arguments
+        .iter()
+        .any(|argument| argument.private_stack_offset().is_some());
+    structural_finish_call_with_result(&mut state.values, return_address, SymbolicValue::Unknown);
+}
+
 pub(super) fn apply_relocated_call(
     decoded: artifact::DecodedInstruction,
     next_instruction: Option<artifact::DecodedInstruction>,
@@ -175,6 +187,10 @@ pub(super) fn apply_relocated_call(
         state
             .reference_blockers
             .push(format!("unresolved-call-relocation at {pc:#x}: {name}"));
+        if dest == Reg::RA {
+            structural_prepare_opaque_call(state, (pc as u32).wrapping_add(8));
+            return StructuralCallControl::Advance(2);
+        }
         return StructuralCallControl::Stop;
     };
     let arguments = structural_call_arguments(
@@ -438,11 +454,23 @@ pub(super) fn apply_call_instruction(
             state.return_value = state.values[usize::from(Reg::A0.0)].clone();
             StructuralCallControl::Stop
         }
-        Inst::Jalr { .. } => {
+        Inst::Jalr { offset, dest, .. } => {
             state
                 .blockers
                 .push(format!("call/jump instruction at {pc:#x}: {instruction}"));
-            StructuralCallControl::Advance(1)
+            if dest == Reg::RA {
+                state.reference_blockers.push(format!(
+                    "unresolved-indirect-call at {pc:#x}: {instruction}"
+                ));
+                structural_prepare_opaque_call(state, (pc as u32).wrapping_add(u32::from(width)));
+                StructuralCallControl::Advance(1)
+            } else {
+                state.reference_blockers.push(format!(
+                    "unresolved-indirect-control-flow at {pc:#x}: {instruction}; offset={:+#x}",
+                    offset.as_i32(),
+                ));
+                StructuralCallControl::Stop
+            }
         }
         _ => StructuralCallControl::NotCall,
     }

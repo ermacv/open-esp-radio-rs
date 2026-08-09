@@ -297,6 +297,7 @@ leaf_commands!(SymbolCommand {
 leaf_commands!(InterfaceCommand {
     Discover(InterfaceDiscoverArgs) => Command::InterfaceDiscover, InterfaceDiscover,
     InitPack(OutputArgs) => Command::InterfaceInitPack, Output,
+    SyncPack(CheckArgs) => Command::InterfaceSyncPack, Check,
     Validate(ValidationArgs) => Command::InterfaceValidate, Validation,
 });
 
@@ -415,6 +416,7 @@ pub(crate) enum Command {
     SymbolInventory(SymbolInventoryArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
+    InterfaceSyncPack(CheckArgs),
     InterfaceValidate(ValidationArgs),
     RegisterInitModel(RegisterModelArgs),
     RegisterImportSvd(RegisterImportArgs),
@@ -579,6 +581,20 @@ mod tests {
                 ParsedInvocation::parse(["project".to_owned(), removed.to_owned()]).unwrap_err();
             assert!(error.to_string().contains("unrecognized subcommand"));
         }
+    }
+
+    #[test]
+    fn interface_pack_sync_has_an_explicit_non_mutating_check_mode() {
+        let invocation = ParsedInvocation::parse([
+            "interfaces".to_owned(),
+            "sync-pack".to_owned(),
+            "--check".to_owned(),
+        ])
+        .unwrap();
+        let Command::InterfaceSyncPack(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert!(arguments.check);
     }
 
     #[test]

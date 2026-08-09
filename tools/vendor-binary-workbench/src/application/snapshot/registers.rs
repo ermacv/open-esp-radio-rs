@@ -41,6 +41,7 @@ pub(super) fn collect(
         observed: summary.map_or(0, |summary| summary.observed),
         reviewed: summary.map_or(0, |summary| summary.reviewed),
         ignored: summary.map_or(0, |summary| summary.ignored),
+        non_operational: summary.map_or(0, |summary| summary.non_operational),
         manual: summary.map_or(0, |summary| summary.manual),
         unreviewed: summary.map_or(0, |summary| summary.unreviewed),
         fields: summary.map_or(0, |summary| summary.fields),
@@ -153,15 +154,25 @@ pub(super) fn detail(
             })
         })
     });
+    let non_operational_only = fact.is_some_and(|fact| {
+        let configured = paths
+            .non_operational_functions
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        crate::registers::fact_is_non_operational(fact, &configured)
+    });
     let review_status = match (
         outside_publication_scope,
         identity.is_some(),
+        non_operational_only,
         fact.is_some(),
     ) {
-        (true, _, _) => RegisterReviewState::Ignored,
-        (false, true, true) => RegisterReviewState::Reviewed,
-        (false, true, false) => RegisterReviewState::Manual,
-        (false, false, _) => RegisterReviewState::Unreviewed,
+        (true, _, _, _) => RegisterReviewState::Ignored,
+        (false, true, _, true) => RegisterReviewState::Reviewed,
+        (false, true, _, false) => RegisterReviewState::Manual,
+        (false, false, true, true) => RegisterReviewState::NonOperational,
+        (false, false, _, _) => RegisterReviewState::Unreviewed,
     };
 
     let mut functions = BTreeSet::new();

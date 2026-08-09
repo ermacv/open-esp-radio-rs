@@ -73,6 +73,19 @@ pub(super) fn collect(
                     .collect::<std::collections::BTreeSet<_>>()
                     .into_iter()
                     .collect(),
+                decode_blocker_operations: fact
+                    .decode_blockers
+                    .iter()
+                    .map(|blocker| {
+                        crate::artifact::unsupported_instruction_mnemonic(
+                            blocker.width,
+                            blocker.raw,
+                        )
+                        .to_owned()
+                    })
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect(),
                 semantic_operations: fact.semantic_operations.clone(),
                 registers: fact.mmio_addresses.clone(),
                 calls: fact.calls.len(),

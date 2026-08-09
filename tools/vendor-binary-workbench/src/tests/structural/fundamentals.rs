@@ -328,6 +328,168 @@ fn pointer_loaded_from_caller_ram_does_not_inherit_argument_provenance() {
 }
 
 #[test]
+fn floating_word_memory_preserves_context_address_and_value_provenance() {
+    let flw = (4_u32 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x07;
+    let fsw = (10_u32 << 20) | (10 << 15) | (2 << 12) | (8 << 7) | 0x27;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("floating-memory.o".to_owned()),
+        name: "floating_memory".to_owned(),
+        address: 0,
+        bytes: [flw, fsw, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: false,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(
+        !trace.is_reference_eligible(),
+        "F semantics remain fail-closed"
+    );
+    assert_eq!(trace.reference_events.len(), 2);
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Read,
+        address: read_address,
+        width: 32,
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!("expected floating context read");
+    };
+    assert!(read_address.canonical().contains("arg0"));
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address: write_address,
+        width: 32,
+        value: Some(SymbolicValue::MemoryImage { read_token: 0, .. }),
+        ..
+    } = &trace.reference_events[1]
+    else {
+        panic!("expected floating context write with load provenance");
+    };
+    assert!(write_address.canonical().contains("arg0"));
+    assert_eq!(
+        trace
+            .blockers
+            .iter()
+            .filter(|blocker| blocker.contains("class=floating-point"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn floating_bit_move_preserves_integer_argument_into_context_store() {
+    let fmv_w_x = (0x78_u32 << 25) | (11 << 15) | (10 << 7) | 0x53;
+    let fsw = (10_u32 << 20) | (10 << 15) | (2 << 12) | (8 << 7) | 0x27;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "floating_bit_move".to_owned(),
+        address: 0,
+        bytes: [fmv_w_x, fsw, 0x0000_8067]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: false,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address,
+        value: Some(value),
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!("expected floating store");
+    };
+    assert!(address.canonical().contains("arg0"));
+    assert_eq!(value.canonical(), SymbolicValue::input(1).canonical());
+    assert!(
+        !trace.is_reference_eligible(),
+        "F semantics remain fail-closed"
+    );
+}
+
+#[test]
+fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
+    let lui_float = (0x3f800_u32 << 12) | (11 << 7) | 0x37; // a1 = 1.0f32 bits
+    let fmv_f10 = (0x78_u32 << 25) | (11 << 15) | (10 << 7) | 0x53;
+    let fmv_f11 = (0x78_u32 << 25) | (11 << 15) | (11 << 7) | 0x53;
+    let feq = (0x50_u32 << 25) | (11 << 20) | (10 << 15) | (2 << 12) | (10 << 7) | 0x53;
+    let lui_mmio = (0x20100_u32 << 12) | (12 << 7) | 0x37;
+    let store_result = (10_u32 << 20) | (12 << 15) | (2 << 12) | 0x23;
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "floating_compare".to_owned(),
+        address: 0,
+        bytes: [
+            lui_float,
+            fmv_f10,
+            fmv_f11,
+            feq,
+            lui_mmio,
+            store_result,
+            0x0000_8067,
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(trace.events.len(), 1);
+    assert_eq!(
+        trace.events[0].memory_value().as_deref(),
+        Some("const:0x00000001")
+    );
+    assert_eq!(
+        trace
+            .blockers
+            .iter()
+            .filter(|blocker| blocker.contains("class=floating-point"))
+            .count(),
+        3
+    );
+    assert!(
+        !trace.is_reference_eligible(),
+        "exact comparison recovery must not erase F blockers"
+    );
+}
+
+#[test]
 fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: Some("relocated_state.o".to_owned()),

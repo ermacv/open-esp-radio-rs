@@ -124,6 +124,7 @@ bitWidth = 1
         facts: directory.join("generated/mmio.json"),
         model: directory.join("registers/device.toml"),
         owned_ranges: vec!["radio".to_owned()],
+        non_operational_functions: Vec::new(),
         review_output: None,
         review_ir_reports: Vec::new(),
         svd_output: svd.then(|| directory.join("generated/device.svd")),

@@ -130,6 +130,7 @@ fn registers(context: &ProjectContext<'_>) -> Component {
     .detail("observed", summary.observed)
     .detail("reviewed", summary.reviewed)
     .detail("ignored", summary.ignored)
+    .detail("non_operational", summary.non_operational)
     .detail("manual", summary.manual)
     .detail("unreviewed", summary.unreviewed)
     .detail("fields", summary.fields)

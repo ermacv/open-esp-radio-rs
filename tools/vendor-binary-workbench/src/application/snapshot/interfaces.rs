@@ -3,7 +3,8 @@
 use super::{ProjectSession, push_error};
 use crate::{
     application::model::{
-        DiagnosticRecord, InterfaceContractSummary, InterfaceSlotSummary, InterfaceWorkspaceReport,
+        DiagnosticRecord, InterfaceContractSummary, InterfaceReviewState, InterfaceSlotSummary,
+        InterfaceWorkspaceReport,
     },
     interfaces::InterfaceWorkspace,
 };
@@ -74,6 +75,8 @@ pub(super) fn collect(
                 offset: slot.offset,
                 width: slot.width,
                 name: slot.name.clone(),
+                review_state: InterfaceReviewState::Reviewed,
+                selector: None,
                 arguments: slot.arguments.clone(),
                 return_type: slot.return_type.clone(),
                 variadic: slot.variadic,
@@ -90,6 +93,32 @@ pub(super) fn collect(
                 functions: slot.functions.iter().cloned().collect(),
                 call_sites: slot.calls.iter().map(|call| call.site).collect(),
             })
+            .chain(
+                workspace
+                    .unreviewed_observations()
+                    .iter()
+                    .map(|slot| InterfaceSlotSummary {
+                        id: slot.id.clone(),
+                        contract: slot.contract.clone(),
+                        offset: slot.offset,
+                        width: slot.width,
+                        name: slot.selector.as_ref().map_or_else(
+                            || format!("slot_{:x}", slot.offset),
+                            |selector| format!("indexed_{selector}"),
+                        ),
+                        review_state: InterfaceReviewState::Unreviewed,
+                        selector: slot.selector.clone(),
+                        arguments: Vec::new(),
+                        return_type: "unknown".to_owned(),
+                        variadic: false,
+                        semantic: None,
+                        effects: Vec::new(),
+                        replacement: None,
+                        execution_model: None,
+                        functions: slot.functions.clone(),
+                        call_sites: slot.call_sites.clone(),
+                    }),
+            )
             .collect(),
     }
 }

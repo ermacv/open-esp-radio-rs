@@ -329,6 +329,7 @@ mod tests {
                 observed: 0,
                 reviewed: 0,
                 ignored: 0,
+                non_operational: 0,
                 manual: 0,
                 unreviewed: 0,
                 fields: 0,
@@ -429,6 +430,7 @@ mod tests {
             blockers: Vec::new(),
             decode_blockers: 1,
             decode_blocker_classes: vec!["zero-fill-or-illegal-trap".to_owned()],
+            decode_blocker_operations: vec!["illegal-zero".to_owned()],
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 1,
@@ -439,6 +441,8 @@ mod tests {
             offset: 4,
             width: 4,
             name: "delay".to_owned(),
+            review_state: crate::InterfaceReviewState::Reviewed,
+            selector: None,
             arguments: vec!["ticks".to_owned()],
             return_type: "void".to_owned(),
             variadic: false,
@@ -454,6 +458,14 @@ mod tests {
 
         state.begin_search();
         for character in "illegal-trap".chars() {
+            state.push_search(character);
+        }
+        state.finish_search();
+        assert_eq!(state.visible_count(), 1);
+        state.clear_search();
+
+        state.begin_search();
+        for character in "illegal-zero".chars() {
             state.push_search(character);
         }
         state.finish_search();
@@ -486,6 +498,7 @@ mod tests {
             blockers: Vec::new(),
             decode_blockers: 0,
             decode_blocker_classes: Vec::new(),
+            decode_blocker_operations: Vec::new(),
             semantic_operations: Vec::new(),
             registers: vec![0x4000],
             calls: 0,
@@ -522,6 +535,7 @@ mod tests {
             blockers: Vec::new(),
             decode_blockers: 0,
             decode_blocker_classes: Vec::new(),
+            decode_blocker_operations: Vec::new(),
             semantic_operations: Vec::new(),
             registers: Vec::new(),
             calls: 0,

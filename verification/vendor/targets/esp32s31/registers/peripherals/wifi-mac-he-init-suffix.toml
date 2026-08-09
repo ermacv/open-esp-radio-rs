@@ -103,6 +103,27 @@ maximum = 0xFF
 [[peripherals.registers]]
 
 [peripherals.registers.register]
+name = "MULTI_BSSID_CONTROL_INTERFACE_1"
+description = "When hal_he_get_bss_color selects interface one, BSS_COLOR_ENABLE gates the returned six-bit BSS color from this word. Other fields remain unnamed."
+addressOffset = 0xC
+size = 32
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BSS_COLOR"
+bitOffset = 21
+bitWidth = 6
+access = "read-only"
+
+[[peripherals.registers.register.fields]]
+name = "BSS_COLOR_ENABLE"
+bitOffset = 27
+bitWidth = 1
+access = "read-only"
+
+[[peripherals.registers]]
+
+[peripherals.registers.register]
 name = "BROADCAST_RU_LOW"
 description = "Complete hal_he_set_bcast_ru(0x7fd,0,0) sets enable bit 22 then replaces the adjacent eleven-bit value."
 addressOffset = 0x18
@@ -691,6 +712,21 @@ confidence = "instruction-exact"
 entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_HIGH"
 sources = ["BLOB_LIBPP_HAL_HE_INIT_SUFFIX"]
 confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact-semantics-unknown"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact"
+
+[[review]]
+entity = "WIFI_MAC_HE_INIT_SUFFIX.MULTI_BSSID_CONTROL_INTERFACE_1.BSS_COLOR_ENABLE"
+sources = ["ROM_REV0_WIFI_RUNTIME_MMIO_GAPS"]
+confidence = "instruction-exact"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_SUFFIX.BROADCAST_RU_LOW"

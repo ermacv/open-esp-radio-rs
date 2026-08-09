@@ -4,6 +4,7 @@ use super::*;
 
 pub(super) struct StructuralTraceState {
     pub(super) values: [SymbolicValue; 32],
+    pub(super) floating_values: [SymbolicValue; 32],
     pub(super) events: Vec<ObservableEvent>,
     pub(super) reference_events: Vec<DraftReferenceEvent>,
     pub(super) blockers: Vec<String>,
@@ -51,6 +52,7 @@ impl StructuralTraceState {
 
         Self {
             values,
+            floating_values: core::array::from_fn(|_| SymbolicValue::Unknown),
             events: Vec::new(),
             reference_events: Vec::new(),
             blockers: Vec::new(),
@@ -65,6 +67,12 @@ impl StructuralTraceState {
             next_private_stack_read_token: 0,
             stack,
             private_stack_may_be_modified_by_call: false,
+        }
+    }
+
+    pub(super) fn invalidate_floating_call_clobbers(&mut self) {
+        for register in (0..=7).chain(10..=17).chain(28..=31) {
+            self.floating_values[register] = SymbolicValue::Unknown;
         }
     }
 

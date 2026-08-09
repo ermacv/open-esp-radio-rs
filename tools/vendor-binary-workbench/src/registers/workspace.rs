@@ -11,6 +11,7 @@ pub(crate) struct RegisterWorkspaceSummary {
     pub(crate) observed: usize,
     pub(crate) reviewed: usize,
     pub(crate) ignored: usize,
+    pub(crate) non_operational: usize,
     pub(crate) manual: usize,
     pub(crate) unreviewed: usize,
     pub(crate) fields: usize,
@@ -21,6 +22,7 @@ pub(crate) struct ProjectRegisterWorkspace {
     facts: Option<RegisterFacts>,
     model: Box<RegisterModel>,
     owned_ranges: BTreeSet<String>,
+    non_operational_functions: BTreeSet<String>,
 }
 
 impl ProjectRegisterWorkspace {
@@ -40,15 +42,17 @@ impl ProjectRegisterWorkspace {
             facts,
             model: Box::new(RegisterModel::load(&paths.model)?),
             owned_ranges: paths.owned_ranges.iter().cloned().collect(),
+            non_operational_functions: paths.non_operational_functions.iter().cloned().collect(),
         })
     }
 
     pub(crate) fn summary(&self) -> Result<RegisterWorkspaceSummary> {
         let identities = self.model.register_identities()?;
-        let (fact_keys, ignored_keys) = self.facts.as_ref().map_or_else(
-            || Ok((BTreeSet::new(), BTreeSet::new())),
-            |facts| observation_keys(facts, &self.owned_ranges),
+        let observations = self.facts.as_ref().map_or_else(
+            || Ok(ObservationKeys::default()),
+            |facts| observation_keys(facts, &self.owned_ranges, &self.non_operational_functions),
         )?;
+        let fact_keys = observations.all();
         let model_keys = identities.keys().copied().collect::<BTreeSet<_>>();
         if let Some(facts) = &self.facts
             && let Some((address, width)) = model_keys.iter().find(|(address, width)| {
@@ -70,11 +74,16 @@ impl ProjectRegisterWorkspace {
         }
         Ok(RegisterWorkspaceSummary {
             ranges: self.facts.as_ref().map_or(0, |facts| facts.ranges.len()),
-            observed: fact_keys.len() + ignored_keys.len(),
-            reviewed: fact_keys.intersection(&model_keys).count(),
-            ignored: ignored_keys.len(),
+            observed: fact_keys.len(),
+            reviewed: observations.owned.intersection(&model_keys).count(),
+            ignored: observations.outside_scope.len(),
+            non_operational: observations.non_operational.difference(&model_keys).count(),
             manual: model_keys.difference(&fact_keys).count(),
-            unreviewed: fact_keys.difference(&model_keys).count(),
+            unreviewed: observations
+                .owned
+                .difference(&model_keys)
+                .filter(|key| !observations.non_operational.contains(key))
+                .count(),
             fields: self.model.render_svd()?.1.fields,
         })
     }
@@ -88,10 +97,24 @@ impl ProjectRegisterWorkspace {
     }
 }
 
+#[derive(Debug, Default)]
+struct ObservationKeys {
+    owned: BTreeSet<(u64, u32)>,
+    outside_scope: BTreeSet<(u64, u32)>,
+    non_operational: BTreeSet<(u64, u32)>,
+}
+
+impl ObservationKeys {
+    fn all(&self) -> BTreeSet<(u64, u32)> {
+        self.owned.union(&self.outside_scope).copied().collect()
+    }
+}
+
 fn observation_keys(
     facts: &RegisterFacts,
     owned_ranges: &BTreeSet<String>,
-) -> Result<(BTreeSet<(u64, u32)>, BTreeSet<(u64, u32)>)> {
+    non_operational_functions: &BTreeSet<String>,
+) -> Result<ObservationKeys> {
     let available = facts
         .ranges
         .iter()
@@ -105,8 +128,8 @@ fn observation_keys(
             "register owned range {missing:?} is absent from MMIO discovery facts"
         )));
     }
-    let mut owned = BTreeSet::new();
-    let mut ignored = BTreeSet::new();
+    validate_non_operational_functions(facts, non_operational_functions)?;
+    let mut observations = ObservationKeys::default();
     for fact in &facts.registers {
         let key = (u64::from(fact.address), u32::from(fact.width));
         let range = facts
@@ -115,12 +138,47 @@ fn observation_keys(
             .find(|range| range.contains(fact.address))
             .expect("validated register facts have exactly one owning range");
         if owned_ranges.contains(&range.name) {
-            owned.insert(key);
+            observations.owned.insert(key);
+            if fact_is_non_operational(fact, non_operational_functions) {
+                observations.non_operational.insert(key);
+            }
         } else {
-            ignored.insert(key);
+            observations.outside_scope.insert(key);
         }
     }
-    Ok((owned, ignored))
+    Ok(observations)
+}
+
+pub(crate) fn fact_is_non_operational(
+    fact: &super::RegisterFact,
+    non_operational_functions: &BTreeSet<String>,
+) -> bool {
+    let mut functions = fact.read_functions.iter().chain(&fact.write_functions);
+    let Some(first) = functions.next() else {
+        return false;
+    };
+    non_operational_functions.contains(first)
+        && functions.all(|function| non_operational_functions.contains(function))
+}
+
+pub(crate) fn validate_non_operational_functions(
+    facts: &RegisterFacts,
+    non_operational_functions: &BTreeSet<String>,
+) -> Result<()> {
+    let observed = facts
+        .registers
+        .iter()
+        .flat_map(|fact| fact.read_functions.iter().chain(&fact.write_functions))
+        .collect::<BTreeSet<_>>();
+    if let Some(function) = non_operational_functions
+        .iter()
+        .find(|function| !observed.contains(function))
+    {
+        return Err(crate::Error::invalid(format!(
+            "register review non-operational function {function:?} is absent from MMIO discovery facts"
+        )));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -159,9 +217,10 @@ mod tests {
             ],
             registers: vec![fact(0x1010), fact(0x3010)],
         };
-        let (owned, ignored) = observation_keys(&facts, &["radio".to_owned()].into()).unwrap();
-        assert_eq!(owned, [(0x1010, 32)].into());
-        assert_eq!(ignored, [(0x3010, 32)].into());
+        let observations =
+            observation_keys(&facts, &["radio".to_owned()].into(), &BTreeSet::new()).unwrap();
+        assert_eq!(observations.owned, [(0x1010, 32)].into());
+        assert_eq!(observations.outside_scope, [(0x3010, 32)].into());
     }
 
     #[test]
@@ -174,7 +233,56 @@ mod tests {
             }],
             registers: Vec::new(),
         };
-        let error = observation_keys(&facts, &["missing".to_owned()].into()).unwrap_err();
+        let error =
+            observation_keys(&facts, &["missing".to_owned()].into(), &BTreeSet::new()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("absent from MMIO discovery facts")
+        );
+    }
+
+    #[test]
+    fn non_operational_policy_excludes_only_exclusive_observations() {
+        let mut diagnostic = fact(0x1010);
+        diagnostic.read_functions = ["archive:dump".to_owned()].into();
+        let mut mixed = fact(0x1020);
+        mixed.read_functions = ["archive:dump".to_owned(), "rom:enable".to_owned()].into();
+        let facts = RegisterFacts {
+            ranges: vec![FactRange {
+                name: "radio".to_owned(),
+                start: 0x1000,
+                end: 0x2000,
+            }],
+            registers: vec![diagnostic, mixed],
+        };
+        let observations = observation_keys(
+            &facts,
+            &["radio".to_owned()].into(),
+            &["archive:dump".to_owned()].into(),
+        )
+        .unwrap();
+        assert_eq!(observations.non_operational, [(0x1010, 32)].into());
+        assert!(observations.owned.contains(&(0x1020, 32)));
+        assert!(!observations.non_operational.contains(&(0x1020, 32)));
+    }
+
+    #[test]
+    fn non_operational_policy_rejects_stale_function_names() {
+        let facts = RegisterFacts {
+            ranges: vec![FactRange {
+                name: "radio".to_owned(),
+                start: 0x1000,
+                end: 0x2000,
+            }],
+            registers: vec![fact(0x1010)],
+        };
+        let error = observation_keys(
+            &facts,
+            &["radio".to_owned()].into(),
+            &["archive:missing".to_owned()].into(),
+        )
+        .unwrap_err();
         assert!(
             error
                 .to_string()

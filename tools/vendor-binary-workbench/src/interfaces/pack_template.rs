@@ -203,7 +203,7 @@ fn write_steps(output: &mut String, key: &str, steps: &[InterfaceFactStep]) {
     output.push_str("]\n");
 }
 
-fn identifier_from(value: &str) -> String {
+pub(super) fn identifier_from(value: &str) -> String {
     let mut output = String::new();
     let mut last_separator = false;
     for character in value.chars() {

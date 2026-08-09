@@ -19,7 +19,9 @@ input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
 Interface schema 5 replaces symbol-wide decode failures with per-instruction
 `decode_blockers` carrying PC, raw word, width, extension class and whether
-linear continuation is architecturally safe. Malformed artifact failures are
+linear continuation is architecturally safe. Linked-IR blockers are restricted
+to instructions reachable from the function entry, rather than every
+unsupported byte in the symbol's declared extent. Malformed artifact failures are
 kept separately as `analysis_failures`. The classification vocabulary keeps an
 all-zero illegal encoding distinct as `zero-fill-or-illegal-trap`: it may be a
 deliberate trap or unreachable fill, but is not evidence that the decoder lost

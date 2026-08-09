@@ -18,8 +18,8 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
     .unwrap();
     let (output, summary) = model.render_svd().unwrap();
     assert_eq!(summary.peripherals, 73);
-    assert_eq!(summary.registers, 1099);
-    assert_eq!(summary.fields, 2464);
+    assert_eq!(summary.registers, 1116);
+    assert_eq!(summary.fields, 2479);
     assert!(!output.contains("SOURCE["));
     assert!(!output.contains("CONFIDENCE["));
     assert!(!output.contains("openEspRadio"));
@@ -69,7 +69,7 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
         .map(|name| evidence_root.join(name)),
     )
     .unwrap();
-    assert_eq!(evidence.sources.len(), 212);
+    assert_eq!(evidence.sources.len(), 214);
     assert_eq!(evidence.ranges.len(), 14);
     assert_eq!(evidence.confidence_levels.len(), 6);
     evidence

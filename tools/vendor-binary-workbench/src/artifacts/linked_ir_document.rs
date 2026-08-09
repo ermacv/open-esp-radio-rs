@@ -219,10 +219,11 @@ pub(crate) fn build_linked_ir_document<'a>(
         } else {
             "primary-resolver"
         },
-        selection_mode: if include_reachable {
-            "symbol-prefix-with-reachable-internal-callees"
-        } else {
-            "symbol-prefix-only"
+        selection_mode: match (symbol_prefix.is_empty(), include_reachable) {
+            (true, true) => "all-symbols-with-reachable-internal-callees",
+            (true, false) => "all-symbols-only",
+            (false, true) => "symbol-prefix-with-reachable-internal-callees",
+            (false, false) => "symbol-prefix-only",
         },
         include_reachable,
         effect_summary_mode: "reachable-inventory-origin-preserving",

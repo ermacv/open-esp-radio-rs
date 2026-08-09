@@ -12,117 +12,127 @@ struct CommandDocument<'a> {
     publication: Option<crate::cli::output::Publication>,
 }
 
-pub(super) fn function_names(functions: &BTreeSet<DiscoveryFunction>) -> Vec<String> {
-    functions.iter().map(DiscoveryFunction::canonical).collect()
-}
-
-pub(super) fn mask_ranges(mask: u32) -> String {
-    let mut ranges = Vec::new();
-    let mut bit = 0_u8;
-    while bit < 32 {
-        if mask & (1_u32 << bit) == 0 {
-            bit += 1;
-            continue;
-        }
-        let start = bit;
-        while bit < 31 && mask & (1_u32 << (bit + 1)) != 0 {
-            bit += 1;
-        }
-        if start == bit {
-            ranges.push(start.to_string());
-        } else {
-            ranges.push(format!("{start}-{bit}"));
-        }
-        bit += 1;
-    }
-    if ranges.is_empty() {
-        "-".to_owned()
-    } else {
-        ranges.join(",")
-    }
-}
-
 fn print_report(report: &MmioDiscoveryReport) {
-    for artifact in &report.artifacts {
-        outputln!(
-            "ARTIFACT\t{}\t{}\tfunctions={}\tfunctions-with-mmio={}\tfunctions-with-diagnostics={}\texplored-states={}\tterminal-paths={}\tbranch-sites={}",
-            artifact.source,
-            artifact.path.display(),
-            artifact.functions,
-            artifact.functions_with_mmio,
-            artifact.functions_with_diagnostics,
-            artifact.explored_states,
-            artifact.terminal_paths,
-            artifact.branch_sites,
-        );
-    }
-    for register in &report.registers {
-        let users = register
-            .read_functions
-            .union(&register.write_functions)
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        outputln!(
-            "REGISTER\t{:#010x}\twidth={}\t{}\treads={}\twrites={}\tfunctions={}",
+    const MAX_HOT_REGISTERS: usize = 32;
+
+    outputln!("MMIO discovery");
+    outputln!(
+        "Artifacts:\n{}",
+        crate::cli::table::render(
+            [
+                "Source",
+                "Functions",
+                "MMIO users",
+                "Diagnostics",
+                "States",
+                "Branches",
+                "Path",
+            ],
+            report.artifacts.iter().map(|artifact| [
+                artifact.source.clone(),
+                artifact.functions.to_string(),
+                artifact.functions_with_mmio.to_string(),
+                artifact.functions_with_diagnostics.to_string(),
+                artifact.explored_states.to_string(),
+                artifact.branch_sites.to_string(),
+                artifact.path.display().to_string(),
+            ]),
+        )
+    );
+    outputln!(
+        "Ranges:\n{}",
+        crate::cli::table::render(
+            ["Range", "Addresses", "Registers", "Named", "Accesses"],
+            report.ranges.iter().map(|range| {
+                let registers = report
+                    .registers
+                    .iter()
+                    .filter(|register| {
+                        register.address >= range.start && register.address < range.end
+                    })
+                    .collect::<Vec<_>>();
+                let named = registers
+                    .iter()
+                    .filter(|register| {
+                        register.name != format!("{}.REG_{:08X}", range.name, register.address)
+                    })
+                    .count();
+                let accesses = registers
+                    .iter()
+                    .map(|register| register.read_count + register.write_count)
+                    .sum::<usize>();
+                [
+                    range.name.clone(),
+                    format!("{:#010x}..{:#010x}", range.start, range.end),
+                    registers.len().to_string(),
+                    named.to_string(),
+                    accesses.to_string(),
+                ]
+            }),
+        )
+    );
+    let mut hot_registers = report.registers.iter().collect::<Vec<_>>();
+    hot_registers.sort_by_key(|register| {
+        (
+            std::cmp::Reverse(register.read_count + register.write_count),
             register.address,
             register.width,
-            register.name,
-            register.read_count,
-            register.write_count,
-            users.len(),
-        );
-        if !register.read_functions.is_empty() {
-            outputln!(
-                "READ-USERS\t{:#010x}\t{}",
-                register.address,
-                function_names(&register.read_functions).join(",")
-            );
-        }
-        if !register.write_functions.is_empty() {
-            outputln!(
-                "WRITE-USERS\t{:#010x}\t{}",
-                register.address,
-                function_names(&register.write_functions).join(",")
-            );
-        }
-        for pattern in &register.write_patterns {
-            outputln!(
-                "WRITE-PATTERN\t{:#010x}\twidth={}\toccurrences={}\tmodified={:#010x}\tfields={}\tpreserved={:#010x}\tinverted={:#010x}\tforced-zero={:#010x}\tforced-one={:#010x}\tread-derived={:#010x}\tdynamic={:#010x}\tfunctions={}",
-                register.address,
-                register.width,
-                pattern.occurrences,
-                pattern.pattern.modified_mask(register.width),
-                mask_ranges(pattern.pattern.modified_mask(register.width)),
-                pattern.pattern.preserved_mask,
-                pattern.pattern.inverted_mask,
-                pattern.pattern.forced_zero_mask,
-                pattern.pattern.forced_one_mask,
-                pattern.pattern.read_derived_mask,
-                pattern.pattern.dynamic_mask,
-                function_names(&pattern.functions).join(","),
-            );
-        }
-    }
-    for diagnostic in &report.diagnostics {
-        outputln!(
-            "DIAGNOSTIC\t{}\t{}\t{}",
-            diagnostic.function.canonical(),
-            diagnostic.scope,
-            diagnostic.message
-        );
-    }
+        )
+    });
+    hot_registers.truncate(MAX_HOT_REGISTERS);
+    outputln!(
+        "Most active registers ({} of {}):\n{}",
+        hot_registers.len(),
+        report.registers.len(),
+        crate::cli::table::render(
+            [
+                "Address", "Width", "Name", "Reads", "Writes", "Users", "Patterns"
+            ],
+            hot_registers.into_iter().map(|register| {
+                let users = register
+                    .read_functions
+                    .union(&register.write_functions)
+                    .count();
+                [
+                    format!("{:#010x}", register.address),
+                    register.width.to_string(),
+                    register.name.clone(),
+                    register.read_count.to_string(),
+                    register.write_count.to_string(),
+                    users.to_string(),
+                    register.write_patterns.len().to_string(),
+                ]
+            }),
+        )
+    );
+    let diagnostic_scopes =
+        report
+            .diagnostics
+            .iter()
+            .fold(BTreeMap::<&str, usize>::new(), |mut scopes, diagnostic| {
+                *scopes.entry(diagnostic.scope).or_default() += 1;
+                scopes
+            });
     let accesses = report
         .registers
         .iter()
         .map(|register| register.read_count + register.write_count)
         .sum::<usize>();
     outputln!(
-        "SUMMARY\tartifacts={}\tranges={}\tregister-widths={}\taccesses={}\tdiagnostics={}",
+        "Summary: artifacts={} ranges={} register-widths={} accesses={} diagnostics={} ({})",
         report.artifacts.len(),
         report.ranges.len(),
         report.registers.len(),
         accesses,
         report.diagnostics.len(),
+        diagnostic_scopes
+            .into_iter()
+            .map(|(scope, count)| format!("{scope}={count}"))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
+    outputln!(
+        "All register findings, users, bit patterns and blockers are available in the JSON report."
     );
 }
 
@@ -131,6 +141,11 @@ pub(super) fn run(
     svd: &MmioMap,
     project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
+    if arguments.jobs > 8 {
+        return Err(crate::Error::invalid(
+            "mmio discover --jobs accepts 0 (safe automatic mode) or 1..=8",
+        ));
+    }
     if arguments.check && arguments.json_report.is_none() {
         return Err(crate::Error::invalid(
             "mmio discover --check requires --json-report PATH",
@@ -192,6 +207,9 @@ pub(super) fn run(
         code_symbol_selection,
         svd,
         effective_code.as_ref(),
+        crate::analysis::MmioDiscoveryOptions {
+            jobs: usize::from(arguments.jobs),
+        },
     )?;
     let publication = arguments.json_report.as_deref().map(|path| {
         crate::cli::output::Publication::new(
@@ -253,12 +271,6 @@ mod tests {
                 end: 0x2011_0000,
             }
         );
-    }
-
-    #[test]
-    fn formats_candidate_bit_ranges() {
-        assert_eq!(mask_ranges(0b1011_1110), "1-5,7");
-        assert_eq!(mask_ranges(0), "-");
     }
 
     #[test]

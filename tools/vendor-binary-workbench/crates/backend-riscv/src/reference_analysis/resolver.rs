@@ -403,6 +403,30 @@ impl ReferenceResolver {
         )
     }
 
+    pub fn trace_symbol_bounded(
+        &self,
+        symbol: &artifact::ArtifactSymbolDefinition,
+        svd: &MmioMap,
+        budget: StructuralTraceBudget,
+    ) -> Result<FunctionAnalysis> {
+        let identity = symbol_key(symbol);
+        let symbol_id = *self
+            .symbol_ids
+            .get(&identity)
+            .expect("catalog lookup returned a symbol without an identity");
+        let mut visiting = BTreeSet::from([symbol.address as u32, symbol_id]);
+        resolve_reference_trace_with_budget(
+            symbol,
+            &self.symbols_by_address,
+            &self.relocated_calls,
+            &self.pointer_context,
+            None,
+            svd,
+            &mut visiting,
+            budget,
+        )
+    }
+
     pub fn symbol_is_exported(&self, symbol: &artifact::ArtifactSymbolDefinition) -> bool {
         self.exported_symbol_keys.contains(&symbol_key(symbol))
     }

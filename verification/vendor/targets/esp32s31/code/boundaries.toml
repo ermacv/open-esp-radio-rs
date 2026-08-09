@@ -1,0 +1,24 @@
+# Human decisions over generated executable-code recovery candidates.
+# Do not copy entries between artifact revisions: SHA guards are mandatory.
+schema = 1
+id = "esp32s31-radio-rev0"
+
+[[inputs]]
+source = "archive"
+artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+
+[[inputs]]
+source = "archive"
+artifact-sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[inputs]]
+source = "archive"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "rom"
+artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+
+[[inputs]]
+source = "rom"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"

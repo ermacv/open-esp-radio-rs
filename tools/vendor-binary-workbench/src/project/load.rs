@@ -122,6 +122,12 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                 return Err(source.item(Some(overlay), "unknown project registers key \"overlay\"; use the schema-2 \"model\" workspace"));
             }
             let model = table_string(table, "model", "project registers", source)?;
+            let owned_ranges = required_table_string_array(
+                table,
+                "owned-ranges",
+                "project registers",
+                source,
+            )?;
             let review_output = nested_output_path(table, base, "review", source)?;
             let review_ir_reports =
                 nested_path_array(table, base, "review", "linked-ir", source)?;
@@ -200,6 +206,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
                     &table_string(table, "facts", "project registers", source)?,
                 ),
                 model: resolve_path(base, &model),
+                owned_ranges,
                 review_output,
                 review_ir_reports,
                 svd_output,
@@ -522,6 +529,49 @@ fn nested_output_path(
             Ok(resolve_path(base, &output))
         })
         .transpose()
+}
+
+fn required_table_string_array(
+    table: &toml_edit::Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<Vec<String>> {
+    let item = table
+        .get(key)
+        .ok_or_else(|| source.table_key(table, key, format!("{context} requires {key:?}")))?;
+    let values = item
+        .as_array()
+        .ok_or_else(|| source.item(Some(item), format!("{context}.{key} must be an array")))?;
+    if values.is_empty() {
+        return Err(source.item(
+            Some(item),
+            format!("{context}.{key} must contain at least one range name"),
+        ));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let span = value.span();
+            let value = value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    source.error(
+                        span.clone(),
+                        format!("{context}.{key}[{index}] must be a non-empty string"),
+                    )
+                })?;
+            if !seen.insert(value) {
+                return Err(
+                    source.error(span, format!("duplicate {context}.{key} range {value:?}"))
+                );
+            }
+            Ok(value.to_owned())
+        })
+        .collect()
 }
 
 fn nested_path_array(

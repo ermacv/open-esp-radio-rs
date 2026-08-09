@@ -1,5 +1,10 @@
 //! Human-reviewed function names and context layouts over generated linked IR.
 
+// The current machine IR models eight register and eight stack arguments.
+// Context review must accept the complete modeled binary ABI rather than
+// silently assuming every context pointer is in a0..a7.
+const MAX_CONTEXT_ARGUMENTS: u8 = 16;
+
 mod facts;
 mod interface_links;
 mod pack;

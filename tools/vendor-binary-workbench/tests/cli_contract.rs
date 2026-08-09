@@ -28,6 +28,39 @@ fn run(arguments: &[&str]) -> Output {
         .expect("run vendor-binary-workbench")
 }
 
+fn init_temporary_project(label: &str) -> (PathBuf, PathBuf) {
+    let directory = std::env::temp_dir().join(format!(
+        "vendor-workbench-cli-contract-{label}-{}",
+        std::process::id()
+    ));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    let output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "init", "--directory"])
+        .arg(&directory)
+        .args([
+            "--id",
+            label,
+            "--mmio",
+            "radio=0x20000000..0x20010000",
+            "--format",
+            "json",
+            "--color",
+            "never",
+        ])
+        .output()
+        .expect("initialize temporary project");
+    assert!(
+        output.status.success(),
+        "project init stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let manifest = directory.join("vendor-project.toml");
+    (directory, manifest)
+}
+
 fn write_rv32_symbol_fixture(path: &Path) {
     let bytes = include_str!("fixtures/symbols-rv32.hex")
         .split_ascii_whitespace()
@@ -207,7 +240,7 @@ fn project_manifest_diagnostics_highlight_the_nested_physical_value() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
     )
     .unwrap();
 
@@ -564,17 +597,14 @@ fn project_analyze_is_the_only_project_analysis_entry_point() {
 
 #[test]
 fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
-    let output = run(&[
-        "project",
-        "analyze",
-        "--check",
-        "--project",
-        "verification/vendor/targets/esp32s31/vendor-project.toml",
-        "--format",
-        "json",
-        "--color",
-        "never",
-    ]);
+    let (directory, manifest) = init_temporary_project("blocked-analysis");
+    let output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "analyze", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("run blocked project analysis");
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
@@ -594,6 +624,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
             .iter()
             .any(|stage| { stage["name"] == "symbol-inventory" && stage["status"] == "blocked" })
     );
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -611,7 +642,7 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\noutput = \"generated/fixture.ir.json\"\n",
+            "schema = 1\nid = \"input-contract\"\ntarget-spec = {:?}\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\noutput = \"generated/fixture.ir.json\"\n",
             target.display().to_string()
         ),
     )
@@ -672,7 +703,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     std::fs::write(
         &manifest,
         format!(
-            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir.json\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
+            "schema = 1\nid = \"symbol-contract\"\ntarget-spec = {:?}\n\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n\n[analysis.navigation]\noutput = \"generated/navigation.json\"\n\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"fixture\"]\nroots = \"all\"\ninclude-reachable = true\nentry-contract = \"none\"\noutput = \"generated/fixture.ir.json\"\n\n[interfaces]\nfacts = \"generated/interfaces.json\"\n",
             target.display().to_string()
         ),
     )
@@ -962,17 +993,26 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 
 #[test]
 fn project_publication_json_is_one_typed_report() {
-    let output = run(&[
-        "project",
-        "publish",
-        "--check",
-        "--project",
-        "verification/vendor/targets/esp32s31/vendor-project.toml",
-        "--format",
-        "json",
-        "--color",
-        "never",
-    ]);
+    let (directory, manifest) = init_temporary_project("publication-report");
+    let written = workbench()
+        .current_dir(repository_root())
+        .args(["project", "publish", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("publish temporary project");
+    assert!(
+        written.status.success(),
+        "initial publication stderr: {}",
+        String::from_utf8_lossy(&written.stderr)
+    );
+    let output = workbench()
+        .current_dir(repository_root())
+        .args(["project", "publish", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("check temporary project publication");
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -984,6 +1024,7 @@ fn project_publication_json_is_one_typed_report() {
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "ok");
     assert_eq!(document["stages"].as_array().unwrap().len(), 4);
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]

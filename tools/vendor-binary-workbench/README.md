@@ -90,6 +90,8 @@ The policy for graph, debug, build, testing, solver, and multi-ISA dependencies
 is documented in [dependency and analysis-engine strategy](docs/dependency-strategy.md).
 Persistent evidence versions and ownership are listed in the
 [artifact schema index](docs/artifact-schemas.md).
+Product priorities, acceptance criteria and unfinished functional work are
+tracked in the [product TODO](TODO.md).
 
 ## Typical reverse-engineering pass
 

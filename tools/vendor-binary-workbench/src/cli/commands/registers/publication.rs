@@ -17,7 +17,7 @@ pub(super) fn export_svd(
         .or(paths.svd_output.as_deref())
         .ok_or("registers export-svd requires --output PATH or [registers.svd] output")
         .map_err(crate::Error::invalid)?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(crate::Error::invalid(format!(
@@ -67,7 +67,7 @@ pub(super) fn generate_pac_source(
         arguments.api_pack.as_deref().or(paths.api_pack.as_deref())
     };
     let api_pack = api_pack_path.map(PacApiPack::load).transpose()?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(crate::Error::invalid(format!(
@@ -110,7 +110,7 @@ pub(super) fn generate_bindings(
         .ok_or(
             "registers generate-bindings requires --crate-name NAME or [registers.bindings] crate-name",
         ).map_err(crate::Error::invalid)?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let workspace_summary = workspace.summary()?;
     if arguments.deny_unreviewed && workspace_summary.unreviewed != 0 {
         return Err(crate::Error::invalid(format!(

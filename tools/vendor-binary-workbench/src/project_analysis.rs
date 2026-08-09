@@ -180,7 +180,7 @@ output = "generated/symbols.json"
         let profile = ProjectIrProfile {
             id: "fixture".to_owned(),
             sources: Vec::new(),
-            symbol_prefix: String::new(),
+            roots: crate::project_ir::ProjectIrRoots::All,
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: spec.output.clone(),

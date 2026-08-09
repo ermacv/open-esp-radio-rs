@@ -7,9 +7,18 @@ and intentionally has an empty harness registry.
 
 `vendor-project.toml` is the preferred project entry point. It composes the
 existing target pack with `memory.toml`, whose MMIO regions are independent of
-SVD register names. The checked project deliberately omits private artifact
-paths. Initialize an ignored sibling `local.toml` from authenticated local
-artifacts:
+SVD register names.
+
+## Normal workflow
+
+Most users need only three project commands:
+
+1. `project inputs init` once per machine, to bind private artifacts;
+2. `project analyze --jobs 2`, to refresh all reverse-engineering evidence;
+3. `project analyze --check`, to reproduce and verify that evidence.
+
+The checked project deliberately omits private artifact paths. Initialize an
+ignored sibling `local.toml` from authenticated local artifacts:
 
 ```console
 cargo vendor-binary-workbench-esp32s31 project inputs init \
@@ -19,10 +28,6 @@ cargo vendor-binary-workbench-esp32s31 project inputs init \
   --bind source-inventory:archive=/path/to/libphy.a \
   --bind source-companion:rom=/path/to/linked-libphy.elf \
   --bind source-companion:archive=/path/to/esp32s31_rev0_rom.elf
-
-cargo vendor-binary-workbench-esp32s31 mmio discover \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --json-report /tmp/esp32s31-mmio.json
 ```
 
 `project inputs init` checks the role names, required profile sources and
@@ -49,7 +54,8 @@ Once sibling `local.toml` exists, the complete generated-evidence workflow is:
 
 ```console
 cargo vendor-binary-workbench-esp32s31 project analyze \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --jobs 2
 
 cargo vendor-binary-workbench-esp32s31 project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
@@ -58,6 +64,8 @@ cargo vendor-binary-workbench-esp32s31 project analyze --check \
 This generates or checks the complete symbol inventory, the cross-report
 navigation index, MMIO/interface facts, both linked-IR profiles, and the register/function reviews, then validates the
 reviewed register, interface, and function files.
+`--jobs 2` parallelizes only independent MMIO functions; linked-IR graph
+construction remains serial. Omit it for the conservative one-worker default.
 It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
 code. The public register release gate needs no private run spec:
 
@@ -69,6 +77,23 @@ cargo vendor-binary-workbench-esp32s31 project publish \
 
 This strictly validates the model, API, lint and evidence packs, then verifies
 the configured SVD, PAC and binding index as one preflighted publication.
+
+The many leaf commands documented below are inspection and repair tools. They
+are not additional required stages: use them when working on one model or when
+`project analyze` identifies the exact failing component.
+
+## Project files at a glance
+
+| Kind | Examples | Ownership |
+| --- | --- | --- |
+| project composition | `vendor-project.toml`, `target.toml`, `platform.toml`, `memory.toml` | tracked, generic workflow and target facts |
+| private inputs | `local.toml` | ignored, machine-local artifact paths |
+| reviewed knowledge | `registers/`, `functions/reviewed.toml`, `interfaces/reviewed.toml`, `code/boundaries.toml` | tracked, edited and reviewed by a person |
+| generated evidence | `generated/` | ignored locally, recreated by `project analyze` |
+
+`vendor-project.toml` is the only normal entry point. The other tracked TOML
+files are composed through it and should not be passed individually on the
+command line.
 
 ## Register project
 

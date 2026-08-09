@@ -23,7 +23,29 @@ pub(crate) fn validate_register_memory_map(
         return Ok(None);
     }
     let model = RegisterModel::load(&paths.model)?;
-    Ok(Some(validate_register_model_memory_map(&model, memory)?))
+    let summary = validate_register_model_memory_map(&model, memory)?;
+    let mmio = memory.mmio_ranges()?;
+    for name in &paths.owned_ranges {
+        if !mmio.iter().any(|(candidate, _, _)| candidate == name) {
+            return Err(crate::Error::invalid(format!(
+                "register owned range {name:?} is not a project MMIO region"
+            )));
+        }
+    }
+    let identities = model.register_identities()?;
+    if let Some(((address, width), identity)) = identities.iter().find(|((address, width), _)| {
+        let end = address.saturating_add(u64::from(*width).div_ceil(8));
+        !mmio.iter().any(|(name, start, range_end)| {
+            paths.owned_ranges.contains(name)
+                && u64::from(*start) <= *address
+                && end <= u64::from(*range_end)
+        })
+    }) {
+        return Err(crate::Error::invalid(format!(
+            "register {identity:?} at {address:#010x}/{width} lies outside [registers].owned-ranges"
+        )));
+    }
+    Ok(Some(summary))
 }
 
 pub(crate) fn validate_register_model_memory_map(

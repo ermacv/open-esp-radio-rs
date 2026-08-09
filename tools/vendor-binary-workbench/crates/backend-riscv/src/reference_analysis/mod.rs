@@ -18,8 +18,9 @@ use std::{
 };
 
 use super::static_analysis::{
-    StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls, SymbolicStack,
-    is_reference_only_blocker, trace_binary_symbol, trace_binary_symbol_with_branches,
+    StructuralCallSite, StructuralPointerContext, StructuralRelocatedCalls, StructuralTraceBudget,
+    SymbolicStack, is_reference_only_blocker, trace_binary_symbol_bounded,
+    trace_binary_symbol_with_branches_bounded,
 };
 use crate::{
     DEFERRED_CALLER_MEMORY_REGION, DraftReferenceEvent, DraftReferenceFlow,
@@ -39,6 +40,28 @@ pub fn resolve_reference_trace(
     svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
 ) -> Result<FunctionAnalysis> {
+    resolve_reference_trace_with_budget(
+        symbol,
+        symbols_by_address,
+        relocated_calls,
+        pointer_context,
+        specialized_arguments,
+        svd,
+        visiting,
+        StructuralTraceBudget::UNBOUNDED,
+    )
+}
+
+fn resolve_reference_trace_with_budget(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    symbols_by_address: &BTreeMap<u32, artifact::ArtifactSymbolDefinition>,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
+    svd: &MmioMap,
+    visiting: &mut BTreeSet<u32>,
+    budget: StructuralTraceBudget,
+) -> Result<FunctionAnalysis> {
     if let Some(mut trace) = pointer_context
         .summary_hooks
         .and_then(|hooks| (hooks.reference_intrinsic)(symbol, svd, pointer_context))
@@ -52,6 +75,7 @@ pub fn resolve_reference_trace(
                     relocated_calls,
                     pointer_context,
                     svd,
+                    budget,
                 },
                 visiting,
                 &mut trace.reference_dependencies,
@@ -76,12 +100,13 @@ pub fn resolve_reference_trace(
         }
         return Ok(trace);
     }
-    let mut trace = trace_binary_symbol(
+    let mut trace = trace_binary_symbol_bounded(
         symbol,
         svd,
         relocated_calls,
         pointer_context,
         specialized_arguments,
+        budget,
     )?;
     trace
         .blockers
@@ -112,6 +137,7 @@ pub fn resolve_reference_trace(
             relocated_calls,
             pointer_context,
             specialized_arguments,
+            budget,
         )
         .and_then(|flow| {
             compose_calls_in_reference_flow(
@@ -121,6 +147,7 @@ pub fn resolve_reference_trace(
                     relocated_calls,
                     pointer_context,
                     svd,
+                    budget,
                 },
                 visiting,
                 &mut trace.reference_dependencies,
@@ -167,5 +194,6 @@ pub fn resolve_reference_trace(
         specialized_arguments,
         svd,
         visiting,
+        budget,
     )
 }

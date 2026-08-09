@@ -55,8 +55,14 @@ fn review(
     if ir_reports.is_empty() && !arguments.no_ir_reports {
         ir_reports.clone_from(&paths.review_ir_reports);
     }
-    let (contents, summary) =
-        render_register_review(&facts, &model, &ir_reports, &paths.facts, &paths.model)?;
+    let (contents, summary) = render_register_review(
+        &facts,
+        &model,
+        &ir_reports,
+        &paths.owned_ranges,
+        &paths.facts,
+        &paths.model,
+    )?;
     crate::application::generated_file::write_or_check(
         output,
         &contents,
@@ -73,6 +79,7 @@ fn review(
         },
         observed: summary.observed,
         reviewed: summary.reviewed,
+        ignored: summary.ignored,
         unreviewed: summary.unreviewed,
         model_only: summary.model_only,
         draft_field_partitions: summary.field_candidates,
@@ -100,7 +107,8 @@ fn init_model(
             .unwrap_or_else(|| "cpu".to_owned()),
     };
     let facts = RegisterFacts::load(&paths.facts)?;
-    let summary = init_register_model(&facts, output, &address_space, &project.id)?;
+    let owned_facts = facts.select_ranges(&paths.owned_ranges)?;
+    let summary = init_register_model(&owned_facts, output, &address_space, &project.id)?;
     let report = RegisterModelDocument {
         schema: 1,
         command: "registers init-model",
@@ -108,7 +116,7 @@ fn init_model(
         model_schema: 2,
         peripherals: summary.peripherals,
         fragments: summary.fragments,
-        observed_registers: facts.registers.len(),
+        observed_registers: owned_facts.registers.len(),
         annotations: None,
         address_space: &address_space,
         input: None,
@@ -155,7 +163,7 @@ fn validate(
     memory_map: Option<&MemoryMap>,
     paths: &crate::project::RegisterWorkspacePaths,
 ) -> Result<bool> {
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let summary = workspace.summary()?;
     let api_pack = validate_pac_api(paths)?;
     let lint_pack = validate_register_lints(paths)?;

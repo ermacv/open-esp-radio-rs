@@ -5,6 +5,10 @@ reverse-engineering evidence. Its `--check` mode performs the same analyses
 but only compares their rendered results with existing files. It never updates
 an output.
 
+This is the normal user interface. The leaf `symbols`, `mmio`, `interfaces`,
+`ir`, `functions`, and `registers` commands expose the same components for
+focused inspection and repair; they are not a second mandatory workflow.
+
 ```console
 cargo vendor-binary-workbench project analyze \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
@@ -12,6 +16,11 @@ cargo vendor-binary-workbench project analyze \
 cargo vendor-binary-workbench project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
+
+`--jobs N` applies bounded concurrency to the independent MMIO-function stage.
+Linked-IR reachability and its transitive summaries remain deterministic and
+serial. Zero is the conservative automatic default; use `--jobs 2` as the
+first explicit setting on a multi-core host.
 
 Use `project doctor` first when diagnosing configuration, backend, catalog, or
 private-artifact readiness. Use write mode after changing inputs or the
@@ -48,6 +57,9 @@ commands remain available for inspecting or overriding one output.
 
 This separation prevents an ordinary vendor-artifact refresh from silently
 turning inferred names, field partitions, or semantics into a public API.
+When a configured function or interface pack is still missing, the human
+summary prints the exact `functions init-pack` or `interfaces init-pack` next
+step after generating the required facts.
 
 ## Dependencies and failure behavior
 

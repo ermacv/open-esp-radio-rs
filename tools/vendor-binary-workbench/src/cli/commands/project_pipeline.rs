@@ -17,9 +17,15 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
+    if arguments.jobs > 8 {
+        return Err(crate::Error::invalid(
+            "project analyze --jobs accepts 0 (safe automatic mode) or 1..=8",
+        ));
+    }
     let request = ProjectAnalysisRequest {
         check: arguments.check,
         deny_unreviewed: arguments.deny_unreviewed,
+        mmio_jobs: usize::from(arguments.jobs),
     };
     let report = crate::application::project_analysis::analyze_project(
         project, request, run_spec, memory_map, svd, target,

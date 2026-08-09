@@ -16,6 +16,7 @@ Declare one or more profiles in `vendor-project.toml`:
 [[analysis.ir]]
 id = "phy"
 sources = ["rom", "archive"]
+roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
 entry-contract = "none"
@@ -25,6 +26,7 @@ pseudo-rust = "generated/reports/phy.pseudo.rs"
 [[analysis.ir]]
 id = "all-rom"
 sources = ["rom"]
+roots = "all"
 output = "generated/findings/rom.ir.json"
 ```
 
@@ -38,8 +40,10 @@ because it would silently analyze nothing. When present, its order controls
 the stable artifact order in generated reports; when omitted, run-spec order
 is retained.
 
-`symbol-prefix` defaults to the empty prefix, which selects every named code
-symbol. `include-reachable` defaults to `true`. `entry-contract` defaults to
+`roots` is required: `"all"` selects every named code symbol, while
+`"symbol-prefix"` requires a non-empty `symbol-prefix`. This keeps full-file
+analysis explicit instead of encoding it as an empty prefix. `include-reachable`
+defaults to `true`. `entry-contract` defaults to
 `none` and is validated against the selected generic or platform harness.
 `pseudo-rust` is optional; schema-v36 JSON is always generated.
 

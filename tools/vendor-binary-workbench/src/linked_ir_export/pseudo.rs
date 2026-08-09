@@ -15,6 +15,7 @@ use super::{
 pub(crate) fn render_pseudo(
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
+    symbol_prefix: &str,
     include_reachable: bool,
 ) -> String {
     let mut output = String::new();
@@ -36,10 +37,15 @@ pub(crate) fn render_pseudo(
     writeln!(
         output,
         "// Selection: {}.",
-        if include_reachable {
-            "symbol-prefix roots plus reachable internal callees from each primary artifact"
-        } else {
-            "symbol-prefix roots only"
+        match (symbol_prefix.is_empty(), include_reachable) {
+            (true, true) => {
+                "all named symbol roots plus reachable internal callees from each primary artifact"
+            }
+            (true, false) => "all named symbol roots",
+            (false, true) => {
+                "symbol-prefix roots plus reachable internal callees from each primary artifact"
+            }
+            (false, false) => "symbol-prefix roots only",
         }
     )
     .expect("writing to String cannot fail");
@@ -510,8 +516,12 @@ pub(crate) fn write_pseudo(
     path: &Path,
     artifacts: &[IrArtifactInput],
     report: &LinkedIrReport,
+    symbol_prefix: &str,
     include_reachable: bool,
 ) -> Result<()> {
-    fs::write(path, render_pseudo(artifacts, report, include_reachable))?;
+    fs::write(
+        path,
+        render_pseudo(artifacts, report, symbol_prefix, include_reachable),
+    )?;
     Ok(())
 }

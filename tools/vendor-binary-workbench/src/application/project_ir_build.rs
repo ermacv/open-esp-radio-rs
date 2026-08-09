@@ -272,7 +272,7 @@ mod tests {
         ProjectIrProfile {
             id: id.to_owned(),
             sources: Vec::new(),
-            symbol_prefix: String::new(),
+            roots: crate::project_ir::ProjectIrRoots::All,
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: PathBuf::from(format!("{id}.json")),

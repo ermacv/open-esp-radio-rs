@@ -26,9 +26,7 @@ pub(super) fn collect(
         if !paths.model.is_file() {
             return None;
         }
-        match ProjectRegisterWorkspace::load(&paths.facts, &paths.model)
-            .and_then(|workspace| workspace.summary())
-        {
+        match ProjectRegisterWorkspace::load(paths).and_then(|workspace| workspace.summary()) {
             Ok(summary) => Some(summary),
             Err(error) => {
                 push_error(diagnostics, "registers", error, Some(paths.model.clone()));
@@ -42,6 +40,7 @@ pub(super) fn collect(
         ranges: summary.map_or(0, |summary| summary.ranges),
         observed: summary.map_or(0, |summary| summary.observed),
         reviewed: summary.map_or(0, |summary| summary.reviewed),
+        ignored: summary.map_or(0, |summary| summary.ignored),
         manual: summary.map_or(0, |summary| summary.manual),
         unreviewed: summary.map_or(0, |summary| summary.unreviewed),
         fields: summary.map_or(0, |summary| summary.fields),
@@ -147,10 +146,22 @@ pub(super) fn detail(
             .as_ref()
             .and_then(|model| model.review().iter().find(|item| item.entity == *identity))
     });
-    let review_status = match (identity.is_some(), fact.is_some()) {
-        (true, true) => RegisterReviewState::Reviewed,
-        (true, false) => RegisterReviewState::Manual,
-        (false, _) => RegisterReviewState::Unreviewed,
+    let outside_publication_scope = fact.is_some_and(|fact| {
+        facts.as_ref().is_some_and(|facts| {
+            facts.ranges.iter().any(|range| {
+                range.contains(fact.address) && !paths.owned_ranges.contains(&range.name)
+            })
+        })
+    });
+    let review_status = match (
+        outside_publication_scope,
+        identity.is_some(),
+        fact.is_some(),
+    ) {
+        (true, _, _) => RegisterReviewState::Ignored,
+        (false, true, true) => RegisterReviewState::Reviewed,
+        (false, true, false) => RegisterReviewState::Manual,
+        (false, false, _) => RegisterReviewState::Unreviewed,
     };
 
     let mut functions = BTreeSet::new();

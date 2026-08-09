@@ -78,7 +78,7 @@ fn registers(context: &ProjectContext<'_>) -> Component {
             .detail("model", paths.model.display().to_string())
             .diagnostic("register model has not been initialized");
     }
-    let workspace = match ProjectRegisterWorkspace::load(&paths.facts, &paths.model) {
+    let workspace = match ProjectRegisterWorkspace::load(paths) {
         Ok(workspace) => workspace,
         Err(error) => {
             return Component::new("registers", Readiness::Invalid)
@@ -111,6 +111,7 @@ fn registers(context: &ProjectContext<'_>) -> Component {
             Readiness::Incomplete
         },
     )
+    .detail("owned_ranges", paths.owned_ranges.join(","))
     .detail("format", workspace.format_label())
     .detail("facts", paths.facts.display().to_string())
     .detail("model", paths.model.display().to_string())

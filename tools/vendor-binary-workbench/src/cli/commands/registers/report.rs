@@ -11,6 +11,7 @@ pub(super) struct RegisterReviewDocument<'a> {
     pub(super) status: &'static str,
     pub(super) observed: usize,
     pub(super) reviewed: usize,
+    pub(super) ignored: usize,
     pub(super) unreviewed: usize,
     pub(super) model_only: usize,
     pub(super) draft_field_partitions: usize,
@@ -106,6 +107,10 @@ pub(super) fn print_review_human(report: &RegisterReviewDocument<'_>) {
             [
                 ["Observed registers".into(), report.observed.to_string()],
                 ["Reviewed registers".into(), report.reviewed.to_string()],
+                [
+                    "Outside publication scope".into(),
+                    report.ignored.to_string()
+                ],
                 ["Unreviewed registers".into(), report.unreviewed.to_string()],
                 ["Model-only registers".into(), report.model_only.to_string()],
                 [

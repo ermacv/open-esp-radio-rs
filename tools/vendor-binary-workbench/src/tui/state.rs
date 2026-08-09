@@ -328,6 +328,7 @@ mod tests {
                 ranges: 0,
                 observed: 0,
                 reviewed: 0,
+                ignored: 0,
                 manual: 0,
                 unreviewed: 0,
                 fields: 0,

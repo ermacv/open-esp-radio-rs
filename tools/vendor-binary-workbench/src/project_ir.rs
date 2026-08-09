@@ -13,11 +13,33 @@ use crate::{Result, project::ProjectSource, source_id::validate_source_id};
 pub(crate) struct ProjectIrProfile {
     pub(crate) id: String,
     pub(crate) sources: Vec<String>,
-    pub(crate) symbol_prefix: String,
+    pub(crate) roots: ProjectIrRoots,
     pub(crate) include_reachable: bool,
     pub(crate) entry_contract: String,
     pub(crate) output: PathBuf,
     pub(crate) pseudo_rust: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ProjectIrRoots {
+    All,
+    SymbolPrefix(String),
+}
+
+impl ProjectIrRoots {
+    pub(crate) const fn mode(&self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::SymbolPrefix(_) => "symbol-prefix",
+        }
+    }
+
+    pub(crate) fn symbol_prefix(&self) -> &str {
+        match self {
+            Self::All => "",
+            Self::SymbolPrefix(prefix) => prefix,
+        }
+    }
 }
 
 pub(crate) fn load_ir_profiles(
@@ -61,8 +83,32 @@ pub(crate) fn load_ir_profiles(
                 ));
             }
             let sources = sources(table, &context, source)?;
-            let symbol_prefix =
-                optional_string(table, "symbol-prefix", &context, source)?.unwrap_or_default();
+            let roots = match required_string(table, "roots", &context, source)?.as_str() {
+                "all" => {
+                    if let Some(item) = table.get("symbol-prefix") {
+                        return Err(source.item(
+                            Some(item),
+                            format!("{context}.symbol-prefix is invalid when roots = \"all\""),
+                        ));
+                    }
+                    ProjectIrRoots::All
+                }
+                "symbol-prefix" => ProjectIrRoots::SymbolPrefix(required_string(
+                    table,
+                    "symbol-prefix",
+                    &context,
+                    source,
+                )?),
+                value => {
+                    return Err(source.table_key(
+                        table,
+                        "roots",
+                        format!(
+                            "{context}.roots must be \"all\" or \"symbol-prefix\", got {value:?}"
+                        ),
+                    ));
+                }
+            };
             let include_reachable =
                 optional_boolean(table, "include-reachable", &context, source)?.unwrap_or(true);
             let entry_contract = optional_string(table, "entry-contract", &context, source)?
@@ -79,7 +125,7 @@ pub(crate) fn load_ir_profiles(
             Ok(ProjectIrProfile {
                 id,
                 sources,
-                symbol_prefix,
+                roots,
                 include_reachable,
                 entry_contract,
                 output,
@@ -223,6 +269,7 @@ mod tests {
 [[analysis.ir]]
 id = "phy"
 sources = ["rom", "archive"]
+roots = "symbol-prefix"
 symbol-prefix = "phy_"
 output = "generated/phy.ir.json"
 pseudo-rust = "generated/phy.pseudo.rs"
@@ -230,6 +277,7 @@ pseudo-rust = "generated/phy.pseudo.rs"
 [[analysis.ir]]
 id = "all-rom"
 sources = ["rom"]
+roots = "all"
 include-reachable = false
 entry-contract = "none"
 output = "generated/rom.ir.json"
@@ -243,12 +291,16 @@ output = "generated/rom.ir.json"
         .unwrap();
         assert_eq!(profiles.len(), 2);
         assert_eq!(profiles[0].sources, ["rom", "archive"]);
+        assert_eq!(
+            profiles[0].roots,
+            ProjectIrRoots::SymbolPrefix("phy_".to_owned())
+        );
         assert!(profiles[0].include_reachable);
         assert_eq!(
             profiles[0].pseudo_rust,
             Some(PathBuf::from("project/generated/phy.pseudo.rs"))
         );
-        assert_eq!(profiles[1].symbol_prefix, "");
+        assert_eq!(profiles[1].roots, ProjectIrRoots::All);
         assert!(!profiles[1].include_reachable);
     }
 
@@ -257,10 +309,12 @@ output = "generated/rom.ir.json"
         let input = r#"
 [[analysis.ir]]
 id = "one"
+roots = "all"
 output = "generated/shared.json"
 
 [[analysis.ir]]
 id = "two"
+roots = "all"
 output = "generated/shared.json"
 "#;
         let document = input.parse::<DocumentMut>().unwrap();
@@ -271,5 +325,33 @@ output = "generated/shared.json"
         )
         .unwrap_err();
         assert!(error.to_string().contains("reuses output path"));
+    }
+
+    #[test]
+    fn root_selection_is_explicit_and_prefix_mode_is_nonempty() {
+        for (profile, expected) in [
+            (
+                "id = \"missing\"\noutput = \"missing.json\"\n",
+                "requires string \"roots\"",
+            ),
+            (
+                "id = \"all\"\nroots = \"all\"\nsymbol-prefix = \"phy_\"\noutput = \"all.json\"\n",
+                "invalid when roots = \"all\"",
+            ),
+            (
+                "id = \"prefix\"\nroots = \"symbol-prefix\"\noutput = \"prefix.json\"\n",
+                "requires string \"symbol-prefix\"",
+            ),
+        ] {
+            let input = format!("[[analysis.ir]]\n{profile}");
+            let document = input.parse::<DocumentMut>().unwrap();
+            let error = load_ir_profiles(
+                &document,
+                Path::new("project"),
+                ProjectSource::new(Path::new("project.toml"), &input),
+            )
+            .unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+        }
     }
 }

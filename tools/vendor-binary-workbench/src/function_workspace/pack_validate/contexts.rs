@@ -174,7 +174,9 @@ fn validate_contexts(
         .map(|field| field.argument)
         .collect::<BTreeSet<_>>();
     for context in &reviewed.contexts {
-        if !contexts.insert(context.argument) || context.argument >= 8 {
+        if !contexts.insert(context.argument)
+            || context.argument >= super::super::MAX_CONTEXT_ARGUMENTS
+        {
             return Err(ValidationError::context(
                 reviewed,
                 context,

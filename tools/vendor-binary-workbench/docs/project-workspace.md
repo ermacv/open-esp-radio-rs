@@ -45,6 +45,7 @@ output = "generated/findings/navigation.json"
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
+roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
 output = "generated/findings/vendor.ir.json"
@@ -53,6 +54,7 @@ pseudo-rust = "generated/reports/vendor.pseudo.rs"
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
+owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/reports/register-review.md"
@@ -176,6 +178,10 @@ visible in the command itself.
 The optional `[registers]` table establishes a generated/reviewed register
 workspace. Its `facts` path becomes the default JSON destination of
 `mmio discover`; `model` is a versioned multi-file hardware description.
+The required `owned-ranges` list names memory-map MMIO regions that belong in
+that published model. Facts from other MMIO regions remain inspectable but are
+classified outside the publication scope instead of blocking an unrelated
+SVD/PAC.
 `registers init-model` bootstraps it from discovery ranges,
 `registers import-svd` migrates an existing catalog, and `registers review`
 joins generated functions/write patterns to reviewed model identities without

@@ -11,6 +11,7 @@ pub(super) fn flatten_reference_trace(
     specialized_arguments: Option<&Rv32CallArguments>,
     svd: &MmioMap,
     visiting: &mut BTreeSet<u32>,
+    budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
     let source_events = std::mem::take(&mut trace.reference_events);
     let mut output = Vec::new();
@@ -446,6 +447,7 @@ pub(super) fn flatten_reference_trace(
                                 relocated_calls,
                                 pointer_context,
                                 svd,
+                                budget,
                             },
                             visiting,
                         )?;

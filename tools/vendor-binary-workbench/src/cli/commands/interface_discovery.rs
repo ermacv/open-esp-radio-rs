@@ -5,9 +5,9 @@ use super::interface_discovery_options::{resolve_options, selected_inputs};
 use crate::{
     analysis::{
         ProjectInterfaceDiscovery as Discovery, ProjectInterfaceDiscoveryOptions,
-        discover_project_interfaces, interface_root_linkage,
+        discover_project_interfaces,
     },
-    interface_discovery::{InterfaceArgumentValue, InterfaceCallCandidate, InterfacePointer},
+    interface_discovery::{InterfaceArgumentValue, InterfaceCallCandidate},
     run_spec::RunSpec,
 };
 
@@ -19,18 +19,6 @@ fn signed_hex(value: i32) -> String {
     }
 }
 
-fn load_chain(pointer: &InterfacePointer) -> String {
-    if pointer.loads.is_empty() {
-        return "direct-function-pointer".to_owned();
-    }
-    pointer
-        .loads
-        .iter()
-        .map(|load| format!("load{}({})", load.width, signed_hex(load.offset)))
-        .collect::<Vec<_>>()
-        .join("->")
-}
-
 fn compact_arguments(call: &InterfaceCallCandidate) -> String {
     let values = call
         .arguments
@@ -39,81 +27,102 @@ fn compact_arguments(call: &InterfaceCallCandidate) -> String {
         .filter(|(_, value)| !matches!(value, InterfaceArgumentValue::Unknown))
         .map(|(index, value)| format!("a{index}={}", value.canonical()))
         .collect::<Vec<_>>();
-    if values.is_empty() {
+    let rendered = if values.is_empty() {
         "-".to_owned()
     } else {
         values.join(",")
-    }
+    };
+    crate::cli::table::compact(rendered, 64)
+}
+
+fn artifact_label(path: &std::path::Path) -> String {
+    let label = path
+        .file_name()
+        .map(|name| name.to_string_lossy())
+        .unwrap_or_else(|| path.as_os_str().to_string_lossy());
+    crate::cli::table::compact(label, 52)
 }
 
 fn print_report(discovery: &Discovery) {
-    for (index, artifact) in discovery.linkage.artifacts.iter().enumerate() {
-        outputln!(
-            "ARTIFACT\tindex={index}\tfunctions={}\troles={}\tsources={}\tpath={}",
-            discovery.functions[index],
-            artifact.roles.join(","),
-            artifact.sources.join(","),
-            artifact.path.display()
-        );
-    }
-    for discovered in &discovery.calls {
-        let call = &discovered.call;
-        let linkage = interface_root_linkage(discovery, discovered.artifact, &call.target.root);
-        let slot = call
-            .target
-            .slot()
-            .map(|load| signed_hex(load.offset))
-            .unwrap_or_else(|| "-".to_owned());
-        outputln!(
-            "INTERFACE_CALL\tartifact={}\tmember={}\tfunction={}\tfunction-address={:#x}\tsite={:#x}\tkind={}\troot-kind={}\troot-addressing={}\troot={}\tchain={}\tcontainer-depth={}\tslot={}\tjalr-offset={}\troot-symbols={}\tlinkage={}\tcandidates={}\targuments={}",
-            discovered.artifact,
-            call.member.as_deref().unwrap_or("-"),
-            call.function,
-            call.function_address,
-            call.site,
-            call.kind.label(),
-            call.target.root.kind(),
-            call.target
-                .root
-                .addressing()
-                .map_or("-", |addressing| addressing.label()),
-            call.target.root.canonical(),
-            load_chain(&call.target),
-            call.target.container_loads().len(),
-            slot,
-            signed_hex(call.jalr_offset),
-            linkage.symbols.into_iter().collect::<Vec<_>>().join(","),
-            linkage
-                .resolutions
-                .into_iter()
-                .collect::<Vec<_>>()
-                .join(","),
-            linkage.candidates.len(),
-            compact_arguments(call),
-        );
-    }
-    for failure in &discovery.failures {
-        outputln!(
-            "DECODE_FAILURE\tartifact={}\tmember={}\tfunction={}\terror={}",
-            failure.artifact,
-            failure.member.as_deref().unwrap_or("-"),
-            failure.function,
-            failure.error
-        );
-    }
+    const MAX_CALLS: usize = 32;
+    const MAX_CALLS_PER_ARTIFACT: usize = 8;
+
+    // A global `take(32)` made the first large ROM image monopolize the human
+    // sample and hid calls from the archive being investigated. Keep the
+    // machine report complete, but show a small representative slice of every
+    // input in the terminal.
+    let visible_calls = (0..discovery.linkage.artifacts.len())
+        .flat_map(|artifact| {
+            discovery
+                .calls
+                .iter()
+                .filter(move |call| call.artifact == artifact)
+                .take(MAX_CALLS_PER_ARTIFACT)
+        })
+        .take(MAX_CALLS)
+        .collect::<Vec<_>>();
+
+    outputln!("Interface discovery");
+    outputln!(
+        "Artifacts:\n{}",
+        crate::cli::table::render(
+            ["#", "Functions", "Roles", "Sources", "Path"],
+            discovery
+                .linkage
+                .artifacts
+                .iter()
+                .enumerate()
+                .map(|(index, artifact)| [
+                    index.to_string(),
+                    discovery.functions[index].to_string(),
+                    artifact.roles.join(", "),
+                    artifact.sources.join(", "),
+                    artifact_label(&artifact.path),
+                ]),
+        )
+    );
+    outputln!(
+        "Representative interface calls ({} of {}):\n{}",
+        visible_calls.len(),
+        discovery.calls.len(),
+        crate::cli::table::render(
+            ["Artifact", "Function", "Site", "Root", "Slot", "Arguments"],
+            visible_calls.into_iter().map(|discovered| {
+                let call = &discovered.call;
+                let slot = call
+                    .target
+                    .slot()
+                    .map(|load| signed_hex(load.offset))
+                    .unwrap_or_else(|| "-".to_owned());
+                [
+                    discovered.artifact.to_string(),
+                    crate::cli::table::compact(&call.function, 40),
+                    format!("{:#010x}", call.site),
+                    crate::cli::table::compact(call.target.root.canonical(), 24),
+                    slot,
+                    compact_arguments(call),
+                ]
+            }),
+        )
+    );
     let table_calls = discovery
         .calls
         .iter()
         .filter(|call| !call.call.target.loads.is_empty())
         .count();
     outputln!(
-        "SUMMARY\tartifacts={}\tfunctions={}\tindirect-candidates={}\ttable-slot-candidates={}\tdecode-failures={}\tsemantic-claims=false\tcompleteness-claim=false",
+        "Summary: artifacts={} functions={} indirect-candidates={} table-slot-candidates={} decode-failures={} semantic-claims=false completeness-claim=false",
         discovery.linkage.artifacts.len(),
         discovery.functions.iter().sum::<usize>(),
         discovery.calls.len(),
         table_calls,
         discovery.failures.len(),
     );
+    if !discovery.failures.is_empty() {
+        outputln!(
+            "Decode failures are retained in the JSON report as scoped incompleteness, not a failure of the usable findings."
+        );
+    }
 }
 
 #[tracing::instrument(name = "discover_interfaces", skip_all)]
@@ -164,5 +173,14 @@ pub(super) fn run(
             "interface discovery JSON report"
         );
     }
-    Ok(discovery.failures.is_empty())
+    if !discovery.failures.is_empty() {
+        tracing::warn!(
+            decode_failures = discovery.failures.len(),
+            "interface discovery retained partial findings"
+        );
+    }
+    // Interface discovery explicitly makes no completeness claim. Per-function
+    // decode failures remain typed evidence in the report and must not discard
+    // usable calls from the rest of a large image.
+    Ok(true)
 }

@@ -563,6 +563,8 @@ mod tests {
             "analyze".to_owned(),
             "--check".to_owned(),
             "--deny-unreviewed".to_owned(),
+            "--jobs".to_owned(),
+            "2".to_owned(),
         ])
         .unwrap();
         let Command::ProjectAnalyze(arguments) = invocation.command else {
@@ -570,6 +572,7 @@ mod tests {
         };
         assert!(arguments.check);
         assert!(arguments.deny_unreviewed);
+        assert_eq!(arguments.jobs, 2);
 
         for removed in ["build", "check"] {
             let error =

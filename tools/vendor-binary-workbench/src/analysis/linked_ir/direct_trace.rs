@@ -430,6 +430,27 @@ pub(super) fn explore_direct_calls(
     identities: &IrIdentityCatalog,
     svd: &MmioMap,
 ) -> DirectCallGraph {
+    const MAX_BLOCKERS: usize = 64;
+    const MAX_BLOCKER_CHARS: usize = 2_048;
+
+    fn record_blocker(blockers: &mut BTreeSet<String>, message: impl Into<String>) {
+        if blockers.len() >= MAX_BLOCKERS {
+            blockers.insert(
+                "additional call-graph diagnostics omitted by the linked-IR exploration budget"
+                    .to_owned(),
+            );
+            return;
+        }
+        let message = message.into();
+        let mut chars = message.chars();
+        let bounded = chars.by_ref().take(MAX_BLOCKER_CHARS).collect::<String>();
+        blockers.insert(if chars.next().is_some() {
+            format!("{bounded}… [diagnostic truncated]")
+        } else {
+            bounded
+        });
+    }
+
     let mut result = DirectCallGraph::default();
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
@@ -437,23 +458,30 @@ pub(super) fn explore_direct_calls(
 
     while let Some(forced_branches) = queue.pop_front() {
         if explored_states >= MAX_CALL_GRAPH_STATES {
-            result.blockers.insert(format!(
-                "call graph exceeds the exploration limit of {MAX_CALL_GRAPH_STATES} states"
-            ));
+            record_blocker(
+                &mut result.blockers,
+                format!(
+                    "call graph exceeds the exploration limit of {MAX_CALL_GRAPH_STATES} states"
+                ),
+            );
             break;
         }
         explored_states += 1;
-        let trace = match direct::trace_binary_symbol_with_branches(
+        let trace = match direct::trace_binary_symbol_with_branches_bounded(
             symbol,
             svd,
             &resolver.relocated_calls,
             &resolver.pointer_context,
             None,
             &forced_branches,
+            direct::StructuralTraceBudget {
+                max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
+                max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
+            },
         ) {
             Ok(trace) => trace,
             Err(error) => {
-                result.blockers.insert(error.to_string());
+                record_blocker(&mut result.blockers, error.to_string());
                 continue;
             }
         };
@@ -505,27 +533,33 @@ pub(super) fn explore_direct_calls(
                 });
             }
         }
-        result
-            .blockers
-            .extend(trace.reference_blockers.iter().cloned());
+        for blocker in &trace.reference_blockers {
+            record_blocker(&mut result.blockers, blocker);
+        }
 
         let Some(branch) = trace.unresolved_branch else {
             continue;
         };
         if forced_branches.len() >= MAX_CALL_GRAPH_BRANCH_DECISIONS {
-            result.blockers.insert(format!(
-                "call graph exceeds the limit of {MAX_CALL_GRAPH_BRANCH_DECISIONS} branch decisions per path at {:#010x}",
-                branch.site
-            ));
+            record_blocker(
+                &mut result.blockers,
+                format!(
+                    "call graph exceeds the limit of {MAX_CALL_GRAPH_BRANCH_DECISIONS} branch decisions per path at {:#010x}",
+                    branch.site
+                ),
+            );
             continue;
         }
         for taken in [false, true] {
             let mut next = forced_branches.clone();
             if next.insert(branch.site, taken).is_some() {
-                result.blockers.insert(format!(
-                    "call graph revisits branch {:#010x}; that path is incomplete",
-                    branch.site
-                ));
+                record_blocker(
+                    &mut result.blockers,
+                    format!(
+                        "call graph revisits branch {:#010x}; that path is incomplete",
+                        branch.site
+                    ),
+                );
             } else if queued.insert(next.clone()) {
                 queue.push_back(next);
             }

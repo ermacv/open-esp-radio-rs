@@ -31,6 +31,12 @@ impl EffectiveCodeCatalog {
             .as_ref()
             .ok_or_else(|| crate::Error::invalid("[code] requires [analysis.symbols]"))?
             .output;
+        if !inventory.is_file() {
+            return Err(crate::Error::invalid(format!(
+                "code-boundary facts are missing at {}; run `vendor-binary-workbench symbols inventory --project PATH` first",
+                inventory.display(),
+            )));
+        }
         let facts = load_code_boundary_facts(inventory)?;
         let workspace = CodeWorkspace::load(&facts, &paths.pack, &project.id)?;
         let source_digests = facts.inputs.iter().fold(

@@ -44,6 +44,25 @@ const MAX_INLINE_MEMORY_INTRINSIC_BYTES: u32 = 256;
 // still exhausts the budget instead of becoming a reference program.
 const MAX_STRUCTURAL_INSTRUCTION_VISITS: u16 = 1_024;
 
+/// Resource limits for one structural trace.
+///
+/// Ordinary reference generation uses the unbounded policy because its
+/// callers select individual reviewed functions. Artifact-wide inventories
+/// use an explicit bounded policy so malformed or unexpectedly large vendor
+/// functions become fail-closed blockers instead of exhausting host memory.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StructuralTraceBudget {
+    pub max_instruction_steps: usize,
+    pub max_events: usize,
+}
+
+impl StructuralTraceBudget {
+    pub const UNBOUNDED: Self = Self {
+        max_instruction_steps: usize::MAX,
+        max_events: usize::MAX,
+    };
+}
+
 #[derive(Debug)]
 pub struct RiscvSummaryHooks {
     pub secondary_return_target: fn(u32) -> bool,
@@ -97,6 +116,25 @@ pub fn trace_binary_symbol(
     )
 }
 
+pub fn trace_binary_symbol_bounded(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    svd: &MmioMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
+    budget: StructuralTraceBudget,
+) -> Result<FunctionAnalysis> {
+    trace_binary_symbol_with_branches_bounded(
+        symbol,
+        svd,
+        relocated_calls,
+        pointer_context,
+        specialized_arguments,
+        &BTreeMap::new(),
+        budget,
+    )
+}
+
 pub fn trace_binary_symbol_with_branches(
     symbol: &artifact::ArtifactSymbolDefinition,
     svd: &MmioMap,
@@ -104,6 +142,26 @@ pub fn trace_binary_symbol_with_branches(
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
     forced_branches: &BTreeMap<u32, bool>,
+) -> Result<FunctionAnalysis> {
+    trace_binary_symbol_with_branches_bounded(
+        symbol,
+        svd,
+        relocated_calls,
+        pointer_context,
+        specialized_arguments,
+        forced_branches,
+        StructuralTraceBudget::UNBOUNDED,
+    )
+}
+
+pub fn trace_binary_symbol_with_branches_bounded(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    svd: &MmioMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
+    forced_branches: &BTreeMap<u32, bool>,
+    budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
     let mut state = StructuralTraceState::new(specialized_arguments);
 
@@ -114,6 +172,7 @@ pub fn trace_binary_symbol_with_branches(
         .map(|(index, instruction)| (instruction.address as u32, index))
         .collect::<BTreeMap<_, _>>();
     let mut instruction_index = 0usize;
+    let mut instruction_steps = 0usize;
     let mut instruction_visits = BTreeMap::<u32, u16>::new();
     // Reference-flow exploration forces one outcome per unresolved branch
     // site. A loop-invariant branch inside a concrete counted loop therefore
@@ -124,6 +183,22 @@ pub fn trace_binary_symbol_with_branches(
     let mut emitted_forced_branch_decisions = BTreeSet::<u32>::new();
     let mut checkpoints = BTreeMap::<u32, StructuralCheckpoint>::new();
     while let Some(decoded) = instructions.get(instruction_index).copied() {
+        if instruction_steps >= budget.max_instruction_steps {
+            state.blockers.push(format!(
+                "structural trace exceeds the artifact-wide budget of {} instruction steps",
+                budget.max_instruction_steps
+            ));
+            break;
+        }
+        let emitted_events = state.events.len() + state.reference_events.len();
+        if emitted_events >= budget.max_events {
+            state.blockers.push(format!(
+                "structural trace exceeds the artifact-wide budget of {} emitted events",
+                budget.max_events
+            ));
+            break;
+        }
+        instruction_steps += 1;
         let pc = decoded.address;
         let width = decoded.width;
         let instruction = decoded.instruction;

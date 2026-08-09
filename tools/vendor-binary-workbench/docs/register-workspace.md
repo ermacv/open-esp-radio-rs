@@ -17,6 +17,7 @@ provenance annotations.
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
+owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/reports/register-review.md"
@@ -43,7 +44,7 @@ pack = "registers/api.toml"
 [registers.lints]
 pack = "registers/lints.toml"
 
-[registers.toml]
+[registers.evidence]
 catalogs = ["registers/evidence.toml"]
 ```
 
@@ -51,6 +52,12 @@ All paths are relative to `vendor-project.toml`. PAC target is `none` or
 `riscv`; edition is `2021` or `2024`. Command-line `--output`, `--target` and
 `--edition` override these defaults. `crate-name` is the Rust import name
 (normally the Cargo package name with `-` replaced by `_`), not a package name.
+`owned-ranges` is required and names MMIO regions from the project memory map
+that this register model owns and may publish. Discovery still scans every
+configured MMIO region. Observations outside this list remain visible as
+`ignored` evidence, but they do not become radio-model review debt and do not
+block SVD/PAC publication. An unmatched observation inside an owned range
+remains `unreviewed` and does block strict publication.
 Review reports are generated and should normally stay under an ignored
 `generated/` directory.
 

@@ -41,7 +41,9 @@ pub(super) fn validate(inputs: &[FunctionInputFact], functions: &[FunctionFact])
         }
         let mut fields = BTreeSet::new();
         for field in &function.context_fields {
-            if field.argument >= 8 || !matches!(field.width, 8 | 16 | 32 | 64) {
+            if field.argument >= super::super::MAX_CONTEXT_ARGUMENTS
+                || !matches!(field.width, 8 | 16 | 32 | 64)
+            {
                 return Err(crate::Error::invalid(format!(
                     "function {}:{} has an invalid context field",
                     function.profile, function.identity

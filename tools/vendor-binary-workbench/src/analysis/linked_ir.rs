@@ -2,6 +2,9 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use indicatif::ProgressStyle;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
+
 use crate::{
     BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
     DraftReferenceTerminator, ExpressionOperation, ExternalReturnModel, FunctionAnalysis,
@@ -10,6 +13,8 @@ use crate::{
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
 const MAX_CALL_GRAPH_BRANCH_DECISIONS: usize = 12;
+const MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE: usize = 4_096;
+const MAX_CALL_GRAPH_EVENTS_PER_TRACE: usize = 1_024;
 const MAX_CONTEXT_PROJECTION_STATES: usize = 4_096;
 const LINKED_CONTEXT_ARGUMENTS: u8 = 16;
 
@@ -138,6 +143,8 @@ pub(crate) fn build_linked_ir_for_source(
         }
     }
 
+    let progress = linked_ir_progress_span(source, scheduled.len());
+
     while let Some(symbol) = pending.pop_front() {
         let selection = if symbol.name.starts_with(symbol_prefix) {
             "symbol-prefix-root"
@@ -163,13 +170,21 @@ pub(crate) fn build_linked_ir_for_source(
                 };
                 if scheduled.insert(symbol_key(callee)) {
                     pending.push_back(callee.clone());
+                    progress.pb_inc_length(1);
                 }
             }
         }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
         let call_graph_blockers = rendered_diagnostics(&call_graph_diagnostics);
-        match resolver.trace_symbol(&symbol, svd) {
+        match resolver.trace_symbol_bounded(
+            &symbol,
+            svd,
+            direct::StructuralTraceBudget {
+                max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
+                max_events: MAX_CALL_GRAPH_EVENTS_PER_TRACE,
+            },
+        ) {
             Ok(trace) => {
                 let memory_accesses = memory_object_accesses_for_trace(&trace);
                 let memory_fields = memory_object_fields_for_accesses(&memory_accesses);
@@ -301,9 +316,33 @@ pub(crate) fn build_linked_ir_for_source(
                 });
             }
         }
+        progress.pb_inc(1);
+        progress.pb_set_message(&format!("{source}: completed {function_identity}"));
     }
 
+    progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", functions.len()));
+
     summarize_linked_ir(functions)
+}
+
+fn linked_ir_progress_span(source: &str, functions: usize) -> tracing::Span {
+    let span = tracing::info_span!(
+        "linked_ir_source",
+        indicatif.pb_show = tracing::field::Empty,
+        source,
+        functions,
+    );
+    span.pb_set_style(
+        &ProgressStyle::with_template(
+            "{spinner:.cyan} [{elapsed_precise}] {pos:>5}/{len:<5} {msg}",
+        )
+        .expect("static linked-IR progress template")
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    span.pb_set_length(functions as u64);
+    span.pb_set_message(&format!("{source}: analyzing functions"));
+    span.pb_start();
+    span
 }
 
 pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {

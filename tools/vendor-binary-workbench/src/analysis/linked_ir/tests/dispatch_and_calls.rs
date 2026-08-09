@@ -500,6 +500,25 @@ fn diagnostic_compaction_leaves_a_single_fragment_unchanged() {
 }
 
 #[test]
+fn diagnostic_compaction_bounds_large_human_evidence() {
+    let messages = (0..80)
+        .map(|index| format!("diagnostic {index}: {}", "x".repeat(1_024)))
+        .collect::<Vec<_>>();
+    let diagnostics = compact_diagnostics(&messages);
+
+    assert_eq!(diagnostics.len(), 65);
+    assert!(
+        diagnostics
+            .last()
+            .unwrap()
+            .rendered
+            .contains("16 additional")
+    );
+    assert!(diagnostics[0].rendered.contains("fragment truncated"));
+    assert!(diagnostics[0].rendered.len() < 600);
+}
+
+#[test]
 fn pseudo_value_renders_register_images_as_read_modify_write_expressions() {
     let value = SymbolicValue::RegisterImage {
         read_token: 3,

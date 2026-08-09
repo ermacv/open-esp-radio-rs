@@ -74,13 +74,14 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         build_symbol_inventory(self.project, self.run_spec()?, check)
     }
 
-    fn discover_mmio(&mut self, check: bool) -> Result<bool> {
+    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<bool> {
         discover_project_mmio(
             self.project,
             self.run_spec()?,
             self.memory_map()?,
             self.svd,
             check,
+            jobs,
         )
     }
 
@@ -167,6 +168,7 @@ pub(crate) fn discover_project_mmio(
     memory_map: &MemoryMap,
     svd: &MmioMap,
     check: bool,
+    jobs: usize,
 ) -> Result<bool> {
     let output = &project
         .registers
@@ -193,6 +195,7 @@ pub(crate) fn discover_project_mmio(
         artifact::CodeSymbolSelection::All,
         svd,
         Some(&EffectiveCodeCatalog::load(project)?),
+        crate::analysis::MmioDiscoveryOptions { jobs },
     )?;
     let document = mmio_document(&report)?;
     super::super::generated_file::write_or_check(
@@ -237,7 +240,13 @@ pub(crate) fn discover_project_interfaces_operation(
         check,
         "interface discovery report",
     )?;
-    Ok(discovery.failures.is_empty())
+    if !discovery.failures.is_empty() {
+        tracing::warn!(
+            decode_failures = discovery.failures.len(),
+            "interface discovery retained partial findings"
+        );
+    }
+    Ok(true)
 }
 
 pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<bool> {
@@ -300,7 +309,7 @@ pub(crate) fn validate_registers(
         .registers
         .as_ref()
         .ok_or_else(|| crate::Error::invalid("[registers] is absent"))?;
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let summary = workspace.summary()?;
     validate_pac_api(paths)?;
     validate_register_lints(paths)?;
@@ -329,6 +338,7 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
         &facts,
         &model,
         &paths.review_ir_reports,
+        &paths.owned_ranges,
         &paths.facts,
         &paths.model,
     )?;

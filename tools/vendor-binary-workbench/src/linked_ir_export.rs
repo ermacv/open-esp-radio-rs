@@ -49,7 +49,7 @@ pub(crate) fn generate_project_profile(
     let (entry_contract, report) = analyze(
         &artifacts,
         &companions,
-        &profile.symbol_prefix,
+        profile.roots.symbol_prefix(),
         profile.include_reachable,
         &profile.entry_contract,
         svd,
@@ -59,16 +59,20 @@ pub(crate) fn generate_project_profile(
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
         &companions,
-        &profile.symbol_prefix,
+        profile.roots.symbol_prefix(),
         entry_contract,
         &report,
         profile.include_reachable,
     )?;
     let json = crate::artifacts::render_linked_ir(&document)?;
-    let pseudo = profile
-        .pseudo_rust
-        .as_ref()
-        .map(|_| render_pseudo(&artifacts, &report, profile.include_reachable));
+    let pseudo = profile.pseudo_rust.as_ref().map(|_| {
+        render_pseudo(
+            &artifacts,
+            &report,
+            profile.roots.symbol_prefix(),
+            profile.include_reachable,
+        )
+    });
     Ok(ProjectIrDocuments {
         json,
         pseudo,
@@ -120,9 +124,11 @@ pub(crate) fn analyze(
     }
     let report = merge_linked_ir(reports);
     if report.functions.is_empty() {
-        return Err(crate::Error::invalid(format!(
-            "no named code symbols start with {symbol_prefix:?} in any IR artifact"
-        )));
+        return Err(crate::Error::invalid(if symbol_prefix.is_empty() {
+            "no named code symbols were found in any IR artifact".to_owned()
+        } else {
+            format!("no named code symbols start with {symbol_prefix:?} in any IR artifact")
+        }));
     }
     Ok((entry_contract, report))
 }

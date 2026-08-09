@@ -2,11 +2,11 @@ use super::*;
 
 fn invalid_project_span(input: &str, name: &str) -> (usize, usize, String) {
     let directory = std::env::temp_dir().join(format!(
-        "open-radio-workbench-project-diagnostic-{}",
-        std::process::id()
+        "open-radio-workbench-project-diagnostic-{}-{name}",
+        std::process::id(),
     ));
     std::fs::create_dir_all(&directory).unwrap();
-    let path = directory.join(name);
+    let path = directory.join("vendor-project.toml");
     std::fs::write(&path, input).unwrap();
     let error = ProjectSpec::load(&path).unwrap_err();
     std::fs::remove_file(path).unwrap();
@@ -16,6 +16,21 @@ fn invalid_project_span(input: &str, name: &str) -> (usize, usize, String) {
         panic!("expected a source-aware project error, got {message}")
     };
     (span.offset(), span.len(), message)
+}
+
+#[test]
+fn register_workspace_requires_an_explicit_nonempty_publication_scope() {
+    let (_, _, missing) = invalid_project_span(
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n",
+        "missing-owned-ranges.toml",
+    );
+    assert!(missing.contains("requires \"owned-ranges\""));
+
+    let (_, _, duplicate) = invalid_project_span(
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\", \"radio\"]\n",
+        "duplicate-owned-ranges.toml",
+    );
+    assert!(duplicate.contains("duplicate project registers.owned-ranges"));
 }
 
 #[test]
@@ -51,6 +66,7 @@ output = "generated/code-boundaries.md"
 [[analysis.ir]]
 id = "vendor"
 sources = ["rom", "archive"]
+roots = "symbol-prefix"
 symbol-prefix = "phy_"
 include-reachable = true
 output = "generated/vendor.ir.json"
@@ -59,6 +75,7 @@ pseudo-rust = "generated/vendor.pseudo.rs"
 [registers]
 facts = "generated/mmio.json"
 model = "registers/reviewed.toml"
+owned-ranges = ["radio"]
 
 [registers.review]
 output = "generated/register-review.md"
@@ -134,7 +151,7 @@ profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
         [ProjectIrProfile {
             id: "vendor".to_owned(),
             sources: vec!["rom".to_owned(), "archive".to_owned()],
-            symbol_prefix: "phy_".to_owned(),
+            roots: crate::project_ir::ProjectIrRoots::SymbolPrefix("phy_".to_owned()),
             include_reachable: true,
             entry_contract: "none".to_owned(),
             output: directory.join("generated/vendor.ir.json"),
@@ -146,6 +163,7 @@ profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
         Some(RegisterWorkspacePaths {
             facts: directory.join("generated/mmio.json"),
             model: directory.join("registers/reviewed.toml"),
+            owned_ranges: vec!["radio".to_owned()],
             review_output: Some(directory.join("generated/register-review.md")),
             review_ir_reports: vec![directory.join("generated/vendor.ir.json")],
             svd_output: Some(directory.join("generated/device.svd")),
@@ -221,7 +239,7 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
         ),
         (
             "wrong-pac-edition.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\nowned-ranges = [\"radio\"]\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
             "\"2018\"",
             "edition must be",
         ),
@@ -233,7 +251,7 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
         ),
         (
             "unknown-function-profile.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\nroots = \"all\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
             "[\"missing\"]",
             "unknown IR profile",
         ),
@@ -324,6 +342,7 @@ output = "generated/facts.json"
 [registers]
 facts = "generated/facts.json"
 model = "registers/device.toml"
+owned-ranges = ["radio"]
 "#,
     )
     .unwrap();

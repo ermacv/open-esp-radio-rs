@@ -119,7 +119,8 @@ pub(crate) struct InterfaceFacts {
 impl InterfaceFacts {
     #[tracing::instrument(name = "load_interface_facts", fields(path = %path.display()))]
     pub(crate) fn load(path: &Path) -> Result<Self> {
-        let input = fs::read_to_string(path)?;
+        let input = fs::read_to_string(path)
+            .map_err(|error| crate::Error::read("interface discovery report", path, error))?;
         parse::parse(&input).map_err(|error| {
             WorkbenchError::manifest_document("interface discovery report", path, &input, error)
         })

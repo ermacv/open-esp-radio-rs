@@ -2,6 +2,44 @@
 
 use super::*;
 
+// Symbolic values are evidence trees, not an unrestricted expression CAS.
+// Repeated register updates can otherwise clone an expression into an
+// exponential tree while analyzing a large compiler-generated function. A
+// value beyond this boundary becomes Unknown, which preserves fail-closed
+// analysis while bounding clone, formatting and drop costs.
+const MAX_SYMBOLIC_VALUE_NODES: usize = 256;
+
+fn symbolic_nodes(value: &SymbolicValue) -> usize {
+    let mut count = 0_usize;
+    let mut pending = vec![value];
+    while let Some(value) = pending.pop() {
+        count += 1;
+        if count > MAX_SYMBOLIC_VALUE_NODES {
+            return count;
+        }
+        match value {
+            SymbolicValue::Expression { left, right, .. } => {
+                pending.push(left);
+                pending.push(right);
+            }
+            SymbolicValue::WideSignedDivide {
+                dividend_low,
+                dividend_high,
+                divisor_low,
+                divisor_high,
+                ..
+            } => {
+                pending.push(dividend_low);
+                pending.push(dividend_high);
+                pending.push(divisor_low);
+                pending.push(divisor_high);
+            }
+            _ => {}
+        }
+    }
+    count
+}
+
 impl SymbolicValue {
     pub fn and(self, constant: u32) -> Self {
         if matches!(&self, Self::Expression { .. }) {
@@ -368,6 +406,13 @@ impl SymbolicValue {
         if !left.is_resolved() || !right.is_resolved() {
             return Self::Unknown;
         }
+        if 1_usize
+            .saturating_add(symbolic_nodes(&left))
+            .saturating_add(symbolic_nodes(&right))
+            > MAX_SYMBOLIC_VALUE_NODES
+        {
+            return Self::Unknown;
+        }
         Self::Expression {
             operation,
             left: Box::new(left),
@@ -391,6 +436,15 @@ impl SymbolicValue {
         {
             return (Self::Unknown, Self::Unknown);
         }
+        if 1_usize
+            .saturating_add(symbolic_nodes(&dividend_low))
+            .saturating_add(symbolic_nodes(&dividend_high))
+            .saturating_add(symbolic_nodes(&divisor_low))
+            .saturating_add(symbolic_nodes(&divisor_high))
+            > MAX_SYMBOLIC_VALUE_NODES
+        {
+            return (Self::Unknown, Self::Unknown);
+        }
         let word = |high_word| Self::WideSignedDivide {
             dividend_low: Box::new(dividend_low.clone()),
             dividend_high: Box::new(dividend_high.clone()),
@@ -399,5 +453,23 @@ impl SymbolicValue {
             high_word,
         };
         (word(false), word(true))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expression_growth_becomes_unknown_before_it_can_exhaust_host_memory() {
+        let mut value = SymbolicValue::input(0);
+        for _ in 0..MAX_SYMBOLIC_VALUE_NODES {
+            value = SymbolicValue::expression(
+                ExpressionOperation::Add,
+                value,
+                SymbolicValue::Constant(1),
+            );
+        }
+        assert_eq!(value, SymbolicValue::Unknown);
     }
 }

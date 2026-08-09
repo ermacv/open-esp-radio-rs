@@ -27,13 +27,14 @@ fn collect_workspace(context: &ProjectContext<'_>, report: &mut DoctorReport) {
     };
 
     if paths.model.is_file() {
-        match ProjectRegisterWorkspace::load(&paths.facts, &paths.model)
+        match ProjectRegisterWorkspace::load(paths)
             .and_then(|workspace| Ok((workspace.summary()?, workspace.format_label())))
         {
             Ok((summary, format)) => {
                 report.capability(
                     CapabilityReport::new("register-workspace", "available")
                         .field("format", format)
+                        .field("owned-ranges", paths.owned_ranges.clone())
                         .field("ranges", summary.ranges)
                         .field("observed", summary.observed)
                         .field("reviewed", summary.reviewed)

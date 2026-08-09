@@ -119,7 +119,7 @@ fn load_release_workspace(
     paths: &crate::project::RegisterWorkspacePaths,
     operation: &str,
 ) -> crate::Result<ProjectRegisterWorkspace> {
-    let workspace = ProjectRegisterWorkspace::load(&paths.facts, &paths.model)?;
+    let workspace = ProjectRegisterWorkspace::load(paths)?;
     let summary = workspace.summary()?;
     if summary.unreviewed != 0 {
         return Err(crate::Error::invalid(format!(

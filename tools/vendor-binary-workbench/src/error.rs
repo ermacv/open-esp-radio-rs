@@ -53,6 +53,17 @@ pub(crate) enum WorkbenchError {
         help("use the leaf command's --help output or correct the referenced project input")
     )]
     InvalidInput { message: String },
+    #[error("cannot read {kind} {path}")]
+    #[diagnostic(
+        code(workbench::input::read),
+        help("initialize the missing project workspace or correct its configured path")
+    )]
+    ReadInput {
+        kind: &'static str,
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("{message}")]
     #[diagnostic(code(workbench::input::line))]
     InputLine { line: usize, message: String },
@@ -140,6 +151,14 @@ impl WorkbenchError {
     pub(crate) fn invalid(message: impl Into<String>) -> Self {
         Self::InvalidInput {
             message: message.into(),
+        }
+    }
+
+    pub(crate) fn read(kind: &'static str, path: &std::path::Path, source: io::Error) -> Self {
+        Self::ReadInput {
+            kind,
+            path: path.to_owned(),
+            source,
         }
     }
 

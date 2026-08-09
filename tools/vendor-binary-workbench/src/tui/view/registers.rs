@@ -46,6 +46,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
         field("Ranges", report.ranges),
         field("Observed", report.observed),
         field("Reviewed", report.reviewed),
+        field("Outside publication scope", report.ignored),
         field("Manual", report.manual),
         field("Unreviewed", report.unreviewed),
         field("Fields", report.fields),

@@ -123,6 +123,7 @@ bitWidth = 1
     let paths = RegisterWorkspacePaths {
         facts: directory.join("generated/mmio.json"),
         model: directory.join("registers/device.toml"),
+        owned_ranges: vec!["radio".to_owned()],
         review_output: None,
         review_ir_reports: Vec::new(),
         svd_output: svd.then(|| directory.join("generated/device.svd")),

@@ -73,6 +73,7 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     assert!(project.interfaces.is_some());
     assert!(project.functions.is_some());
     assert!(project.code.is_some());
+    assert_eq!(project.registers.as_ref().unwrap().owned_ranges, ["radio"]);
     target.require_available_backend().unwrap();
     assert_eq!(memory.mmio_ranges().unwrap().len(), 1);
     assert_eq!(model.render_svd().unwrap().1.peripherals, 1);

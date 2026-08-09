@@ -7,6 +7,7 @@ pub(super) struct ReferenceCalleeContext<'a> {
     pub(super) relocated_calls: &'a StructuralRelocatedCalls,
     pub(super) pointer_context: &'a StructuralPointerContext,
     pub(super) svd: &'a MmioMap,
+    pub(super) budget: StructuralTraceBudget,
 }
 
 #[derive(Clone, Debug)]
@@ -93,10 +94,11 @@ pub(super) fn explore_reference_flow(
     relocated_calls: &StructuralRelocatedCalls,
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
+    budget: StructuralTraceBudget,
 ) -> std::result::Result<DraftReferenceFlow, String> {
-    const MAX_COMPLETE_PATHS: usize = 64;
-    const MAX_EXPLORED_STATES: usize = MAX_COMPLETE_PATHS * 2 - 1;
-    const MAX_BRANCH_DECISIONS: usize = 12;
+    let max_complete_paths = 64;
+    let max_explored_states = max_complete_paths * 2 - 1;
+    let max_branch_decisions = 12;
 
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
@@ -105,18 +107,19 @@ pub(super) fn explore_reference_flow(
 
     while let Some(forced_branches) = queue.pop_front() {
         explored_states += 1;
-        if explored_states > MAX_EXPLORED_STATES {
+        if explored_states > max_explored_states {
             return Err(format!(
-                "symbolic CFG exceeds the exploration limit of {MAX_COMPLETE_PATHS} complete paths"
+                "symbolic CFG exceeds the exploration limit of {max_complete_paths} complete paths"
             ));
         }
-        let trace = trace_binary_symbol_with_branches(
+        let trace = trace_binary_symbol_with_branches_bounded(
             symbol,
             svd,
             relocated_calls,
             pointer_context,
             specialized_arguments,
             &forced_branches,
+            budget,
         )
         .map_err(|error| error.to_string())?;
 
@@ -166,9 +169,9 @@ pub(super) fn explore_reference_flow(
                         .join("; ")
                 ));
             }
-            if forced_branches.len() >= MAX_BRANCH_DECISIONS {
+            if forced_branches.len() >= max_branch_decisions {
                 return Err(format!(
-                    "symbolic CFG exceeds the limit of {MAX_BRANCH_DECISIONS} branch decisions per path"
+                    "symbolic CFG exceeds the limit of {max_branch_decisions} branch decisions per path"
                 ));
             }
             for taken in [false, true] {
@@ -205,9 +208,9 @@ pub(super) fn explore_reference_flow(
             events: trace.reference_events.into(),
             return_value: trace.return_value,
         });
-        if paths.len() > MAX_COMPLETE_PATHS {
+        if paths.len() > max_complete_paths {
             return Err(format!(
-                "symbolic CFG exceeds the exploration limit of {MAX_COMPLETE_PATHS} complete paths"
+                "symbolic CFG exceeds the exploration limit of {max_complete_paths} complete paths"
             ));
         }
     }
@@ -242,7 +245,7 @@ pub(super) fn resolve_reference_callee(
     if !visiting.insert(target) {
         return Err(format!("recursive-call at {site:#010x} to {}", callee.name));
     }
-    let result = resolve_reference_trace(
+    let result = resolve_reference_trace_with_budget(
         callee,
         context.symbols_by_address,
         context.relocated_calls,
@@ -250,6 +253,7 @@ pub(super) fn resolve_reference_callee(
         Some(arguments),
         context.svd,
         visiting,
+        context.budget,
     )
     .map_err(|error| format!("callee-decode at {site:#010x}: {}: {error}", callee.name));
     visiting.remove(&target);

@@ -330,7 +330,8 @@ impl InterfaceWorkspace {
 impl InterfacePack {
     #[tracing::instrument(name = "load_interface_pack", fields(path = %path.display()))]
     fn load(path: &Path) -> Result<LoadedInterfacePack> {
-        let input = fs::read_to_string(path)?;
+        let input = fs::read_to_string(path)
+            .map_err(|error| crate::Error::read("interface pack", path, error))?;
         let source_document = Document::parse(input.clone()).map_err(|error| {
             crate::error::WorkbenchError::manifest_source(
                 "interface pack",

@@ -4,10 +4,7 @@ use super::super::*;
 
 mod human;
 
-use crate::linked_ir_export::{
-    IrArtifactInput, analyze, field_candidate_summary, format_site_path, guard_direct_mmio_links,
-    guard_mmio_links, optional_hex_text, provenance_summary, write_pseudo,
-};
+use crate::linked_ir_export::{IrArtifactInput, analyze, write_pseudo};
 #[cfg(test)]
 use crate::linked_ir_export::{named_artifact, validate_artifact_inputs};
 use human::print_report;
@@ -60,7 +57,13 @@ pub(super) fn run(
         arguments.include_reachable,
     )?;
     if let Some(path) = arguments.pseudo_rust.as_deref() {
-        write_pseudo(path, &artifacts, &report, arguments.include_reachable)?;
+        write_pseudo(
+            path,
+            &artifacts,
+            &report,
+            &arguments.symbol_prefix,
+            arguments.include_reachable,
+        )?;
     }
     if let Some(path) = arguments.json_report.as_deref() {
         crate::artifacts::write_linked_ir(path, &document)?;

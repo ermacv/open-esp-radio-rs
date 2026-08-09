@@ -35,8 +35,12 @@ impl IrDoctorReport {
         );
         for profile in &self.profiles {
             outputln!(
-                "  {:<20} inputs={:<20} output={:<14} functions={} registers={} fields={}",
+                "  {:<20} roots={:<20} inputs={:<20} output={:<14} functions={} registers={} fields={}",
                 profile.id,
+                profile.symbol_prefix.as_ref().map_or_else(
+                    || profile.roots.to_owned(),
+                    |prefix| format!("{}:{prefix}", profile.roots),
+                ),
                 profile.input_status,
                 profile.output_status,
                 profile.functions,
@@ -56,7 +60,9 @@ struct IrProfileReport {
     input_status: &'static str,
     sources: Vec<String>,
     missing: Vec<String>,
-    symbol_prefix: String,
+    roots: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    symbol_prefix: Option<String>,
     include_reachable: bool,
     entry_contract: String,
     contract_status: &'static str,
@@ -183,7 +189,11 @@ pub(super) fn inspect(
             input_status,
             sources: requested.into_iter().map(str::to_owned).collect(),
             missing: missing.into_iter().map(str::to_owned).collect(),
-            symbol_prefix: profile.symbol_prefix.clone(),
+            roots: profile.roots.mode(),
+            symbol_prefix: match &profile.roots {
+                crate::project_ir::ProjectIrRoots::All => None,
+                crate::project_ir::ProjectIrRoots::SymbolPrefix(prefix) => Some(prefix.clone()),
+            },
             include_reachable: profile.include_reachable,
             entry_contract: profile.entry_contract.clone(),
             contract_status,

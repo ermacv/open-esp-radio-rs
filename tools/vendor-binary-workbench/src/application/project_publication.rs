@@ -142,7 +142,7 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
     type Prepared = PreparedPublication;
 
     fn validate_registers(&mut self) -> Result<bool> {
-        let workspace = ProjectRegisterWorkspace::load(&self.paths.facts, &self.paths.model)?;
+        let workspace = ProjectRegisterWorkspace::load(self.paths)?;
         let summary = workspace.summary()?;
         validate_pac_api(self.paths)?;
         validate_register_lints(self.paths)?;

@@ -172,7 +172,8 @@ impl FunctionWorkspace {
 impl FunctionPack {
     #[tracing::instrument(name = "load_function_pack", fields(path = %path.display()))]
     fn load(path: &Path) -> Result<LoadedFunctionPack> {
-        let input = fs::read_to_string(path)?;
+        let input = fs::read_to_string(path)
+            .map_err(|error| crate::Error::read("function pack", path, error))?;
         let source_document = Document::parse(input.clone()).map_err(|error| {
             crate::error::WorkbenchError::manifest_source(
                 "function pack",

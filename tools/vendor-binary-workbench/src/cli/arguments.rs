@@ -85,6 +85,9 @@ pub(crate) struct ProjectAnalyzeArgs {
     /// Treat unreviewed generated material as a pipeline failure.
     #[arg(long)]
     pub(crate) deny_unreviewed: bool,
+    /// Worker threads for independent MMIO functions; zero selects conservative automatic mode.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) jobs: u8,
 }
 
 #[derive(Clone, Debug, Default, Args)]
@@ -279,6 +282,9 @@ pub(crate) struct MmioDiscoverArgs {
     /// Select which matching function symbols become MMIO analysis roots.
     #[arg(long, value_enum, default_value_t)]
     pub(crate) code_symbols: CodeSymbolSelectionArg,
+    /// Worker threads used for independent function analysis; zero selects a conservative auto value.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) jobs: u8,
     /// Write the machine-readable MMIO discovery report.
     #[arg(long)]
     pub(crate) json_report: Option<PathBuf>,

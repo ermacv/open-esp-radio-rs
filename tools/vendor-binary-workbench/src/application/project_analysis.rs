@@ -15,6 +15,7 @@ use crate::{Result, project::ProjectSpec};
 pub(crate) struct ProjectAnalysisRequest {
     pub(crate) check: bool,
     pub(crate) deny_unreviewed: bool,
+    pub(crate) mmio_jobs: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -29,7 +30,7 @@ pub(crate) struct ProjectAnalysisInputs {
 /// the concrete analysis engines and artifact publication boundaries.
 pub(crate) trait ProjectAnalysisOperations {
     fn symbol_inventory(&mut self, check: bool) -> Result<bool>;
-    fn discover_mmio(&mut self, check: bool) -> Result<bool>;
+    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<bool>;
     fn discover_interfaces(&mut self, check: bool) -> Result<bool>;
     fn build_linked_ir(&mut self, check: bool) -> Result<bool>;
     fn build_navigation(&mut self, check: bool) -> Result<bool>;
@@ -93,7 +94,7 @@ pub(crate) fn run(
             StageOutcome::Blocked("memory-map is not configured".to_owned())
         }
         Some(_) => execute("mmio-discovery", generated, || {
-            operations.discover_mmio(mode.is_check())
+            operations.discover_mmio(mode.is_check(), request.mmio_jobs)
         }),
     };
     summary.record("mmio-discovery", &mmio);
@@ -285,7 +286,7 @@ mod tests {
             self.called("symbols")
         }
 
-        fn discover_mmio(&mut self, _: bool) -> Result<bool> {
+        fn discover_mmio(&mut self, _: bool, _: usize) -> Result<bool> {
             self.called("mmio")
         }
 

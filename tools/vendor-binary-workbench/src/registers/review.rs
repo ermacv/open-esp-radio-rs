@@ -18,6 +18,7 @@ use crate::Result;
 pub(crate) struct RegisterReviewSummary {
     pub(crate) observed: usize,
     pub(crate) reviewed: usize,
+    pub(crate) ignored: usize,
     pub(crate) unreviewed: usize,
     pub(crate) model_only: usize,
     pub(crate) field_candidates: usize,
@@ -47,6 +48,7 @@ pub(crate) fn render_register_review(
     facts: &RegisterFacts,
     model: &RegisterModel,
     ir_paths: &[PathBuf],
+    owned_ranges: &[String],
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
@@ -56,6 +58,7 @@ pub(crate) fn render_register_review(
         &model.register_identities()?,
         model.review(),
         &ir,
+        owned_ranges,
         facts_path,
         model_path,
     )
@@ -66,6 +69,7 @@ fn render_report(
     identities: &BTreeMap<(u64, u32), String>,
     annotations: &[ReviewAnnotation],
     ir: &RegisterReviewIr,
+    owned_ranges: &[String],
     facts_path: &Path,
     model_path: &Path,
 ) -> Result<(String, RegisterReviewSummary)> {
@@ -74,7 +78,21 @@ fn render_report(
         .iter()
         .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
         .collect::<BTreeSet<_>>();
-    let reviewed = fact_keys
+    let owned_ranges = owned_ranges
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let owned_fact_keys = facts
+        .registers
+        .iter()
+        .filter(|fact| {
+            facts.ranges.iter().any(|range| {
+                range.contains(fact.address) && owned_ranges.contains(range.name.as_str())
+            })
+        })
+        .map(|fact| (u64::from(fact.address), u32::from(fact.width)))
+        .collect::<BTreeSet<_>>();
+    let reviewed = owned_fact_keys
         .iter()
         .filter(|identity| identities.contains_key(identity))
         .count();
@@ -85,6 +103,7 @@ fn render_report(
     let field_candidates = facts
         .registers
         .iter()
+        .filter(|fact| owned_fact_keys.contains(&(u64::from(fact.address), u32::from(fact.width))))
         .map(|fact| candidate_fields(fact, ir.register(fact.address, fact.width)))
         .map(|fields| fields.len())
         .sum();
@@ -96,7 +115,8 @@ fn render_report(
     let summary = RegisterReviewSummary {
         observed: facts.registers.len(),
         reviewed,
-        unreviewed: facts.registers.len() - reviewed,
+        ignored: fact_keys.len() - owned_fact_keys.len(),
+        unreviewed: owned_fact_keys.len() - reviewed,
         model_only,
         field_candidates,
         ir_reports: ir.reports.len(),
@@ -136,6 +156,12 @@ fn render_report(
         output,
         "- Matched by the reviewed model: {}",
         summary.reviewed
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        output,
+        "- Outside the publication scope: {}",
+        summary.ignored
     )
     .expect("writing to String cannot fail");
     writeln!(output, "- Awaiting review: {}", summary.unreviewed)
@@ -180,12 +206,18 @@ fn render_report(
     let mut ranges = facts.ranges.iter().collect::<Vec<_>>();
     ranges.sort_by_key(|range| (range.start, range.end, range.name.as_str()));
     for range in ranges {
+        let owned = owned_ranges.contains(range.name.as_str());
         writeln!(
             output,
-            "\n## Range `{}` (`{:#010x}..{:#010x}`)\n",
+            "\n## Range `{}` (`{:#010x}..{:#010x}`) — {}\n",
             markdown_code(&range.name),
             range.start,
-            range.end
+            range.end,
+            if owned {
+                "owned"
+            } else {
+                "outside publication scope"
+            }
         )
         .expect("writing to String cannot fail");
         output.push_str("| Address | Offset | Width | State | Model identity | Catalog name | Reads | Writes | Modified masks |\n");
@@ -210,7 +242,9 @@ fn render_report(
                 fact.address,
                 fact.address - range.start,
                 fact.width,
-                if identity.is_some() {
+                if !owned {
+                    "ignored"
+                } else if identity.is_some() {
                     "reviewed"
                 } else {
                     "unreviewed"
@@ -235,7 +269,11 @@ fn render_report(
                 "\n### `{:#010x}/{}` — {}\n",
                 fact.address,
                 fact.width,
-                identity.map_or("unreviewed", String::as_str)
+                if !owned {
+                    "outside publication scope"
+                } else {
+                    identity.map_or("unreviewed", String::as_str)
+                }
             )
             .expect("writing to String cannot fail");
             writeln!(
@@ -292,7 +330,7 @@ fn render_report(
                 output.push('\n');
                 write_ir_evidence(&mut output, ir_register);
             }
-            if identity.is_none() {
+            if owned && identity.is_none() {
                 write_draft(&mut output, fact, range.start, ir_register);
             }
         }
@@ -391,6 +429,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             &RegisterReviewIr::default(),
+            &["radio".to_owned()],
             Path::new("mmio.json"),
             Path::new("device.toml"),
         )

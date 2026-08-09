@@ -7,15 +7,61 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc::sync_channel,
+    },
+    thread,
 };
+
+use indicatif::ProgressStyle;
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
     BitSource, FunctionAnalysis, MemoryAccess, MmioMap, MmioRegion, ObservableEvent, Result,
     StructuralPointerContext, SymbolicValue, artifact, direct,
 };
 
+// Artifact-wide discovery remains bounded, but these are analysis-coverage
+// limits rather than performance knobs. Symbolic-value size, trace steps and
+// retained events independently bound resource use; do not lower path
+// coverage without a measured completeness comparison on a real project.
 const MAX_DISCOVERY_STATES: usize = 127;
 const MAX_DISCOVERY_BRANCH_DECISIONS: usize = 12;
+const MAX_DISCOVERY_JOBS: usize = 8;
+const AUTO_DISCOVERY_JOBS: usize = 1;
+const MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE: usize = 4_096;
+const MAX_DISCOVERY_EVENTS_PER_TRACE: usize = 1_024;
+const MAX_DISCOVERY_EVENTS_PER_FUNCTION: usize = 2_048;
+// Symbolic expressions are recursive trees. A whole-ROM function can build a
+// much deeper (still bounded) value than the operating system's small default
+// worker stack can drop safely. Keep the stack explicit so `--jobs` does not
+// make an artifact fail when the same analysis succeeds on the main thread.
+const DISCOVERY_WORKER_STACK_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct MmioDiscoveryOptions {
+    /// Zero selects the conservative automatic worker count.
+    pub(crate) jobs: usize,
+}
+
+impl Default for MmioDiscoveryOptions {
+    fn default() -> Self {
+        Self { jobs: 0 }
+    }
+}
+
+impl MmioDiscoveryOptions {
+    fn worker_count(self, functions: usize) -> usize {
+        let available = thread::available_parallelism().map_or(1, usize::from);
+        let requested = if self.jobs == 0 {
+            available.min(AUTO_DISCOVERY_JOBS)
+        } else {
+            self.jobs.min(MAX_DISCOVERY_JOBS).min(available)
+        };
+        requested.max(1).min(functions.max(1))
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct DiscoveryRange {
@@ -127,7 +173,7 @@ struct RegisterAccumulator {
     write_patterns: BTreeMap<WriteBitPattern, (usize, BTreeSet<DiscoveryFunction>)>,
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Eq, PartialEq)]
 struct FunctionExploration {
     /// One representative observable plus its maximum multiplicity on any
     /// explored path. ObservableEvent does not retain the instruction site,
@@ -263,7 +309,11 @@ fn record_event(
     true
 }
 
-fn merge_path_events(merged: &mut Vec<(ObservableEvent, usize)>, path_events: &[ObservableEvent]) {
+fn merge_path_events(
+    merged: &mut Vec<(ObservableEvent, usize)>,
+    path_events: &[ObservableEvent],
+) -> bool {
+    let mut truncated = false;
     let mut path_counts = Vec::<(ObservableEvent, usize)>::new();
     for event in path_events {
         if let Some((_, count)) = path_counts
@@ -280,10 +330,13 @@ fn merge_path_events(merged: &mut Vec<(ObservableEvent, usize)>, path_events: &[
             merged.iter_mut().find(|(candidate, _)| candidate == &event)
         {
             *merged_count = (*merged_count).max(count);
+        } else if merged.len() >= MAX_DISCOVERY_EVENTS_PER_FUNCTION {
+            truncated = true;
         } else {
             merged.push((event, count));
         }
     }
+    truncated
 }
 
 fn collect_trace_diagnostics(
@@ -329,13 +382,17 @@ fn explore_symbol(
             break;
         }
         result.explored_states += 1;
-        let trace = match direct::trace_binary_symbol_with_branches(
+        let trace = match direct::trace_binary_symbol_with_branches_bounded(
             symbol,
             map,
             relocated_calls,
             pointer_context,
             None,
             &forced_branches,
+            direct::StructuralTraceBudget {
+                max_instruction_steps: MAX_DISCOVERY_INSTRUCTION_STEPS_PER_TRACE,
+                max_events: MAX_DISCOVERY_EVENTS_PER_TRACE,
+            },
         ) {
             Ok(trace) => trace,
             Err(error) => {
@@ -343,7 +400,14 @@ fn explore_symbol(
                 continue;
             }
         };
-        merge_path_events(&mut result.events, &trace.events);
+        if merge_path_events(&mut result.events, &trace.events) {
+            result.diagnostics.insert((
+                "exploration",
+                format!(
+                    "function exceeds the discovery limit of {MAX_DISCOVERY_EVENTS_PER_FUNCTION} distinct observable events"
+                ),
+            ));
+        }
         collect_trace_diagnostics(&trace, &mut result.diagnostics);
 
         let Some(branch) = trace.unresolved_branch else {
@@ -380,6 +444,75 @@ fn explore_symbol(
     result
 }
 
+fn artifact_progress_span(source: &str, path: &Path, functions: usize) -> tracing::Span {
+    let span = tracing::info_span!(
+        "mmio_artifact",
+        indicatif.pb_show = tracing::field::Empty,
+        source,
+        artifact = %path.display(),
+        functions,
+    );
+    span.pb_set_style(
+        &ProgressStyle::with_template(
+            "{spinner:.cyan} [{elapsed_precise}] {pos:>5}/{len:<5} {msg}",
+        )
+        .expect("static MMIO progress template")
+        .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ "),
+    );
+    span.pb_set_length(functions as u64);
+    span.pb_set_message(&format!("{source}: loading functions"));
+    span.pb_start();
+    span
+}
+
+fn explore_symbols(
+    source: &str,
+    symbols: &[artifact::ArtifactSymbolDefinition],
+    map: &MmioMap,
+    relocated_calls: &direct::StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    jobs: usize,
+    mut consume: impl FnMut(DiscoveryFunction, FunctionExploration),
+) {
+    let next = AtomicUsize::new(0);
+    // A bounded channel prevents fast workers from retaining an entire
+    // artifact's symbolic results while the deterministic accumulator merges
+    // earlier completions.
+    let (sender, receiver) = sync_channel::<(DiscoveryFunction, FunctionExploration)>(jobs * 2);
+    thread::scope(|scope| {
+        for worker in 0..jobs {
+            let sender = sender.clone();
+            let next = &next;
+            thread::Builder::new()
+                .name(format!("mmio-discovery-{worker}"))
+                .stack_size(DISCOVERY_WORKER_STACK_BYTES)
+                .spawn_scoped(scope, move || {
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(symbol) = symbols.get(index) else {
+                            break;
+                        };
+                        let function = DiscoveryFunction {
+                            source: source.to_owned(),
+                            member: symbol.member.clone(),
+                            symbol: symbol.name.clone(),
+                        };
+                        let exploration =
+                            explore_symbol(symbol, map, relocated_calls, pointer_context);
+                        if sender.send((function, exploration)).is_err() {
+                            break;
+                        }
+                    }
+                })
+                .expect("spawning a bounded MMIO discovery worker");
+        }
+        drop(sender);
+        for (function, exploration) in receiver {
+            consume(function, exploration);
+        }
+    });
+}
+
 fn discovery_map(svd: &MmioMap, ranges: &[DiscoveryRange]) -> MmioMap {
     let mut map = svd.clone();
     map.regions.extend(ranges.iter().map(|range| MmioRegion {
@@ -412,6 +545,7 @@ pub(crate) fn discover_mmio(
     code_symbol_selection: artifact::CodeSymbolSelection,
     svd: &MmioMap,
     effective_code: Option<&super::EffectiveCodeCatalog>,
+    options: MmioDiscoveryOptions,
 ) -> Result<MmioDiscoveryReport> {
     let map = discovery_map(svd, ranges);
     let relocated_calls = BTreeMap::new();
@@ -436,35 +570,56 @@ pub(crate) fn discover_mmio(
                 0,
             ),
         };
+        let jobs = options.worker_count(symbols.len());
+        let progress = artifact_progress_span(source, path, symbols.len());
+        progress.pb_set_message(&format!(
+            "{source}: analyzing {} functions with {jobs} worker{}",
+            symbols.len(),
+            if jobs == 1 { "" } else { "s" }
+        ));
+        tracing::info!(
+            source,
+            artifact = %path.display(),
+            functions = symbols.len(),
+            jobs,
+            max_states_per_function = MAX_DISCOVERY_STATES,
+            "starting artifact MMIO analysis"
+        );
         let mut functions_with_mmio = 0usize;
         let mut functions_with_diagnostics = 0usize;
         let mut explored_states = 0usize;
         let mut terminal_paths = 0usize;
         let mut branch_sites = 0usize;
-        for symbol in &symbols {
-            let function = DiscoveryFunction {
-                source: source.clone(),
-                member: symbol.member.clone(),
-                symbol: symbol.name.clone(),
-            };
-            let exploration = explore_symbol(symbol, &map, &relocated_calls, &pointer_context);
-            let mut found = false;
-            for (event, occurrences) in &exploration.events {
-                found |= record_event(&mut accumulators, ranges, &function, event, *occurrences);
-            }
-            functions_with_mmio += usize::from(found);
-            functions_with_diagnostics += usize::from(!exploration.diagnostics.is_empty());
-            explored_states += exploration.explored_states;
-            terminal_paths += exploration.terminal_paths;
-            branch_sites += exploration.branch_sites.len();
-            diagnostics.extend(exploration.diagnostics.into_iter().map(|(scope, message)| {
-                FunctionDiagnostic {
-                    function: function.clone(),
-                    scope,
-                    message,
+        explore_symbols(
+            source,
+            &symbols,
+            &map,
+            &relocated_calls,
+            &pointer_context,
+            jobs,
+            |function, exploration| {
+                let mut found = false;
+                for (event, occurrences) in &exploration.events {
+                    found |=
+                        record_event(&mut accumulators, ranges, &function, event, *occurrences);
                 }
-            }));
-        }
+                functions_with_mmio += usize::from(found);
+                functions_with_diagnostics += usize::from(!exploration.diagnostics.is_empty());
+                explored_states += exploration.explored_states;
+                terminal_paths += exploration.terminal_paths;
+                branch_sites += exploration.branch_sites.len();
+                diagnostics.extend(exploration.diagnostics.into_iter().map(|(scope, message)| {
+                    FunctionDiagnostic {
+                        function: function.clone(),
+                        scope,
+                        message,
+                    }
+                }));
+                progress.pb_inc(1);
+                progress.pb_set_message(&format!("{source}: completed {}", function.canonical()));
+            },
+        );
+        progress.pb_set_finish_message(&format!("{source}: analyzed {} functions", symbols.len()));
         artifact_summaries.push(ArtifactDiscoverySummary {
             source: source.clone(),
             path: path.clone(),
@@ -499,6 +654,13 @@ pub(crate) fn discover_mmio(
                 .collect(),
         })
         .collect();
+    diagnostics.sort_by(|left, right| {
+        (&left.function, left.scope, &left.message).cmp(&(
+            &right.function,
+            right.scope,
+            &right.message,
+        ))
+    });
 
     Ok(MmioDiscoveryReport {
         code_symbol_selection,
@@ -609,5 +771,61 @@ mod tests {
             "{:#?}",
             exploration.diagnostics
         );
+    }
+
+    #[test]
+    fn parallel_function_exploration_matches_serial_results() {
+        let template = artifact::ArtifactSymbolDefinition {
+            member: None,
+            name: String::new(),
+            address: 0x1000,
+            bytes: vec![
+                0x63, 0x08, 0x05, 0x00, // beq a0, zero, 0x1010
+                0xb7, 0x75, 0x10, 0x20, // lui a1, 0x20107
+                0x23, 0xa8, 0xc5, 0x02, // sw a2, 0x30(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+                0xb7, 0x75, 0x10, 0x20, // lui a1, 0x20107
+                0x23, 0xaa, 0xd5, 0x02, // sw a3, 0x34(a1)
+                0x67, 0x80, 0x00, 0x00, // ret
+            ],
+            addresses_resolved: true,
+            memory_regions: Vec::new(),
+            relocations: Vec::new(),
+        };
+        let symbols = (0..4)
+            .map(|index| artifact::ArtifactSymbolDefinition {
+                name: format!("branched_mmio_{index}"),
+                ..template.clone()
+            })
+            .collect::<Vec<_>>();
+        let map = MmioMap {
+            registers: Vec::new(),
+            regions: vec![MmioRegion {
+                name: "radio".to_owned(),
+                start: 0x2010_7000,
+                end: 0x2010_7100,
+                readable: true,
+                writable: true,
+            }],
+        };
+        let relocated_calls = direct::StructuralRelocatedCalls::default();
+        let pointer_context = StructuralPointerContext::default();
+        let collect = |jobs| {
+            let mut results = BTreeMap::new();
+            explore_symbols(
+                "fixture",
+                &symbols,
+                &map,
+                &relocated_calls,
+                &pointer_context,
+                jobs,
+                |function, exploration| {
+                    results.insert(function, exploration);
+                },
+            );
+            results
+        };
+
+        assert_eq!(collect(1), collect(2));
     }
 }

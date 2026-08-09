@@ -9,6 +9,10 @@ cargo vendor-binary-workbench mmio discover \
   --json-report /tmp/radio-mmio.json
 ```
 
+The human view is intentionally bounded: it shows artifact/range summaries
+and the 32 most active registers. The JSON report remains the complete
+register, function, bit-pattern and diagnostic inventory.
+
 Every `mmio` region in the project's default address space becomes a discovery
 range. Pass one or more explicit `--range` options to replace those defaults
 for a narrower scan. SVD contributes register names only; unknown addresses
@@ -82,9 +86,21 @@ addresses; indexed and pointer-derived range recovery remains part of the
 reference analyzer rather than this inventory.
 
 Input-dependent conditional branches are explored in both directions with
-explicit bounds of 127 symbolic states and 12 decisions per path. Artifact
+explicit bounds of 127 symbolic states and 12 decisions per path. Each trace is
+also bounded to 4,096 instruction steps, 1,024 observable events and 2,048
+distinct merged events per function. Symbolic value trees are capped and
+degrade to `unknown` when further expression expansion would exceed the host
+resource boundary. All exhausted limits become scoped diagnostics rather than
+silently claiming completeness. Artifact
 summaries report explored states, terminal paths and distinct branch sites;
 exhausting either bound produces an `exploration` diagnostic. Access counts use
 the maximum multiplicity of an observable shape on any explored path, rather
 than summing paths and double-counting their common prefix. The JSON records
 this as `"access_count_mode": "maximum-per-path"`.
+
+Independent functions can be processed concurrently with `--jobs N` (`1..=8`).
+Zero is the conservative automatic mode and currently selects one worker.
+Workers use a bounded result queue, deterministic final sorting and explicit
+stack size, so concurrency does not retain one whole artifact per worker.
+Choose `--jobs 2` first on a new target and compare runtime and peak RSS before
+raising it further.

@@ -2,27 +2,58 @@
 
 use super::*;
 
+const MAX_DIAGNOSTICS_PER_CATEGORY: usize = 64;
+const MAX_DIAGNOSTIC_FRAGMENTS: usize = 64;
+const MAX_DIAGNOSTIC_FRAGMENT_CHARS: usize = 512;
+
+fn bounded_fragment(fragment: &str) -> String {
+    let mut chars = fragment.chars();
+    let bounded = chars
+        .by_ref()
+        .take(MAX_DIAGNOSTIC_FRAGMENT_CHARS)
+        .collect::<String>();
+    if chars.next().is_some() {
+        format!("{bounded}… [fragment truncated]")
+    } else {
+        bounded
+    }
+}
+
 pub(super) fn identity(member: Option<&str>, symbol: &str) -> String {
     member.map_or_else(|| symbol.to_owned(), |member| format!("{member}:{symbol}"))
 }
 
 pub(super) fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
-    let mut fragment_indices = BTreeMap::<&str, usize>::new();
+    let mut fragment_indices = BTreeMap::<String, usize>::new();
     let mut fragments = Vec::<LinkedDiagnosticFragment>::new();
     let mut original_fragments = 0;
 
     for (ordinal, fragment) in message.split("; ").enumerate() {
         original_fragments += 1;
-        if let Some(index) = fragment_indices.get(fragment).copied() {
+        if ordinal >= MAX_DIAGNOSTIC_FRAGMENTS {
+            continue;
+        }
+        let fragment = bounded_fragment(fragment);
+        if let Some(index) = fragment_indices.get(&fragment).copied() {
             fragments[index].occurrences += 1;
         } else {
-            fragment_indices.insert(fragment, fragments.len());
+            fragment_indices.insert(fragment.clone(), fragments.len());
             fragments.push(LinkedDiagnosticFragment {
                 first_ordinal: ordinal,
                 occurrences: 1,
-                message: fragment.to_owned(),
+                message: fragment,
             });
         }
+    }
+    if original_fragments > MAX_DIAGNOSTIC_FRAGMENTS {
+        fragments.push(LinkedDiagnosticFragment {
+            first_ordinal: MAX_DIAGNOSTIC_FRAGMENTS,
+            occurrences: original_fragments - MAX_DIAGNOSTIC_FRAGMENTS,
+            message: format!(
+                "{} additional diagnostic fragments omitted",
+                original_fragments - MAX_DIAGNOSTIC_FRAGMENTS
+            ),
+        });
     }
 
     let rendered = fragments
@@ -48,10 +79,18 @@ pub(super) fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
 }
 
 pub(super) fn compact_diagnostics(messages: &[String]) -> Vec<LinkedDiagnostic> {
-    messages
+    let mut diagnostics = messages
         .iter()
+        .take(MAX_DIAGNOSTICS_PER_CATEGORY)
         .map(|message| compact_diagnostic(message))
-        .collect()
+        .collect::<Vec<_>>();
+    if messages.len() > MAX_DIAGNOSTICS_PER_CATEGORY {
+        diagnostics.push(compact_diagnostic(&format!(
+            "{} additional diagnostics omitted by the linked-IR presentation budget",
+            messages.len() - MAX_DIAGNOSTICS_PER_CATEGORY
+        )));
+    }
+    diagnostics
 }
 
 pub(super) fn rendered_diagnostics(diagnostics: &[LinkedDiagnostic]) -> Vec<String> {

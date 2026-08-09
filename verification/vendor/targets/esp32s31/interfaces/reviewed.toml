@@ -1,0 +1,4884 @@
+# Human-reviewed interface layouts. Generated discovery facts stay separate.
+schema = 1
+id = "esp32s31-radio-rev0"
+calling-convention = "riscv-ilp32"
+
+[[anchors]]
+id = "rom-arg0"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "function-argument"
+argument = 0
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 124
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 120
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+[[anchors]]
+id = "rom-arg0-2"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "function-argument"
+argument = 0
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 68
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-arg0-3"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "function-argument"
+argument = 0
+container-path = [{ offset = 0, width = 32 }, { offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 28
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-arg0-4"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "function-argument"
+argument = 0
+container-path = [{ offset = 4, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 112
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 108
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07e000"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07e000
+container-path = [{ offset = 1540, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 8
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07f000"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07f000
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 512
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 508
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07f000-2"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07f000
+container-path = [{ offset = 500, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 8
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07f1fc"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07f1fc
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07f324"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07f324
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 32
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07fe98"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07fe98
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07fea0"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07fea0
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff58"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff58
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 1020
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 1016
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff6c"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff6c
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff74"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff74
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff84"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff84
+container-path = [{ offset = 0, width = 32 }, { offset = 444, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 68
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff84-2"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff84
+container-path = [{ offset = 0, width = 32 }, { offset = 448, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 20
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ff90"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ff90
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 320
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 52
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 56
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 60
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 68
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 72
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 76
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 84
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 92
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 96
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 100
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 104
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 108
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 112
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 116
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 120
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 124
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 128
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 136
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 140
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 144
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 148
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 160
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 180
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 184
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 188
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 192
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 240
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 244
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 288
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 316
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f07ffac"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f07ffac
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 12
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = []
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = -1572
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1560
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1556
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1508
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1504
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1500
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -1496
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -356
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -352
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -324
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -144
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -136
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = -84
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-2"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -1564, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 8
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-3"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -964, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-4"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -292, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 152
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 128
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 148
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-5"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -188, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 484
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 84
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 88
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 100
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 104
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 116
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 120
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 160
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 176
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 188
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 200
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 204
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 208
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 212
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 224
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 228
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 232
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 240
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 248
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 252
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 264
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 356
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 360
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 372
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 380
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 400
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 408
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 412
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 420
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 424
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 436
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 440
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 444
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 464
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 472
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 476
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 480
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-6"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -184, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 1556
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 52
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 56
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 60
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 68
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 72
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 76
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 80
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 84
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 88
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 92
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 100
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 104
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 108
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 112
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 116
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 120
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 124
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 128
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 132
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 140
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 148
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 160
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 164
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 168
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 172
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 176
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 180
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 184
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 188
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 192
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 196
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 200
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 204
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 208
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 212
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 216
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 220
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 224
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 228
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 232
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 236
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 240
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 244
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 248
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 252
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 256
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 260
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 264
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 268
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 272
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 276
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 284
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 288
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 292
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 296
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 304
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 308
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 312
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 316
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 320
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 324
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 328
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 332
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 336
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 340
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 344
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 348
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 352
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 364
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 388
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 392
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 396
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 400
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 408
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 412
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 416
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 420
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 424
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 428
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 432
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 436
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 440
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 444
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 448
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 452
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 456
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 460
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 464
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 472
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 476
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 488
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 492
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 500
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 504
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 508
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 512
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 532
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 536
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 540
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 544
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 548
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 552
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 556
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 564
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 568
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 572
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 576
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 580
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 588
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 592
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 596
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 600
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 604
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 608
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 612
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 616
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 620
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 624
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 628
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 632
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 636
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 640
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 644
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 648
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 652
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 656
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 660
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 668
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 672
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 676
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 680
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 688
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 692
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 696
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 700
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 708
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 716
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 720
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 724
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 728
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 732
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 736
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 744
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 748
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 752
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 760
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 764
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 768
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 772
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 784
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 788
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 800
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 804
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 808
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 816
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 820
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 824
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 828
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 832
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 836
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 840
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 844
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 848
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 852
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 860
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 864
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 868
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 872
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 876
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 880
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 884
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 912
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 916
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 928
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 932
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 940
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 944
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 948
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 956
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 960
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 964
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 972
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 976
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 980
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 988
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 992
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 996
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1000
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1004
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1012
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1016
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1020
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1024
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1028
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1032
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1036
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1040
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1044
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1048
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1052
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1056
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1060
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1064
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1068
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1072
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1076
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1080
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1088
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1092
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1096
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1112
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1116
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1120
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1124
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1128
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1132
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1136
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1140
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1148
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1156
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1160
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1164
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1168
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1172
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1176
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1180
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1184
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1188
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1192
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1196
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1200
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1204
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1208
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1212
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1216
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1220
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1224
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1232
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1236
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1240
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1244
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1248
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1252
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1256
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1260
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1268
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1272
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1276
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1280
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1292
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1296
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1300
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1304
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1308
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1316
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1324
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1328
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1332
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1340
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1344
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1348
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1352
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1356
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1360
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1364
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1368
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1372
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1376
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1384
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1388
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1392
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1404
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1408
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1412
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1416
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1420
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1424
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1428
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1432
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1436
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1440
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1444
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1448
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1452
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1456
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1460
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1464
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1468
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1472
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1476
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1480
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1484
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1488
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1492
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1504
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1508
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1532
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1536
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1540
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1544
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1548
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 1552
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-7"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -168, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 1032
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 1028
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-8"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -112, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 332
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 88
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 112
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 132
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 164
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 168
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 172
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 176
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 200
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 236
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 248
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 256
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 260
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 264
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 272
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 280
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 296
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 300
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 304
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 308
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 312
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 328
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-9"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -104, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 32
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-10"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -100, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-11"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -68, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 72
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 52
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 56
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 60
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 68
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-12"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -64, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 8
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-13"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -56, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 156
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 56
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 60
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 116
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 132
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 136
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 144
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 148
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 152
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-14"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -52, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 80
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 64
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 68
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 72
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 76
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-15"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -48, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 24
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-16"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -40, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 16
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-17"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -28, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 32
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-18"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -24, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 8
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-19"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -20, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 32
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 4
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 8
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 12
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 24
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 28
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "rom-address-2f080000-20"
+status = "unreviewed"
+origin = "observed"
+source = "rom"
+root-kind = "absolute-address"
+address = 0x2f080000
+container-path = [{ offset = -12, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 4
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[anchors.slots]]
+offset = 0
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_debug.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 44
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns-2"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_reg.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns-3"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_rfpll.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 24
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns-4"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_track.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns-5"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_tx_cal.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 48
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-g-phyfuns-6"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "relocated-symbol"
+symbol = "g_phyFuns"
+member = "phy_tx_gain.o"
+addend = 0
+addressing = "absolute"
+container-path = [{ offset = 0, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 44
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "51497819736295c9b33d6775495dade4c6fb39db887edfe095608c670d9ae223"
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors]]
+id = "archive-address-10008000"
+status = "unreviewed"
+origin = "observed"
+source = "archive"
+root-kind = "absolute-address"
+address = 0x10008000
+container-path = [{ offset = 1160, width = 32 }]
+layout-version = "unreviewed"
+pointer-width = 32
+layout-size = 52
+slot-stride = 4
+# execution-contract = "platform.table-v1" # optional compiled harness table ID
+
+[[anchors.guards]]
+kind = "artifact-sha256"
+sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6547"
+
+[[anchors.slots]]
+offset = 16
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 20
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 36
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 40
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 44
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract
+
+[[anchors.slots]]
+offset = 48
+width = 32
+status = "unreviewed"
+origin = "observed"
+# execution-model = "operation-id" # requires anchor execution-contract

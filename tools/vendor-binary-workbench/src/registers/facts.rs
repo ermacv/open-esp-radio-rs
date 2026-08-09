@@ -181,6 +181,36 @@ impl RegisterFacts {
         }
         Ok(())
     }
+
+    pub(crate) fn select_ranges(&self, names: &[String]) -> Result<Self> {
+        let selected = names.iter().map(String::as_str).collect::<BTreeSet<_>>();
+        if let Some(missing) = selected
+            .iter()
+            .find(|name| !self.ranges.iter().any(|range| range.name == **name))
+        {
+            return Err(crate::Error::invalid(format!(
+                "register owned range {missing:?} is absent from MMIO discovery facts"
+            )));
+        }
+        Ok(Self {
+            ranges: self
+                .ranges
+                .iter()
+                .filter(|range| selected.contains(range.name.as_str()))
+                .cloned()
+                .collect(),
+            registers: self
+                .registers
+                .iter()
+                .filter(|register| {
+                    self.ranges.iter().any(|range| {
+                        selected.contains(range.name.as_str()) && range.contains(register.address)
+                    })
+                })
+                .cloned()
+                .collect(),
+        })
+    }
 }
 
 #[cfg(test)]
@@ -220,5 +250,54 @@ mod tests {
         assert_eq!(facts.registers[0].write_patterns[0].dynamic_mask, 2);
         assert_eq!(facts.ranges[0].name, "radio");
         assert!(facts.ranges[0].contains(0x1010));
+    }
+
+    #[test]
+    fn selects_owned_ranges_without_discarding_width_or_evidence() {
+        let facts = RegisterFacts {
+            ranges: vec![
+                FactRange {
+                    name: "radio".to_owned(),
+                    start: 0x1000,
+                    end: 0x2000,
+                },
+                FactRange {
+                    name: "system".to_owned(),
+                    start: 0x3000,
+                    end: 0x4000,
+                },
+            ],
+            registers: vec![
+                RegisterFact {
+                    address: 0x1010,
+                    width: 32,
+                    catalog_name: "RADIO".to_owned(),
+                    reads: 1,
+                    writes: 0,
+                    read_functions: ["read_radio".to_owned()].into(),
+                    write_functions: BTreeSet::new(),
+                    write_patterns: Vec::new(),
+                    candidate_masks: Vec::new(),
+                },
+                RegisterFact {
+                    address: 0x3010,
+                    width: 32,
+                    catalog_name: "SYSTEM".to_owned(),
+                    reads: 1,
+                    writes: 0,
+                    read_functions: BTreeSet::new(),
+                    write_functions: BTreeSet::new(),
+                    write_patterns: Vec::new(),
+                    candidate_masks: Vec::new(),
+                },
+            ],
+        };
+        let selected = facts.select_ranges(&["radio".to_owned()]).unwrap();
+        assert_eq!(selected.ranges.len(), 1);
+        assert_eq!(selected.registers.len(), 1);
+        assert_eq!(
+            selected.registers[0].read_functions,
+            ["read_radio".to_owned()].into()
+        );
     }
 }

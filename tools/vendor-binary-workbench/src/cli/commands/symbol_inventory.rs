@@ -69,31 +69,39 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
         .iter()
         .filter(|symbol| options.includes(symbol))
         .collect::<Vec<_>>();
-    outputln!(
-        "Symbols:\n{}",
-        crate::cli::table::render(
-            [
-                "Artifact",
-                "Member",
-                "Name",
-                "Definition",
-                "Address",
-                "Size",
-                "Resolution",
-                "Candidates",
-            ],
-            symbols.iter().map(|symbol| [
-                symbol.artifact.to_string(),
-                optional_human(symbol.member.as_deref()).to_owned(),
-                symbol.fact.name.clone(),
-                symbol.fact.definition.label().to_owned(),
-                format!("{:#x}", symbol.fact.address),
-                symbol.fact.size.to_string(),
-                symbol.resolution.label().to_owned(),
-                symbol.candidates.len().to_string(),
-            ]),
-        )
-    );
+    let details_requested = options.name_prefix.is_some() || options.undefined_only;
+    if details_requested {
+        outputln!(
+            "Symbols:\n{}",
+            crate::cli::table::render(
+                [
+                    "Artifact",
+                    "Member",
+                    "Name",
+                    "Definition",
+                    "Address",
+                    "Size",
+                    "Resolution",
+                    "Candidates",
+                ],
+                symbols.iter().map(|symbol| [
+                    symbol.artifact.to_string(),
+                    optional_human(symbol.member.as_deref()).to_owned(),
+                    symbol.fact.name.clone(),
+                    symbol.fact.definition.label().to_owned(),
+                    format!("{:#x}", symbol.fact.address),
+                    symbol.fact.size.to_string(),
+                    symbol.resolution.label().to_owned(),
+                    symbol.candidates.len().to_string(),
+                ]),
+            )
+        );
+    } else {
+        outputln!(
+            "Symbols: {} facts (details saved in JSON; use --name-prefix PREFIX or --undefined-only for a human subset)",
+            symbols.len()
+        );
+    }
 
     let code_sections = inventory
         .artifacts
@@ -220,7 +228,7 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
             })
         })
         .collect::<Vec<_>>();
-    if !candidates.is_empty() {
+    if details_requested && !candidates.is_empty() {
         outputln!(
             "Resolution candidates:\n{}",
             crate::cli::table::render(

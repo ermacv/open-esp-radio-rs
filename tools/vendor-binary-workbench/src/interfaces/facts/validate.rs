@@ -172,7 +172,6 @@ pub(crate) fn validate_sha256(value: &str, context: &str) -> Result<()> {
 }
 
 fn validate_steps(steps: &[InterfaceFactStep], context: &str) -> Result<()> {
-    let mut keys = BTreeSet::new();
     for step in steps {
         if !matches!(step.width, 8 | 16 | 32 | 64) {
             return Err(crate::Error::invalid(format!(
@@ -181,11 +180,6 @@ fn validate_steps(steps: &[InterfaceFactStep], context: &str) -> Result<()> {
             )));
         }
         validate_selector(step.selector, context)?;
-        if !keys.insert((step.offset, step.width, step.selector)) {
-            return Err(crate::Error::invalid(format!(
-                "{context} contains a duplicate step"
-            )));
-        }
     }
     Ok(())
 }
@@ -223,4 +217,19 @@ fn validate_selector(selector: Option<InterfaceFactSelector>, context: &str) -> 
         )));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repeated_offsets_at_different_pointer_depths_are_valid() {
+        let step = InterfaceFactStep {
+            offset: 0,
+            width: 32,
+            selector: None,
+        };
+        validate_steps(&[step, step], "nested pointer chain").unwrap();
+    }
 }

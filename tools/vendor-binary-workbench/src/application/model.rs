@@ -236,6 +236,7 @@ pub struct RegisterSummary {
 pub enum RegisterReviewState {
     Reviewed,
     Manual,
+    Ignored,
     Unreviewed,
 }
 
@@ -244,6 +245,7 @@ impl RegisterReviewState {
         match self {
             Self::Reviewed => "reviewed",
             Self::Manual => "manual",
+            Self::Ignored => "ignored",
             Self::Unreviewed => "unreviewed",
         }
     }
@@ -335,6 +337,7 @@ pub struct RegisterWorkspaceReport {
     pub ranges: usize,
     pub observed: usize,
     pub reviewed: usize,
+    pub ignored: usize,
     pub manual: usize,
     pub unreviewed: usize,
     pub fields: usize,

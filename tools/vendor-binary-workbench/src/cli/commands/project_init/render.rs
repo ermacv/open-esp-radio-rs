@@ -31,6 +31,7 @@ output = \"generated/reports/code-boundaries.md\"\n",
             "\n[[analysis.ir]]\n\
 id = \"{source}\"\n\
 sources = [\"{source}\"]\n\
+roots = \"all\"\n\
 include-reachable = true\n\
 entry-contract = \"none\"\n\
 output = \"generated/findings/{source}.ir.json\"\n\
@@ -48,6 +49,7 @@ pseudo-rust = \"generated/reports/{source}.pseudo.rs\"\n"
         "\n[registers]\n\
 facts = \"generated/findings/mmio.json\"\n\
 model = \"registers/device.toml\"\n\
+owned-ranges = [{owned_ranges}]\n\
 \n[registers.review]\n\
 output = \"generated/reports/register-review.md\"\n\
 linked-ir = [{linked_ir}]\n\
@@ -68,7 +70,8 @@ pack = \"functions/reviewed.toml\"\n\
 profiles = [{profiles}]\n\
 \n[functions.review]\n\
 output = \"generated/reports/function-review.md\"\n",
-        options.pac_crate_name
+        options.pac_crate_name,
+        owned_ranges = quoted_list(options.ranges.iter().map(|range| range.name.clone()))
     ));
     output
 }

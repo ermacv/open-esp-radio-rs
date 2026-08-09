@@ -53,7 +53,7 @@ pub(super) fn apply_project_defaults(
                     let prefixes = project
                         .ir_profiles
                         .iter()
-                        .map(|profile| profile.symbol_prefix.as_str())
+                        .map(|profile| profile.roots.symbol_prefix())
                         .collect::<std::collections::BTreeSet<_>>();
                     if prefixes.len() == 1 {
                         arguments.vendor_prefix = prefixes
@@ -87,12 +87,13 @@ pub(super) fn apply_project_defaults(
                 let mut conflicting = std::collections::BTreeSet::new();
                 for profile in &project.ir_profiles {
                     for source in &profile.sources {
+                        let profile_prefix = profile.roots.symbol_prefix();
                         match prefixes.get(source) {
-                            Some(prefix) if prefix != &profile.symbol_prefix => {
+                            Some(prefix) if prefix != profile_prefix => {
                                 conflicting.insert(source.clone());
                             }
                             None => {
-                                prefixes.insert(source.clone(), profile.symbol_prefix.clone());
+                                prefixes.insert(source.clone(), profile_prefix.to_owned());
                             }
                             _ => {}
                         }
@@ -299,6 +300,27 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
             }
             _ => {}
         }
+    }
+    if let Command::ExportIr(arguments) = command
+        && use_default_companions
+        && arguments.artifact.len() == 1
+    {
+        let source = &arguments.artifact[0].source;
+        arguments
+            .companion
+            .extend(
+                run_spec
+                    .inputs()
+                    .iter()
+                    .filter_map(|input| match &input.role {
+                        InputRole::SourceCompanion(companion_source)
+                            if companion_source == source =>
+                        {
+                            Some(input.path.clone())
+                        }
+                        _ => None,
+                    }),
+            );
     }
 }
 

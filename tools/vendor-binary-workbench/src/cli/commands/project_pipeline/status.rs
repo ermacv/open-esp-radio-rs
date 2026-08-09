@@ -24,6 +24,28 @@ fn print_human(document: &ProjectAnalysisReport) {
         document.blocked,
         document.not_configured
     );
+    let missing_function_pack = document.stages.iter().any(|stage| {
+        stage
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("cannot read function pack"))
+    });
+    let missing_interface_pack = document.stages.iter().any(|stage| {
+        stage
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("cannot read interface pack"))
+    });
+    if missing_function_pack || missing_interface_pack {
+        outputln!("Next review workspace setup:");
+        if missing_function_pack {
+            outputln!("  vendor-binary-workbench functions init-pack");
+        }
+        if missing_interface_pack {
+            outputln!("  vendor-binary-workbench interfaces init-pack");
+        }
+        outputln!("Then rerun `vendor-binary-workbench project analyze`.");
+    }
 }
 
 #[cfg(test)]

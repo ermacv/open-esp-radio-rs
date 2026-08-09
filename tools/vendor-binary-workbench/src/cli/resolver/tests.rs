@@ -151,6 +151,23 @@ fn source_qualified_cli_artifacts_override_only_the_same_source() {
 }
 
 #[test]
+fn one_ir_source_receives_only_its_source_qualified_companion() {
+    let (path, run_spec) = run_spec(
+        "source-companion",
+        "[[inputs]]\nrole = \"source-artifact:rom\"\npath = \"rom.elf\"\n\n[[inputs]]\nrole = \"source-companion:rom\"\npath = \"rom-companion.elf\"\n\n[[inputs]]\nrole = \"source-companion:archive\"\npath = \"archive-companion.elf\"\n",
+    );
+    let mut command = Command::ExportIr(IrExportArgs::default());
+    apply_run_spec_defaults(&mut command, &run_spec);
+    std::fs::remove_file(path).unwrap();
+    let Command::ExportIr(arguments) = command else {
+        panic!("unexpected argument type")
+    };
+    assert_eq!(arguments.artifact.len(), 1);
+    assert_eq!(arguments.companion.len(), 1);
+    assert!(arguments.companion[0].ends_with("rom-companion.elf"));
+}
+
+#[test]
 fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
     let directory = fixture_directory("discovery");
     let nested = directory.join("nested");

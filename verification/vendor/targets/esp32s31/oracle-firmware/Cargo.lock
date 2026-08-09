@@ -1244,6 +1244,7 @@ dependencies = [
  "open-esp-radio-esp32s31-pac",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-dma",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-esp32s31-wifi-sta",
@@ -1288,6 +1289,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-wifi"
+version = "0.1.0"
+dependencies = [
+ "open-esp-radio-esp32s31-hal",
+ "open-esp-radio-esp32s31-phy",
+ "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi-mac",
+ "open-esp-radio-ieee80211",
+ "open-esp-radio-wifi-softmac",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-wifi-dma"
 version = "0.1.0"
 dependencies = [
@@ -1306,6 +1319,7 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
 ]
 
@@ -1328,6 +1342,7 @@ dependencies = [
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-phy",
  "open-esp-radio-esp32s31-registers",
+ "open-esp-radio-esp32s31-wifi",
  "open-esp-radio-esp32s31-wifi-mac",
  "open-esp-radio-ieee80211",
  "open-esp-radio-wifi-softmac",
@@ -1342,6 +1357,10 @@ version = "0.1.0"
 [[package]]
 name = "open-esp-radio-vendor-oracle-esp32s31-trace-elf"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "toml_edit",
+]
 
 [[package]]
 name = "open-esp-radio-vendor-oracle-hil-esp32s31"
@@ -1646,6 +1665,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "serde_yaml"
 version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1861,8 +1889,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6975367e4d2ef766d86af01ffad14b622fecc8d4357a998fbc4deb6e9bacaf9b"
 dependencies = [
  "indexmap",
+ "serde_core",
+ "serde_spanned",
  "toml_datetime",
  "toml_parser",
+ "toml_writer",
  "winnow",
 ]
 
@@ -1874,6 +1905,12 @@ checksum = "1d38ac1cf9b95face32296c0a3ede1fdc270627c9d9c02a7274dd6d960dc4d56"
 dependencies = [
  "winnow",
 ]
+
+[[package]]
+name = "toml_writer"
+version = "1.1.2+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tracing"

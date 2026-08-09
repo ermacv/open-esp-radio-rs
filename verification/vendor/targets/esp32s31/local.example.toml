@@ -1,0 +1,27 @@
+# Role reference for manual setups. Prefer `project inputs init`; keep local.toml untracked.
+# Paths are resolved relative to the copied run spec.
+schema = 1
+
+[[inputs]]
+role = "source-artifact:rom"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
+role = "source-artifact:archive"
+path = "/path/to/linked-libphy.elf"
+
+[[inputs]]
+role = "source-inventory:archive"
+path = "/path/to/libphy.a"
+
+[[inputs]]
+role = "source-companion:rom"
+path = "/path/to/linked-libphy.elf"
+
+[[inputs]]
+role = "source-companion:archive"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
+role = "rust-artifact"
+path = "/path/to/rust-trace-probes.elf"

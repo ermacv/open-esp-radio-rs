@@ -25,7 +25,7 @@ Repeated analysis should use a project manifest:
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --run-spec /path/to/local.toml
 ```
 
 The project composes a target, local inputs, an independent memory map, and
@@ -38,7 +38,7 @@ development:
 
 ```console
 cargo vendor-binary-workbench <workflow> <command> \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   ...
 ```
 
@@ -46,7 +46,7 @@ The ESP32-S31 target specification selects the architecture, ABI, SVD catalog,
 profiles, dispositions, and evidence baseline. Its project-selected platform
 pack supplies the harness and reusable semantic catalogs. Vendor artifact paths
 and trusted digests stay outside both packs; callers authenticate inputs and
-pass them directly or through an untracked project-local `local.run`.
+pass them directly or through an untracked project-local `local.toml`.
 
 ## Workflows
 
@@ -54,7 +54,7 @@ pass them directly or through an untracked project-local `local.run`.
 | --- | --- | --- |
 | `project init` | Create a validated generic project, MMIO map and editable register model | [Creating a project](docs/project-init.md) |
 | `project configure` | Attach or verify a reusable platform/harness/semantic composition | [Platform packs](docs/platform-packs.md) |
-| `project inputs init` | Validate caller-owned ELF/archive roles and create or check untracked `local.run` | [Creating a project](docs/project-init.md#local-inputs-and-first-analysis) |
+| `project inputs init` | Validate caller-owned ELF/archive roles and create or check untracked `local.toml` | [Creating a project](docs/project-init.md#local-inputs-and-first-analysis) |
 | Project configuration | Compose target, inputs, memory regions and SVD catalogs | [Project workspace](docs/project-workspace.md) |
 | `project doctor` | Check backend, harness, memory, SVD and local artifact readiness | [Project workspace](docs/project-workspace.md#project-diagnostics) |
 | `project status` | Emit phase-based lifecycle and publication readiness as text or stable JSON | [Project status](docs/project-status.md) |
@@ -62,6 +62,7 @@ pass them directly or through an untracked project-local `local.run`.
 | `project analyze [--check]` | Generate or non-mutatingly verify project-owned symbol/navigation, MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
 | `project publish` | Strictly validate reviewed registers and write or check configured SVD/PAC/bindings | [Project publication](docs/project-publication.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
+| `code init-pack` / `validate` / `review` | Review conservative function-boundary candidates recovered inside executable-code gaps | [Reviewed code boundaries](docs/code-boundaries.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
 | `interfaces init-pack` / `validate` | Review table layouts and ABI, then bind slots to reusable semantic operations | [Interface packs](docs/interface-packs.md) |
 | `functions init-pack` / `validate` / `review` | Review function roles and context layouts, then render a source-like reading view | [Function and context packs](docs/function-packs.md) |
@@ -97,7 +98,7 @@ Start by recording artifact and linkage facts:
 ```console
 cargo vendor-binary-workbench symbols inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report /tmp/esp32s31-symbols.json
 ```
 
@@ -106,7 +107,7 @@ Then find structurally recoverable callback/function-table use:
 ```console
 cargo vendor-binary-workbench interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report /tmp/esp32s31-interfaces.json
 ```
 
@@ -132,7 +133,7 @@ Then build an address inventory:
 
 ```console
 cargo vendor-binary-workbench mmio discover \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --range phy=0x20100000..0x20110000 \
@@ -143,7 +144,7 @@ Then export the functions and reachable internal callees:
 
 ```console
 cargo vendor-binary-workbench ir export \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --symbol-prefix phy_ \
   --include-reachable \
@@ -164,7 +165,7 @@ statically resolved `JAL`/`JALR` targets inside forbidden half-open ranges:
 
 ```console
 cargo vendor-binary-workbench image audit-targets \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact target/path/to/runtime-elf \
   --forbid 'radio-api=0x2f800bf0..0x2f8016bc' \
   --forbid 'radio-body=0x2f823c12..0x2f83e6d0'

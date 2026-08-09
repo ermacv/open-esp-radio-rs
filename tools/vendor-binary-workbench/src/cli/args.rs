@@ -107,6 +107,11 @@ enum Workflow {
         #[command(subcommand)]
         command: FunctionCommand,
     },
+    /// Review recovered executable-code boundaries before analysis.
+    Code {
+        #[command(subcommand)]
+        command: CodeCommand,
+    },
     /// Discover and inspect binary symbols.
     Symbols {
         #[command(subcommand)]
@@ -279,6 +284,12 @@ leaf_commands!(FunctionCommand {
     Review(ReviewArgs) => Command::FunctionReview, Review,
 });
 
+leaf_commands!(CodeCommand {
+    InitPack(OutputArgs) => Command::CodeInitPack, Output,
+    Validate(ValidationArgs) => Command::CodeValidate, Validation,
+    Review(ReviewArgs) => Command::CodeReview, Review,
+});
+
 leaf_commands!(SymbolCommand {
     Inventory(SymbolInventoryArgs) => Command::SymbolInventory, SymbolInventory,
 });
@@ -367,6 +378,7 @@ impl Workflow {
             Self::Tooling { command } => command.into_command(),
             Self::Project { command } => command.into_command(),
             Self::Functions { command } => command.into_command(),
+            Self::Code { command } => command.into_command(),
             Self::Symbols { command } => command.into_command(),
             Self::Interfaces { command } => command.into_command(),
             Self::Registers { command } => command.into_command(),
@@ -397,6 +409,9 @@ pub(crate) enum Command {
     FunctionInitPack(OutputArgs),
     FunctionValidate(ValidationArgs),
     FunctionReview(ReviewArgs),
+    CodeInitPack(OutputArgs),
+    CodeValidate(ValidationArgs),
+    CodeReview(ReviewArgs),
     SymbolInventory(SymbolInventoryArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
@@ -476,7 +491,7 @@ mod tests {
             "--artifact".to_owned(),
             "rom=rom.elf".to_owned(),
             "--target-spec".to_owned(),
-            "target.spec".to_owned(),
+            "target.toml".to_owned(),
             "--include-reachable".to_owned(),
             "--svd".to_owned(),
             "radio.svd".to_owned(),
@@ -484,7 +499,7 @@ mod tests {
             "never".to_owned(),
         ])
         .unwrap();
-        assert_eq!(invocation.target_spec, Some(PathBuf::from("target.spec")));
+        assert_eq!(invocation.target_spec, Some(PathBuf::from("target.toml")));
         assert_eq!(invocation.svd_paths, [PathBuf::from("radio.svd")]);
         assert_eq!(invocation.ui.progress, ProgressMode::Never);
         let Command::ExportIr(arguments) = invocation.command else {

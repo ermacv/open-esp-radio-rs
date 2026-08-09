@@ -1,0 +1,211 @@
+schema = 1
+# Every inventory function resolves through these fail-closed defaults. A new
+# vendor symbol is therefore visible as not-yet-ported instead of disappearing
+# from the report. Protocol remains unknown until a reviewed family rule or an
+# exact function entry classifies it.
+default-disposition = "not-yet-ported"
+default-protocol = "unknown"
+# Protocol classification is independent of implementation status. Keep the
+# shared PHY/RF functions unknown until their actual cross-protocol ownership
+# is established; names alone are not enough to call them Wi-Fi.
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_wifi_"
+protocol = "wifi"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_wifi_"
+protocol = "wifi"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_11p_"
+protocol = "wifi"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_11p_"
+protocol = "wifi"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_bt_"
+protocol = "bluetooth"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_bt_"
+protocol = "bluetooth"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "bt_"
+protocol = "bluetooth"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "bt_"
+protocol = "bluetooth"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_ble_"
+protocol = "ble"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_ble_"
+protocol = "ble"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "ble_"
+protocol = "ble"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "ble_"
+protocol = "ble"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_coex_"
+protocol = "coex"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_coex_"
+protocol = "coex"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "coex_"
+protocol = "coex"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "coex_"
+protocol = "coex"
+[[protocol-prefixes]]
+source = "rom"
+prefix = "phy_154_"
+protocol = "ieee802154"
+[[protocol-prefixes]]
+source = "archive"
+prefix = "phy_154_"
+protocol = "ieee802154"
+# Effect Contract v1 pilot: exact finite MMIO leaf. The contract classifies
+# every vendor effect; a new read, write, call, delay, or state edge fails
+# closed instead of being ignored by a normalizer.
+
+[[functions]]
+source = "rom"
+symbol = "phy_disable_agc"
+disposition = "direct"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
+binding = "v1"
+rust-probe = "open_phy_trace_disable_agc"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20107030 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20107030 }
+disposition = { kind = "required" }
+
+# Blocking-to-async vertical slice. The closed driver adapter executes three
+# ROM branch scenarios, the compiled release HAL probe and the typed Rust
+# transition. The ROM activity halfword is projected onto owned Rust state;
+# the polling read and fixed delay require named, bounded async replacements.
+[[functions]]
+source = "rom"
+symbol = "phy_iq_est_enable"
+disposition = "state-transition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_dc_iq::PhyDcIqEstimateTransition"
+binding = "v1"
+rust-probe = "open_phy_trace_iq_est_enable"
+driver-adapter = "esp32s31-iq-est-enable-v1"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "state-read", width = 16, field = "phy_dc_iq.readiness_activity_edges" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "state-write", width = 16, field = "phy_dc_iq.readiness_activity_edges" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010044c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x2010044c }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20100450 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20100450 }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "delay" }
+disposition = { kind = "replaced-by-async", value = { condition = "timer-1us", timeout = { kind = "deadline-micros", value = 1 } } }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x2010047c }
+disposition = { kind = "replaced-by-async", value = { condition = "iq-estimator-ready", timeout = { kind = "attempts", value = 10000 } } }
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x201008d0 }
+disposition = { kind = "required" }
+
+# The complete cold-registration graph already has a single Rust owner and
+# successful hardware evidence. These entries describe implementation only:
+# until a semantic transition contract is executable, they remain
+# IMPLEMENTED-UNQUALIFIED and do not satisfy the completion gate.
+[[functions]]
+source = "archive"
+symbol = "register_chipv7_phy"
+disposition = "replaced-by-composition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_register::PhyRegisterTransition"
+hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+[[functions.blocked-by]]
+source = "archive"
+symbol = "phy_bb_init"
+
+[[functions]]
+source = "archive"
+symbol = "phy_rf_init"
+disposition = "state-transition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_cold::PhyRfColdInit"
+hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+semantic-contract = "esp32s31-rf-init"
+
+[[functions]]
+source = "archive"
+symbol = "phy_bb_init"
+disposition = "state-transition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_bb::PhyBbInitTransition"
+hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+[[functions.blocked-by]]
+source = "archive"
+symbol = "phy_bt_tx_gain_init"
+
+[[functions]]
+source = "archive"
+symbol = "phy_chip_set_chan"
+disposition = "state-transition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_channel::PhyChipChannelTransition"
+hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+semantic-contract = "esp32s31-channel"
+
+[[functions]]
+source = "archive"
+symbol = "phy_bt_txdc_cal_new"
+disposition = "state-transition"
+protocol = "bluetooth"
+rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxDcTransition"
+semantic-contract = "esp32s31-bluetooth-txdc"
+
+[[functions]]
+source = "archive"
+symbol = "phy_bt_tx_pwctrl_init"
+disposition = "state-transition"
+protocol = "bluetooth"
+rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxPowerTransition"
+semantic-contract = "esp32s31-bluetooth-tx-power"
+
+[[functions]]
+source = "archive"
+symbol = "phy_txdc_cal_pwdet_init"
+disposition = "state-transition"
+protocol = "shared"
+rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxDcPwdetTransition"
+semantic-contract = "esp32s31-bluetooth-txdc-pwdet"

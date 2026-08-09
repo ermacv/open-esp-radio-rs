@@ -82,6 +82,36 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         &ir_profiles,
         source,
     )?;
+    let code = document
+        .get("code")
+        .map(|item| -> Result<CodeWorkspacePaths> {
+            let table = item
+                .as_table()
+                .ok_or_else(|| source.item(Some(item), "project manifest code must be a table"))?;
+            if symbol_inventory.is_none() {
+                return Err(source.item(
+                    Some(item),
+                    "project [code] requires [analysis.symbols] generated facts",
+                ));
+            }
+            let review_output = table
+                .get("review")
+                .map(|item| -> Result<PathBuf> {
+                    let review = item.as_table().ok_or_else(|| {
+                        source.item(Some(item), "project code.review must be a table")
+                    })?;
+                    Ok(resolve_path(
+                        base,
+                        &table_string(review, "output", "project code.review", source)?,
+                    ))
+                })
+                .transpose()?;
+            Ok(CodeWorkspacePaths {
+                pack: resolve_path(base, &table_string(table, "pack", "project code", source)?),
+                review_output,
+            })
+        })
+        .transpose()?;
     let registers = document
         .get("registers")
         .map(|item| -> Result<RegisterWorkspacePaths> {
@@ -384,6 +414,71 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             ));
         }
     }
+    if let Some(code) = &code {
+        let mut generated = Vec::<(&str, &Path)>::new();
+        if let Some(symbols) = &symbol_inventory {
+            generated.push(("symbol inventory", &symbols.output));
+        }
+        if let Some(navigation) = &navigation_index {
+            generated.push(("navigation index", &navigation.output));
+        }
+        for profile in &ir_profiles {
+            generated.push(("linked-IR report", &profile.output));
+            if let Some(path) = &profile.pseudo_rust {
+                generated.push(("pseudo-Rust report", path));
+            }
+        }
+        if let Some(paths) = &registers {
+            generated.push(("register facts", &paths.facts));
+            if let Some(path) = &paths.review_output {
+                generated.push(("register review", path));
+            }
+            if let Some(path) = &paths.svd_output {
+                generated.push(("generated SVD", path));
+            }
+            if let Some(pac) = &paths.pac {
+                generated.push(("generated PAC", &pac.output));
+            }
+            if let Some(bindings) = &paths.bindings {
+                generated.push(("generated PAC bindings", &bindings.output));
+            }
+        }
+        if let Some(paths) = &interfaces {
+            generated.push(("interface facts", &paths.facts));
+        }
+        if let Some(path) = functions
+            .as_ref()
+            .and_then(|paths| paths.review_output.as_ref())
+        {
+            generated.push(("function review", path));
+        }
+        if let Some((owner, path)) = generated.iter().find(|(_, output)| **output == code.pack) {
+            return Err(source.item(
+                document.get("code"),
+                format!(
+                    "reviewed code-boundary pack {} reuses {owner} output path",
+                    path.display()
+                ),
+            ));
+        }
+        if let Some(review) = &code.review_output {
+            if review == &code.pack {
+                return Err(source.item(
+                    document.get("code"),
+                    "generated code-boundary review reuses the reviewed pack path",
+                ));
+            }
+            if let Some((owner, path)) = generated.iter().find(|(_, output)| **output == *review) {
+                return Err(source.item(
+                    document.get("code"),
+                    format!(
+                        "generated code-boundary review {} reuses {owner} output path",
+                        path.display()
+                    ),
+                ));
+            }
+        }
+    }
     Ok(ProjectSpec {
         id,
         target_spec,
@@ -394,6 +489,7 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         svd_paths,
         symbol_inventory,
         navigation_index,
+        code,
         ir_profiles,
         registers,
         interfaces,

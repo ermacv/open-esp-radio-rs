@@ -31,8 +31,8 @@ fn resolves_composed_specs_relative_to_the_project() {
         r#"
 schema = 1
 id = "fixture"
-target-spec = "target.spec"
-run-spec = "local.run"
+target-spec = "target.toml"
+run-spec = "local.toml"
 memory-map = "memory.toml"
 svd = ["registers/base.svd"]
 
@@ -41,6 +41,12 @@ output = "generated/symbols.json"
 
 [analysis.navigation]
 output = "generated/navigation.json"
+
+[code]
+pack = "code/boundaries.toml"
+
+[code.review]
+output = "generated/code-boundaries.md"
 
 [[analysis.ir]]
 id = "vendor"
@@ -67,7 +73,7 @@ target = "none"
 edition = "2024"
 
 [registers.bindings]
-output = "generated/device.bindings"
+output = "generated/device.bindings.toml"
 crate-name = "fixture_pac"
 
 [registers.api]
@@ -91,7 +97,7 @@ profiles = ["vendor"]
 output = "generated/function-review.md"
 
 [verification]
-profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
+profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
 "#,
     )
     .unwrap();
@@ -99,8 +105,8 @@ profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
     let project = ProjectSpec::load(&path).unwrap();
     std::fs::remove_dir_all(&directory).unwrap();
     assert_eq!(project.id, "fixture");
-    assert_eq!(project.target_spec, directory.join("target.spec"));
-    assert_eq!(project.run_spec, Some(directory.join("local.run")));
+    assert_eq!(project.target_spec, directory.join("target.toml"));
+    assert_eq!(project.run_spec, Some(directory.join("local.toml")));
     assert_eq!(project.memory_map, Some(directory.join("memory.toml")));
     assert!(project.svd_configured);
     assert_eq!(project.svd_paths, [directory.join("registers/base.svd")]);
@@ -114,6 +120,13 @@ profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
         project.navigation_index,
         Some(NavigationIndexSpec {
             output: directory.join("generated/navigation.json"),
+        })
+    );
+    assert_eq!(
+        project.code,
+        Some(CodeWorkspacePaths {
+            pack: directory.join("code/boundaries.toml"),
+            review_output: Some(directory.join("generated/code-boundaries.md")),
         })
     );
     assert_eq!(
@@ -142,7 +155,7 @@ profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
                 edition: "2024".to_owned(),
             }),
             bindings: Some(PacBindingsOutputSpec {
-                output: directory.join("generated/device.bindings"),
+                output: directory.join("generated/device.bindings.toml"),
                 crate_name: "fixture_pac".to_owned(),
             }),
             api_pack: Some(directory.join("registers/api.toml")),
@@ -177,8 +190,8 @@ profiles = ["profiles/compiled.profile", "profiles/interrupts.profile"]
         project.verification,
         Some(VerificationWorkspacePaths {
             profiles: vec![
-                directory.join("profiles/compiled.profile"),
-                directory.join("profiles/interrupts.profile"),
+                directory.join("profiles/compiled.toml"),
+                directory.join("profiles/interrupts.toml"),
             ],
             rust_prefix: None,
         })
@@ -190,37 +203,37 @@ fn nested_project_errors_retain_the_exact_manifest_value_span() {
     let cases = [
         (
             "wrong-run-spec-type.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nrun-spec = 7\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nrun-spec = 7\n",
             "7",
             "run-spec",
         ),
         (
             "wrong-analysis-shape.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nanalysis = \"wrong\"\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nanalysis = \"wrong\"\n",
             "\"wrong\"",
             "analysis must be a table",
         ),
         (
             "wrong-source-id.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"fixture\"\nsources = [\"bad.source\"]\noutput = \"generated/fixture.json\"\n",
             "\"bad.source\"",
             "invalid source id",
         ),
         (
             "wrong-pac-edition.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\nmodel = \"registers.toml\"\n[registers.pac]\noutput = \"pac.rs\"\nedition = \"2018\"\n",
             "\"2018\"",
             "edition must be",
         ),
         (
             "removed-interface-key.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"interfaces.json\"\nsemantic-catalogs = []\n",
             "[]",
             "semantic catalogs belong to the platform pack",
         ),
         (
             "unknown-function-profile.toml",
-            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+            "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
             "[\"missing\"]",
             "unknown IR profile",
         ),
@@ -264,7 +277,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let registers = directory.join("registers.toml");
     std::fs::write(
         &registers,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[registers]\nfacts = \"facts.json\"\noverlay = \"reviewed.toml\"\n",
     )
     .unwrap();
     assert!(
@@ -277,7 +290,7 @@ fn rejects_removed_workspace_configuration_keys() {
     let interfaces = directory.join("interfaces.toml");
     std::fs::write(
         &interfaces,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[interfaces]\nfacts = \"facts.json\"\nsemantic-catalogs = []\n",
     )
     .unwrap();
     assert!(
@@ -303,7 +316,7 @@ fn rejects_generic_analysis_output_collisions() {
         r#"
 schema = 1
 id = "fixture"
-target-spec = "target.spec"
+target-spec = "target.toml"
 
 [analysis.symbols]
 output = "generated/facts.json"
@@ -325,7 +338,7 @@ model = "registers/device.toml"
         r#"
 schema = 1
 id = "fixture"
-target-spec = "target.spec"
+target-spec = "target.toml"
 
 [analysis.symbols]
 output = "generated/symbols.json"
@@ -348,6 +361,62 @@ facts = "generated/facts.json"
 }
 
 #[test]
+fn reviewed_code_pack_and_review_own_distinct_paths() {
+    let directory = std::env::temp_dir().join(format!(
+        "open-radio-workbench-code-path-collision-{}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let manifest = directory.join(DEFAULT_PROJECT_MANIFEST);
+    std::fs::write(
+        &manifest,
+        r#"
+schema = 1
+id = "fixture"
+target-spec = "target.toml"
+
+[analysis.symbols]
+output = "generated/symbols.json"
+
+[code]
+pack = "generated/symbols.json"
+"#,
+    )
+    .unwrap();
+    assert!(
+        ProjectSpec::load(&manifest)
+            .unwrap_err()
+            .to_string()
+            .contains("reuses symbol inventory output path")
+    );
+    std::fs::write(
+        &manifest,
+        r#"
+schema = 1
+id = "fixture"
+target-spec = "target.toml"
+
+[analysis.symbols]
+output = "generated/symbols.json"
+
+[code]
+pack = "code/boundaries.toml"
+
+[code.review]
+output = "code/boundaries.toml"
+"#,
+    )
+    .unwrap();
+    assert!(
+        ProjectSpec::load(&manifest)
+            .unwrap_err()
+            .to_string()
+            .contains("review reuses the reviewed pack path")
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn distinguishes_an_explicit_empty_svd_catalog_from_an_omitted_one() {
     let directory = std::env::temp_dir().join(format!(
         "open-radio-workbench-project-empty-svd-{}",
@@ -358,12 +427,12 @@ fn distinguishes_an_explicit_empty_svd_catalog_from_an_omitted_one() {
     let omitted = directory.join("omitted.toml");
     std::fs::write(
         &explicit,
-        "schema = 1\nid = \"explicit\"\ntarget-spec = \"target.spec\"\nsvd = []\n",
+        "schema = 1\nid = \"explicit\"\ntarget-spec = \"target.toml\"\nsvd = []\n",
     )
     .unwrap();
     std::fs::write(
         &omitted,
-        "schema = 1\nid = \"omitted\"\ntarget-spec = \"target.spec\"\n",
+        "schema = 1\nid = \"omitted\"\ntarget-spec = \"target.toml\"\n",
     )
     .unwrap();
 

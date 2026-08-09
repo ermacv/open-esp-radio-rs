@@ -99,6 +99,7 @@ pub(crate) struct ArtifactDiscoverySummary {
     pub(crate) source: String,
     pub(crate) path: PathBuf,
     pub(crate) functions: usize,
+    pub(crate) reviewed_boundaries: usize,
     pub(crate) functions_with_mmio: usize,
     pub(crate) functions_with_diagnostics: usize,
     pub(crate) explored_states: usize,
@@ -410,6 +411,7 @@ pub(crate) fn discover_mmio(
     symbol_prefix: &str,
     code_symbol_selection: artifact::CodeSymbolSelection,
     svd: &MmioMap,
+    effective_code: Option<&super::EffectiveCodeCatalog>,
 ) -> Result<MmioDiscoveryReport> {
     let map = discovery_map(svd, ranges);
     let relocated_calls = BTreeMap::new();
@@ -419,8 +421,21 @@ pub(crate) fn discover_mmio(
     let mut artifact_summaries = Vec::new();
 
     for (source, path) in artifacts {
-        let symbols =
-            artifact::load_code_symbols(Path::new(path), symbol_prefix, code_symbol_selection)?;
+        let (symbols, reviewed_boundaries) = match effective_code {
+            Some(catalog) => {
+                let loaded = catalog.load_symbols(
+                    source,
+                    Path::new(path),
+                    symbol_prefix,
+                    code_symbol_selection,
+                )?;
+                (loaded.symbols, loaded.reviewed_boundaries)
+            }
+            None => (
+                artifact::load_code_symbols(Path::new(path), symbol_prefix, code_symbol_selection)?,
+                0,
+            ),
+        };
         let mut functions_with_mmio = 0usize;
         let mut functions_with_diagnostics = 0usize;
         let mut explored_states = 0usize;
@@ -454,6 +469,7 @@ pub(crate) fn discover_mmio(
             source: source.clone(),
             path: path.clone(),
             functions: symbols.len(),
+            reviewed_boundaries,
             functions_with_mmio,
             functions_with_diagnostics,
             explored_states,

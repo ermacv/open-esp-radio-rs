@@ -121,7 +121,7 @@ change discovery, IR generation, or review rendering.
 ## Private inputs
 
 A public project normally omits `run-spec`; callers create an untracked
-`local.run` beside the project manifest with `project inputs init`. The
+`local.toml` beside the project manifest with `project inputs init`. The
 resolver discovers that file automatically. Explicit `--run-spec` remains an
 override for CI or for credentials stored elsewhere. With neither source,
 `project analyze --check` reports analysis roots and their dependants as
@@ -135,17 +135,17 @@ non-mutating primitive for narrow workflows:
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project path/to/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --check
 
 cargo vendor-binary-workbench interfaces discover \
   --project path/to/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --check
 
 cargo vendor-binary-workbench symbols inventory \
   --project path/to/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --check
 ```
 

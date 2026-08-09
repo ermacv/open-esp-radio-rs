@@ -44,7 +44,7 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
 
     assert!(run(arguments.clone()).unwrap());
     let project = ProjectSpec::load(&directory.join(DEFAULT_PROJECT_MANIFEST)).unwrap();
-    let target = TargetSpec::load(&directory.join("target.spec")).unwrap();
+    let target = TargetSpec::load(&directory.join("target.toml")).unwrap();
     let memory = MemoryMap::load(&directory.join("memory.toml")).unwrap();
     let model = RegisterModel::load(&project.registers.as_ref().unwrap().model).unwrap();
     assert_eq!(project.ir_profiles.len(), 1);
@@ -72,13 +72,14 @@ fn creates_a_valid_project_and_refuses_to_overwrite_it() {
     );
     assert!(project.interfaces.is_some());
     assert!(project.functions.is_some());
+    assert!(project.code.is_some());
     target.require_available_backend().unwrap();
     assert_eq!(memory.mmio_ranges().unwrap().len(), 1);
     assert_eq!(model.render_svd().unwrap().1.peripherals, 1);
     let readme = fs::read_to_string(directory.join("README.md")).unwrap();
     assert!(readme.contains("project inputs init"));
     assert!(readme.contains("--bind source-artifact:vendor=/path/to/vendor.elf"));
-    assert!(!readme.contains("--run-spec local.run"));
+    assert!(!readme.contains("--run-spec local.toml"));
     let containment = crate::registers::validate_register_memory_map(
         project.registers.as_ref().unwrap(),
         Some(&memory),

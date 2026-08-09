@@ -53,7 +53,7 @@ pub(crate) struct ProjectInputsInitArgs {
     /// Bind one run-spec role to a caller-owned artifact path.
     #[arg(long, value_name = "ROLE=PATH", required = true)]
     pub(crate) bind: Vec<ProjectInputBinding>,
-    /// Local run-spec to create; defaults to local.run next to the project manifest.
+    /// Local run-spec to create; defaults to local.toml next to the project manifest.
     #[arg(long)]
     pub(crate) output: Option<PathBuf>,
     /// Verify that the existing local run-spec matches the requested bindings.

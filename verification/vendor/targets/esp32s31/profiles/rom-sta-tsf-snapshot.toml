@@ -1,0 +1,69 @@
+schema = 1
+
+[[profiles]]
+name = "rom-sta-tsf-snapshot"
+vendor-source = "rom"
+vendor-symbol = "hal_get_sta_tsf"
+rust-symbol = "open_rom_power_tsf_trace_hal_get_sta_tsf"
+compare-return = false
+
+[[profiles.cases]]
+name = "neither-output"
+arguments = [0, 0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d814
+value = 0xa5a50010
+
+[[profiles.cases]]
+name = "low-output"
+arguments = [0x3fff0000, 0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d814
+value = 0xa5a50010
+[[profiles.cases.mmio-initial]]
+address = 0x2010d820
+value = 0x01234567
+[[profiles.cases.ram]]
+address = 0x3fff0000
+value = 0
+[[profiles.cases.observe]]
+address = 0x3fff0000
+length = 4
+
+[[profiles.cases]]
+name = "high-output"
+arguments = [0, 0x3fff0004]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d814
+value = 0x5a5a0011
+[[profiles.cases.mmio-initial]]
+address = 0x2010d824
+value = 0x89abcdef
+[[profiles.cases.ram]]
+address = 0x3fff0004
+value = 0
+[[profiles.cases.observe]]
+address = 0x3fff0004
+length = 4
+
+[[profiles.cases]]
+name = "both-outputs"
+arguments = [0x3fff0000, 0x3fff0004]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d814
+value = 0x12340010
+[[profiles.cases.mmio-initial]]
+address = 0x2010d820
+value = 0x76543210
+[[profiles.cases.mmio-initial]]
+address = 0x2010d824
+value = 0xfedcba98
+[[profiles.cases.ram]]
+address = 0x3fff0000
+value = 0
+[[profiles.cases.ram]]
+address = 0x3fff0004
+value = 0
+[[profiles.cases.observe]]
+address = 0x3fff0000
+length = 8

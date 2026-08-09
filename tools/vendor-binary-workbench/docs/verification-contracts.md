@@ -19,8 +19,9 @@ uses fail-closed defaults for everything else. Supported dispositions are:
 Implemented entries name a `rust-component`. An implemented component without
 an executable semantic or effect contract remains
 `IMPLEMENTED-UNQUALIFIED`; prose and source presence do not become evidence.
-`blocked-by SOURCE SYMBOL` expresses an exact qualification dependency. The
-loader rejects missing blocker targets and duplicate entries.
+Each `[[functions.blocked-by]]` table expresses an exact qualification
+dependency through `source` and `symbol`. The loader rejects missing blocker
+targets and duplicate entries.
 
 Protocol classification is independent from completion. Shared PHY/RF,
 Wi-Fi, Bluetooth, BLE, Coex and 802.15.4 counts therefore remain visible even
@@ -29,19 +30,31 @@ when a function is not yet ported.
 ## Bindings
 
 Binding v1 selects one exact compiled Rust probe. It is independent of the
-convention-based `--rust-prefix`. `compare-return true` additionally compares
+convention-based `--rust-prefix`. `compare-return = true` additionally compares
 the observable ABI return register; it is opt-in because a machine value in
 `a0` alone does not prove the unavailable C prototype declared a return.
 
-```text
-function rom phy_disable_agc
-disposition direct
-rust-component open_esp_radio_esp32s31_hal::phy_agc::set_enabled
-binding v1
-rust-probe open_phy_trace_disable_agc
-effect-contract exact-effects-v1
-effect mmio-read 32 0x20107030 required
-effect mmio-write 32 0x20107030 required
+```toml
+schema = 1
+default-disposition = "not-yet-ported"
+default-protocol = "unknown"
+
+[[functions]]
+source = "rom"
+symbol = "phy_disable_agc"
+disposition = "direct"
+rust-component = "open_esp_radio_esp32s31_hal::phy_agc::set_enabled"
+binding = "v1"
+rust-probe = "open_phy_trace_disable_agc"
+effect-contract = "exact-effects-v1"
+
+[[functions.effects]]
+selector = { kind = "mmio-read", width = 32, address = 0x20107030 }
+disposition = { kind = "required" }
+
+[[functions.effects]]
+selector = { kind = "mmio-write", width = 32, address = 0x20107030 }
+disposition = { kind = "required" }
 ```
 
 ## Effect Contract v1

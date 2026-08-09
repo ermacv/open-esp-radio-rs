@@ -221,6 +221,48 @@ fn recognizes_both_riscv_call_relocation_kinds() {
 }
 
 #[test]
+fn reviewed_section_range_becomes_a_code_symbol_without_changing_elf_symbols() {
+    let path = write_visibility_fixture();
+    let reviewed = load_reviewed_code_ranges(
+        &path,
+        &[ReviewedCodeRange {
+            member: None,
+            section: ".text".to_owned(),
+            name: "recovered_gap".to_owned(),
+            start_offset: 8,
+            end_offset: 12,
+        }],
+    )
+    .unwrap();
+    let ordinary = load_code_symbols(&path, "", CodeSymbolSelection::All).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    assert_eq!(reviewed.len(), 1);
+    assert_eq!(reviewed[0].name, "recovered_gap");
+    assert_eq!(reviewed[0].address, 8);
+    assert_eq!(reviewed[0].bytes, [0, 0, 0, 0]);
+    assert!(ordinary.iter().all(|symbol| symbol.name != "recovered_gap"));
+}
+
+#[test]
+fn reviewed_section_range_fails_closed_outside_section() {
+    let path = write_visibility_fixture();
+    let error = load_reviewed_code_ranges(
+        &path,
+        &[ReviewedCodeRange {
+            member: None,
+            section: ".text".to_owned(),
+            name: "oversized".to_owned(),
+            start_offset: 8,
+            end_offset: 16,
+        }],
+    )
+    .unwrap_err();
+    std::fs::remove_file(path).unwrap();
+    assert!(error.to_string().contains("invalid section offsets"));
+}
+
+#[test]
 fn recognizes_absolute_pc_relative_and_got_relocation_kinds() {
     assert_eq!(
         riscv_relocation_kind(object::elf::R_RISCV_PCREL_HI20),

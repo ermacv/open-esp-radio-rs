@@ -1,6 +1,7 @@
 //! Effect Contract data model and canonical representation.
 
 use super::*;
+use serde::Deserialize;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct RegisterId {
@@ -33,7 +34,8 @@ pub enum ContractValue {
     Symbolic(SymbolicValue),
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
 pub enum PlatformOperation {
     DebugDiagnostic,
     NvsCalibrationCache,
@@ -46,20 +48,6 @@ pub enum PlatformOperation {
 }
 
 impl PlatformOperation {
-    pub fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "debug-diagnostic" => Ok(Self::DebugDiagnostic),
-            "nvs-calibration-cache" => Ok(Self::NvsCalibrationCache),
-            "rtos-scheduling-adapter" => Ok(Self::RtosSchedulingAdapter),
-            "delay-micros" => Ok(Self::DelayMicros),
-            "random" => Ok(Self::Random),
-            "critical-section" => Ok(Self::CriticalSection),
-            "allocate" => Ok(Self::Allocate),
-            "deallocate" => Ok(Self::Deallocate),
-            _ => Err(format!("unknown platform operation {value:?} at line {line}").into()),
-        }
-    }
-
     pub const fn label(&self) -> &'static str {
         match self {
             Self::DebugDiagnostic => "debug-diagnostic",
@@ -104,7 +92,8 @@ impl ReadyCondition {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 #[allow(
     dead_code,
     reason = "attempt and deadline timeouts are both part of the v1 async contract"
@@ -115,24 +104,6 @@ pub enum Timeout {
 }
 
 impl Timeout {
-    pub(super) fn parse(value: &str, line: usize) -> Result<Self> {
-        let (kind, count) = value.split_once('=').ok_or_else(|| {
-            format!("async replacement timeout must be KIND=COUNT at line {line}")
-        })?;
-        let count = u32_literal(count)
-            .ok_or_else(|| format!("invalid async replacement timeout {value:?} at line {line}"))?;
-        if count == 0 {
-            return Err(
-                format!("async replacement timeout must be non-zero at line {line}").into(),
-            );
-        }
-        match kind {
-            "attempts" => Ok(Self::Attempts(count)),
-            "deadline-us" => Ok(Self::DeadlineMicros(count)),
-            _ => Err(format!("unknown async replacement timeout {kind:?} at line {line}").into()),
-        }
-    }
-
     pub(super) fn canonical(self) -> String {
         match self {
             Self::Attempts(count) => format!("attempts={count}"),
@@ -188,7 +159,8 @@ pub enum ContractEffect {
     },
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum EffectSelector {
     MmioRead { width: u8, address: u32 },
     MmioWrite { width: u8, address: u32 },
@@ -365,7 +337,8 @@ impl ContractEffect {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
 pub enum OmissionReason {
     DebugDiagnostic,
     NvsCalibrationCache,
@@ -374,16 +347,6 @@ pub enum OmissionReason {
 }
 
 impl OmissionReason {
-    pub fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "debug-diagnostic" => Ok(Self::DebugDiagnostic),
-            "nvs-calibration-cache" => Ok(Self::NvsCalibrationCache),
-            "rtos-scheduling-adapter" => Ok(Self::RtosSchedulingAdapter),
-            "unused-instrumentation" => Ok(Self::UnusedInstrumentation),
-            _ => Err(format!("unknown omission reason {value:?} at line {line}").into()),
-        }
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::DebugDiagnostic => "debug-diagnostic",
@@ -394,7 +357,8 @@ impl OmissionReason {
     }
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum EffectDisposition {
     Required,
     ReplacedByAsync { condition: String, timeout: Timeout },
@@ -433,19 +397,13 @@ impl EffectDisposition {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub enum EffectComparison {
     ExactEffectsV1,
 }
 
 impl EffectComparison {
-    pub fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "exact-effects-v1" => Ok(Self::ExactEffectsV1),
-            _ => Err(format!("unknown effect contract {value:?} at line {line}").into()),
-        }
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::ExactEffectsV1 => "exact-effects-v1",
@@ -466,6 +424,7 @@ impl EffectPolicy {
     ) -> Result<Self> {
         let mut collected = BTreeMap::new();
         for (selector, disposition) in rules {
+            validate_effect_rule(&selector, &disposition)?;
             if collected.insert(selector.clone(), disposition).is_some() {
                 return Err(format!("duplicate effect rule {}", selector.canonical()).into());
             }
@@ -498,4 +457,102 @@ impl EffectPolicy {
     pub fn disposition(&self, selector: &EffectSelector) -> Option<&EffectDisposition> {
         self.rules.get(selector)
     }
+}
+
+fn validate_effect_rule(selector: &EffectSelector, disposition: &EffectDisposition) -> Result<()> {
+    let width = match selector {
+        EffectSelector::MmioRead { width, .. }
+        | EffectSelector::MmioWrite { width, .. }
+        | EffectSelector::StateRead { width, .. }
+        | EffectSelector::StateWrite { width, .. } => Some(*width),
+        _ => None,
+    };
+    if width.is_some_and(|width| !matches!(width, 8 | 16 | 32)) {
+        return Err("effect width must be 8, 16, or 32".into());
+    }
+    for id in match selector {
+        EffectSelector::PlatformProvidedInput { input } => [Some(input.as_str()), None],
+        EffectSelector::PlatformProvidedService { service } => [Some(service.as_str()), None],
+        EffectSelector::PublishedEvent { event } => [Some(event.as_str()), None],
+        EffectSelector::InitializationPrerequisite { prerequisite } => {
+            [Some(prerequisite.as_str()), None]
+        }
+        _ => [None, None],
+    }
+    .into_iter()
+    .flatten()
+    {
+        validate_boundary_id(id)?;
+    }
+    match disposition {
+        EffectDisposition::ReplacedByAsync { condition, timeout } => {
+            validate_boundary_id(condition)?;
+            let count = match timeout {
+                Timeout::Attempts(count) | Timeout::DeadlineMicros(count) => *count,
+            };
+            if count == 0 {
+                return Err("async replacement timeout must be non-zero".into());
+            }
+        }
+        EffectDisposition::PlatformProvidedInput { input } => validate_boundary_id(input)?,
+        EffectDisposition::PlatformProvidedService { service } => validate_boundary_id(service)?,
+        EffectDisposition::PublishedEvent { event } => validate_boundary_id(event)?,
+        EffectDisposition::InitializationPrerequisite { prerequisite } => {
+            validate_boundary_id(prerequisite)?
+        }
+        _ => {}
+    }
+    match (selector, disposition) {
+        (EffectSelector::PlatformCall { .. }, EffectDisposition::AllowedOmission(_))
+        | (EffectSelector::PlatformCall { .. }, EffectDisposition::PlatformOwned)
+        | (_, EffectDisposition::Required | EffectDisposition::Forbidden)
+        | (
+            EffectSelector::Delay | EffectSelector::MmioRead { .. },
+            EffectDisposition::ReplacedByAsync { .. },
+        )
+        | (
+            EffectSelector::MmioRead { .. }
+            | EffectSelector::StateRead { .. }
+            | EffectSelector::PlatformCall { .. },
+            EffectDisposition::PlatformProvidedInput { .. },
+        )
+        | (
+            EffectSelector::PlatformCall { .. },
+            EffectDisposition::PlatformProvidedService { .. },
+        )
+        | (
+            EffectSelector::StateWrite { .. } | EffectSelector::PlatformCall { .. },
+            EffectDisposition::PublishedEvent { .. },
+        )
+        | (_, EffectDisposition::InitializationPrerequisite { .. }) => Ok(()),
+        (_, EffectDisposition::AllowedOmission(_)) => {
+            Err("allowed-omission applies only to platform-call effects".into())
+        }
+        (_, EffectDisposition::PlatformOwned) => {
+            Err("platform-owned applies only to platform-call effects".into())
+        }
+        (_, EffectDisposition::ReplacedByAsync { .. }) => {
+            Err("replaced-by-async applies only to delay or MMIO-read effects".into())
+        }
+        (_, EffectDisposition::PlatformProvidedInput { .. }) => {
+            Err("platform-provided-input applies only to read or platform-call effects".into())
+        }
+        (_, EffectDisposition::PlatformProvidedService { .. }) => {
+            Err("platform-provided-service applies only to platform-call effects".into())
+        }
+        (_, EffectDisposition::PublishedEvent { .. }) => {
+            Err("published-event applies only to state-write or platform-call effects".into())
+        }
+    }
+}
+
+fn validate_boundary_id(value: &str) -> Result<()> {
+    if value.is_empty()
+        || !value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_' | b'.')
+        })
+    {
+        return Err(format!("invalid effect boundary id {value:?}").into());
+    }
+    Ok(())
 }

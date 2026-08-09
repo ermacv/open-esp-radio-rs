@@ -13,6 +13,19 @@ pub struct ArtifactSymbolDefinition {
     pub relocations: Vec<SymbolRelocation>,
 }
 
+/// A human-reviewed function range inside an executable section.
+///
+/// Offsets are section-relative so the identity remains stable for
+/// relocatable archive members whose section addresses are zero.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ReviewedCodeRange {
+    pub member: Option<String>,
+    pub section: String,
+    pub name: String,
+    pub start_offset: u64,
+    pub end_offset: u64,
+}
+
 /// Which named, sized text symbols should become analysis roots.
 ///
 /// This is deliberately separate from [`ArtifactSymbolScope`], which records

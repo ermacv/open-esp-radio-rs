@@ -207,7 +207,7 @@ fn project_manifest_diagnostics_highlight_the_nested_physical_value() {
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[[analysis.ir]]\nid = \"known\"\noutput = \"known.json\"\n[functions]\npack = \"functions.toml\"\nprofiles = [\"missing\"]\n",
     )
     .unwrap();
 
@@ -242,8 +242,8 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     std::fs::create_dir_all(&directory).unwrap();
     let project = directory.join("vendor-project.toml");
     std::fs::write(
-        directory.join("target.spec"),
-        "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+        directory.join("target.toml"),
+        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
     )
     .unwrap();
     std::fs::write(
@@ -253,7 +253,7 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     .unwrap();
     std::fs::write(
         &project,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nplatform-pack = \"platform.toml\"\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nplatform-pack = \"platform.toml\"\n",
     )
     .unwrap();
 
@@ -278,7 +278,7 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
     .unwrap();
     std::fs::write(
         &project,
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\nmemory-map = \"memory.toml\"\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\nmemory-map = \"memory.toml\"\n",
     )
     .unwrap();
     let memory_output = workbench()
@@ -606,7 +606,7 @@ fn project_inputs_validate_elf_and_archive_roles_before_writing() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
     std::fs::create_dir_all(&directory).unwrap();
-    let target = repository_root().join("verification/vendor/targets/esp32s31/target.spec");
+    let target = repository_root().join("verification/vendor/targets/esp32s31/target.toml");
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
@@ -667,7 +667,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         std::fs::remove_dir_all(&directory).unwrap();
     }
     std::fs::create_dir_all(&directory).unwrap();
-    let target = repository_root().join("verification/vendor/targets/esp32s31/target.spec");
+    let target = repository_root().join("verification/vendor/targets/esp32s31/target.toml");
     let manifest = directory.join("vendor-project.toml");
     std::fs::write(
         &manifest,
@@ -679,7 +679,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     .unwrap();
     let artifact = directory.join("vendor.o");
     write_rv32_symbol_fixture(&artifact);
-    let run_spec = directory.join("local.run");
+    let run_spec = directory.join("local.toml");
     let inputs = workbench()
         .current_dir(repository_root())
         .args(["project", "inputs", "init", "--project"])
@@ -747,6 +747,53 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
             .find(|stage| stage["name"] == "navigation-index")
             .expect("navigation-index stage");
         assert_eq!(navigation_stage["status"], expected_stage_status);
+    }
+
+    let manifest_contents = std::fs::read_to_string(&manifest).unwrap()
+        + "\n[code]\npack = \"code/boundaries.toml\"\n\n[code.review]\noutput = \"generated/code-boundaries.md\"\n";
+    std::fs::write(&manifest, manifest_contents).unwrap();
+    for (command, expected) in [
+        ("init-pack", "created"),
+        ("validate", "valid"),
+        ("review", "written"),
+    ] {
+        let output = workbench()
+            .current_dir(repository_root())
+            .args(["code", command, "--project"])
+            .arg(&manifest)
+            .args(["--format", "json", "--color", "never"])
+            .output()
+            .expect("run reviewed code-boundary lifecycle");
+        assert!(
+            output.status.success(),
+            "code {command} stderr: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["status"], expected);
+    }
+
+    let checked = workbench()
+        .current_dir(repository_root())
+        .args(["project", "analyze", "--check", "--project"])
+        .arg(&manifest)
+        .args(["--format", "json", "--color", "never"])
+        .output()
+        .expect("check project analysis with reviewed code boundaries");
+    assert!(
+        checked.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&checked.stderr)
+    );
+    let checked: serde_json::Value = serde_json::from_slice(&checked.stdout).unwrap();
+    for name in ["code-boundary-validation", "code-boundary-review"] {
+        assert!(
+            checked["stages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|stage| stage["name"] == name && stage["status"] == "verified")
+        );
     }
 
     let ir_build = workbench()
@@ -831,12 +878,14 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);
     assert!(!document["code_sections"].as_array().unwrap().is_empty());
     assert!(document["summary"]["function_boundary_candidates"].is_number());
-    assert!(document["code_sections"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .all(|section| section["function_candidates"].is_array()
-            && section["recovery_blockers"].is_array()));
+    assert!(
+        document["code_sections"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|section| section["function_candidates"].is_array()
+                && section["recovery_blockers"].is_array())
+    );
     let navigation: serde_json::Value = serde_json::from_slice(
         &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
     )

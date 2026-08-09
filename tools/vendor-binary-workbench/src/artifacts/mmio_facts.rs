@@ -1,4 +1,4 @@
-//! Stored schema-v3 projection of artifact-wide MMIO evidence.
+//! Stored schema-v4 projection of artifact-wide MMIO evidence.
 
 use serde::Serialize;
 
@@ -23,6 +23,7 @@ struct ArtifactDocument {
     source: String,
     artifact: ArtifactIdentity,
     functions: usize,
+    reviewed_boundaries: usize,
     functions_with_mmio: usize,
     functions_with_diagnostics: usize,
     explored_states: usize,
@@ -114,6 +115,7 @@ pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<Mm
                         sha256: artifact_sha256(&artifact.path)?,
                     },
                     functions: artifact.functions,
+                    reviewed_boundaries: artifact.reviewed_boundaries,
                     functions_with_mmio: artifact.functions_with_mmio,
                     functions_with_diagnostics: artifact.functions_with_diagnostics,
                     explored_states: artifact.explored_states,
@@ -224,7 +226,7 @@ mod tests {
         };
         let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
-        assert_eq!(parsed["schema_version"], 3);
+        assert_eq!(parsed["schema_version"], 4);
         assert_eq!(parsed["command"], "mmio discover");
         assert_eq!(parsed["code_selection"]["symbols"], "all");
         assert_eq!(parsed["code_selection"]["symbol_prefix"], "");

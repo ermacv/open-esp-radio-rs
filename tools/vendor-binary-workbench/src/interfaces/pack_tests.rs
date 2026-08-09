@@ -80,7 +80,7 @@ fn write_facts(path: &Path, digest: &str) {
         path,
         format!(
             r#"{{
-  "schema_version": 3,
+  "schema_version": 4,
   "command": "interfaces discover",
   "analysis_scope": {{
     "architecture":"riscv32",
@@ -92,7 +92,7 @@ fn write_facts(path: &Path, digest: &str) {
     "linker_resolution_claim":false,
     "completeness_claim":false
   }},
-  "artifacts": [{{"index":0,"path":"libpp.a","roles":[],"sources":["libpp"],"sha256":"{digest}","container":"archive","functions":1}}],
+  "artifacts": [{{"index":0,"path":"libpp.a","roles":[],"sources":["libpp"],"sha256":"{digest}","container":"archive","functions":1,"reviewed_boundaries":0}}],
   "calls": [{{
     "artifact":0,
     "member":"event.o",

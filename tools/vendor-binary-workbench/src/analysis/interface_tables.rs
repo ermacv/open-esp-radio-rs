@@ -32,6 +32,7 @@ pub(crate) struct InterfaceDecodeFailure {
 pub(crate) struct ProjectInterfaceDiscovery {
     pub(crate) linkage: ProjectLinkageInventory,
     pub(crate) functions: Vec<usize>,
+    pub(crate) reviewed_boundaries: Vec<usize>,
     pub(crate) calls: Vec<DiscoveredInterfaceCall>,
     pub(crate) failures: Vec<InterfaceDecodeFailure>,
 }
@@ -39,18 +40,41 @@ pub(crate) struct ProjectInterfaceDiscovery {
 pub(crate) fn discover_project_interfaces(
     inputs: &[(String, PathBuf)],
     options: &ProjectInterfaceDiscoveryOptions,
+    effective_code: Option<&super::EffectiveCodeCatalog>,
 ) -> Result<ProjectInterfaceDiscovery> {
     let linkage = build_project_linkage_inventory(inputs)?;
     let mut functions = Vec::with_capacity(linkage.artifacts.len());
+    let mut reviewed_boundaries = Vec::with_capacity(linkage.artifacts.len());
     let mut calls = Vec::new();
     let mut failures = Vec::new();
     for (artifact_index, artifact) in linkage.artifacts.iter().enumerate() {
-        let symbols = artifact::load_code_symbols(
-            &artifact.path,
-            &options.name_prefix,
-            artifact::CodeSymbolSelection::All,
-        )?;
+        let source = artifact.sources.first().ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "interface artifact {} has no logical source",
+                artifact.path.display()
+            ))
+        })?;
+        let (symbols, reviewed_count) = match effective_code {
+            Some(catalog) => {
+                let loaded = catalog.load_symbols(
+                    source,
+                    &artifact.path,
+                    &options.name_prefix,
+                    artifact::CodeSymbolSelection::All,
+                )?;
+                (loaded.symbols, loaded.reviewed_boundaries)
+            }
+            None => (
+                artifact::load_code_symbols(
+                    &artifact.path,
+                    &options.name_prefix,
+                    artifact::CodeSymbolSelection::All,
+                )?,
+                0,
+            ),
+        };
         functions.push(symbols.len());
+        reviewed_boundaries.push(reviewed_count);
         for symbol in symbols {
             match discover_interface_calls(&symbol) {
                 Ok(discovered) => calls.extend(
@@ -75,6 +99,7 @@ pub(crate) fn discover_project_interfaces(
     Ok(ProjectInterfaceDiscovery {
         linkage,
         functions,
+        reviewed_boundaries,
         calls,
         failures,
     })

@@ -30,7 +30,7 @@ fn checked_esp32s31_model_preserves_expanded_register_identities() {
     .unwrap();
     assert_eq!(
         bindings,
-        std::fs::read_to_string(root.join("svd/esp32s31-radio.bindings")).unwrap()
+        std::fs::read_to_string(root.join("svd/esp32s31-radio.bindings.toml")).unwrap()
     );
     let api =
         PacApiPack::load(&root.join("verification/vendor/targets/esp32s31/registers/api.toml"))

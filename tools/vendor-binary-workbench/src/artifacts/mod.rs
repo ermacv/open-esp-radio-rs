@@ -11,7 +11,7 @@ mod linked_ir_document;
 mod linked_ir_read;
 mod mmio_facts;
 mod mmio_facts_read;
-mod symbol_inventory;
+pub(crate) mod symbol_inventory;
 
 pub(crate) use interface_facts::{build_interface_facts, render_interface_facts};
 pub(crate) use interface_facts_read::{
@@ -46,17 +46,17 @@ pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 3,
+    version: 4,
     command: "mmio discover",
 };
 
 pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 3,
+    version: 4,
     command: "interfaces discover",
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 35,
+    version: 36,
     command: "ir export",
 };
 
@@ -93,21 +93,21 @@ mod tests {
         assert_eq!(
             MMIO_FACTS,
             ArtifactSchema {
-                version: 3,
+                version: 4,
                 command: "mmio discover",
             }
         );
         assert_eq!(
             INTERFACE_FACTS,
             ArtifactSchema {
-                version: 3,
+                version: 4,
                 command: "interfaces discover",
             }
         );
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 35,
+                version: 36,
                 command: "ir export",
             }
         );

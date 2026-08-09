@@ -132,7 +132,7 @@ bitWidth = 1
             edition: "2024".to_owned(),
         }),
         bindings: bindings.then(|| PacBindingsOutputSpec {
-            output: directory.join("generated/device.bindings"),
+            output: directory.join("generated/device.bindings.toml"),
             crate_name: "fixture_pac".to_owned(),
         }),
         api_pack: None,
@@ -141,7 +141,7 @@ bitWidth = 1
     };
     let project = ProjectSpec {
         id: format!("publication-{name}"),
-        target_spec: directory.join("target.spec"),
+        target_spec: directory.join("target.toml"),
         platform_pack: None,
         run_spec: None,
         memory_map: None,
@@ -149,6 +149,7 @@ bitWidth = 1
         svd_paths: Vec::new(),
         symbol_inventory: None,
         navigation_index: None,
+        code: None,
         ir_profiles: Vec::new(),
         registers: Some(paths),
         interfaces: None,

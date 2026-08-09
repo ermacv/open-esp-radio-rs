@@ -29,13 +29,24 @@ changes kind/digest. New evidence is reported as an addition and does not hide
 a regression elsewhere. Profile evidence binds the parsed scenario, argument
 domain, observations, scripted responses, reachability and execution sources.
 
+The baseline is strict TOML:
+
+```toml
+schema = 1
+
+[[evidence]]
+source = "rom"
+symbol = "phy_disable_agc"
+kind = "effect-contract:<digest>"
+```
+
 The baseline is not rewritten during protected verification. First persist the
 complete report, including a failing result:
 
 ```console
 cargo vendor-binary-workbench verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/authenticated.run \
+  --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \
   --json-report /tmp/esp32s31-verification.json
 ```
@@ -46,11 +57,11 @@ Then produce a separate deterministic candidate:
 cargo vendor-binary-workbench verify evidence \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --report /tmp/esp32s31-verification.json \
-  --candidate /tmp/esp32s31.candidate.evidence
+  --candidate /tmp/esp32s31.candidate.toml
 
 diff -u \
-  verification/vendor/targets/esp32s31/baselines/phy.evidence \
-  /tmp/esp32s31.candidate.evidence
+  verification/vendor/targets/esp32s31/baselines/phy.toml \
+  /tmp/esp32s31.candidate.toml
 ```
 
 `verify evidence` needs only the public project, the persisted schema-v4

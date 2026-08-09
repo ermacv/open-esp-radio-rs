@@ -1,0 +1,7 @@
+schema = 1
+# Focused station TSF wake bool-domain profile. Artifact authentication stays
+# caller-owned; this row pins proof and verifier identity.
+[[evidence]]
+source = "libpp"
+symbol = "hal_set_sta_tsf_wakeup"
+kind = "scenario/profile:libpp-sta-tsf-wakeup/sha256:da6a6558601594bc72607234bb6566fe6bea20b0cc62f4b13c627cae3c025958"

@@ -46,6 +46,9 @@ pub enum Error {
     TomlDeserialize(#[from] toml_edit::de::Error),
 
     #[error(transparent)]
+    TomlSerialize(#[from] toml_edit::ser::Error),
+
+    #[error(transparent)]
     Svd(#[from] svd_rs::SvdError),
 
     #[error("invalid {kind} {path}: {reason}")]

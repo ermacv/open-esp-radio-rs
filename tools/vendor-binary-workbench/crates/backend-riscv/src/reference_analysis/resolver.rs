@@ -62,6 +62,7 @@ impl ReferenceResolver {
             harness,
             entry_contract,
             artifact::CodeSymbolSelection::Exported,
+            &[],
         )
     }
 
@@ -81,6 +82,25 @@ impl ReferenceResolver {
             harness,
             entry_contract,
             artifact::CodeSymbolSelection::All,
+            &[],
+        )
+    }
+
+    /// Load all ordinary symbols plus explicit human-reviewed section ranges.
+    pub fn load_all_code_with_reviewed_ranges(
+        artifact: &Path,
+        companions: &[PathBuf],
+        harness: &'static RiscvHarnessSpec,
+        entry_contract: EntryContractRef,
+        reviewed: &[artifact::ReviewedCodeRange],
+    ) -> Result<Self> {
+        Self::load_catalog_with_entry_contract(
+            artifact,
+            companions,
+            harness,
+            entry_contract,
+            artifact::CodeSymbolSelection::All,
+            reviewed,
         )
     }
 
@@ -90,6 +110,7 @@ impl ReferenceResolver {
         harness: &'static RiscvHarnessSpec,
         entry_contract: EntryContractRef,
         selection: artifact::CodeSymbolSelection,
+        reviewed: &[artifact::ReviewedCodeRange],
     ) -> Result<Self> {
         let exported_symbols =
             artifact::load_code_symbols(artifact, "", artifact::CodeSymbolSelection::Exported)?;
@@ -98,11 +119,19 @@ impl ReferenceResolver {
             .map(symbol_key)
             .collect::<BTreeSet<_>>();
         let mut address_preferred_symbol_keys = exported_symbol_keys.clone();
-        let symbols = if selection == artifact::CodeSymbolSelection::All {
+        let mut symbols = if selection == artifact::CodeSymbolSelection::All {
             artifact::load_code_symbols(artifact, "", selection)?
         } else {
             exported_symbols
         };
+        symbols.extend(artifact::load_reviewed_code_ranges(artifact, reviewed)?);
+        symbols.sort_by(|left, right| {
+            (&left.member, &left.name, left.address).cmp(&(
+                &right.member,
+                &right.name,
+                right.address,
+            ))
+        });
         let mut symbols_by_address = BTreeMap::new();
         for symbol in symbols
             .iter()

@@ -8,8 +8,8 @@ use crate::{
 };
 
 use super::model::{
-    FunctionWorkspaceCommand, InterfaceWorkspaceCommand, RegisterWorkspaceCommand,
-    ResolvedInvocation, TargetCommand,
+    CodeWorkspaceCommand, FunctionWorkspaceCommand, InterfaceWorkspaceCommand,
+    RegisterWorkspaceCommand, ResolvedInvocation, TargetCommand,
 };
 
 pub(super) struct ResolvedEnvironment {
@@ -57,6 +57,11 @@ impl ResolvedEnvironment {
                 .ok_or_else(|| crate::Error::invalid("register command has no project"))?,
             self.memory_map,
         ))
+    }
+
+    fn into_project(self) -> Result<ProjectSpec> {
+        self.project
+            .ok_or_else(|| crate::Error::invalid("workspace command has no project"))
     }
 
     fn into_run_spec(self, workflow: &str) -> Result<RunSpec> {
@@ -112,6 +117,18 @@ pub(super) fn resolve_command(
                 target,
             }
         }
+        Command::CodeInitPack(arguments) => ResolvedInvocation::CodeWorkspace {
+            command: CodeWorkspaceCommand::InitPack(arguments),
+            project: environment.into_project()?,
+        },
+        Command::CodeValidate(arguments) => ResolvedInvocation::CodeWorkspace {
+            command: CodeWorkspaceCommand::Validate(arguments),
+            project: environment.into_project()?,
+        },
+        Command::CodeReview(arguments) => ResolvedInvocation::CodeWorkspace {
+            command: CodeWorkspaceCommand::Review(arguments),
+            project: environment.into_project()?,
+        },
         Command::RegisterInitModel(arguments) => {
             let (project, memory_map) = environment.into_project_registers()?;
             ResolvedInvocation::RegisterWorkspace {
@@ -188,10 +205,20 @@ pub(super) fn resolve_command(
             arguments,
             run_spec: environment.into_run_spec("symbols inventory")?,
         },
-        Command::InterfaceDiscover(arguments) => ResolvedInvocation::InterfaceDiscover {
-            arguments,
-            run_spec: environment.into_run_spec("interfaces discover")?,
-        },
+        Command::InterfaceDiscover(arguments) => {
+            let ResolvedEnvironment {
+                project, run_spec, ..
+            } = environment;
+            ResolvedInvocation::InterfaceDiscover {
+                arguments,
+                run_spec: run_spec.ok_or_else(|| {
+                    crate::Error::invalid(
+                        "interfaces discover requires a run spec with artifact bindings",
+                    )
+                })?,
+                project,
+            }
+        }
         Command::BuildIr(arguments) => {
             let ResolvedEnvironment {
                 project,
@@ -219,81 +246,97 @@ pub(super) fn resolve_command(
             command: TargetCommand::AuditImageTargets(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::DiscoverMmio(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::DiscoverMmio(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::ExportIr(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExportIr(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::VerifyContractChannel(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyContractChannel(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::VerifyContractRfInit(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyContractRfInit(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::ExecuteRun(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExecuteRun(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::ExecuteCompare(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExecuteCompare(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::VerifyProfiles(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyProfiles(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::GenerateReference(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::GenerateReference(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::GenerateReferenceBatch(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::GenerateReferenceBatch(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::GenerateDriver(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::GenerateDriver(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::InspectAnalyze(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectAnalyze(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::VerifyInventory(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyInventory(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::VerifySource(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifySource(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::InspectTrace(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectTrace(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::InspectCompare(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::InspectCompare(arguments),
             target: environment.target,
             svd: environment.svd,
+            project: environment.project.map(Box::new),
         },
         Command::GenerateCompletions(_)
         | Command::GenerateManpage(_)

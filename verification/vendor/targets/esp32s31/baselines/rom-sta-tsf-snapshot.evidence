@@ -1,3 +1,0 @@
-# Focused coherent station TSF snapshot profile. Artifact authentication stays
-# caller-owned; this row pins proof and verifier identity.
-evidence rom hal_get_sta_tsf scenario/profile:rom-sta-tsf-snapshot/sha256:664827b8384352186480849a7146bf69d1c87ef4f62bbe631fd69fe886f69f55

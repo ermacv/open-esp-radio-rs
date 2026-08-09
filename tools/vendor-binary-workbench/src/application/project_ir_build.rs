@@ -63,6 +63,7 @@ pub(crate) fn build_project_ir<'a>(
     target: &TargetSpec,
 ) -> Result<BuildDocument<'a>> {
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
+    let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let mut built = Vec::with_capacity(selected.len());
     for profile in selected {
         let inputs = resolve_inputs(profile, run_spec)?;
@@ -72,6 +73,7 @@ pub(crate) fn build_project_ir<'a>(
             profile,
             svd,
             target,
+            &effective_code,
         )?;
         built.push(BuiltProfile { profile, documents });
     }
@@ -311,10 +313,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("local.run");
+        let path = directory.join("local.toml");
         std::fs::write(
             &path,
-            "schema 1\ninput source-artifact:rom rom.elf\ninput source-artifact:archive archive.elf\ninput source-companion:rom archive.elf\ninput source-companion:archive rom.elf\n",
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:rom\"\npath = \"rom.elf\"\n\n[[inputs]]\nrole = \"source-artifact:archive\"\npath = \"archive.elf\"\n\n[[inputs]]\nrole = \"source-companion:rom\"\npath = \"archive.elf\"\n\n[[inputs]]\nrole = \"source-companion:archive\"\npath = \"rom.elf\"\n",
         )
         .unwrap();
         let run_spec = RunSpec::load(&path).unwrap();

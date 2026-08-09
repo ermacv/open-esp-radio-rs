@@ -1,9 +1,7 @@
 //! Reviewed evidence baselines, comparisons, and candidate publication.
 
 use std::{
-    env,
-    fmt::Write as _,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
 };
 
@@ -12,31 +10,41 @@ use serde::{Deserialize, Serialize};
 use super::{EvidenceSet, VerificationEvidenceDocument, record_evidence};
 use crate::{Result, error::WorkbenchError};
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BaselineDocument {
+    schema: u32,
+    evidence: Vec<BaselineEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BaselineEntry {
+    source: String,
+    symbol: String,
+    kind: String,
+}
+
 #[tracing::instrument(name = "load_evidence_baseline", fields(path = %path.display()))]
 pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
     let text = fs::read_to_string(path)?;
-    parse_evidence_baseline(path, &text)
-        .map_err(|error| WorkbenchError::manifest_document("evidence baseline", path, &text, error))
+    let document: BaselineDocument = toml_edit::de::from_str(&text).map_err(|error| {
+        WorkbenchError::manifest_source("evidence baseline TOML", path, &text, &error, error.span())
+    })?;
+    finish_evidence_baseline(path, document).map_err(|error| {
+        WorkbenchError::manifest_document("evidence baseline TOML", path, &text, error)
+    })
 }
 
-fn parse_evidence_baseline(path: &Path, text: &str) -> Result<EvidenceSet> {
+fn finish_evidence_baseline(path: &Path, document: BaselineDocument) -> Result<EvidenceSet> {
+    if document.schema != 1 {
+        return Err(crate::Error::invalid(
+            "evidence baseline TOML requires schema = 1",
+        ));
+    }
     let mut evidence = EvidenceSet::new();
-    for (index, raw) in text.lines().enumerate() {
-        let line_number = index + 1;
-        let line = raw.split_once('#').map_or(raw, |(before, _)| before).trim();
-        if line.is_empty() {
-            continue;
-        }
-        (|| {
-            let fields = line.split_whitespace().collect::<Vec<_>>();
-            let ["evidence", source, symbol, kind] = fields.as_slice() else {
-                return Err(crate::Error::invalid(
-                    "expected evidence baseline directive: evidence SOURCE SYMBOL KIND",
-                ));
-            };
-            record_evidence(&mut evidence, source, symbol, *kind)
-        })()
-        .map_err(|error: WorkbenchError| error.at_line(line_number))?;
+    for entry in document.evidence {
+        record_evidence(&mut evidence, &entry.source, &entry.symbol, entry.kind)?;
     }
     if evidence.is_empty() {
         return Err(crate::Error::invalid(format!(
@@ -160,11 +168,30 @@ pub(crate) fn write_evidence_candidate(
             )));
         }
     }
-    let mut output = String::new();
-    for ((source, symbol), kind) in evidence {
-        writeln!(output, "evidence {source} {symbol} {kind}")
-            .expect("writing to String cannot fail");
+    #[derive(Serialize)]
+    struct BaselineDocument<'a> {
+        schema: u32,
+        evidence: Vec<BaselineEntry<'a>>,
     }
+
+    #[derive(Serialize)]
+    struct BaselineEntry<'a> {
+        source: &'a str,
+        symbol: &'a str,
+        kind: &'a str,
+    }
+
+    let output = toml_edit::ser::to_string_pretty(&BaselineDocument {
+        schema: 1,
+        evidence: evidence
+            .iter()
+            .map(|((source, symbol), kind)| BaselineEntry {
+                source,
+                symbol,
+                kind,
+            })
+            .collect(),
+    })?;
     fs::write(path, output)?;
     Ok(())
 }
@@ -215,13 +242,49 @@ mod tests {
     use super::*;
 
     #[test]
-    fn malformed_baseline_retains_its_physical_source_line() {
-        let error = parse_evidence_baseline(
-            Path::new("fixture.evidence"),
-            "# reviewed baseline\nevidence incomplete\n",
-        )
-        .unwrap_err();
+    fn every_checked_in_esp32s31_baseline_is_valid_toml() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)
+            .expect("workbench remains under tools");
+        let directory = root.join("verification/vendor/targets/esp32s31/baselines");
+        let mut paths = fs::read_dir(directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.extension()
+                    .is_some_and(|extension| extension == "toml")
+            })
+            .collect::<Vec<_>>();
+        paths.sort();
+        assert_eq!(paths.len(), 9);
+        for path in paths {
+            assert!(!load_evidence_baseline(&path).unwrap().is_empty());
+        }
+    }
 
-        assert!(matches!(error, WorkbenchError::InputLine { line: 2, .. }));
+    #[test]
+    fn malformed_baseline_retains_its_physical_source_line() {
+        let input =
+            "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = 42\nkind = \"symbolic\"\n";
+        let path = std::env::temp_dir().join(format!(
+            "vendor-workbench-evidence-diagnostic-{}.toml",
+            std::process::id()
+        ));
+        fs::write(&path, input).unwrap();
+        let error = load_evidence_baseline(&path).unwrap_err();
+        fs::remove_file(&path).unwrap();
+
+        let WorkbenchError::ManifestSource {
+            path: reported,
+            span,
+            ..
+        } = error
+        else {
+            panic!("expected source diagnostic");
+        };
+        let line_start = input.find("symbol = 42").unwrap();
+        assert_eq!(reported, path);
+        assert!((line_start..line_start + "symbol = 42".len()).contains(&span.offset()));
     }
 }

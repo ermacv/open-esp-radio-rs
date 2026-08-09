@@ -7,6 +7,7 @@ mod analysis;
 mod application;
 mod artifacts;
 mod cli;
+mod code_workspace;
 mod digest;
 mod error;
 mod function_workspace;

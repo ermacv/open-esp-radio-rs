@@ -28,6 +28,9 @@ pub enum Error {
 
     #[error(transparent)]
     Format(#[from] std::fmt::Error),
+
+    #[error(transparent)]
+    Toml(#[from] toml_edit::de::Error),
 }
 
 impl From<String> for Error {
@@ -91,13 +94,4 @@ pub struct DriverAdapterEvidenceSources {
 pub struct SemanticContractEvidenceSources {
     pub common: &'static [EvidenceSource],
     pub contract: EvidenceSource,
-}
-
-pub(crate) fn u32_literal(value: &str) -> Option<u32> {
-    let value = value.trim();
-    if let Some(hex) = value.strip_prefix("0x") {
-        u32::from_str_radix(hex, 16).ok()
-    } else {
-        value.parse().ok()
-    }
 }

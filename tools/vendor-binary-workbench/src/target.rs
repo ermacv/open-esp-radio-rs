@@ -6,6 +6,7 @@ use std::{
 };
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
+use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Debug, Error, Diagnostic)]
@@ -48,7 +49,8 @@ pub(crate) enum TargetError {
 
 type Result<T> = std::result::Result<T, TargetError>;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum Architecture {
     Riscv32,
     Xtensa,
@@ -56,15 +58,6 @@ pub(crate) enum Architecture {
 }
 
 impl Architecture {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "riscv32" => Some(Self::Riscv32),
-            "xtensa" => Some(Self::Xtensa),
-            "arm-thumb" => Some(Self::ArmThumb),
-            _ => None,
-        }
-    }
-
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Riscv32 => "riscv32",
@@ -74,27 +67,19 @@ impl Architecture {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum CallingConvention {
     RiscvIlp32,
     XtensaCall0,
     XtensaWindowed,
+    #[serde(rename = "aapcs32-softfloat")]
     Aapcs32SoftFloat,
+    #[serde(rename = "aapcs32-hardfloat")]
     Aapcs32HardFloat,
 }
 
 impl CallingConvention {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "riscv-ilp32" => Some(Self::RiscvIlp32),
-            "xtensa-call0" => Some(Self::XtensaCall0),
-            "xtensa-windowed" => Some(Self::XtensaWindowed),
-            "aapcs32-softfloat" => Some(Self::Aapcs32SoftFloat),
-            "aapcs32-hardfloat" => Some(Self::Aapcs32HardFloat),
-            _ => None,
-        }
-    }
-
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::RiscvIlp32 => "riscv-ilp32",
@@ -106,21 +91,14 @@ impl CallingConvention {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum Endianness {
     Little,
     Big,
 }
 
 impl Endianness {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "little" => Some(Self::Little),
-            "big" => Some(Self::Big),
-            _ => None,
-        }
-    }
-
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Little => "little",
@@ -146,186 +124,68 @@ pub(crate) struct TargetSpec {
     pub(crate) evidence_baseline: Option<PathBuf>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct TargetDocument {
+    schema: u32,
+    id: String,
+    architecture: Architecture,
+    calling_convention: CallingConvention,
+    endianness: Endianness,
+    pointer_width: u8,
+    rust_target: String,
+    #[serde(default)]
+    memory_map: Option<PathBuf>,
+    #[serde(default)]
+    svd: Vec<PathBuf>,
+    #[serde(default)]
+    pac_bindings: Option<PathBuf>,
+    #[serde(default)]
+    profiles: Option<PathBuf>,
+    #[serde(default)]
+    dispositions: Option<PathBuf>,
+    #[serde(default)]
+    evidence_baseline: Option<PathBuf>,
+}
+
 impl TargetSpec {
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path).map_err(|source| TargetError::Read {
             path: path.to_owned(),
             source,
         })?;
-        let mut schema = None;
-        let mut id = None;
-        let mut architecture = None;
-        let mut calling_convention = None;
-        let mut endianness = None;
-        let mut pointer_width = None;
-        let mut rust_target = None;
-        let mut memory_map = None;
-        let mut svd_paths = Vec::new();
-        let mut pac_bindings = None;
-        let mut profiles = None;
-        let mut dispositions = None;
-        let mut evidence_baseline = None;
+        let document: TargetDocument = toml_edit::de::from_str(&input).map_err(|error| {
+            let span = error.span().unwrap_or(0..input.len().min(1));
+            TargetError::Invalid {
+                message: format!("invalid target TOML: {error}"),
+                src: NamedSource::new(path.display().to_string(), input.clone()),
+                span: (span.start, span.len().max(1)).into(),
+            }
+        })?;
+        if document.schema != 1 {
+            return Err(invalid(path, &input, "target TOML requires schema = 1"));
+        }
         let base = path.parent().unwrap_or_else(|| Path::new("."));
-
-        for (index, raw_line) in input.lines().enumerate() {
-            let line = raw_line.split('#').next().unwrap_or_default().trim();
-            if line.is_empty() {
-                continue;
-            }
-            let (directive, value) = line
-                .split_once(char::is_whitespace)
-                .map(|(directive, value)| (directive, value.trim()))
-                .filter(|(_, value)| !value.is_empty())
-                .ok_or_else(|| invalid(path, &input, index, "target directive requires a value"))?;
-            match directive {
-                "schema" => set_once(
-                    &mut schema,
-                    value
-                        .parse::<u32>()
-                        .map_err(|_| invalid(path, &input, index, "schema must be an integer"))?,
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "target" => {
-                    if value.chars().any(char::is_whitespace) {
-                        return Err(invalid(path, &input, index, "target id must be one token"));
-                    }
-                    set_once(&mut id, value.to_owned(), directive, path, &input, index)?;
-                }
-                "architecture" => set_once(
-                    &mut architecture,
-                    Architecture::parse(value).ok_or_else(|| {
-                        invalid(
-                            path,
-                            &input,
-                            index,
-                            format!("unsupported architecture {value:?}"),
-                        )
-                    })?,
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "calling-convention" => set_once(
-                    &mut calling_convention,
-                    CallingConvention::parse(value).ok_or_else(|| {
-                        invalid(
-                            path,
-                            &input,
-                            index,
-                            format!("unsupported calling convention {value:?}"),
-                        )
-                    })?,
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "endianness" => set_once(
-                    &mut endianness,
-                    Endianness::parse(value).ok_or_else(|| {
-                        invalid(
-                            path,
-                            &input,
-                            index,
-                            format!("unsupported endianness {value:?}"),
-                        )
-                    })?,
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "pointer-width" => set_once(
-                    &mut pointer_width,
-                    value.parse::<u8>().map_err(|_| {
-                        invalid(path, &input, index, "pointer width must be an integer")
-                    })?,
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "rust-target" => {
-                    set_token(&mut rust_target, value, directive, path, &input, index)?;
-                }
-                "memory-map" => set_once(
-                    &mut memory_map,
-                    resolve_path(base, value),
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "svd" => svd_paths.push(resolve_path(base, value)),
-                "pac-bindings" => set_once(
-                    &mut pac_bindings,
-                    resolve_path(base, value),
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "profiles" => set_once(
-                    &mut profiles,
-                    resolve_path(base, value),
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "dispositions" => set_once(
-                    &mut dispositions,
-                    resolve_path(base, value),
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                "evidence-baseline" => set_once(
-                    &mut evidence_baseline,
-                    resolve_path(base, value),
-                    directive,
-                    path,
-                    &input,
-                    index,
-                )?,
-                _ => {
-                    return Err(invalid(
-                        path,
-                        &input,
-                        index,
-                        format!("unknown target directive {directive:?}"),
-                    ));
-                }
-            }
-        }
-
-        if schema != Some(1) {
-            return Err(invalid(path, &input, 0, "target spec requires schema 1"));
-        }
         let target = Self {
-            id: id.ok_or_else(|| invalid(path, &input, 0, "target spec has no target id"))?,
+            id: document.id,
             harness: None,
-            architecture: architecture
-                .ok_or_else(|| invalid(path, &input, 0, "target spec has no architecture"))?,
-            calling_convention: calling_convention
-                .ok_or_else(|| invalid(path, &input, 0, "target spec has no calling-convention"))?,
-            endianness: endianness
-                .ok_or_else(|| invalid(path, &input, 0, "target spec has no endianness"))?,
-            pointer_width: pointer_width
-                .ok_or_else(|| invalid(path, &input, 0, "target spec has no pointer-width"))?,
-            rust_target: rust_target
-                .ok_or_else(|| invalid(path, &input, 0, "target spec has no rust-target"))?,
-            memory_map,
-            svd_paths,
-            pac_bindings,
-            profiles,
-            dispositions,
-            evidence_baseline,
+            architecture: document.architecture,
+            calling_convention: document.calling_convention,
+            endianness: document.endianness,
+            pointer_width: document.pointer_width,
+            rust_target: document.rust_target,
+            memory_map: document.memory_map.map(|path| resolve_path(base, path)),
+            svd_paths: document
+                .svd
+                .into_iter()
+                .map(|path| resolve_path(base, path))
+                .collect(),
+            pac_bindings: document.pac_bindings.map(|path| resolve_path(base, path)),
+            profiles: document.profiles.map(|path| resolve_path(base, path)),
+            dispositions: document.dispositions.map(|path| resolve_path(base, path)),
+            evidence_baseline: document
+                .evidence_baseline
+                .map(|path| resolve_path(base, path)),
         };
         target.validate_pair()?;
         Ok(target)
@@ -383,69 +243,19 @@ impl TargetSpec {
     }
 }
 
-fn resolve_path(base: &Path, value: &str) -> PathBuf {
-    let path = Path::new(value);
+fn resolve_path(base: &Path, path: PathBuf) -> PathBuf {
     if path.is_absolute() {
-        path.to_owned()
+        path
     } else {
         base.join(path)
     }
 }
 
-fn set_once<T>(
-    slot: &mut Option<T>,
-    value: T,
-    directive: &str,
-    path: &Path,
-    input: &str,
-    line_index: usize,
-) -> Result<()> {
-    if slot.replace(value).is_some() {
-        return Err(invalid(
-            path,
-            input,
-            line_index,
-            format!("duplicate {directive} directive"),
-        ));
-    }
-    Ok(())
-}
-
-fn set_token(
-    slot: &mut Option<String>,
-    value: &str,
-    directive: &str,
-    path: &Path,
-    input: &str,
-    line_index: usize,
-) -> Result<()> {
-    if value.chars().any(char::is_whitespace) {
-        return Err(invalid(
-            path,
-            input,
-            line_index,
-            format!("{directive} must be one token"),
-        ));
-    }
-    set_once(slot, value.to_owned(), directive, path, input, line_index)
-}
-
-fn invalid(path: &Path, input: &str, line_index: usize, message: impl Into<String>) -> TargetError {
-    let offset = input
-        .split_inclusive('\n')
-        .take(line_index)
-        .map(str::len)
-        .sum::<usize>();
-    let length = input
-        .split_inclusive('\n')
-        .nth(line_index)
-        .map(|line| line.trim_end_matches(['\r', '\n']).len())
-        .unwrap_or(0)
-        .max(1);
+fn invalid(path: &Path, input: &str, message: impl Into<String>) -> TargetError {
     TargetError::Invalid {
         message: message.into(),
         src: NamedSource::new(path.display().to_string(), input.to_owned()),
-        span: (offset, length).into(),
+        span: (0, input.len().min(1).max(1)).into(),
     }
 }
 
@@ -455,7 +265,7 @@ mod tests {
 
     fn write_spec(name: &str, contents: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "open-radio-workbench-target-{}-{name}.spec",
+            "open-radio-workbench-target-{}-{name}.toml",
             std::process::id(),
         ));
         std::fs::write(&path, contents).unwrap();
@@ -466,7 +276,7 @@ mod tests {
     fn loads_an_explicit_riscv_abi_pair() {
         let path = write_spec(
             "riscv",
-            "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imafc-unknown-none-elf\n",
+            "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imafc-unknown-none-elf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
@@ -477,7 +287,7 @@ mod tests {
     fn resolves_an_optional_target_memory_map() {
         let path = write_spec(
             "memory-map",
-            "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\nmemory-map maps/device.toml\n",
+            "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\nmemory-map = \"maps/device.toml\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(&path).unwrap();
@@ -491,7 +301,7 @@ mod tests {
     fn generic_target_has_no_platform_harness() {
         let path = write_spec(
             "generic-riscv",
-            "schema 1\ntarget generic-riscv\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+            "schema = 1\nid = \"generic-riscv\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();
@@ -509,22 +319,18 @@ mod tests {
     fn rejects_harness_selection_in_a_target_spec() {
         let path = write_spec(
             "target-harness",
-            "schema 1\ntarget fixture\nharness fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+            "schema = 1\nid = \"fixture\"\nharness = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
         );
         let error = TargetSpec::load(&path).unwrap_err();
         std::fs::remove_file(path).unwrap();
-        assert!(
-            error
-                .to_string()
-                .contains("unknown target directive \"harness\"")
-        );
+        assert!(error.to_string().contains("unknown field `harness`"));
     }
 
     #[test]
     fn rejects_an_architecture_abi_mismatch() {
         let path = write_spec(
             "mismatch",
-            "schema 1\ntarget fixture\narchitecture arm-thumb\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target thumbv7em-none-eabi\n",
+            "schema = 1\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabi\"\n",
         );
         let error = TargetSpec::load(&path).unwrap_err();
         std::fs::remove_file(path).unwrap();
@@ -535,7 +341,7 @@ mod tests {
     fn recognizes_arm_float_abi_without_claiming_a_backend() {
         let path = write_spec(
             "arm-hardfloat",
-            "schema 1\ntarget fixture\narchitecture arm-thumb\ncalling-convention aapcs32-hardfloat\nendianness little\npointer-width 32\nrust-target thumbv7em-none-eabihf\n",
+            "schema = 1\nid = \"fixture\"\narchitecture = \"arm-thumb\"\ncalling-convention = \"aapcs32-hardfloat\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"thumbv7em-none-eabihf\"\n",
         );
         let target = TargetSpec::load(&path).unwrap();
         std::fs::remove_file(path).unwrap();

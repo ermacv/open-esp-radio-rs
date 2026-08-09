@@ -1,8 +1,0 @@
-schema 1
-target generic-rv32
-architecture riscv32
-calling-convention riscv-ilp32
-endianness little
-pointer-width 32
-rust-target riscv32imac-unknown-none-elf
-memory-map memory.toml

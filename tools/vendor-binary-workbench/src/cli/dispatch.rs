@@ -47,6 +47,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             project,
             target,
         } => commands::run_function_pack_command(command, &project, &target),
+        ResolvedInvocation::CodeWorkspace { command, project } => {
+            commands::run_code_workspace_command(command, &project)
+        }
         ResolvedInvocation::RegisterWorkspace {
             command,
             project,
@@ -64,7 +67,8 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
         ResolvedInvocation::InterfaceDiscover {
             arguments,
             run_spec,
-        } => commands::run_interface_discovery(arguments, &run_spec),
+            project,
+        } => commands::run_interface_discovery(arguments, &run_spec, project.as_ref()),
         ResolvedInvocation::BuildIr {
             arguments,
             project,
@@ -77,6 +81,7 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             command,
             target,
             svd,
-        } => commands::run_target(command, &svd, &target),
+            project,
+        } => commands::run_target(command, &svd, &target, project.as_deref()),
     }
 }

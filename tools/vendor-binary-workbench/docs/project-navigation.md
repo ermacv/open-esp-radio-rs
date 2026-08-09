@@ -64,7 +64,7 @@ Run the ordinary project workflow:
 ```console
 cargo vendor-binary-workbench project analyze \
   --project path/to/vendor-project.toml \
-  --run-spec /private/local.run
+  --run-spec /private/local.toml
 
 cargo vendor-binary-workbench project status \
   --project path/to/vendor-project.toml

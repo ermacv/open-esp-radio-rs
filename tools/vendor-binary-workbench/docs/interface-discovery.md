@@ -8,11 +8,20 @@ raw symbols/instructions and a reviewed interface pack.
 
 Bind archives and ELF images in a local run spec:
 
-```text
-schema 1
-input source-inventory:libpp /private/vendor/libpp.a
-input source-artifact:vendor-linked /private/vendor/vendor-linked.elf
-input source-artifact:rom /private/vendor/rom.elf
+```toml
+schema = 1
+
+[[inputs]]
+role = "source-inventory:libpp"
+path = "/private/vendor/libpp.a"
+
+[[inputs]]
+role = "source-artifact:vendor-linked"
+path = "/private/vendor/vendor-linked.elf"
+
+[[inputs]]
+role = "source-artifact:rom"
+path = "/private/vendor/rom.elf"
 ```
 
 Then run:
@@ -20,7 +29,7 @@ Then run:
 ```console
 cargo vendor-binary-workbench interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report generated/findings/interfaces.json
 ```
 

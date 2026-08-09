@@ -13,6 +13,7 @@ mod navigation;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
     Overview,
+    Code,
     Functions,
     Registers,
     Interfaces,
@@ -22,8 +23,9 @@ pub(super) enum Section {
 }
 
 impl Section {
-    pub(super) const ALL: [Self; 7] = [
+    pub(super) const ALL: [Self; 8] = [
         Self::Overview,
+        Self::Code,
         Self::Functions,
         Self::Registers,
         Self::Interfaces,
@@ -35,6 +37,7 @@ impl Section {
     pub(super) const fn title(self) -> &'static str {
         match self {
             Self::Overview => "Overview",
+            Self::Code => "Code",
             Self::Functions => "Functions",
             Self::Registers => "Registers",
             Self::Interfaces => "Interfaces",
@@ -279,9 +282,9 @@ impl BrowserState {
 mod tests {
     use super::*;
     use crate::{
-        DiagnosticRecord, DiagnosticSeverity, FunctionReviewState, FunctionSelection,
-        FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport, ProjectStatusPhase,
-        ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
+        CodeWorkspaceReport, DiagnosticRecord, DiagnosticSeverity, FunctionReviewState,
+        FunctionSelection, FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport,
+        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
         RegisterWorkspaceReport,
     };
 
@@ -305,6 +308,17 @@ mod tests {
                         components: Vec::new(),
                     })
                     .collect(),
+            },
+            code: CodeWorkspaceReport {
+                configured: false,
+                facts: None,
+                pack: None,
+                review_output: None,
+                observed_candidates: 0,
+                accepted: 0,
+                rejected: 0,
+                unreviewed: 0,
+                boundaries: Vec::new(),
             },
             functions: Vec::new(),
             logical_types: Vec::new(),

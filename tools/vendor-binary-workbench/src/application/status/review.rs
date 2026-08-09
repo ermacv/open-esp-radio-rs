@@ -3,6 +3,8 @@
 use super::model::{Component, Phase, Readiness};
 use crate::application::ProjectContext;
 use crate::{
+    artifacts::symbol_inventory::load_code_boundary_facts,
+    code_workspace::CodeWorkspace,
     function_workspace::FunctionWorkspace,
     interfaces::InterfaceWorkspace,
     registers::{
@@ -14,8 +16,57 @@ use crate::{
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     Phase::collect(
         "review",
-        vec![registers(context), interfaces(context), functions(context)],
+        vec![
+            code(context),
+            registers(context),
+            interfaces(context),
+            functions(context),
+        ],
     )
+}
+
+fn code(context: &ProjectContext<'_>) -> Component {
+    let Some(paths) = &context.project.code else {
+        return Component::new("code_boundaries", Readiness::NotConfigured);
+    };
+    let Some(inventory) = &context.project.symbol_inventory else {
+        return Component::new("code_boundaries", Readiness::Invalid)
+            .diagnostic("[code] requires [analysis.symbols]");
+    };
+    if !inventory.output.is_file() {
+        return Component::new("code_boundaries", Readiness::Incomplete)
+            .detail("facts", inventory.output.display().to_string())
+            .diagnostic("symbol inventory has not been generated");
+    }
+    if !paths.pack.is_file() {
+        return Component::new("code_boundaries", Readiness::Incomplete)
+            .detail("pack", paths.pack.display().to_string())
+            .diagnostic("reviewed code-boundary pack has not been initialized");
+    }
+    let workspace = load_code_boundary_facts(&inventory.output)
+        .and_then(|facts| CodeWorkspace::load(&facts, &paths.pack, &context.project.id));
+    match workspace {
+        Ok(workspace) => {
+            let summary = workspace.summary();
+            Component::new(
+                "code_boundaries",
+                if summary.unreviewed == 0 {
+                    Readiness::Ready
+                } else {
+                    Readiness::Incomplete
+                },
+            )
+            .detail("facts", inventory.output.display().to_string())
+            .detail("pack", paths.pack.display().to_string())
+            .detail("candidates", summary.observed_candidates)
+            .detail("accepted", summary.accepted)
+            .detail("rejected", summary.rejected)
+            .detail("unreviewed", summary.unreviewed)
+        }
+        Err(error) => Component::new("code_boundaries", Readiness::Invalid)
+            .detail("pack", paths.pack.display().to_string())
+            .diagnostic(error),
+    }
 }
 
 fn registers(context: &ProjectContext<'_>) -> Component {

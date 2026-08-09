@@ -11,8 +11,8 @@ mod tests;
 
 pub(super) use environment::resolve;
 pub(super) use model::{
-    FunctionWorkspaceCommand, InterfaceWorkspaceCommand, RegisterWorkspaceCommand,
-    ResolvedInvocation, TargetCommand,
+    CodeWorkspaceCommand, FunctionWorkspaceCommand, InterfaceWorkspaceCommand,
+    RegisterWorkspaceCommand, ResolvedInvocation, TargetCommand,
 };
 
 #[cfg(test)]

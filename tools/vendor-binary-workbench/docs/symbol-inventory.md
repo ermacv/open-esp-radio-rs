@@ -7,7 +7,7 @@ recovery, MMIO analysis, or platform semantics are applied.
 ```console
 cargo vendor-binary-workbench symbols inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report generated/facts/symbols.json
 ```
 
@@ -71,12 +71,12 @@ This distinguishes two different claims:
   an analysis root;
 - `executable-byte coverage`: every executable byte belongs to such a symbol.
 
-Only the first is currently available to `ir export`, `interfaces discover`
-and, by default, `mmio discover`. A non-zero uncovered byte count or any
-zero-sized code symbol is therefore an explicit recovery backlog, not a
-silently analyzed function. Padding, literal pools and alignment bytes may
-also appear in the uncovered ranges; later function-boundary recovery must
-classify them rather than assuming every gap is a function.
+The first is available directly from ELF facts. In project mode, accepted
+entries from the reviewed code-boundary pack augment that catalog for linked
+IR, interface, and MMIO analysis. Remaining uncovered bytes and unreviewed
+zero-sized code symbols stay an explicit recovery backlog. Padding, literal
+pools and alignment bytes may also appear in the uncovered ranges, so the
+workbench never assumes every gap is a function.
 
 Within those gaps the inventory emits an unreviewed function-boundary
 candidate only when there is concrete entry evidence: a defined zero-sized
@@ -85,7 +85,13 @@ candidate records its section-relative entry, a conservative end limit, symbol
 names and every direct-control-flow site. It remains `reviewed=false` and is
 not fed into IR/MMIO analysis. Decode failures are retained as
 `recovery_blockers`. This keeps discovery useful without promoting padding,
-literal pools or a guessed prologue to executable function truth.
+literal pools or a guessed prologue to executable function truth. Only a
+separate accepted pack entry crosses that trust boundary.
+
+Projects may place human decisions over these candidates in a separate
+reviewed pack. The lifecycle, guards, and strict range rules are documented in
+[reviewed code boundaries](code-boundaries.md). The inventory itself remains
+immutable generated evidence and is never edited to mark a candidate accepted.
 
 ## Definition and association classes
 
@@ -119,12 +125,24 @@ link.
 
 A local run spec can expose both forms:
 
-```text
-schema 1
-input source-inventory:libphy /private/vendor/libphy.a
-input source-artifact:vendor-linked /private/vendor/vendor-linked.elf
-input source-artifact:rom /private/vendor/rom.elf
-input source-artifact:rust /build/rust-driver.elf
+```toml
+schema = 1
+
+[[inputs]]
+role = "source-inventory:libphy"
+path = "/private/vendor/libphy.a"
+
+[[inputs]]
+role = "source-artifact:vendor-linked"
+path = "/private/vendor/vendor-linked.elf"
+
+[[inputs]]
+role = "source-artifact:rom"
+path = "/private/vendor/rom.elf"
+
+[[inputs]]
+role = "source-artifact:rust"
+path = "/build/rust-driver.elf"
 ```
 
 The part after `:` is a stable logical source identifier. A path may have
@@ -162,15 +180,17 @@ effect vocabulary.
 2. Run `project analyze` to save the configured complete symbol inventory and
    other generated evidence, or use `symbols inventory` directly.
 3. Add the fully linked ELF when exact symbol selection is needed.
-4. Run `interfaces discover` to recover pointer roots, load chains, indirect
+4. If executable gaps contain recovery candidates, run `code init-pack`,
+   review every candidate, then run `code validate --deny-unreviewed`.
+5. Run `interfaces discover` to recover pointer roots, load chains, indirect
    call sites and ABI argument provenance without assigning slot semantics.
-5. Run `mmio discover` to create address and bit-pattern candidates.
-6. Review register names and semantics in the separate editable model; do not
+6. Run `mmio discover` to create address and bit-pattern candidates.
+7. Review register names and semantics in the separate editable model; do not
    edit generated facts.
-7. Run `ir export` with an explicit target for structural IR, then through a
+8. Run `ir export` with an explicit target for structural IR, then through a
    project with a selected platform pack for typed globals, trampoline calls,
    delays, NVS, logging, or RTOS effects.
-8. Promote reviewed behavior into reference/effect contracts and validate the
+9. Promote reviewed behavior into reference/effect contracts and validate the
    Rust implementation against those contracts.
 
 This staged model preserves evidence: regeneration can replace facts without

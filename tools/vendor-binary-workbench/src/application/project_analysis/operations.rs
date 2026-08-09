@@ -3,14 +3,15 @@
 use crate::{
     MemoryMap, MmioMap, Result, TargetSpec,
     analysis::{
-        DiscoveryRange, ProjectInterfaceDiscoveryOptions, build_project_linkage_inventory,
-        discover_mmio, discover_project_interfaces,
+        DiscoveryRange, EffectiveCodeCatalog, ProjectInterfaceDiscoveryOptions,
+        build_project_linkage_inventory, discover_mmio, discover_project_interfaces,
     },
     artifact,
     artifacts::{
         build_interface_facts, build_mmio_facts as mmio_document, build_symbol_inventory_document,
         render_interface_facts, render_mmio_facts, render_symbol_inventory,
     },
+    code_workspace::{CodeWorkspace, render_code_boundary_review},
     function_workspace::{FunctionWorkspace, link_reviewed_interfaces, render_function_review},
     interfaces::InterfaceWorkspace,
     project::ProjectSpec,
@@ -105,6 +106,14 @@ impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
         build_navigation(self.project, check)
     }
 
+    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<bool> {
+        validate_code_boundaries(self.project, deny_unreviewed)
+    }
+
+    fn review_code(&mut self, check: bool) -> Result<bool> {
+        review_code_boundaries(self.project, check)
+    }
+
     fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool> {
         validate_registers(self.project, self.memory_map, deny_unreviewed)
     }
@@ -183,6 +192,7 @@ pub(crate) fn discover_project_mmio(
         "",
         artifact::CodeSymbolSelection::All,
         svd,
+        Some(&EffectiveCodeCatalog::load(project)?),
     )?;
     let document = mmio_document(&report)?;
     super::super::generated_file::write_or_check(
@@ -215,8 +225,11 @@ pub(crate) fn discover_project_interfaces_operation(
             "run spec has no artifact or inventory inputs for interface discovery",
         ));
     }
-    let discovery =
-        discover_project_interfaces(&inputs, &ProjectInterfaceDiscoveryOptions::default())?;
+    let discovery = discover_project_interfaces(
+        &inputs,
+        &ProjectInterfaceDiscoveryOptions::default(),
+        Some(&EffectiveCodeCatalog::load(project)?),
+    )?;
     let document = build_interface_facts(&discovery)?;
     super::super::generated_file::write_or_check(
         output,
@@ -236,6 +249,45 @@ pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<boo
     let document = crate::navigation::build(project)?;
     let rendered = serde_json::to_string_pretty(&document)? + "\n";
     super::super::generated_file::write_or_check(output, &rendered, check, "navigation index")?;
+    Ok(true)
+}
+
+pub(crate) fn validate_code_boundaries(
+    project: &ProjectSpec,
+    deny_unreviewed: bool,
+) -> Result<bool> {
+    let paths = project
+        .code
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[code] is absent"))?;
+    let inventory = &project
+        .symbol_inventory
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[analysis.symbols] is absent"))?
+        .output;
+    let facts = crate::artifacts::symbol_inventory::load_code_boundary_facts(inventory)?;
+    let workspace = CodeWorkspace::load(&facts, &paths.pack, &project.id)?;
+    Ok(!deny_unreviewed || workspace.summary().unreviewed == 0)
+}
+
+pub(crate) fn review_code_boundaries(project: &ProjectSpec, check: bool) -> Result<bool> {
+    let paths = project
+        .code
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[code] is absent"))?;
+    let output = paths
+        .review_output
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[code.review] is absent"))?;
+    let inventory = &project
+        .symbol_inventory
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[analysis.symbols] is absent"))?
+        .output;
+    let facts = crate::artifacts::symbol_inventory::load_code_boundary_facts(inventory)?;
+    let workspace = CodeWorkspace::load(&facts, &paths.pack, &project.id)?;
+    let contents = render_code_boundary_review(&workspace, inventory)?;
+    super::super::generated_file::write_or_check(output, &contents, check, "code-boundary review")?;
     Ok(true)
 }
 

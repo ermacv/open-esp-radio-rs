@@ -103,8 +103,8 @@ generic backend or a dynamic ABI plugin protocol.
 ## Composition rules
 
 Pack architecture and calling convention must exactly match the target. A
-harness is selected only by the platform pack; `target.spec` is generic and a
-`harness` directive there is rejected. Commands that require target-specific
+harness is selected only by the platform pack; `target.toml` is generic and a
+`harness` key there is rejected. Commands that require target-specific
 execution or verification therefore require a project with an appropriate
 platform pack. Generic artifact and IR workflows may still use an explicit
 target spec for backend development.

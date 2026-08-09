@@ -1,5 +1,6 @@
 //! Read-only projection of every configured project workspace.
 
+mod code;
 mod comparisons;
 mod functions;
 mod interfaces;
@@ -38,6 +39,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
             })
         })
         .collect::<Vec<_>>();
+    let code = self::code::collect(resolved, &mut diagnostics);
     let (functions, logical_types) = self::functions::collect(resolved, &mut diagnostics);
     let registers = self::registers::collect(resolved, &mut diagnostics);
     let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
@@ -49,6 +51,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     WorkspaceSnapshot {
         generation,
         project_status,
+        code,
         functions,
         logical_types,
         registers,
@@ -213,17 +216,22 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
         return None;
     }
     let mut output = format!(
-        "# Generated coverage draft; replace TODO values and replay every case.\nprofile draft-{}\nvendor-source {}\nvendor-symbol {}\nrust-symbol TODO_RUST_SYMBOL\n",
-        fact.symbol
-            .replace(|character: char| !character.is_ascii_alphanumeric(), "-"),
-        fact.source,
-        fact.symbol,
+        "# Generated coverage draft; replace TODO values and replay every case.\nschema = 1\n\n[[profiles]]\nname = {}\nvendor-source = {}\nvendor-symbol = {}\nrust-symbol = \"TODO_RUST_SYMBOL\"\n",
+        toml_edit::Value::from(format!(
+            "draft-{}",
+            fact.symbol
+                .replace(|character: char| !character.is_ascii_alphanumeric(), "-")
+        )),
+        toml_edit::Value::from(fact.source.as_str()),
+        toml_edit::Value::from(fact.symbol.as_str()),
     );
     for suggestion in suggestions {
         for variant in &suggestion.variants {
             output.push_str(&format!(
-                "\n# {}: {}\ncase {}-{}\n",
-                suggestion.kind, suggestion.evidence, suggestion.kind, variant.name
+                "\n# {}: {}\n[[profiles.cases]]\nname = {}\n",
+                suggestion.kind,
+                suggestion.evidence,
+                toml_edit::Value::from(format!("{}-{}", suggestion.kind, variant.name)),
             ));
             let arguments = variant
                 .arguments
@@ -231,19 +239,24 @@ fn profile_draft(fact: &FunctionFact, suggestions: &[ScenarioSuggestionSummary])
                 .map(|argument| (argument.index, argument.value))
                 .collect::<BTreeMap<_, _>>();
             if let Some(maximum) = arguments.keys().max().copied() {
+                output.push_str("arguments = [\n");
                 for index in 0..=maximum {
                     if let Some(value) = arguments.get(&index) {
-                        output.push_str(&format!("arg {value:#010x}\n"));
+                        output.push_str(&format!("  {value:#010x},\n"));
                     } else {
                         output.push_str(&format!(
-                            "arg 0x00000000 # TODO: supply unconstrained argument a{index}\n"
+                            "  0x00000000, # TODO: supply unconstrained argument a{index}\n"
                         ));
                     }
                 }
+                output.push_str("]\n");
             }
             for read in &variant.mmio_reads {
                 for value in &read.values {
-                    output.push_str(&format!("read {:#010x}={value:#010x}\n", read.address));
+                    output.push_str(&format!(
+                        "[[profiles.cases.mmio-reads]]\naddress = {:#010x}\nvalue = {value:#010x}\n",
+                        read.address
+                    ));
                 }
             }
         }
@@ -506,10 +519,11 @@ mod tests {
         }];
 
         let draft = profile_draft(&fact, &suggestions).unwrap();
-        assert!(draft.contains("rust-symbol TODO_RUST_SYMBOL"));
+        assert!(draft.contains("rust-symbol = \"TODO_RUST_SYMBOL\""));
         assert!(draft.contains("TODO: supply unconstrained argument a0"));
-        assert!(draft.contains("arg 0x00000001"));
-        assert!(draft.contains("read 0x00004000=0x00000000"));
-        assert!(draft.contains("read 0x00004000=0x00000001"));
+        assert!(draft.contains("  0x00000001,"));
+        assert!(draft.contains("address = 0x00004000\nvalue = 0x00000000"));
+        assert!(draft.contains("address = 0x00004000\nvalue = 0x00000001"));
+        assert!(draft.parse::<toml_edit::DocumentMut>().is_ok());
     }
 }

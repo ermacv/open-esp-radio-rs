@@ -19,10 +19,10 @@ pub use model::{
     ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
     ArtifactSymbolDefinitionState, ArtifactSymbolFact, ArtifactSymbolKind, ArtifactSymbolScope,
     ArtifactSymbolTable, ArtifactSymbolVisibility, CodeSymbolSelection, DecodedInstruction,
-    ExecutableSection, MemoryRegion, RelocationKind, SymbolRelocation,
+    ExecutableSection, MemoryRegion, RelocationKind, ReviewedCodeRange, SymbolRelocation,
 };
 pub use sections::load_executable_sections;
-pub use symbols::load_code_symbols;
+pub use symbols::{load_code_symbols, load_reviewed_code_ranges};
 
 #[cfg(test)]
 mod tests;

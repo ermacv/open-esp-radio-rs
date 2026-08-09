@@ -1,6 +1,7 @@
 //! Project configuration and caller-owned input readiness diagnostics.
 
 mod capabilities;
+mod code;
 mod inputs;
 mod interfaces;
 mod model;
@@ -34,6 +35,7 @@ pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     report.absorb(function_counts.0, function_counts.1);
 
     capabilities::collect(&context, &mut report);
+    code::collect(&context, &mut report);
     registers::collect(&context, &mut report);
     interfaces::collect(&context, &mut report);
     inputs::collect(&context, &mut report);

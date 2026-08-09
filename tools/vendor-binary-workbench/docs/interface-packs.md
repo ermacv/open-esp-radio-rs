@@ -35,7 +35,7 @@ Generate facts from local vendor inputs:
 ```console
 cargo vendor-binary-workbench interfaces discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --run-spec /path/to/local.toml
 ```
 
 Create a pack once:
@@ -272,9 +272,10 @@ The resolved model currently establishes the reviewed bridge from pack
 evidence into the compiled harness and is visible in interface/function review
 reports. Runtime table location, contents, lifecycle and indirect dispatch are
 scenario state; they belong to `TableInstance`, not to the interface pack.
-Execution profiles create source-specific instances with `vendor-table` /
-`rust-table` and populate symbol-backed slots with the corresponding
-`*-table-slot` directives. The executor validates and materializes those
+Execution-profile TOML creates source-specific instances with
+`[[profiles.cases.vendor-tables]]` and
+`[[profiles.cases.rust-tables]]`; each table owns its structured `slots`
+array. The executor validates and materializes those
 concrete pointers against the exact ELF before running the scenario. The
 instance retains the layout ID as provenance; validating that ID against this
 reviewed contract remains a project-layer operation rather than backend

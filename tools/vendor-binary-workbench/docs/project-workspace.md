@@ -31,7 +31,7 @@ own directory:
 ```toml
 schema = 1
 id = "esp32s31-radio-rev0"
-target-spec = "target.spec"
+target-spec = "target.toml"
 platform-pack = "platform.toml"
 memory-map = "memory.toml"
 svd = ["registers/vendor.svd", "registers/reviewed.svd"]
@@ -67,13 +67,13 @@ target = "none"
 edition = "2024"
 
 [registers.bindings]
-output = "generated/svd/device.bindings"
+output = "generated/svd/device.bindings.toml"
 crate-name = "device_pac"
 
 [registers.api]
 pack = "registers/api.toml"
 
-[registers.evidence]
+[registers.toml]
 catalogs = ["registers/evidence.toml"]
 
 [interfaces]
@@ -89,7 +89,7 @@ output = "generated/reports/function-review.md"
 
 [verification]
 rust-prefix = "open_phy_trace_"
-profiles = ["profiles/compiled-equivalence.profile"]
+profiles = ["profiles/compiled-equivalence.toml"]
 ```
 
 `target-spec` selects the architecture and ABI. It does not select a platform
@@ -109,7 +109,7 @@ classification independent from clean SVD register names in both invocation
 forms.
 
 `run-spec` may be included when the project itself is private. Public projects
-normally omit it. Create a validated, untracked sibling `local.run` once:
+normally omit it. Create a validated, untracked sibling `local.toml` once:
 
 ```console
 cargo vendor-binary-workbench project inputs init \
@@ -122,7 +122,7 @@ cargo vendor-binary-workbench mmio discover \
 ```
 
 Run-spec precedence is explicit `--run-spec`, manifest `run-spec`, sibling
-`local.run`, then no bindings. Explicit `--svd` also overrides project
+`local.toml`, then no bindings. Explicit `--svd` also overrides project
 defaults. The old
 `--target-spec` invocation remains supported, but it cannot be combined with
 `--project` because that would create two configuration roots.
@@ -146,6 +146,22 @@ root evidence using artifact digest, archive member, symbol name and object
 address. It adds navigation only: none of the source reports depends on it,
 and no RTOS, NVS, logging, delay, register, or linker semantic claim is made.
 See [project navigation](project-navigation.md).
+
+Optional `[code]` owns the human decisions over function-boundary candidates
+from the complete symbol inventory:
+
+```toml
+[code]
+pack = "code/boundaries.toml"
+
+[code.review]
+output = "generated/reports/code-boundaries.md"
+```
+
+The pack is initialized once with `code init-pack` and then edited by the
+reviewer. It is guarded by source IDs and artifact SHA-256 values and cannot
+expand a candidate past its generated executable-gap limit. Generated symbol
+facts never acquire reviewed state. See [reviewed code boundaries](code-boundaries.md).
 
 If the project omits the top-level `svd` key, target-spec SVD catalogs remain
 the fallback. An explicit `svd = []` disables that fallback. This is useful
@@ -191,7 +207,7 @@ The optional `[verification]` table makes one or more concrete execution
 profile files part of the project rather than an ad-hoc CLI argument. Profile
 names must be unique across the listed files. Artifact paths remain private:
 `vendor-source` is resolved through `source-artifact:ID` and
-`source-companion:ID` entries in `local.run`, while the Rust side uses
+`source-companion:ID` entries in `local.toml`, while the Rust side uses
 `rust-artifact` and `rust-companion`. This split lets the read-only browser run
 a reviewed comparison without copying local binary paths into the shareable
 manifest.
@@ -249,7 +265,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v35 reports and their register/field-candidate counts are reported;
+as schema-v36 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -260,7 +276,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v35 facts, artifact provenance guards, the pack lifecycle, review
+schema-v36 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 
@@ -341,7 +357,7 @@ map is the source of address classification.
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report generated/findings/mmio.json
 ```
 
@@ -360,6 +376,7 @@ Commands now request the knowledge they actually consume:
 | `project status` | optional artifact inspection | reads and reports it | optional enrichment |
 | `image audit-targets` | yes | no | no |
 | `symbols inventory` | yes | no | no |
+| `code init-pack` / `validate` / `review` | no | no | no |
 | `interfaces discover` | yes | no | no |
 | `interfaces init-pack` / `validate` | no | no | no |
 | `functions init-pack` / `validate` / `review` | no | no | no |

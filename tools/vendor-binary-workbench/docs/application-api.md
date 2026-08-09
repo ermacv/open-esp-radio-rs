@@ -44,6 +44,8 @@ println!("{} registers", snapshot.registers.registers.len());
 `WorkspaceSnapshot` combines:
 
 - lifecycle readiness and component diagnostics;
+- reviewed executable-code boundary candidates, their decisions, artifact
+  guards, physical ranges, and direct-control-flow evidence;
 - recovered and reviewed function summaries and explicitly reviewed logical
   types; heavyweight context, memory, scenario and pseudo-Rust details are
   separate queries;
@@ -78,6 +80,12 @@ reviewed, manual/model-only or unreviewed and whether its display name came
 from the reviewed model, imported catalog/SVD, discovery facts or the raw
 address. Loading a workspace index does not parse all linked-IR register
 evidence eagerly.
+
+Code-boundary facts are small enough to remain in the snapshot. The read-only
+TUI exposes them in its `Code` section, including accepted/rejected/unreviewed
+state and the exact evidence behind each generated candidate. Editing still
+happens only in the checked-in `[code].pack`; reload atomically revalidates it
+against the current symbol inventory and artifact SHA-256 guards.
 
 `WorkspaceSnapshot::project_status` is the canonical typed
 `ProjectStatusReport`; there is no second snapshot-specific status schema and

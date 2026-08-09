@@ -5,7 +5,7 @@ With a project memory map, SVD and explicit ranges are optional:
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report /tmp/radio-mmio.json
 ```
 
@@ -26,7 +26,7 @@ without writing it:
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --check
 ```
 
@@ -41,7 +41,7 @@ SVD register name:
 
 ```console
 cargo vendor-binary-workbench mmio discover \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact rom="$ESP32S31_ROM_ELF" \
   --artifact libphy="$ESP32S31_LIBPHY_ARCHIVE" \
   --range phy=0x20100000..0x20110000 \

@@ -118,12 +118,12 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
         root.join(DEFAULT_PROJECT_MANIFEST),
         render_manifest(options),
     )?;
-    fs::write(root.join("target.spec"), render_target(options))?;
+    fs::write(root.join("target.toml"), render_target(options))?;
     fs::write(root.join("platform.toml"), render_platform(options))?;
     fs::write(root.join("memory.toml"), render_memory(options))?;
-    fs::write(root.join("run.spec.example"), render_run_spec(options))?;
+    fs::write(root.join("local.example.toml"), render_run_spec(options))?;
     fs::write(root.join("README.md"), render_readme(options))?;
-    fs::write(root.join(".gitignore"), "/generated/\n/local.run\n")?;
+    fs::write(root.join(".gitignore"), "/generated/\n/local.toml\n")?;
 
     let model = root.join("registers/device.toml");
     if let Some(input) = options.import_svd.as_deref() {
@@ -149,7 +149,7 @@ fn write_project(root: &Path, options: &Options) -> Result<()> {
 
 fn validate_project(root: &Path) -> Result<()> {
     let project = ProjectSpec::load(&root.join(DEFAULT_PROJECT_MANIFEST))?;
-    let mut target = TargetSpec::load(&root.join("target.spec"))?;
+    let mut target = TargetSpec::load(&root.join("target.toml"))?;
     if let Some(pack) = &project.platform_pack {
         pack.apply_to_target(&mut target)?;
     }

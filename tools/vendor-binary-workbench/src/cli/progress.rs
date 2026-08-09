@@ -16,6 +16,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         | Command::ProjectStatus(_)
         | Command::ProjectBrowse(_)
         | Command::FunctionInitPack(_)
+        | Command::CodeInitPack(_)
         | Command::InterfaceInitPack(_)
         | Command::RegisterInitModel(_)
         | Command::VerifyEvidence(_) => return None,
@@ -23,6 +24,8 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::ProjectPublish(_) => "Project publication",
         Command::FunctionValidate(_) => "Function validation",
         Command::FunctionReview(_) => "Function review",
+        Command::CodeValidate(_) => "Code-boundary validation",
+        Command::CodeReview(_) => "Code-boundary review",
         Command::RegisterImportSvd(_) => "SVD import",
         Command::RegisterValidate(_) => "Register validation",
         Command::RegisterReview(_) => "Register review",

@@ -9,9 +9,14 @@ old-schema compatibility readers.
 | Artifact | Version | Command identity | Owner |
 | --- | ---: | --- | --- |
 | Symbol inventory | 3 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
-| MMIO discovery facts | 3 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
-| Interface discovery facts | 3 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 35 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| MMIO discovery facts | 4 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
+| Interface discovery facts | 4 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
+| Linked IR | 36 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+
+MMIO/interface schema 4 and linked-IR schema 36 carry reviewed-code-boundary
+provenance. MMIO and interface artifacts record the accepted boundary count per
+input. Linked IR retains the complete reviewed physical ranges so downstream
+reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
 
 `artifacts/mod.rs` is the only owner of these version/command constants.
 Domain workspaces and navigation use the corresponding typed Serde consumer

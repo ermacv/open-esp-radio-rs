@@ -75,7 +75,7 @@ impl ProjectSession {
                     .or_else(|| {
                         manifest
                             .parent()
-                            .map(|parent| parent.join("local.run"))
+                            .map(|parent| parent.join("local.toml"))
                             .filter(|path| path.is_file())
                     })
             })

@@ -7,30 +7,25 @@ use std::{
 };
 
 use crate::Result;
+use serde::Deserialize;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum PacAccess {
+    #[serde(rename = "read-only")]
     ReadOnly,
+    #[serde(rename = "write-only")]
     WriteOnly,
+    #[serde(rename = "read-write")]
     ReadWrite,
+    #[serde(rename = "read-writeOnce")]
     ReadWriteOnce,
+    #[serde(rename = "writeOnce")]
     WriteOnce,
+    #[serde(rename = "unspecified")]
     Unspecified,
 }
 
 impl PacAccess {
-    fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "read-only" => Ok(Self::ReadOnly),
-            "write-only" => Ok(Self::WriteOnly),
-            "read-write" => Ok(Self::ReadWrite),
-            "read-writeOnce" => Ok(Self::ReadWriteOnce),
-            "writeOnce" => Ok(Self::WriteOnce),
-            "unspecified" => Ok(Self::Unspecified),
-            _ => Err(format!("unknown PAC access {value:?} at line {line}").into()),
-        }
-    }
-
     pub const fn readable(self) -> bool {
         matches!(self, Self::ReadOnly | Self::ReadWrite | Self::ReadWriteOnce)
     }
@@ -43,13 +38,15 @@ impl PacAccess {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct PacScopeBinding {
     pub method: String,
     pub index: Option<u32>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct PacFieldBinding {
     pub svd_name: String,
     pub method: String,
@@ -59,7 +56,8 @@ pub struct PacFieldBinding {
     pub access: PacAccess,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct PacRegisterBinding {
     pub address: u32,
     pub width: u8,
@@ -102,60 +100,12 @@ pub struct PacBindingIndex {
     registers: BTreeMap<(u32, u8), Vec<PacRegisterBinding>>,
 }
 
-fn parse_u32(value: &str, kind: &str, line: usize) -> Result<u32> {
-    let parsed = value
-        .strip_prefix("0x")
-        .map_or_else(|| value.parse(), |hex| u32::from_str_radix(hex, 16))
-        .map_err(|_| format!("invalid PAC {kind} {value:?} at line {line}"))?;
-    Ok(parsed)
-}
-
-fn parse_u8(value: &str, kind: &str, line: usize) -> Result<u8> {
-    value
-        .parse()
-        .map_err(|_| format!("invalid PAC {kind} {value:?} at line {line}").into())
-}
-
-fn parse_optional_index(value: &str, line: usize) -> Result<Option<u32>> {
-    if value == "-" {
-        Ok(None)
-    } else {
-        Ok(Some(parse_u32(value, "array index", line)?))
-    }
-}
-
-fn parse_scope(value: &str, line: usize) -> Result<Vec<PacScopeBinding>> {
-    if value == "-" {
-        return Ok(Vec::new());
-    }
-    value
-        .split('.')
-        .map(|item| {
-            if let Some((method, index)) = item
-                .strip_suffix(']')
-                .and_then(|item| item.rsplit_once('['))
-            {
-                if method.is_empty() {
-                    return Err(format!("empty PAC scope method at line {line}").into());
-                }
-                Ok(PacScopeBinding {
-                    method: method.to_owned(),
-                    index: Some(parse_u32(index, "scope index", line)?),
-                })
-            } else if item.is_empty() {
-                Err(format!("empty PAC scope method at line {line}").into())
-            } else {
-                Ok(PacScopeBinding {
-                    method: item.to_owned(),
-                    index: None,
-                })
-            }
-        })
-        .collect()
-}
-
-fn optional_name(value: &str) -> Option<String> {
-    (value != "-").then(|| value.to_owned())
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct PacBindingDocument {
+    schema: u32,
+    crate_name: String,
+    registers: Vec<PacRegisterBinding>,
 }
 
 impl PacBindingIndex {
@@ -164,116 +114,46 @@ impl PacBindingIndex {
     }
 
     pub fn parse(input: &str) -> Result<Self> {
-        let mut lines = input.lines().enumerate();
-        let (_, header) = lines.next().ok_or("PAC binding index is empty")?;
-        if header.trim() != "pac-binding-index 2" {
-            return Err(format!(
-                "unsupported PAC binding index header {:?}; expected pac-binding-index 2",
-                header.trim()
-            )
-            .into());
+        let document: PacBindingDocument = toml_edit::de::from_str(input)?;
+        if document.schema != 2 {
+            return Err("PAC binding TOML requires schema = 2".into());
         }
-        let (crate_line, crate_directive) = lines
-            .next()
-            .map(|(line, value)| (line + 1, value.trim()))
-            .ok_or("PAC binding index has no crate directive")?;
-        let crate_name = crate_directive
-            .strip_prefix("crate ")
-            .filter(|name| !name.is_empty() && !name.contains(char::is_whitespace))
-            .ok_or_else(|| format!("invalid PAC crate directive at line {crate_line}"))?
-            .to_owned();
-
+        if document.crate_name.is_empty() || document.crate_name.contains(char::is_whitespace) {
+            return Err("PAC binding TOML has an invalid crate-name".into());
+        }
         let mut registers = BTreeMap::<(u32, u8), Vec<PacRegisterBinding>>::new();
         let mut identities = BTreeSet::new();
-        for (line_index, raw_line) in lines {
-            let line_number = line_index + 1;
-            let line = raw_line.trim();
-            if line.is_empty() {
-                continue;
+        for register in document.registers {
+            if !matches!(register.width, 8 | 16 | 32 | 64) {
+                return Err(format!(
+                    "unsupported PAC register width {} for {}",
+                    register.width, register.identity
+                )
+                .into());
             }
-            let words = line.split_whitespace().collect::<Vec<_>>();
-            match words.first().copied() {
-                Some("register") if words.len() == 12 => {
-                    let address = parse_u32(words[1], "register address", line_number)?;
-                    let width = parse_u8(words[2], "register width", line_number)?;
-                    if !matches!(width, 8 | 16 | 32 | 64) {
-                        return Err(format!(
-                            "unsupported PAC register width {width} at line {line_number}"
-                        )
-                        .into());
-                    }
-                    let identity = words[4].to_owned();
-                    if !identities.insert(identity.clone()) {
-                        return Err(format!(
-                            "duplicate PAC register identity {identity} at line {line_number}"
-                        )
-                        .into());
-                    }
-                    registers
-                        .entry((address, width))
-                        .or_default()
-                        .push(PacRegisterBinding {
-                            address,
-                            width,
-                            access: PacAccess::parse(words[3], line_number)?,
-                            identity,
-                            peripheral: words[5].to_owned(),
-                            peripheral_type: words[6].to_owned(),
-                            peripheral_module: words[7].to_owned(),
-                            scope: parse_scope(words[8], line_number)?,
-                            register_method: words[9].to_owned(),
-                            register_index: parse_optional_index(words[10], line_number)?,
-                            alternate_register: optional_name(words[11]),
-                            fields: Vec::new(),
-                        });
-                }
-                Some("field") if words.len() == 9 => {
-                    let address = parse_u32(words[1], "field address", line_number)?;
-                    let identity = words[2];
-                    let field = PacFieldBinding {
-                        svd_name: words[3].to_owned(),
-                        method: words[4].to_owned(),
-                        index: parse_optional_index(words[5], line_number)?,
-                        bit_offset: parse_u8(words[6], "field offset", line_number)?,
-                        bit_width: parse_u8(words[7], "field width", line_number)?,
-                        access: PacAccess::parse(words[8], line_number)?,
-                    };
-                    let Some(register) = registers
-                        .values_mut()
-                        .flat_map(|bindings| bindings.iter_mut())
-                        .find(|register| {
-                            register.address == address && register.identity == identity
-                        })
-                    else {
-                        return Err(format!(
-                            "PAC field refers to missing register {identity} at line {line_number}"
-                        )
-                        .into());
-                    };
-                    let end = u16::from(field.bit_offset) + u16::from(field.bit_width);
-                    if field.bit_width == 0 || end > u16::from(register.width) {
-                        return Err(format!(
-                            "PAC field {} has invalid bit range at line {line_number}",
-                            field.svd_name
-                        )
-                        .into());
-                    }
-                    register.fields.push(field);
-                }
-                Some(kind) => {
-                    return Err(format!(
-                        "invalid PAC binding {kind:?} field count at line {line_number}"
-                    )
-                    .into());
-                }
-                None => unreachable!(),
+            if !identities.insert(register.identity.clone()) {
+                return Err(
+                    format!("duplicate PAC register identity {}", register.identity).into(),
+                );
             }
+            for field in &register.fields {
+                let end = u16::from(field.bit_offset) + u16::from(field.bit_width);
+                if field.bit_width == 0 || end > u16::from(register.width) {
+                    return Err(
+                        format!("PAC field {} has an invalid bit range", field.svd_name).into(),
+                    );
+                }
+            }
+            registers
+                .entry((register.address, register.width))
+                .or_default()
+                .push(register);
         }
         if registers.is_empty() {
-            return Err("PAC binding index has no registers".into());
+            return Err("PAC binding TOML has no registers".into());
         }
         Ok(Self {
-            crate_name,
+            crate_name: document.crate_name,
             registers,
         })
     }

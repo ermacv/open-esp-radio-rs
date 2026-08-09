@@ -8,7 +8,7 @@ and intentionally has an empty harness registry.
 `vendor-project.toml` is the preferred project entry point. It composes the
 existing target pack with `memory.toml`, whose MMIO regions are independent of
 SVD register names. The checked project deliberately omits private artifact
-paths. Initialize an ignored sibling `local.run` from authenticated local
+paths. Initialize an ignored sibling `local.toml` from authenticated local
 artifacts:
 
 ```console
@@ -45,7 +45,7 @@ The status report therefore shows ready configuration, verification and
 publication phases and incomplete private-input/analysis phases until a local
 run spec is supplied.
 
-Once sibling `local.run` exists, the complete generated-evidence workflow is:
+Once sibling `local.toml` exists, the complete generated-evidence workflow is:
 
 ```console
 cargo vendor-binary-workbench-esp32s31 project analyze \
@@ -100,7 +100,7 @@ generated report never feeds SVD or PAC generation.
 
 The checked project defines separate `rom-phy` and `archive-phy` linked-IR
 profiles. Each primary input receives the other linked ELF as its reviewed
-companion through `local.run`, then register review merges both reports:
+companion through `local.toml`, then register review merges both reports:
 
 ```console
 cargo vendor-binary-workbench-esp32s31 ir build \
@@ -152,7 +152,7 @@ cargo vendor-binary-workbench-esp32s31 registers generate-bindings \
   --check --deny-unreviewed
 ```
 
-This produces `svd/esp32s31-radio.bindings` from the same schema-2 model and
+This produces `svd/esp32s31-radio.bindings.toml` from the same schema-2 model and
 records the Rust PAC crate name used by `driver generate`.
 
 The project also configures the generic interface workspace. Generate facts
@@ -205,14 +205,14 @@ external table ABI/semantics remain in `interfaces/` plus the reusable catalog.
 This directory owns target-specific input for compiled vendor-to-Rust
 verification. It is deliberately outside the generic verification engine.
 
-- `target.spec` selects the generic RISC-V 32-bit backend, ILP32 calling
+- `target.toml` selects the generic RISC-V 32-bit backend, ILP32 calling
   convention and Rust recompilation target.
 - `platform.toml` is the project-mode platform pack: it composes the
   ESP32-S31 radio harness with reusable RTOS/NVS/logging/delay vocabulary.
 - `interfaces/reviewed.toml` alone binds concrete observed table slots to that
   vocabulary; the platform pack does not identify vendor layouts.
-- `run.spec.example` documents caller-owned artifact roles; `project inputs
-  init` creates and validates the untracked `local.run`.
+- `local.example.toml` documents caller-owned artifact roles; `project inputs
+  init` creates and validates the untracked `local.toml`.
 - `profiles/` contains concrete compiled-equivalence scenarios.
 - `dispositions/` maps vendor inventory symbols to Rust components and
   executable contracts.
@@ -221,7 +221,7 @@ verification. It is deliberately outside the generic verification engine.
 No file here selects a proprietary artifact path or authenticates one. The
 caller validates the desired vendor revision and passes absolute paths at run
 time, either as command options, an explicit run spec, or the automatically
-discovered untracked sibling `local.run`. Private integration tests
+discovered untracked sibling `local.toml`. Private integration tests
 recognize these explicit variables:
 
 - `OPEN_ESP_RADIO_ESP32S31_ROM_ELF`
@@ -242,7 +242,7 @@ composition in the production MAC IRQ path. Build the caller-owned linked view
 and the Rust probes first:
 
 ```console
-OPEN_RADIO_LINKED_ORACLE_SPEC="$PWD/verification/vendor/targets/esp32s31/oracle-firmware/trace-elf/linked-oracle-libpp.spec" \
+OPEN_RADIO_LINKED_ORACLE_SPEC="$PWD/verification/vendor/targets/esp32s31/oracle-firmware/trace-elf/linked-oracle-libpp.toml" \
 cargo build --manifest-path verification/vendor/targets/esp32s31/oracle-firmware/Cargo.toml \
   -p open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --target riscv32imafc-unknown-none-elf --release
@@ -258,15 +258,15 @@ all three vendor inputs; no artifact path or hash is embedded in the tool:
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-interrupt.disposition \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-interrupt.toml \
   --no-profiles --gate regression --match-floor 3 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-interrupt.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-interrupt.toml
 ```
 
 The dedicated Rust prefix is part of the focused gate boundary. The same ELF
@@ -284,15 +284,15 @@ but does not enable modem sleep.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_irq_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-power-interrupt.disposition \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-power-interrupt.toml \
   --no-profiles --gate regression --match-floor 2 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-power-interrupt.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-power-interrupt.toml
 ```
 
 The expected result is two exact-effect matches, no
@@ -311,15 +311,15 @@ same operations in vendor order without importing vendor PM context.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.disposition \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.toml \
   --no-profiles --gate regression --match-floor 10 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-modem-wakeup.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-modem-wakeup.toml
 ```
 
 The expected result is ten exact-effect matches and a passing evidence
@@ -334,16 +334,16 @@ disable branch: both branches set bit 21 at `0x2010_d830`, while only bit 29 at
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_tsf_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-sta-tsf-wakeup.disposition \
-  --profiles verification/vendor/targets/esp32s31/profiles/libpp-sta-tsf-wakeup.profile \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-sta-tsf-wakeup.toml \
+  --profiles verification/vendor/targets/esp32s31/profiles/libpp-sta-tsf-wakeup.toml \
   --gate regression --match-floor 1 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-sta-tsf-wakeup.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-sta-tsf-wakeup.toml
 ```
 
 Both profile cases must have four ordered MMIO events and complete branch
@@ -358,15 +358,15 @@ register transaction to both output words.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "rom=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --source-prefix rom=hal_get_sta_tsf \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_rom_power_tsf_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/rom-sta-tsf-snapshot.disposition \
-  --profiles verification/vendor/targets/esp32s31/profiles/rom-sta-tsf-snapshot.profile \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/rom-sta-tsf-snapshot.toml \
+  --profiles verification/vendor/targets/esp32s31/profiles/rom-sta-tsf-snapshot.toml \
   --gate regression --match-floor 1 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/rom-sta-tsf-snapshot.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/rom-sta-tsf-snapshot.toml
 ```
 
 The expected result is four matching cases, complete coverage of both pointer
@@ -391,16 +391,16 @@ statistics suffix to be omitted as unused instrumentation.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_tx_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-tx-dma.disposition \
-  --profiles verification/vendor/targets/esp32s31/profiles/libpp-tx-dma.profile \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-tx-dma.toml \
+  --profiles verification/vendor/targets/esp32s31/profiles/libpp-tx-dma.toml \
   --gate regression --match-floor 7 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-tx-dma.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-tx-dma.toml
 ```
 
 The expected focused result is `match=7`, `mismatch=0`, `incomplete=0`,
@@ -420,15 +420,15 @@ descriptor memory ownership.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libpp=$ESP32S31_LIBPP_LINKED_ELF" \
   --source-inventory "libpp=$OPEN_ESP_RADIO_ESP32S31_LIBPP_ARCHIVE" \
   --source-companion "libpp=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_rx_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-rx-dma.disposition \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-rx-dma.toml \
   --no-profiles --gate regression --match-floor 9 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-rx-dma.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-rx-dma.toml
 ```
 
 The expected result is eight exact PAC-leaf matches plus one compiled
@@ -455,15 +455,15 @@ its caller, and exposes the deadline to an Embassy executor.
 
 ```console
 cargo vendor-binary-workbench-esp32s31 verify inventory \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --source-artifact "libnet80211=$ESP32S31_LIBNET80211_LINKED_ELF" \
   --source-inventory "libnet80211=$OPEN_ESP_RADIO_ESP32S31_LIBNET80211_ARCHIVE" \
   --source-companion "libnet80211=$OPEN_ESP_RADIO_ESP32S31_ROM_ELF" \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libnet80211_trace_ \
-  --dispositions verification/vendor/targets/esp32s31/dispositions/libnet80211-sta-join.disposition \
+  --dispositions verification/vendor/targets/esp32s31/dispositions/libnet80211-sta-join.toml \
   --no-profiles --gate regression --match-floor 1 \
-  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libnet80211-sta-join.evidence
+  --evidence-baseline verification/vendor/targets/esp32s31/baselines/libnet80211-sta-join.toml
 ```
 
 `ESP32S31_LIBNET80211_LINKED_ELF` is a caller-built linked view of the same

@@ -17,17 +17,19 @@ fn fixture_directory(name: &str) -> PathBuf {
 }
 
 fn write_target(path: &std::path::Path, svd: Option<&str>) {
-    let svd = svd.map(|path| format!("svd {path}\n")).unwrap_or_default();
+    let svd = svd
+        .map(|path| format!("svd = [\"{path}\"]\n"))
+        .unwrap_or_default();
     std::fs::write(
         path,
         format!(
-            "schema 1\n\
-             target fixture\n\
-             architecture riscv32\n\
-             calling-convention riscv-ilp32\n\
-             endianness little\n\
-             pointer-width 32\n\
-             rust-target riscv32imafc-unknown-none-elf\n\
+            "schema = 1\n\
+             id = \"fixture\"\n\
+             architecture = \"riscv32\"\n\
+             calling-convention = \"riscv-ilp32\"\n\
+             endianness = \"little\"\n\
+             pointer-width = 32\n\
+             rust-target = \"riscv32imafc-unknown-none-elf\"\n\
              {svd}"
         ),
     )
@@ -40,7 +42,7 @@ fn write_project(path: &std::path::Path, extra: &str) {
         format!(
             "schema = 1\n\
              id = \"fixture-project\"\n\
-             target-spec = \"target.spec\"\n\
+             target-spec = \"target.toml\"\n\
              {extra}"
         ),
     )
@@ -53,11 +55,11 @@ fn parse(arguments: &[&str]) -> ParsedInvocation {
 
 fn run_spec(name: &str, contents: &str) -> (std::path::PathBuf, RunSpec) {
     let path = std::env::temp_dir().join(format!(
-        "vendor-workbench-resolver-{}-{}.run",
+        "vendor-workbench-resolver-{}-{}.toml",
         std::process::id(),
         name
     ));
-    std::fs::write(&path, format!("schema 1\n{contents}")).unwrap();
+    std::fs::write(&path, format!("schema = 1\n{contents}")).unwrap();
     let run_spec = RunSpec::load(&path).unwrap();
     (path, run_spec)
 }
@@ -90,7 +92,7 @@ fn command_resources_are_classified_by_one_positive_plan() {
 fn explicit_cli_paths_win_over_all_run_spec_defaults() {
     let (path, run_spec) = run_spec(
         "explicit",
-        "input artifact default.elf\ninput companion first.a\ninput companion second.a\n",
+        "[[inputs]]\nrole = \"artifact\"\npath = \"default.elf\"\n\n[[inputs]]\nrole = \"companion\"\npath = \"first.a\"\n\n[[inputs]]\nrole = \"companion\"\npath = \"second.a\"\n",
     );
     let mut command = Command::GenerateReference(ReferenceArgs {
         artifact: Some("explicit.elf".into()),
@@ -110,7 +112,7 @@ fn explicit_cli_paths_win_over_all_run_spec_defaults() {
 fn all_default_companions_are_preserved_when_cli_has_none() {
     let (path, run_spec) = run_spec(
         "companions",
-        "input artifact default.elf\ninput companion first.a\ninput companion second.a\n",
+        "[[inputs]]\nrole = \"artifact\"\npath = \"default.elf\"\n\n[[inputs]]\nrole = \"companion\"\npath = \"first.a\"\n\n[[inputs]]\nrole = \"companion\"\npath = \"second.a\"\n",
     );
     let mut command = Command::GenerateReference(ReferenceArgs::default());
     apply_run_spec_defaults(&mut command, &run_spec);
@@ -128,7 +130,7 @@ fn all_default_companions_are_preserved_when_cli_has_none() {
 fn source_qualified_cli_artifacts_override_only_the_same_source() {
     let (path, run_spec) = run_spec(
         "sources",
-        "input source-artifact:rom default-rom.elf\ninput source-artifact:archive archive.elf\n",
+        "[[inputs]]\nrole = \"source-artifact:rom\"\npath = \"default-rom.elf\"\n\n[[inputs]]\nrole = \"source-artifact:archive\"\npath = \"archive.elf\"\n",
     );
     let mut command = Command::ExportIr(IrExportArgs {
         artifact: vec!["rom=explicit-rom.elf".parse().unwrap()],
@@ -153,14 +155,14 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
     let directory = fixture_directory("discovery");
     let nested = directory.join("nested");
     std::fs::create_dir(&nested).unwrap();
-    write_target(&directory.join("target.spec"), None);
+    write_target(&directory.join("target.toml"), None);
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"local.run\"\n",
+        "run-spec = \"local.toml\"\n",
     );
     std::fs::write(
-        directory.join("local.run"),
-        "schema 1\ninput artifact artifacts/vendor.elf\n",
+        directory.join("local.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"artifacts/vendor.elf\"\n",
     )
     .unwrap();
 
@@ -169,8 +171,8 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
         panic!("expected a resolved project-status command")
     };
     assert_eq!(session.manifest, directory.join(DEFAULT_PROJECT_MANIFEST));
-    assert_eq!(session.target_path, directory.join("target.spec"));
-    assert_eq!(session.run_spec_path, Some(directory.join("local.run")));
+    assert_eq!(session.target_path, directory.join("target.toml"));
+    assert_eq!(session.run_spec_path, Some(directory.join("local.toml")));
     assert_eq!(
         session.run_spec.unwrap().inputs()[0].path,
         directory.join("artifacts/vendor.elf")
@@ -182,7 +184,7 @@ fn discovered_project_resolves_project_owned_paths_from_the_manifest() {
 #[test]
 fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
     let directory = fixture_directory("browser");
-    write_target(&directory.join("target.spec"), None);
+    write_target(&directory.join("target.toml"), None);
     write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
 
     let resolved = resolve_from(parse(&["project", "browse"]), &directory).unwrap();
@@ -209,11 +211,11 @@ fn project_browser_resolves_only_the_manifest_for_the_application_frontend() {
 #[test]
 fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let directory = fixture_directory("local-run-discovery");
-    write_target(&directory.join("target.spec"), None);
+    write_target(&directory.join("target.toml"), None);
     write_project(&directory.join(DEFAULT_PROJECT_MANIFEST), "");
     std::fs::write(
-        directory.join("local.run"),
-        "schema 1\ninput artifact discovered.elf\n",
+        directory.join("local.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"discovered.elf\"\n",
     )
     .unwrap();
 
@@ -230,7 +232,7 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
         panic!("expected a resolved project-status command")
     };
-    assert_eq!(session.run_spec_path, Some(directory.join("local.run")));
+    assert_eq!(session.run_spec_path, Some(directory.join("local.toml")));
     assert!(
         session.run_spec.unwrap().inputs()[0]
             .path
@@ -239,11 +241,11 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
 
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"configured.run\"\n",
+        "run-spec = \"configured.toml\"\n",
     );
     std::fs::write(
-        directory.join("configured.run"),
-        "schema 1\ninput artifact configured.elf\n",
+        directory.join("configured.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"configured.elf\"\n",
     )
     .unwrap();
     let resolved = resolve_from(
@@ -261,7 +263,7 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
     };
     assert_eq!(
         session.run_spec_path,
-        Some(directory.join("configured.run"))
+        Some(directory.join("configured.toml"))
     );
 
     std::fs::remove_dir_all(directory).unwrap();
@@ -270,19 +272,19 @@ fn sibling_local_run_is_discovered_but_manifest_configuration_wins() {
 #[test]
 fn explicit_run_spec_and_svd_override_project_defaults() {
     let directory = fixture_directory("precedence");
-    write_target(&directory.join("target.spec"), Some("target.svd"));
+    write_target(&directory.join("target.toml"), Some("target.svd"));
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"project.run\"\nsvd = [\"project.svd\"]\n",
+        "run-spec = \"project.toml\"\nsvd = [\"project.svd\"]\n",
     );
     std::fs::write(
-        directory.join("project.run"),
-        "schema 1\ninput artifact project.elf\n",
+        directory.join("project.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"project.elf\"\n",
     )
     .unwrap();
     std::fs::write(
-        directory.join("explicit.run"),
-        "schema 1\ninput artifact explicit.elf\n",
+        directory.join("explicit.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"explicit.elf\"\n",
     )
     .unwrap();
 
@@ -293,7 +295,7 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
             "--project",
             directory.join(DEFAULT_PROJECT_MANIFEST).to_str().unwrap(),
             "--run-spec",
-            directory.join("explicit.run").to_str().unwrap(),
+            directory.join("explicit.toml").to_str().unwrap(),
             "--svd",
             "cli.svd",
         ]),
@@ -303,7 +305,7 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
     let ResolvedInvocation::ProjectStatus { session, .. } = resolved else {
         panic!("expected a resolved project-status command")
     };
-    assert_eq!(session.run_spec_path, Some(directory.join("explicit.run")));
+    assert_eq!(session.run_spec_path, Some(directory.join("explicit.toml")));
     assert!(
         session.run_spec.unwrap().inputs()[0]
             .path
@@ -317,14 +319,14 @@ fn explicit_run_spec_and_svd_override_project_defaults() {
 #[test]
 fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
     let directory = fixture_directory("cli-input");
-    write_target(&directory.join("target.spec"), None);
+    write_target(&directory.join("target.toml"), None);
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"project.run\"\n",
+        "run-spec = \"project.toml\"\n",
     );
     std::fs::write(
-        directory.join("project.run"),
-        "schema 1\ninput artifact project.elf\n",
+        directory.join("project.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"project.elf\"\n",
     )
     .unwrap();
 
@@ -355,14 +357,14 @@ fn explicit_cli_arguments_remain_authoritative_after_full_resolution() {
 #[test]
 fn project_symbol_inventory_supplies_the_default_report_path() {
     let directory = fixture_directory("symbol-inventory");
-    write_target(&directory.join("target.spec"), None);
+    write_target(&directory.join("target.toml"), None);
     write_project(
         &directory.join(DEFAULT_PROJECT_MANIFEST),
-        "run-spec = \"project.run\"\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
+        "run-spec = \"project.toml\"\n[analysis.symbols]\noutput = \"generated/symbols.json\"\n",
     );
     std::fs::write(
-        directory.join("project.run"),
-        "schema 1\ninput artifact vendor.elf\n",
+        directory.join("project.toml"),
+        "schema = 1\n\n[[inputs]]\nrole = \"artifact\"\npath = \"vendor.elf\"\n",
     )
     .unwrap();
 

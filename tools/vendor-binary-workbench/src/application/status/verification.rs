@@ -112,7 +112,7 @@ mod tests {
             .nth(2)
             .expect("workbench remains under tools");
         let target =
-            TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.spec"))
+            TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.toml"))
                 .unwrap();
         for component in [
             profile_packs(

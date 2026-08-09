@@ -25,7 +25,7 @@ cargo vendor-binary-workbench verify source \
 
 cargo vendor-binary-workbench verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/authenticated.run \
+  --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \
   --json-report /tmp/esp32s31-verification.json
 ```

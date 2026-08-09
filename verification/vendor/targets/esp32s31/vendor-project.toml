@@ -2,7 +2,7 @@
 # run spec passed with --run-spec, or in a private copy referenced here.
 schema = 1
 id = "esp32s31-radio-rev0"
-target-spec = "target.spec"
+target-spec = "target.toml"
 platform-pack = "platform.toml"
 memory-map = "memory.toml"
 svd = ["../../../../svd/esp32s31-platform-radio-deps.svd"]
@@ -12,6 +12,12 @@ output = "generated/findings/symbols.json"
 
 [analysis.navigation]
 output = "generated/findings/navigation.json"
+
+[code]
+pack = "code/boundaries.toml"
+
+[code.review]
+output = "generated/reports/code-boundaries.md"
 
 [[analysis.ir]]
 id = "rom-phy"
@@ -51,7 +57,7 @@ target = "none"
 edition = "2024"
 
 [registers.bindings]
-output = "../../../../svd/esp32s31-radio.bindings"
+output = "../../../../svd/esp32s31-radio.bindings.toml"
 crate-name = "open_esp_radio_esp32s31_pac"
 
 [registers.api]
@@ -60,7 +66,7 @@ pack = "registers/api.toml"
 [registers.lints]
 pack = "registers/lints.toml"
 
-[registers.evidence]
+[registers.toml]
 catalogs = [
     "registers/evidence/policy.toml",
     "registers/evidence/platform.toml",
@@ -87,8 +93,8 @@ output = "generated/reports/function-review.md"
 [verification]
 rust-prefix = "open_phy_trace_"
 profiles = [
-    "profiles/compiled-equivalence.profile",
-    "profiles/libpp-sta-tsf-wakeup.profile",
-    "profiles/libpp-tx-dma.profile",
-    "profiles/rom-sta-tsf-snapshot.profile",
+    "profiles/compiled-equivalence.toml",
+    "profiles/libpp-sta-tsf-wakeup.toml",
+    "profiles/libpp-tx-dma.toml",
+    "profiles/rom-sta-tsf-snapshot.toml",
 ]

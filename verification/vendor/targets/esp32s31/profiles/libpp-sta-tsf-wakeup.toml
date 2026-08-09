@@ -1,0 +1,35 @@
+schema = 1
+# Both source-owned bool inputs and distinct initial images prove the
+# non-symmetric vendor transaction: disable clears bit 29 at 0x2010d858, but
+# both branches set bit 21 at 0x2010d830.
+
+[[profiles]]
+name = "libpp-sta-tsf-wakeup"
+vendor-source = "libpp"
+vendor-symbol = "hal_set_sta_tsf_wakeup"
+rust-symbol = "open_libpp_power_tsf_trace_hal_set_sta_tsf_wakeup"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 1
+
+[[profiles.cases]]
+name = "disabled"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d858
+value = 0xffffffff
+[[profiles.cases.mmio-initial]]
+address = 0x2010d830
+value = 0x00000000
+
+[[profiles.cases]]
+name = "enabled"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x2010d858
+value = 0x01234567
+[[profiles.cases.mmio-initial]]
+address = 0x2010d830
+value = 0x5a1a55aa

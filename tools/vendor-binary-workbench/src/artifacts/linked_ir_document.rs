@@ -29,11 +29,22 @@ impl ArtifactIdentity {
 struct SourceArtifact<'a> {
     source: &'a str,
     artifact: ArtifactIdentity,
+    reviewed_code_boundaries: Vec<ReviewedCodeBoundaryDocument<'a>>,
+}
+
+#[derive(Serialize)]
+struct ReviewedCodeBoundaryDocument<'a> {
+    member: &'a Option<String>,
+    section: &'a str,
+    name: &'a str,
+    start_offset: String,
+    end_offset: String,
 }
 
 #[derive(Serialize)]
 struct ReportSummary {
     artifacts: usize,
+    reviewed_code_boundaries: usize,
     functions: usize,
     root_functions: usize,
     included_reachable_functions: usize,
@@ -80,7 +91,7 @@ struct ReportSummary {
 }
 
 impl ReportSummary {
-    fn new(artifacts: usize, report: &LinkedIrReport) -> Self {
+    fn new(artifacts: &[IrArtifactInput], report: &LinkedIrReport) -> Self {
         let root_functions = report
             .functions
             .iter()
@@ -100,7 +111,11 @@ impl ReportSummary {
             direct_mmio_predicate_sources,
         ) = field_candidate_summary(report);
         Self {
-            artifacts,
+            artifacts: artifacts.len(),
+            reviewed_code_boundaries: artifacts
+                .iter()
+                .map(|artifact| artifact.reviewed_code.len())
+                .sum(),
             functions: report.functions.len(),
             root_functions,
             included_reachable_functions: report.functions.len() - root_functions,
@@ -230,6 +245,17 @@ pub(crate) fn build_linked_ir_document<'a>(
                 Ok(SourceArtifact {
                     source: &artifact.source,
                     artifact: ArtifactIdentity::load(&artifact.path)?,
+                    reviewed_code_boundaries: artifact
+                        .reviewed_code
+                        .iter()
+                        .map(|range| ReviewedCodeBoundaryDocument {
+                            member: &range.member,
+                            section: &range.section,
+                            name: &range.name,
+                            start_offset: format!("{:#x}", range.start_offset),
+                            end_offset: format!("{:#x}", range.end_offset),
+                        })
+                        .collect(),
                 })
             })
             .collect::<Result<Vec<_>>>()?,
@@ -239,7 +265,7 @@ pub(crate) fn build_linked_ir_document<'a>(
             .collect::<Result<Vec<_>>>()?,
         symbol_prefix,
         entry_contract: entry_contract.id(),
-        summary: ReportSummary::new(artifacts.len(), report),
+        summary: ReportSummary::new(artifacts, report),
         mmio_registers: &report.mmio_registers,
         semantic_boundaries: &report.semantic_boundaries,
         trampoline_slots: &report.trampoline_slots,

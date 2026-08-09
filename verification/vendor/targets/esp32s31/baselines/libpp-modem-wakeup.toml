@@ -1,0 +1,43 @@
+schema = 1
+# Focused finite WDEVPWR counter and TBTT register slice. Artifact
+# authentication stays caller-owned; these rows pin proof and verifier identity.
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
+kind = "effect-contract/exact-effects-v1/sha256:22f3b9830aa2807d50c36f91bc878f04ce0c2df5035fea71c59a2ca33c744458"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable"
+kind = "effect-contract/exact-effects-v1/sha256:ea2a8ec9ace13c1eaf496e7abf29b7de7fe4e8641c2ffc2fe0f343cddb4901b0"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_beacon_miss_timeout"
+kind = "effect-contract/exact-effects-v1/sha256:a753951b459d4e3623b96026a1476daed7c4a0684bbe9c13ae182c3d1d4c1af9"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
+kind = "effect-contract/exact-effects-v1/sha256:6e0ca2398ee0fe73fcd18ef4e34f89d5184738d0175c21457a48d87107b49ec4"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable"
+kind = "effect-contract/exact-effects-v1/sha256:466fffbac8a4a765924213dec099c2706bfbb8f31ea49488e64f2ffc57779d6e"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
+kind = "effect-contract/exact-effects-v1/sha256:3127b4e51fe41237abcce35cb7c4d36825bbe00aa54bfaa35f059982c9266466"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
+kind = "effect-contract/exact-effects-v1/sha256:170688154352a21b2e56168da5347f7f126ae7137886b8d424dac9daba9ad19f"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_disable"
+kind = "effect-contract/exact-effects-v1/sha256:34669f350c34b351f2835cf8adeb61b8b731aa01331ba76f72841fc0c8b54c87"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_enable"
+kind = "effect-contract/exact-effects-v1/sha256:bae6b3f101bad7a53c71a62301a312a0c00ad13631868b80193b47b9eba30e31"
+[[evidence]]
+source = "libpp"
+symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_interval"
+kind = "effect-contract/exact-effects-v1/sha256:00af6e2f70151231fce567e6f9b466155e09d120bac6373cb35124a0f9aed1ae"

@@ -11,6 +11,7 @@ use ratatui::{
 use super::state::{BrowserState, Section};
 use crate::{DiagnosticSeverity, Readiness};
 
+mod code;
 mod comparisons;
 mod functions;
 mod interfaces;
@@ -35,6 +36,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
     render_tabs(frame, state, tabs);
     match state.section {
         Section::Overview => render_overview(frame, state, content),
+        Section::Code => code::render(frame, state, content),
         Section::Functions => functions::render(frame, state, content),
         Section::Registers => registers::render(frame, state, content),
         Section::Interfaces => interfaces::render(frame, state, content),
@@ -388,8 +390,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport, ProjectStatusPhase,
-        ProjectStatusReport, ProjectTargetIdentity, RegisterWorkspaceReport,
+        CodeWorkspaceReport, ComparisonProfileSummary, FunctionSummary, InterfaceWorkspaceReport,
+        ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, RegisterWorkspaceReport,
         ScenarioArgumentSummary, ScenarioSuggestionSummary, ScenarioSuggestionVariantSummary,
         WorkspaceSnapshot,
     };
@@ -413,6 +415,17 @@ mod tests {
                     status: Readiness::Ready,
                     components: Vec::new(),
                 }],
+            },
+            code: CodeWorkspaceReport {
+                configured: false,
+                facts: None,
+                pack: None,
+                review_output: None,
+                observed_candidates: 0,
+                accepted: 0,
+                rejected: 0,
+                unreviewed: 0,
+                boundaries: Vec::new(),
             },
             functions: Vec::new(),
             logical_types: Vec::new(),
@@ -439,7 +452,7 @@ mod tests {
             },
             comparisons: vec![ComparisonProfileSummary {
                 name: "trace-init".to_owned(),
-                path: "profiles/init.profile".into(),
+                path: "profiles/init.toml".into(),
                 vendor_source: "rom".to_owned(),
                 vendor_symbol: "phy_init".to_owned(),
                 rust_symbol: "open_phy_init".to_owned(),

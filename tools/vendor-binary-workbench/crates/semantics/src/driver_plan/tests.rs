@@ -1,20 +1,99 @@
 use super::*;
 use crate::{EffectComparison, ResolvedReferenceBody, ResolvedReferenceEvent, Timeout};
 
-const BINDINGS: &str = "\
-pac-binding-index 2
-crate fixture_radio_pac
-register 0x20100034 32 write-only PHY_ORACLE.I2C_WORD1 PHY_ORACLE PhyOracle phy_oracle - i2c_word 1 -
-field 0x20100034 PHY_ORACLE.I2C_WORD1 VALUE value - 0 32 write-only
-register 0x20104c48 32 read-only WIFI_MAC_INTERRUPT.STATUS WIFI_MAC_INTERRUPT WifiMacInterrupt wifi_mac_interrupt - status - -
-field 0x20104c48 WIFI_MAC_INTERRUPT.STATUS EVENTS events - 0 32 read-only
-register 0x20104c4c 32 write-only WIFI_MAC_INTERRUPT.CLEAR WIFI_MAC_INTERRUPT WifiMacInterrupt wifi_mac_interrupt - clear - -
-field 0x20104c4c WIFI_MAC_INTERRUPT.CLEAR EVENTS events - 0 32 write-only
-register 0x20104d40 32 read-write WIFI_MAC_TX_QUEUE_CONTROL.CONTROL0 WIFI_MAC_TX_QUEUE_CONTROL WifiMacTxQueueControl wifi_mac_tx_queue_control - control 0 -
-register 0x20104d50 32 read-write WIFI_MAC_TX_QUEUE_CONTROL.CONTROL1 WIFI_MAC_TX_QUEUE_CONTROL WifiMacTxQueueControl wifi_mac_tx_queue_control - control 1 -
-register 0x20104d60 32 read-write WIFI_MAC_TX_QUEUE_CONTROL.CONTROL2 WIFI_MAC_TX_QUEUE_CONTROL WifiMacTxQueueControl wifi_mac_tx_queue_control - control 2 -
-register 0x20104d70 32 read-write WIFI_MAC_TX_QUEUE_CONTROL.CONTROL3 WIFI_MAC_TX_QUEUE_CONTROL WifiMacTxQueueControl wifi_mac_tx_queue_control - control 3 -
-";
+const BINDINGS: &str = r#"
+schema = 2
+crate-name = "fixture_radio_pac"
+
+[[registers]]
+address = 0x20100034
+width = 32
+access = "write-only"
+identity = "PHY_ORACLE.I2C_WORD1"
+peripheral = "PHY_ORACLE"
+peripheral-type = "PhyOracle"
+peripheral-module = "phy_oracle"
+scope = []
+register-method = "i2c_word"
+register-index = 1
+fields = [{ svd-name = "VALUE", method = "value", bit-offset = 0, bit-width = 32, access = "write-only" }]
+
+[[registers]]
+address = 0x20104c48
+width = 32
+access = "read-only"
+identity = "WIFI_MAC_INTERRUPT.STATUS"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "status"
+fields = [{ svd-name = "EVENTS", method = "events", bit-offset = 0, bit-width = 32, access = "read-only" }]
+
+[[registers]]
+address = 0x20104c4c
+width = 32
+access = "write-only"
+identity = "WIFI_MAC_INTERRUPT.CLEAR"
+peripheral = "WIFI_MAC_INTERRUPT"
+peripheral-type = "WifiMacInterrupt"
+peripheral-module = "wifi_mac_interrupt"
+scope = []
+register-method = "clear"
+fields = [{ svd-name = "EVENTS", method = "events", bit-offset = 0, bit-width = 32, access = "write-only" }]
+
+[[registers]]
+address = 0x20104d40
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL0"
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+peripheral-type = "WifiMacTxQueueControl"
+peripheral-module = "wifi_mac_tx_queue_control"
+scope = []
+register-method = "control"
+register-index = 0
+fields = []
+
+[[registers]]
+address = 0x20104d50
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL1"
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+peripheral-type = "WifiMacTxQueueControl"
+peripheral-module = "wifi_mac_tx_queue_control"
+scope = []
+register-method = "control"
+register-index = 1
+fields = []
+
+[[registers]]
+address = 0x20104d60
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL2"
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+peripheral-type = "WifiMacTxQueueControl"
+peripheral-module = "wifi_mac_tx_queue_control"
+scope = []
+register-method = "control"
+register-index = 2
+fields = []
+
+[[registers]]
+address = 0x20104d70
+width = 32
+access = "read-write"
+identity = "WIFI_MAC_TX_QUEUE_CONTROL.CONTROL3"
+peripheral = "WIFI_MAC_TX_QUEUE_CONTROL"
+peripheral-type = "WifiMacTxQueueControl"
+peripheral-module = "wifi_mac_tx_queue_control"
+scope = []
+register-method = "control"
+register-index = 3
+fields = []
+"#;
 
 fn get_event_program() -> ResolvedReferenceProgram {
     ResolvedReferenceProgram {

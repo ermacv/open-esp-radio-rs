@@ -4,10 +4,10 @@ use super::options::Options;
 
 pub(super) fn render_manifest(options: &Options) -> String {
     let mut output = format!(
-        "# Shareable project configuration. Keep local artifact paths in local.run.\n\
+        "# Shareable project configuration. Keep local artifact paths in local.toml.\n\
 schema = 1\n\
 id = \"{}\"\n\
-target-spec = \"target.spec\"\n\
+target-spec = \"target.toml\"\n\
 platform-pack = \"platform.toml\"\n\
 memory-map = \"memory.toml\"\n\
 svd = []\n",
@@ -18,7 +18,13 @@ svd = []\n",
 output = \"generated/findings/symbols.json\"\n\
 \n\
 [analysis.navigation]\n\
-output = \"generated/findings/navigation.json\"\n",
+output = \"generated/findings/navigation.json\"\n\
+\n\
+[code]\n\
+pack = \"code/boundaries.toml\"\n\
+\n\
+[code.review]\n\
+output = \"generated/reports/code-boundaries.md\"\n",
     );
     for source in &options.sources {
         output.push_str(&format!(
@@ -52,7 +58,7 @@ output = \"generated/pac/src/lib.rs\"\n\
 target = \"none\"\n\
 edition = \"2024\"\n\
 \n[registers.bindings]\n\
-output = \"generated/svd/device.bindings\"\n\
+output = \"generated/svd/device.bindings.toml\"\n\
 crate-name = \"{}\"\n\
 \n[interfaces]\n\
 facts = \"generated/findings/interfaces.json\"\n\
@@ -82,14 +88,14 @@ semantic-catalogs = []\n",
 pub(super) fn render_target(options: &Options) -> String {
     format!(
         "# Generic RV32 target; select reviewed platform semantics in platform.toml.\n\
-schema 1\n\
-target {}\n\
-architecture riscv32\n\
-calling-convention riscv-ilp32\n\
-endianness little\n\
-pointer-width 32\n\
-rust-target {}\n\
-memory-map memory.toml\n",
+schema = 1\n\
+id = \"{}\"\n\
+architecture = \"riscv32\"\n\
+calling-convention = \"riscv-ilp32\"\n\
+endianness = \"little\"\n\
+pointer-width = 32\n\
+rust-target = \"{}\"\n\
+memory-map = \"memory.toml\"\n",
         options.id, options.rust_target
     )
 }
@@ -107,11 +113,11 @@ pub(super) fn render_memory(options: &Options) -> String {
 
 pub(super) fn render_run_spec(options: &Options) -> String {
     let mut output =
-        "# Reference template. Prefer `project inputs init --bind ROLE=PATH`; keep local.run untracked.\nschema 1\n"
+        "# Reference template. Prefer `project inputs init --bind ROLE=PATH`; keep local.toml untracked.\nschema = 1\n"
             .to_owned();
     for source in &options.sources {
         output.push_str(&format!(
-            "input source-artifact:{source} /path/to/{source}.elf\n"
+            "\n[[inputs]]\nrole = \"source-artifact:{source}\"\npath = \"/path/to/{source}.elf\"\n"
         ));
     }
     output.push_str(
@@ -138,13 +144,17 @@ cargo vendor-binary-workbench project inputs init --project vendor-project.toml 
 cargo vendor-binary-workbench project doctor --project vendor-project.toml\n\
 cargo vendor-binary-workbench project configure --project vendor-project.toml --check\n\
 cargo vendor-binary-workbench project status --project vendor-project.toml\n\
+cargo vendor-binary-workbench symbols inventory --project vendor-project.toml\n\
+cargo vendor-binary-workbench code init-pack --project vendor-project.toml\n\
+cargo vendor-binary-workbench interfaces discover --project vendor-project.toml\n\
+cargo vendor-binary-workbench interfaces init-pack --project vendor-project.toml\n\
+cargo vendor-binary-workbench ir build --project vendor-project.toml\n\
+cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\n\
 cargo vendor-binary-workbench project analyze --project vendor-project.toml\n\
 cargo vendor-binary-workbench registers review --project vendor-project.toml\n\
-cargo vendor-binary-workbench interfaces init-pack --project vendor-project.toml\n\
-cargo vendor-binary-workbench functions init-pack --project vendor-project.toml\n\
 ```\n\n\
-Review `registers/peripherals/*.toml`, `interfaces/reviewed.toml` and\n\
-`functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
+Review `code/boundaries.toml`, `registers/peripherals/*.toml`,\n\
+`interfaces/reviewed.toml` and `functions/reviewed.toml`. Then use `project analyze` to refresh evidence,\n\
 `project analyze --check` in analysis CI, and `project publish --check` for SVD/PAC.\n",
         options.id,
         bindings = bindings

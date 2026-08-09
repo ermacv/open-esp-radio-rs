@@ -12,15 +12,29 @@ use crate::linked_ir_export::{
 use crate::linked_ir_export::{named_artifact, validate_artifact_inputs};
 use human::print_report;
 
-pub(super) fn run(arguments: IrExportArgs, svd: &MmioMap, target: &TargetSpec) -> Result<bool> {
-    let artifacts = arguments
+pub(super) fn run(
+    arguments: IrExportArgs,
+    svd: &MmioMap,
+    target: &TargetSpec,
+    project: Option<&crate::project::ProjectSpec>,
+) -> Result<bool> {
+    let mut artifacts = arguments
         .artifact
         .into_iter()
         .map(|value| IrArtifactInput {
             source: value.source.into_string(),
             path: value.path,
+            reviewed_code: Vec::new(),
         })
         .collect::<Vec<_>>();
+    let effective_code = project
+        .map(crate::analysis::EffectiveCodeCatalog::load)
+        .transpose()?;
+    if let Some(catalog) = &effective_code {
+        for artifact in &mut artifacts {
+            artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
+        }
+    }
     let (entry_contract, report) = analyze(
         &artifacts,
         &arguments.companion,

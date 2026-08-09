@@ -2038,6 +2038,7 @@ dependencies = [
  "open-radio-vendor-analysis-model",
  "serde",
  "thiserror 2.0.19",
+ "toml_edit",
 ]
 
 [[package]]

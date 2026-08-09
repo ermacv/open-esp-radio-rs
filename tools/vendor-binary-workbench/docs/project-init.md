@@ -28,14 +28,14 @@ The new directory contains:
 
 ```text
 vendor-project.toml       shareable analysis and publication configuration
-target.spec                 generic RV32/ILP32 target selection
+target.toml                 generic RV32/ILP32 target selection
 platform.toml               reviewed platform composition, initially neutral
 memory.toml                 editable address spaces and MMIO regions
 registers/device.toml       schema-2 editable register-model root
 registers/peripherals/      one fragment per declared MMIO window
-run.spec.example            template for caller-local artifact bindings
+local.example.toml            template for caller-local artifact bindings
 README.md                   project-local bootstrap commands
-.gitignore                  local.run and generated outputs
+.gitignore                  local.toml and generated outputs
 ```
 
 The files have deliberately different owners:
@@ -46,7 +46,7 @@ The files have deliberately different owners:
   a compiled harness. The generated pack starts empty.
 - `registers/**/*.toml` is reviewed hardware knowledge. Users edit names,
   offsets, fields, access rules and reset metadata there.
-- `local.run` binds source IDs to licensed local ELF/archive paths and remains
+- `local.toml` binds source IDs to licensed local ELF/archive paths and remains
   untracked.
 - `generated/` contains reproducible findings, reading views, SVD, PAC and
   bindings. It is never the review database.
@@ -83,9 +83,9 @@ cargo vendor-binary-workbench project doctor \
 The command derives required source IDs from `[[analysis.ir]]`, rejects missing
 or unknown source bindings, checks each path, verifies that artifact roles are
 ELF32 and inventory roles are archives, and atomically writes sibling
-`local.run`. It refuses an existing file unless `--force` is explicit;
+`local.toml`. It refuses an existing file unless `--force` is explicit;
 `--check` verifies the exact generated content without writing. The generated
-`run.spec.example` remains a role reference for manual setups.
+`local.example.toml` remains a role reference for manual setups.
 
 Each generated IR profile consumes `source-artifact:ID`. For an archive plus a
 fully linked ELF, add the corresponding
@@ -94,7 +94,7 @@ candidate members; the linked image remains the authority for final placement
 and symbol resolution.
 
 For project commands the resolver selects an explicit `--run-spec` first, then
-a manifest `run-spec`, then an existing sibling `local.run`. Therefore the
+a manifest `run-spec`, then an existing sibling `local.toml`. Therefore the
 normal project-local workflow does not repeat `--run-spec`. Perform the first
 discovery and initialize reviewed packs:
 
@@ -133,8 +133,9 @@ annotations.
 
 ## Current architecture scope
 
-The initializer currently emits `architecture riscv32`, `riscv-ilp32`, little
-endian, 32-bit pointers, and defaults the Rust target to
+The initializer currently emits `architecture = "riscv32"`,
+`calling-convention = "riscv-ilp32"`, `endianness = "little"`, 32-bit
+pointers, and defaults the Rust target to
 `riscv32imac-unknown-none-elf`. `--rust-target` may select a compatible Rust
 triple and `--pac-crate-name` may override the generated PAC import name. A
 future architecture initializer should be a separate template selected by an

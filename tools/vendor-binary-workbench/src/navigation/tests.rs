@@ -96,7 +96,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &interfaces_path,
         serde_json::to_string(&json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "command": "interfaces discover",
             "analysis_scope": {
                 "architecture": "riscv32",
@@ -115,7 +115,8 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "sources": ["vendor"],
                 "sha256": "11".repeat(32),
                 "container": "object",
-                "functions": 1
+                "functions": 1,
+                "reviewed_boundaries": 0
             }],
             "calls": [{
                 "artifact": 0,
@@ -157,7 +158,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
 
     let project = ProjectSpec {
         id: "fixture".to_owned(),
-        target_spec: PathBuf::from("target.spec"),
+        target_spec: PathBuf::from("target.toml"),
         platform_pack: None,
         run_spec: None,
         memory_map: None,
@@ -169,6 +170,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
         navigation_index: Some(NavigationIndexSpec {
             output: directory.join("navigation.json"),
         }),
+        code: None,
         ir_profiles: Vec::new(),
         registers: None,
         interfaces: Some(InterfaceWorkspacePaths {

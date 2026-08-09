@@ -254,10 +254,10 @@ mod tests {
             "schema = 1\nid = \"fixture-platform\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nharness = \"esp32s31-radio-v1\"\nsemantic-catalogs = [\"semantics.toml\"]\n",
         )
         .unwrap();
-        let target_path = root.join("target.spec");
+        let target_path = root.join("target.toml");
         fs::write(
             &target_path,
-            "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+            "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
         )
         .unwrap();
 

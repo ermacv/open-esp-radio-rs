@@ -126,7 +126,11 @@ fn print_report(report: &MmioDiscoveryReport) {
     );
 }
 
-pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
+pub(super) fn run(
+    arguments: MmioDiscoverArgs,
+    svd: &MmioMap,
+    project: Option<&crate::project::ProjectSpec>,
+) -> Result<bool> {
     if arguments.check && arguments.json_report.is_none() {
         return Err(crate::Error::invalid(
             "mmio discover --check requires --json-report PATH",
@@ -178,12 +182,16 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
         crate::cli::CodeSymbolSelectionArg::All => artifact::CodeSymbolSelection::All,
         crate::cli::CodeSymbolSelectionArg::Exported => artifact::CodeSymbolSelection::Exported,
     };
+    let effective_code = project
+        .map(crate::analysis::EffectiveCodeCatalog::load)
+        .transpose()?;
     let report = discover_mmio(
         &artifacts,
         &ranges,
         &arguments.symbol_prefix,
         code_symbol_selection,
         svd,
+        effective_code.as_ref(),
     )?;
     let publication = arguments.json_report.as_deref().map(|path| {
         crate::cli::output::Publication::new(

@@ -18,6 +18,7 @@ for standalone target/backend experiments and machine-readable output.
 | View | Contents |
 | --- | --- |
 | Overview | Lifecycle phases, readiness, component diagnostics |
+| Code | Generated executable-gap candidates, reviewed boundaries, artifact guards and control-flow evidence |
 | Functions | Recovered functions, review status, blockers, replay-required scenario candidates and pseudo-Rust |
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
 | Interfaces | Resolved table slots, ABI, semantics, execution models and sites |
@@ -54,9 +55,12 @@ register asks the worker for `register_detail(address)` once per snapshot
 generation. The detail pane shows name provenance, width, review state,
 read/write/RMW counts, function users, write masks, field candidates,
 direct/transitive predicates, polls and linked semantic operations.
+Code boundaries are kept in the light snapshot and can be filtered by source,
+section, address, reviewed name, symbol evidence, reason, or caller. The view
+is read-only: edit `code/boundaries.toml`, validate it, then reload.
 Implementation state follows the same boundary: `tui/state/detail.rs` owns
 lazy caches, `state/filter.rs` owns matching and `state/navigation.rs` owns
-reviewed cross-links. Function, register, interface and comparison views are
+reviewed cross-links. Code, function, register, interface and comparison views are
 separate renderers; none performs project I/O or analysis.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
@@ -66,7 +70,7 @@ execution closes its coverage.
 
 Comparison execution uses the same worker and the same application API. The
 selected profile must be declared under `[verification]`, while its local
-vendor and Rust binaries are resolved from `local.run`. A result stays attached
+vendor and Rust binaries are resolved from `local.toml`. A result stays attached
 to the current snapshot generation and is discarded on reload. The TUI renders
 the typed first-difference context, coverage blockers, table lifecycle and
 per-device completeness; it never derives a verdict from display text.

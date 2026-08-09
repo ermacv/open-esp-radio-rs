@@ -39,7 +39,7 @@ scenario:
 
 ```console
 cargo vendor-binary-workbench execute run \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --artifact "$ESP32S31_ROM_ELF" \
   --symbol phy_freq_band_reg_set --arg 1 \
   --mmio 0x20107030=0xffffffff --mmio 0x20107ce4=0
@@ -95,7 +95,7 @@ Compare linked vendor and Rust implementations under the same scenarios:
 
 ```console
 cargo vendor-binary-workbench execute compare \
-  --target-spec verification/vendor/targets/esp32s31/target.spec \
+  --target-spec verification/vendor/targets/esp32s31/target.toml \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --vendor-symbol phy_freq_band_reg_set \
   --rust-artifact \
@@ -164,23 +164,23 @@ The ESP32-S31 profile file contains both ROM and archive entries, so it is
 executed by the source-aware `verify inventory` command below. `verify profiles`
 is available for a focused profile file that targets one vendor artifact.
 
-The profile format has `profile`, required `vendor-source`, `vendor-symbol`,
-`rust-symbol`, optional `contract` (`scenario` or `state`), optional
-`compare-return`, optional profile-level `arg-range INDEX MIN MAX`, and one or
-more `case` sections. Case directives are `arg`,
-`mmio`, `read`, `device-model`, `ram`, `vendor-ram-symbol`, `rust-ram-symbol`, runtime-table
-directives described below, `observe`, and `max-steps`. Source-specific
-`vendor-observe`/`rust-observe` ranges and
-`vendor-observe-symbol`/`rust-observe-symbol` ranges normalize corresponding
-state to the same comparison offsets; the symbolic form is
-`SYMBOL[+OFFSET]=LENGTH`. `vendor-ram` and `rust-ram` seed one source-specific
-little-endian word without implicitly observing its physical address. Numeric
-values accept the same decimal or hexadecimal
-notation as the CLI. A symbolic RAM word resolves to the named symbol
-independently in the selected ELF, which models function tables without
-pinning unstable linked addresses. Dynamically resolved indirect calls are
-reported as `COVERED-CONTROL-FLOW`; their child branch inventory is included
-in coverage.
+Profile files are strict TOML with `schema = 1`, one or more `[[profiles]]`
+tables, and one or more nested `[[profiles.cases]]` tables. A profile requires
+`name`, `vendor-source`, `vendor-symbol`, and `rust-symbol`; `contract`
+(`"scenario"` or `"state"`) and `compare-return` are optional. Closed ABI
+domains use `[[profiles.argument-ranges]]` with `index`, `min`, and `max`.
+
+Cases store arguments in `arguments`, stable MMIO seeds in
+`[[profiles.cases.mmio-initial]]`, ordered reads in
+`[[profiles.cases.mmio-reads]]`, and RAM words in the corresponding `ram`,
+`vendor-ram`, or `rust-ram` arrays of tables. Symbol-backed words,
+source-specific observations, runtime tables, memory objects, device models,
+and `max-steps` are structured TOML fields rather than positional strings.
+Numeric values use normal TOML decimal or hexadecimal integers. A symbolic
+RAM word resolves to the named symbol independently in the selected ELF,
+which models function tables without pinning unstable linked addresses.
+Dynamically resolved indirect calls are reported as
+`COVERED-CONTROL-FLOW`; their child branch inventory is included in coverage.
 Profiles are executable coverage input; they are not a parallel function
 ledger.
 
@@ -192,17 +192,25 @@ cell live, and which linked function is installed in each slot. These are
 separate claims. Use source-specific directives so vendor and Rust images may
 have different addresses and symbols:
 
-```text
-vendor-table esp32s31-radio-rev0::wifi-osi-v9 0x3fff1000 0x40 0x3fff0030
-vendor-table-slot esp32s31-radio-rev0::wifi-osi-v9 0x10 vendor_queue_send
+```toml
+[[profiles.cases.vendor-tables]]
+layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
+base-address = 0x3fff1000
+layout-size = 0x40
+pointer-cells = [0x3fff0030]
+slots = [{ offset = 0x10, target = { kind = "symbol", value = "vendor_queue_send" } }]
 
-rust-table esp32s31-radio-rev0::wifi-osi-v9 0x3ffe1000 0x40
-rust-table-slot esp32s31-radio-rev0::wifi-osi-v9 0x10 open_queue_send
+[[profiles.cases.rust-tables]]
+layout-id = "esp32s31-radio-rev0::wifi-osi-v9"
+base-address = 0x3ffe1000
+layout-size = 0x40
+pointer-cells = []
+slots = [{ offset = 0x10, target = { kind = "symbol", value = "open_queue_send" } }]
 ```
 
-The table form is `LAYOUT-ID BASE SIZE [POINTER-CELL]`; a slot is
-`LAYOUT-ID OFFSET SYMBOL`. Use the literal `null` as the slot target when the initial callback is intentionally absent. A table must be declared before its slots in one
-case. The executor resolves every symbol against the exact side's ELF and then
+Slot targets use `{ kind = "symbol", value = "..." }`,
+`{ kind = "address", value = 0x... }`, or `{ kind = "null" }`. The executor
+resolves every symbol against the exact side's ELF and then
 materializes 32-bit little-endian pointer cells and slots. It rejects duplicate
 instances/slots, unaligned locations, out-of-layout offsets, missing target
 symbols and conflicts with explicit RAM seeds. Thus a profile no longer needs
@@ -229,42 +237,76 @@ placement: argument pointees, globals, pointers loaded from globals, and
 absolute objects. A comparison case can bind several such observations to one
 logical runtime instance:
 
-```text
-vendor-memory-instance phy-state 0x3fff2000 0x240
-vendor-memory-binding phy-state argument 0
-vendor-memory-binding phy-state dereferenced-global g_phy_state 0
+```toml
+[[profiles.cases.vendor-memory-instances]]
+id = "phy-state"
+base-address = 0x3fff2000
+length = 0x240
+bindings = [
+  { kind = "argument", index = 0 },
+  { kind = "dereferenced-global", symbol = "g_phy_state", pointer_offset = 0 },
+]
 
-rust-memory-instance phy-state 0x3ffe2000 0x240
-rust-memory-binding phy-state argument 0
-rust-memory-binding phy-state global OPEN_PHY_STATE
+[[profiles.cases.rust-memory-instances]]
+id = "phy-state"
+base-address = 0x3ffe2000
+length = 0x240
+bindings = [
+  { kind = "argument", index = 0 },
+  { kind = "global", symbol = "OPEN_PHY_STATE" },
+]
 ```
 
-The binding forms are `argument INDEX`, `global SYMBOL`,
-`dereferenced-global SYMBOL POINTER-OFFSET`, and
-`absolute ADDRESS-SPACE ADDRESS`. Materialization checks placement, symbol
+Binding kinds are `argument`, `global`, `dereferenced-global`, and `absolute`.
+Materialization checks placement, symbol
 addresses and pointer cells instead of inferring nominal type identity from
 matching offsets. The shared instance ID is the explicit reviewer claim that
 the source-specific objects represent the same logical state.
 
 ### Peripheral execution models
 
-`mmio ADDRESS=VALUE` and `read ADDRESS=VALUE` remain the simplest deterministic
-oracle: they provide constant or ordered read responses and never infer device
-state from writes. A case that needs real register behavior can instead own an
-explicit model:
+`mmio-initial` and `mmio-reads` remain the simplest deterministic oracle: they
+provide stable or ordered read responses and never infer device state from
+writes. A case that needs real register behavior can instead own an explicit
+model:
 
-```text
-device-model w1c irq-status 0x60008020 32 0x0000000f 0x00000003 0x0000000c
-device-model sequence-read ready 0x60008024 32 0,0,1
-device-model fifo rx-fifo 0x60008028 32 0x41,0x42 -
-device-model indexed-bank rf-bank 0x6000802c 0x60008030 32 0x10,0x20,0x30
+```toml
+[[profiles.cases.device-models]]
+kind = "w1c"
+id = "irq-status"
+address = 0x60008020
+width = 32
+initial_value = 0x0000000f
+clear_mask = 0x00000003
+read_clear_mask = 0x0000000c
+
+[[profiles.cases.device-models]]
+kind = "sequence-read"
+id = "ready"
+address = 0x60008024
+width = 32
+values = [0, 0, 1]
+
+[[profiles.cases.device-models]]
+kind = "fifo"
+id = "rx-fifo"
+address = 0x60008028
+width = 32
+read_values = [0x41, 0x42]
+expected_writes = []
+
+[[profiles.cases.device-models]]
+kind = "indexed-bank"
+id = "rf-bank"
+index_address = 0x6000802c
+data_address = 0x60008030
+width = 32
+initial_values = [0x10, 0x20, 0x30]
 ```
 
-The serializable closed `DeviceModelSpec` vocabulary is `constant-read`,
+The closed `DeviceModelSpec` vocabulary is `constant-read`,
 `sequence-read`, `w1c`, `read-to-clear`, `self-clearing`, `fifo`, and
-`indexed-bank`. Comma-separated lists are ordered expectations; `-` is an
-empty FIFO read/write list. W1C accepts `INITIAL CLEAR-MASK READ-CLEAR-MASK`;
-self-clearing accepts `INITIAL STORE-MASK COMMAND-MASK`. Raw reads and writes
+`indexed-bank`. TOML arrays are ordered expectations. Raw reads and writes
 are always retained in the ordered effect trace; model state only determines
 the returned value and subsequent peripheral state.
 
@@ -289,7 +331,7 @@ The default `verify profiles` view contains a profile coverage table and a
 scenario table with match, diff or incomplete details. JSON and JSONL
 serialize the same typed aggregate report directly for automation.
 
-`arg-range` is a closed ABI precondition, not a hint inferred from the listed
+`[[profiles.argument-ranges]]` is a closed ABI precondition, not a hint inferred from the listed
 cases. The loader requires an executed case for every value combination in
 the declared finite domain (currently at most 4096 combinations). Static
 reachability is then computed separately for every admissible combination,
@@ -299,7 +341,7 @@ Arguments without a declared range remain unknown.
 
 ## State and semantic contracts
 
-`contract state` means the vendor bytes are decoded at the binary boundary
+`contract = "state"` means the vendor bytes are decoded at the binary boundary
 while the Rust probe publishes a stable canonical projection through typed
 getters. The observed Rust address is the trace protocol output, not the
 private layout of `PhyColdState`. The current schema covers dot11p, current

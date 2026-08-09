@@ -1,0 +1,231 @@
+schema = 1
+# Concrete coverage for leaves whose logical queue argument selects the
+# reversed physical CONTROL[3-queue] PAC bank.
+
+[[profiles]]
+name = "libpp-txq-enabled"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_is_txq_enabled"
+rust-symbol = "open_libpp_tx_trace_hal_mac_is_txq_enabled"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0-set"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0x80000000
+
+[[profiles.cases]]
+name = "queue-1-clear"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x80000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x80000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0x80000000
+
+[[profiles.cases]]
+name = "queue-2-set"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x80000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0
+
+[[profiles.cases]]
+name = "queue-3-clear"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x80000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0x80000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0x80000000
+
+[[profiles]]
+name = "libpp-txq-valid"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_is_txq_valid"
+rust-symbol = "open_libpp_tx_trace_hal_mac_is_txq_valid"
+compare-return = true
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0-clear"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0
+
+[[profiles.cases]]
+name = "queue-1-set"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0
+
+[[profiles.cases]]
+name = "queue-2-clear"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0x40000000
+
+[[profiles.cases]]
+name = "queue-3-set"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x40000000
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0
+
+[[profiles]]
+name = "libpp-set-txq-invalid"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_set_txq_invalid"
+rust-symbol = "open_libpp_tx_trace_hal_mac_set_txq_invalid"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0xffffffff
+
+[[profiles.cases]]
+name = "queue-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0xd2345678
+
+[[profiles.cases]]
+name = "queue-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x41234567
+
+[[profiles.cases]]
+name = "queue-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x87654321
+
+[[profiles]]
+name = "libpp-disable-txq"
+vendor-source = "libpp"
+vendor-symbol = "hal_mac_txq_disable"
+rust-symbol = "open_libpp_tx_trace_hal_mac_txq_disable"
+compare-return = false
+[[profiles.argument-ranges]]
+index = 0
+min = 0
+max = 3
+
+[[profiles.cases]]
+name = "queue-0"
+arguments = [0]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d70
+value = 0xffffffff
+
+[[profiles.cases]]
+name = "queue-1"
+arguments = [1]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d60
+value = 0xd2345678
+
+[[profiles.cases]]
+name = "queue-2"
+arguments = [2]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d50
+value = 0x41234567
+
+[[profiles.cases]]
+name = "queue-3"
+arguments = [3]
+[[profiles.cases.mmio-initial]]
+address = 0x20104d40
+value = 0x87654321

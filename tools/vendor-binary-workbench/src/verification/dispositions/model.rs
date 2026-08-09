@@ -7,8 +7,10 @@ use super::super::effect_contract::{
     EffectComparison, EffectDisposition, EffectPolicy, EffectSelector,
 };
 use crate::Result;
+use serde::Deserialize;
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd)]
+#[serde(rename_all = "kebab-case")]
 pub enum Protocol {
     Shared,
     Wifi,
@@ -20,21 +22,6 @@ pub enum Protocol {
 }
 
 impl Protocol {
-    pub(super) fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "shared" => Ok(Self::Shared),
-            "wifi" => Ok(Self::Wifi),
-            "bluetooth" => Ok(Self::Bluetooth),
-            "ble" => Ok(Self::Ble),
-            "coex" => Ok(Self::Coex),
-            "ieee802154" => Ok(Self::Ieee802154),
-            "unknown" => Ok(Self::Unknown),
-            _ => Err(crate::Error::invalid(format!(
-                "invalid protocol {value:?} at line {line}"
-            ))),
-        }
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::Shared => "shared",
@@ -48,7 +35,8 @@ impl Protocol {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
 pub enum Disposition {
     Direct,
     StateTransition,
@@ -58,19 +46,6 @@ pub enum Disposition {
 }
 
 impl Disposition {
-    pub(super) fn parse(value: &str, line: usize) -> Result<Self> {
-        match value {
-            "direct" => Ok(Self::Direct),
-            "state-transition" => Ok(Self::StateTransition),
-            "replaced-by-composition" => Ok(Self::ReplacedByComposition),
-            "generation-candidate" => Ok(Self::GenerationCandidate),
-            "not-yet-ported" => Ok(Self::NotYetPorted),
-            _ => Err(crate::Error::invalid(format!(
-                "invalid disposition {value:?} at line {line}"
-            ))),
-        }
-    }
-
     pub const fn label(self) -> &'static str {
         match self {
             Self::Direct => "direct",

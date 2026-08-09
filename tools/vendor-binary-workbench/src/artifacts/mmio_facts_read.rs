@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v3 MMIO discovery facts.
+//! Typed consumer projection for schema-v4 MMIO discovery facts.
 
 #![allow(
     dead_code,
@@ -47,6 +47,7 @@ struct StoredMmioArtifact {
     source: String,
     artifact: StoredArtifactIdentity,
     functions: usize,
+    reviewed_boundaries: usize,
     functions_with_mmio: usize,
     functions_with_diagnostics: usize,
     explored_states: usize,

@@ -48,7 +48,7 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
         manifest
             .parent()
             .unwrap_or_else(|| Path::new("."))
-            .join("local.run")
+            .join("local.toml")
     });
     let required_sources = required_sources(&project);
     let bindings = resolve_bindings(arguments.bind, &required_sources)?;
@@ -209,13 +209,13 @@ fn validate_renderable_path(path: &Path) -> Result<()> {
 fn render_run_spec(bindings: &[ResolvedBinding]) -> String {
     let mut output = String::from(
         "# Caller-owned artifact bindings. Keep this file untracked.\n\
-         schema 1\n",
+         schema = 1\n",
     );
     for binding in bindings {
         output.push_str(&format!(
-            "input {} {}\n",
-            binding.role,
-            binding.path.display()
+            "\n[[inputs]]\nrole = {:?}\npath = {:?}\n",
+            binding.role.to_string(),
+            binding.path.display().to_string()
         ));
     }
     output

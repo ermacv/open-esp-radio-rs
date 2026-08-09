@@ -30,7 +30,7 @@ fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
         .ancestors()
         .nth(2)
         .expect("workbench remains under tools");
-    let path = root.join("verification/vendor/targets/esp32s31/baselines/phy.evidence");
+    let path = root.join("verification/vendor/targets/esp32s31/baselines/phy.toml");
     let expected = load_evidence_baseline(&path).unwrap();
     assert_eq!(expected.len(), 104);
     assert!(compare_evidence_baseline(&expected, &expected).passed);
@@ -54,7 +54,7 @@ fn profile_evidence_is_bound_to_scenario_contents() {
         .nth(2)
         .expect("workbench facade remains under tools");
     let profiles = profiles::load(
-        &root.join("verification/vendor/targets/esp32s31/profiles/compiled-equivalence.profile"),
+        &root.join("verification/vendor/targets/esp32s31/profiles/compiled-equivalence.toml"),
     )
     .unwrap();
     let mut modified = profiles[0].clone();
@@ -152,7 +152,7 @@ fn verification_json_report_contains_reproducible_inputs() {
         .nth(2)
         .expect("workbench remains under tools");
     let mut target =
-        TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.spec")).unwrap();
+        TargetSpec::load(&root.join("verification/vendor/targets/esp32s31/target.toml")).unwrap();
     crate::platform_pack::PlatformPack::load(
         &root.join("verification/vendor/targets/esp32s31/platform.toml"),
     )
@@ -210,12 +210,16 @@ fn verification_json_report_contains_reproducible_inputs() {
 fn evidence_candidate_is_deterministic_and_cannot_replace_the_baseline() {
     let directory = env::temp_dir();
     let suffix = std::process::id();
-    let baseline = directory.join(format!("vendor-workbench-baseline-{suffix}.evidence"));
-    let candidate = directory.join(format!("vendor-workbench-candidate-{suffix}.evidence"));
+    let baseline = directory.join(format!("vendor-workbench-baseline-{suffix}.toml"));
+    let candidate = directory.join(format!("vendor-workbench-candidate-{suffix}.toml"));
     let mut evidence = EvidenceSet::new();
     record_evidence(&mut evidence, "rom", "second", "symbolic").unwrap();
     record_evidence(&mut evidence, "archive", "first", "state/profile:reviewed").unwrap();
-    fs::write(&baseline, "evidence rom old symbolic\n").unwrap();
+    fs::write(
+        &baseline,
+        "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"old\"\nkind = \"symbolic\"\n",
+    )
+    .unwrap();
 
     let error = write_evidence_candidate(&baseline, &[("accepted baseline", &baseline)], &evidence)
         .unwrap_err();
@@ -224,7 +228,7 @@ fn evidence_candidate_is_deterministic_and_cannot_replace_the_baseline() {
     assert_eq!(load_evidence_baseline(&candidate).unwrap(), evidence);
     assert_eq!(
         fs::read_to_string(&candidate).unwrap(),
-        "evidence archive first state/profile:reviewed\nevidence rom second symbolic\n"
+        "schema = 1\n\n[[evidence]]\nsource = \"archive\"\nsymbol = \"first\"\nkind = \"state/profile:reviewed\"\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"second\"\nkind = \"symbolic\"\n"
     );
 
     fs::remove_file(baseline).unwrap();

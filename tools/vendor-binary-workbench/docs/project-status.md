@@ -15,7 +15,7 @@ JSON report for tools and dashboards:
 ```console
 cargo vendor-binary-workbench project status \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --json-report generated/reports/project-status.json
 ```
 
@@ -70,7 +70,7 @@ evidence:
 ```console
 cargo vendor-binary-workbench project status \
   --project PATH/vendor-project.toml \
-  --run-spec PATH/local.run \
+  --run-spec PATH/local.toml \
   --json-report PATH/generated/reports/project-status.json \
   --check --deny-incomplete
 ```

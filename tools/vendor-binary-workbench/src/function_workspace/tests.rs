@@ -184,7 +184,8 @@ fn write_ir(path: &std::path::Path) {
     .unwrap();
     document["artifacts"] = serde_json::json!([{
         "source": "rom",
-        "artifact": {"path": "rom.elf", "sha256": digest}
+        "artifact": {"path": "rom.elf", "sha256": digest},
+        "reviewed_code_boundaries": []
     }]);
     std::fs::write(path, serde_json::to_string_pretty(&document).unwrap()).unwrap();
 }

@@ -1,4 +1,0 @@
-# Focused WDEVPWR STATUS/CLEAR hard-ISR boundary. Artifact authentication stays
-# caller-owned; these rows pin proof and verifier identity.
-evidence libpp hal_pwr_interrupt_clr_event effect-contract/exact-effects-v1/sha256:ebd74696eca5539c07ee49369bccbb29acbc5e5b0d40942a23bcb8e60f110238
-evidence libpp hal_pwr_interrupt_get_event effect-contract/exact-effects-v1/sha256:3fc983cce8c7c414422e36c03e084a465d29ac8e786e46c5000859b7107c3935

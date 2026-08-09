@@ -1,4 +1,4 @@
-//! Effect Contract parsing and comparison tests.
+//! Effect Contract validation and comparison tests.
 
 use super::*;
 use crate::{EquivalenceMode, EquivalenceOutcome, EquivalenceVerdict};
@@ -86,32 +86,50 @@ fn blocking_effect_requires_an_explicit_await_ready_replacement() {
 
 #[test]
 fn omission_reason_and_platform_operation_vocabularies_are_closed() {
-    assert!(OmissionReason::parse("debug-diagnostic", 1).is_ok());
-    assert!(OmissionReason::parse("whatever", 1).is_err());
-    assert!(PlatformOperation::parse("nvs-calibration-cache", 1).is_ok());
-    assert!(PlatformOperation::parse("vendor-magic", 1).is_err());
+    #[derive(serde::Deserialize)]
+    struct Vocabulary {
+        omission: OmissionReason,
+        operation: PlatformOperation,
+    }
+
+    let vocabulary: Vocabulary = toml_edit::de::from_str(
+        "omission = \"debug-diagnostic\"\noperation = \"nvs-calibration-cache\"\n",
+    )
+    .unwrap();
+    assert_eq!(vocabulary.omission, OmissionReason::DebugDiagnostic);
+    assert_eq!(vocabulary.operation, PlatformOperation::NvsCalibrationCache);
+    assert!(
+        toml_edit::de::from_str::<Vocabulary>(
+            "omission = \"whatever\"\noperation = \"vendor-magic\"\n"
+        )
+        .is_err()
+    );
 }
 
 #[test]
-fn effect_rule_parser_is_closed_and_restricts_omissions() {
-    assert_eq!(
-        parse_effect_rule(
-            "platform-call debug-diagnostic allowed-omission debug-diagnostic",
-            7,
-        )
-        .unwrap(),
-        (
-            EffectSelector::PlatformCall {
-                operation: PlatformOperation::DebugDiagnostic,
-            },
-            EffectDisposition::AllowedOmission(OmissionReason::DebugDiagnostic),
-        )
-    );
-    assert!(parse_effect_rule("vendor-effect magic required", 8).is_err());
+fn typed_effect_rules_are_closed_and_restrict_omissions() {
     assert!(
-        parse_effect_rule(
-            "mmio-write 32 0x20107030 allowed-omission debug-diagnostic",
-            9,
+        EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [(
+                EffectSelector::PlatformCall {
+                    operation: PlatformOperation::DebugDiagnostic,
+                },
+                EffectDisposition::AllowedOmission(OmissionReason::DebugDiagnostic),
+            )],
+        )
+        .is_ok()
+    );
+    assert!(
+        EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [(
+                EffectSelector::MmioWrite {
+                    width: 32,
+                    address: 0x2010_7030,
+                },
+                EffectDisposition::AllowedOmission(OmissionReason::DebugDiagnostic),
+            )],
         )
         .is_err()
     );
@@ -198,36 +216,110 @@ fn semantic_boundary_dispositions_require_exact_typed_replacements() {
 
 #[test]
 fn boundary_effect_selectors_are_valid_contract_rules() {
-    for rule in [
-        "platform-provided-input station-mac required",
-        "platform-provided-service embassy-wakeup required",
-        "published-event rx-success required",
-        "initialization-prerequisite power-irqs-disabled required",
+    for selector in [
+        EffectSelector::PlatformProvidedInput {
+            input: "station-mac".to_owned(),
+        },
+        EffectSelector::PlatformProvidedService {
+            service: "embassy-wakeup".to_owned(),
+        },
+        EffectSelector::PublishedEvent {
+            event: "rx-success".to_owned(),
+        },
+        EffectSelector::InitializationPrerequisite {
+            prerequisite: "power-irqs-disabled".to_owned(),
+        },
     ] {
-        assert!(parse_effect_rule(rule, 17).is_ok(), "{rule}");
+        assert!(
+            EffectPolicy::new(
+                EffectComparison::ExactEffectsV1,
+                [(selector, EffectDisposition::Required)],
+            )
+            .is_ok()
+        );
     }
 }
 
 #[test]
 fn semantic_boundary_rule_syntax_is_closed_and_canonical() {
-    for rule in [
-        "mmio-read 32 0x20107030 platform-provided-input station-mac",
-        "platform-call rtos-scheduling-adapter platform-provided-service embassy-wakeup",
-        "state-write 32 sta.event published-event rx-ready",
-        "mmio-write 32 0x20107030 initialization-prerequisite mac-clock-enabled",
+    for (selector, disposition, canonical) in [
+        (
+            EffectSelector::MmioRead {
+                width: 32,
+                address: 0x2010_7030,
+            },
+            EffectDisposition::PlatformProvidedInput {
+                input: "station-mac".to_owned(),
+            },
+            "mmio-read 32 0x20107030 platform-provided-input station-mac",
+        ),
+        (
+            EffectSelector::PlatformCall {
+                operation: PlatformOperation::RtosSchedulingAdapter,
+            },
+            EffectDisposition::PlatformProvidedService {
+                service: "embassy-wakeup".to_owned(),
+            },
+            "platform-call rtos-scheduling-adapter platform-provided-service embassy-wakeup",
+        ),
+        (
+            EffectSelector::StateWrite {
+                width: 32,
+                field: "sta.event".to_owned(),
+            },
+            EffectDisposition::PublishedEvent {
+                event: "rx-ready".to_owned(),
+            },
+            "state-write 32 sta.event published-event rx-ready",
+        ),
+        (
+            EffectSelector::MmioWrite {
+                width: 32,
+                address: 0x2010_7030,
+            },
+            EffectDisposition::InitializationPrerequisite {
+                prerequisite: "mac-clock-enabled".to_owned(),
+            },
+            "mmio-write 32 0x20107030 initialization-prerequisite mac-clock-enabled",
+        ),
     ] {
-        let (selector, disposition) = parse_effect_rule(rule, 11).unwrap();
+        EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [(selector.clone(), disposition.clone())],
+        )
+        .unwrap();
         assert_eq!(
             format!("{} {}", selector.canonical(), disposition.canonical()),
-            rule
+            canonical
         );
     }
     assert!(
-        parse_effect_rule(
-            "mmio-write 32 0x20107030 platform-provided-input station-mac",
-            12,
+        EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [(
+                EffectSelector::MmioWrite {
+                    width: 32,
+                    address: 0x2010_7030,
+                },
+                EffectDisposition::PlatformProvidedInput {
+                    input: "station-mac".to_owned(),
+                },
+            )],
         )
         .is_err()
     );
-    assert!(parse_effect_rule("platform-call random published-event Invalid/Event", 13,).is_err());
+    assert!(
+        EffectPolicy::new(
+            EffectComparison::ExactEffectsV1,
+            [(
+                EffectSelector::PlatformCall {
+                    operation: PlatformOperation::Random,
+                },
+                EffectDisposition::PublishedEvent {
+                    event: "Invalid/Event".to_owned(),
+                },
+            )],
+        )
+        .is_err()
+    );
 }

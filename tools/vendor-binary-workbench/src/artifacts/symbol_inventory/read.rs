@@ -26,6 +26,39 @@ pub(crate) struct SymbolInventorySummary {
     pub(crate) code_recovery_blockers: usize,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CodeBoundaryInputFact {
+    pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CodeBoundaryCandidateFact {
+    pub(crate) source: String,
+    pub(crate) artifact_sha256: String,
+    pub(crate) member: Option<String>,
+    pub(crate) object_kind: String,
+    pub(crate) section: String,
+    pub(crate) section_address: u64,
+    pub(crate) entry_offset: u64,
+    pub(crate) end_limit_offset: u64,
+    pub(crate) symbol_names: Vec<String>,
+    pub(crate) direct_control_flow: Vec<CodeBoundaryControlFlowFact>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct CodeBoundaryControlFlowFact {
+    pub(crate) caller: String,
+    pub(crate) site_offset: u64,
+    pub(crate) kind: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CodeBoundaryFacts {
+    pub(crate) inputs: Vec<CodeBoundaryInputFact>,
+    pub(crate) candidates: Vec<CodeBoundaryCandidateFact>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredSymbolInventory {
@@ -296,6 +329,72 @@ pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInven
     })
 }
 
+pub(crate) fn load_code_boundary_facts(path: &Path) -> crate::Result<CodeBoundaryFacts> {
+    let input = std::fs::read_to_string(path)?;
+    let document = parse_symbol_inventory(&input).map_err(|error| {
+        crate::Error::invalid(format!(
+            "unsupported symbol inventory in {}: {error}",
+            path.display()
+        ))
+    })?;
+    let mut inputs = Vec::new();
+    let mut candidates = Vec::new();
+    for artifact in &document.artifacts {
+        for source in &artifact.sources {
+            inputs.push(CodeBoundaryInputFact {
+                source: source.clone(),
+                artifact_sha256: artifact.artifact.sha256.clone(),
+            });
+        }
+    }
+    inputs.sort();
+    inputs.dedup();
+    for section in &document.code_sections {
+        let artifact = document
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.index == section.artifact)
+            .ok_or_else(|| {
+                crate::Error::invalid(format!(
+                    "code section {:?} refers to missing artifact {}",
+                    section.section, section.artifact
+                ))
+            })?;
+        let source = artifact.sources.first().ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "code section {:?} belongs to an artifact without a logical source",
+                section.section
+            ))
+        })?;
+        for candidate in &section.function_candidates {
+            candidates.push(CodeBoundaryCandidateFact {
+                source: source.clone(),
+                artifact_sha256: artifact.artifact.sha256.clone(),
+                member: section.member.clone(),
+                object_kind: section.object_kind.clone(),
+                section: section.section.clone(),
+                section_address: hex_u64(&section.address)?,
+                entry_offset: hex_u64(&candidate.entry_offset)?,
+                end_limit_offset: hex_u64(&candidate.end_limit_offset)?,
+                symbol_names: candidate.symbol_names.clone(),
+                direct_control_flow: candidate
+                    .direct_control_flow
+                    .iter()
+                    .map(|edge| {
+                        Ok(CodeBoundaryControlFlowFact {
+                            caller: edge.caller.clone(),
+                            site_offset: hex_u64(&edge.site_offset)?,
+                            kind: edge.kind.clone(),
+                        })
+                    })
+                    .collect::<crate::Result<Vec<_>>>()?,
+            });
+        }
+    }
+    candidates.sort();
+    Ok(CodeBoundaryFacts { inputs, candidates })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -394,6 +493,10 @@ mod tests {
             }
         });
         let error = parse_symbol_inventory(&input.to_string()).unwrap_err();
-        assert!(error.to_string().contains("invalid unreviewed function-boundary candidate"));
+        assert!(
+            error
+                .to_string()
+                .contains("invalid unreviewed function-boundary candidate")
+        );
     }
 }

@@ -145,6 +145,12 @@ pub(crate) struct FunctionWorkspacePaths {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CodeWorkspacePaths {
+    pub(crate) pack: PathBuf,
+    pub(crate) review_output: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationWorkspacePaths {
     pub(crate) profiles: Vec<PathBuf>,
     pub(crate) rust_prefix: Option<String>,
@@ -161,6 +167,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) symbol_inventory: Option<SymbolInventorySpec>,
     pub(crate) navigation_index: Option<NavigationIndexSpec>,
+    pub(crate) code: Option<CodeWorkspacePaths>,
     pub(crate) ir_profiles: Vec<ProjectIrProfile>,
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,

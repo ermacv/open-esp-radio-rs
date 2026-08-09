@@ -36,11 +36,16 @@ pub(crate) fn generate_project_profile(
     profile: &ProjectIrProfile,
     svd: &MmioMap,
     target: &TargetSpec,
+    effective_code: &crate::analysis::EffectiveCodeCatalog,
 ) -> Result<ProjectIrDocuments> {
-    let artifacts = inputs
+    let mut artifacts = inputs
         .into_iter()
         .map(|(source, path)| named_artifact_path(&source, path))
         .collect::<Result<Vec<_>>>()?;
+    for artifact in &mut artifacts {
+        artifact.reviewed_code =
+            effective_code.reviewed_ranges(&artifact.source, &artifact.path)?;
+    }
     let (entry_contract, report) = analyze(
         &artifacts,
         &companions,
@@ -94,11 +99,12 @@ pub(crate) fn analyze(
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
-        let resolver = ReferenceResolver::load_all_code_with_entry_contract(
+        let resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
             &artifact.path,
             companions,
             riscv_harness,
             entry_contract,
+            &artifact.reviewed_code,
         )?;
         reports.push(build_linked_ir_for_source(
             &resolver,

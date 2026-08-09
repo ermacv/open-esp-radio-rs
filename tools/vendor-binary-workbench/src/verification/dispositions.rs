@@ -7,26 +7,78 @@ use std::{
 };
 
 use crate::{ArtifactSymbolIdentity, Result};
+use serde::Deserialize;
 
 use super::bindings::{BindingVersion, DriverAdapter};
-use super::effect_contract::{EffectComparison, parse_effect_rule};
-#[cfg(test)]
-use super::effect_contract::{EffectDisposition, EffectSelector};
+use super::effect_contract::{EffectComparison, EffectDisposition, EffectSelector};
 
 mod model;
 
 pub use model::{Disposition, Entry, Manifest, Protocol, ResolvedDisposition, SemanticContract};
 use model::{EntryBuilder, ProtocolPrefix};
 
-fn directive_value(line: &str, line_number: usize) -> Result<(&str, &str)> {
-    line.split_once(char::is_whitespace)
-        .map(|(directive, value)| (directive, value.trim()))
-        .filter(|(_, value)| !value.is_empty())
-        .ok_or_else(|| {
-            crate::Error::invalid(format!(
-                "disposition directive needs a value at line {line_number}"
-            ))
-        })
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct DispositionDocument {
+    schema: u32,
+    default_disposition: Disposition,
+    default_protocol: Protocol,
+    #[serde(default)]
+    protocol_prefixes: Vec<ProtocolPrefixInput>,
+    #[serde(default)]
+    functions: Vec<FunctionInput>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProtocolPrefixInput {
+    source: String,
+    prefix: String,
+    protocol: Protocol,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EffectRuleInput {
+    selector: EffectSelector,
+    disposition: EffectDisposition,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct BlockerInput {
+    source: String,
+    symbol: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct FunctionInput {
+    source: String,
+    symbol: String,
+    disposition: Disposition,
+    #[serde(default)]
+    protocol: Option<Protocol>,
+    #[serde(default)]
+    rust_component: Option<String>,
+    #[serde(default)]
+    hil_evidence: Option<String>,
+    #[serde(default)]
+    semantic_contract: Option<String>,
+    #[serde(default)]
+    effect_contract: Option<EffectComparison>,
+    #[serde(default)]
+    effects: Vec<EffectRuleInput>,
+    #[serde(default)]
+    binding: Option<String>,
+    #[serde(default)]
+    rust_probe: Option<String>,
+    #[serde(default)]
+    compare_return: Option<bool>,
+    #[serde(default)]
+    driver_adapter: Option<String>,
+    #[serde(default)]
+    blocked_by: Vec<BlockerInput>,
 }
 
 pub(crate) fn validate_source_id(value: &str, line: usize) -> Result<&str> {
@@ -39,310 +91,96 @@ impl Manifest {
     #[tracing::instrument(name = "load_disposition_manifest", fields(path = %path.display()))]
     pub fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
-        Self::parse(&input).map_err(|error| {
-            crate::error::WorkbenchError::manifest_document(
-                "disposition manifest",
+        let document: DispositionDocument = toml_edit::de::from_str(&input).map_err(|error| {
+            crate::error::WorkbenchError::manifest_source(
+                "disposition TOML",
                 path,
                 &input,
-                error,
+                &error,
+                error.span(),
             )
+        })?;
+        Self::finish(document).map_err(|error| {
+            crate::error::WorkbenchError::manifest_document("disposition TOML", path, &input, error)
         })
     }
 
-    fn parse(input: &str) -> Result<Self> {
-        let mut default_disposition = None;
-        let mut default_protocol = None;
+    fn finish(document: DispositionDocument) -> Result<Self> {
+        if document.schema != 1 {
+            return Err(crate::Error::invalid(
+                "disposition TOML requires schema = 1",
+            ));
+        }
+        let mut prefix_identities = BTreeSet::new();
         let mut protocol_prefixes = Vec::new();
+        for prefix in document.protocol_prefixes {
+            validate_source_id(&prefix.source, 1)?;
+            if !prefix_identities.insert((prefix.source.clone(), prefix.prefix.clone())) {
+                return Err(crate::Error::invalid(format!(
+                    "duplicate protocol prefix {} {}",
+                    prefix.source, prefix.prefix
+                )));
+            }
+            protocol_prefixes.push(ProtocolPrefix {
+                source: prefix.source,
+                prefix: prefix.prefix,
+                protocol: prefix.protocol,
+            });
+        }
         let mut entries = BTreeMap::new();
-        let mut current: Option<EntryBuilder> = None;
-
-        let finish_entry = |builder: EntryBuilder,
-                            entries: &mut BTreeMap<(String, String), Entry>|
-         -> Result<()> {
-            let entry = builder.finish()?;
+        for (index, function) in document.functions.into_iter().enumerate() {
+            validate_source_id(&function.source, index + 1)?;
+            let semantic_contract = function
+                .semantic_contract
+                .as_deref()
+                .map(|value| SemanticContract::parse(value, index + 1))
+                .transpose()?;
+            let binding_version = function
+                .binding
+                .as_deref()
+                .map(|value| BindingVersion::parse(value, index + 1))
+                .transpose()?;
+            let driver_adapter = function
+                .driver_adapter
+                .as_deref()
+                .map(|value| DriverAdapter::parse(value, index + 1))
+                .transpose()?;
+            let entry = EntryBuilder {
+                source: function.source,
+                symbol: function.symbol,
+                disposition: Some(function.disposition),
+                protocol: function.protocol,
+                rust_component: function.rust_component,
+                hil_evidence: function.hil_evidence,
+                semantic_contract,
+                effect_comparison: function.effect_contract,
+                effect_rules: function
+                    .effects
+                    .into_iter()
+                    .map(|rule| (rule.selector, rule.disposition))
+                    .collect(),
+                binding_version,
+                rust_probe: function.rust_probe,
+                compare_return: function.compare_return,
+                driver_adapter,
+                qualification_blockers: function
+                    .blocked_by
+                    .into_iter()
+                    .map(|blocker| (blocker.source, blocker.symbol))
+                    .collect(),
+                line: index + 1,
+            }
+            .finish()?;
             let key = (entry.source.clone(), entry.symbol.clone());
             if entries.insert(key, entry).is_some() {
                 return Err(crate::Error::invalid(
                     "duplicate disposition function entry",
                 ));
             }
-            Ok(())
-        };
-
-        for (index, raw_line) in input.lines().enumerate() {
-            let line_number = index + 1;
-            let line = raw_line.split('#').next().unwrap_or_default().trim();
-            if line.is_empty() {
-                continue;
-            }
-            (|| -> Result<()> {
-                let (directive, value) = directive_value(line, line_number)?;
-                if directive == "function" {
-                    if let Some(builder) = current.take() {
-                        finish_entry(builder, &mut entries)?;
-                    }
-                    let mut words = value.split_whitespace();
-                    let source = words.next().ok_or("function has no source").map_err(crate::Error::invalid)?;
-                    let symbol = words.next().ok_or("function has no symbol").map_err(crate::Error::invalid)?;
-                    if words.next().is_some() {
-                        return Err(
-                            crate::Error::invalid(format!("function has extra fields at line {line_number}"))
-                        );
-                    }
-                    validate_source_id(source, line_number)?;
-                    current = Some(EntryBuilder {
-                        source: source.to_owned(),
-                        symbol: symbol.to_owned(),
-                        disposition: None,
-                        protocol: None,
-                        rust_component: None,
-                        hil_evidence: None,
-                        semantic_contract: None,
-                        effect_comparison: None,
-                        effect_rules: Vec::new(),
-                        binding_version: None,
-                        rust_probe: None,
-                        compare_return: None,
-                        driver_adapter: None,
-                        qualification_blockers: Vec::new(),
-                        line: line_number,
-                    });
-                    return Ok(());
-                }
-
-                match directive {
-                    "default-disposition" => {
-                        if current.is_some() {
-                            return Err(crate::Error::invalid(format!(
-                                "default-disposition inside function at line {line_number}"
-                            )
-                            ));
-                        }
-                        if default_disposition
-                            .replace(Disposition::parse(value, line_number)?)
-                            .is_some()
-                        {
-                            return Err(crate::Error::invalid("duplicate default-disposition"));
-                        }
-                    }
-                    "default-protocol" => {
-                        if current.is_some() {
-                            return Err(crate::Error::invalid(format!(
-                                "default-protocol inside function at line {line_number}"
-                            )
-                            ));
-                        }
-                        if default_protocol
-                            .replace(Protocol::parse(value, line_number)?)
-                            .is_some()
-                        {
-                            return Err(crate::Error::invalid("duplicate default-protocol"));
-                        }
-                    }
-                    "protocol-prefix" => {
-                        if current.is_some() {
-                            return Err(crate::Error::invalid(format!(
-                                "protocol-prefix inside function at line {line_number}"
-                            )
-                            ));
-                        }
-                        let mut words = value.split_whitespace();
-                        let source = words.next().ok_or("protocol-prefix has no source").map_err(crate::Error::invalid)?;
-                        let prefix = words.next().ok_or("protocol-prefix has no prefix").map_err(crate::Error::invalid)?;
-                        let protocol = words.next().ok_or("protocol-prefix has no protocol").map_err(crate::Error::invalid)?;
-                        if words.next().is_some() {
-                            return Err(crate::Error::invalid(format!(
-                                "protocol-prefix has extra fields at line {line_number}"
-                            )
-                            ));
-                        }
-                        validate_source_id(source, line_number)?;
-                        protocol_prefixes.push(ProtocolPrefix {
-                            source: source.to_owned(),
-                            prefix: prefix.to_owned(),
-                            protocol: Protocol::parse(protocol, line_number)?,
-                        });
-                    }
-                    "disposition" | "protocol" | "rust-component" | "hil-evidence"
-                    | "semantic-contract" | "effect-contract" | "effect" | "binding"
-                    | "rust-probe" | "compare-return" | "driver-adapter" | "blocked-by" => {
-                        let builder = current.as_mut().ok_or_else(|| {
-                            format!("{directive} outside function at line {line_number}")
-                        }).map_err(crate::Error::invalid)?;
-                        match directive {
-                            "disposition" => {
-                                if builder
-                                    .disposition
-                                    .replace(Disposition::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate disposition at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "protocol" => {
-                                if builder
-                                    .protocol
-                                    .replace(Protocol::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate protocol at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "rust-component" => {
-                                if builder.rust_component.replace(value.to_owned()).is_some() {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate rust-component at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "hil-evidence" => {
-                                if builder.hil_evidence.replace(value.to_owned()).is_some() {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate hil-evidence at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "semantic-contract" => {
-                                if builder
-                                    .semantic_contract
-                                    .replace(SemanticContract::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate semantic-contract at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "effect-contract" => {
-                                if builder
-                                    .effect_comparison
-                                    .replace(EffectComparison::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate effect-contract at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "effect" => builder
-                                .effect_rules
-                                .push(parse_effect_rule(value, line_number)?),
-                            "binding" => {
-                                if builder
-                                    .binding_version
-                                    .replace(BindingVersion::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(
-                                        crate::Error::invalid(format!("duplicate binding at line {line_number}"))
-                                    );
-                                }
-                            }
-                            "rust-probe" => {
-                                if builder.rust_probe.replace(value.to_owned()).is_some() {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate rust-probe at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "compare-return" => {
-                                if value != "true" {
-                                    return Err(crate::Error::invalid(format!(
-                                        "compare-return must be true at line {line_number}"
-                                    )
-                                    ));
-                                }
-                                if builder.compare_return.replace(true).is_some() {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate compare-return at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "driver-adapter" => {
-                                if builder
-                                    .driver_adapter
-                                    .replace(DriverAdapter::parse(value, line_number)?)
-                                    .is_some()
-                                {
-                                    return Err(crate::Error::invalid(format!(
-                                        "duplicate driver-adapter at line {line_number}"
-                                    )
-                                    ));
-                                }
-                            }
-                            "blocked-by" => {
-                                let mut words = value.split_whitespace();
-                                let source = words.next().ok_or_else(|| {
-                                    format!("blocked-by has no source at line {line_number}")
-                                }).map_err(crate::Error::invalid)?;
-                                let symbol = words.next().ok_or_else(|| {
-                                    format!("blocked-by has no symbol at line {line_number}")
-                                }).map_err(crate::Error::invalid)?;
-                                if words.next().is_some() {
-                                    return Err(crate::Error::invalid(format!(
-                                        "blocked-by has extra fields at line {line_number}"
-                                    )
-                                    ));
-                                }
-                                validate_source_id(source, line_number)?;
-                                let blocker = (source.to_owned(), symbol.to_owned());
-                                if builder.qualification_blockers.contains(&blocker) {
-                                    return Err(crate::Error::invalid(format!(
-                                    "duplicate blocked-by {source} {symbol} at line {line_number}"
-                                )
-                                ));
-                                }
-                                builder.qualification_blockers.push(blocker);
-                            }
-                            _ => unreachable!(),
-                        }
-                    }
-                    _ => {
-                        return Err(crate::Error::invalid(format!(
-                            "unknown disposition directive {directive:?} at line {line_number}"
-                        )
-                        ));
-                    }
-                }
-                Ok(())
-            })()
-            .map_err(|error| error.at_line(line_number))?;
         }
-        if let Some(builder) = current {
-            finish_entry(builder, &mut entries)?;
-        }
-
-        let default_disposition = default_disposition
-            .ok_or("disposition manifest has no default-disposition")
-            .map_err(crate::Error::invalid)?;
-        let default_protocol = default_protocol
-            .ok_or("disposition manifest has no default-protocol")
-            .map_err(crate::Error::invalid)?;
-        let mut prefix_identities = BTreeSet::new();
-        for prefix in &protocol_prefixes {
-            if !prefix_identities.insert((prefix.source.as_str(), prefix.prefix.as_str())) {
-                return Err(crate::Error::invalid(format!(
-                    "duplicate protocol-prefix {} {}",
-                    prefix.source, prefix.prefix
-                )));
-            }
-        }
-
         Ok(Self {
-            default_disposition,
-            default_protocol,
+            default_disposition: document.default_disposition,
+            default_protocol: document.default_protocol,
             protocol_prefixes,
             entries,
         })

@@ -34,7 +34,7 @@ target = "none"
 edition = "2024"
 
 [registers.bindings]
-output = "generated/svd/device.bindings"
+output = "generated/svd/device.bindings.toml"
 crate-name = "device_pac"
 
 [registers.api]
@@ -43,7 +43,7 @@ pack = "registers/api.toml"
 [registers.lints]
 pack = "registers/lints.toml"
 
-[registers.evidence]
+[registers.toml]
 catalogs = ["registers/evidence.toml"]
 ```
 
@@ -99,7 +99,7 @@ First generate facts from local artifacts and project memory-map ranges:
 ```console
 cargo vendor-binary-workbench mmio discover \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run
+  --run-spec /path/to/local.toml
 ```
 
 Then create an empty reviewed model with one peripheral fragment per discovery
@@ -140,7 +140,7 @@ destination.
 
 ### Linked-IR enrichment
 
-The basic report needs only `mmio discover` facts. Optional schema-v35
+The basic report needs only `mmio discover` facts. Optional schema-v36
 `ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
 carry: poll masks, direct branch predicates, producer-return chains and links
 from register bits to guarded semantic actions.
@@ -151,7 +151,7 @@ under `[registers.review].linked-ir` or pass them explicitly:
 ```console
 cargo vendor-binary-workbench ir export \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
-  --run-spec /path/to/local.run \
+  --run-spec /path/to/local.toml \
   --symbol-prefix phy_ --include-reachable \
   --json-report verification/vendor/targets/esp32s31/generated/findings/phy.ir.json
 
@@ -303,7 +303,7 @@ summaries inside `register-workspace`. A strict coverage failure is reported as
 
 ### Evidence catalogs
 
-`[registers.evidence].catalogs` contains reviewed source descriptions and an
+`[registers.toml].catalogs` contains reviewed source descriptions and an
 optional controlled confidence vocabulary outside both the hardware model and
 safe API policy. Register-model `[[review]]` annotations and API-pack
 `sources = [...]` refer to catalog IDs. Validation rejects undefined IDs and
@@ -389,6 +389,11 @@ svd2rust peripheral, cluster, register and field path generated from the same
 release SVD. It is consumed by driver generation; it contains no target
 semantics or safe transaction policy.
 
+The generated index is strict schema-2 TOML. Each `[[registers]]` entry owns
+its address, access mode, exact SVD identity, svd2rust method path and nested
+`[[registers.fields]]` entries. It is deterministic generated output and is
+not edited by hand.
+
 ```console
 cargo vendor-binary-workbench registers generate-bindings \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
@@ -404,4 +409,4 @@ Direct SVD, PAC and binding generation emits the typed `svd-publication`,
 the same typed leaf results suppressed and aggregated by `project publish`.
 
 For ESP32-S31 this project-owned command reproduces
-`svd/esp32s31-radio.bindings` byte-for-byte.
+`svd/esp32s31-radio.bindings.toml` byte-for-byte.

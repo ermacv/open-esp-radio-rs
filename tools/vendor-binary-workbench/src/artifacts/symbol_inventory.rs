@@ -11,7 +11,8 @@ use crate::{
 mod read;
 
 pub(crate) use read::{
-    StoredSymbolInventory, inspect_symbol_inventory, parse_symbol_inventory,
+    CodeBoundaryCandidateFact, CodeBoundaryFacts, StoredSymbolInventory, inspect_symbol_inventory,
+    load_code_boundary_facts, parse_symbol_inventory,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

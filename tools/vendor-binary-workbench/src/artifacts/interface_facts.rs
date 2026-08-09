@@ -359,6 +359,7 @@ struct ArtifactDocument<'a> {
     sha256: String,
     container: &'static str,
     functions: usize,
+    reviewed_boundaries: usize,
 }
 
 #[derive(Serialize)]
@@ -422,6 +423,7 @@ pub(crate) fn build_interface_facts(
                     sha256: crate::artifact_sha256(&artifact.path)?,
                     container: artifact.container.label(),
                     functions: discovery.functions[index],
+                    reviewed_boundaries: discovery.reviewed_boundaries[index],
                 })
             })
             .collect::<Result<Vec<_>>>()?,

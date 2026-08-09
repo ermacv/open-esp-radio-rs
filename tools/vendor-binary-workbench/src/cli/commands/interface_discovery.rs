@@ -117,7 +117,11 @@ fn print_report(discovery: &Discovery) {
 }
 
 #[tracing::instrument(name = "discover_interfaces", skip_all)]
-pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Result<bool> {
+pub(super) fn run(
+    arguments: InterfaceDiscoverArgs,
+    run_spec: &RunSpec,
+    project: Option<&crate::project::ProjectSpec>,
+) -> Result<bool> {
     let options = resolve_options(arguments);
     if options.check && options.json_report.is_none() {
         return Err(crate::Error::invalid(
@@ -131,12 +135,16 @@ pub(super) fn run(arguments: InterfaceDiscoverArgs, run_spec: &RunSpec) -> Resul
         ));
     }
     tracing::debug!(inputs = inputs.len(), "resolved interface discovery inputs");
+    let effective_code = project
+        .map(crate::analysis::EffectiveCodeCatalog::load)
+        .transpose()?;
     let discovery = discover_project_interfaces(
         &inputs,
         &ProjectInterfaceDiscoveryOptions {
             name_prefix: options.name_prefix.clone(),
             tables_only: options.tables_only,
         },
+        effective_code.as_ref(),
     )?;
     let document = crate::artifacts::build_interface_facts(&discovery)?;
     if !crate::cli::output::structured(&document) {

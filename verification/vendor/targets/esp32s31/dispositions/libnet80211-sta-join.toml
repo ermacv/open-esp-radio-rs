@@ -1,0 +1,57 @@
+schema = 1
+# Infrastructure-STA Authentication/Association management-state boundary.
+# The vendor root mixes this protocol slice with private interface/node state,
+# NVS, power/coexistence, mesh, logging and the OSI callback table. The Rust
+# replacement retains only typed protocol state and caller/Embassy services.
+default-disposition = "not-yet-ported"
+default-protocol = "wifi"
+
+[[functions]]
+source = "libnet80211"
+symbol = "ieee80211_sta_new_state"
+disposition = "replaced-by-composition"
+protocol = "wifi"
+rust-component = "open_esp_radio_ieee80211::station::StaAuthenticationRuntime"
+binding = "v1"
+rust-probe = "open_libnet80211_trace_sta_join_state"
+driver-adapter = "esp32s31-sta-join-state-v1"
+effect-contract = "exact-effects-v1"
+[[functions.effects]]
+selector = { kind = "state-write", width = 16, field = "sta-management.sequence" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "state-write", width = 16, field = "sta-authentication.attempt" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "state-write", width = 16, field = "sta-association.retry-ordinal" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "state-write", width = 32, field = "sta-state.deadline-ms" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "rtos-scheduling-adapter" }
+disposition = { kind = "platform-provided-service", value = { service = "embassy-sta-state-deadline" } }
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "debug-diagnostic" }
+disposition = { kind = "allowed-omission", value = "debug-diagnostic" }
+[[functions.effects]]
+selector = { kind = "platform-call", operation = "nvs-calibration-cache" }
+disposition = { kind = "platform-provided-input", value = { input = "caller-owned-sta-configuration" } }
+[[functions.effects]]
+selector = { kind = "platform-provided-input", input = "caller-owned-sta-configuration" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "platform-provided-service", service = "embassy-sta-state-deadline" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "published-event", event = "sta-authenticated" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "published-event", event = "sta-associated" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "initialization-prerequisite", prerequisite = "infrastructure-sta-only" }
+disposition = { kind = "required" }
+[[functions.effects]]
+selector = { kind = "initialization-prerequisite", prerequisite = "mesh-and-power-state-transitions-disabled" }
+disposition = { kind = "required" }

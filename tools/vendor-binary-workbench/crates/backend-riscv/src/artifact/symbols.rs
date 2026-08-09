@@ -156,3 +156,164 @@ pub fn load_code_symbols(
     });
     Ok(symbols)
 }
+
+fn collect_reviewed_ranges(
+    data: &[u8],
+    member: Option<&str>,
+    ranges: &[ReviewedCodeRange],
+    output: &mut Vec<ArtifactSymbolDefinition>,
+) -> Result<()> {
+    let matching = ranges
+        .iter()
+        .filter(|range| range.member.as_deref() == member)
+        .collect::<Vec<_>>();
+    if matching.is_empty() {
+        return Ok(());
+    }
+    let file = object::File::parse(data)?;
+    if file.architecture() != object::Architecture::Riscv32 || !file.is_little_endian() {
+        return Err(format!(
+            "reviewed code-boundary member {member:?} is not little-endian RISC-V 32-bit"
+        )
+        .into());
+    }
+    let addresses_resolved = file.kind() != ObjectKind::Relocatable;
+    let memory_regions = if addresses_resolved {
+        file.sections()
+            .filter_map(|section| {
+                let writable = match section.kind() {
+                    SectionKind::Data
+                    | SectionKind::UninitializedData
+                    | SectionKind::Common
+                    | SectionKind::Tls
+                    | SectionKind::UninitializedTls => true,
+                    SectionKind::Text | SectionKind::ReadOnlyData | SectionKind::ReadOnlyString => {
+                        false
+                    }
+                    _ => return None,
+                };
+                let start = u32::try_from(section.address()).ok()?;
+                let length = u32::try_from(section.size()).ok()?;
+                (start != 0 && length != 0 && start.checked_add(length).is_some()).then(|| {
+                    MemoryRegion {
+                        start,
+                        length,
+                        writable,
+                        name: section.name().unwrap_or("<unnamed>").to_owned(),
+                    }
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    for range in matching {
+        let section = file
+            .sections()
+            .find(|section| section.name().ok() == Some(range.section.as_str()))
+            .ok_or_else(|| {
+                format!(
+                    "reviewed code range {} refers to missing section {:?} in member {member:?}",
+                    range.name, range.section
+                )
+            })?;
+        if section.kind() != SectionKind::Text {
+            return Err(format!(
+                "reviewed code range {} refers to non-executable section {:?}",
+                range.name, range.section
+            )
+            .into());
+        }
+        if range.start_offset >= range.end_offset || range.end_offset > section.size() {
+            return Err(format!(
+                "reviewed code range {} has invalid section offsets {:#x}..{:#x}",
+                range.name, range.start_offset, range.end_offset
+            )
+            .into());
+        }
+        let section_data = section.data()?;
+        let start = usize::try_from(range.start_offset)
+            .map_err(|_| format!("reviewed code range {} start is too large", range.name))?;
+        let end = usize::try_from(range.end_offset)
+            .map_err(|_| format!("reviewed code range {} end is too large", range.name))?;
+        let bytes = section_data
+            .get(start..end)
+            .ok_or_else(|| format!("reviewed code range {} exceeds section data", range.name))?
+            .to_vec();
+        let address = section
+            .address()
+            .checked_add(range.start_offset)
+            .ok_or_else(|| format!("reviewed code range {} address overflows", range.name))?;
+        let end_address = section
+            .address()
+            .checked_add(range.end_offset)
+            .ok_or_else(|| format!("reviewed code range {} end address overflows", range.name))?;
+        let mut relocations = relocations::collect_section_relocations(&file, section.index())?
+            .into_iter()
+            .filter(|relocation| relocation.address >= address && relocation.address < end_address)
+            .map(|relocation| {
+                let addend = relocation.addend();
+                Ok(SymbolRelocation {
+                    address: u32::try_from(relocation.address).map_err(|_| {
+                        format!("relocation in {} exceeds RV32 address space", range.name)
+                    })?,
+                    kind: relocation.kind,
+                    symbol: relocation.symbol,
+                    addend,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        relocations.sort_by_key(|relocation| (relocation.address, relocation.kind as u8));
+        output.push(ArtifactSymbolDefinition {
+            member: range.member.clone(),
+            name: range.name.clone(),
+            address,
+            bytes,
+            addresses_resolved,
+            memory_regions: memory_regions.clone(),
+            relocations,
+        });
+    }
+    Ok(())
+}
+
+/// Loads only ranges that crossed the reviewed boundary-pack trust boundary.
+pub fn load_reviewed_code_ranges(
+    path: &Path,
+    ranges: &[ReviewedCodeRange],
+) -> Result<Vec<ArtifactSymbolDefinition>> {
+    let data = fs::read(path)?;
+    let mut symbols = Vec::new();
+    match FileKind::parse(data.as_slice())? {
+        FileKind::Archive => {
+            let archive = ArchiveFile::parse(data.as_slice())?;
+            for member in archive.members() {
+                let member = member?;
+                let name = String::from_utf8_lossy(member.name()).into_owned();
+                if !ranges
+                    .iter()
+                    .any(|range| range.member.as_deref() == Some(name.as_str()))
+                {
+                    continue;
+                }
+                let member_data = member.data(data.as_slice())?;
+                collect_reviewed_ranges(member_data, Some(&name), ranges, &mut symbols)?;
+            }
+        }
+        FileKind::Elf32 => collect_reviewed_ranges(&data, None, ranges, &mut symbols)?,
+        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
+    }
+    if symbols.len() != ranges.len() {
+        return Err(format!(
+            "loaded {} of {} reviewed code ranges from {}",
+            symbols.len(),
+            ranges.len(),
+            path.display()
+        )
+        .into());
+    }
+    symbols.sort_by(|left, right| {
+        (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
+    });
+    Ok(symbols)
+}

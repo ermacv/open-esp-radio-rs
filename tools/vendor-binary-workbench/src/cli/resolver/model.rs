@@ -48,6 +48,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         project: ProjectSpec,
         target: TargetSpec,
     },
+    CodeWorkspace {
+        command: CodeWorkspaceCommand,
+        project: ProjectSpec,
+    },
     RegisterWorkspace {
         command: RegisterWorkspaceCommand,
         project: ProjectSpec,
@@ -65,6 +69,7 @@ pub(in crate::cli) enum ResolvedInvocation {
     InterfaceDiscover {
         arguments: InterfaceDiscoverArgs,
         run_spec: RunSpec,
+        project: Option<ProjectSpec>,
     },
     BuildIr {
         arguments: IrBuildArgs,
@@ -78,10 +83,17 @@ pub(in crate::cli) enum ResolvedInvocation {
         command: TargetCommand,
         target: TargetSpec,
         svd: MmioMap,
+        project: Option<Box<ProjectSpec>>,
     },
 }
 
 pub(in crate::cli) enum FunctionWorkspaceCommand {
+    InitPack(OutputArgs),
+    Validate(ValidationArgs),
+    Review(ReviewArgs),
+}
+
+pub(in crate::cli) enum CodeWorkspaceCommand {
     InitPack(OutputArgs),
     Validate(ValidationArgs),
     Review(ReviewArgs),

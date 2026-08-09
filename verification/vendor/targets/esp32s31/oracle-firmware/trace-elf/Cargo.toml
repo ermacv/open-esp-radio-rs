@@ -9,3 +9,7 @@ build = "build.rs"
 
 [lints.rust]
 unexpected_cfgs = "allow"
+
+[build-dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+toml_edit = { version = "=0.25.13", features = ["serde"] }

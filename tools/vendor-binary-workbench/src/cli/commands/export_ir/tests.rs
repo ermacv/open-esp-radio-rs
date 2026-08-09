@@ -14,10 +14,12 @@ fn artifact_input_requires_explicit_source_names() {
         IrArtifactInput {
             source: parsed.source.into_string(),
             path: parsed.path,
+            reviewed_code: Vec::new(),
         },
         IrArtifactInput {
             source: "libphy".to_owned(),
             path: PathBuf::from("/tmp/vendor=archive.a"),
+            reviewed_code: Vec::new(),
         }
     );
     assert!("/tmp/vendor=archive.a".parse::<SourcePath>().is_err());

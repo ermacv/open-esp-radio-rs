@@ -81,16 +81,15 @@ mod tests {
         let suffix = std::process::id();
         let directory = env::temp_dir();
         let report = directory.join(format!("vendor-workbench-review-{suffix}.json"));
-        let baseline = directory.join(format!("vendor-workbench-review-{suffix}.evidence"));
-        let candidate = directory.join(format!(
-            "vendor-workbench-review-{suffix}.candidate.evidence"
-        ));
+        let baseline = directory.join(format!("vendor-workbench-review-{suffix}.toml"));
+        let candidate = directory.join(format!("vendor-workbench-review-{suffix}.candidate.toml"));
         fs::write(
             &report,
             r#"{"schema_version":4,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
         )
         .unwrap();
-        fs::write(&baseline, "evidence rom leaf symbolic\n").unwrap();
+        let document = "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"leaf\"\nkind = \"symbolic\"\n";
+        fs::write(&baseline, document).unwrap();
 
         assert!(
             run(VerifyEvidenceArgs {
@@ -101,10 +100,7 @@ mod tests {
             })
             .unwrap()
         );
-        assert_eq!(
-            fs::read_to_string(&candidate).unwrap(),
-            "evidence rom leaf symbolic\n"
-        );
+        assert_eq!(fs::read_to_string(&candidate).unwrap(), document);
 
         let error = run(VerifyEvidenceArgs {
             report: Some(report.clone()),

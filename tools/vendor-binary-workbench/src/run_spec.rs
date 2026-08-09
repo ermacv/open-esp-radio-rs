@@ -7,6 +7,7 @@ use std::{
 };
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
+use serde::Deserialize;
 use thiserror::Error;
 
 use crate::source_id::SourceId;
@@ -136,6 +137,20 @@ pub(crate) struct RunSpec {
     inputs: Vec<RunInput>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunDocument {
+    schema: u32,
+    inputs: Vec<RunInputDocument>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RunInputDocument {
+    role: String,
+    path: PathBuf,
+}
+
 impl RunSpec {
     pub(crate) fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path).map_err(|source| RunSpecError::Read {
@@ -143,72 +158,48 @@ impl RunSpec {
             source,
         })?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut schema = None;
+        let document: RunDocument = toml_edit::de::from_str(&input).map_err(|error| {
+            let span = error.span().unwrap_or(0..input.len().min(1));
+            RunSpecError::Invalid {
+                message: format!("invalid run TOML: {error}"),
+                src: NamedSource::new(path.display().to_string(), input.clone()),
+                span: (span.start, span.len().max(1)).into(),
+            }
+        })?;
+        if document.schema != 1 {
+            return Err(invalid(path, &input, "run TOML requires schema = 1"));
+        }
         let mut inputs = Vec::new();
         let mut unique_roles = BTreeSet::new();
-
-        for (index, raw_line) in input.lines().enumerate() {
-            let line = raw_line.split('#').next().unwrap_or_default().trim();
-            if line.is_empty() {
-                continue;
+        for entry in document.inputs {
+            let Some(role) = InputRole::parse(&entry.role) else {
+                return Err(invalid(
+                    path,
+                    &input,
+                    format!("unsupported input role {:?}", entry.role),
+                ));
+            };
+            if role != InputRole::Companion && !unique_roles.insert(role.clone()) {
+                return Err(invalid(
+                    path,
+                    &input,
+                    format!("duplicate input role {:?}", entry.role),
+                ));
             }
-            let (directive, value) = split_value(line, path, &input, index)?;
-            match directive {
-                "schema" => {
-                    let parsed = value.parse::<u32>().map_err(|_| {
-                        invalid(path, &input, index, "schema must be an unsigned integer")
-                    })?;
-                    if schema.replace(parsed).is_some() {
-                        return Err(invalid(path, &input, index, "duplicate schema directive"));
-                    }
-                }
-                "input" => {
-                    let (role_text, input_path) = split_value(value, path, &input, index)?;
-                    let Some(role) = InputRole::parse(role_text) else {
-                        return Err(invalid(
-                            path,
-                            &input,
-                            index,
-                            format!("unsupported input role {role_text:?}"),
-                        ));
-                    };
-                    if role != InputRole::Companion && !unique_roles.insert(role.clone()) {
-                        return Err(invalid(
-                            path,
-                            &input,
-                            index,
-                            format!("duplicate input role {role_text:?}"),
-                        ));
-                    }
-                    let input_path = Path::new(input_path);
-                    inputs.push(RunInput {
-                        role,
-                        path: if input_path.is_absolute() {
-                            input_path.to_owned()
-                        } else {
-                            base.join(input_path)
-                        },
-                    });
-                }
-                _ => {
-                    return Err(invalid(
-                        path,
-                        &input,
-                        index,
-                        format!("unknown run-spec directive {directive:?}"),
-                    ));
-                }
-            }
-        }
-        if schema != Some(1) {
-            return Err(invalid(path, &input, 0, "run spec requires schema 1"));
+            inputs.push(RunInput {
+                role,
+                path: if entry.path.is_absolute() {
+                    entry.path
+                } else {
+                    base.join(entry.path)
+                },
+            });
         }
         if inputs.is_empty() {
             return Err(invalid(
                 path,
                 &input,
-                0,
-                "run spec requires at least one input",
+                "run TOML requires at least one input",
             ));
         }
         Ok(Self { inputs })
@@ -219,39 +210,11 @@ impl RunSpec {
     }
 }
 
-fn split_value<'a>(
-    line: &'a str,
-    path: &Path,
-    input: &str,
-    line_index: usize,
-) -> Result<(&'a str, &'a str)> {
-    line.split_once(char::is_whitespace)
-        .map(|(key, value)| (key, value.trim()))
-        .filter(|(_, value)| !value.is_empty())
-        .ok_or_else(|| invalid(path, input, line_index, "directive requires a value"))
-}
-
-fn invalid(
-    path: &Path,
-    input: &str,
-    line_index: usize,
-    message: impl Into<String>,
-) -> RunSpecError {
-    let offset = input
-        .split_inclusive('\n')
-        .take(line_index)
-        .map(str::len)
-        .sum::<usize>();
-    let length = input
-        .split_inclusive('\n')
-        .nth(line_index)
-        .map(|line| line.trim_end_matches(['\r', '\n']).len())
-        .unwrap_or(0)
-        .max(1);
+fn invalid(path: &Path, input: &str, message: impl Into<String>) -> RunSpecError {
     RunSpecError::Invalid {
         message: message.into(),
         src: NamedSource::new(path.display().to_string(), input.to_owned()),
-        span: (offset, length).into(),
+        span: (0, input.len().min(1).max(1)).into(),
     }
 }
 
@@ -266,10 +229,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("local.run");
+        let path = directory.join("local.toml");
         std::fs::write(
             &path,
-            "schema 1\ninput source-artifact:rom inputs/rom.elf\ninput rust-artifact /tmp/probes.elf\n",
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:rom\"\npath = \"inputs/rom.elf\"\n\n[[inputs]]\nrole = \"rust-artifact\"\npath = \"/tmp/probes.elf\"\n",
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
@@ -287,10 +250,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("local.run");
+        let path = directory.join("local.toml");
         std::fs::write(
             &path,
-            "schema 1\ninput source-artifact:libpp inputs/libpp.elf\ninput source-inventory:libpp inputs/libpp.a\n",
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:libpp\"\npath = \"inputs/libpp.elf\"\n\n[[inputs]]\nrole = \"source-inventory:libpp\"\npath = \"inputs/libpp.a\"\n",
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();
@@ -308,10 +271,10 @@ mod tests {
             std::process::id()
         ));
         std::fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("local.run");
+        let path = directory.join("local.toml");
         std::fs::write(
             &path,
-            "schema 1\ninput source-artifact:rom rom.elf\ninput source-inventory:rom rom.a\ninput rust-artifact probes.elf\n",
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:rom\"\npath = \"rom.elf\"\n\n[[inputs]]\nrole = \"source-inventory:rom\"\npath = \"rom.a\"\n\n[[inputs]]\nrole = \"rust-artifact\"\npath = \"probes.elf\"\n",
         )
         .unwrap();
         let run = RunSpec::load(&path).unwrap();

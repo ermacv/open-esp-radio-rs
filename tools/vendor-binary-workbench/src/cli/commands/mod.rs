@@ -1,6 +1,7 @@
 //! Per-command parsing and execution.
 
 mod audit_image_targets;
+mod code_workspace;
 mod discover_mmio;
 mod execute_compare;
 mod execute_run;
@@ -38,8 +39,8 @@ use super::{
     MmioMap, Result, TargetSpec,
     args::{CompletionArgs, ManpageArgs},
     resolver::{
-        FunctionWorkspaceCommand, InterfaceWorkspaceCommand, RegisterWorkspaceCommand,
-        TargetCommand,
+        CodeWorkspaceCommand, FunctionWorkspaceCommand, InterfaceWorkspaceCommand,
+        RegisterWorkspaceCommand, TargetCommand,
     },
 };
 use crate::application::ProjectContext;
@@ -114,8 +115,9 @@ pub(super) fn run_symbol_inventory(
 pub(super) fn run_interface_discovery(
     arguments: super::InterfaceDiscoverArgs,
     run_spec: &crate::run_spec::RunSpec,
+    project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
-    interface_discovery::run(arguments, run_spec)
+    interface_discovery::run(arguments, run_spec, project)
 }
 
 pub(super) fn run_interface_pack_command(
@@ -132,6 +134,13 @@ pub(super) fn run_function_pack_command(
     target: &TargetSpec,
 ) -> Result<bool> {
     function_pack::run(command, project, target)
+}
+
+pub(super) fn run_code_workspace_command(
+    command: CodeWorkspaceCommand,
+    project: &crate::project::ProjectSpec,
+) -> Result<bool> {
+    code_workspace::run(command, project)
 }
 
 pub(super) fn run_register_command(
@@ -156,11 +165,12 @@ pub(super) fn run_target(
     command: TargetCommand,
     svd: &MmioMap,
     target: &TargetSpec,
+    project: Option<&crate::project::ProjectSpec>,
 ) -> Result<bool> {
     match command {
         TargetCommand::AuditImageTargets(arguments) => audit_image_targets::run(arguments),
-        TargetCommand::DiscoverMmio(arguments) => discover_mmio::run(arguments, svd),
-        TargetCommand::ExportIr(arguments) => export_ir::run(arguments, svd, target),
+        TargetCommand::DiscoverMmio(arguments) => discover_mmio::run(arguments, svd, project),
+        TargetCommand::ExportIr(arguments) => export_ir::run(arguments, svd, target, project),
         TargetCommand::VerifyContractChannel(arguments) => verify_contract::run(
             arguments,
             svd,

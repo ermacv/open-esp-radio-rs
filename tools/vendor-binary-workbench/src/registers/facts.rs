@@ -196,7 +196,7 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
-  "schema_version": 3,
+  "schema_version": 4,
   "command": "mmio discover",
   "analysis_mode": "best-effort",
   "access_count_mode": "maximum-per-path",

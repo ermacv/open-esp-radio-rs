@@ -53,6 +53,62 @@ pub struct DiagnosticRecord {
     pub path: Option<PathBuf>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CodeBoundaryReviewState {
+    Unreviewed,
+    Accepted,
+    Rejected,
+}
+
+impl CodeBoundaryReviewState {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Unreviewed => "unreviewed",
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeBoundaryControlFlowSummary {
+    pub caller: String,
+    pub site_offset: u64,
+    pub kind: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeBoundarySummary {
+    pub source: String,
+    pub artifact_sha256: String,
+    pub member: Option<String>,
+    pub object_kind: String,
+    pub section: String,
+    pub address: u64,
+    pub entry_offset: u64,
+    pub end_exclusive_offset: u64,
+    pub end_limit_offset: u64,
+    pub status: CodeBoundaryReviewState,
+    pub name: Option<String>,
+    pub reason: Option<String>,
+    pub symbol_names: Vec<String>,
+    pub direct_control_flow: Vec<CodeBoundaryControlFlowSummary>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct CodeWorkspaceReport {
+    pub configured: bool,
+    pub facts: Option<PathBuf>,
+    pub pack: Option<PathBuf>,
+    pub review_output: Option<PathBuf>,
+    pub observed_candidates: usize,
+    pub accepted: usize,
+    pub rejected: usize,
+    pub unreviewed: usize,
+    pub boundaries: Vec<CodeBoundarySummary>,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FunctionContextFieldSummary {
     pub offset: i32,
@@ -342,6 +398,7 @@ pub struct ComparisonProfileSummary {
 pub struct WorkspaceSnapshot {
     pub generation: u64,
     pub project_status: crate::ProjectStatusReport,
+    pub code: CodeWorkspaceReport,
     pub functions: Vec<FunctionSummary>,
     pub logical_types: Vec<LogicalTypeSummary>,
     pub registers: RegisterWorkspaceReport,

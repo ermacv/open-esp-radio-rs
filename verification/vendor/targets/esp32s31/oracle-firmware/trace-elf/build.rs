@@ -1,30 +1,45 @@
 use std::{
+    collections::BTreeSet,
     env,
     error::Error,
     fs,
     path::{Path, PathBuf},
 };
 
+use serde::Deserialize;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct FixtureDataSymbol {
     name: String,
     size: usize,
     alignment: usize,
 }
 
-#[derive(Default)]
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct LinkedOracleSpec {
-    schema: Option<u32>,
-    source: Option<String>,
+    schema: u32,
+    source: String,
+    #[serde(default)]
     linker_scripts: Vec<PathBuf>,
+    #[serde(default)]
     archives: Vec<PathBuf>,
+    #[serde(default)]
     objects: Vec<PathBuf>,
+    #[serde(default)]
     stub_symbols: Vec<String>,
+    #[serde(default)]
     fixture_data_symbols: Vec<FixtureDataSymbol>,
+    #[serde(default)]
     whole_archive: Option<bool>,
+    #[serde(default)]
     emit_relocations: Option<bool>,
+    #[serde(default)]
     gc_sections: Option<bool>,
+    #[serde(default)]
     unresolved_symbols: Option<String>,
 }
 
@@ -32,152 +47,73 @@ impl LinkedOracleSpec {
     fn load(path: &Path) -> Result<Self> {
         let input = fs::read_to_string(path)?;
         let base = path.parent().unwrap_or_else(|| Path::new("."));
-        let mut spec = Self::default();
-        for (index, raw_line) in input.lines().enumerate() {
-            let line_number = index + 1;
-            let line = raw_line.split('#').next().unwrap_or_default().trim();
-            if line.is_empty() {
-                continue;
-            }
-            let (directive, value) = line
-                .split_once(char::is_whitespace)
-                .map(|(directive, value)| (directive, value.trim()))
-                .filter(|(_, value)| !value.is_empty())
-                .ok_or_else(|| {
-                    format!("linked-oracle directive needs a value at line {line_number}")
-                })?;
-            match directive {
-                "schema" => set_once(&mut spec.schema, value.parse()?, directive, line_number)?,
-                "source" => {
-                    if value.is_empty()
-                        || !value.bytes().all(|byte| {
-                            byte.is_ascii_lowercase()
-                                || byte.is_ascii_digit()
-                                || matches!(byte, b'-' | b'_')
-                        })
-                    {
-                        return Err(
-                            format!("invalid source id {value:?} at line {line_number}").into()
-                        );
-                    }
-                    set_once(&mut spec.source, value.to_owned(), directive, line_number)?;
-                }
-                "linker-script" => spec.linker_scripts.push(resolve(base, value)),
-                "archive" => spec.archives.push(resolve(base, value)),
-                "object" => spec.objects.push(resolve(base, value)),
-                "stub-symbol" => {
-                    validate_symbol(value, "stub", line_number)?;
-                    if spec.stub_symbols.iter().any(|symbol| symbol == value) {
-                        return Err(format!(
-                            "duplicate stub symbol {value:?} at line {line_number}"
-                        )
-                        .into());
-                    }
-                    spec.stub_symbols.push(value.to_owned());
-                }
-                "fixture-data-symbol" => {
-                    let mut fields = value.split_whitespace();
-                    let name = fields.next().ok_or_else(|| {
-                        format!("fixture-data-symbol has no name at line {line_number}")
-                    })?;
-                    validate_symbol(name, "fixture data", line_number)?;
-                    let size = fields
-                        .next()
-                        .ok_or_else(|| {
-                            format!("fixture-data-symbol has no size at line {line_number}")
-                        })?
-                        .parse::<usize>()?;
-                    let alignment = fields
-                        .next()
-                        .ok_or_else(|| {
-                            format!("fixture-data-symbol has no alignment at line {line_number}")
-                        })?
-                        .parse::<usize>()?;
-                    if fields.next().is_some() {
-                        return Err(format!(
-                            "fixture-data-symbol has extra fields at line {line_number}"
-                        )
-                        .into());
-                    }
-                    if size == 0 {
-                        return Err(format!(
-                            "fixture-data-symbol size must be non-zero at line {line_number}"
-                        )
-                        .into());
-                    }
-                    if alignment == 0 || alignment > 4096 || !alignment.is_power_of_two() {
-                        return Err(format!(
-                            "fixture-data-symbol alignment must be a power of two up to 4096 at line {line_number}"
-                        )
-                        .into());
-                    }
-                    if spec
-                        .fixture_data_symbols
-                        .iter()
-                        .any(|symbol| symbol.name == name)
-                    {
-                        return Err(format!(
-                            "duplicate fixture data symbol {name:?} at line {line_number}"
-                        )
-                        .into());
-                    }
-                    spec.fixture_data_symbols.push(FixtureDataSymbol {
-                        name: name.to_owned(),
-                        size,
-                        alignment,
-                    });
-                }
-                "whole-archive" => set_once(
-                    &mut spec.whole_archive,
-                    parse_bool(value, directive, line_number)?,
-                    directive,
-                    line_number,
-                )?,
-                "emit-relocations" => set_once(
-                    &mut spec.emit_relocations,
-                    parse_bool(value, directive, line_number)?,
-                    directive,
-                    line_number,
-                )?,
-                "gc-sections" => set_once(
-                    &mut spec.gc_sections,
-                    parse_bool(value, directive, line_number)?,
-                    directive,
-                    line_number,
-                )?,
-                "unresolved-symbols" => {
-                    if !matches!(value, "ignore-all" | "report-all") {
-                        return Err(format!(
-                            "invalid unresolved-symbols policy {value:?} at line {line_number}"
-                        )
-                        .into());
-                    }
-                    set_once(
-                        &mut spec.unresolved_symbols,
-                        value.to_owned(),
-                        directive,
-                        line_number,
-                    )?;
-                }
-                _ => {
-                    return Err(format!(
-                        "unknown linked-oracle directive {directive:?} at line {line_number}"
-                    )
-                    .into());
-                }
-            }
+        let mut spec: Self = toml_edit::de::from_str(&input)?;
+        if spec.schema != 1 {
+            return Err("linked-oracle TOML requires schema = 1".into());
         }
-        if spec.schema != Some(1) {
-            return Err("linked-oracle spec requires schema 1".into());
-        }
-        if spec.source.is_none() {
-            return Err("linked-oracle spec has no source id".into());
+        if spec.source.is_empty()
+            || !spec.source.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'-' | b'_')
+            })
+        {
+            return Err(format!("invalid source id {:?}", spec.source).into());
         }
         if spec.linker_scripts.is_empty() {
-            return Err("linked-oracle spec has no linker script".into());
+            return Err("linked-oracle TOML has no linker script".into());
         }
         if spec.archives.is_empty() && spec.objects.is_empty() {
-            return Err("linked-oracle spec has no archive or object input".into());
+            return Err("linked-oracle TOML has no archive or object input".into());
+        }
+        if spec
+            .unresolved_symbols
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "ignore-all" | "report-all"))
+        {
+            return Err(format!(
+                "invalid unresolved-symbols policy {:?}",
+                spec.unresolved_symbols.as_deref().unwrap()
+            )
+            .into());
+        }
+        spec.linker_scripts = spec
+            .linker_scripts
+            .into_iter()
+            .map(|path| resolve(base, path))
+            .collect();
+        spec.archives = spec
+            .archives
+            .into_iter()
+            .map(|path| resolve(base, path))
+            .collect();
+        spec.objects = spec
+            .objects
+            .into_iter()
+            .map(|path| resolve(base, path))
+            .collect();
+        let mut stub_symbols = BTreeSet::new();
+        for symbol in &spec.stub_symbols {
+            validate_symbol(symbol, "stub")?;
+            if !stub_symbols.insert(symbol) {
+                return Err(format!("duplicate stub symbol {symbol:?}").into());
+            }
+        }
+        let mut fixture_symbols = BTreeSet::new();
+        for symbol in &spec.fixture_data_symbols {
+            validate_symbol(&symbol.name, "fixture data")?;
+            if !fixture_symbols.insert(&symbol.name) {
+                return Err(format!("duplicate fixture data symbol {:?}", symbol.name).into());
+            }
+            if symbol.size == 0 {
+                return Err("fixture-data-symbol size must be non-zero".into());
+            }
+            if symbol.alignment == 0
+                || symbol.alignment > 4096
+                || !symbol.alignment.is_power_of_two()
+            {
+                return Err(
+                    "fixture-data-symbol alignment must be a power of two up to 4096".into(),
+                );
+            }
         }
         Ok(spec)
     }
@@ -187,7 +123,7 @@ impl LinkedOracleSpec {
         println!("cargo:rerun-if-env-changed=OPEN_RADIO_LINKED_ORACLE_SPEC");
         println!(
             "cargo:rustc-env=OPEN_RADIO_LINKED_ORACLE_SOURCE={}",
-            self.source.as_deref().expect("validated source")
+            self.source
         );
         for script in &self.linker_scripts {
             println!("cargo:rerun-if-changed={}", script.display());
@@ -232,34 +168,20 @@ impl LinkedOracleSpec {
     }
 }
 
-fn validate_symbol(value: &str, kind: &str, line: usize) -> Result<()> {
+fn validate_symbol(value: &str, kind: &str) -> Result<()> {
     if value.is_empty()
         || !value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'$'))
     {
-        return Err(format!("invalid {kind} symbol {value:?} at line {line}").into());
+        return Err(format!("invalid {kind} symbol {value:?}").into());
     }
     Ok(())
 }
 
-fn set_once<T>(slot: &mut Option<T>, value: T, directive: &str, line: usize) -> Result<()> {
-    if slot.replace(value).is_some() {
-        return Err(format!("duplicate {directive} at line {line}").into());
-    }
-    Ok(())
-}
-
-fn parse_bool(value: &str, directive: &str, line: usize) -> Result<bool> {
-    value
-        .parse()
-        .map_err(|_| format!("invalid boolean for {directive} at line {line}").into())
-}
-
-fn resolve(base: &Path, value: &str) -> PathBuf {
-    let path = Path::new(value);
+fn resolve(base: &Path, path: PathBuf) -> PathBuf {
     if path.is_absolute() {
-        path.to_owned()
+        path
     } else {
         base.join(path)
     }
@@ -271,7 +193,7 @@ fn main() -> Result<()> {
     );
     let spec_path = env::var_os("OPEN_RADIO_LINKED_ORACLE_SPEC")
         .map(PathBuf::from)
-        .unwrap_or_else(|| manifest.join("linked-oracle.spec"));
+        .unwrap_or_else(|| manifest.join("linked-oracle.toml"));
     let spec_path = fs::canonicalize(&spec_path).map_err(|error| {
         format!(
             "failed to resolve linked-oracle spec {}: {error}",

@@ -1,19 +1,24 @@
 //! Scenario-owned runtime function-table placement and lifecycle evidence.
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "kebab-case")]
 pub enum TableSlotTarget {
     Null,
     Address(u32),
     Symbol(String),
 }
 
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct TableInstanceSlot {
     pub offset: u32,
     pub target: TableSlotTarget,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct TableInstance {
     pub layout_id: String,
     pub base_address: u32,

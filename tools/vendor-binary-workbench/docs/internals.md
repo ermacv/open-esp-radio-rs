@@ -55,7 +55,7 @@ descriptor, whose dependency ends at the ESP32-S31 semantic harness boundary.
 Register discovery facts and coverage remain in the workbench facade. The
 shared register-model crate knows neither artifacts nor targets. A project may
 attach reviewed safe PAC transactions through `[registers.api]` and evidence
-catalogs through `[registers.evidence]`; their contents remain target-owned.
+catalogs through `[registers.toml]`; their contents remain target-owned.
 The project-owned register commands are the primitive SVD/PAC publication
 operations; `project publish` is their strict, preflighted project-level entry
 point.
@@ -107,7 +107,7 @@ presentation.
 
 Explicit CLI values take precedence over run-spec values. Run-spec selection
 itself is explicit `--run-spec` > project manifest `run-spec` > an existing
-sibling `local.run`. A run spec fills
+sibling `local.toml`. A run spec fills
 only missing inputs and never synthesizes command-line tokens. Help, usage,
 unknown-option rejection and option conflicts are all derived from the same
 `clap` declarations. Runtime and project errors therefore do not print CLI
@@ -216,10 +216,10 @@ directly to stdout. Semantic qualifications return a typed report containing
 artifacts, scenario verdicts, coverage totals, state-footprint counts and the
 first retained difference; only the CLI renders that report.
 
-Line-oriented verification profiles, dispositions and evidence baselines
-preserve their physical source line as a typed diagnostic span. TOML project,
-memory, platform, function and interface manifests retain parser-provided byte
-spans. Malformed JSON facts and verification reports retain the parser's
+Verification profiles, dispositions, evidence baselines, projects, targets,
+run bindings, memory maps, platform packs, function packs and interface packs
+are strict TOML and retain parser-provided byte spans in typed diagnostics.
+Malformed JSON facts and verification reports retain the parser's
 physical source line instead of degrading to a path-only message. Function and
 interface semantic validation use source-neutral field locators to retain the
 exact reviewed pack field after syntax parsing, including stale provenance,
@@ -489,7 +489,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, multi-report loading and queries |
-| `facts/parse.rs` | Strict schema-v35 linked-IR projection, including site-bearing calls and guard expressions |
+| `facts/parse.rs` | Strict schema-v36 linked-IR projection, including site-bearing calls and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -538,7 +538,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v35 Serde document |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v36 Serde document |
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |
@@ -547,7 +547,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `cli/commands/export_ir/human/summary.rs` | Aggregate report section |
 | `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
-Schema v35 serializes the typed `LinkedIrReport` model directly; the removed
+Schema v36 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,

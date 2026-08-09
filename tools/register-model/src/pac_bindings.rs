@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
 use svd_rs::{Access, MaybeArray, RegisterCluster, RegisterProperties};
 
 use crate::{Error, Result};
@@ -36,65 +37,103 @@ struct ExpandedField {
     access: Option<Access>,
 }
 
-/// Generate the stable text index used to bind observed MMIO addresses to PAC paths.
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct BindingDocument {
+    schema: u32,
+    crate_name: String,
+    registers: Vec<RegisterBinding>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct RegisterBinding {
+    address: u32,
+    width: u32,
+    access: &'static str,
+    identity: String,
+    peripheral: String,
+    peripheral_type: String,
+    peripheral_module: String,
+    scope: Vec<ScopeBinding>,
+    register_method: String,
+    register_index: Option<u32>,
+    alternate_register: Option<String>,
+    fields: Vec<FieldBinding>,
+}
+
+#[derive(Serialize)]
+struct ScopeBinding {
+    method: String,
+    index: Option<u32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct FieldBinding {
+    svd_name: String,
+    method: String,
+    index: Option<u32>,
+    bit_offset: u32,
+    bit_width: u32,
+    access: &'static str,
+}
+
+/// Generate the stable TOML index used to bind observed MMIO addresses to PAC paths.
 ///
 /// `crate_name` is the Rust crate identifier, not the Cargo package name.
 pub fn generate_pac_binding_index(svd: &str, crate_name: &str) -> Result<String> {
     validate_pac_crate_name(crate_name)?;
     let addresses = expanded_register_map(svd)?;
-    let mut output = format!("pac-binding-index 2\ncrate {crate_name}\n");
+    let mut bindings = Vec::new();
     for (address, registers) in addresses {
+        let address = u32::try_from(address).map_err(|_| {
+            Error::message(format!(
+                "PAC binding address {address:#x} exceeds the 32-bit address space"
+            ))
+        })?;
         for register in registers {
             let peripheral_type = type_binding_name(&register.peripheral);
             let peripheral_module = member_binding_name(&register.peripheral);
-            let scope = if register.scope.is_empty() {
-                "-".to_owned()
-            } else {
-                register
-                    .scope
-                    .iter()
-                    .map(|scope| match scope.array_index {
-                        Some(index) => format!("{}[{index}]", scope.rust_name),
-                        None => scope.rust_name.clone(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(".")
-            };
-            let register_index = register
-                .array_index
-                .map_or_else(|| "-".to_owned(), |index| index.to_string());
-            let alternate = register.alternate_register.as_deref().unwrap_or("-");
-            output.push_str(&format!(
-                "register 0x{address:08x} {} {} {} {} {} {} {} {} {} {}\n",
-                register.size_bits,
-                access_label(register.access),
-                register.identity,
-                register.peripheral,
+            bindings.push(RegisterBinding {
+                address,
+                width: register.size_bits,
+                access: access_label(register.access),
+                identity: register.identity,
+                peripheral: register.peripheral,
                 peripheral_type,
                 peripheral_module,
-                scope,
-                register.rust_name,
-                register_index,
-                alternate,
-            ));
-            for field in register.fields {
-                let field_index = field
-                    .array_index
-                    .map_or_else(|| "-".to_owned(), |index| index.to_string());
-                output.push_str(&format!(
-                    "field 0x{address:08x} {} {} {} {} {} {} {}\n",
-                    register.identity,
-                    field.name,
-                    field.rust_name,
-                    field_index,
-                    field.bit_offset,
-                    field.bit_width,
-                    access_label(field.access),
-                ));
-            }
+                scope: register
+                    .scope
+                    .into_iter()
+                    .map(|scope| ScopeBinding {
+                        method: scope.rust_name,
+                        index: scope.array_index,
+                    })
+                    .collect(),
+                register_method: register.rust_name,
+                register_index: register.array_index,
+                alternate_register: register.alternate_register,
+                fields: register
+                    .fields
+                    .into_iter()
+                    .map(|field| FieldBinding {
+                        svd_name: field.name,
+                        method: field.rust_name,
+                        index: field.array_index,
+                        bit_offset: field.bit_offset,
+                        bit_width: field.bit_width,
+                        access: access_label(field.access),
+                    })
+                    .collect(),
+            });
         }
     }
-    Ok(output)
+    Ok(toml_edit::ser::to_string_pretty(&BindingDocument {
+        schema: 2,
+        crate_name: crate_name.to_owned(),
+        registers: bindings,
+    })?)
 }
 
 /// Validate the Rust crate identifier stored in a binding index header.
@@ -458,9 +497,7 @@ mod tests {
     fn emits_configurable_crate_and_address_bindings() {
         assert_eq!(
             generate_pac_binding_index(SIMPLE_SVD, "fixture_pac").unwrap(),
-            "pac-binding-index 2\ncrate fixture_pac\n\
-             register 0x40000000 32 read-write UART0.CTRL UART0 Uart0 uart0 - ctrl - -\n\
-             field 0x40000000 UART0.CTRL ENABLE enable - 0 1 read-write\n"
+            "schema = 2\ncrate-name = \"fixture_pac\"\n\n[[registers]]\naddress = 1073741824\nwidth = 32\naccess = \"read-write\"\nidentity = \"UART0.CTRL\"\nperipheral = \"UART0\"\nperipheral-type = \"Uart0\"\nperipheral-module = \"uart0\"\nscope = []\nregister-method = \"ctrl\"\n\n[[registers.fields]]\nsvd-name = \"ENABLE\"\nmethod = \"enable\"\nbit-offset = 0\nbit-width = 1\naccess = \"read-write\"\n"
         );
     }
 

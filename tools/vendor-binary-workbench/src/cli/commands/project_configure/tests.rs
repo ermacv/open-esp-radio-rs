@@ -18,12 +18,12 @@ fn configuration_is_validated_written_checked_and_cleared() {
     fs::create_dir_all(&packs).unwrap();
     fs::write(
         project.join("vendor-project.toml"),
-        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n",
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n",
     )
     .unwrap();
     fs::write(
-        project.join("target.spec"),
-        "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+        project.join("target.toml"),
+        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
     )
     .unwrap();
     fs::write(
@@ -80,11 +80,11 @@ fn incompatible_pack_never_changes_the_manifest() {
     }
     fs::create_dir_all(&root).unwrap();
     let manifest = root.join("vendor-project.toml");
-    let original = "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.spec\"\n";
+    let original = "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n";
     fs::write(&manifest, original).unwrap();
     fs::write(
-        root.join("target.spec"),
-        "schema 1\ntarget fixture\narchitecture riscv32\ncalling-convention riscv-ilp32\nendianness little\npointer-width 32\nrust-target riscv32imac-unknown-none-elf\n",
+        root.join("target.toml"),
+        "schema = 1\nid = \"fixture\"\narchitecture = \"riscv32\"\ncalling-convention = \"riscv-ilp32\"\nendianness = \"little\"\npointer-width = 32\nrust-target = \"riscv32imac-unknown-none-elf\"\n",
     )
     .unwrap();
     fs::write(

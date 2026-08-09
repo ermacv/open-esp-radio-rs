@@ -33,6 +33,8 @@ pub(crate) trait ProjectAnalysisOperations {
     fn discover_interfaces(&mut self, check: bool) -> Result<bool>;
     fn build_linked_ir(&mut self, check: bool) -> Result<bool>;
     fn build_navigation(&mut self, check: bool) -> Result<bool>;
+    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<bool>;
+    fn review_code(&mut self, check: bool) -> Result<bool>;
     fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool>;
     fn review_registers(&mut self, check: bool) -> Result<bool>;
     fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<bool>;
@@ -134,6 +136,31 @@ pub(crate) fn run(
         }),
     };
     summary.record("navigation-index", &navigation);
+
+    let code_validation = match project.code.as_ref() {
+        None => StageOutcome::NotConfigured("[code] is absent".to_owned()),
+        Some(_) if symbols.blocks_dependants() => {
+            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+        }
+        Some(_) => execute("code-boundary-validation", StageSuccess::Verified, || {
+            operations.validate_code(request.deny_unreviewed)
+        }),
+    };
+    summary.record("code-boundary-validation", &code_validation);
+
+    let code_review = match project.code.as_ref() {
+        None => StageOutcome::NotConfigured("[code] is absent".to_owned()),
+        Some(paths) if paths.review_output.is_none() => {
+            StageOutcome::NotConfigured("[code.review] is absent".to_owned())
+        }
+        Some(_) if symbols.blocks_dependants() => {
+            StageOutcome::Blocked("symbol-inventory did not complete".to_owned())
+        }
+        Some(_) => execute("code-boundary-review", generated, || {
+            operations.review_code(mode.is_check())
+        }),
+    };
+    summary.record("code-boundary-review", &code_review);
 
     let register_validation = match project.registers.as_ref() {
         None => StageOutcome::NotConfigured("[registers] is absent".to_owned()),
@@ -274,6 +301,14 @@ mod tests {
             self.called("navigation")
         }
 
+        fn validate_code(&mut self, _: bool) -> Result<bool> {
+            self.called("code-validation")
+        }
+
+        fn review_code(&mut self, _: bool) -> Result<bool> {
+            self.called("code-review")
+        }
+
         fn validate_registers(&mut self, _: bool) -> Result<bool> {
             self.called("register-validation")
         }
@@ -298,7 +333,7 @@ mod tests {
     fn empty_project() -> ProjectSpec {
         ProjectSpec {
             id: "fixture".to_owned(),
-            target_spec: "target.spec".into(),
+            target_spec: "target.toml".into(),
             platform_pack: None,
             run_spec: None,
             memory_map: None,
@@ -306,6 +341,7 @@ mod tests {
             svd_paths: Vec::new(),
             symbol_inventory: None,
             navigation_index: None,
+            code: None,
             ir_profiles: Vec::new(),
             registers: None,
             interfaces: None,
@@ -325,7 +361,7 @@ mod tests {
         );
         assert!(operations.calls.is_empty());
         assert!(report.succeeded());
-        assert_eq!(report.not_configured, 10);
+        assert_eq!(report.not_configured, 12);
     }
 
     #[test]

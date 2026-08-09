@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v3 interface discovery facts.
+//! Typed consumer projection for schema-v4 interface discovery facts.
 
 #![allow(
     dead_code,
@@ -44,6 +44,7 @@ pub(crate) struct StoredInterfaceArtifact {
     pub(crate) sha256: String,
     container: String,
     functions: usize,
+    reviewed_boundaries: usize,
 }
 
 #[derive(Debug, Deserialize)]

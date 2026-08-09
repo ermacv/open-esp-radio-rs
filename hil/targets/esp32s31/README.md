@@ -12,9 +12,10 @@ Layout:
 - `telemetry`: qualification-only counters;
 - `board`: board-specific boot resources.
 
-The required image profile runs ordinary code/data from PSRAM while keeping
-stacks, DMA arenas and ISR code in internal SRAM. The runtime validates these
-ranges before enabling the radio.
+The required image profile runs ordinary code/data, RX handoff/reorder and
+monitor capture from PSRAM. Allocations actually addressed by Wi-Fi DMA,
+the current stack and ISR text stay in internal SRAM. Runtime checks validate
+section probes; the host ELF memory policy validates the production owners.
 
 Use the host runner as the only command surface:
 
@@ -23,7 +24,8 @@ cargo hil scenarios
 cargo hil doctor
 cargo hil build <scenario>
 cargo hil flash <scenario> --port /dev/ttyACM0
-cargo hil station reconnect|ap-loss|ap-absence|stop --serial /dev/ttyACM0
+cargo hil station reconnect|ap-loss|ap-absence --serial /dev/ttyACM0
+cargo hil wifi stop|start|scan|monitor|roundtrip --serial /dev/ttyACM0
 cargo hil traffic rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp ...
 ```
 

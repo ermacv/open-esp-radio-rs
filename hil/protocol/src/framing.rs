@@ -263,8 +263,8 @@ mod tests {
     use crate::{
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
         SessionLinkRequirements, StartupArtifactChunk, StationAttemptFailureReason,
-        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, StationStopEvidence,
-        Transport,
+        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport, WifiRole,
+        WifiRoleTransitionEvidence,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -467,13 +467,17 @@ mod tests {
     }
 
     #[test]
-    fn complete_station_stop_frontier_round_trips_with_request_identity() {
+    fn explicit_wifi_role_transition_round_trips_with_request_identity() {
         let expected = Envelope::new(
             7,
             5,
             0,
             42,
-            Event::StationStopped(StationStopEvidence::COMPLETE),
+            Event::WifiRoleTransitioned(WifiRoleTransitionEvidence {
+                previous: WifiRole::Station,
+                current: WifiRole::Idle,
+                generation: 9,
+            }),
         );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();

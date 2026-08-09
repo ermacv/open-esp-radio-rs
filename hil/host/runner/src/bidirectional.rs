@@ -1629,6 +1629,13 @@ fn parse_device_report(log: &str) -> DeviceReport {
             if include_rx_interval_evidence && let Some(sample) = sample {
                 report.rx_dispatch.push(sample);
             }
+            if include_rx_interval_evidence
+                && report.software_health.len() < report.rx.len()
+                && let (Some(enqueued), Some(dropped)) =
+                    (field(line, "enqueued"), field(line, "dropped"))
+            {
+                report.software_health.push((enqueued, dropped));
+            }
         } else if line.starts_with("ORXB ") || line.contains(" ORXB ") {
             let sample = (|| {
                 Some(RxPipelineEvidence {
@@ -1766,6 +1773,15 @@ fn parse_device_report(log: &str) -> DeviceReport {
                 };
                 include_rx_interval_evidence = is_qualified_rx_sample(sample);
                 report.rx.push(sample);
+                if let Some(address) = field(line, "code") {
+                    report.code_addresses.push(address);
+                }
+                if report.dma_health.len() < report.rx.len()
+                    && let (Some(buffer_full), Some(fifo_overflow)) =
+                        (field(line, "full"), field(line, "overflow"))
+                {
+                    report.dma_health.push((buffer_full, fifo_overflow));
+                }
             }
         } else if line.starts_with("OTX ") || line.contains(" OTX ") {
             if let (Some(throughput_kbps), Some(bandwidth_mhz), Some(rate_kbps)) =
@@ -1776,7 +1792,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     bandwidth_mhz: bandwidth_mhz as u16,
                     rate_kbps,
                 });
-                if let Some(address) = field(line, "a") {
+                if let Some(address) = field(line, "a").or_else(|| field(line, "code")) {
                     report.code_addresses.push(address);
                 }
             }
@@ -3063,7 +3079,7 @@ mod tests {
              OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240 first_exchanges=119 first_exchange_us=23760 first_exchange_max_us=210 retried_exchanges=1 retry_publications=2 retry_exchange_us=240 retry_exchange_max_us=240\n\
              OAMPI tx_irq_epochs=121 tx_irq_samples=2 tx_irq_skew=0 tx_irq_service_us=18 tx_irq_service_max_us=11 tx_flight_samples=2 tx_flight_us=390 tx_flight_max_us=210\n\
              OAMPB samples=121 received=120 success_without=0 nonzero_control=0 start_outside=0 start_lag_max=31 full=120 partial=0 empty=1\n\
-             ORX b=6000000 d=5000 u=5000000 k=9600\n\
+             ORX b=6000000 d=5000 u=5000000 k=9600 code=1343154946\n\
              ORXP f=4 r=11 m=11\n\
              ORXQ first=0 highest=4999 next=5000 gap_events=0 forward_missing=0 maximum_gap=0 maximum_gap_at=4294967295 first_gap_at=4294967295 last_gap_at=4294967295 backward=0 adjacent_duplicates=0 unsequenced=0 maximum_interarrival_us=100 maximum_interarrival_at=1\n\
              ORXSM s_mpdu=100 not_s_mpdu=4900 unavailable=0 beacon_s_mpdu=0 beacon_not_s_mpdu=50 beacon_unavailable=0\n\
@@ -3089,6 +3105,7 @@ mod tests {
             deadline_resets: 0,
         };
         qualify(&options, host, &report).unwrap();
+        assert!(report.code_addresses.contains(&1_343_154_946));
         let ampdu = AmpduEvidence::from_report(&report);
         assert_eq!(ampdu.aggregates, 120);
         assert_eq!(ampdu.histogram_total(), 120);

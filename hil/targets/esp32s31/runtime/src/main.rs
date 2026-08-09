@@ -420,7 +420,7 @@ fn validate_runtime_layout() {
     {
         fail(c"OPEN_RADIO_HIL runtime=FAIL reason=layout\r\n");
     }
-    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma=SRAM stack=SRAM\r\n");
+    print(c"OPEN_RADIO_HIL placement=PASS isr=SRAM dma_probes=SRAM stack=SRAM\r\n");
 }
 
 fn range_in_internal_sram(start: u32, end: u32) -> bool {

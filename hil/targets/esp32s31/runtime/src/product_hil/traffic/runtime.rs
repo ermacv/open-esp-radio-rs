@@ -103,6 +103,7 @@ async fn run_workload(stack: Stack<'static>, qualification: Esp32s31Qualificatio
         pacing_group_datagrams: 64,
         drain: Duration::from_millis(250),
         code_address: runtime_code_marker as *const () as usize,
+        qualification,
         session_source,
     };
 

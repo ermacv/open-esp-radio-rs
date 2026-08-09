@@ -3,6 +3,7 @@
 use embassy_futures::yield_now;
 use embassy_net::{Ipv4Address, Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer};
+use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::aggregate_tx::AggregateTxCounters;
 use open_esp_radio_hil_protocol::{
     Completion as HilCompletion, Direction as HilDirection, Event as HilEvent, ServiceInfo,
@@ -40,6 +41,7 @@ pub(in crate::product_hil) struct UdpTxBenchmarkConfig {
     pub pacing_group_datagrams: u8,
     pub drain: Duration,
     pub code_address: usize,
+    pub qualification: Esp32s31QualificationSnapshot,
     pub session_source: UdpTxSessionSource,
 }
 
@@ -202,11 +204,17 @@ pub(in crate::product_hil) async fn run_open_radio_udp_tx_benchmark<'a>(
         // outside the measured interval so the structured result cannot race
         // the final network queue and A-MPDU exchange.
         Timer::after(config.drain).await;
+        let tx_vector = config
+            .qualification
+            .tx_vector()
+            .expect("active TX session retains its associated link vector");
         emergency_log(format_args!(
             "OTX b={bytes} d={datagrams} u={elapsed_us} k={throughput_kbps} \
-             e={send_errors} p={} pg={} code={}",
+             e={send_errors} p={} pg={} w={} r={} code={}",
             offered_rate_bps.unwrap_or(0) / 1_000,
             config.pacing_group_datagrams,
+            tx_vector.bandwidth_mhz,
+            tx_vector.aggregate_rate_kbps,
             config.code_address,
         ));
         if let Some(aggregate_start) = aggregate_start {

@@ -5,6 +5,7 @@ use core::future::Future;
 use embassy_time::Instant;
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::{AggregateTxCounterSnapshot, AggregateTxCounters},
+    mac_irq::MacIrqClassificationSnapshot,
     rx_pipeline::{RxPipelineCounterSnapshot, RxPipelineCounters},
     task_poll::{TaskPollCounters, TaskPollSet, TaskPollSetSnapshot, TaskPollSnapshot},
 };
@@ -119,6 +120,10 @@ pub(in crate::product_hil) fn log_open_radio_ampdu_interval(
 pub(in crate::product_hil) fn log_open_radio_rx_pipeline_interval(
     earlier: RxPipelineCounterSnapshot,
     rx_irq_posts: u32,
+    mac_irq_entries: u32,
+    irq_classification: MacIrqClassificationSnapshot,
+    irq_auxiliary_status_or: u32,
+    irq_unknown_status_or: u32,
     counters: &RxPipelineCounters,
 ) {
     let pipeline = counters.snapshot().wrapping_delta_since(earlier);
@@ -207,7 +212,7 @@ pub(in crate::product_hil) fn log_open_radio_rx_pipeline_interval(
     emergency_log(format_args!(
         "ORXF zero={} one={} two_three={} four_seven={} eight_fifteen={} \
          sixteen_thirty_one={} thirty_two_plus={} irq_posts={} irq_epochs={} \
-         irq_samples={} irq_skew={} \
+         irq_entries={} irq_coalesced={} irq_samples={} irq_skew={} \
          irq_service_us={} irq_service_boot_max_us={}",
         pipeline.frontier_zero_services,
         pipeline.frontier_one_services,
@@ -218,10 +223,26 @@ pub(in crate::product_hil) fn log_open_radio_rx_pipeline_interval(
         pipeline.frontier_thirty_two_plus_services,
         rx_irq_posts,
         pipeline.rx_irq_epochs,
+        mac_irq_entries,
+        rx_irq_posts.saturating_sub(pipeline.rx_irq_epochs),
         pipeline.rx_irq_service_samples,
         pipeline.rx_irq_clock_skew_samples,
         pipeline.rx_irq_to_service_micros,
         pipeline.rx_irq_to_service_lifetime_max_micros,
+    ));
+    emergency_log(format_args!(
+        "ORXI spurious={} rx_only={} rx_mixed={} tx_only={} tx_mixed={} other_only={} \
+         extra={} saturated={} aux_or={} unknown_or={}",
+        irq_classification.spurious_entries,
+        irq_classification.rx_only_entries,
+        irq_classification.rx_mixed_entries,
+        irq_classification.tx_only_entries,
+        irq_classification.tx_mixed_entries,
+        irq_classification.other_only_entries,
+        irq_classification.extra_nonzero_snapshots,
+        irq_classification.saturated_entries,
+        irq_auxiliary_status_or,
+        irq_unknown_status_or,
     ));
 }
 

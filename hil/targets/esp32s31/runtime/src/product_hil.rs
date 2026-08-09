@@ -9,6 +9,7 @@ use core::{
 };
 
 use embassy_executor::{SendSpawner, Spawner};
+use embassy_futures::select::{Either, select};
 use embassy_net::{
     Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
 };
@@ -18,38 +19,44 @@ use esp_hal::{
     rng::Trng,
 };
 use open_esp_radio::{
-    MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy, StationSecurity,
-    WifiMacAddress, WifiMonitorConfig, WifiSsid,
+    MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
+    StationSecurity, WifiMacAddress, WifiMonitorConfig, WifiScanRequest as DriverWifiScanRequest,
+    WifiSsid,
     esp32s31::phy::{
         PhyCalibrationIdentity, phy_cold::PhyCalibrationRecord, phy_rfpll::phy_get_rf_cal_version,
     },
     wifi::{
         ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
+        softmac::MacRxEvidence,
         sta::station::StaReconnectPolicy,
         wpa2::Pmk,
     },
 };
 use open_esp_radio_esp32s31_embassy_wifi::{
-    Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
-    Esp32s31WifiDevice, Esp32s31WifiParts,
+    Esp32s31MacIrqObservation, Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts,
+    Esp32s31RadioRunner, Esp32s31WifiDevice, Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::{
-    aggregate_tx::AggregateTxCounters, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
+    aggregate_tx::AggregateTxCounters, mac_irq::MacIrqClassificationCounters,
+    rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkInfo,
     NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationEpochEvidence, StationLifecycleEvent, StationStopEvidence,
+    StationEpochEvidence, StationLifecycleEvent, WifiMonitorEvidence, WifiRole,
+    WifiRoleTransitionEvidence, WifiScanEvidence,
 };
 use static_cell::ConstStaticCell;
 
 use crate::console::{
-    StationControlRequest, complete_station_epoch_cycle, complete_station_stop, emergency_log,
+    WifiControlRequest, complete_monitor_start, complete_monitor_stop,
+    complete_station_epoch_cycle, complete_wifi_role_transition, complete_wifi_scan, emergency_log,
     publish_event_reliably, publish_startup_artifact, publish_station_lifecycle,
-    receive_station_control_request,
+    receive_wifi_control_request, set_wifi_role,
 };
 
+mod rx_qualification;
 mod traffic;
 
 use traffic::{connected_traffic_task, tcp_rx_pattern_worker_task, tcp_tx_pattern_worker_task};
@@ -67,6 +74,8 @@ pub(crate) const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 static DIAGNOSTIC_STAGE: AtomicU32 = AtomicU32::new(0);
 static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> =
     ConstStaticCell::new(StackResources::new());
+static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
+    ConstStaticCell::new(rx_qualification::HilConnectedRxObserver::new(4_323));
 
 // Qualification observers execute on the RX/TX hot paths. Their atomics stay
 // in internal SRAM so measuring a production image does not introduce PSRAM
@@ -75,11 +84,25 @@ static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> 
 pub(crate) static RX_PIPELINE: RxPipelineCounters = RxPipelineCounters::new(now_micros);
 #[unsafe(link_section = ".critical.bss.open_radio_tx_telemetry")]
 pub(crate) static AGGREGATE_TX: AggregateTxCounters = AggregateTxCounters::new();
+#[unsafe(link_section = ".critical.bss.open_radio_rx_telemetry")]
+pub(crate) static MAC_IRQ: MacIrqClassificationCounters = MacIrqClassificationCounters::new();
 #[unsafe(link_section = ".critical.bss.open_radio_task_poll_telemetry")]
 pub(crate) static TASK_POLLS: TaskPollSet = TaskPollSet::new();
 
 fn now_micros() -> u64 {
     Instant::now().as_micros()
+}
+
+fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
+    match observation {
+        Esp32s31MacIrqObservation::RxEpoch => RX_PIPELINE.record_rx_irq_epoch(),
+        Esp32s31MacIrqObservation::TxEpoch => AGGREGATE_TX.record_tx_irq_epoch(now_micros),
+        Esp32s31MacIrqObservation::Entry {
+            first_status,
+            observed_status,
+            nonzero_snapshots,
+        } => MAC_IRQ.record(first_status, observed_status, u32::from(nonzero_snapshots)),
+    }
 }
 
 pub fn diagnostic_snapshot() -> (u32, u32) {
@@ -99,7 +122,7 @@ pub const fn hil_capabilities() -> Capabilities {
             structured_evidence: true,
             startup_artifact: true,
             station_epoch_control: true,
-            station_stop_control: true,
+            wifi_role_control: true,
             station_lifecycle_events: true,
         },
         maximum_payload_bytes: if OPEN_RADIO_TCP_BENCH {
@@ -199,7 +222,7 @@ pub async fn run(
         protocol_spawner
             .spawn(tcp_tx_pattern_worker_task().expect("TCP TX pattern task must allocate once"));
     }
-    let mut credentials = startup.network.credentials;
+    let credentials = startup.network.credentials;
     let efuse_registers = esp_hal::peripherals::EFUSE::regs();
     let mut station_address = [0; 6];
     station_address
@@ -225,6 +248,8 @@ pub async fn run(
     .with_qualification_hooks(Esp32s31QualificationHooks {
         rx_pipeline: &RX_PIPELINE,
         aggregate_tx: &AGGREGATE_TX,
+        connected_rx: CONNECTED_RX_OBSERVER.take(),
+        mac_irq: observe_mac_irq,
     });
     let config = match startup.phy_calibration_record {
         Some(bytes) => config.with_calibration_record(PhyCalibrationRecord::from_bytes(bytes)),
@@ -233,7 +258,7 @@ pub async fn run(
 
     let started_at = Instant::now();
     let (radio, runner) =
-        open_esp_radio_esp32s31_embassy_wifi::new(spawner, platform, trng, config)
+        open_esp_radio_esp32s31_embassy_wifi::new(protocol_spawner, platform, trng, config)
             .await
             .unwrap_or_else(|error| panic!("production radio initialization failed: {error:?}"));
     let Esp32s31RadioParts {
@@ -251,7 +276,7 @@ pub async fn run(
     let Esp32s31WifiParts {
         control,
         device,
-        monitor_frames: _,
+        monitor_frames,
         qualification,
     } = wifi.into_parts();
     spawner
@@ -278,7 +303,7 @@ pub async fn run(
     );
 
     DIAGNOSTIC_STAGE.store(20, Ordering::Release);
-    let mut station = control
+    let station = control
         .start_station(station_request(
             credentials.ssid(),
             credentials.passphrase(),
@@ -290,6 +315,7 @@ pub async fn run(
         generation: station.generation().value(),
     })
     .await;
+    set_wifi_role(WifiRole::Station);
     emergency_log(format_args!(
         "OPEN_RADIO_HIL result=PASS stage=station-connected generation={}",
         station.generation().value(),
@@ -300,93 +326,252 @@ pub async fn run(
             .expect("connected traffic task must allocate once"),
     );
 
-    loop {
-        match receive_station_control_request().await {
-            StationControlRequest::Cycle { request_id } => {
-                let stopped_generation = station.generation().value();
-                let idle = station
-                    .stop()
-                    .await
-                    .unwrap_or_else(|error| panic!("production station stop failed: {error:?}"));
-                publish_station_lifecycle(StationLifecycleEvent::Disconnected {
-                    generation: stopped_generation,
-                    reason: StationDisconnectReason::ReconnectRequested,
-                })
-                .await;
-                station = idle
-                    .start_station(station_request(
-                        credentials.ssid(),
-                        credentials.passphrase(),
-                    ))
-                    .await
-                    .unwrap_or_else(|error| panic!("production station restart failed: {error:?}"));
-                publish_station_lifecycle(StationLifecycleEvent::Connected {
-                    generation: station.generation().value(),
-                })
-                .await;
-                complete_station_epoch_cycle(request_id, StationEpochEvidence::COMPLETE).await;
-            }
-            StationControlRequest::Stop { request_id } => {
-                let stopped_generation = station.generation().value();
-                let idle = station
-                    .stop()
-                    .await
-                    .unwrap_or_else(|error| panic!("production station stop failed: {error:?}"));
-                publish_station_lifecycle(StationLifecycleEvent::Disconnected {
-                    generation: stopped_generation,
-                    reason: StationDisconnectReason::LinkPolicy,
-                })
-                .await;
+    enum ProductWifiRole<P> {
+        Idle(open_esp_radio::WifiIdle<P>),
+        Station(open_esp_radio::WifiStation<P>),
+        Monitor {
+            owner: open_esp_radio::WifiMonitor<P>,
+            channel: u8,
+            captured_frames: u32,
+            captured_bytes: u64,
+            generation_mismatches: u32,
+            channel_mismatches: u32,
+            channel_unavailable: u32,
+            last_observed_channel: u8,
+        },
+    }
 
-                let monitor = idle
-                    .start_monitor(MonitorRequest::new(
-                        WifiChannel::mhz20(1).expect("monitor channel is valid"),
+    let mut role = ProductWifiRole::Station(station);
+    loop {
+        role = match role {
+            ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
+                WifiControlRequest::Cycle { request_id } => {
+                    let stopped_generation = station.generation().value();
+                    let idle = station.stop().await.unwrap_or_else(|error| {
+                        panic!("production station stop failed: {error:?}")
+                    });
+                    publish_station_lifecycle(StationLifecycleEvent::Disconnected {
+                        generation: stopped_generation,
+                        reason: StationDisconnectReason::ReconnectRequested,
+                    })
+                    .await;
+                    let station = idle
+                        .start_station(station_request(
+                            credentials.ssid(),
+                            credentials.passphrase(),
+                        ))
+                        .await
+                        .unwrap_or_else(|error| {
+                            panic!("production station restart failed: {error:?}")
+                        });
+                    publish_station_lifecycle(StationLifecycleEvent::Connected {
+                        generation: station.generation().value(),
+                    })
+                    .await;
+                    complete_station_epoch_cycle(request_id, StationEpochEvidence::COMPLETE).await;
+                    ProductWifiRole::Station(station)
+                }
+                WifiControlRequest::StopStation { request_id } => {
+                    let stopped_generation = station.generation().value();
+                    let idle = station.stop().await.unwrap_or_else(|error| {
+                        panic!("production station stop failed: {error:?}")
+                    });
+                    publish_station_lifecycle(StationLifecycleEvent::Disconnected {
+                        generation: stopped_generation,
+                        reason: StationDisconnectReason::LinkPolicy,
+                    })
+                    .await;
+                    set_wifi_role(WifiRole::Idle);
+                    complete_wifi_role_transition(
+                        request_id,
+                        WifiRoleTransitionEvidence {
+                            previous: WifiRole::Station,
+                            current: WifiRole::Idle,
+                            generation: stopped_generation,
+                        },
+                    )
+                    .await;
+                    ProductWifiRole::Idle(idle)
+                }
+                _ => unreachable!("console admits only station commands while station owns Wi-Fi"),
+            },
+            ProductWifiRole::Idle(idle) => match receive_wifi_control_request().await {
+                WifiControlRequest::StartStation { request_id } => {
+                    let station = idle
+                        .start_station(station_request(
+                            credentials.ssid(),
+                            credentials.passphrase(),
+                        ))
+                        .await
+                        .unwrap_or_else(|error| {
+                            panic!("production station start failed: {error:?}")
+                        });
+                    publish_station_lifecycle(StationLifecycleEvent::Connected {
+                        generation: station.generation().value(),
+                    })
+                    .await;
+                    set_wifi_role(WifiRole::Station);
+                    complete_wifi_role_transition(
+                        request_id,
+                        WifiRoleTransitionEvidence {
+                            previous: WifiRole::Idle,
+                            current: WifiRole::Station,
+                            generation: station.generation().value(),
+                        },
+                    )
+                    .await;
+                    ProductWifiRole::Station(station)
+                }
+                WifiControlRequest::Scan {
+                    request_id,
+                    request,
+                } => {
+                    let mut channels = [0_u8; 13];
+                    let mut channel_count = 0_usize;
+                    for channel in 1_u8..=13 {
+                        if request.channel_mask_2_4_ghz & (1_u16 << (channel - 1)) != 0 {
+                            channels[channel_count] = channel;
+                            channel_count += 1;
+                        }
+                    }
+                    let scan_channels =
+                        StationScanChannels::from_primary_channels(&channels[..channel_count])
+                            .expect("console validates the scan channel mask");
+                    let completed = idle
+                        .scan(DriverWifiScanRequest::new(
+                            scan_channels,
+                            NonZeroU16::new(request.dwell_millis)
+                                .expect("console validates nonzero scan dwell"),
+                        ))
+                        .await
+                        .unwrap_or_else(|error| {
+                            panic!("production standalone scan failed: {error:?}")
+                        });
+                    let (idle, report) = completed.into_parts();
+                    let configured = report
+                        .results()
+                        .iter()
+                        .find(|result| result.ssid() == credentials.ssid());
+                    let evidence = WifiScanEvidence {
+                        generation: report.generation().value(),
+                        observed_frames: report.observed_frames,
+                        unique_bss: report.results().len() as u8,
+                        dropped_unique_bss: report.dropped_unique_bss,
+                        configured_ssid_found: configured.is_some(),
+                        configured_ssid_channel: configured.map_or(0, |result| result.channel),
+                        configured_ssid_rssi_dbm: configured
+                            .map_or(i8::MIN, |result| result.rssi_dbm),
+                    };
+                    set_wifi_role(WifiRole::Idle);
+                    complete_wifi_scan(request_id, evidence).await;
+                    ProductWifiRole::Idle(idle)
+                }
+                WifiControlRequest::StartMonitor {
+                    request_id,
+                    request,
+                } => {
+                    let mut monitor_request = MonitorRequest::new(
+                        WifiChannel::mhz20(request.channel)
+                            .expect("console validates the monitor channel"),
                         WifiMonitorConfig::normalized(),
-                    ))
-                    .await
-                    .unwrap_or_else(|error| panic!("production monitor start failed: {error:?}"));
-                let idle = monitor
+                    );
+                    if let Some(snapshot_length) = NonZeroU16::new(request.snapshot_length) {
+                        monitor_request = monitor_request.with_capture_policy(
+                            MonitorCapturePolicy::truncate_at(snapshot_length),
+                        );
+                    }
+                    let monitor =
+                        idle.start_monitor(monitor_request)
+                            .await
+                            .unwrap_or_else(|error| {
+                                panic!("production monitor start failed: {error:?}")
+                            });
+                    set_wifi_role(WifiRole::Monitor);
+                    complete_monitor_start(
+                        request_id,
+                        WifiRoleTransitionEvidence {
+                            previous: WifiRole::Idle,
+                            current: WifiRole::Monitor,
+                            generation: monitor.generation().value(),
+                        },
+                    )
+                    .await;
+                    ProductWifiRole::Monitor {
+                        owner: monitor,
+                        channel: request.channel,
+                        captured_frames: 0,
+                        captured_bytes: 0,
+                        generation_mismatches: 0,
+                        channel_mismatches: 0,
+                        channel_unavailable: 0,
+                        last_observed_channel: 0,
+                    }
+                }
+                _ => unreachable!("console admits only idle commands while Wi-Fi is idle"),
+            },
+            ProductWifiRole::Monitor {
+                owner,
+                channel,
+                mut captured_frames,
+                mut captured_bytes,
+                mut generation_mismatches,
+                mut channel_mismatches,
+                mut channel_unavailable,
+                mut last_observed_channel,
+            } => {
+                let request_id = loop {
+                    match select(receive_wifi_control_request(), monitor_frames.receive()).await {
+                        Either::First(WifiControlRequest::StopMonitor { request_id }) => {
+                            break request_id;
+                        }
+                        Either::First(_) => unreachable!(
+                            "console admits only monitor stop while monitor owns Wi-Fi"
+                        ),
+                        Either::Second(frame) => {
+                            captured_frames = captured_frames.saturating_add(1);
+                            captured_bytes =
+                                captured_bytes.saturating_add(frame.captured_length() as u64);
+                            if frame.metadata().generation != owner.generation().value() {
+                                generation_mismatches = generation_mismatches.saturating_add(1);
+                            }
+                            match frame.metadata().rx.channel {
+                                MacRxEvidence::HardwareObserved(observed)
+                                | MacRxEvidence::ProtocolValidated(observed) => {
+                                    last_observed_channel = observed;
+                                    if observed != channel {
+                                        channel_mismatches =
+                                            channel_mismatches.saturating_add(1);
+                                    }
+                                }
+                                MacRxEvidence::Unavailable => {
+                                    channel_unavailable = channel_unavailable.saturating_add(1);
+                                }
+                            }
+                        }
+                    }
+                };
+                let generation = owner.generation().value();
+                let idle = owner
                     .stop()
                     .await
                     .unwrap_or_else(|error| panic!("production monitor stop failed: {error:?}"));
-                let monitor = idle
-                    .start_monitor(MonitorRequest::new(
-                        WifiChannel::mhz20(6).expect("monitor channel is valid"),
-                        WifiMonitorConfig::normalized(),
-                    ))
-                    .await
-                    .unwrap_or_else(|error| panic!("production monitor restart failed: {error:?}"));
-                let idle = monitor.stop().await.unwrap_or_else(|error| {
-                    panic!("production restarted monitor stop failed: {error:?}")
-                });
-                let restarted = idle
-                    .start_station(station_request(
-                        credentials.ssid(),
-                        credentials.passphrase(),
-                    ))
-                    .await
-                    .unwrap_or_else(|error| {
-                        panic!("production station rematerialization failed: {error:?}")
-                    });
-                publish_station_lifecycle(StationLifecycleEvent::Connected {
-                    generation: restarted.generation().value(),
-                })
+                set_wifi_role(WifiRole::Idle);
+                complete_monitor_stop(
+                    request_id,
+                    WifiMonitorEvidence {
+                        generation,
+                        channel,
+                        captured_frames,
+                        captured_bytes,
+                        generation_mismatches,
+                        channel_mismatches,
+                        channel_unavailable,
+                        last_observed_channel,
+                    },
+                )
                 .await;
-                let final_generation = restarted.generation().value();
-                let _idle = restarted.stop().await.unwrap_or_else(|error| {
-                    panic!("production rematerialized station stop failed: {error:?}")
-                });
-                publish_station_lifecycle(StationLifecycleEvent::Disconnected {
-                    generation: final_generation,
-                    reason: StationDisconnectReason::LinkPolicy,
-                })
-                .await;
-                credentials.clear_passphrase();
-                complete_station_stop(request_id, StationStopEvidence::COMPLETE).await;
-                loop {
-                    Timer::after_secs(60).await;
-                }
+                ProductWifiRole::Idle(idle)
             }
-        }
+        };
     }
 }

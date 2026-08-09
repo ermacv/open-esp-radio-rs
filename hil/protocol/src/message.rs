@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 17;
+pub const PROTOCOL_VERSION: u16 = 18;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -130,9 +130,8 @@ pub struct FeatureCapabilities {
     /// This image can stop one healthy connected STA epoch at a safe runner
     /// boundary and use the returned owners to exercise reassociation.
     pub station_epoch_control: bool,
-    /// This image can stop the complete station role and report reconstruction
-    /// of the role-neutral Wi-Fi owner.
-    pub station_stop_control: bool,
+    /// This image exposes explicit role-neutral Wi-Fi lifecycle commands.
+    pub wifi_role_control: bool,
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
@@ -421,9 +420,16 @@ pub enum Command {
     /// lifecycle operation, not a transport-session stop and not evidence of
     /// peer link loss.
     CycleStationEpoch,
-    /// Stop the complete station role after all child tasks, DMA and interrupt
-    /// routing have returned their exact owners.
+    /// Stop the active station and return to role-neutral Wi-Fi ownership.
     StopStation,
+    /// Materialize a station from the role-neutral Wi-Fi owner.
+    StartStation,
+    /// Run one finite standalone scan and return to role-neutral ownership.
+    ScanWifi(WifiScanRequest),
+    /// Materialize a standalone monitor from the role-neutral Wi-Fi owner.
+    StartMonitor(WifiMonitorRequest),
+    /// Stop the active monitor and return to role-neutral Wi-Fi ownership.
+    StopMonitor,
     Stop,
     Abort,
     GetLastResult,
@@ -463,70 +469,65 @@ pub struct StationEpochEvidence {
     pub connected_runner_started: bool,
 }
 
-/// Exact clean-stop frontiers required before another Wi-Fi role may start.
+/// Wi-Fi role represented by the target-side application owner.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct StationStopEvidence {
-    pub lifecycle_owner_returned: bool,
-    pub pac_reclaimed: bool,
-    pub interrupt_setup_reclaimed: bool,
-    /// DMA, network, executor and control owners were recovered from the
-    /// exact stopped station phase rather than replaced with allocation
-    /// handles or newly initialized storage.
-    pub role_resources_reclaimed: bool,
-    pub wifi_stopped_reconstructed: bool,
-    /// The reconstructed owner was consumed by another supported Wi-Fi role.
-    pub subsequent_role_materialized: bool,
-    /// The subsequent role returned only after its own ISR/DMA epoch was
-    /// quiescent and reconstructed the role-neutral owner again.
-    pub subsequent_role_quiesced: bool,
-    /// The role-local resources returned by the subsequent role were rebound
-    /// to a second epoch without replacing their static storage or control
-    /// domain.
-    pub subsequent_role_restarted: bool,
-    /// The restarted subsequent role returned its ISR/DMA and role-neutral
-    /// owners through another clean quiescence edge.
-    pub subsequent_role_restart_quiesced: bool,
-    /// The owner returned by the subsequent role was consumed by a fresh
-    /// station task without reacquiring PAC or recreating an IRQ token.
-    pub station_rematerialized: bool,
-    /// The rematerialized station completed scan/join/security and started a
-    /// real connected runner before its stop was requested.
-    pub station_connected: bool,
-    /// The replacement station returned only after its task, ISR and DMA
-    /// epochs were quiescent and its exact owner graph was reclaimed again.
-    pub station_requiesced: bool,
+pub enum WifiRole {
+    Idle,
+    Station,
+    Monitor,
 }
 
-impl StationStopEvidence {
-    pub const COMPLETE: Self = Self {
-        lifecycle_owner_returned: true,
-        pac_reclaimed: true,
-        interrupt_setup_reclaimed: true,
-        role_resources_reclaimed: true,
-        wifi_stopped_reconstructed: true,
-        subsequent_role_materialized: true,
-        subsequent_role_quiesced: true,
-        subsequent_role_restarted: true,
-        subsequent_role_restart_quiesced: true,
-        station_rematerialized: true,
-        station_connected: true,
-        station_requiesced: true,
-    };
+/// Compact, target-neutral standalone scan request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiScanRequest {
+    /// Bit zero selects channel 1 and bit twelve selects channel 13.
+    pub channel_mask_2_4_ghz: u16,
+    pub dwell_millis: u16,
+}
 
-    pub const fn is_complete(self) -> bool {
-        self.lifecycle_owner_returned
-            && self.pac_reclaimed
-            && self.interrupt_setup_reclaimed
-            && self.role_resources_reclaimed
-            && self.wifi_stopped_reconstructed
-            && self.subsequent_role_materialized
-            && self.subsequent_role_quiesced
-            && self.subsequent_role_restarted
-            && self.subsequent_role_restart_quiesced
-            && self.station_rematerialized
-            && self.station_connected
-            && self.station_requiesced
-    }
+/// Compact, target-neutral standalone monitor request.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorRequest {
+    pub channel: u8,
+    /// Zero retains the complete frame; a nonzero value truncates captures.
+    pub snapshot_length: u16,
+}
+
+/// Completion of one explicit role ownership transition.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiRoleTransitionEvidence {
+    pub previous: WifiRole,
+    pub current: WifiRole,
+    pub generation: u32,
+}
+
+/// Bounded scan evidence. The complete BSS table stays in the driver API and
+/// is intentionally not expanded to fit the UART protocol.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiScanEvidence {
+    pub generation: u32,
+    pub observed_frames: u32,
+    pub unique_bss: u8,
+    pub dropped_unique_bss: u32,
+    pub configured_ssid_found: bool,
+    pub configured_ssid_channel: u8,
+    pub configured_ssid_rssi_dbm: i8,
+}
+
+/// Observations retained by the HIL consumer during one monitor epoch.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorEvidence {
+    pub generation: u32,
+    pub channel: u8,
+    pub captured_frames: u32,
+    pub captured_bytes: u64,
+    pub generation_mismatches: u32,
+    /// Frames whose RX metadata explicitly named another channel.
+    pub channel_mismatches: u32,
+    /// Frames for which the backend did not expose per-frame channel data.
+    pub channel_unavailable: u32,
+    /// Most recent explicit hardware/protocol channel, or zero if unavailable.
+    pub last_observed_channel: u8,
 }
 
 impl StationEpochEvidence {
@@ -698,8 +699,14 @@ pub enum Event {
     /// Reliable completion acknowledgement for `CycleStationEpoch`.
     /// The envelope request ID identifies the command being completed.
     StationEpochCompleted(StationEpochEvidence),
-    /// Reliable completion acknowledgement for `StopStation`.
-    StationStopped(StationStopEvidence),
+    /// Reliable completion of `StartStation` or `StopStation`.
+    WifiRoleTransitioned(WifiRoleTransitionEvidence),
+    /// Reliable completion of one finite `ScanWifi` request.
+    WifiScanCompleted(WifiScanEvidence),
+    /// Reliable completion of `StartMonitor`.
+    WifiMonitorStarted(WifiRoleTransitionEvidence),
+    /// Reliable completion of `StopMonitor` and its bounded capture summary.
+    WifiMonitorStopped(WifiMonitorEvidence),
     /// Unsolicited, reliable station generation/link transition.
     StationLifecycle(StationLifecycleEvent),
     NetworkReady(NetworkInfo),

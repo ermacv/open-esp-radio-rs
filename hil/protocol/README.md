@@ -38,15 +38,20 @@ each direction. TCP evidence accounts for bytes and EOF-completed streams.
 ICMP records response latency. Full duplex requires both directional readiness
 events before host traffic starts.
 
-Station lifecycle commands acknowledge admission first and publish a separate
-correlated completion only after the production owner returns:
+Wi-Fi lifecycle commands acknowledge admission first and publish a separate
+correlated completion only after the production typestate transition returns:
 
 - `CycleStationEpoch`: stopped connected epoch, finite rescan/rejoin and new
   connected generation;
-- `StopStation`: child tasks, IRQ and DMA quiesced and role-neutral owner
-  reconstructed;
+- `StopStation` / `StartStation`: `Station <-> Idle`;
+- `ScanWifi`: finite `Idle -> Scan -> Idle` plus a compact scan summary;
+- `StartMonitor` / `StopMonitor`: `Idle <-> Monitor` plus capture counts;
 - unsolicited lifecycle: connected, peer loss, attempt failure and retry
   exhaustion.
+
+The HIL reports only facts visible at the public boundary. Returning
+`WifiIdle` proves the driver's quiescence contract; the protocol does not
+invent separate PAC, IRQ or DMA flags which the application cannot observe.
 
 One target task owns USB RX/TX. Radio/network paths never wait for UART; typed
 events use bounded queues or retained snapshots. One host worker owns reset,

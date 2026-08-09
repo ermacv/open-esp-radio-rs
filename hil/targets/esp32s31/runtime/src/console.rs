@@ -25,7 +25,8 @@ use open_esp_radio_hil_protocol::{
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
     ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationLifecycleEvent, StationStopEvidence, Transport, TransportEvidence,
+    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorEvidence,
+    WifiMonitorRequest, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
     evidence_crc32c, startup_artifact_crc32c,
 };
 
@@ -59,7 +60,9 @@ static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
 /// One plus the last event sequence fully written to the USB endpoint.
 /// Zero means that no event from the current boot has crossed that boundary.
 #[unsafe(link_section = ".critical.data.logging")]
-static SERIALIZED_STATION_EVENT_NEXT: AtomicU32 = AtomicU32::new(0);
+static SERIALIZED_WIFI_EVENT_NEXT: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.data.logging")]
+static WIFI_ROLE_STATE: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static RECORDS: Channel<CriticalSectionRawMutex, TextBuffer<MESSAGE_CAPACITY>, QUEUE_CAPACITY> =
     Channel::new();
@@ -77,13 +80,31 @@ static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Chan
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
-static STATION_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, StationControlRequest, 1> =
+static WIFI_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, WifiControlRequest, 1> =
     Channel::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationControlRequest {
-    Cycle { request_id: u32 },
-    Stop { request_id: u32 },
+pub enum WifiControlRequest {
+    Cycle {
+        request_id: u32,
+    },
+    StopStation {
+        request_id: u32,
+    },
+    StartStation {
+        request_id: u32,
+    },
+    Scan {
+        request_id: u32,
+        request: WifiScanRequest,
+    },
+    StartMonitor {
+        request_id: u32,
+        request: WifiMonitorRequest,
+    },
+    StopMonitor {
+        request_id: u32,
+    },
 }
 
 #[derive(Clone, Copy)]
@@ -252,7 +273,28 @@ pub fn init_protocol(boot_id: u64) {
     BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
     BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
     EVENT_SEQUENCE.store(0, Ordering::Relaxed);
-    SERIALIZED_STATION_EVENT_NEXT.store(0, Ordering::Relaxed);
+    SERIALIZED_WIFI_EVENT_NEXT.store(0, Ordering::Relaxed);
+    WIFI_ROLE_STATE.store(0, Ordering::Relaxed);
+}
+
+/// Publish the application-visible Wi-Fi owner state used for command
+/// admission. Zero is reserved for the boot interval before a role exists.
+pub fn set_wifi_role(role: WifiRole) {
+    let encoded = match role {
+        WifiRole::Idle => 1,
+        WifiRole::Station => 2,
+        WifiRole::Monitor => 3,
+    };
+    WIFI_ROLE_STATE.store(encoded, Ordering::Release);
+}
+
+fn wifi_role_is(role: WifiRole) -> bool {
+    let expected = match role {
+        WifiRole::Idle => 1,
+        WifiRole::Station => 2,
+        WifiRole::Monitor => 3,
+    };
+    WIFI_ROLE_STATE.load(Ordering::Acquire) == expected
 }
 
 fn boot_id() -> u64 {
@@ -321,8 +363,8 @@ pub async fn receive_session_start() -> ActiveSession {
 ///
 /// The production runner observes this only at a hardware-safe transaction
 /// boundary; the console owns command admission and never touches radio state.
-pub async fn receive_station_control_request() -> StationControlRequest {
-    STATION_CONTROL_REQUESTS.receive().await
+pub async fn receive_wifi_control_request() -> WifiControlRequest {
+    WIFI_CONTROL_REQUESTS.receive().await
 }
 
 /// Reliably acknowledge a completed target-side station ownership cycle.
@@ -335,10 +377,29 @@ pub async fn complete_station_epoch_cycle(request_id: u32, evidence: StationEpoc
 
 /// Reliably acknowledge complete station dematerialization and reconstruction
 /// of the role-neutral Wi-Fi owner.
-pub async fn complete_station_stop(request_id: u32, evidence: StationStopEvidence) {
-    let sequence = queue_event_reliably(0, request_id, Event::StationStopped(evidence)).await;
+pub async fn complete_wifi_role_transition(request_id: u32, evidence: WifiRoleTransitionEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::WifiRoleTransitioned(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_wifi_scan(request_id: u32, evidence: WifiScanEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::WifiScanCompleted(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_monitor_start(request_id: u32, evidence: WifiRoleTransitionEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStarted(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn complete_monitor_stop(request_id: u32, evidence: WifiMonitorEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStopped(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+async fn wait_until_serialized(sequence: u32) {
     let target = sequence.wrapping_add(1);
-    while SERIALIZED_STATION_EVENT_NEXT.load(Ordering::Acquire) != target {
+    while SERIALIZED_WIFI_EVENT_NEXT.load(Ordering::Acquire) != target {
         yield_now().await;
     }
 }
@@ -353,7 +414,7 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
     // A lifecycle edge is qualification evidence, not a best-effort trace.
     // Queue admission alone is insufficient at a terminal station exit: the
     // producing task may return before the independent USB worker runs again.
-    while SERIALIZED_STATION_EVENT_NEXT.load(Ordering::Acquire) != target {
+    while SERIALIZED_WIFI_EVENT_NEXT.load(Ordering::Acquire) != target {
         yield_now().await;
     }
 }
@@ -608,10 +669,11 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         } else if !network_provisioned
                             || state != SessionState::Idle
                             || session_id != 0
+                            || !wifi_role_is(WifiRole::Station)
                         {
                             Event::Rejected(RejectReason::InvalidState)
-                        } else if STATION_CONTROL_REQUESTS
-                            .try_send(StationControlRequest::Cycle { request_id })
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::Cycle { request_id })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)
@@ -621,15 +683,107 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, response).await;
                     }
                     Command::StopStation => {
-                        let response = if !capabilities.features.station_stop_control {
+                        let response = if !capabilities.features.wifi_role_control {
                             Event::Rejected(RejectReason::Unsupported)
                         } else if !network_provisioned
                             || state != SessionState::Idle
                             || session_id != 0
+                            || !wifi_role_is(WifiRole::Station)
                         {
                             Event::Rejected(RejectReason::InvalidState)
-                        } else if STATION_CONTROL_REQUESTS
-                            .try_send(StationControlRequest::Stop { request_id })
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StopStation { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StartStation => {
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StartStation { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::ScanWifi(request) => {
+                        let valid = request.channel_mask_2_4_ghz != 0
+                            && request.channel_mask_2_4_ghz & !0x1fff == 0
+                            && (1..=1_000).contains(&request.dwell_millis);
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !valid {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::Scan {
+                                request_id,
+                                request,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StartMonitor(request) => {
+                        let valid =
+                            (1..=13).contains(&request.channel) && request.snapshot_length <= 2_304;
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !valid {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StartMonitor {
+                                request_id,
+                                request,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StopMonitor => {
+                        let response = if !capabilities.features.wifi_role_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Monitor)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::StopMonitor { request_id })
                             .is_err()
                         {
                             Event::Rejected(RejectReason::Busy)
@@ -833,9 +987,13 @@ async fn write_event_async(
         PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
         if matches!(
             &event.body,
-            Event::StationLifecycle(_) | Event::StationStopped(_)
+            Event::StationLifecycle(_)
+                | Event::WifiRoleTransitioned(_)
+                | Event::WifiScanCompleted(_)
+                | Event::WifiMonitorStarted(_)
+                | Event::WifiMonitorStopped(_)
         ) {
-            SERIALIZED_STATION_EVENT_NEXT
+            SERIALIZED_WIFI_EVENT_NEXT
                 .store(event.message_sequence.wrapping_add(1), Ordering::Release);
         }
     } else {

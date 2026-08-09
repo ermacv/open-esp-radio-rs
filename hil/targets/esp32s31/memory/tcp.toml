@@ -24,20 +24,20 @@ symbol = "*::station::STATION_MEMORY"
 owner = "wifi.station-arena"
 scope = "adapter"
 reason = "hardware-dma"
-placement = "required-psram"
-region = "external-psram"
-optimization = "One owner graph contains RX/TX DMA, scan scratch and control storage; split it only if a later chip requires different placement."
+placement = "required-sram"
+region = "internal-sram"
+optimization = "The aggregate includes RX and ordinary-TX memory addressed by Wi-Fi DMA; split CPU-only scan/control fields before moving any subset to PSRAM."
 
 [[rules]]
 symbol = "*::connected::RX_STAGE_POOL"
 owner = "wifi.rx.hot-staging"
 scope = "adapter"
 reason = "latency-critical"
-placement = "preferred-psram"
-region = "external-psram"
-count = 16
+placement = "required-sram"
+region = "internal-sram"
+count = 64
 element_capacity = 1700
-optimization = "Tune slot count only against measured RX backpressure."
+optimization = "One BlockAck retention horizon plus one complete 32-descriptor burst; tune only against measured BUFFER_FULL and staging backpressure."
 
 [[rules]]
 symbol = "*::connected::RX_REORDER_STORAGE"
@@ -46,7 +46,7 @@ scope = "adapter"
 reason = "cold-path"
 placement = "required-psram"
 region = "external-psram"
-count = 8
+count = 64
 element_capacity = 1700
 
 [[rules]]
@@ -54,9 +54,9 @@ symbol = "*::connected::NETWORK_TX_POOL"
 owner = "wifi.tx.pinned-network"
 scope = "adapter"
 reason = "hardware-dma"
-placement = "required-psram"
-region = "external-psram"
-count = 8
+placement = "required-sram"
+region = "internal-sram"
+count = 32
 element_capacity = 1648
 
 [[rules]]
@@ -71,7 +71,7 @@ region = "external-psram"
 symbol = "*::connected::TX_AMPDU_STORAGE"
 owner = "wifi.tx.ampdu-state"
 scope = "adapter"
-reason = "hardware-dma"
+reason = "cpu-only"
 placement = "required-psram"
 region = "external-psram"
 
@@ -80,8 +80,8 @@ symbol = "*::connected::TX_AMPDU_DMA_STORAGE"
 owner = "wifi.tx.ampdu-descriptors"
 scope = "adapter"
 reason = "hardware-dma"
-placement = "required-psram"
-region = "external-psram"
+placement = "required-sram"
+region = "internal-sram"
 
 [[rules]]
 symbol = "*::connected::TX_AMPDU_RETENTION"

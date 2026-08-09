@@ -1,11 +1,13 @@
 #![forbid(unsafe_code)]
 
+use core::sync::atomic::Ordering;
+
 use embassy_futures::yield_now;
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
 use open_esp_radio_hil_esp32s31_telemetry::{
-    rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
+    rx_evidence::RX_HE_MCS_BUCKETS, rx_pipeline::RxPipelineCounters, task_poll::TaskPollSet,
 };
 use open_esp_radio_hil_protocol::{
     Direction as HilDirection, Event as HilEvent, ServiceInfo, SessionReady,
@@ -15,10 +17,14 @@ use open_esp_radio_hil_protocol::{
 use super::UdpSocketBuffers;
 use crate::{
     console::{complete_session, emergency_log, publish_event_reliably, receive_session_start},
-    product_hil::traffic::{
-        BidirectionalResultChannel, BidirectionalSessionChannel, OpenRadioBidirectionalDirection,
-        UdpSequenceEvidence, complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
-        log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
+    product_hil::{
+        rx_qualification,
+        traffic::{
+            BidirectionalResultChannel, BidirectionalSessionChannel,
+            OpenRadioBidirectionalDirection, UdpSequenceEvidence,
+            complete_open_radio_bidirectional_direction, iperf2_udp_sequence,
+            log_open_radio_rx_pipeline_interval, log_open_radio_task_poll_interval,
+        },
     },
 };
 
@@ -106,8 +112,19 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .rx_statistics()
             .map(|value| value.primary);
         let irq_start = telemetry.qualification.rx_interrupt_posts();
+        let irq_classification_start = crate::product_hil::MAC_IRQ.snapshot();
+        let _ = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
+        let _ = crate::product_hil::MAC_IRQ.take_unknown_status_or();
         let pipeline_start = telemetry.pipeline.snapshot();
         let task_poll_start = telemetry.task_polls.snapshot();
+        rx_qualification::LAST_FORMAT.store(u32::MAX, Ordering::Relaxed);
+        rx_qualification::LAST_PHY.store(u32::MAX, Ordering::Relaxed);
+        let phy_start = rx_qualification::RX_PHY.snapshot();
+        let s_mpdu_start = rx_qualification::RX_S_MPDU.snapshot();
+        let beacon_s_mpdu_start = rx_qualification::BEACON_S_MPDU.snapshot();
+        let ampdu_start = rx_qualification::RX_AMPDU.snapshot();
+        #[cfg(feature = "rx-order-telemetry")]
+        let order_start = rx_qualification::RX_ORDER.snapshot();
         let expected_payload_bytes = usize::from(
             session
                 .config
@@ -174,6 +191,18 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             .qualification
             .rx_interrupt_posts()
             .wrapping_sub(irq_start);
+        let irq_classification = crate::product_hil::MAC_IRQ
+            .snapshot()
+            .wrapping_delta_since(irq_classification_start);
+        let mac_irq_entries = irq_classification
+            .spurious_entries
+            .saturating_add(irq_classification.rx_only_entries)
+            .saturating_add(irq_classification.rx_mixed_entries)
+            .saturating_add(irq_classification.tx_only_entries)
+            .saturating_add(irq_classification.tx_mixed_entries)
+            .saturating_add(irq_classification.other_only_entries);
+        let irq_auxiliary_status_or = crate::product_hil::MAC_IRQ.take_auxiliary_status_or();
+        let irq_unknown_status_or = crate::product_hil::MAC_IRQ.take_unknown_status_or();
         let pipeline_end = telemetry.pipeline.snapshot();
         let queue_dropped = pipeline_end
             .network_dropped
@@ -202,7 +231,114 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
             rx_irq_posts,
             config.code_address,
         ));
-        log_open_radio_rx_pipeline_interval(pipeline_start, rx_irq_posts, telemetry.pipeline);
+        emergency_log(format_args!(
+            "ORXP f={} p={}",
+            rx_qualification::LAST_FORMAT.load(Ordering::Relaxed),
+            rx_qualification::LAST_PHY.load(Ordering::Relaxed),
+        ));
+        emergency_log(format_args!(
+            "ORXQ first={} highest={} next={} gap_events={} forward_missing={} \
+             maximum_gap={} maximum_gap_at={} first_gap_at={} last_gap_at={} backward={} \
+             adjacent_duplicates={} unsequenced={} maximum_interarrival_us={} \
+             maximum_interarrival_at={}",
+            sequence.first.unwrap_or(u32::MAX),
+            sequence.first.map(|_| sequence.highest).unwrap_or(u32::MAX),
+            sequence
+                .first
+                .map(|_| sequence.expected)
+                .unwrap_or(u32::MAX),
+            sequence.gap_events,
+            sequence.forward_missing,
+            sequence.maximum_gap,
+            sequence.maximum_gap_at.unwrap_or(u32::MAX),
+            sequence.first_gap_at.unwrap_or(u32::MAX),
+            sequence.last_gap_at.unwrap_or(u32::MAX),
+            sequence.backward,
+            sequence.adjacent_duplicates,
+            sequence.unsequenced,
+            sequence.maximum_interarrival_micros,
+            sequence.maximum_interarrival_at.unwrap_or(u32::MAX),
+        ));
+        #[cfg(feature = "rx-order-telemetry")]
+        {
+            let order = rx_qualification::RX_ORDER
+                .snapshot()
+                .wrapping_delta_since(order_start);
+            emergency_log(format_args!(
+                "ORXO gap_events={} forward_missing={} backward={} adjacent_duplicates={} \
+                 backward_mac_backward={} backward_mac_same={} backward_mac_forward={} \
+                 backward_mac_other_tid={} backward_mac_unavailable={}",
+                order.gap_events,
+                order.forward_missing,
+                order.backward,
+                order.adjacent_duplicates,
+                order.backward_mac_backward,
+                order.backward_mac_same,
+                order.backward_mac_forward,
+                order.backward_mac_other_tid,
+                order.backward_mac_unavailable,
+            ));
+        }
+        let rx_s_mpdu = rx_qualification::RX_S_MPDU
+            .snapshot()
+            .wrapping_delta_since(s_mpdu_start);
+        let beacon_s_mpdu = rx_qualification::BEACON_S_MPDU
+            .snapshot()
+            .wrapping_delta_since(beacon_s_mpdu_start);
+        let rx_ampdu = rx_qualification::RX_AMPDU
+            .snapshot()
+            .wrapping_delta_since(ampdu_start);
+        emergency_log(format_args!(
+            "ORXSM s_mpdu={} not_s_mpdu={} unavailable={} beacon_s_mpdu={} \
+             beacon_not_s_mpdu={} beacon_unavailable={}",
+            rx_s_mpdu.s_mpdu_frames,
+            rx_s_mpdu.not_s_mpdu_frames,
+            rx_s_mpdu.unavailable_frames,
+            beacon_s_mpdu.s_mpdu_frames,
+            beacon_s_mpdu.not_s_mpdu_frames,
+            beacon_s_mpdu.unavailable_frames,
+        ));
+        emergency_log(format_args!(
+            "ORXAG ampdu={} not_ampdu={} hardware_ampdu={} hardware_not_ampdu={} \
+             protocol_ampdu={} protocol_not_ampdu={} unavailable={}",
+            rx_ampdu.ampdu_frames,
+            rx_ampdu.not_ampdu_frames,
+            rx_ampdu.hardware_ampdu_frames,
+            rx_ampdu.hardware_not_ampdu_frames,
+            rx_ampdu.protocol_ampdu_frames,
+            rx_ampdu.protocol_not_ampdu_frames,
+            rx_ampdu.unavailable_frames,
+        ));
+        let phy_end = rx_qualification::RX_PHY.snapshot();
+        let mcs = core::array::from_fn::<_, RX_HE_MCS_BUCKETS, _>(|index| {
+            phy_end.he_mcs[index].wrapping_sub(phy_start.he_mcs[index])
+        });
+        emergency_log(format_args!(
+            "ORXM m0={} m1={} m2={} m3={} m4={} m5={} m6={} m7={} m8={} m9={} \
+             m10={} m11={} other={}",
+            mcs[0],
+            mcs[1],
+            mcs[2],
+            mcs[3],
+            mcs[4],
+            mcs[5],
+            mcs[6],
+            mcs[7],
+            mcs[8],
+            mcs[9],
+            mcs[10],
+            mcs[11],
+            phy_end.other.wrapping_sub(phy_start.other),
+        ));
+        log_open_radio_rx_pipeline_interval(
+            pipeline_start,
+            rx_irq_posts,
+            mac_irq_entries,
+            irq_classification,
+            irq_auxiliary_status_or,
+            irq_unknown_status_or,
+            telemetry.pipeline,
+        );
         log_open_radio_task_poll_interval(
             task_poll_start,
             config.task_poll_telemetry,

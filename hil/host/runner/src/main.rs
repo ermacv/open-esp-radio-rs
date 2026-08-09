@@ -19,12 +19,12 @@ mod startup_artifact;
 mod station_ap_absence;
 mod station_ap_loss;
 mod station_lifecycle;
-mod station_stop;
 mod tcp_traffic;
 mod traffic_capture;
 mod trigger;
 mod tx_traffic;
 mod udp_socket;
+mod wifi_control;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -131,10 +131,13 @@ fn run() -> Result<()> {
             Some("ap-absence") => station_ap_absence::run(arguments.collect(), &root),
             Some("ap-loss") => station_ap_loss::run(arguments.collect(), &root),
             Some("reconnect") => station_lifecycle::run(arguments.collect(), &root),
-            Some("stop") => station_stop::run(arguments.collect(), &root),
             _ => Err("usage: cargo hil station \
-                 <reconnect|stop|ap-loss|ap-absence> [options]"
+                 <reconnect|ap-loss|ap-absence> [options]"
                 .into()),
+        },
+        Some("wifi") => match arguments.next() {
+            Some(operation) => wifi_control::run(&operation, arguments.collect(), &root),
+            None => Err("usage: cargo hil wifi <stop|start|scan|monitor|roundtrip> [options]".into()),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
@@ -195,7 +198,11 @@ fn print_help() {
          cargo hil station ap-absence [options]\n\
          cargo hil station ap-loss [options]\n\
          cargo hil station reconnect [options]\n\
-         cargo hil station stop [options]\n\
+         cargo hil wifi stop [options]\n\
+         cargo hil wifi start [options]\n\
+         cargo hil wifi scan [options]\n\
+         cargo hil wifi monitor [options]\n\
+         cargo hil wifi roundtrip [options]\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \

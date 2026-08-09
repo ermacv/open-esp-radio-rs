@@ -17,8 +17,9 @@ use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
     SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
-    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent,
-    StationStopEvidence, Transport, TransportEvidence, evidence_crc32c,
+    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent, Transport,
+    TransportEvidence, WifiMonitorEvidence, WifiMonitorRequest, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -81,7 +82,7 @@ pub(crate) struct StationEpochHandle {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct StationStopHandle {
+pub(crate) struct WifiCommandHandle {
     request_id: u32,
     first_event: usize,
 }
@@ -565,43 +566,127 @@ impl SerialCapture {
             })
     }
 
-    pub(crate) fn request_station_stop(&self) -> Result<StationStopHandle> {
+    fn request_wifi_command(&self, command: Command, operation: &str) -> Result<WifiCommandHandle> {
         let first_event = self.protocol_event_count();
-        let response = self.send_command(0, Command::StopStation, PROTOCOL_READY_TIMEOUT)?;
+        let response = self.send_command(0, command, PROTOCOL_READY_TIMEOUT)?;
         match response.body {
-            Event::Accepted => Ok(StationStopHandle {
+            Event::Accepted => Ok(WifiCommandHandle {
                 request_id: response.request_id,
                 first_event,
             }),
             Event::Rejected(reason) => {
-                Err(format!("device rejected station stop: {reason:?}").into())
+                Err(format!("device rejected {operation}: {reason:?}").into())
             }
-            _ => Err("device returned an invalid station stop response".into()),
+            _ => Err(format!("device returned an invalid {operation} response").into()),
         }
     }
 
-    pub(crate) fn observed_station_stop(
+    pub(crate) fn request_station_stop(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StopStation, "station stop")
+    }
+
+    pub(crate) fn request_station_start(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StartStation, "station start")
+    }
+
+    pub(crate) fn request_wifi_scan(&self, request: WifiScanRequest) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::ScanWifi(request), "standalone Wi-Fi scan")
+    }
+
+    pub(crate) fn request_monitor_start(
         &self,
-        handle: StationStopHandle,
-    ) -> Option<StationStopEvidence> {
-        let messages = self
-            .protocol
-            .messages
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        messages
-            .get(handle.first_event..)
-            .unwrap_or_default()
-            .iter()
-            .find_map(|message| {
-                if message.request_id != handle.request_id {
-                    return None;
-                }
-                match message.body {
-                    Event::StationStopped(evidence) => Some(evidence),
-                    _ => None,
-                }
+        request: WifiMonitorRequest,
+    ) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StartMonitor(request), "monitor start")
+    }
+
+    pub(crate) fn request_monitor_stop(&self) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::StopMonitor, "monitor stop")
+    }
+
+    pub(crate) fn wait_wifi_role_transition(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiRoleTransitionEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiRoleTransitioned(_))
             })
+            .ok_or("device did not complete the Wi-Fi role transition")?;
+        match event.body {
+            Event::WifiRoleTransitioned(evidence) => Ok(evidence),
+            _ => unreachable!("role-transition predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_wifi_scan(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiScanEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiScanCompleted(_))
+            })
+            .ok_or("device did not complete the standalone Wi-Fi scan")?;
+        match event.body {
+            Event::WifiScanCompleted(evidence) => Ok(evidence),
+            _ => unreachable!("scan predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_monitor_start(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiRoleTransitionEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiMonitorStarted(_))
+            })
+            .ok_or("device did not complete monitor start")?;
+        match event.body {
+            Event::WifiMonitorStarted(evidence) => Ok(evidence),
+            _ => unreachable!("monitor-start predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_monitor_stop(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<WifiMonitorEvidence> {
+        let event = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiMonitorStopped(_))
+            })
+            .ok_or("device did not complete monitor stop")?;
+        match event.body {
+            Event::WifiMonitorStopped(evidence) => Ok(evidence),
+            _ => unreachable!("monitor-stop predicate accepted only its completion event"),
+        }
+    }
+
+    pub(crate) fn wait_for_connected_station(&self, timeout: Duration) -> Result<u32> {
+        let event = self
+            .wait_for_protocol_after(0, timeout, |message| {
+                matches!(
+                    message.body,
+                    Event::StationLifecycle(StationLifecycleEvent::Connected { .. })
+                )
+            })
+            .ok_or("device did not publish connected station readiness")?;
+        match event.body {
+            Event::StationLifecycle(StationLifecycleEvent::Connected { generation }) => {
+                Ok(generation)
+            }
+            _ => unreachable!("connected predicate accepted only a connected lifecycle event"),
+        }
     }
 
     /// Cursor for reliable unsolicited station lifecycle events.

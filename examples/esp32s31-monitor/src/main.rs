@@ -29,7 +29,7 @@ use open_esp_radio_esp32s31_wifi_esp_hal::{
         EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,
     },
 };
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use open_esp_radio::esp32s31::wifi::embassy::monitor::{
     EmbassyEsp32s31PhyDelay, EmbassyMacIrqRuntime, EmbassyPowerIrqRuntime,
@@ -69,12 +69,18 @@ type CaptureReceiver = MonitorCaptureReceiver<
 >;
 
 static EXECUTOR: StaticCell<Executor<0>> = StaticCell::new();
-static RX_STORAGE: StaticCell<RxStorage> = StaticCell::new();
-static RX_BUFFER_ADDRESSES: StaticCell<[u32; RX_DESCRIPTOR_COUNT]> = StaticCell::new();
-static CAPTURE_POOL: StaticCell<CapturePool> = StaticCell::new();
+// DMA and capture arenas contain the monitor's large frame buffers. Const
+// static initialization guarantees that startup never constructs or moves
+// those arrays through the executor CPU stack.
+static RX_STORAGE: ConstStaticCell<RxStorage> = ConstStaticCell::new(RxStorage::new());
+static RX_BUFFER_ADDRESSES: ConstStaticCell<[u32; RX_DESCRIPTOR_COUNT]> =
+    ConstStaticCell::new([0; RX_DESCRIPTOR_COUNT]);
+static CAPTURE_POOL: ConstStaticCell<CapturePool> = ConstStaticCell::new(CapturePool::new());
+// This wrapper contains the runtime borrow of CAPTURE_POOL, so it cannot be
+// const-initialized; init_with below constructs it directly in static storage.
 static CAPTURE_RESOURCES: StaticCell<CaptureResources> = StaticCell::new();
-static MONITOR_CONTROL: StaticCell<Esp32s31MonitorControlResources<CriticalSectionRawMutex>> =
-    StaticCell::new();
+static MONITOR_CONTROL: ConstStaticCell<Esp32s31MonitorControlResources<CriticalSectionRawMutex>> =
+    ConstStaticCell::new(Esp32s31MonitorControlResources::new());
 static IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> = EmbassyMacIrqRuntime::new();
 static POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
@@ -165,9 +171,9 @@ async fn monitor_task(
         .unwrap_or_else(|_| panic!("common MAC start failed"));
     let (plan, wifi) = monitor.into_parts();
 
-    let rx_storage = RX_STORAGE.init_with(RxStorage::new);
-    let buffer_addresses = RX_BUFFER_ADDRESSES.init([0; RX_DESCRIPTOR_COUNT]);
-    let capture_pool = CAPTURE_POOL.init_with(CapturePool::new);
+    let rx_storage = RX_STORAGE.take();
+    let buffer_addresses = RX_BUFFER_ADDRESSES.take();
+    let capture_pool = CAPTURE_POOL.take();
     let capture_resources = CAPTURE_RESOURCES.init_with(|| CaptureResources::new(capture_pool));
     let (sink, receiver) = capture_resources.split();
     spawner.spawn(
@@ -219,7 +225,7 @@ fn main() -> ! {
     );
     let executor = EXECUTOR.init(Executor::<0>::new(software_interrupts.software_interrupt0));
     executor.run(|spawner| {
-        let control = MONITOR_CONTROL.init_with(Esp32s31MonitorControlResources::new);
+        let control = MONITOR_CONTROL.take();
         spawner.spawn(
             monitor_task(spawner, radio, trng_source, control)
                 .expect("monitor task storage must be available once"),

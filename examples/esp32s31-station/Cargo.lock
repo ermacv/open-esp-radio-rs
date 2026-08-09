@@ -1265,6 +1265,8 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 name = "open-esp-radio"
 version = "0.1.0"
 dependencies = [
+ "embassy-futures",
+ "embassy-sync 0.8.0",
  "open-esp-radio-embassy-net",
  "open-esp-radio-esp32s31-hal",
  "open-esp-radio-esp32s31-pac",
@@ -1309,6 +1311,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "open-esp-radio-esp32s31-embassy-wifi"
+version = "0.1.0"
+dependencies = [
+ "embassy-executor",
+ "embassy-futures",
+ "embassy-net",
+ "embassy-sync 0.8.0",
+ "embassy-time",
+ "esp-hal",
+ "esp-println",
+ "open-esp-radio",
+ "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-wifi-esp-hal",
+ "static_cell",
+]
+
+[[package]]
 name = "open-esp-radio-esp32s31-hal"
 version = "0.1.0"
 dependencies = [
@@ -1343,17 +1362,13 @@ name = "open-esp-radio-esp32s31-station"
 version = "0.1.0"
 dependencies = [
  "embassy-executor",
- "embassy-futures",
- "embassy-net",
- "embassy-sync 0.8.0",
- "embassy-time",
  "esp-backtrace",
  "esp-bootloader-esp-idf",
  "esp-hal",
  "esp-println",
  "open-esp-radio",
  "open-esp-radio-esp32s31-embassy-runtime",
- "open-esp-radio-esp32s31-wifi-embassy",
+ "open-esp-radio-esp32s31-embassy-wifi",
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "static_cell",
 ]
@@ -1400,6 +1415,7 @@ dependencies = [
  "open-esp-radio-wifi-softmac",
  "open-esp-radio-wifi-sta",
  "open-esp-radio-wpa2",
+ "static_cell",
 ]
 
 [[package]]
@@ -1451,7 +1467,9 @@ name = "open-esp-radio-wifi-embassy"
 version = "0.1.0"
 dependencies = [
  "embassy-sync 0.8.0",
+ "embassy-time",
  "open-esp-radio-dma",
+ "open-esp-radio-embassy-net",
  "open-esp-radio-wifi-softmac",
 ]
 

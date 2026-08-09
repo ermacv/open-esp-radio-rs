@@ -48,6 +48,15 @@ cargo vendor-binary-workbench mmio discover \
   --json-report /tmp/esp32s31-phy-mmio.json
 ```
 
+By default every named, non-empty text symbol is an analysis root, including
+local/private functions in archive members and ELF symbol tables. Use
+`--code-symbols exported` only when intentionally restricting the scan to
+global and weak definitions; `--symbol-prefix` can narrow either catalog. The
+generated facts record both choices in `code_selection`, so a reviewed result
+cannot silently change scope. This is symbol-complete, not byte-complete:
+stripped functions, zero-sized symbols and executable bytes without a function
+symbol still require code-boundary recovery before they can be analyzed.
+
 The report groups statically addressed 8/16/32-bit reads and writes by
 address, names known SVD registers, assigns stable `RANGE.REG_ADDRESS`
 candidate names to unknown addresses, and lists every artifact/member/function

@@ -51,7 +51,7 @@ pub struct ArtifactDetail {
 #[serde(untagged)]
 pub enum DetailValue {
     String(String),
-    Unsigned(usize),
+    Unsigned(u64),
     Bool(bool),
     Strings(Vec<String>),
     LinkedIrProfiles(Vec<LinkedIrProfileDetail>),
@@ -73,6 +73,12 @@ impl From<&str> for DetailValue {
 
 impl From<usize> for DetailValue {
     fn from(value: usize) -> Self {
+        Self::Unsigned(value as u64)
+    }
+}
+
+impl From<u64> for DetailValue {
+    fn from(value: u64) -> Self {
         Self::Unsigned(value)
     }
 }

@@ -45,7 +45,11 @@ pub(crate) fn discover_project_interfaces(
     let mut calls = Vec::new();
     let mut failures = Vec::new();
     for (artifact_index, artifact) in linkage.artifacts.iter().enumerate() {
-        let symbols = artifact::load_all_code_symbols(&artifact.path, &options.name_prefix)?;
+        let symbols = artifact::load_code_symbols(
+            &artifact.path,
+            &options.name_prefix,
+            artifact::CodeSymbolSelection::All,
+        )?;
         functions.push(symbols.len());
         for symbol in symbols {
             match discover_interface_calls(&symbol) {

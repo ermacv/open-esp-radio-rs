@@ -68,7 +68,22 @@ fn symbol_inventory(context: &ProjectContext<'_>) -> Component {
             .detail("symbol_facts", summary.symbol_facts)
             .detail("exported_definitions", summary.exported_definitions)
             .detail("undefined", summary.undefined)
-            .detail("unresolved_or_associated", summary.unresolved_or_associated),
+            .detail("unresolved_or_associated", summary.unresolved_or_associated)
+            .detail("executable_bytes", summary.executable_bytes)
+            .detail("symbol_covered_bytes", summary.symbol_covered_bytes)
+            .detail(
+                "uncovered_executable_bytes",
+                summary.uncovered_executable_bytes,
+            )
+            .detail(
+                "named_zero_sized_code_symbols",
+                summary.named_zero_sized_code_symbols,
+            )
+            .detail(
+                "function_boundary_candidates",
+                summary.function_boundary_candidates,
+            )
+            .detail("code_recovery_blockers", summary.code_recovery_blockers),
         Err(error) => Component::new("symbol_inventory", Readiness::Invalid)
             .detail("path", spec.output.display().to_string())
             .diagnostic(error),

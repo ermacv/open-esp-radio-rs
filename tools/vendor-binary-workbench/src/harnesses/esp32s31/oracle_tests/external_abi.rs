@@ -139,7 +139,9 @@ fn real_libpp_pp_post_matches_the_reviewed_direct_semantic_contract() {
         return;
     }
 
-    let symbols = artifact::load_all_code_symbols(&artifact, "pp_post").unwrap();
+    let symbols =
+        artifact::load_code_symbols(&artifact, "pp_post", artifact::CodeSymbolSelection::All)
+            .unwrap();
     let symbol = symbols
         .iter()
         .find(|symbol| symbol.member.as_deref() == Some("pp.o") && symbol.name == "pp_post")

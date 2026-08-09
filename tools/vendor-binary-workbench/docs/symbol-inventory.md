@@ -57,6 +57,36 @@ decoded as functions.
 The generated JSON authenticates every input with SHA-256. The digest records
 which bytes produced the report; it is not a vendor-version acceptance policy.
 
+## Executable-byte coverage
+
+The inventory also compares every executable section with all named, sized
+text symbols in that exact ELF object or archive member. `code_sections`
+records executable bytes, bytes covered by the union of symbol ranges,
+zero-sized code-symbol counts and section-relative uncovered ranges. The human
+view presents the same totals and gaps.
+
+This distinguishes two different claims:
+
+- `code-symbol coverage`: every named, sized local/global function can be made
+  an analysis root;
+- `executable-byte coverage`: every executable byte belongs to such a symbol.
+
+Only the first is currently available to `ir export`, `interfaces discover`
+and, by default, `mmio discover`. A non-zero uncovered byte count or any
+zero-sized code symbol is therefore an explicit recovery backlog, not a
+silently analyzed function. Padding, literal pools and alignment bytes may
+also appear in the uncovered ranges; later function-boundary recovery must
+classify them rather than assuming every gap is a function.
+
+Within those gaps the inventory emits an unreviewed function-boundary
+candidate only when there is concrete entry evidence: a defined zero-sized
+text symbol or a linked RISC-V `JAL`/tail transfer from a sized function. A
+candidate records its section-relative entry, a conservative end limit, symbol
+names and every direct-control-flow site. It remains `reviewed=false` and is
+not fed into IR/MMIO analysis. Decode failures are retained as
+`recovery_blockers`. This keeps discovery useful without promoting padding,
+literal pools or a guessed prologue to executable function truth.
+
 ## Definition and association classes
 
 The report separates binary facts from conservative project associations:

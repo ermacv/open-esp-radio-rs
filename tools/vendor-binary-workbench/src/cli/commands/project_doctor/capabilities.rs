@@ -122,6 +122,21 @@ fn collect_symbol_inventory(context: &ProjectContext<'_>, report: &mut DoctorRep
                 .field("exported-definitions", summary.exported_definitions)
                 .field("undefined", summary.undefined)
                 .field("unresolved-or-associated", summary.unresolved_or_associated)
+                .field("executable-bytes", summary.executable_bytes)
+                .field("symbol-covered-bytes", summary.symbol_covered_bytes)
+                .field(
+                    "uncovered-executable-bytes",
+                    summary.uncovered_executable_bytes,
+                )
+                .field(
+                    "named-zero-sized-code-symbols",
+                    summary.named_zero_sized_code_symbols,
+                )
+                .field(
+                    "function-boundary-candidates",
+                    summary.function_boundary_candidates,
+                )
+                .field("code-recovery-blockers", summary.code_recovery_blockers)
                 .field("path", spec.output.display().to_string()),
             Err(error) => {
                 report.error();

@@ -825,9 +825,18 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
-    assert_eq!(document["schema_version"], 2);
+    assert_eq!(document["schema_version"], 3);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
+    assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);
+    assert!(!document["code_sections"].as_array().unwrap().is_empty());
+    assert!(document["summary"]["function_boundary_candidates"].is_number());
+    assert!(document["code_sections"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|section| section["function_candidates"].is_array()
+            && section["recovery_blockers"].is_array()));
     let navigation: serde_json::Value = serde_json::from_slice(
         &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
     )

@@ -14,8 +14,9 @@ fn write_visibility_fixture() -> std::path::PathBuf {
 
     let mut object = Object::new(BinaryFormat::Elf, Architecture::Riscv32, Endianness::Little);
     let section = object.add_section(Vec::new(), b".text".to_vec(), SectionKind::Text);
-    let global_offset = object.append_section_data(section, &[0x67, 0x80, 0x00, 0x00], 4);
+    let global_offset = object.append_section_data(section, &[0xef, 0x00, 0x80, 0x00], 4);
     let local_offset = object.append_section_data(section, &[0x67, 0x80, 0x00, 0x00], 4);
+    let gap_offset = object.append_section_data(section, &[0, 0, 0, 0], 4);
     for (name, value, scope) in [
         ("exported_function", global_offset, SymbolScope::Dynamic),
         ("private_function", local_offset, SymbolScope::Compilation),
@@ -31,6 +32,16 @@ fn write_visibility_fixture() -> std::path::PathBuf {
             flags: SymbolFlags::None,
         });
     }
+    object.add_symbol(Symbol {
+        name: b"hidden_entry".to_vec(),
+        value: gap_offset,
+        size: 0,
+        kind: SymbolKind::Text,
+        scope: SymbolScope::Compilation,
+        weak: false,
+        section: SymbolSection::Section(section),
+        flags: SymbolFlags::None,
+    });
     object.add_symbol(Symbol {
         name: b"external_service".to_vec(),
         value: 0,
@@ -228,7 +239,7 @@ fn recognizes_absolute_pc_relative_and_got_relocation_kinds() {
 #[test]
 fn pcrel_low_is_normalized_from_local_label_to_actual_symbol() {
     let path = write_pcrel_fixture(false, true);
-    let symbols = load_all_code_symbols(&path, "vendor_callback").unwrap();
+    let symbols = load_code_symbols(&path, "vendor_callback", CodeSymbolSelection::All).unwrap();
     std::fs::remove_file(path).unwrap();
 
     assert_eq!(symbols.len(), 1);
@@ -270,7 +281,7 @@ fn pcrel_low_is_normalized_from_local_label_to_actual_symbol() {
 #[test]
 fn got_pair_resolves_symbol_address_without_inventing_a_table_load() {
     let path = write_pcrel_fixture(true, true);
-    let symbols = load_all_code_symbols(&path, "vendor_callback").unwrap();
+    let symbols = load_code_symbols(&path, "vendor_callback", CodeSymbolSelection::All).unwrap();
     std::fs::remove_file(path).unwrap();
 
     assert_eq!(
@@ -311,7 +322,7 @@ fn got_pair_resolves_symbol_address_without_inventing_a_table_load() {
 #[test]
 fn unpaired_pcrel_low_is_rejected_as_malformed_evidence() {
     let path = write_pcrel_fixture(false, false);
-    let error = load_all_code_symbols(&path, "vendor_callback").unwrap_err();
+    let error = load_code_symbols(&path, "vendor_callback", CodeSymbolSelection::All).unwrap_err();
     std::fs::remove_file(path).unwrap();
     assert!(error.to_string().contains("has no HI20 relocation"));
 }
@@ -338,11 +349,11 @@ fn relocated_call_link_register_distinguishes_call_and_tail_call() {
 }
 
 #[test]
-fn exploratory_catalog_adds_local_functions_without_broadening_default_inventory() {
+fn code_symbol_selection_explicitly_controls_local_functions() {
     let path = write_visibility_fixture();
 
-    let exported = load_symbols(&path, "").unwrap();
-    let all = load_all_code_symbols(&path, "").unwrap();
+    let exported = load_code_symbols(&path, "", CodeSymbolSelection::Exported).unwrap();
+    let all = load_code_symbols(&path, "", CodeSymbolSelection::All).unwrap();
 
     std::fs::remove_file(path).unwrap();
     assert_eq!(
@@ -399,4 +410,38 @@ fn artifact_inventory_preserves_definition_binding_and_section_facts() {
         ArtifactSymbolDefinitionState::Undefined
     );
     assert!(!external.is_exported_definition());
+}
+
+#[test]
+fn artifact_inventory_reports_executable_bytes_without_sized_symbol_coverage() {
+    let path = write_visibility_fixture();
+    let inventory = inspect_artifact(&path).unwrap();
+    std::fs::remove_file(path).unwrap();
+
+    let sections = &inventory.objects[0].code_sections;
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].name, ".text");
+    assert_eq!(sections[0].size, 12);
+    assert_eq!(sections[0].named_sized_symbols, 2);
+    assert_eq!(sections[0].named_zero_sized_symbols, 1);
+    assert_eq!(sections[0].symbol_covered_bytes, 8);
+    assert_eq!(
+        sections[0].uncovered_ranges,
+        [ArtifactCodeRange {
+            start_offset: 8,
+            end_offset: 12,
+        }]
+    );
+    assert_eq!(sections[0].function_candidates.len(), 1);
+    let candidate = &sections[0].function_candidates[0];
+    assert_eq!(candidate.entry_offset, 8);
+    assert_eq!(candidate.end_limit_offset, 12);
+    assert_eq!(candidate.symbol_names, ["hidden_entry"]);
+    assert_eq!(candidate.direct_control_flow.len(), 1);
+    assert_eq!(candidate.direct_control_flow[0].caller, "exported_function");
+    assert_eq!(candidate.direct_control_flow[0].site_offset, 0);
+    assert_eq!(
+        candidate.direct_control_flow[0].kind,
+        ArtifactDirectControlFlowKind::Call
+    );
 }

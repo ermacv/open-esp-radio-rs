@@ -290,6 +290,7 @@ fn large_analysis_and_human_renderers_keep_functional_boundaries() {
         "function_workspace/pack_validate/contexts.rs",
         "function_workspace/pack_validate/primitives.rs",
         "function_workspace/pack_validate/types.rs",
+        "artifacts/symbol_inventory/read.rs",
         "cli/commands/export_ir/human/functions/effects.rs",
         "cli/commands/export_ir/human/functions/local.rs",
     ] {

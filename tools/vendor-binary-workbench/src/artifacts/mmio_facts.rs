@@ -1,4 +1,4 @@
-//! Stored schema-v2 projection of artifact-wide MMIO evidence.
+//! Stored schema-v3 projection of artifact-wide MMIO evidence.
 
 use serde::Serialize;
 
@@ -64,12 +64,19 @@ struct DiagnosticDocument {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct CodeSelectionDocument {
+    symbols: &'static str,
+    symbol_prefix: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct MmioFactsDocument {
     schema_version: u32,
     command: &'static str,
     analysis_mode: &'static str,
     access_count_mode: &'static str,
     completeness_claim: bool,
+    code_selection: CodeSelectionDocument,
     ranges: Vec<RangeDocument>,
     artifacts: Vec<ArtifactDocument>,
     registers: Vec<RegisterDocument>,
@@ -83,6 +90,10 @@ pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<Mm
         analysis_mode: "best-effort",
         access_count_mode: "maximum-per-path",
         completeness_claim: false,
+        code_selection: CodeSelectionDocument {
+            symbols: report.code_symbol_selection.label(),
+            symbol_prefix: report.symbol_prefix.clone(),
+        },
         ranges: report
             .ranges
             .iter()
@@ -204,6 +215,8 @@ mod tests {
     #[test]
     fn rendered_report_has_the_canonical_identity() {
         let report = MmioDiscoveryReport {
+            code_symbol_selection: crate::artifact::CodeSymbolSelection::All,
+            symbol_prefix: String::new(),
             artifacts: Vec::new(),
             ranges: Vec::new(),
             registers: Vec::new(),
@@ -211,13 +224,17 @@ mod tests {
         };
         let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
-        assert_eq!(parsed["schema_version"], 2);
+        assert_eq!(parsed["schema_version"], 3);
         assert_eq!(parsed["command"], "mmio discover");
+        assert_eq!(parsed["code_selection"]["symbols"], "all");
+        assert_eq!(parsed["code_selection"]["symbol_prefix"], "");
     }
 
     #[test]
     fn stored_mmio_facts_reject_unknown_and_missing_fields() {
         let report = MmioDiscoveryReport {
+            code_symbol_selection: crate::artifact::CodeSymbolSelection::All,
+            symbol_prefix: String::new(),
             artifacts: Vec::new(),
             ranges: Vec::new(),
             registers: Vec::new(),

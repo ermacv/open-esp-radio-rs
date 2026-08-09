@@ -196,11 +196,12 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
-  "schema_version": 2,
+  "schema_version": 3,
   "command": "mmio discover",
   "analysis_mode": "best-effort",
   "access_count_mode": "maximum-per-path",
   "completeness_claim": false,
+  "code_selection": {"symbols":"all","symbol_prefix":""},
   "ranges": [{"name":"radio","start":"0x1000","end_exclusive":"0x2000"}],
   "artifacts": [],
   "registers": [{"address":"0x1010","width":32,"name":"UNMAPPED","reads":1,"writes":2,"read_functions":["rom:read"],"write_functions":["lib:member.o:write"],"write_patterns":[{"occurrences":2,"modified_mask":"0x3","candidate_bit_ranges":"0-1","preserved_mask":"0xfffffffc","inverted_mask":"0x0","forced_zero_mask":"0x0","forced_one_mask":"0x1","read_derived_mask":"0x0","dynamic_mask":"0x2","functions":["lib:member.o:write"]}]}],

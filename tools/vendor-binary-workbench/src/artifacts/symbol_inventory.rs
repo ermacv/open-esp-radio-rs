@@ -1,18 +1,17 @@
-//! Stored symbol-inventory schema, writer and strict summary projection.
+//! Stored symbol-inventory schema and writer.
 
-#![allow(
-    dead_code,
-    reason = "complete stored DTOs enforce every persistent schema field"
-)]
-
-use std::path::Path;
-
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::SYMBOL_INVENTORY;
 use crate::{
     analysis::{LinkageSymbol, ProjectLinkageInventory},
     artifact_sha256,
+};
+
+mod read;
+
+pub(crate) use read::{
+    StoredSymbolInventory, inspect_symbol_inventory, parse_symbol_inventory,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -60,6 +59,51 @@ struct SymbolDocument {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct CodeRangeDocument {
+    start_offset: String,
+    end_offset: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct DirectControlFlowDocument {
+    caller: String,
+    site_offset: String,
+    kind: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct FunctionCandidateDocument {
+    entry_offset: String,
+    end_limit_offset: String,
+    symbol_names: Vec<String>,
+    direct_control_flow: Vec<DirectControlFlowDocument>,
+    reviewed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct RecoveryBlockerDocument {
+    symbol: String,
+    message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct CodeSectionDocument {
+    artifact: usize,
+    member: Option<String>,
+    object_kind: &'static str,
+    section: String,
+    address: String,
+    executable_bytes: u64,
+    named_sized_symbols: usize,
+    named_zero_sized_symbols: usize,
+    symbol_covered_bytes: u64,
+    uncovered_bytes: u64,
+    uncovered_ranges: Vec<CodeRangeDocument>,
+    function_candidates: Vec<FunctionCandidateDocument>,
+    recovery_blockers: Vec<RecoveryBlockerDocument>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 struct SummaryDocument {
     artifacts: usize,
     symbol_facts: usize,
@@ -67,6 +111,13 @@ struct SummaryDocument {
     exported_definitions: usize,
     undefined: usize,
     unresolved_or_associated: usize,
+    executable_sections: usize,
+    executable_bytes: u64,
+    symbol_covered_bytes: u64,
+    uncovered_executable_bytes: u64,
+    named_zero_sized_code_symbols: usize,
+    function_boundary_candidates: usize,
+    code_recovery_blockers: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -76,6 +127,7 @@ pub(crate) struct SymbolInventoryDocument {
     linkage_mode: &'static str,
     linker_resolution_claim: bool,
     artifacts: Vec<ArtifactDocument>,
+    code_sections: Vec<CodeSectionDocument>,
     symbols: Vec<SymbolDocument>,
     summary: SummaryDocument,
 }
@@ -130,6 +182,63 @@ pub(crate) fn build_symbol_inventory_document(
                 })
             })
             .collect::<crate::Result<Vec<_>>>()?,
+        code_sections: inventory
+            .artifacts
+            .iter()
+            .enumerate()
+            .flat_map(|(artifact, input)| {
+                input.code_sections.iter().map(move |section| {
+                    let coverage = &section.coverage;
+                    CodeSectionDocument {
+                        artifact,
+                        member: section.member.clone(),
+                        object_kind: section.object_kind.label(),
+                        section: coverage.name.clone(),
+                        address: format!("{:#x}", coverage.address),
+                        executable_bytes: coverage.size,
+                        named_sized_symbols: coverage.named_sized_symbols,
+                        named_zero_sized_symbols: coverage.named_zero_sized_symbols,
+                        symbol_covered_bytes: coverage.symbol_covered_bytes,
+                        uncovered_bytes: coverage.size - coverage.symbol_covered_bytes,
+                        uncovered_ranges: coverage
+                            .uncovered_ranges
+                            .iter()
+                            .map(|range| CodeRangeDocument {
+                                start_offset: format!("{:#x}", range.start_offset),
+                                end_offset: format!("{:#x}", range.end_offset),
+                            })
+                            .collect(),
+                        function_candidates: coverage
+                            .function_candidates
+                            .iter()
+                            .map(|candidate| FunctionCandidateDocument {
+                                entry_offset: format!("{:#x}", candidate.entry_offset),
+                                end_limit_offset: format!("{:#x}", candidate.end_limit_offset),
+                                symbol_names: candidate.symbol_names.clone(),
+                                direct_control_flow: candidate
+                                    .direct_control_flow
+                                    .iter()
+                                    .map(|evidence| DirectControlFlowDocument {
+                                        caller: evidence.caller.clone(),
+                                        site_offset: format!("{:#x}", evidence.site_offset),
+                                        kind: evidence.kind.label(),
+                                    })
+                                    .collect(),
+                                reviewed: false,
+                            })
+                            .collect(),
+                        recovery_blockers: coverage
+                            .recovery_blockers
+                            .iter()
+                            .map(|blocker| RecoveryBlockerDocument {
+                                symbol: blocker.symbol.clone(),
+                                message: blocker.message.clone(),
+                            })
+                            .collect(),
+                    }
+                })
+            })
+            .collect(),
         symbols: symbols
             .iter()
             .map(|symbol| SymbolDocument {
@@ -166,6 +275,47 @@ pub(crate) fn build_symbol_inventory_document(
             exported_definitions: exported,
             undefined,
             unresolved_or_associated: unresolved,
+            executable_sections: inventory
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.code_sections.len())
+                .sum(),
+            executable_bytes: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.size)
+                .sum(),
+            symbol_covered_bytes: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.symbol_covered_bytes)
+                .sum(),
+            uncovered_executable_bytes: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.size - section.coverage.symbol_covered_bytes)
+                .sum(),
+            named_zero_sized_code_symbols: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.named_zero_sized_symbols)
+                .sum(),
+            function_boundary_candidates: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.function_candidates.len())
+                .sum(),
+            code_recovery_blockers: inventory
+                .artifacts
+                .iter()
+                .flat_map(|artifact| &artifact.code_sections)
+                .map(|section| section.coverage.recovery_blockers.len())
+                .sum(),
         },
     })
 }
@@ -174,164 +324,4 @@ pub(crate) fn render_symbol_inventory(document: &SymbolInventoryDocument) -> cra
     let mut output = serde_json::to_string_pretty(document)?;
     output.push('\n');
     Ok(output)
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SymbolInventorySummary {
-    pub(crate) artifacts: usize,
-    pub(crate) symbol_facts: usize,
-    pub(crate) exported_definitions: usize,
-    pub(crate) undefined: usize,
-    pub(crate) unresolved_or_associated: usize,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoredSymbolInventory {
-    schema_version: u32,
-    command: String,
-    linkage_mode: String,
-    linker_resolution_claim: bool,
-    pub(crate) artifacts: Vec<StoredSymbolArtifact>,
-    pub(crate) symbols: Vec<StoredSymbolFact>,
-    summary: StoredSummaryDocument,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoredSymbolArtifact {
-    pub(crate) index: usize,
-    pub(crate) artifact: StoredSymbolArtifactIdentity,
-    roles: Vec<String>,
-    pub(crate) sources: Vec<String>,
-    container: String,
-    objects: usize,
-    skipped_members: usize,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoredSymbolArtifactIdentity {
-    pub(crate) path: String,
-    pub(crate) sha256: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct StoredSymbolFact {
-    pub(crate) artifact: usize,
-    pub(crate) member: Option<String>,
-    object_kind: String,
-    pub(crate) name: String,
-    pub(crate) table: String,
-    binding: String,
-    visibility: String,
-    pub(crate) definition: String,
-    pub(crate) kind: String,
-    section: Option<String>,
-    pub(crate) address: String,
-    size: u64,
-    scope: String,
-    pub(crate) resolution: String,
-    candidates: Vec<StoredSymbolCandidate>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StoredSymbolCandidate {
-    artifact: usize,
-    member: Option<String>,
-    address: String,
-    kind: String,
-}
-
-pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolInventory> {
-    super::expect_identity(input, SYMBOL_INVENTORY)?;
-    let document: StoredSymbolInventory = serde_json::from_str(input)?;
-    if document.linkage_mode != "association-only" || document.linker_resolution_claim {
-        return Err(crate::Error::invalid(
-            "symbol inventory makes an unsupported linker-resolution claim",
-        ));
-    }
-    Ok(document)
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StoredSummaryDocument {
-    artifacts: usize,
-    symbol_facts: usize,
-    emitted: usize,
-    exported_definitions: usize,
-    undefined: usize,
-    unresolved_or_associated: usize,
-}
-
-pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInventorySummary> {
-    let input = std::fs::read_to_string(path)?;
-    let document = parse_symbol_inventory(&input).map_err(|error| {
-        crate::Error::invalid(format!(
-            "unsupported symbol inventory in {}: {error}",
-            path.display()
-        ))
-    })?;
-    Ok(SymbolInventorySummary {
-        artifacts: document.summary.artifacts,
-        symbol_facts: document.summary.symbol_facts,
-        exported_definitions: document.summary.exported_definitions,
-        undefined: document.summary.undefined,
-        unresolved_or_associated: document.summary.unresolved_or_associated,
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn stored_inventory_summary_is_strictly_versioned() {
-        let path = std::env::temp_dir().join(format!(
-            "vendor-workbench-symbol-inventory-{}.json",
-            std::process::id()
-        ));
-        std::fs::write(
-            &path,
-            r#"{"schema_version":2,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5}}"#,
-        )
-        .unwrap();
-        let summary = inspect_symbol_inventory(&path).unwrap();
-        assert_eq!(summary.artifacts, 3);
-        assert_eq!(summary.symbol_facts, 40);
-        assert_eq!(summary.exported_definitions, 12);
-
-        std::fs::write(
-            &path,
-            r#"{"schema_version":1,"command":"symbols inventory","summary":{"artifacts":0,"symbol_facts":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0}}"#,
-        )
-        .unwrap();
-        assert!(
-            inspect_symbol_inventory(&path)
-                .unwrap_err()
-                .to_string()
-                .contains("expected schema_version 2")
-        );
-        std::fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn stored_inventory_rejects_unknown_and_missing_fields() {
-        let input = r#"{"schema_version":2,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0}}"#;
-        let mut unknown: serde_json::Value = serde_json::from_str(input).unwrap();
-        unknown["summary"]["legacy_field"] = serde_json::json!(true);
-        let error = parse_symbol_inventory(&unknown.to_string()).unwrap_err();
-        assert!(error.to_string().contains("unknown field `legacy_field`"));
-
-        let mut missing: serde_json::Value = serde_json::from_str(input).unwrap();
-        missing["summary"]
-            .as_object_mut()
-            .unwrap()
-            .remove("emitted");
-        let error = parse_symbol_inventory(&missing.to_string()).unwrap_err();
-        assert!(error.to_string().contains("missing field `emitted`"));
-    }
 }

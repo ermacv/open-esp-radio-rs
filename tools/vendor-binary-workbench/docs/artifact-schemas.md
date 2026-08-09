@@ -8,8 +8,8 @@ old-schema compatibility readers.
 
 | Artifact | Version | Command identity | Owner |
 | --- | ---: | --- | --- |
-| Symbol inventory | 2 | `symbols inventory` | `artifacts/symbol_inventory.rs` |
-| MMIO discovery facts | 2 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
+| Symbol inventory | 3 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
+| MMIO discovery facts | 3 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 3 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
 | Linked IR | 35 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 

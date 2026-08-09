@@ -15,6 +15,14 @@ pub(crate) struct LinkageArtifact {
     pub(crate) container: artifact::ArtifactContainerKind,
     pub(crate) objects: usize,
     pub(crate) skipped_members: usize,
+    pub(crate) code_sections: Vec<LinkageCodeSection>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct LinkageCodeSection {
+    pub(crate) member: Option<String>,
+    pub(crate) object_kind: artifact::ArtifactObjectKind,
+    pub(crate) coverage: artifact::ArtifactCodeSectionCoverage,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -164,6 +172,21 @@ pub(crate) fn build_project_linkage_inventory(
             container: inventory.container,
             objects: inventory.objects.len(),
             skipped_members: inventory.skipped_members,
+            code_sections: inventory
+                .objects
+                .iter()
+                .flat_map(|object| {
+                    object
+                        .code_sections
+                        .iter()
+                        .cloned()
+                        .map(|coverage| LinkageCodeSection {
+                            member: object.member.clone(),
+                            object_kind: object.kind,
+                            coverage,
+                        })
+                })
+                .collect(),
         });
         inventories.push(inventory);
     }

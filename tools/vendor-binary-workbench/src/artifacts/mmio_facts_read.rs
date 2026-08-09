@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v2 MMIO discovery facts.
+//! Typed consumer projection for schema-v3 MMIO discovery facts.
 
 #![allow(
     dead_code,
@@ -17,10 +17,18 @@ pub(crate) struct StoredMmioFacts {
     analysis_mode: String,
     access_count_mode: String,
     completeness_claim: bool,
+    code_selection: StoredCodeSelection,
     pub(crate) ranges: Vec<StoredMmioRange>,
     artifacts: Vec<StoredMmioArtifact>,
     pub(crate) registers: Vec<StoredRegisterFact>,
     diagnostics: Vec<StoredMmioDiagnostic>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredCodeSelection {
+    symbols: String,
+    symbol_prefix: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +115,12 @@ pub(crate) fn parse_mmio_facts(input: &str) -> Result<StoredMmioFacts> {
         return Err(crate::Error::invalid(
             "MMIO facts artifact makes an unsupported analysis or completeness claim",
         ));
+    }
+    if !matches!(document.code_selection.symbols.as_str(), "all" | "exported") {
+        return Err(crate::Error::invalid(format!(
+            "unsupported MMIO code-symbol selection {:?}",
+            document.code_selection.symbols
+        )));
     }
     Ok(document)
 }

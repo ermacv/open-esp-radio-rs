@@ -56,7 +56,13 @@ impl ReferenceResolver {
         harness: &'static RiscvHarnessSpec,
         entry_contract: EntryContractRef,
     ) -> Result<Self> {
-        Self::load_catalog_with_entry_contract(artifact, companions, harness, entry_contract, false)
+        Self::load_catalog_with_entry_contract(
+            artifact,
+            companions,
+            harness,
+            entry_contract,
+            artifact::CodeSymbolSelection::Exported,
+        )
     }
 
     /// Load the broader exploratory catalog used by IR export.
@@ -69,7 +75,13 @@ impl ReferenceResolver {
         harness: &'static RiscvHarnessSpec,
         entry_contract: EntryContractRef,
     ) -> Result<Self> {
-        Self::load_catalog_with_entry_contract(artifact, companions, harness, entry_contract, true)
+        Self::load_catalog_with_entry_contract(
+            artifact,
+            companions,
+            harness,
+            entry_contract,
+            artifact::CodeSymbolSelection::All,
+        )
     }
 
     fn load_catalog_with_entry_contract(
@@ -77,16 +89,17 @@ impl ReferenceResolver {
         companions: &[PathBuf],
         harness: &'static RiscvHarnessSpec,
         entry_contract: EntryContractRef,
-        include_local: bool,
+        selection: artifact::CodeSymbolSelection,
     ) -> Result<Self> {
-        let exported_symbols = artifact::load_symbols(artifact, "")?;
+        let exported_symbols =
+            artifact::load_code_symbols(artifact, "", artifact::CodeSymbolSelection::Exported)?;
         let exported_symbol_keys = exported_symbols
             .iter()
             .map(symbol_key)
             .collect::<BTreeSet<_>>();
         let mut address_preferred_symbol_keys = exported_symbol_keys.clone();
-        let symbols = if include_local {
-            artifact::load_all_code_symbols(artifact, "")?
+        let symbols = if selection == artifact::CodeSymbolSelection::All {
+            artifact::load_code_symbols(artifact, "", selection)?
         } else {
             exported_symbols
         };
@@ -140,10 +153,14 @@ impl ReferenceResolver {
                 .into());
             };
             image.add_companion(companion)?;
-            let companion_exported_symbols = artifact::load_symbols(companion, "")?;
+            let companion_exported_symbols = artifact::load_code_symbols(
+                companion,
+                "",
+                artifact::CodeSymbolSelection::Exported,
+            )?;
             address_preferred_symbol_keys.extend(companion_exported_symbols.iter().map(symbol_key));
-            let companion_symbols = if include_local {
-                artifact::load_all_code_symbols(companion, "")?
+            let companion_symbols = if selection == artifact::CodeSymbolSelection::All {
+                artifact::load_code_symbols(companion, "", selection)?
             } else {
                 companion_exported_symbols
             };

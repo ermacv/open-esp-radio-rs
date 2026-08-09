@@ -108,6 +108,8 @@ pub(crate) struct ArtifactDiscoverySummary {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct MmioDiscoveryReport {
+    pub(crate) code_symbol_selection: artifact::CodeSymbolSelection,
+    pub(crate) symbol_prefix: String,
     pub(crate) ranges: Vec<DiscoveryRange>,
     pub(crate) artifacts: Vec<ArtifactDiscoverySummary>,
     pub(crate) registers: Vec<RegisterFinding>,
@@ -395,12 +397,18 @@ fn discovery_map(svd: &MmioMap, ranges: &[DiscoveryRange]) -> MmioMap {
 #[tracing::instrument(
     name = "discover_mmio",
     skip(artifacts, ranges, svd),
-    fields(artifacts = artifacts.len(), ranges = ranges.len(), symbol_prefix)
+    fields(
+        artifacts = artifacts.len(),
+        ranges = ranges.len(),
+        symbol_prefix,
+        code_symbols = code_symbol_selection.label()
+    )
 )]
 pub(crate) fn discover_mmio(
     artifacts: &[(String, PathBuf)],
     ranges: &[DiscoveryRange],
     symbol_prefix: &str,
+    code_symbol_selection: artifact::CodeSymbolSelection,
     svd: &MmioMap,
 ) -> Result<MmioDiscoveryReport> {
     let map = discovery_map(svd, ranges);
@@ -411,7 +419,8 @@ pub(crate) fn discover_mmio(
     let mut artifact_summaries = Vec::new();
 
     for (source, path) in artifacts {
-        let symbols = artifact::load_symbols(Path::new(path), symbol_prefix)?;
+        let symbols =
+            artifact::load_code_symbols(Path::new(path), symbol_prefix, code_symbol_selection)?;
         let mut functions_with_mmio = 0usize;
         let mut functions_with_diagnostics = 0usize;
         let mut explored_states = 0usize;
@@ -476,6 +485,8 @@ pub(crate) fn discover_mmio(
         .collect();
 
     Ok(MmioDiscoveryReport {
+        code_symbol_selection,
+        symbol_prefix: symbol_prefix.to_owned(),
         ranges: ranges.to_vec(),
         artifacts: artifact_summaries,
         registers,

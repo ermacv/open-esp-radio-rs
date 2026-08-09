@@ -13,6 +13,31 @@ pub struct ArtifactSymbolDefinition {
     pub relocations: Vec<SymbolRelocation>,
 }
 
+/// Which named, sized text symbols should become analysis roots.
+///
+/// This is deliberately separate from [`ArtifactSymbolScope`], which records
+/// the ELF symbol-table scope of an individual symbol.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum CodeSymbolSelection {
+    /// Global and weak definitions that participate in external linkage.
+    Exported,
+    /// Every named definition, including local/private implementation details.
+    All,
+}
+
+impl CodeSymbolSelection {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Exported => "exported",
+            Self::All => "all",
+        }
+    }
+
+    pub const fn includes_local(self) -> bool {
+        matches!(self, Self::All)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ArtifactContainerKind {
     Elf32,
@@ -199,6 +224,68 @@ pub struct ArtifactSymbolFact {
     pub scope: ArtifactSymbolScope,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ArtifactCodeRange {
+    /// Offset from the beginning of the containing executable section.
+    pub start_offset: u64,
+    /// Exclusive offset from the beginning of the containing section.
+    pub end_offset: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ArtifactDirectControlFlowKind {
+    Call,
+    TailCall,
+}
+
+impl ArtifactDirectControlFlowKind {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Call => "call",
+            Self::TailCall => "tail-call",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ArtifactDirectControlFlowEvidence {
+    pub caller: String,
+    /// Section-relative offset of the JAL instruction.
+    pub site_offset: u64,
+    pub kind: ArtifactDirectControlFlowKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactFunctionBoundaryCandidate {
+    /// Section-relative candidate entry address.
+    pub entry_offset: u64,
+    /// Exclusive upper bound inferred from the next candidate or covered range.
+    pub end_limit_offset: u64,
+    /// Zero-sized function symbols anchored at this entry, if any.
+    pub symbol_names: Vec<String>,
+    /// Direct linked calls from sized code into this uncovered entry.
+    pub direct_control_flow: Vec<ArtifactDirectControlFlowEvidence>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactCodeRecoveryBlocker {
+    pub symbol: String,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactCodeSectionCoverage {
+    pub name: String,
+    pub address: u64,
+    pub size: u64,
+    pub named_sized_symbols: usize,
+    pub named_zero_sized_symbols: usize,
+    pub symbol_covered_bytes: u64,
+    pub uncovered_ranges: Vec<ArtifactCodeRange>,
+    pub function_candidates: Vec<ArtifactFunctionBoundaryCandidate>,
+    pub recovery_blockers: Vec<ArtifactCodeRecoveryBlocker>,
+}
+
 impl ArtifactSymbolFact {
     pub const fn is_exported_definition(&self) -> bool {
         self.definition.is_definition()
@@ -211,6 +298,7 @@ impl ArtifactSymbolFact {
 pub struct ArtifactObjectInventory {
     pub member: Option<String>,
     pub kind: ArtifactObjectKind,
+    pub code_sections: Vec<ArtifactCodeSectionCoverage>,
     pub symbols: Vec<ArtifactSymbolFact>,
 }
 

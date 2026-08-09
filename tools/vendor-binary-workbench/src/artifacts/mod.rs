@@ -41,12 +41,12 @@ pub(crate) struct ArtifactSchema {
 }
 
 pub(crate) const SYMBOL_INVENTORY: ArtifactSchema = ArtifactSchema {
-    version: 2,
+    version: 3,
     command: "symbols inventory",
 };
 
 pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 2,
+    version: 3,
     command: "mmio discover",
 };
 
@@ -86,14 +86,14 @@ mod tests {
         assert_eq!(
             SYMBOL_INVENTORY,
             ArtifactSchema {
-                version: 2,
+                version: 3,
                 command: "symbols inventory",
             }
         );
         assert_eq!(
             MMIO_FACTS,
             ArtifactSchema {
-                version: 2,
+                version: 3,
                 command: "mmio discover",
             }
         );

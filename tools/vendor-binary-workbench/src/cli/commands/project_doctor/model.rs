@@ -158,7 +158,7 @@ pub(super) struct ReportField {
 #[derive(Serialize)]
 #[serde(untagged)]
 pub(super) enum ReportValue {
-    Unsigned(usize),
+    Unsigned(u64),
     Boolean(bool),
     String(String),
     Strings(Vec<String>),
@@ -178,6 +178,12 @@ impl fmt::Display for ReportValue {
 
 impl From<usize> for ReportValue {
     fn from(value: usize) -> Self {
+        Self::Unsigned(value as u64)
+    }
+}
+
+impl From<u64> for ReportValue {
+    fn from(value: u64) -> Self {
         Self::Unsigned(value)
     }
 }

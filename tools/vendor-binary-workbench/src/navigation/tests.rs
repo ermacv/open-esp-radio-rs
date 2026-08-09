@@ -24,7 +24,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &symbols_path,
         serde_json::to_string(&json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,
@@ -37,6 +37,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "objects": 1,
                 "skipped_members": 0
             }],
+            "code_sections": [],
             "symbols": [
                 {
                     "artifact": 0,
@@ -79,7 +80,14 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "emitted": 2,
                 "exported_definitions": 2,
                 "undefined": 0,
-                "unresolved_or_associated": 0
+                "unresolved_or_associated": 0,
+                "executable_sections": 0,
+                "executable_bytes": 0,
+                "symbol_covered_bytes": 0,
+                "uncovered_executable_bytes": 0,
+                "named_zero_sized_code_symbols": 0,
+                "function_boundary_candidates": 0,
+                "code_recovery_blockers": 0
             }
         }))
         .unwrap(),

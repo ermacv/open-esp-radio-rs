@@ -95,6 +95,117 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
         )
     );
 
+    let code_sections = inventory
+        .artifacts
+        .iter()
+        .enumerate()
+        .flat_map(|(artifact_index, artifact)| {
+            artifact.code_sections.iter().map(move |section| {
+                let coverage = &section.coverage;
+                let coverage_percent = if coverage.size == 0 {
+                    100.0
+                } else {
+                    coverage.symbol_covered_bytes as f64 * 100.0 / coverage.size as f64
+                };
+                [
+                    artifact_index.to_string(),
+                    optional_human(section.member.as_deref()).to_owned(),
+                    coverage.name.clone(),
+                    coverage.size.to_string(),
+                    format!("{} ({coverage_percent:.1}%)", coverage.symbol_covered_bytes),
+                    (coverage.size - coverage.symbol_covered_bytes).to_string(),
+                    coverage.named_zero_sized_symbols.to_string(),
+                    coverage.uncovered_ranges.len().to_string(),
+                    coverage.function_candidates.len().to_string(),
+                    coverage.recovery_blockers.len().to_string(),
+                ]
+            })
+        })
+        .collect::<Vec<_>>();
+    if !code_sections.is_empty() {
+        outputln!(
+            "Executable code coverage by named, sized symbols:\n{}",
+            crate::cli::table::render(
+                [
+                    "Artifact",
+                    "Member",
+                    "Section",
+                    "Exec bytes",
+                    "Symbol-covered",
+                    "Uncovered",
+                    "Zero-sized",
+                    "Gaps",
+                    "Candidates",
+                    "Blockers",
+                ],
+                code_sections,
+            )
+        );
+    }
+
+    let function_candidates = inventory
+        .artifacts
+        .iter()
+        .enumerate()
+        .flat_map(|(artifact_index, artifact)| {
+            artifact.code_sections.iter().flat_map(move |section| {
+                section
+                    .coverage
+                    .function_candidates
+                    .iter()
+                    .map(move |candidate| {
+                        let evidence = candidate
+                            .direct_control_flow
+                            .iter()
+                            .map(|call| {
+                                format!(
+                                    "{}:{}@{:#x}",
+                                    call.kind.label(),
+                                    call.caller,
+                                    call.site_offset
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        [
+                            artifact_index.to_string(),
+                            optional_human(section.member.as_deref()).to_owned(),
+                            section.coverage.name.clone(),
+                            format!("{:#x}", candidate.entry_offset),
+                            format!("{:#x}", candidate.end_limit_offset),
+                            if candidate.symbol_names.is_empty() {
+                                "-".to_owned()
+                            } else {
+                                candidate.symbol_names.join(", ")
+                            },
+                            if evidence.is_empty() {
+                                "-".to_owned()
+                            } else {
+                                evidence
+                            },
+                        ]
+                    })
+            })
+        })
+        .collect::<Vec<_>>();
+    if !function_candidates.is_empty() {
+        outputln!(
+            "Unreviewed function-boundary candidates:\n{}",
+            crate::cli::table::render(
+                [
+                    "Artifact",
+                    "Member",
+                    "Section",
+                    "Entry",
+                    "End limit",
+                    "Symbols",
+                    "Direct control flow",
+                ],
+                function_candidates,
+            )
+        );
+    }
+
     let candidates = symbols
         .iter()
         .flat_map(|symbol| {
@@ -136,14 +247,43 @@ fn print_report_human(inventory: &ProjectLinkageInventory, options: &Options) {
         .iter()
         .filter(|symbol| symbol.resolution.is_unresolved())
         .count();
+    let executable_bytes = inventory
+        .artifacts
+        .iter()
+        .flat_map(|artifact| &artifact.code_sections)
+        .map(|section| section.coverage.size)
+        .sum::<u64>();
+    let symbol_covered_bytes = inventory
+        .artifacts
+        .iter()
+        .flat_map(|artifact| &artifact.code_sections)
+        .map(|section| section.coverage.symbol_covered_bytes)
+        .sum::<u64>();
+    let function_boundary_candidates = inventory
+        .artifacts
+        .iter()
+        .flat_map(|artifact| &artifact.code_sections)
+        .map(|section| section.coverage.function_candidates.len())
+        .sum::<usize>();
+    let code_recovery_blockers = inventory
+        .artifacts
+        .iter()
+        .flat_map(|artifact| &artifact.code_sections)
+        .map(|section| section.coverage.recovery_blockers.len())
+        .sum::<usize>();
     outputln!(
-        "Summary: artifacts={} symbol-facts={} shown={} exported={} undefined={} unresolved-or-associated={}",
+        "Summary: artifacts={} symbol-facts={} shown={} exported={} undefined={} unresolved-or-associated={} executable-bytes={} symbol-covered-bytes={} uncovered-executable-bytes={} function-boundary-candidates={} code-recovery-blockers={}",
         inventory.artifacts.len(),
         inventory.symbols.len(),
         symbols.len(),
         exported,
         undefined,
         unresolved,
+        executable_bytes,
+        symbol_covered_bytes,
+        executable_bytes - symbol_covered_bytes,
+        function_boundary_candidates,
+        code_recovery_blockers,
     );
 }
 

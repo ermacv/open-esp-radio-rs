@@ -174,7 +174,17 @@ pub(super) fn run(arguments: MmioDiscoverArgs, svd: &MmioMap) -> Result<bool> {
         }
     }
 
-    let report = discover_mmio(&artifacts, &ranges, &arguments.symbol_prefix, svd)?;
+    let code_symbol_selection = match arguments.code_symbols {
+        crate::cli::CodeSymbolSelectionArg::All => artifact::CodeSymbolSelection::All,
+        crate::cli::CodeSymbolSelectionArg::Exported => artifact::CodeSymbolSelection::Exported,
+    };
+    let report = discover_mmio(
+        &artifacts,
+        &ranges,
+        &arguments.symbol_prefix,
+        code_symbol_selection,
+        svd,
+    )?;
     let publication = arguments.json_report.as_deref().map(|path| {
         crate::cli::output::Publication::new(
             path,

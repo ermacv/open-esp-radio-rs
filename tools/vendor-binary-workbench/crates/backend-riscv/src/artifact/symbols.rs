@@ -15,7 +15,7 @@ fn collect_object_symbols(
     data: &[u8],
     member: Option<&str>,
     prefix: &str,
-    include_local: bool,
+    selection: CodeSymbolSelection,
     output: &mut Vec<ArtifactSymbolDefinition>,
 ) -> Result<()> {
     let file = object::File::parse(data)?;
@@ -60,7 +60,7 @@ fn collect_object_symbols(
     for symbol in file.symbols() {
         if symbol.kind() != SymbolKind::Text
             || !symbol.is_definition()
-            || (!include_local && !(symbol.is_global() || symbol.is_weak()))
+            || (!selection.includes_local() && !(symbol.is_global() || symbol.is_weak()))
             || symbol.size() == 0
         {
             continue;
@@ -121,12 +121,12 @@ fn collect_object_symbols(
 #[tracing::instrument(
     name = "load_riscv_symbols",
     skip_all,
-    fields(path = %path.display(), prefix, include_local)
+    fields(path = %path.display(), prefix, selection = selection.label())
 )]
-fn load_symbols_with_visibility(
+pub fn load_code_symbols(
     path: &Path,
     prefix: &str,
-    include_local: bool,
+    selection: CodeSymbolSelection,
 ) -> Result<Vec<ArtifactSymbolDefinition>> {
     let data = fs::read(path)?;
     let mut symbols = Vec::new();
@@ -142,36 +142,17 @@ fn load_symbols_with_visibility(
                         member_data,
                         Some(&name),
                         prefix,
-                        include_local,
+                        selection,
                         &mut symbols,
                     )?;
                 }
             }
         }
-        FileKind::Elf32 => {
-            collect_object_symbols(&data, None, prefix, include_local, &mut symbols)?
-        }
+        FileKind::Elf32 => collect_object_symbols(&data, None, prefix, selection, &mut symbols)?,
         kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
     }
     symbols.sort_by(|left, right| {
         (&left.member, &left.name, left.address).cmp(&(&right.member, &right.name, right.address))
     });
     Ok(symbols)
-}
-
-/// Load exported (global or weak) code symbols.
-///
-/// This remains the default inventory for validation and verification: adding
-/// private implementation details must not silently broaden evidence scope.
-pub fn load_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefinition>> {
-    load_symbols_with_visibility(path, prefix, false)
-}
-
-/// Load every named, non-empty code symbol, including local/private functions.
-///
-/// This broader catalog is intended for exploratory IR and call-graph export.
-/// It is not a completeness guarantee: stripped functions and executable bytes
-/// without a sized text symbol still have no function boundary here.
-pub fn load_all_code_symbols(path: &Path, prefix: &str) -> Result<Vec<ArtifactSymbolDefinition>> {
-    load_symbols_with_visibility(path, prefix, true)
 }

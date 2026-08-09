@@ -60,8 +60,18 @@ fn structural_loader_reproduces_both_vendor_inventories() {
         eprintln!("private vendor inventory fixtures are not installed; integration test skipped");
         return;
     }
-    assert_eq!(artifact::load_symbols(&rom, "phy_").unwrap().len(), 305);
-    assert_eq!(artifact::load_symbols(&archive, "").unwrap().len(), 161);
+    assert_eq!(
+        artifact::load_code_symbols(&rom, "phy_", artifact::CodeSymbolSelection::Exported)
+            .unwrap()
+            .len(),
+        305
+    );
+    assert_eq!(
+        artifact::load_code_symbols(&archive, "", artifact::CodeSymbolSelection::Exported)
+            .unwrap()
+            .len(),
+        161
+    );
 }
 
 #[test]
@@ -74,7 +84,12 @@ fn archive_loader_retains_riscv_data_relocation_addends_and_store_kinds() {
         eprintln!("private libpp fixture is not installed; integration test skipped");
         return;
     }
-    let symbols = artifact::load_symbols(&archive, "hal_tsf_get_tbttstart").unwrap();
+    let symbols = artifact::load_code_symbols(
+        &archive,
+        "hal_tsf_get_tbttstart",
+        artifact::CodeSymbolSelection::Exported,
+    )
+    .unwrap();
     let symbol = symbols
         .iter()
         .find(|symbol| symbol.name == "hal_tsf_get_tbttstart")
@@ -85,7 +100,12 @@ fn archive_loader_retains_riscv_data_relocation_addends_and_store_kinds() {
             && relocation.addend == 4
     }));
 
-    let symbols = artifact::load_symbols(&archive, "pp_timer_register_post_cb").unwrap();
+    let symbols = artifact::load_code_symbols(
+        &archive,
+        "pp_timer_register_post_cb",
+        artifact::CodeSymbolSelection::Exported,
+    )
+    .unwrap();
     let symbol = symbols
         .iter()
         .find(|symbol| symbol.name == "pp_timer_register_post_cb")
@@ -97,7 +117,12 @@ fn archive_loader_retains_riscv_data_relocation_addends_and_store_kinds() {
             .any(|relocation| relocation.kind == artifact::RelocationKind::Lo12S)
     );
 
-    let symbols = artifact::load_symbols(&archive, "hal_set_ofdma_sequence_pti").unwrap();
+    let symbols = artifact::load_code_symbols(
+        &archive,
+        "hal_set_ofdma_sequence_pti",
+        artifact::CodeSymbolSelection::Exported,
+    )
+    .unwrap();
     let symbol = symbols
         .iter()
         .find(|symbol| symbol.name == "hal_set_ofdma_sequence_pti")

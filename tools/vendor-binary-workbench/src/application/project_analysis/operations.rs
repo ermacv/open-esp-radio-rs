@@ -6,6 +6,7 @@ use crate::{
         DiscoveryRange, ProjectInterfaceDiscoveryOptions, build_project_linkage_inventory,
         discover_mmio, discover_project_interfaces,
     },
+    artifact,
     artifacts::{
         build_interface_facts, build_mmio_facts as mmio_document, build_symbol_inventory_document,
         render_interface_facts, render_mmio_facts, render_symbol_inventory,
@@ -176,7 +177,13 @@ pub(crate) fn discover_project_mmio(
         .into_iter()
         .map(|(name, start, end)| DiscoveryRange { name, start, end })
         .collect::<Vec<_>>();
-    let report = discover_mmio(&artifacts, &ranges, "", svd)?;
+    let report = discover_mmio(
+        &artifacts,
+        &ranges,
+        "",
+        artifact::CodeSymbolSelection::All,
+        svd,
+    )?;
     let document = mmio_document(&report)?;
     super::super::generated_file::write_or_check(
         output,

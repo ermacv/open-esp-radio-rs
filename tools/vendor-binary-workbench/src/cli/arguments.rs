@@ -2,7 +2,7 @@
 
 use std::{path::PathBuf, str::FromStr};
 
-use clap::Args;
+use clap::{Args, ValueEnum};
 
 use super::{NamedAddressRange, ProjectInputBinding, SourcePath, SourceValue};
 use crate::source_id::SourceId;
@@ -256,6 +256,15 @@ pub(crate) struct ImageAuditArgs {
     pub(crate) forbid: Vec<NamedAddressRange>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+pub(crate) enum CodeSymbolSelectionArg {
+    /// Analyze every named, sized function symbol, including local functions.
+    #[default]
+    All,
+    /// Analyze only global and weak function definitions.
+    Exported,
+}
+
 #[derive(Clone, Debug, Default, Args)]
 pub(crate) struct MmioDiscoverArgs {
     /// Named vendor artifact; repeat for multi-source analysis.
@@ -267,6 +276,9 @@ pub(crate) struct MmioDiscoverArgs {
     /// Restrict analyzed functions to this symbol prefix.
     #[arg(long, default_value = "")]
     pub(crate) symbol_prefix: String,
+    /// Select which matching function symbols become MMIO analysis roots.
+    #[arg(long, value_enum, default_value_t)]
+    pub(crate) code_symbols: CodeSymbolSelectionArg,
     /// Write the machine-readable MMIO discovery report.
     #[arg(long)]
     pub(crate) json_report: Option<PathBuf>,

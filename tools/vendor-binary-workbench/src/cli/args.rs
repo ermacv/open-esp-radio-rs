@@ -615,4 +615,33 @@ mod tests {
         .unwrap_err();
         assert!(error.to_string().contains("interactive human frontend"));
     }
+
+    #[test]
+    fn mmio_discovery_defaults_to_all_code_symbols_and_can_be_narrowed() {
+        let invocation = ParsedInvocation::parse([
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--artifact".to_owned(),
+            "vendor=/tmp/vendor.a".to_owned(),
+            "--range".to_owned(),
+            "radio=0x60000000..0x60001000".to_owned(),
+        ])
+        .unwrap();
+        let Command::DiscoverMmio(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.code_symbols, CodeSymbolSelectionArg::All);
+
+        let invocation = ParsedInvocation::parse([
+            "mmio".to_owned(),
+            "discover".to_owned(),
+            "--code-symbols".to_owned(),
+            "exported".to_owned(),
+        ])
+        .unwrap();
+        let Command::DiscoverMmio(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert_eq!(arguments.code_symbols, CodeSymbolSelectionArg::Exported);
+    }
 }

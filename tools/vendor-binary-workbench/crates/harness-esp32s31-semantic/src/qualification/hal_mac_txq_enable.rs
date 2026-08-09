@@ -116,7 +116,11 @@ fn validate_domain(
 }
 
 fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Result<String> {
-    let symbols = artifact::load_symbols(vendor_inventory, SYMBOL)?;
+    let symbols = artifact::load_code_symbols(
+        vendor_inventory,
+        SYMBOL,
+        artifact::CodeSymbolSelection::Exported,
+    )?;
     let symbol = symbols
         .iter()
         .find(|candidate| candidate.name == SYMBOL)

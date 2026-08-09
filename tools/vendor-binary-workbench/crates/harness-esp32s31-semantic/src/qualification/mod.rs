@@ -85,7 +85,11 @@ fn hash_field(hasher: &mut Sha256, bytes: &[u8]) {
 }
 
 fn inventory_symbol_sha256(path: &Path, member: Option<&str>, symbol_name: &str) -> Result<String> {
-    let symbols = crate::artifact::load_symbols(path, symbol_name)?;
+    let symbols = crate::artifact::load_code_symbols(
+        path,
+        symbol_name,
+        crate::artifact::CodeSymbolSelection::Exported,
+    )?;
     let matches = symbols
         .iter()
         .filter(|symbol| {

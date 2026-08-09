@@ -14,13 +14,15 @@ pub(crate) fn list_code_symbols(
     artifact: &Path,
     prefix: &str,
 ) -> Result<Vec<ArtifactSymbolIdentity>> {
-    Ok(artifact::load_symbols(artifact, prefix)?
-        .into_iter()
-        .map(|symbol| ArtifactSymbolIdentity {
-            member: symbol.member,
-            name: symbol.name,
-        })
-        .collect())
+    Ok(
+        artifact::load_code_symbols(artifact, prefix, artifact::CodeSymbolSelection::Exported)?
+            .into_iter()
+            .map(|symbol| ArtifactSymbolIdentity {
+                member: symbol.member,
+                name: symbol.name,
+            })
+            .collect(),
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +80,11 @@ pub(crate) fn trace_document(trace: &FunctionAnalysis) -> TraceDocument<'_> {
 }
 
 pub(crate) fn extract(input: &ArtifactSymbolSelector, svd: &MmioMap) -> Result<FunctionAnalysis> {
-    let symbols = artifact::load_symbols(&input.artifact, &input.symbol)?;
+    let symbols = artifact::load_code_symbols(
+        &input.artifact,
+        &input.symbol,
+        artifact::CodeSymbolSelection::Exported,
+    )?;
     let symbol = symbols
         .iter()
         .find(|candidate| {

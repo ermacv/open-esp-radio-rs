@@ -5,39 +5,37 @@ use open_esp_radio::{
     esp32s31::{
         phy::phy_cold::PhyColdState,
         registers::MacInterruptSetup,
-        wifi::sta::{
-            channel::Esp32s31ScanPhy,
-            scan::{Esp32s31StaScanBackend, Esp32s31StaScanConfig, Esp32s31StaScanError},
-        },
+        wifi::sta::scan::Esp32s31StaScanError,
     },
     wifi::{
         ieee80211::{
             scan::{ScanObservation, ScanRecord, ScanTable},
             station::StaSequenceCounter,
         },
-        sta::scan::{StaCandidateScanExit, StaCandidateScanService, StaScanPlanError},
+        sta::scan::StaScanPlanError,
+        sta::request::StationDiscovery,
     },
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
     phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-    scan_port::{
-        EmbassyEsp32s31ScanTimer, Esp32s31ScanPort, Esp32s31ScanPortParts, Esp32s31ScanRadio,
-        Esp32s31ScanStation, Esp32s31ScanStorage,
-    },
+    scan_port::EmbassyEsp32s31ScanTimer,
     scan_rx::Esp32s31ScanFrameObserver,
+    station::{
+        Esp32s31StationScanDecision, Esp32s31StationScanPlan, Esp32s31StationScanResources,
+        Esp32s31StationScanReturned, run_esp32s31_station_scan,
+    },
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 
 use super::super::{
-    HilPhyObserver, PROBE_REQUEST_RATES, PROBE_TX_DESCRIPTOR_CAPACITY, RadioHilDisconnectedEpoch,
-    RadioHilRunningScanPortError, RunningScanRx, RunningScanTx, SCAN_DWELL_MS, STA_SCAN_CHANNELS,
-    TxStorage,
+    HilPhyObserver, LISTEN_CHANNEL, RadioHilDisconnectedEpoch, RadioHilRunningScanPortError,
+    RunningScanRx, TxStorage,
 };
 use super::reporting::{RadioHilStationEpochProgress, RadioHilStationEpochReporter};
 use crate::console::emergency_log;
 
 /// Borrowed board context for one running candidate scan.
-pub(in crate::radio_hil) struct RadioHilRunningScanContext<'fixture, 'ssid> {
+pub(in crate::radio_hil) struct RadioHilRunningScanContext<'fixture> {
     pub state: &'fixture mut PhyColdState,
     pub platform: &'fixture mut EspHalRadioPeripheral,
     pub tx_storage: &'fixture mut TxStorage,
@@ -45,7 +43,7 @@ pub(in crate::radio_hil) struct RadioHilRunningScanContext<'fixture, 'ssid> {
     pub scan_table: &'fixture mut ScanTable,
     pub scan_frame: &'fixture mut [u8],
     pub station_address: [u8; 6],
-    pub target_ssid: &'ssid [u8],
+    pub discovery: StationDiscovery,
     pub sequence: &'fixture mut StaSequenceCounter,
 }
 
@@ -101,7 +99,7 @@ impl Esp32s31ScanFrameObserver for RadioHilRunningScanFrameObserver {
 /// storage.
 pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
     epoch: RadioHilDisconnectedEpoch,
-    context: RadioHilRunningScanContext<'_, '_>,
+    context: RadioHilRunningScanContext<'_>,
     reporter: RadioHilStationEpochReporter,
 ) -> Result<RadioHilRunningScanReturn, RadioHilRunningScanRecovery> {
     let RadioHilRunningScanContext {
@@ -112,7 +110,7 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
         scan_table,
         scan_frame,
         station_address,
-        target_ssid,
+        discovery,
         sequence,
     } = context;
     let open_esp_radio_esp32s31_wifi_embassy::station_epoch::Esp32s31RunningScanEpochParts {
@@ -123,34 +121,32 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
     let control = tx_storage
         .take_control()
         .expect("connected teardown returned the ordinary TX owner");
-    let scan_owner = Esp32s31ScanPort::new(
-        Esp32s31ScanRadio::new(
-            Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(state, platform, HilPhyObserver),
+    let scan_plan = Esp32s31StationScanPlan::new(discovery, Some(LISTEN_CHANNEL as u8));
+    let scan_started = Instant::now();
+    let scan = run_esp32s31_station_scan(
+        Esp32s31StationScanResources {
+            phy: state,
+            platform,
+            phy_observer: HilPhyObserver,
+            phy_delay: EmbassyPhyDelay,
             hardware,
-            RunningScanRx::from_stopped(rx),
-            RunningScanTx::new(control, interrupt_setup),
-        ),
-        Esp32s31ScanStorage::new(
-            scan_table,
-            scan_frame,
-            RadioHilRunningScanFrameObserver {
+            receive: RunningScanRx::from_stopped(rx),
+            control,
+            interrupt_setup,
+            table: scan_table,
+            frame: scan_frame,
+            scan_observer: RadioHilRunningScanFrameObserver {
                 station_address,
                 probe_responses: 0,
             },
             sequence,
-        ),
-        Esp32s31ScanStation::new(station_address, target_ssid, &PROBE_REQUEST_RATES)
-            .with_descriptor_capacity(PROBE_TX_DESCRIPTOR_CAPACITY as u32),
-        EmbassyEsp32s31ScanTimer,
-    );
-    let scan_config =
-        Esp32s31StaScanConfig::new(SCAN_DWELL_MS).expect("fixed HIL scan dwell policy is nonzero");
-    let scan_backend = Esp32s31StaScanBackend::new(scan_config);
-    let mut scan_service = StaCandidateScanService::new(scan_backend);
-    let scan_started = Instant::now();
-    let (scan_owner, outcome) = match scan_service.run(scan_owner, &STA_SCAN_CHANNELS).await {
-        StaCandidateScanExit::Selected {
-            owner,
+            timer: EmbassyEsp32s31ScanTimer,
+        },
+        scan_plan.request(station_address),
+    )
+    .await;
+    let outcome = match scan.decision {
+        Esp32s31StationScanDecision::Selected {
             candidate,
             progress,
         } => {
@@ -162,79 +158,64 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
                 candidate.channel,
                 candidate.rssi,
             ));
-            (owner, Ok(candidate))
+            Ok(candidate)
         }
-        StaCandidateScanExit::NoCandidate { owner, progress } => {
+        Esp32s31StationScanDecision::NoCandidate { progress } => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-running-scan \
                  channels={} error=no-candidate",
                 progress.channels_completed,
             ));
-            (
-                owner,
-                Err(RadioHilRunningScanFailure::NoCandidate {
-                    channels_completed: progress.channels_completed,
-                }),
-            )
+            Err(RadioHilRunningScanFailure::NoCandidate {
+                channels_completed: progress.channels_completed,
+            })
         }
-        StaCandidateScanExit::Stopped { owner, progress } => {
+        Esp32s31StationScanDecision::Stopped { progress } => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan \
                  channels={} error=stopped",
                 progress.channels_completed,
             ));
-            (
-                owner,
-                Err(RadioHilRunningScanFailure::Stopped {
-                    channels_completed: progress.channels_completed,
-                }),
-            )
+            Err(RadioHilRunningScanFailure::Stopped {
+                channels_completed: progress.channels_completed,
+            })
         }
-        StaCandidateScanExit::Failed {
-            owner,
-            error,
-            progress,
-        } => {
+        Esp32s31StationScanDecision::Failed { error, progress } => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan \
                  channels={} error={error:?}",
                 progress.channels_completed,
             ));
-            (
-                owner,
-                Err(RadioHilRunningScanFailure::Transaction {
-                    error,
-                    channels_completed: progress.channels_completed,
-                }),
-            )
+            Err(RadioHilRunningScanFailure::Transaction {
+                error,
+                channels_completed: progress.channels_completed,
+            })
         }
-        StaCandidateScanExit::InvalidPlan {
-            owner,
-            error,
-            progress,
-        } => {
+        Esp32s31StationScanDecision::InvalidPlan { error, progress } => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-running-scan-plan \
                  channels={} error={error:?}",
                 progress.channels_planned,
             ));
-            (owner, Err(RadioHilRunningScanFailure::InvalidPlan(error)))
+            Err(RadioHilRunningScanFailure::InvalidPlan(error))
         }
     };
-
-    let Esp32s31ScanPortParts {
-        phy,
+    let Esp32s31StationScanReturned {
         hardware,
-        rx,
-        tx,
+        receive,
+        control,
         timer: _,
-        observer,
+        phy_observer: _,
+        phy_delay: _,
+        scan_observer,
+        table: _,
+        frame: _,
+        sequence: _,
         telemetry,
-        ..
-    } = scan_owner.into_parts();
-    let probe_responses = observer.probe_responses;
-    let (_state, _platform, _observer) = phy.into_parts();
-    let rx = match rx.into_stopped() {
+        transmit,
+    } = scan.returned;
+    let probe_responses = scan_observer.probe_responses;
+    let rx = match receive.into_stopped() {
         Ok(rx) => rx,
         Err(rx) => {
             emergency_log(format_args!(
@@ -242,13 +223,12 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
                  stage=production-running-scan-return phase={:?}",
                 rx.phase(),
             ));
-            let _owners = (retained, hardware, rx, tx);
+            let _owners = (retained, hardware, rx, control);
             loop {
                 Timer::after_secs(60).await;
             }
         }
     };
-    let (control, tx_summary) = tx.into_parts();
     tx_storage
         .restore_control(control)
         .unwrap_or_else(|_| panic!("running scan returned over a live TX owner"));
@@ -258,8 +238,8 @@ pub(in crate::radio_hil) async fn qualify_disconnected_running_scan(
          raw_frames={} probe_responses={} ring_epochs={}",
         rx.ring().descriptor_base(),
         rx.queued_frames(),
-        tx_summary.completions,
-        tx_summary.failures,
+        transmit.completions,
+        transmit.failures,
         telemetry.raw_frames,
         probe_responses,
         telemetry.ring_epochs,

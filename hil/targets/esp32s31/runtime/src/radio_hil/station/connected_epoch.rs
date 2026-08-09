@@ -3,26 +3,31 @@
 mod bindings;
 mod run;
 
-use core::future::Future;
-
-use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, signal::Signal};
-use open_esp_radio_esp32s31_wifi_embassy::{
-    connected_rx_protocol::ConnectedRxProtocolStopped, station::Esp32s31ConnectedTaskGroup,
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use open_esp_radio::adapters::wifi::embassy::connected_tasks::{
+    ConnectedTaskControlError, ConnectedTaskControlResources, ConnectedTaskController,
+    ConnectedTaskEndpoint, ConnectedTaskGroupWithAuxiliary,
 };
 use open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollSet;
 
 use crate::{
     console::emergency_log,
-    radio_hil::{ConnectedNetworkStackRunner, ConnectedRxProtocol},
+    radio_hil::{
+        ConnectedNetworkStackRunner, ConnectedRxProtocol, RadioHilConnectedRxProtocolStopped,
+    },
 };
 
 use super::super::connected_traffic::observe_open_radio_task_polls;
 
 pub(in crate::radio_hil) use bindings::{
     RadioHilConnectedEpochBindings, RadioHilConnectedEpochPolicy, RadioHilConnectedEpochServices,
-    RadioHilConnectedEpochStorage,
+    RadioHilConnectedEpochStorage, RadioHilConnectedStaticResourceError,
+    RadioHilInitialConnectedStaticResources,
 };
 pub(in crate::radio_hil) use run::run_connected_network;
+
+pub(in crate::radio_hil) type RadioHilConnectedTrafficTaskEndpoint =
+    ConnectedTaskEndpoint<'static, CriticalSectionRawMutex, ()>;
 
 /// HIL executor and cancellation resources shared by one connected epoch.
 ///
@@ -32,31 +37,28 @@ pub(in crate::radio_hil) use run::run_connected_network;
 pub(in crate::radio_hil) struct RadioHilConnectedTaskBindings {
     task_polls: &'static TaskPollSet,
     task_poll_telemetry: bool,
-    protocol_stop: &'static Signal<CriticalSectionRawMutex, ()>,
-    protocol_stopped: &'static Signal<CriticalSectionRawMutex, ConnectedRxProtocolStopped<'static>>,
-    traffic_stop: &'static Signal<CriticalSectionRawMutex, ()>,
-    traffic_stopped: &'static Signal<CriticalSectionRawMutex, ()>,
+    protocol: &'static ConnectedTaskControlResources<
+        CriticalSectionRawMutex,
+        RadioHilConnectedRxProtocolStopped,
+    >,
+    traffic: &'static ConnectedTaskControlResources<CriticalSectionRawMutex, ()>,
 }
 
 impl RadioHilConnectedTaskBindings {
     pub(in crate::radio_hil) const fn new(
         task_polls: &'static TaskPollSet,
         task_poll_telemetry: bool,
-        protocol_stop: &'static Signal<CriticalSectionRawMutex, ()>,
-        protocol_stopped: &'static Signal<
+        protocol: &'static ConnectedTaskControlResources<
             CriticalSectionRawMutex,
-            ConnectedRxProtocolStopped<'static>,
+            RadioHilConnectedRxProtocolStopped,
         >,
-        traffic_stop: &'static Signal<CriticalSectionRawMutex, ()>,
-        traffic_stopped: &'static Signal<CriticalSectionRawMutex, ()>,
+        traffic: &'static ConnectedTaskControlResources<CriticalSectionRawMutex, ()>,
     ) -> Self {
         Self {
             task_polls,
             task_poll_telemetry,
-            protocol_stop,
-            protocol_stopped,
-            traffic_stop,
-            traffic_stopped,
+            protocol,
+            traffic,
         }
     }
 
@@ -68,6 +70,29 @@ impl RadioHilConnectedTaskBindings {
 
     pub(in crate::radio_hil) const fn telemetry_enabled(self) -> bool {
         self.task_poll_telemetry
+    }
+
+    pub(in crate::radio_hil) fn start_epoch(
+        self,
+    ) -> Result<
+        (
+            RadioHilConnectedTaskGroup,
+            ConnectedTaskEndpoint<
+                'static,
+                CriticalSectionRawMutex,
+                RadioHilConnectedRxProtocolStopped,
+            >,
+            RadioHilConnectedTrafficTaskEndpoint,
+        ),
+        ConnectedTaskControlError,
+    > {
+        let (protocol, protocol_endpoint) = self.protocol.split()?;
+        let (traffic, traffic_endpoint) = self.traffic.split()?;
+        Ok((
+            ConnectedTaskGroupWithAuxiliary::new(protocol, traffic),
+            protocol_endpoint,
+            traffic_endpoint,
+        ))
     }
 }
 
@@ -88,48 +113,33 @@ pub(in crate::radio_hil) async fn connected_network_stack_task(
 pub(in crate::radio_hil) async fn connected_rx_protocol_task(
     protocol: ConnectedRxProtocol,
     bindings: RadioHilConnectedTaskBindings,
+    endpoint: ConnectedTaskEndpoint<
+        'static,
+        CriticalSectionRawMutex,
+        RadioHilConnectedRxProtocolStopped,
+    >,
 ) {
-    let stopped = observe_open_radio_task_polls(
-        protocol.run_until_stopped(bindings.protocol_stop.wait()),
+    observe_open_radio_task_polls(
+        protocol.run_controlled_task(endpoint, |shutdown| {
+            emergency_log(format_args!(
+                "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stop \
+                 queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
+                shutdown.queued_frames,
+                shutdown.retained_frames,
+                shutdown.reorder_commands,
+                shutdown.active_reorders,
+            ));
+        }),
         bindings.task_polls.protocol(),
         bindings.task_poll_telemetry,
     )
     .await;
-    let shutdown = stopped.shutdown();
-    emergency_log(format_args!(
-        "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stop \
-         queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
-        shutdown.queued_frames,
-        shutdown.retained_frames,
-        shutdown.reorder_commands,
-        shutdown.active_reorders,
-    ));
-    bindings.protocol_stopped.signal(stopped);
 }
 
-/// Adapter between the production finite-stop contract and HIL task signals.
-pub(in crate::radio_hil) struct RadioHilConnectedTaskGroup {
-    bindings: RadioHilConnectedTaskBindings,
-}
-
-impl RadioHilConnectedTaskGroup {
-    pub(in crate::radio_hil) const fn new(bindings: RadioHilConnectedTaskBindings) -> Self {
-        Self { bindings }
-    }
-}
-
-impl Esp32s31ConnectedTaskGroup for RadioHilConnectedTaskGroup {
-    type Stopped = ConnectedRxProtocolStopped<'static>;
-
-    fn request_stop(&mut self) {
-        self.bindings.traffic_stop.signal(());
-        self.bindings.protocol_stop.signal(());
-    }
-
-    fn wait_stopped(&mut self) -> impl Future<Output = Self::Stopped> + '_ {
-        async {
-            self.bindings.traffic_stopped.wait().await;
-            self.bindings.protocol_stopped.wait().await
-        }
-    }
-}
+/// Both HIL tasks must consume their current epoch endpoints before the
+/// protocol owner can be reused. A dropped endpoint poisons its static control
+/// resource instead of allowing a later epoch to clear a raw signal.
+pub(in crate::radio_hil) type RadioHilConnectedTaskGroup = ConnectedTaskGroupWithAuxiliary<
+    ConnectedTaskController<'static, CriticalSectionRawMutex, RadioHilConnectedRxProtocolStopped>,
+    ConnectedTaskController<'static, CriticalSectionRawMutex, ()>,
+>;

@@ -135,6 +135,16 @@ calibration record; the shared protocol contains neither that size nor
 eFuse/ABI fields. Target firmware never writes NVS or flash for this flow. The
 artifact CRC is transport integrity, not a firmware/oracle identity hash.
 
+Protocol version 15 adds `StopStation` and its correlated `StationStopped`
+evidence as a complete dematerialization proof. Completion is serialized only
+after the lifecycle owner returned, the exact PAC owner was reclaimed, the
+inactive interrupt route returned its setup token, the stopped phase returned
+its DMA/network/executor resources, and those capabilities reconstructed
+`WifiStopped`. The target then consumes that same owner in a standalone
+monitor epoch, quiesces its ISR/DMA graph and reconstructs `WifiStopped` a
+second time. Command acceptance, retained allocation addresses or a diagnostic
+stop line are not sufficient evidence.
+
 ## Ownership
 
 - One firmware task owns both async USB halves and arbitrates binary events
@@ -157,6 +167,19 @@ Idle
   -> Authentication / Association / WPA2
   -> start replacement connected runner
   -> StationEpochCompleted(request_id, complete ownership evidence)
+```
+
+Complete role shutdown is a distinct terminal operation:
+
+```text
+Idle
+  <- StopStation(request_id)
+  -> Accepted(request_id)
+  -> stop connected children, IRQ route, RX DMA, TX and keys
+  -> return station lifecycle owner
+  -> reclaim PAC and interrupt setup token
+  -> reconstruct WifiStopped
+  -> StationStopped(request_id, complete owner evidence)
 ```
 
 Real peer-loss qualification uses unsolicited events rather than a command:

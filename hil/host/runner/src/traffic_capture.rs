@@ -18,7 +18,8 @@ use open_esp_radio_hil_protocol::{
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
     SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
     StartupArtifactStatus, StateChange, StationEpochEvidence, StationFaultEvidence,
-    StationFaultInjection, StationLifecycleEvent, Transport, TransportEvidence, evidence_crc32c,
+    StationFaultInjection, StationLifecycleEvent, StationStopEvidence, Transport,
+    TransportEvidence, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -76,6 +77,12 @@ pub(crate) struct SessionHandle {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct StationEpochHandle {
+    request_id: u32,
+    first_event: usize,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StationStopHandle {
     request_id: u32,
     first_event: usize,
 }
@@ -560,6 +567,45 @@ impl SerialCapture {
                 }
                 match message.body {
                     Event::StationEpochCompleted(evidence) => Some(evidence),
+                    _ => None,
+                }
+            })
+    }
+
+    pub(crate) fn request_station_stop(&self) -> Result<StationStopHandle> {
+        let first_event = self.protocol_event_count();
+        let response = self.send_command(0, Command::StopStation, PROTOCOL_READY_TIMEOUT)?;
+        match response.body {
+            Event::Accepted => Ok(StationStopHandle {
+                request_id: response.request_id,
+                first_event,
+            }),
+            Event::Rejected(reason) => {
+                Err(format!("device rejected station stop: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid station stop response".into()),
+        }
+    }
+
+    pub(crate) fn observed_station_stop(
+        &self,
+        handle: StationStopHandle,
+    ) -> Option<StationStopEvidence> {
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        messages
+            .get(handle.first_event..)
+            .unwrap_or_default()
+            .iter()
+            .find_map(|message| {
+                if message.request_id != handle.request_id {
+                    return None;
+                }
+                match message.body {
+                    Event::StationStopped(evidence) => Some(evidence),
                     _ => None,
                 }
             })

@@ -14,7 +14,7 @@ use open_esp_radio_hil_protocol::{
 
 use crate::{
     Result,
-    controlled_ap::{ControlledAp, require_credentials_environment},
+    controlled_ap::{ControlledAp, require_controlled_ap_credentials_environment},
     traffic_capture::{SerialCapture, await_device_marker},
 };
 
@@ -39,7 +39,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         return Ok(());
     }
     let options = parse_options(&arguments)?;
-    require_credentials_environment()?;
+    require_controlled_ap_credentials_environment()?;
     let output = root.join("target/hil/esp32s31/qualification/station-tx-fault");
     fs::create_dir_all(&output)?;
 

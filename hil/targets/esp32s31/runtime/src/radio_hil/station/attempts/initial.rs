@@ -1,86 +1,87 @@
 #![forbid(unsafe_code)]
 
 use open_esp_radio::{
-    esp32s31::{
-        hal::RadioRegisters,
-        wifi::sta::{
-            attempt::{Esp32s31StaAttempt, Esp32s31StaAttemptOutcome, Esp32s31StaAttemptStage},
-            channel::Esp32s31ScanPhy,
-        },
-    },
+    esp32s31::{hal::RadioRegisters, wifi::sta::attempt::Esp32s31StaAttemptStage},
     wifi::sta::station::{StaAttemptFailure, StaAttemptOutcome},
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
     phy_delay::EmbassyEsp32s31PhyDelay as EmbassyPhyDelay,
-    sta_attempt_target::{
-        Esp32s31StaAttemptRadio, Esp32s31StaAttemptStorage, Esp32s31StaAttemptTargetOwner,
-        Esp32s31StaAttemptTargetPort,
+    station::{
+        Esp32s31StationJoinOutcome, Esp32s31StationJoinResources, run_esp32s31_station_join,
     },
 };
 
 use crate::{
     console::emergency_log,
     radio_hil::{
-        HilPhyObserver, RadioHilAuthenticationReady, RadioHilConnectedEpochResources,
-        RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner, RadioHilStationCommandReceiver,
-        StaConnectedSession, WPA2_MESSAGE_4_HARDWARE_PROTECTED, run_connected_network,
+        HilPhyObserver, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE, RX_DESCRIPTOR_COUNT,
+        RadioHilConnectedEpochResources, RadioHilConnectedServiceResources,
+        RadioHilConnectedTaskFixture, RadioHilStaJoinObserver, RadioHilStaLifecycleFailure,
+        RadioHilStaLifecycleOwner, RadioHilStaNetwork, RadioHilStationCommandReceiver,
+        RadioHilStationPhase, WPA2_MESSAGE_4_HARDWARE_PROTECTED, run_connected_network,
     },
 };
+use open_esp_radio::esp32s31::wifi::sta::attempt::{
+    Esp32s31StaAttemptSecurity, Esp32s31StaAttemptStation,
+};
 
-use super::{RadioHilStaAttemptOwner, connected_attempt_outcome};
+use super::connected_attempt_outcome;
 
 pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'security>(
-    ready: RadioHilAuthenticationReady<'fixture, 'security>,
+    mut fixture: RadioHilConnectedTaskFixture<'fixture>,
+    mut hardware: RadioRegisters,
+    target: Esp32s31StaAttemptStation,
+    rx: crate::radio_hil::RadioHilJoinRx<'static>,
+    network: RadioHilStaNetwork,
+    security: Esp32s31StaAttemptSecurity<'security>,
     station_control: &mut RadioHilStationCommandReceiver<'_>,
     generation: u32,
 ) -> StaAttemptOutcome<RadioHilStaLifecycleOwner<'fixture, 'security>, RadioHilStaLifecycleFailure>
 {
-    let RadioHilAuthenticationReady {
-        mut fixture,
-        target,
-        rx,
-        network,
+    let (radio_resources, storage_resources, _) = fixture.split_mut();
+    let (state, platform, _) = radio_resources.parts_mut();
+    let (dma, tx_storage, _, frame, _) = storage_resources.parts_mut();
+    let join = run_esp32s31_station_join::<
+        _,
+        _,
+        _,
+        EmbassyPhyDelay,
+        _,
+        _,
+        RadioHilStaJoinObserver,
+        _,
+        RX_DESCRIPTOR_COUNT,
+        RX_BUFFER_SIZE,
+        RX_BUFFER_STORAGE_SIZE,
+    >(Esp32s31StationJoinResources {
+        hardware: &mut hardware,
+        phy: state,
+        platform,
+        phy_observer: HilPhyObserver,
+        receive: rx,
+        rx_storage: dma.storage(),
+        transmit: tx_storage
+            .control_mut()
+            .expect("initial station attempt owns control TX"),
+        frame,
+        station: target,
         security,
-    } = ready;
-    let channel = Esp32s31ScanPhy::<_, _, EmbassyPhyDelay>::new(
-        &mut *fixture.state,
-        &mut *fixture.platform,
-        HilPhyObserver,
-    );
-    let owner: RadioHilStaAttemptOwner<'_, '_, '_, '_, '_, RadioRegisters> =
-        Esp32s31StaAttemptTargetOwner::new(
-            Esp32s31StaAttemptRadio::new(
-                &mut fixture.mmio,
-                channel,
-                rx,
-                fixture.rx_storage,
-                fixture
-                    .tx_storage
-                    .control_mut()
-                    .expect("initial station attempt owns control TX"),
-            ),
-            Esp32s31StaAttemptStorage::new(&mut *fixture.frame),
-            target,
-            security,
-        );
-    let mut attempt = Esp32s31StaAttempt::new(Esp32s31StaAttemptTargetPort::new());
-    match attempt.run(owner).await {
-        Esp32s31StaAttemptOutcome::Failed(failure) => {
-            let (owner, stage, disposition, error, progress) = failure.into_parts();
-            let report = owner.report();
+        attempt_observer: (),
+    })
+    .await;
+    match join {
+        Esp32s31StationJoinOutcome::Failed {
+            returned,
+            report,
+            stage,
+            disposition,
+            error,
+            progress,
+        } => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-sta-attempt \
                  phase={stage:?} disposition={disposition:?} error={error:?}"
             ));
-            let (radio, _storage, target, security) = owner.into_parts();
-            let Esp32s31StaAttemptRadio {
-                hardware: _,
-                channel,
-                receive,
-                rx_storage: _,
-                transmit: _,
-            } = radio;
-            let _ = channel.into_parts();
             let associated = progress.completed(Esp32s31StaAttemptStage::Association);
             let message1 = report
                 .wpa2_handshake
@@ -96,13 +97,16 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                 RadioHilStaLifecycleFailure::Authentication
             };
             StaAttemptOutcome::Failed {
-                owner: RadioHilStaLifecycleOwner::Authenticate(RadioHilAuthenticationReady {
+                owner: RadioHilStaLifecycleOwner::new(
                     fixture,
-                    target,
-                    rx: receive,
-                    network,
-                    security,
-                }),
+                    RadioHilStationPhase::InitialJoin {
+                        hardware,
+                        receive: returned.receive,
+                        network,
+                        station: returned.station,
+                    },
+                    returned.security,
+                ),
                 failure: StaAttemptFailure::new(
                     stage.lifecycle_stage(),
                     disposition,
@@ -110,27 +114,15 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                 ),
             }
         }
-        Esp32s31StaAttemptOutcome::Connected {
-            connected,
+        Esp32s31StationJoinOutcome::Connected {
+            returned,
+            peer,
+            pairwise,
+            group,
+            report,
             progress: _,
         } => {
-            let mut owner = connected.into_owner();
-            let report = owner.report();
-            let peer = owner
-                .take_connected_peer()
-                .expect("successful station attempt owns its connected peer");
-            let (pairwise, group) = owner
-                .take_installed_keys()
-                .expect("successful station attempt owns both CCMP slots");
-            let (radio, _storage, target, security) = owner.into_parts();
-            let Esp32s31StaAttemptRadio {
-                hardware: _,
-                channel,
-                receive,
-                rx_storage: _,
-                transmit: _,
-            } = radio;
-            let _ = channel.into_parts();
+            let target = returned.station;
             let authentication = report
                 .authentication
                 .expect("successful station attempt reports Authentication");
@@ -166,25 +158,29 @@ pub(in crate::radio_hil) async fn run_initial_station_attempt<'fixture, 'securit
                 message4.status,
                 message4.primary_word,
             ));
-            let (connected_fixture, registers) = fixture.into_task_fixture();
-            let returned = run_connected_network(
-                connected_fixture,
-                RadioHilConnectedEpochResources::Initial {
-                    registers,
-                    rx: receive,
-                },
-                StaConnectedSession {
-                    generation,
-                    peer,
+            let board = fixture.board();
+            let interface = board.interface();
+            let config = board.connected_station_config();
+            let connected_return = run_connected_network(
+                RadioHilConnectedServiceResources::new(
+                    fixture,
+                    RadioHilConnectedEpochResources::Initial {
+                        hardware,
+                        receive: returned.receive,
+                    },
                     network,
-                    security,
-                },
-                pairwise,
-                group,
+                    interface,
+                    config,
+                    peer,
+                    pairwise,
+                    group,
+                    returned.security,
+                ),
+                generation,
                 station_control,
             )
             .await;
-            connected_attempt_outcome(returned, target)
+            connected_attempt_outcome(connected_return, target)
         }
     }
 }

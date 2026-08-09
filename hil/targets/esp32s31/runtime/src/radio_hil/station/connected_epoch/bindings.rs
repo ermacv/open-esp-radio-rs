@@ -1,39 +1,89 @@
 #![forbid(unsafe_code)]
 
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use embassy_time::Duration;
 use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
+use open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduTxError;
 use open_esp_radio_esp32s31_wifi_embassy::{
     connected_sta_port::Esp32s31ConnectedStaConfig, embassy_irq::EmbassyMacIrqRuntime,
+    station::Esp32s31InitialConnectedEpochResources,
 };
 use open_esp_radio_hil_esp32s31_telemetry::{
     aggregate_tx::AggregateTxCounters, rx_pipeline::RxPipelineCounters,
 };
 use open_esp_radio_hil_protocol::NetworkIpv4Configuration;
-use static_cell::StaticCell;
+use static_cell::ConstStaticCell;
 
 use crate::{
     radio_fault::StationFaultControl,
     radio_hil::{
-        ConnectedAmpduDmaBacking, ConnectedAmpduMetadataBacking, ConnectedRxReorderCommands,
-        ConnectedRxReorderStorage, ConnectedRxStagePool, ConnectedStackResources,
-        ConnectedTrafficStartChannel, ControlResources, StagedRxQueue,
+        ConnectedAmpduStorage, ConnectedRxEpochResources, ConnectedRxProtocolStorage,
+        ConnectedRxReorderCommands, ConnectedRxReorderStorage, ConnectedRxStagePool,
+        ConnectedStackResources, ConnectedTrafficStartChannel, ControlResources, StagedRxQueue,
     },
 };
 
 use super::super::reporting::RadioHilStationEpochReporter;
 
-/// Static cells initialized only by the first connected epoch.
-#[derive(Clone, Copy)]
+/// Initial-only owners materialized before the station lifecycle can activate
+/// IRQ or DMA for a connected epoch.
+pub(in crate::radio_hil) struct RadioHilInitialConnectedStaticResources {
+    registers: &'static Esp32s31RadioRegistersArena,
+    aggregate: ConnectedAmpduStorage,
+    control: &'static ControlResources,
+}
+
+impl RadioHilInitialConnectedStaticResources {
+    pub(in crate::radio_hil) const fn new(
+        registers: &'static Esp32s31RadioRegistersArena,
+        aggregate: ConnectedAmpduStorage,
+        control: &'static ControlResources,
+    ) -> Self {
+        Self {
+            registers,
+            aggregate,
+            control,
+        }
+    }
+
+    pub(in crate::radio_hil) fn with_rx(
+        self,
+        rx: ConnectedRxEpochResources,
+    ) -> Esp32s31InitialConnectedEpochResources<
+        'static,
+        ConnectedRxEpochResources,
+        ConnectedAmpduStorage,
+        &'static ControlResources,
+    > {
+        Esp32s31InitialConnectedEpochResources::new(
+            self.registers,
+            rx,
+            self.aggregate,
+            self.control,
+        )
+    }
+}
+
+/// Boot-time failure to materialize an initial-only connected resource.
+#[derive(Debug)]
+pub(in crate::radio_hil) enum RadioHilConnectedStaticResourceError {
+    PrimaryMetadataUnavailable,
+    PrimaryDmaUnavailable,
+    PrimaryAmpduInvalid { _error: HtAmpduTxError },
+    StandbyMetadataUnavailable,
+    StandbyDmaUnavailable,
+    StandbyAmpduInvalid { _error: HtAmpduTxError },
+    PrimaryRetentionUnavailable,
+    StandbyRetentionUnavailable,
+    ControlUnavailable,
+    RegisterArenaUnavailable,
+}
+
+/// Storage retained across connected epochs. Initial-only resources are
+/// present exactly once and become structurally unavailable after first use.
 pub(in crate::radio_hil) struct RadioHilConnectedEpochStorage {
-    pub(in crate::radio_hil) stack: &'static StaticCell<ConnectedStackResources>,
-    pub(in crate::radio_hil) ampdu_metadata: &'static StaticCell<ConnectedAmpduMetadataBacking>,
-    pub(in crate::radio_hil) ampdu_dma: &'static StaticCell<ConnectedAmpduDmaBacking>,
-    pub(in crate::radio_hil) ampdu_standby_metadata:
-        &'static StaticCell<ConnectedAmpduMetadataBacking>,
-    pub(in crate::radio_hil) ampdu_standby_dma: &'static StaticCell<ConnectedAmpduDmaBacking>,
-    pub(in crate::radio_hil) control: &'static StaticCell<ControlResources>,
-    pub(in crate::radio_hil) registers: &'static StaticCell<Esp32s31RadioRegistersArena>,
+    pub(in crate::radio_hil) stack: &'static ConstStaticCell<ConnectedStackResources>,
+    pub(in crate::radio_hil) initial: Option<RadioHilInitialConnectedStaticResources>,
+    pub(in crate::radio_hil) rx_protocol: &'static mut ConnectedRxProtocolStorage,
 }
 
 /// Persistent queues, observers and fault controls borrowed by every epoch.
@@ -48,7 +98,6 @@ pub(in crate::radio_hil) struct RadioHilConnectedEpochServices {
     pub(in crate::radio_hil) aggregate_tx: &'static AggregateTxCounters,
     pub(in crate::radio_hil) faults: &'static StationFaultControl,
     pub(in crate::radio_hil) traffic_start: &'static ConnectedTrafficStartChannel,
-    pub(in crate::radio_hil) task_stop_timeout: Duration,
     pub(in crate::radio_hil) station_reporter: RadioHilStationEpochReporter,
 }
 
@@ -60,7 +109,6 @@ pub(in crate::radio_hil) struct RadioHilConnectedEpochPolicy {
 }
 
 /// Complete HIL adapter supplied to the production connected transaction.
-#[derive(Clone, Copy)]
 pub(in crate::radio_hil) struct RadioHilConnectedEpochBindings {
     pub(in crate::radio_hil) storage: RadioHilConnectedEpochStorage,
     pub(in crate::radio_hil) services: RadioHilConnectedEpochServices,

@@ -3,9 +3,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use crate::console::emergency_log;
 use embassy_executor::{SendSpawner, Spawner};
 use embassy_net::StackResources;
-use embassy_sync::{
-    blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel, signal::Signal,
-};
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Duration, Instant, Timer};
 use esp_hal::{
     efuse::{self, InterfaceMacAddress},
@@ -24,10 +22,12 @@ use open_esp_radio::esp32s31::wifi::sta::{
 use open_esp_radio::{
     RadioConfig, WifiConfig, WifiMacAddress, WifiStationConfig,
     adapters::network::embassy_net::{
-        PinnedTxPool as OpenRadioNetworkTxPool, SplitPinnedDevice as OpenRadioNetworkDevice,
+        PinnedTxFrame as OpenRadioPinnedTxFrame, PinnedTxPool as OpenRadioNetworkTxPool,
+        SplitPinnedDevice as OpenRadioNetworkDevice,
         SplitPinnedRadioRunner as OpenRadioNetworkRunner,
         SplitPinnedResources as OpenRadioNetworkResources,
     },
+    adapters::wifi::embassy::connected_tasks::ConnectedTaskControlResources,
     esp32s31::{
         Esp32s31RadioStartConfig, Esp32s31RadioStartFailure, Esp32s31WifiStartConfig,
         Esp32s31WifiStartFailure,
@@ -49,12 +49,9 @@ use open_esp_radio::{
                 HeBccDcmMcs, HeDcmRate, HeEdcaTxopLimit, HeLdpcDcmMcs, HeMcs, HtGuardInterval,
                 HtMcs, LegacyRate, TxSlot,
             },
-            tx_ampdu::HtAmpduTxStorage,
+            tx_ampdu::{HtAmpduTxStorage, RetainedAmpduDmaStorage},
         },
-        wifi::sta::{
-            control_tx::{ControlTxError, Esp32s31ControlTx},
-            scan_tx::Esp32s31RunningScanTx,
-        },
+        wifi::sta::control_tx::{ControlTxError, Esp32s31ControlTx},
     },
     wifi::ieee80211::{
         channel::WifiChannel,
@@ -65,7 +62,8 @@ use open_esp_radio::{
 use open_esp_radio_esp32s31_wifi_embassy::{
     aggregate_tx::AggregateTxResources,
     connected_rx_protocol::{
-        ConnectedRxProtocolStopped, Esp32s31ConnectedRxProtocol, Esp32s31StagedRxQueue,
+        Esp32s31ConnectedRxProtocol, Esp32s31ConnectedRxProtocolStopped,
+        Esp32s31ConnectedRxProtocolStorage, Esp32s31StagedRxQueue,
     },
     connected_sta_port::{
         Esp32s31ConnectedStaBlockAckPolicy, Esp32s31ConnectedStaConfig,
@@ -84,9 +82,9 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
     scan_port::Esp32s31ScanPortError,
     scan_rx::{Esp32s31RunningScanRx, Esp32s31ScanRx},
-    scan_target::Esp32s31ColdScanTx,
     station::{
         Esp32s31StationCommandReceiver, Esp32s31StationControlResources, Esp32s31StationController,
+        materialize_esp32s31_station,
     },
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
     tx_time::EmbassyWifiTxTimer,
@@ -119,18 +117,19 @@ use connected_traffic::{
 };
 mod station;
 use station::{
-    HilConnectedRxObserver, RadioHilAuthenticationReady, RadioHilConnectedEpochBindings,
-    RadioHilConnectedEpochPolicy, RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn,
-    RadioHilConnectedEpochServices, RadioHilConnectedEpochStorage, RadioHilConnectedExit,
-    RadioHilConnectedRxBindings, RadioHilConnectedTaskBindings, RadioHilConnectedTaskFixture,
-    RadioHilConnectedTaskGroup, RadioHilNetworkReportBindings, RadioHilReconnectReady,
-    RadioHilRunningNetwork, RadioHilRunningScanContext, RadioHilRunningScanFailure,
-    RadioHilRunningScanReady, RadioHilStaJoinObserver, RadioHilStaLifecycleFailure,
-    RadioHilStaLifecycleOwner, RadioHilStaNetwork, RadioHilStationEpochCoordinator,
-    RadioHilStationEpochProgress, RadioHilStationEpochProgressChannel,
-    RadioHilStationEpochReporter, StaConnectedSession, connected_network_report_task,
-    connected_network_stack_task, connected_rx_protocol_task, injected_tx_source_requires_reset,
-    qualify_disconnected_running_scan, run_connected_network, run_full_station_hil,
+    HilConnectedRxObserver, RadioHilConnectedEpochBindings, RadioHilConnectedEpochPolicy,
+    RadioHilConnectedEpochResources, RadioHilConnectedEpochReturn, RadioHilConnectedEpochServices,
+    RadioHilConnectedEpochStorage, RadioHilConnectedExit, RadioHilConnectedRxBindings,
+    RadioHilConnectedServiceResources, RadioHilConnectedStaticResourceError,
+    RadioHilConnectedTaskBindings, RadioHilConnectedTaskFixture,
+    RadioHilInitialConnectedStaticResources, RadioHilNetworkReportBindings, RadioHilRunningNetwork,
+    RadioHilRunningScanContext, RadioHilRunningScanFailure, RadioHilStaJoinObserver,
+    RadioHilStaLifecycleFailure, RadioHilStaLifecycleOwner, RadioHilStaNetwork,
+    RadioHilStationEpochCoordinator, RadioHilStationEpochProgress,
+    RadioHilStationEpochProgressChannel, RadioHilStationEpochReporter, RadioHilStationPhase,
+    connected_network_report_task, connected_network_stack_task, connected_rx_protocol_task,
+    injected_tx_source_requires_reset, qualify_disconnected_running_scan, run_connected_network,
+    run_full_station_hil,
 };
 
 // Coarse crash breadcrumbs for the standalone HIL panic handler. The action
@@ -160,7 +159,7 @@ pub fn diagnostic_snapshot() -> (u32, u32) {
         DIAGNOSTIC_ACTION_ORDINAL.load(Ordering::Acquire),
     )
 }
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 const MAC_HANDSHAKE_SAMPLE_LIMIT: u32 = 100_000;
 // A reset-separated 48-by-1,700 experiment reduced BUFFER_FULL from four to
@@ -274,7 +273,6 @@ const OPEN_RADIO_TCP_TX_BUFFER_CAPACITY: usize = 65_536;
 const OPEN_RADIO_TCP_IO_CAPACITY: usize = 65_536;
 const OPEN_RADIO_TCP_CHUNK_CAPACITY: usize = 32_768;
 const OPEN_RADIO_TCP_IDLE_TIMEOUT: Duration = Duration::from_secs(3);
-const OPEN_RADIO_CONNECTED_TASK_STOP_TIMEOUT: Duration = Duration::from_secs(2);
 const OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET: Duration = Duration::from_micros(500);
 const OPEN_RADIO_THROUGHPUT_BENCH: bool = option_env!("OPEN_RADIO_TX_BENCH").is_some();
 const OPEN_RADIO_BIDIRECTIONAL_BENCH: bool =
@@ -302,6 +300,7 @@ pub const fn hil_capabilities() -> Capabilities {
             structured_evidence: OPEN_RADIO_RUNTIME_SESSIONS,
             startup_artifact: true,
             station_epoch_control: true,
+            station_stop_control: true,
             station_lifecycle_events: true,
             station_fault_injection: true,
         },
@@ -392,7 +391,6 @@ const fn selected_tx_bench_rate_kbps(value: Option<&str>) -> Option<u64> {
 // simultaneous downlink stream.
 const OPEN_RADIO_TX_BENCH_RATE_KBPS: Option<u64> =
     selected_tx_bench_rate_kbps(option_env!("OPEN_RADIO_TX_BENCH_RATE_KBPS"));
-const PROBE_TX_DESCRIPTOR_CAPACITY: usize = 88;
 const TX_METADATA_SIZE: usize = 8;
 const TX_FCS_SIZE: usize = 4;
 const TX_CCMP_MIC_SIZE: usize = 8;
@@ -640,35 +638,6 @@ const LISTEN_CHANNEL: u16 = selected_sta_channel(
     option_env!("OPEN_RADIO_STA_CHANNEL"),
     if PERF_AP_PROFILE { 11 } else { 6 },
 );
-const STA_SCAN_CHANNEL_COUNT: usize = 13;
-// `OPEN_RADIO_STA_CHANNEL` remains a useful first-channel hint for controlled
-// HIL setups, but it must never pin an ordinary connection. Scan that channel
-// first and then every other ESP32-S31 2.4-GHz channel exactly once.
-const fn sta_scan_channel(index: usize) -> u8 {
-    let preferred = LISTEN_CHANNEL as u8;
-    if index == 0 {
-        preferred
-    } else {
-        let sequential = index as u8;
-        if sequential >= preferred {
-            sequential + 1
-        } else {
-            sequential
-        }
-    }
-}
-
-const fn sta_scan_channels() -> [u8; STA_SCAN_CHANNEL_COUNT] {
-    let mut channels = [0; STA_SCAN_CHANNEL_COUNT];
-    let mut index = 0;
-    while index < STA_SCAN_CHANNEL_COUNT {
-        channels[index] = sta_scan_channel(index);
-        index += 1;
-    }
-    channels
-}
-
-const STA_SCAN_CHANNELS: [u8; STA_SCAN_CHANNEL_COUNT] = sta_scan_channels();
 // Migration installs both keys before queueing M4, but keeps STA EAPOL on its
 // measured plaintext layout until the M4 TX-done edge opens the controlled
 // port. Protected M4 remains a useful explicit negative control experiment.
@@ -737,22 +706,11 @@ const LAN_PROBE_IPV4: [u8; 4] = selected_ipv4(
         [192, 168, 178, 129]
     },
 );
-const PROBE_REQUEST_RATES: [u8; 12] = [
-    0x82, 0x84, 0x8b, 0x96, 0x0c, 0x12, 0x18, 0x24, 0x30, 0x48, 0x60, 0x6c,
-];
-
 type RxStorage = Esp32s31RxDmaStorage<RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
 type ScanRx = Esp32s31ScanRx<'static, RX_DESCRIPTOR_COUNT, RX_BUFFER_SIZE, RX_BUFFER_STORAGE_SIZE>;
 const _: () = assert!(RX_BUFFER_SIZE <= ESP32S31_RX_BUFFER_SIZE);
 
 type ControlTx = Esp32s31ControlTx<
-    'static,
-    PhyTxTargetPowerProfile,
-    fn() -> u32,
-    EmbassyWifiTxTimer,
-    TX_BUFFER_SIZE,
->;
-type ScanTx = Esp32s31ColdScanTx<
     'static,
     PhyTxTargetPowerProfile,
     fn() -> u32,
@@ -770,38 +728,72 @@ type RadioHilMacInterruptEpoch =
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_rx")]
-static OPEN_RADIO_RX_DMA_STORAGE: StaticCell<RxStorage> = StaticCell::new();
+static OPEN_RADIO_RX_DMA_STORAGE: ConstStaticCell<RxStorage> =
+    ConstStaticCell::new(RxStorage::new());
+// This arena belongs only to the finite post-STA monitor proof. The station's
+// returned DMA owner remains in its separate reusable resource graph.
+#[used]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".dma.bss.open_radio_role_transition_monitor")]
+static OPEN_RADIO_ROLE_TRANSITION_MONITOR_RX: ConstStaticCell<station::TransitionMonitorRxStorage> =
+    ConstStaticCell::new(station::TransitionMonitorRxStorage::new());
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx")]
-static OPEN_RADIO_TX_DMA_STORAGE: StaticCell<TxDmaStorage<TX_BUFFER_SIZE>> = StaticCell::new();
+static OPEN_RADIO_TX_DMA_STORAGE: ConstStaticCell<TxDmaStorage<TX_BUFFER_SIZE>> =
+    ConstStaticCell::new(TxDmaStorage::new());
+// These owners contain runtime-derived DMA and PHY configuration, so they
+// cannot be const-initialized. They still live in static storage and callers
+// use `init_with` to construct them at their final address without a movable
+// task-stack intermediate.
 static OPEN_RADIO_TX_SLOT_STORAGE: StaticCell<TxSlot<TX_BUFFER_SIZE>> = StaticCell::new();
 static OPEN_RADIO_TX_STATE: StaticCell<TxStorage> = StaticCell::new();
 // A connected epoch publishes the unique register owner here for stable task
 // placement and must reclaim it before returning to a role-neutral owner.
-static OPEN_RADIO_REGISTER_ARENA: StaticCell<Esp32s31RadioRegistersArena> = StaticCell::new();
-static OPEN_RADIO_RX_BUFFER_ADDRESSES: StaticCell<[u32; RX_DESCRIPTOR_COUNT]> = StaticCell::new();
+static OPEN_RADIO_REGISTER_ARENA: ConstStaticCell<Esp32s31RadioRegistersArena> =
+    ConstStaticCell::new(Esp32s31RadioRegistersArena::new());
+static OPEN_RADIO_RX_BUFFER_ADDRESSES: ConstStaticCell<[u32; RX_DESCRIPTOR_COUNT]> =
+    ConstStaticCell::new([0; RX_DESCRIPTOR_COUNT]);
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu")]
-static OPEN_RADIO_TX_AMPDU_STORAGE: StaticCell<ConnectedAmpduMetadataBacking> = StaticCell::new();
+static OPEN_RADIO_TX_AMPDU_STORAGE: ConstStaticCell<ConnectedAmpduMetadataBacking> =
+    ConstStaticCell::new(ConnectedAmpduMetadataBacking::new());
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_descriptors")]
-static OPEN_RADIO_TX_AMPDU_DMA_STORAGE: StaticCell<ConnectedAmpduDmaBacking> = StaticCell::new();
+static OPEN_RADIO_TX_AMPDU_DMA_STORAGE: ConstStaticCell<ConnectedAmpduDmaBacking> =
+    ConstStaticCell::new(ConnectedAmpduDmaBacking::new());
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby")]
-static OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE: StaticCell<ConnectedAmpduMetadataBacking> =
-    StaticCell::new();
+static OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE: ConstStaticCell<ConnectedAmpduMetadataBacking> =
+    ConstStaticCell::new(ConnectedAmpduMetadataBacking::new());
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_tx_ampdu_standby_descriptors")]
-static OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE: StaticCell<ConnectedAmpduDmaBacking> =
+static OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE: ConstStaticCell<ConnectedAmpduDmaBacking> =
+    ConstStaticCell::new(ConnectedAmpduDmaBacking::new());
+// Retained network leases are protocol-lifetime ownership, not transient
+// call scratch. These arenas are static so two 32-slot lease/descriptor tables
+// are never moved through the connected async stack, which previously
+// overflowed `_stack_end` and corrupted the adjacent A-MPDU owner.
+static OPEN_RADIO_TX_AMPDU_RETENTION: StaticCell<ConnectedAmpduRetentionBacking> =
     StaticCell::new();
+// The standby scheduler owns the same large lease table independently of the
+// hardware-visible primary, so it needs its own static arena for the same
+// async-stack and ownership reason.
+static OPEN_RADIO_TX_AMPDU_STANDBY_RETENTION: StaticCell<ConnectedAmpduRetentionBacking> =
+    StaticCell::new();
+// Scan records and frame scratch survive awaits and are large enough that
+// constructing them by value in the initial-scan future would consume the CPU
+// stack. ScanTable uses in-place initialization because its EMPTY sentinel is
+// nonzero; the zero-filled frame buffers can remain const-initialized BSS.
 static SCAN_TABLE: StaticCell<ScanTable> = StaticCell::new();
-static SCAN_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
-static ETHERNET_FRAME: StaticCell<[u8; RX_STAGE_CAPACITY]> = StaticCell::new();
+static SCAN_FRAME: ConstStaticCell<[u8; RX_STAGE_CAPACITY]> =
+    ConstStaticCell::new([0; RX_STAGE_CAPACITY]);
+static ETHERNET_FRAME: ConstStaticCell<[u8; RX_STAGE_CAPACITY]> =
+    ConstStaticCell::new([0; RX_STAGE_CAPACITY]);
 // The vendor `wDev_IndicateFrame` allocates an ESF buffer and copies the
 // completed RX unit before `wDev_DiscardFrame` returns the DMA descriptors.
 // Keep the same ownership boundary explicit in the open HIL. This hot staging
@@ -822,6 +814,10 @@ type StagedRxQueue = Esp32s31StagedRxQueue<
 type ConnectedRxStagePool = RxStagePool<RX_STAGE_SLOT_COUNT, RX_STAGE_CAPACITY>;
 type ConnectedRxReorderCommands = RxReorderCommandResources<CriticalSectionRawMutex>;
 type ConnectedRxReorderStorage = RxReorderFrameStorage<RX_STAGE_CAPACITY>;
+type ConnectedRxProtocolStorage =
+    Esp32s31ConnectedRxProtocolStorage<'static, RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT>;
+type RadioHilConnectedRxProtocolStopped =
+    Esp32s31ConnectedRxProtocolStopped<'static, 'static, RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT>;
 type ConnectedAmpduMetadataBacking = HtAmpduTxStorage<TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
 type ConnectedAmpduDmaBacking = AmpduDmaStorage<TX_AMPDU_FRAME_COUNT, 0>;
 static OPEN_RADIO_STAGED_RX_QUEUE: StagedRxQueue = StagedRxQueue::new();
@@ -831,6 +827,11 @@ static OPEN_RADIO_RX_REORDER_COMMANDS: ConnectedRxReorderCommands =
 // actually cross a sequence gap touch this cold backing; in-order frames stay
 // on the internal SRAM staging fast path.
 static OPEN_RADIO_RX_REORDER_STORAGE: ConnectedRxReorderStorage = RxReorderFrameStorage::new();
+// This arena contains the 64 retained-frame lease slots and per-TID reorder
+// machines. It is static because moving that multi-kilobyte state through the
+// nested connected async composition was measured to push SP below
+// `_stack_end`, corrupting adjacent DMA/A-MPDU ownership state.
+static OPEN_RADIO_RX_PROTOCOL_STORAGE: StaticCell<ConnectedRxProtocolStorage> = StaticCell::new();
 type NetworkResources = OpenRadioNetworkResources<
     CriticalSectionRawMutex,
     NETWORK_FRAME_CAPACITY,
@@ -863,6 +864,16 @@ type NetworkTxPool = OpenRadioNetworkTxPool<
     NETWORK_TX_TRAILER,
     NETWORK_TX_QUEUE_DEPTH,
 >;
+type ConnectedNetworkTxBacking = OpenRadioPinnedTxFrame<
+    'static,
+    CriticalSectionRawMutex,
+    NETWORK_FRAME_CAPACITY,
+    NETWORK_TX_HEADROOM,
+    NETWORK_TX_TRAILER,
+    NETWORK_TX_QUEUE_DEPTH,
+>;
+type ConnectedAmpduRetentionBacking =
+    RetainedAmpduDmaStorage<ConnectedNetworkTxBacking, TX_AMPDU_FRAME_COUNT>;
 type ConnectedStackResources = StackResources<OPEN_RADIO_STACK_SOCKET_COUNT>;
 type ControlResources =
     ConnectedControlResources<CriticalSectionRawMutex, CONNECTED_CONTROL_QUEUE_DEPTH>;
@@ -915,14 +926,6 @@ type RunningScanRx = Esp32s31RunningScanRx<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
-type RunningScanTx<'interrupt> = Esp32s31RunningScanTx<
-    'static,
-    'interrupt,
-    PhyTxTargetPowerProfile,
-    fn() -> u32,
-    EmbassyWifiTxTimer,
-    TX_BUFFER_SIZE,
->;
 type RadioHilJoinRx<'storage> = Esp32s31PreconnectedRx<
     'storage,
     EmbassyEsp32s31PreconnectedRxDelay,
@@ -948,8 +951,12 @@ type ConnectedRxEpochResources = Esp32s31RxEpochResources<
     RX_BUFFER_SIZE,
     RX_BUFFER_STORAGE_SIZE,
 >;
-type ConnectedAmpduStorage =
-    AggregateTxResources<'static, TX_AMPDU_FRAME_COUNT, TX_AMPDU_BUFFER_SIZE>;
+type ConnectedAmpduStorage = AggregateTxResources<
+    'static,
+    ConnectedNetworkTxBacking,
+    TX_AMPDU_FRAME_COUNT,
+    TX_AMPDU_BUFFER_SIZE,
+>;
 type RadioHilReconnectedEpoch = Esp32s31ReconnectedStaEpoch<
     ConnectedHardware,
     RadioHilJoinRx<'static>,
@@ -978,22 +985,29 @@ type ConnectedTrafficStartChannel =
 // overwrote `SharedLinkState`; its next `set_link_state` failed with a
 // misaligned waker load at 0x400679e2. The benchmark-specific queue depth above
 // removes that false memory pressure, while production stays at depth 32.
-static OPEN_RADIO_NETWORK_RESOURCES: StaticCell<NetworkResources> = StaticCell::new();
-static OPEN_RADIO_CONTROL_RESOURCES: StaticCell<ControlResources> = StaticCell::new();
-static OPEN_RADIO_STATION_CONTROL_RESOURCES: StaticCell<
+static OPEN_RADIO_NETWORK_RESOURCES: ConstStaticCell<NetworkResources> =
+    ConstStaticCell::new(NetworkResources::new());
+static OPEN_RADIO_CONTROL_RESOURCES: ConstStaticCell<ControlResources> =
+    ConstStaticCell::new(ControlResources::new());
+static OPEN_RADIO_STATION_CONTROL_RESOURCES: ConstStaticCell<
     Esp32s31StationControlResources<CriticalSectionRawMutex>,
-> = StaticCell::new();
+> = ConstStaticCell::new(Esp32s31StationControlResources::new());
 // Only allocations actually addressed by Wi-Fi DMA are forced into SRAM.
 // Embassy RX slots, channels and link state remain ordinary PSRAM data.
 #[used]
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".dma.bss.open_radio_network_tx")]
-static OPEN_RADIO_NETWORK_TX_POOL: StaticCell<NetworkTxPool> = StaticCell::new();
+static OPEN_RADIO_NETWORK_TX_POOL: ConstStaticCell<NetworkTxPool> =
+    ConstStaticCell::new(NetworkTxPool::new());
 // Keep one slot for each concurrently live socket: embassy-net DNS, DHCP,
 // the selected UDP benchmark, and the post-DHCP external-network probe.
 // The probe intentionally remains alive after it primes the neighbor cache,
 // so its slot cannot be shared with the benchmark socket.
-static OPEN_RADIO_STACK_RESOURCES: StaticCell<ConnectedStackResources> = StaticCell::new();
+// Embassy's socket registry is a multi-kilobyte object. Const static
+// initialization prevents it from being returned by value inside the
+// connected async composition before embassy-net takes its permanent lease.
+static OPEN_RADIO_STACK_RESOURCES: ConstStaticCell<ConnectedStackResources> =
+    ConstStaticCell::new(ConnectedStackResources::new());
 #[unsafe(link_section = ".critical.data.open_radio_bidirectional_session")]
 static OPEN_RADIO_BIDIRECTIONAL_RX_SESSIONS: BidirectionalSessionChannel = Channel::new();
 #[unsafe(link_section = ".critical.data.open_radio_bidirectional_session")]
@@ -1061,26 +1075,30 @@ static OPEN_RADIO_IRQ_RUNTIME: EmbassyMacIrqRuntime<CriticalSectionRawMutex> =
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_POWER_IRQ_RUNTIME: EmbassyPowerIrqRuntime<CriticalSectionRawMutex> =
     EmbassyPowerIrqRuntime::new();
-// One connected-epoch cancellation edge shared only by the production radio
-// and staged-protocol tasks. This is HIL executor composition, not driver
-// state; the reusable protocol owner accepts any caller-supplied stop future.
+// Per-epoch task capabilities are static state machines, not resettable event
+// bits. Each task must consume its endpoint and acknowledge completion before
+// a later connected epoch can reuse either control block; dropping an endpoint
+// permanently poisons that reuse frontier.
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
-static OPEN_RADIO_CONNECTED_PROTOCOL_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-#[unsafe(link_section = ".critical.bss.open_radio_irq")]
-static OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED: Signal<
+static OPEN_RADIO_CONNECTED_PROTOCOL_TASK: ConnectedTaskControlResources<
     CriticalSectionRawMutex,
-    ConnectedRxProtocolStopped<'static>,
-> = Signal::new();
+    RadioHilConnectedRxProtocolStopped,
+> = ConnectedTaskControlResources::new();
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
-static OPEN_RADIO_CONNECTED_TRAFFIC_STOP: Signal<CriticalSectionRawMutex, ()> = Signal::new();
-#[unsafe(link_section = ".critical.bss.open_radio_irq")]
-static OPEN_RADIO_CONNECTED_TRAFFIC_STOPPED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
+static OPEN_RADIO_CONNECTED_TRAFFIC_TASK: ConnectedTaskControlResources<
+    CriticalSectionRawMutex,
+    (),
+> = ConnectedTaskControlResources::new();
 #[unsafe(link_section = ".critical.bss.open_radio_irq")]
 static OPEN_RADIO_CONNECTED_TRAFFIC_START: ConnectedTrafficStartChannel = Channel::new();
 #[unsafe(link_section = ".critical.bss.open_radio_station_epoch")]
 static OPEN_RADIO_STATION_EPOCH_ACTIVE: AtomicBool = AtomicBool::new(false);
 #[unsafe(link_section = ".critical.bss.open_radio_station_epoch")]
 static OPEN_RADIO_STATION_EPOCH_PROGRESS: RadioHilStationEpochProgressChannel = Channel::new();
+#[unsafe(link_section = ".critical.bss.open_radio_station_epoch")]
+static OPEN_RADIO_STATION_STOP_REQUEST: AtomicU32 = AtomicU32::new(0);
+#[unsafe(link_section = ".critical.bss.open_radio_station_epoch")]
+static OPEN_RADIO_STATION_INTERNAL_CONNECTED: AtomicBool = AtomicBool::new(false);
 
 fn station_epoch_reporter() -> RadioHilStationEpochReporter {
     RadioHilStationEpochReporter::new(
@@ -1093,6 +1111,8 @@ fn station_epoch_coordinator() -> RadioHilStationEpochCoordinator {
     RadioHilStationEpochCoordinator::new(
         &OPEN_RADIO_STATION_EPOCH_ACTIVE,
         &OPEN_RADIO_STATION_EPOCH_PROGRESS,
+        &OPEN_RADIO_STATION_STOP_REQUEST,
+        &OPEN_RADIO_STATION_INTERNAL_CONNECTED,
     )
 }
 
@@ -1137,23 +1157,63 @@ fn connected_task_bindings() -> RadioHilConnectedTaskBindings {
     RadioHilConnectedTaskBindings::new(
         &OPEN_RADIO_TASK_POLLS,
         OPEN_RADIO_TASK_POLL_TELEMETRY,
-        &OPEN_RADIO_CONNECTED_PROTOCOL_STOP,
-        &OPEN_RADIO_CONNECTED_PROTOCOL_STOPPED,
-        &OPEN_RADIO_CONNECTED_TRAFFIC_STOP,
-        &OPEN_RADIO_CONNECTED_TRAFFIC_STOPPED,
+        &OPEN_RADIO_CONNECTED_PROTOCOL_TASK,
+        &OPEN_RADIO_CONNECTED_TRAFFIC_TASK,
     )
 }
 
-fn connected_epoch_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilConnectedEpochBindings {
-    RadioHilConnectedEpochBindings {
+fn connected_epoch_bindings(
+    ipv4: NetworkIpv4Configuration,
+) -> Result<RadioHilConnectedEpochBindings, RadioHilConnectedStaticResourceError> {
+    let primary_metadata = OPEN_RADIO_TX_AMPDU_STORAGE
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::PrimaryMetadataUnavailable)?;
+    let primary_dma = OPEN_RADIO_TX_AMPDU_DMA_STORAGE
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::PrimaryDmaUnavailable)?;
+    let primary = open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduTxResources::pin_static(
+        primary_metadata,
+        primary_dma,
+    )
+    .map_err(|error| RadioHilConnectedStaticResourceError::PrimaryAmpduInvalid {
+        _error: error,
+    })?;
+    let standby_metadata = OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::StandbyMetadataUnavailable)?;
+    let standby_dma = OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::StandbyDmaUnavailable)?;
+    let standby = open_esp_radio::esp32s31::wifi::mac::tx_ampdu::HtAmpduTxResources::pin_static(
+        standby_metadata,
+        standby_dma,
+    )
+    .map_err(|error| RadioHilConnectedStaticResourceError::StandbyAmpduInvalid {
+        _error: error,
+    })?;
+    let primary_retention = OPEN_RADIO_TX_AMPDU_RETENTION
+        .try_init_with(RetainedAmpduDmaStorage::new)
+        .ok_or(RadioHilConnectedStaticResourceError::PrimaryRetentionUnavailable)?;
+    let standby_retention = OPEN_RADIO_TX_AMPDU_STANDBY_RETENTION
+        .try_init_with(RetainedAmpduDmaStorage::new)
+        .ok_or(RadioHilConnectedStaticResourceError::StandbyRetentionUnavailable)?;
+    let aggregate =
+        AggregateTxResources::pipelined(primary, primary_retention, standby, standby_retention);
+    let control = OPEN_RADIO_CONTROL_RESOURCES
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::ControlUnavailable)?;
+    let registers = OPEN_RADIO_REGISTER_ARENA
+        .try_take()
+        .ok_or(RadioHilConnectedStaticResourceError::RegisterArenaUnavailable)?;
+
+    Ok(RadioHilConnectedEpochBindings {
         storage: RadioHilConnectedEpochStorage {
             stack: &OPEN_RADIO_STACK_RESOURCES,
-            ampdu_metadata: &OPEN_RADIO_TX_AMPDU_STORAGE,
-            ampdu_dma: &OPEN_RADIO_TX_AMPDU_DMA_STORAGE,
-            ampdu_standby_metadata: &OPEN_RADIO_TX_AMPDU_STANDBY_STORAGE,
-            ampdu_standby_dma: &OPEN_RADIO_TX_AMPDU_STANDBY_DMA_STORAGE,
-            control: &OPEN_RADIO_CONTROL_RESOURCES,
-            registers: &OPEN_RADIO_REGISTER_ARENA,
+            initial: Some(RadioHilInitialConnectedStaticResources::new(
+                registers, aggregate, &*control,
+            )),
+            rx_protocol: OPEN_RADIO_RX_PROTOCOL_STORAGE
+                .init_with(Esp32s31ConnectedRxProtocolStorage::new),
         },
         services: RadioHilConnectedEpochServices {
             staged_rx: &OPEN_RADIO_STAGED_RX_QUEUE,
@@ -1165,14 +1225,13 @@ fn connected_epoch_bindings(ipv4: NetworkIpv4Configuration) -> RadioHilConnected
             aggregate_tx: &OPEN_RADIO_TX_AGGREGATE_COUNTERS,
             faults: &crate::radio_fault::STATION_FAULT_CONTROL,
             traffic_start: &OPEN_RADIO_CONNECTED_TRAFFIC_START,
-            task_stop_timeout: OPEN_RADIO_CONNECTED_TASK_STOP_TIMEOUT,
             station_reporter: station_epoch_reporter(),
         },
         policy: RadioHilConnectedEpochPolicy {
             station: radio_hil_connected_sta_config(),
             ipv4,
         },
-    }
+    })
 }
 
 const fn radio_hil_message4_protection() -> Esp32s31Wpa2Message4Protection {
@@ -1481,15 +1540,18 @@ pub async fn run(
         }
     };
     let station_interface = station.interface();
-    let (_wifi_plan, mac) = station.into_parts();
+    let (_wifi_plan, wifi) = station.into_parts();
     set_diagnostic_stage(200);
     let phy_elapsed = phy_started.elapsed();
-    let report = mac.report();
+    let report = wifi.start_report();
     let outcome = report.wifi.registration;
     let counters = report.wifi.port_counters;
     let mac_outcome = report.mac;
-    let (powered, mut state, calibration_record, _) = mac.into_parts();
-    let tx_power_profile = state
+    let mut materialized = materialize_esp32s31_station(wifi, ());
+    let tx_power_profile = materialized
+        .owner
+        .radio_mut()
+        .0
         .tx_target_power_profile()
         .with_maximum_quarter_dbm(OPEN_RADIO_MAX_TX_POWER_QUARTER_DBM);
     emergency_log(format_args!(
@@ -1505,7 +1567,7 @@ pub async fn run(
         counters.baseband_operations,
         phy_elapsed.as_millis(),
     ));
-    if let Some(record) = calibration_record.as_ref() {
+    if let Some(record) = materialized.owner.calibration_record() {
         let disposition = match outcome.calibration_path {
             PhyCalibrationPath::FullUncached | PhyCalibrationPath::FullForRecord => {
                 StartupArtifactDisposition::Created
@@ -1531,13 +1593,12 @@ pub async fn run(
         mac_outcome.handshake_samples, mac_outcome.handshake_value,
     ));
     set_diagnostic_stage(230);
-    let (platform, registers) = powered.into_parts();
     let _ = run_full_station_hil(
         spawner,
         protocol_spawner,
-        &mut state,
-        platform,
-        registers,
+        materialized.owner,
+        materialized.registers,
+        materialized.interrupt_setup,
         &trng,
         &mut network_credentials,
         network_ipv4,

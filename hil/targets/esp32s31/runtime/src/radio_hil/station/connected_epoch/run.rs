@@ -1,50 +1,53 @@
 #![forbid(unsafe_code)]
 
-use core::sync::atomic::Ordering;
+use core::{future::Future, sync::atomic::Ordering};
 
-use embassy_net::{Config as NetworkConfig, Ipv4Address, Ipv4Cidr, StackResources, StaticConfigV4};
-use embassy_net_driver::LinkState;
+use embassy_net::{Config as NetworkConfig, Ipv4Address, Ipv4Cidr, StaticConfigV4};
 use embassy_time::Timer;
-use open_esp_radio::esp32s31::wifi::sta::cooperative_hardware::CooperativeRadioHardware;
 use open_esp_radio::{
+    adapters::wifi::embassy::station_network::RunningStationNetwork,
     esp32s31::wifi::{
-        dma::tx_ampdu_storage::AmpduDmaStorage,
         mac::{
-            crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
-            init::MAC_COLD_RX_INTERRUPT_MASK,
+            crypto::CcmpKeyHardware,
             tx::{HeEdcaTxopLimit, TxPhyRate},
-            tx_ampdu::{HtAmpduTxResources, HtAmpduTxStorage},
         },
         sta::peer::Esp32s31StaConnectedLink,
     },
-    wifi::{
-        ieee80211::station::StaTxSequenceCounters,
-        softmac::interface::{
-            BoundVirtualInterface, ChannelContextId, VifId, VifRole, VirtualInterface,
-        },
-    },
 };
 use open_esp_radio_esp32s31_wifi_embassy::{
-    aggregate_tx::AggregateTxResources,
-    connected_runner::ConnectedRunner,
     connected_sta_port::{
-        Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaDriverParts,
-        Esp32s31ConnectedStaNetworkTxDomain, Esp32s31ConnectedStaPort,
+        Esp32s31ConnectedStaControlResources, Esp32s31ConnectedStaNetworkTxDomain,
         Esp32s31ConnectedStaRxProtocolResources, Esp32s31ConnectedStaTxResources,
     },
-    connected_sta_teardown::{
-        Esp32s31ConnectedStaTeardownFailure, Esp32s31ConnectedStaTeardownPort,
-    },
+    connected_sta_teardown::Esp32s31ConnectedStaTeardownFailure,
     network_rx::EmbassyNetConnectedRxSink,
     rx_dma_service::Esp32s31RxEpochResources,
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
-        Esp32s31ConnectedStationExit, Esp32s31ConnectedTaskStopOutcome,
-        Esp32s31StationReconnectSource, run_esp32s31_connected_station_epoch,
-        stop_esp32s31_connected_task_group,
+        Esp32s31ConnectedDriverAssembly, Esp32s31ConnectedDriverAssemblyResources,
+        Esp32s31ConnectedEpochStartFailure, Esp32s31ConnectedEpochStarted,
+        Esp32s31ConnectedNetworkStartedParts, Esp32s31ConnectedRunObserver,
+        Esp32s31ConnectedServiceTeardownFailure, Esp32s31ConnectedStationExit,
+        Esp32s31StationReconnectSource, activate_esp32s31_connected_epoch,
+        assemble_esp32s31_connected_driver, prepare_esp32s31_connected_service,
+        run_and_quiesce_esp32s31_connected_epoch, start_esp32s31_initial_connected_epoch,
+        start_esp32s31_reconnected_connected_epoch,
     },
-    station_epoch::Esp32s31ReconnectedStaEpochParts,
 };
+
+struct RadioHilConnectedRunObserver {
+    counters: &'static open_esp_radio_hil_esp32s31_telemetry::task_poll::TaskPollCounters,
+    enabled: bool,
+}
+
+impl Esp32s31ConnectedRunObserver for RadioHilConnectedRunObserver {
+    fn observe<'a, F>(&'a mut self, future: F) -> impl Future<Output = F::Output> + 'a
+    where
+        F: Future + 'a,
+    {
+        observe_open_radio_task_polls(future, self.counters, self.enabled)
+    }
+}
 use open_esp_radio_hil_protocol::{
     NetworkIpv4Configuration, StationDisconnectReason, StationFaultClassification,
     StationFaultEvidence, StationLifecycleEvent,
@@ -54,77 +57,109 @@ use crate::{
     console::emergency_log,
     radio_fault::{FaultInjectingConnectedServices, FaultInjectingServicesError},
     radio_hil::{
-        ControlResources, HilConnectedRxObserver, NETWORK_FRAME_CAPACITY, NETWORK_RX_QUEUE_DEPTH,
+        HilConnectedRxObserver, NETWORK_FRAME_CAPACITY, NETWORK_RX_QUEUE_DEPTH,
         NETWORK_TX_QUEUE_DEPTH, OPEN_RADIO_MAC_IRQ_CLASSIFICATION, OPEN_RADIO_MAC_IRQ_ENTRIES,
         OPEN_RADIO_RX_PIPELINE_COUNTERS, OPEN_RADIO_TCP_BENCH, OpenRadioRxReloadDelay,
         RX_BLOCK_ACK_SOFTWARE_WINDOW, RX_STAGE_CAPACITY, RX_STAGE_SLOT_COUNT,
         RadioHilConnectedEpochBindings, RadioHilConnectedEpochResources,
-        RadioHilConnectedEpochReturn, RadioHilConnectedExit, RadioHilConnectedTaskFixture,
-        RadioHilConnectedTaskGroup, RadioHilConnectedTrafficConfig, RadioHilDisconnectedEpoch,
-        RadioHilRunningNetwork, RadioHilStaNetwork, RadioHilStationCommandReceiver,
-        RadioHilStationEpochProgress, StaConnectedSession, TX_AMPDU_FRAME_COUNT,
-        connected_network_report_task, connected_network_stack_task, connected_rx_protocol_task,
+        RadioHilConnectedEpochReturn, RadioHilConnectedExit, RadioHilConnectedServiceResources,
+        RadioHilConnectedTrafficConfig, RadioHilDisconnectedEpoch, RadioHilStationCommandReceiver,
+        RadioHilStationEpochProgress, TX_AMPDU_FRAME_COUNT, connected_network_report_task,
+        connected_network_stack_task, connected_rx_protocol_task,
         connected_traffic::observe_open_radio_task_polls, connected_traffic_task,
         injected_tx_source_requires_reset,
     },
 };
 
 pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
-    fixture: RadioHilConnectedTaskFixture<'fixture>,
-    epoch_resources: RadioHilConnectedEpochResources,
-    session: StaConnectedSession<'security>,
-    pairwise_slot: StaPairwiseCcmpSlot,
-    group_slot: StaGroupCcmpSlot,
+    resources: RadioHilConnectedServiceResources<'fixture, 'security>,
+    generation: u32,
     station_control: &mut RadioHilStationCommandReceiver<'_>,
 ) -> RadioHilConnectedEpochReturn<'fixture, 'security> {
+    let prepared = prepare_esp32s31_connected_service::<
+        TX_AMPDU_FRAME_COUNT,
+        RX_BLOCK_ACK_SOFTWARE_WINDOW,
+        _,
+        _,
+        _,
+    >(resources)
+    .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
     let reconnected_epoch = matches!(
-        &epoch_resources,
+        prepared.epoch(),
         RadioHilConnectedEpochResources::Reconnected(_)
     );
-    let RadioHilConnectedTaskFixture {
+    let started = prepared.start_network(|fixture, device, connected_plan| {
+        let RadioHilConnectedEpochBindings {
+            storage,
+            services: _,
+            policy,
+        } = fixture.board().connected_epoch_bindings();
+        let station_address = connected_plan.link().station_address;
+        let stack_resources = storage.stack.take();
+        let mut seed = [0_u8; 8];
+        seed[..6].copy_from_slice(&station_address);
+        seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
+        // Keep the controlled local throughput setup independent of DHCP
+        // while preserving DHCP as an end-to-end router test.
+        let network_config = match policy.ipv4 {
+            NetworkIpv4Configuration::Dhcp => NetworkConfig::dhcpv4(Default::default()),
+            NetworkIpv4Configuration::Static {
+                address,
+                prefix_length,
+                gateway,
+            } => NetworkConfig::ipv4_static(StaticConfigV4 {
+                address: Ipv4Cidr::new(Ipv4Address::from_octets(address), prefix_length),
+                gateway: gateway.map(Ipv4Address::from_octets),
+                dns_servers: Default::default(),
+            }),
+        };
+        let (stack, stack_runner) = embassy_net::new(
+            device,
+            network_config,
+            stack_resources,
+            u64::from_le_bytes(seed),
+        );
+        (stack, stack_runner)
+    });
+    let Esp32s31ConnectedNetworkStartedParts {
+        runtime: fixture,
+        epoch: epoch_resources,
+        stack,
+        network: network_runner,
+        initial_network_task: stack_runner,
+        plan: connected_plan,
+        pairwise: pairwise_slot,
+        group: group_slot,
+        security,
+    } = started.into_parts();
+    let runtime = fixture.into_parts();
+    let (mut role, mut interrupt_epoch) = runtime.radio.into_parts();
+    let (_state, platform) = role.radio_mut();
+    let (dma, tx_storage, scan_table, frame, ethernet) = runtime.storage.into_parts();
+    let (rx_storage, descriptor_base, buffer_addresses) = dma.into_parts();
+    let (
         spawner,
         protocol_spawner,
-        state,
-        platform,
-        interrupt_epoch,
-        rx_storage,
-        tx_storage,
-        descriptor_base,
-        buffer_addresses,
-        scan_table,
-        frame,
-        ethernet,
+        station_interface,
         connected_tasks,
         connected_rx,
         network_report,
         connected_epoch,
-    } = fixture;
+        station_control_resources,
+    ) = runtime.board.into_parts();
     let RadioHilConnectedEpochBindings {
-        storage,
+        mut storage,
         services: epoch_services,
-        policy,
+        policy: epoch_policy,
     } = connected_epoch;
-    let StaConnectedSession {
-        generation,
-        peer,
-        network,
-        security,
-    } = session;
+    let rx_protocol_runtime = storage.rx_protocol;
     let open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity {
         pmk,
         supplicant_nonce,
         sequences,
         message4_protection,
+        ..
     } = security;
-    let interface = BoundVirtualInterface::new(
-        VirtualInterface::new(VifId::PRIMARY, VifRole::Station, peer.link.station_address),
-        ChannelContextId::PRIMARY,
-    );
-    let connected_plan = Esp32s31ConnectedStaPort::prepare_for_interface_with_storage::<
-        TX_AMPDU_FRAME_COUNT,
-        RX_BLOCK_ACK_SOFTWARE_WINDOW,
-    >(peer, policy.station, interface)
-    .unwrap_or_else(|failure| panic!("invalid connected STA policy: {:?}", failure.error));
     let connected_rx_irq_start = epoch_services.irq.rx_post_count();
     let connected_mac_irq_start = OPEN_RADIO_MAC_IRQ_ENTRIES.load(Ordering::Relaxed);
     let connected_irq_classification_start = OPEN_RADIO_MAC_IRQ_CLASSIFICATION.snapshot();
@@ -140,7 +175,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // connected path enables the ISR-owned RX/TX Signal sink.
     // After `activate`, ordinary `RadioRegisters` cannot touch those
     // registers.
-    if let Err(error) = interrupt_epoch.activate(platform, MAC_COLD_RX_INTERRUPT_MASK) {
+    if let Err(error) = activate_esp32s31_connected_epoch(&mut interrupt_epoch, platform) {
         emergency_log(format_args!(
             "OPEN_RADIO_PHY_HIL result=FAIL stage=production-interrupt-start \
              error={error:?} reset_required=1"
@@ -152,37 +187,6 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         }
     }
 
-    let (stack, network_runner, stack_runner) = match network {
-        RadioHilStaNetwork::Unstarted { device, runner } => {
-            let stack_resources = storage.stack.init(StackResources::new());
-            let mut seed = [0_u8; 8];
-            seed[..6].copy_from_slice(&station_address);
-            seed[6..].copy_from_slice(&0x31a5_u16.to_le_bytes());
-            // Keep the controlled local throughput setup independent of DHCP
-            // while preserving DHCP as an end-to-end router test.
-            let network_config = match policy.ipv4 {
-                NetworkIpv4Configuration::Dhcp => NetworkConfig::dhcpv4(Default::default()),
-                NetworkIpv4Configuration::Static {
-                    address,
-                    prefix_length,
-                    gateway,
-                } => NetworkConfig::ipv4_static(StaticConfigV4 {
-                    address: Ipv4Cidr::new(Ipv4Address::from_octets(address), prefix_length),
-                    gateway: gateway.map(Ipv4Address::from_octets),
-                    dns_servers: Default::default(),
-                }),
-            };
-            let (stack, stack_runner) = embassy_net::new(
-                device,
-                network_config,
-                stack_resources,
-                u64::from_le_bytes(seed),
-            );
-            (stack, runner, Some(stack_runner))
-        }
-        RadioHilStaNetwork::Running(network) => (network.stack, network.runner, None),
-    };
-    network_runner.set_link_state(LinkState::Up);
     let data_tx_rate = connected_plan.data_tx_rate();
     let benchmark_tx_rate = connected_plan.aggregate_tx_rate();
     let peer_ampdu_limit = tx_storage
@@ -215,23 +219,15 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     ));
 
     let (staged_rx_sender, staged_rx_receiver) = epoch_services.staged_rx.split();
-    let (hardware, rx, tx_ampdu_storage, control_resources) = match epoch_resources {
-        RadioHilConnectedEpochResources::Initial { mut registers, rx } => {
-            let rx_ring = match rx
-                .try_into_live_with_storage(&mut registers, rx_storage)
-                .await
-            {
-                Ok(ring) => ring,
-                Err(failure) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-runner-rx-arm epoch=initial error={:?}",
-                        failure.error,
-                    ));
-                    let _owner = failure.owner;
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
+    let start = match epoch_resources {
+        RadioHilConnectedEpochResources::Initial { hardware, receive } => {
+            let Some(initial) = storage.initial.take() else {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL stage=connected-initial-resources-unavailable"
+                ));
+                let _owners = (hardware, receive, network_runner);
+                loop {
+                    Timer::after_secs(60).await;
                 }
             };
             let rx = Esp32s31RxEpochResources::new(
@@ -240,76 +236,43 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
                 staged_rx_sender,
                 OpenRadioRxReloadDelay,
             )
-            .with_pipeline_observer(epoch_services.rx_pipeline)
-            .with_live_ring(rx_ring);
-            // The production aggregate owner is descriptor-only
-            // (`BUFFER_SIZE == 0`), so constructing it in the static cell does
-            // not materialize the former 55-KiB payload arena on this task's
-            // stack. This edge belongs exclusively to the first epoch.
-            let ampdu = HtAmpduTxResources::pin_static(
-                storage.ampdu_metadata.init_with(HtAmpduTxStorage::new),
-                storage.ampdu_dma.init_with(AmpduDmaStorage::new),
-            )
-            .expect("A-MPDU metadata and descriptor storage must be valid");
-            let standby_ampdu = HtAmpduTxResources::pin_static(
-                storage
-                    .ampdu_standby_metadata
-                    .init_with(HtAmpduTxStorage::new),
-                storage.ampdu_standby_dma.init_with(AmpduDmaStorage::new),
-            )
-            .expect("standby A-MPDU metadata and descriptor storage must be valid");
-            let ampdu = AggregateTxResources::pipelined(ampdu, standby_ampdu);
-            let control_resources = storage.control.init(ControlResources::new());
-            let register_arena = storage
-                .registers
-                .init_with(open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena::new);
-            let registers = register_arena
-                .publish(registers)
-                .unwrap_or_else(|_| panic!("connected register arena requires radio reset"));
-            (
-                CooperativeRadioHardware::new(registers),
-                rx,
-                ampdu,
-                &*control_resources,
-            )
+            .with_pipeline_observer(epoch_services.rx_pipeline);
+            start_esp32s31_initial_connected_epoch(hardware, receive, initial.with_rx(rx)).await
         }
         RadioHilConnectedEpochResources::Reconnected(epoch) => {
-            let Esp32s31ReconnectedStaEpochParts {
-                mut hardware,
-                rx,
-                rx_resources,
-                aggregate_tx: ampdu,
-                control: control_resources,
-            } = epoch.into_parts();
-            let rx_ring = match rx
-                .try_into_live_with_storage(&mut hardware, rx_storage)
-                .await
-            {
-                Ok(ring) => ring,
-                Err(failure) => {
-                    emergency_log(format_args!(
-                        "OPEN_RADIO_PHY_HIL result=FAIL \
-                         stage=production-runner-rx-arm epoch=reconnected \
-                         error={:?}",
-                        failure.error,
-                    ));
-                    let _owners = (
-                        hardware,
-                        failure.owner,
-                        rx_resources,
-                        ampdu,
-                        control_resources,
-                        network_runner,
-                    );
-                    loop {
-                        Timer::after_secs(60).await;
-                    }
-                }
-            };
-            let rx = rx_resources.with_live_ring(rx_ring);
-            (hardware, rx, ampdu, control_resources)
+            start_esp32s31_reconnected_connected_epoch(epoch).await
         }
     };
+    let started = match start {
+        Ok(started) => started,
+        Err(failure) => {
+            match &failure {
+                Esp32s31ConnectedEpochStartFailure::RegisterPublication { error, .. } => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-register-publication error={error:?} reset_required=1"
+                    ));
+                }
+                Esp32s31ConnectedEpochStartFailure::Receive { phase, error, .. } => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-runner-rx-arm epoch={phase:?} \
+                         error={error:?} reset_required=1"
+                    ));
+                }
+            }
+            let _owners = (failure, network_runner);
+            loop {
+                Timer::after_secs(60).await;
+            }
+        }
+    };
+    let Esp32s31ConnectedEpochStarted {
+        hardware,
+        rx,
+        aggregate_tx: tx_ampdu_storage,
+        control: control_resources,
+    } = started;
     // The policy is statically dispatched inside the production RX owner. It
     // can only narrow admission for a real completed unit; descriptor recycle
     // and staging remain exclusively owned by `Esp32s31ConnectedRx`.
@@ -322,67 +285,76 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     )
     .with_pipeline_observer(epoch_services.rx_pipeline);
     let (rx_reorder_sender, rx_reorder_receiver) = epoch_services.rx_reorder_commands.split();
-    let rx_protocol = Esp32s31ConnectedStaPort::build_rx_protocol(
-        &connected_plan,
-        Esp32s31ConnectedStaRxProtocolResources {
-            frames: staged_rx_receiver,
-            irq: epoch_services.irq,
-            sink: rx_sink,
-            mpdu: frame,
-            ethernet,
-            reorder_commands: rx_reorder_receiver,
-            reorder_storage: epoch_services.rx_reorder_storage,
-            reorder_scratch: None,
-            pipeline_observer: Some(epoch_services.rx_pipeline),
-        },
-    );
-
-    let tx_sequences = core::mem::replace(sequences, StaTxSequenceCounters::new(0));
+    let tx_sequences = sequences;
     let control_tx = tx_storage
         .take_control()
         .expect("control TX owner moves into the connected runner exactly once");
-    let tx = Esp32s31ConnectedStaPort::build_tx(
-        &connected_plan,
-        Esp32s31ConnectedStaTxResources {
-            control: control_tx,
-            aggregate: tx_ampdu_storage,
-            pairwise_key: pairwise_slot,
-            sequences: tx_sequences,
-            aggregate_tx_observer: Some(epoch_services.aggregate_tx),
-            network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
-        },
-    )
-    .unwrap_or_else(|_failure| panic!("connected handoff requires an idle control TX owner"));
-    let control = Esp32s31ConnectedStaPort::build_control(
-        &connected_plan,
-        Esp32s31ConnectedStaControlResources {
-            receiver: control_receiver,
-            reorder_commands: rx_reorder_sender,
-        },
-    );
-
     let registers = hardware.register_access();
-    let drivers = Esp32s31ConnectedStaPort::assemble(
-        connected_plan,
-        Esp32s31ConnectedStaDriverParts {
+    let assembled =
+        match assemble_esp32s31_connected_driver(Esp32s31ConnectedDriverAssemblyResources {
+            plan: connected_plan,
+            irq: epoch_services.irq,
+            network: network_runner,
             hardware,
             rx,
-            tx,
-            control,
-            protocol: rx_protocol,
-        },
-    );
-    let rx_protocol = drivers.protocol;
-    let connected_services =
-        FaultInjectingConnectedServices::new(drivers.services, epoch_services.faults);
-    let mut radio_runner =
-        ConnectedRunner::new(epoch_services.irq, network_runner, connected_services);
-    // WPA2 receives through the same already-live DMA ring in polling mode.
-    // Probe its durable frontier once after interrupt activation so a frame
-    // completed before the route was unmasked cannot strand connected RX
-    // until beacon-loss teardown merely because no new hardware edge arrives.
-    epoch_services.irq.notify_rx_handoff();
-
+            protocol: Esp32s31ConnectedStaRxProtocolResources {
+                frames: staged_rx_receiver,
+                irq: epoch_services.irq,
+                sink: rx_sink,
+                mpdu: frame,
+                ethernet,
+                reorder_commands: rx_reorder_receiver,
+                reorder_storage: epoch_services.rx_reorder_storage,
+                runtime: rx_protocol_runtime,
+                reorder_scratch: None,
+                pipeline_observer: Some(epoch_services.rx_pipeline),
+            },
+            tx: Esp32s31ConnectedStaTxResources {
+                control: control_tx,
+                aggregate: tx_ampdu_storage,
+                pairwise_key: pairwise_slot,
+                sequences: tx_sequences,
+                aggregate_tx_observer: Some(epoch_services.aggregate_tx),
+                network_domain: Esp32s31ConnectedStaNetworkTxDomain::new(),
+            },
+            control: Esp32s31ConnectedStaControlResources {
+                receiver: control_receiver,
+                reorder_commands: rx_reorder_sender,
+            },
+            map_services: |services| {
+                FaultInjectingConnectedServices::new(services, epoch_services.faults)
+            },
+        }) {
+            Ok(assembled) => assembled,
+            Err(failure) => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL \
+                 stage=production-connected-compose error=tx-owner-active reset_required=1"
+                ));
+                let _retained_owners = failure;
+                loop {
+                    Timer::after_secs(60).await;
+                }
+            }
+        };
+    let Esp32s31ConnectedDriverAssembly {
+        runner: radio_runner,
+        protocol: rx_protocol,
+        report: _,
+    } = assembled;
+    let (connected_task_group, protocol_endpoint, traffic_endpoint) =
+        match connected_tasks.start_epoch() {
+            Ok(epoch) => epoch,
+            Err(error) => {
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=FAIL \
+                         stage=production-connected-task-start error={error:?} reset_required=1"
+                ));
+                loop {
+                    Timer::after_secs(60).await;
+                }
+            }
+        };
     let network_started = stack_runner.is_some();
     if let Some(stack_runner) = stack_runner {
         let stack_task = connected_network_stack_task(stack_runner, connected_tasks)
@@ -401,7 +373,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // CriticalSectionRawMutex queues and is compiler-proven Send, so moving it
     // to Core 1 removes one long cooperative poll interval without inventing
     // a fixed per-wake frame ceiling.
-    let protocol_task = connected_rx_protocol_task(rx_protocol, connected_tasks)
+    let protocol_task = connected_rx_protocol_task(rx_protocol, connected_tasks, protocol_endpoint)
         .unwrap_or_else(|_| panic!("connected RX protocol task allocation failed"));
     protocol_spawner.spawn(protocol_task);
     epoch_services
@@ -409,6 +381,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         .send(RadioHilConnectedTrafficConfig {
             association_phy,
             data_tx_rate: benchmark_tx_rate,
+            endpoint: traffic_endpoint,
         })
         .await;
     let benchmark_topology = if OPEN_RADIO_TCP_BENCH {
@@ -436,121 +409,187 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
     // disconnect returns RX/TX/control ownership into the same scope that
     // retains the GTK and platform token. A spawned task could only report
     // the edge and would strand those values in its private task storage.
-    let runner_exit = match observe_open_radio_task_polls(
-        run_esp32s31_connected_station_epoch(&mut radio_runner, station_control),
-        connected_tasks.radio_polls(),
-        connected_tasks.telemetry_enabled(),
-    )
-    .await
-    {
-        Esp32s31ConnectedStationExit::Disconnected => {
-            let control = radio_runner.services().inner().control();
-            let beacon_monitor = control.beacon_monitor();
-            let beacon_lost = control.beacon_lost();
-            let rx_irqs = epoch_services
-                .irq
-                .rx_post_count()
-                .wrapping_sub(connected_rx_irq_start);
-            let mac_irq_entries = OPEN_RADIO_MAC_IRQ_ENTRIES
-                .load(Ordering::Relaxed)
-                .wrapping_sub(connected_mac_irq_start);
-            let irq = OPEN_RADIO_MAC_IRQ_CLASSIFICATION
-                .snapshot()
-                .wrapping_delta_since(connected_irq_classification_start);
-            let pipeline = OPEN_RADIO_RX_PIPELINE_COUNTERS
-                .snapshot()
-                .wrapping_delta_since(connected_rx_pipeline_start);
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner \
+    let mut run_observer = RadioHilConnectedRunObserver {
+        counters: connected_tasks.radio_polls(),
+        enabled: connected_tasks.telemetry_enabled(),
+    };
+    let stopped = match run_and_quiesce_esp32s31_connected_epoch(
+        interrupt_epoch,
+        platform,
+        radio_runner,
+        station_control,
+        connected_task_group,
+        &mut run_observer,
+        |exit, runner| match exit {
+            Esp32s31ConnectedStationExit::Disconnected => {
+                let control = runner.services().inner().control();
+                let beacon_monitor = control.beacon_monitor();
+                let beacon_lost = control.beacon_lost();
+                let rx_irqs = epoch_services
+                    .irq
+                    .rx_post_count()
+                    .wrapping_sub(connected_rx_irq_start);
+                let mac_irq_entries = OPEN_RADIO_MAC_IRQ_ENTRIES
+                    .load(Ordering::Relaxed)
+                    .wrapping_sub(connected_mac_irq_start);
+                let irq = OPEN_RADIO_MAC_IRQ_CLASSIFICATION
+                    .snapshot()
+                    .wrapping_delta_since(connected_irq_classification_start);
+                let pipeline = OPEN_RADIO_RX_PIPELINE_COUNTERS
+                    .snapshot()
+                    .wrapping_delta_since(connected_rx_pipeline_start);
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner \
                  exit=disconnected beacon_lost={} beacons_observed={} \
                  beacon_deadline_us={:?} last_control_event={:?} last_tx_failure={:?} \
                  rx_irqs={} mac_irq_entries={} irq_rx_only={} irq_rx_mixed={} \
                  irq_tx_only={} irq_tx_mixed={} irq_other_only={} irq_spurious={} \
-                 rx_service_calls={} rx_frontier={} rx_admitted={} protocol_frames={}",
-                u8::from(beacon_lost),
-                beacon_monitor.map_or(0, |monitor| monitor.observed()),
-                beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
-                control.last_event(),
-                control.last_tx_failure(),
-                rx_irqs,
-                mac_irq_entries,
-                irq.rx_only_entries,
-                irq.rx_mixed_entries,
-                irq.tx_only_entries,
-                irq.tx_mixed_entries,
-                irq.other_only_entries,
-                irq.spurious_entries,
-                pipeline.service_calls,
-                pipeline.completion_frontier_frames,
-                pipeline.admitted_frames,
-                pipeline.protocol_frames,
-            ));
-            RadioHilConnectedExit::Disconnected { beacon_lost }
-        }
-        Esp32s31ConnectedStationExit::ReconnectRequested { source } => {
-            let source = match source {
-                Esp32s31StationReconnectSource::Controller => "station-controller",
-                Esp32s31StationReconnectSource::CoalescedDisconnect => "coalesced-disconnect",
-            };
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
+                 rx_service_calls={} rx_frontier={} rx_admitted={} protocol_frames={} \
+                 tx_active={} tx_prepared={} tx_queue={:?} ordinary_slot={:?} \
+                 ordinary_word0={:#010x}",
+                    u8::from(beacon_lost),
+                    beacon_monitor.map_or(0, |monitor| monitor.observed()),
+                    beacon_monitor.and_then(|monitor| monitor.deadline_micros()),
+                    control.last_event(),
+                    control.last_tx_failure(),
+                    rx_irqs,
+                    mac_irq_entries,
+                    irq.rx_only_entries,
+                    irq.rx_mixed_entries,
+                    irq.tx_only_entries,
+                    irq.tx_mixed_entries,
+                    irq.other_only_entries,
+                    irq.spurious_entries,
+                    pipeline.service_calls,
+                    pipeline.completion_frontier_frames,
+                    pipeline.admitted_frames,
+                    pipeline.protocol_frames,
+                    u8::from(runner.services().inner().tx().active()),
+                    u8::from(runner.services().inner().tx().has_prepared_network_tx()),
+                    runner.services().inner().tx().queue_state(),
+                    runner.services().inner().tx().ordinary_slot_state(),
+                    runner.services().inner().tx().ordinary_descriptor_word0(),
+                ));
+                let tx = runner.services().inner().tx();
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner-tx-owner \
+                     active={} prepared={} queue={:?} ordinary={:?} ordinary_word0={:#010x}",
+                    u8::from(tx.active()),
+                    u8::from(tx.has_prepared_network_tx()),
+                    tx.queue_state(),
+                    tx.ordinary_slot_state(),
+                    tx.ordinary_descriptor_word0(),
+                ));
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner-ampdu-owner \
+                     metadata_state={} dma_free={} held={} standby_free={:?}",
+                    tx.aggregate_slot_state_code(),
+                    u8::from(tx.aggregate_dma_is_free()),
+                    tx.aggregate_held_backings(),
+                    tx.standby_aggregate_is_fully_free(),
+                ));
+                let aggregate = epoch_services.aggregate_tx.snapshot();
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-runner-ampdu-history \
+                     singles={} ba_transitions={} prepared={} standby_prepared={} \
+                     publications={} completed={}",
+                    aggregate.network_single_mpdu_started,
+                    aggregate.block_ack_operational_transitions,
+                    aggregate.aggregates_prepared,
+                    aggregate.standby_prepared,
+                    aggregate.aggregate_publications,
+                    aggregate.aggregates_completed,
+                ));
+                RadioHilConnectedExit::Disconnected { beacon_lost }
+            }
+            Esp32s31ConnectedStationExit::ReconnectRequested { source } => {
+                let source = match source {
+                    Esp32s31StationReconnectSource::Controller => "station-controller",
+                    Esp32s31StationReconnectSource::CoalescedDisconnect => "coalesced-disconnect",
+                };
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=PASS stage=production-runner-stop \
                  source={source} command=Reconnect"
-            ));
-            RadioHilConnectedExit::ReconnectRequested
-        }
-        Esp32s31ConnectedStationExit::StationStopped(command) => {
-            RadioHilConnectedExit::StationStopped(command)
-        }
-        Esp32s31ConnectedStationExit::HardwareFailure(error) => match error {
-            FaultInjectingServicesError::InjectedTxAfterPublication { fault, source } => {
-                let reset_required = injected_tx_source_requires_reset(&source);
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result={} stage=production-runner-fault \
+                ));
+                RadioHilConnectedExit::ReconnectRequested
+            }
+            Esp32s31ConnectedStationExit::StationStopped(command) => {
+                RadioHilConnectedExit::StationStopped(command)
+            }
+            Esp32s31ConnectedStationExit::HardwareFailure(error) => match error {
+                FaultInjectingServicesError::InjectedTxAfterPublication { fault, source } => {
+                    let reset_required = injected_tx_source_requires_reset(&source);
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result={} stage=production-runner-fault \
                          injection={:?} request_id={} reset_required={} source={source:?}",
-                    if reset_required { "PASS" } else { "FAIL" },
-                    fault.injection,
-                    fault.request_id,
-                    u8::from(reset_required),
-                ));
-                RadioHilConnectedExit::InjectedTxFault {
-                    fault,
-                    reset_required,
+                        if reset_required { "PASS" } else { "FAIL" },
+                        fault.injection,
+                        fault.request_id,
+                        u8::from(reset_required),
+                    ));
+                    RadioHilConnectedExit::InjectedTxFault {
+                        fault,
+                        reset_required,
+                    }
                 }
-            }
-            FaultInjectingServicesError::Inner(error) => {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?}"
-                ));
-                RadioHilConnectedExit::HardwareFailure
-            }
-            FaultInjectingServicesError::InjectionContractViolation { fault, progress } => {
-                emergency_log(format_args!(
-                    "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner-fault \
+                FaultInjectingServicesError::Inner(error) => {
+                    let services = runner.services().inner();
+                    let tx = services.tx();
+                    let control = services.control();
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner error={error:?} \
+                         tx_active={} tx_prepared={} tx_queue={:?} ordinary_slot={:?} \
+                         ordinary_word0={:#010x} control_in_flight={} \
+                         last_control_event={:?} last_control_tx_failure={:?}",
+                        u8::from(tx.active()),
+                        u8::from(tx.has_prepared_network_tx()),
+                        tx.queue_state(),
+                        tx.ordinary_slot_state(),
+                        tx.ordinary_descriptor_word0(),
+                        u8::from(control.tx_in_flight()),
+                        control.last_event(),
+                        control.last_tx_failure(),
+                    ));
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=OBSERVE stage=production-failure-tx-owner \
+                         ordinary={:?} ordinary_word0={:#010x} aggregate={:?} \
+                         aggregate_dma_free={} standby_free={:?}",
+                        tx.ordinary_slot_state(),
+                        tx.ordinary_descriptor_word0(),
+                        tx.aggregate_slot_state(),
+                        u8::from(tx.aggregate_dma_is_free()),
+                        tx.standby_aggregate_is_fully_free(),
+                    ));
+                    RadioHilConnectedExit::HardwareFailure
+                }
+                FaultInjectingServicesError::InjectionContractViolation { fault, progress } => {
+                    emergency_log(format_args!(
+                        "OPEN_RADIO_PHY_HIL result=FAIL stage=production-runner-fault \
                          injection={:?} request_id={} contract_progress={progress:?}",
-                    fault.injection, fault.request_id,
-                ));
-                RadioHilConnectedExit::HardwareFailure
-            }
+                        fault.injection, fault.request_id,
+                    ));
+                    RadioHilConnectedExit::HardwareFailure
+                }
+            },
         },
-    };
-    // Close hardware publication before stopping the protocol consumer. The
-    // radio runner no longer schedules RX/control; masking both CPU and
-    // peripheral routes now makes the command/frame drain finite and prevents
-    // a stale wake from leaking into the next connected epoch.
-    let interrupt_drain = match interrupt_epoch.quiesce(platform) {
-        Ok(drain) => drain,
-        Err(error) => {
+    )
+    .await
+    {
+        Ok(stopped) => stopped,
+        Err(pending) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-interrupt-stop \
-                 error={error:?} reset_required=1"
+                 error={:?} state=stopping",
+                pending.error,
             ));
-            // The host owns board reset after a failed HIL transaction. Keep
-            // this stack frame and every role owner alive until that reset.
+            let _owners = pending;
             loop {
                 Timer::after_secs(60).await;
             }
         }
     };
+    let runner_exit = stopped.exit;
+    let interrupt_drain = stopped.quiesced.interrupt_drain;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-interrupt-stop \
          rx_wake={} rx_capacity_wake={} tx_events={:#010x} power_events={:#010x}",
@@ -559,33 +598,10 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         interrupt_drain.mac.tx_events,
         interrupt_drain.power_events,
     ));
-    // No spawned task may retain a PAC borrow when this epoch returns. The
-    // benchmark is the only task besides the radio runner that receives the
-    // register cell; stop it before waiting for protocol ownership release.
-    let mut connected_task_group = RadioHilConnectedTaskGroup::new(connected_tasks);
-    let stopped_protocol = match stop_esp32s31_connected_task_group(
-        &mut connected_task_group,
-        epoch_services.task_stop_timeout,
-    )
-    .await
-    {
-        Esp32s31ConnectedTaskStopOutcome::Stopped(stopped) => stopped,
-        Esp32s31ConnectedTaskStopOutcome::ResetRequired { timeout } => {
-            emergency_log(format_args!(
-                "OPEN_RADIO_PHY_HIL result=FAIL \
-                 stage=production-connected-task-stop error=timeout \
-                 timeout_ms={} reset_required=1",
-                timeout.as_millis(),
-            ));
-            loop {
-                Timer::after_secs(60).await;
-            }
-        }
-    };
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-benchmark-stopped"
     ));
-    let protocol_shutdown = stopped_protocol.shutdown();
+    let protocol_shutdown = stopped.quiesced.tasks.shutdown();
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-rx-protocol-stopped \
          queued_frames={} retained_frames={} reorder_commands={} active_reorders={}",
@@ -594,46 +610,67 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         protocol_shutdown.reorder_commands,
         protocol_shutdown.active_reorders,
     ));
-    let (frame, ethernet) = stopped_protocol.into_scratch();
-    let (network, services) = radio_runner.into_parts();
-    let services = services.into_inner();
-    let teardown = match Esp32s31ConnectedStaTeardownPort::try_teardown(services, group_slot) {
+    let stopped = stopped.map_services(|services| services.into_inner());
+    let teardown = match stopped.try_teardown(group_slot) {
         Ok(teardown) => teardown,
-        Err(Esp32s31ConnectedStaTeardownFailure::Control {
-            error,
-            services,
-            group_key,
+        Err(Esp32s31ConnectedServiceTeardownFailure {
+            interrupt,
+            network,
+            tasks,
+            error:
+                Esp32s31ConnectedStaTeardownFailure::Control {
+                    error,
+                    services,
+                    group_key,
+                },
+            ..
         }) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-control-stop error={error:?}"
             ));
-            let _owners = (network, services, group_key);
+            let _owners = (interrupt, network, tasks, services, group_key);
             loop {
                 Timer::after_secs(60).await;
             }
         }
-        Err(Esp32s31ConnectedStaTeardownFailure::Rx {
-            error,
-            hardware,
-            rx,
-            tx,
-            control,
-            group_key,
+        Err(Esp32s31ConnectedServiceTeardownFailure {
+            interrupt,
+            network,
+            tasks,
+            error:
+                Esp32s31ConnectedStaTeardownFailure::Rx {
+                    error,
+                    hardware,
+                    rx,
+                    tx,
+                    control,
+                    group_key,
+                },
+            ..
         }) => {
             emergency_log(format_args!(
                 "OPEN_RADIO_PHY_HIL result=FAIL stage=production-rx-dma-stop error={error:?}"
             ));
-            let _owners = (network, hardware, rx, tx, control, group_key);
+            let _owners = (
+                interrupt, network, tasks, hardware, rx, tx, control, group_key,
+            );
             loop {
                 Timer::after_secs(60).await;
             }
         }
-        Err(Esp32s31ConnectedStaTeardownFailure::TxActive {
-            hardware,
-            stopped_rx,
-            tx,
-            control,
-            group_key,
+        Err(Esp32s31ConnectedServiceTeardownFailure {
+            interrupt,
+            network,
+            tasks,
+            error:
+                Esp32s31ConnectedStaTeardownFailure::TxActive {
+                    hardware,
+                    stopped_rx,
+                    tx,
+                    control,
+                    group_key,
+                },
+            ..
         }) => {
             if let RadioHilConnectedExit::InjectedTxFault {
                 fault,
@@ -674,12 +711,25 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
                      stage=production-connected-tx-return error=aggregate-active"
                 ));
             }
-            let _owners = (network, hardware, stopped_rx, tx, control, group_key);
+            let _owners = (
+                interrupt, network, tasks, hardware, stopped_rx, tx, control, group_key,
+            );
             loop {
                 Timer::after_secs(60).await;
             }
         }
     };
+    let interrupt_epoch = teardown.interrupt;
+    let stopped_protocol = teardown.tasks;
+    let (frame, ethernet, rx_protocol_runtime) = stopped_protocol.into_parts();
+    storage.rx_protocol = rx_protocol_runtime;
+    let connected_epoch = RadioHilConnectedEpochBindings {
+        storage,
+        services: epoch_services,
+        policy: epoch_policy,
+    };
+    let network = teardown.network;
+    let teardown = teardown.driver;
     let control_shutdown = teardown.control;
     emergency_log(format_args!(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-control-stop \
@@ -713,7 +763,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         u8::from(pairwise_cleared),
         u8::from(group_cleared),
     ));
-    *sequences = teardown.sequences;
+    let sequences = teardown.sequences;
     tx_storage
         .restore_resources(teardown.tx_resources)
         .unwrap_or_else(|_| panic!("connected TX return found a live owner"));
@@ -721,10 +771,7 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
         "OPEN_RADIO_PHY_HIL result=PASS stage=production-connected-tx-return"
     ));
     let disconnected = RadioHilDisconnectedEpoch::new(
-        RadioHilRunningNetwork {
-            stack,
-            runner: network,
-        },
+        RunningStationNetwork::new(stack, network),
         teardown.hardware,
         teardown.stopped_rx,
         teardown.aggregate,
@@ -758,31 +805,41 @@ pub(in crate::radio_hil) async fn run_connected_network<'fixture, 'security>(
             .report(RadioHilStationEpochProgress::RunnerStopped);
     }
     RadioHilConnectedEpochReturn {
-        fixture: RadioHilConnectedTaskFixture {
-            spawner,
-            protocol_spawner,
-            state,
-            platform,
-            interrupt_epoch,
-            rx_storage,
-            tx_storage,
-            descriptor_base,
-            buffer_addresses,
-            scan_table,
-            frame,
-            ethernet,
-            connected_tasks,
-            connected_rx,
-            network_report,
-            connected_epoch,
-        },
+        fixture:
+            open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRuntimeResources::new(
+                open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationRadioResources::new(
+                    role,
+                    interrupt_epoch,
+                ),
+                open_esp_radio_esp32s31_wifi_embassy::station::Esp32s31StationStorageResources::new(
+                    super::super::RadioHilStationDmaResources::new(
+                        rx_storage,
+                        descriptor_base,
+                        buffer_addresses,
+                    ),
+                    tx_storage,
+                    scan_table,
+                    frame,
+                    ethernet,
+                ),
+                super::super::RadioHilStationBoardResources::new(
+                    spawner,
+                    protocol_spawner,
+                    station_interface,
+                    connected_tasks,
+                    connected_rx,
+                    network_report,
+                    connected_epoch,
+                    station_control_resources,
+                ),
+            ),
         disconnected,
-        security: open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity {
+        security: open_esp_radio::esp32s31::wifi::sta::attempt::Esp32s31StaAttemptSecurity::new(
             pmk,
             supplicant_nonce,
             sequences,
             message4_protection,
-        },
+        ),
         exit: runner_exit,
     }
 }

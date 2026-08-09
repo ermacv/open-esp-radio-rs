@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 12;
+pub const PROTOCOL_VERSION: u16 = 16;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
@@ -130,6 +130,9 @@ pub struct FeatureCapabilities {
     /// This image can stop one healthy connected STA epoch at a safe runner
     /// boundary and use the returned owners to exercise reassociation.
     pub station_epoch_control: bool,
+    /// This image can stop the complete station role and report reconstruction
+    /// of the role-neutral Wi-Fi owner.
+    pub station_stop_control: bool,
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
@@ -422,6 +425,9 @@ pub enum Command {
     /// lifecycle operation, not a transport-session stop and not evidence of
     /// peer link loss.
     CycleStationEpoch,
+    /// Stop the complete station role after all child tasks, DMA and interrupt
+    /// routing have returned their exact owners.
+    StopStation,
     /// Arm one deterministic fault below the station lifecycle facade.
     /// Injection is one-shot and occurs only after the named production
     /// transaction has crossed its hardware-ownership edge.
@@ -570,6 +576,72 @@ pub struct StationEpochEvidence {
     pub scan_owners_returned: bool,
     pub join_completed: bool,
     pub connected_runner_started: bool,
+}
+
+/// Exact clean-stop frontiers required before another Wi-Fi role may start.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StationStopEvidence {
+    pub lifecycle_owner_returned: bool,
+    pub pac_reclaimed: bool,
+    pub interrupt_setup_reclaimed: bool,
+    /// DMA, network, executor and control owners were recovered from the
+    /// exact stopped station phase rather than replaced with allocation
+    /// handles or newly initialized storage.
+    pub role_resources_reclaimed: bool,
+    pub wifi_stopped_reconstructed: bool,
+    /// The reconstructed owner was consumed by another supported Wi-Fi role.
+    pub subsequent_role_materialized: bool,
+    /// The subsequent role returned only after its own ISR/DMA epoch was
+    /// quiescent and reconstructed the role-neutral owner again.
+    pub subsequent_role_quiesced: bool,
+    /// The role-local resources returned by the subsequent role were rebound
+    /// to a second epoch without replacing their static storage or control
+    /// domain.
+    pub subsequent_role_restarted: bool,
+    /// The restarted subsequent role returned its ISR/DMA and role-neutral
+    /// owners through another clean quiescence edge.
+    pub subsequent_role_restart_quiesced: bool,
+    /// The owner returned by the subsequent role was consumed by a fresh
+    /// station task without reacquiring PAC or recreating an IRQ token.
+    pub station_rematerialized: bool,
+    /// The rematerialized station completed scan/join/security and started a
+    /// real connected runner before its stop was requested.
+    pub station_connected: bool,
+    /// The replacement station returned only after its task, ISR and DMA
+    /// epochs were quiescent and its exact owner graph was reclaimed again.
+    pub station_requiesced: bool,
+}
+
+impl StationStopEvidence {
+    pub const COMPLETE: Self = Self {
+        lifecycle_owner_returned: true,
+        pac_reclaimed: true,
+        interrupt_setup_reclaimed: true,
+        role_resources_reclaimed: true,
+        wifi_stopped_reconstructed: true,
+        subsequent_role_materialized: true,
+        subsequent_role_quiesced: true,
+        subsequent_role_restarted: true,
+        subsequent_role_restart_quiesced: true,
+        station_rematerialized: true,
+        station_connected: true,
+        station_requiesced: true,
+    };
+
+    pub const fn is_complete(self) -> bool {
+        self.lifecycle_owner_returned
+            && self.pac_reclaimed
+            && self.interrupt_setup_reclaimed
+            && self.role_resources_reclaimed
+            && self.wifi_stopped_reconstructed
+            && self.subsequent_role_materialized
+            && self.subsequent_role_quiesced
+            && self.subsequent_role_restarted
+            && self.subsequent_role_restart_quiesced
+            && self.station_rematerialized
+            && self.station_connected
+            && self.station_requiesced
+    }
 }
 
 impl StationEpochEvidence {
@@ -741,6 +813,8 @@ pub enum Event {
     /// Reliable completion acknowledgement for `CycleStationEpoch`.
     /// The envelope request ID identifies the command being completed.
     StationEpochCompleted(StationEpochEvidence),
+    /// Reliable completion acknowledgement for `StopStation`.
+    StationStopped(StationStopEvidence),
     /// Unsolicited, reliable station generation/link transition.
     StationLifecycle(StationLifecycleEvent),
     /// Reliable terminal frontier for a requested station fault injection.

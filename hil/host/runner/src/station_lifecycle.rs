@@ -21,9 +21,9 @@ const LIFECYCLE_TERMINAL_MARKER: &str = "result=FAIL stage=production-sta-lifecy
 const FATAL_STARTUP_FAILURE_MARKERS: &[&str] = &[
     "result=FAIL stage=mac-cold-start",
     "result=FAIL stage=rx-ring-stage",
-    "result=FAIL stage=cold-scan-service-stop",
-    "result=FAIL stage=cold-scan-service ",
-    "result=FAIL stage=cold-scan-plan",
+    "result=FAIL stage=initial-scan-service-stop",
+    "result=FAIL stage=initial-scan-service ",
+    "result=FAIL stage=initial-scan-plan",
     "result=FAIL stage=production-connected-task-stop",
 ];
 

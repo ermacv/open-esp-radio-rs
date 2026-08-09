@@ -10,7 +10,7 @@ use open_esp_radio_hil_protocol::{StationDisconnectReason, StationLifecycleEvent
 
 use crate::{
     Result,
-    controlled_ap::{ControlledAp, require_credentials_environment},
+    controlled_ap::{ControlledAp, require_controlled_ap_credentials_environment},
     traffic_capture::SerialCapture,
 };
 
@@ -31,7 +31,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         return Ok(());
     }
     let options = parse_options(&arguments)?;
-    require_credentials_environment()?;
+    require_controlled_ap_credentials_environment()?;
     let output = root.join("target/hil/esp32s31/qualification/station-ap-loss");
     fs::create_dir_all(&output)?;
 

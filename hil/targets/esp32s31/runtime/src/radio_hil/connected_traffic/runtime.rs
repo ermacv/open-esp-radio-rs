@@ -7,7 +7,7 @@ use open_esp_radio::{
     esp32s31::wifi::{device::register_arena::Esp32s31RadioRegistersAccess, mac::tx::TxPhyRate},
     wifi::ieee80211::station::StaAssociationPhy,
 };
-use static_cell::StaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use super::{
     TcpBenchmarkConfig, UdpRxBenchmarkConfig, UdpRxSessionSource, UdpRxTelemetry, UdpSocketBuffers,
@@ -15,14 +15,14 @@ use super::{
     run_open_radio_bidirectional_session_coordinator, run_open_radio_tcp_benchmark,
     run_open_radio_udp_rx_benchmark, run_open_radio_udp_tx_benchmark,
 };
+use crate::radio_hil::station::RadioHilConnectedTrafficTaskEndpoint;
 use crate::radio_hil::{
     OPEN_RADIO_BIDIRECTIONAL_BENCH, OPEN_RADIO_BIDIRECTIONAL_RESULTS,
     OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH, OPEN_RADIO_BIDIRECTIONAL_RX_SESSIONS,
     OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH, OPEN_RADIO_BIDIRECTIONAL_TX_SESSIONS,
-    OPEN_RADIO_CONNECTED_TRAFFIC_START, OPEN_RADIO_CONNECTED_TRAFFIC_STOP,
-    OPEN_RADIO_CONNECTED_TRAFFIC_STOPPED, OPEN_RADIO_IRQ_RUNTIME,
-    OPEN_RADIO_MAC_IRQ_CLASSIFICATION, OPEN_RADIO_MAC_IRQ_ENTRIES, OPEN_RADIO_RAW_MAC_BENCH,
-    OPEN_RADIO_RUNTIME_RX_SESSIONS, OPEN_RADIO_RUNTIME_TX_SESSIONS, OPEN_RADIO_RX_A_MPDU_COUNTERS,
+    OPEN_RADIO_CONNECTED_TRAFFIC_START, OPEN_RADIO_IRQ_RUNTIME, OPEN_RADIO_MAC_IRQ_CLASSIFICATION,
+    OPEN_RADIO_MAC_IRQ_ENTRIES, OPEN_RADIO_RAW_MAC_BENCH, OPEN_RADIO_RUNTIME_RX_SESSIONS,
+    OPEN_RADIO_RUNTIME_TX_SESSIONS, OPEN_RADIO_RX_A_MPDU_COUNTERS,
     OPEN_RADIO_RX_APPLICATION_HANDOFF_BUDGET, OPEN_RADIO_RX_BEACON_S_MPDU_COUNTERS,
     OPEN_RADIO_RX_LAST_UDP_FORMAT, OPEN_RADIO_RX_LAST_UDP_PHY, OPEN_RADIO_RX_ORDER_COUNTERS,
     OPEN_RADIO_RX_ORDER_TELEMETRY, OPEN_RADIO_RX_PHY_COUNTERS, OPEN_RADIO_RX_PIPELINE_COUNTERS,
@@ -37,33 +37,53 @@ use crate::radio_hil::{
     OPEN_RADIO_UDP_TX_QUEUE_DEPTH, TX_AMPDU_FRAME_COUNT,
 };
 
+// Socket metadata and payload rings are static storage. Zero-filled payloads
+// use const BSS initialization; metadata uses `init_with` because EMPTY has a
+// nonzero representation and copying a const image would waste flash. Neither
+// path constructs the roughly 94-KiB RX ring as an async-stack value: such a
+// temporary previously crossed the stack boundary and corrupted Wi-Fi state.
 static OPEN_RADIO_UDP_RX_METADATA: StaticCell<[PacketMetadata; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]> =
     StaticCell::new();
-static OPEN_RADIO_UDP_RX_BUFFER: StaticCell<
+static OPEN_RADIO_UDP_RX_BUFFER: ConstStaticCell<
     [u8; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-> = StaticCell::new();
+> = ConstStaticCell::new([0; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
 static OPEN_RADIO_UDP_TX_METADATA: StaticCell<[PacketMetadata; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]> =
     StaticCell::new();
-static OPEN_RADIO_UDP_TX_BUFFER: StaticCell<
+static OPEN_RADIO_UDP_TX_BUFFER: ConstStaticCell<
     [u8; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-> = StaticCell::new();
+> = ConstStaticCell::new([0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]);
+// The TX benchmark pattern needs a unique mutable lease. `init_with` builds it
+// directly in static storage so the nonzero pattern neither occupies flash as
+// initial data nor becomes part of a benchmark future's stack.
 static OPEN_RADIO_UDP_PACKET: StaticCell<[u8; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]> = StaticCell::new();
-static OPEN_RADIO_TCP_RX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]> =
-    StaticCell::new();
-static OPEN_RADIO_TCP_TX_BUFFER: StaticCell<[u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]> =
-    StaticCell::new();
+
+// TCP window storage is 256 KiB RX plus 64 KiB TX. Compile-time static
+// initialization is mandatory: constructing either array in the connected
+// task would overflow the CPU stack before the socket could borrow it.
+static OPEN_RADIO_TCP_RX_BUFFER: ConstStaticCell<[u8; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]);
+static OPEN_RADIO_TCP_TX_BUFFER: ConstStaticCell<[u8; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]> =
+    ConstStaticCell::new([0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]);
+
+// Full-duplex qualification owns a second RX ring. It is separate static
+// storage so enabling bidirectional traffic cannot add another roughly 94 KiB
+// aggregate to the connected task's stack frame.
 static OPEN_RADIO_BIDIRECTIONAL_RX_METADATA: StaticCell<
     [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH],
 > = StaticCell::new();
-static OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER: StaticCell<
+static OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER: ConstStaticCell<
     [u8; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-> = StaticCell::new();
+> = ConstStaticCell::new(
+    [0; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+);
 static OPEN_RADIO_BIDIRECTIONAL_TX_METADATA: StaticCell<
     [PacketMetadata; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH],
 > = StaticCell::new();
-static OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER: StaticCell<
+static OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER: ConstStaticCell<
     [u8; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
-> = StaticCell::new();
+> = ConstStaticCell::new(
+    [0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY],
+);
 
 // Keep one ordinary-code symbol alive so the host HIL can prove the runtime
 // memory profile from periodic UART evidence. In the required
@@ -269,11 +289,13 @@ async fn run_connected_traffic_workload(
 // driver crates expose owned runners but do not choose an executor, task
 // storage or benchmark policy. Keeping each long-running future in its own
 // Embassy task gives it an independent waker and removes the fixed outer poll
-// order that previously coupled stack, protocol and PAC progress.
-#[derive(Clone, Copy)]
+// order that previously coupled stack, protocol and PAC progress. Each
+// traffic epoch also carries a linear stop endpoint; only this task can
+// acknowledge it, and dropping it poisons later reuse.
 pub(in crate::radio_hil) struct RadioHilConnectedTrafficConfig {
     pub(in crate::radio_hil) association_phy: StaAssociationPhy,
     pub(in crate::radio_hil) data_tx_rate: TxPhyRate,
+    pub(in crate::radio_hil) endpoint: RadioHilConnectedTrafficTaskEndpoint,
 }
 
 enum RadioHilConnectedTrafficBuffers {
@@ -316,8 +338,8 @@ impl RadioHilConnectedTrafficBuffers {
     fn init() -> Self {
         if OPEN_RADIO_TCP_BENCH {
             Self::Tcp {
-                rx: OPEN_RADIO_TCP_RX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_RX_BUFFER_CAPACITY]),
-                tx: OPEN_RADIO_TCP_TX_BUFFER.init_with(|| [0; OPEN_RADIO_TCP_TX_BUFFER_CAPACITY]),
+                rx: OPEN_RADIO_TCP_RX_BUFFER.take(),
+                tx: OPEN_RADIO_TCP_TX_BUFFER.take(),
             }
         } else if OPEN_RADIO_RAW_MAC_BENCH {
             Self::Raw
@@ -325,37 +347,25 @@ impl RadioHilConnectedTrafficBuffers {
             Self::Bidirectional {
                 tx_rx_metadata: OPEN_RADIO_UDP_RX_METADATA
                     .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]),
-                tx_rx: OPEN_RADIO_UDP_RX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-                }),
+                tx_rx: OPEN_RADIO_UDP_RX_BUFFER.take(),
                 tx_tx_metadata: OPEN_RADIO_UDP_TX_METADATA
                     .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]),
-                tx_tx: OPEN_RADIO_UDP_TX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-                }),
+                tx_tx: OPEN_RADIO_UDP_TX_BUFFER.take(),
                 packet: OPEN_RADIO_UDP_PACKET.init_with(|| [0x5a; OPEN_RADIO_UDP_PAYLOAD_CAPACITY]),
                 rx_rx_metadata: OPEN_RADIO_BIDIRECTIONAL_RX_METADATA
                     .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH]),
-                rx_rx: OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_BIDIRECTIONAL_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-                }),
+                rx_rx: OPEN_RADIO_BIDIRECTIONAL_RX_BUFFER.take(),
                 rx_tx_metadata: OPEN_RADIO_BIDIRECTIONAL_TX_METADATA
                     .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH]),
-                rx_tx: OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER.init_with(|| {
-                    [0; OPEN_RADIO_BIDIRECTIONAL_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-                }),
+                rx_tx: OPEN_RADIO_BIDIRECTIONAL_TX_BUFFER.take(),
             }
         } else {
             let rx_metadata = OPEN_RADIO_UDP_RX_METADATA
                 .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH]);
-            let rx = OPEN_RADIO_UDP_RX_BUFFER.init_with(|| {
-                [0; OPEN_RADIO_SOCKET_RX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-            });
+            let rx = OPEN_RADIO_UDP_RX_BUFFER.take();
             let tx_metadata = OPEN_RADIO_UDP_TX_METADATA
                 .init_with(|| [PacketMetadata::EMPTY; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH]);
-            let tx = OPEN_RADIO_UDP_TX_BUFFER.init_with(|| {
-                [0; OPEN_RADIO_SOCKET_TX_QUEUE_DEPTH * OPEN_RADIO_UDP_PAYLOAD_CAPACITY]
-            });
+            let tx = OPEN_RADIO_UDP_TX_BUFFER.take();
             if option_env!("OPEN_RADIO_TX_BENCH").is_some() {
                 Self::UdpTx {
                     rx_metadata,
@@ -386,7 +396,7 @@ pub(in crate::radio_hil) async fn connected_traffic_task(
     loop {
         let config = OPEN_RADIO_CONNECTED_TRAFFIC_START.receive().await;
         let _ = select(
-            OPEN_RADIO_CONNECTED_TRAFFIC_STOP.wait(),
+            config.endpoint.wait_for_stop(),
             observe_open_radio_task_polls(
                 run_connected_traffic_workload(
                     stack,
@@ -400,6 +410,6 @@ pub(in crate::radio_hil) async fn connected_traffic_task(
             ),
         )
         .await;
-        OPEN_RADIO_CONNECTED_TRAFFIC_STOPPED.signal(());
+        config.endpoint.complete(());
     }
 }

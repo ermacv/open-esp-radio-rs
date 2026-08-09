@@ -1,8 +1,9 @@
 #![forbid(unsafe_code)]
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
+use embassy_time::{Duration, with_timeout};
 use open_esp_radio::{
     esp32s31::wifi::mac::tx::TxCompletion,
     esp32s31::wifi::sta::{
@@ -11,6 +12,7 @@ use open_esp_radio::{
 };
 use open_esp_radio_hil_protocol::StationEpochEvidence;
 
+use crate::console::StationControlRequest;
 use crate::console::emergency_log;
 use crate::radio_hil::RadioHilStationController;
 
@@ -58,15 +60,80 @@ impl RadioHilStationEpochReporter {
 pub(in crate::radio_hil) struct RadioHilStationEpochCoordinator {
     active: &'static AtomicBool,
     progress: &'static RadioHilStationEpochProgressChannel,
+    stop_request: &'static AtomicU32,
+    internal_connected: &'static AtomicBool,
 }
 
 impl RadioHilStationEpochCoordinator {
     pub(in crate::radio_hil) const fn new(
         active: &'static AtomicBool,
         progress: &'static RadioHilStationEpochProgressChannel,
+        stop_request: &'static AtomicU32,
+        internal_connected: &'static AtomicBool,
     ) -> Self {
-        Self { active, progress }
+        Self {
+            active,
+            progress,
+            stop_request,
+            internal_connected,
+        }
     }
+
+    pub(in crate::radio_hil) fn take_stop_request(self) -> Option<u32> {
+        let request_id = self.stop_request.swap(0, Ordering::AcqRel);
+        (request_id != 0).then_some(request_id)
+    }
+
+    pub(in crate::radio_hil) fn begin_internal_epoch(self) {
+        while self.progress.try_receive().is_ok() {}
+        self.internal_connected.store(false, Ordering::Release);
+        self.active.store(true, Ordering::Release);
+    }
+
+    pub(in crate::radio_hil) async fn receive_progress(self) -> RadioHilStationEpochProgress {
+        self.progress.receive().await
+    }
+
+    pub(in crate::radio_hil) fn finish_internal_epoch(self, connected: bool) {
+        self.internal_connected.store(connected, Ordering::Release);
+        self.active.store(false, Ordering::Release);
+    }
+
+    pub(in crate::radio_hil) fn internal_epoch_reached_connected(self) -> bool {
+        self.internal_connected.load(Ordering::Acquire)
+    }
+}
+
+#[embassy_executor::task]
+pub(in crate::radio_hil) async fn station_restart_control_task(
+    mut controller: RadioHilStationController<'static>,
+    coordinator: RadioHilStationEpochCoordinator,
+) {
+    coordinator.begin_internal_epoch();
+    let connected = with_timeout(Duration::from_secs(30), async {
+        loop {
+            if coordinator.receive_progress().await
+                == RadioHilStationEpochProgress::ConnectedRunnerStarted
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .is_ok();
+    coordinator.finish_internal_epoch(connected);
+    let queued = controller.request_stop();
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=OBSERVE \
+         stage=production-station-restart-controller connected={} command=stop queued={}",
+        u8::from(connected),
+        u8::from(queued),
+    ));
+    let completion = controller.wait_completion().await;
+    emergency_log(format_args!(
+        "OPEN_RADIO_PHY_HIL result=OBSERVE \
+         stage=production-station-restart-controller completion={completion:?}"
+    ));
 }
 
 #[embassy_executor::task]
@@ -75,7 +142,21 @@ pub(in crate::radio_hil) async fn station_control_task(
     coordinator: RadioHilStationEpochCoordinator,
 ) {
     loop {
-        let request_id = crate::console::receive_station_epoch_cycle().await;
+        let request_id = match crate::console::receive_station_control_request().await {
+            StationControlRequest::Cycle { request_id } => request_id,
+            StationControlRequest::Stop { request_id } => {
+                coordinator
+                    .stop_request
+                    .store(request_id, Ordering::Release);
+                let queued = controller.request_stop();
+                emergency_log(format_args!(
+                    "OPEN_RADIO_PHY_HIL result=OBSERVE \
+                     stage=production-station-controller command=stop queued={}",
+                    u8::from(queued),
+                ));
+                return;
+            }
+        };
         let was_active = coordinator.active.swap(true, Ordering::AcqRel);
         if was_active {
             emergency_log(format_args!(

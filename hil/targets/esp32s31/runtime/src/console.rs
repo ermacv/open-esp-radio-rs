@@ -25,8 +25,8 @@ use open_esp_radio_hil_protocol::{
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
     ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationFaultEvidence, StationLifecycleEvent, Transport,
-    TransportEvidence, evidence_crc32c, startup_artifact_crc32c,
+    StationEpochEvidence, StationFaultEvidence, StationLifecycleEvent, StationStopEvidence,
+    Transport, TransportEvidence, evidence_crc32c, startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -59,7 +59,7 @@ static PROTOCOL_TX_FRAMES: AtomicU32 = AtomicU32::new(0);
 /// One plus the last event sequence fully written to the USB endpoint.
 /// Zero means that no event from the current boot has crossed that boundary.
 #[unsafe(link_section = ".critical.data.logging")]
-static SERIALIZED_STATION_LIFECYCLE_NEXT: AtomicU32 = AtomicU32::new(0);
+static SERIALIZED_STATION_EVENT_NEXT: AtomicU32 = AtomicU32::new(0);
 #[unsafe(link_section = ".critical.data.logging")]
 static RECORDS: Channel<CriticalSectionRawMutex, TextBuffer<MESSAGE_CAPACITY>, QUEUE_CAPACITY> =
     Channel::new();
@@ -77,7 +77,14 @@ static SESSION_STARTS: Channel<CriticalSectionRawMutex, ActiveSession, 1> = Chan
 #[unsafe(link_section = ".critical.data.logging")]
 static SESSION_RESULTS: Channel<CriticalSectionRawMutex, SessionResult, 1> = Channel::new();
 #[unsafe(link_section = ".critical.data.logging")]
-static STATION_EPOCH_CYCLES: Channel<CriticalSectionRawMutex, u32, 1> = Channel::new();
+static STATION_CONTROL_REQUESTS: Channel<CriticalSectionRawMutex, StationControlRequest, 1> =
+    Channel::new();
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StationControlRequest {
+    Cycle { request_id: u32 },
+    Stop { request_id: u32 },
+}
 
 #[derive(Clone, Copy)]
 pub struct ActiveSession {
@@ -245,7 +252,7 @@ pub fn init_protocol(boot_id: u64) {
     BOOT_ID_LOW.store(boot_id as u32, Ordering::Relaxed);
     BOOT_ID_HIGH.store((boot_id >> 32) as u32, Ordering::Release);
     EVENT_SEQUENCE.store(0, Ordering::Relaxed);
-    SERIALIZED_STATION_LIFECYCLE_NEXT.store(0, Ordering::Relaxed);
+    SERIALIZED_STATION_EVENT_NEXT.store(0, Ordering::Relaxed);
 }
 
 fn boot_id() -> u64 {
@@ -314,8 +321,8 @@ pub async fn receive_session_start() -> ActiveSession {
 ///
 /// The production runner observes this only at a hardware-safe transaction
 /// boundary; the console owns command admission and never touches radio state.
-pub async fn receive_station_epoch_cycle() -> u32 {
-    STATION_EPOCH_CYCLES.receive().await
+pub async fn receive_station_control_request() -> StationControlRequest {
+    STATION_CONTROL_REQUESTS.receive().await
 }
 
 /// Reliably acknowledge a completed target-side station ownership cycle.
@@ -324,6 +331,16 @@ pub async fn receive_station_epoch_cycle() -> u32 {
 /// and retains the command request ID used by the host qualifier.
 pub async fn complete_station_epoch_cycle(request_id: u32, evidence: StationEpochEvidence) {
     publish_event_reliably(0, request_id, Event::StationEpochCompleted(evidence)).await;
+}
+
+/// Reliably acknowledge complete station dematerialization and reconstruction
+/// of the role-neutral Wi-Fi owner.
+pub async fn complete_station_stop(request_id: u32, evidence: StationStopEvidence) {
+    let sequence = queue_event_reliably(0, request_id, Event::StationStopped(evidence)).await;
+    let target = sequence.wrapping_add(1);
+    while SERIALIZED_STATION_EVENT_NEXT.load(Ordering::Acquire) != target {
+        yield_now().await;
+    }
 }
 
 /// Reliably publish one unsolicited station generation/link edge.
@@ -336,7 +353,7 @@ pub async fn publish_station_lifecycle(event: StationLifecycleEvent) {
     // A lifecycle edge is qualification evidence, not a best-effort trace.
     // Queue admission alone is insufficient at a terminal station exit: the
     // producing task may return before the independent USB worker runs again.
-    while SERIALIZED_STATION_LIFECYCLE_NEXT.load(Ordering::Acquire) != target {
+    while SERIALIZED_STATION_EVENT_NEXT.load(Ordering::Acquire) != target {
         yield_now().await;
     }
 }
@@ -598,7 +615,28 @@ pub async fn protocol_task(capabilities: Capabilities) {
                             || session_id != 0
                         {
                             Event::Rejected(RejectReason::InvalidState)
-                        } else if STATION_EPOCH_CYCLES.try_send(request_id).is_err() {
+                        } else if STATION_CONTROL_REQUESTS
+                            .try_send(StationControlRequest::Cycle { request_id })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
+                    Command::StopStation => {
+                        let response = if !capabilities.features.station_stop_control {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if STATION_CONTROL_REQUESTS
+                            .try_send(StationControlRequest::Stop { request_id })
+                            .is_err()
+                        {
                             Event::Rejected(RejectReason::Busy)
                         } else {
                             Event::Accepted
@@ -815,8 +853,11 @@ async fn write_event_async(
     let _guard = WriterGuard::acquire_protocol().await;
     if tx.write_all(frame).await.is_ok() && tx.write_all(b"\r\n").await.is_ok() {
         PROTOCOL_TX_FRAMES.fetch_add(1, Ordering::Relaxed);
-        if matches!(&event.body, Event::StationLifecycle(_)) {
-            SERIALIZED_STATION_LIFECYCLE_NEXT
+        if matches!(
+            &event.body,
+            Event::StationLifecycle(_) | Event::StationStopped(_)
+        ) {
+            SERIALIZED_STATION_EVENT_NEXT
                 .store(event.message_sequence.wrapping_add(1), Ordering::Release);
         }
     } else {

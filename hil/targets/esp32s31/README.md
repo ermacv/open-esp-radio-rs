@@ -63,6 +63,7 @@ cargo hil build radio
 cargo hil flash radio --port /dev/ttyACM0
 cargo hil station ap-loss --serial /dev/ttyACM0
 cargo hil station reconnect --serial /dev/ttyACM0
+cargo hil station stop --serial /dev/ttyACM0
 cargo hil build udp-tx
 cargo hil traffic trigger <monitor-interface> --transmitter <bssid> --aid <aid>
 cargo hil oracle build
@@ -128,13 +129,12 @@ ESP-HAL route now own stable PAC storage, CPU route activation/quiescence,
 hard-handler service and Embassy wake drain. HIL retains only handler
 observations, task placement and stop signals. Protocol v7 correlates each HIL
 cycle request with a reliable completion covering runner return, scan-owner
-return, fresh join and replacement connected-runner startup. The task-stop
-deadline is no longer HIL policy:
-`stop_esp32s31_connected_task_group` requests the fixture-defined task group,
-returns its exact stopped owner, and otherwise reports `ResetRequired`. HIL
-implements only the benchmark/protocol signals and maps that terminal outcome
-to evidence. Executing a complete platform radio reset from the returned
-reset-required frontier remains recovery work.
+return, fresh join and replacement connected-runner startup. Task shutdown has
+no driver-internal reset deadline: the chip-neutral
+`stop_connected_task_group` requests the fixture-defined task group and keeps
+the connected epoch in `Stopping` until it returns its exact owner. A separate
+deadline-bounded observation may report `Pending`, but cannot turn software
+liveness into permission to reset or reuse radio resources.
 Absolute Embassy deadlines, retry state, RX-before-timeout ordering and
 live-ring/TX ownership are shared driver behavior rather than parallel
 test-only loops. `Esp32s31Wpa2HandshakePort` and `Esp32s31Wpa2KeyPort` likewise
@@ -161,6 +161,17 @@ qualification adapter into the distinct `CycleRequested` edge; it is never
 reported as beacon loss. The outer lifecycle then enters its `RunningScan`
 owner with `refresh_candidate=1`. This qualifies repeated resource reuse and
 controlled rescan/re-authentication, not recovery after an AP disappears.
+`cargo hil station stop` controls the repository HE20 fixture and requests the
+terminal station edge. It accepts only protocol-v16 evidence proving child
+task and lifecycle return, exact PAC reclaim, interrupt setup-token return,
+recovery of phase-owned DMA/network/executor resources, reconstruction of the
+role-neutral `WifiStopped`, and a complete start/stop round trip through a
+standalone monitor using that same owner. The exact returned monitor resources
+then start and stop a second monitor epoch before its `WifiStopped` starts a
+second real station task; the cell requires scan/join/security, connected
+entry, cooperative stop and a second exact PAC/IRQ/resource reclaim.
+A queued stop request, retained static allocation addresses and UART
+diagnostics cannot qualify the cell.
 `cargo hil station ap-loss` is the separate real peer-loss cell. It controls
 the repository HE20 hostapd fixture, requires reliable generation-zero
 `Connected` and `BeaconLoss` events, restores the AP, and accepts only a new

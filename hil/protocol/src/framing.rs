@@ -264,7 +264,7 @@ mod tests {
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
         SessionLinkRequirements, StartupArtifactChunk, StationAttemptFailureReason,
         StationDisconnectReason, StationFailureStage, StationFaultClassification,
-        StationFaultEvidence, StationLifecycleEvent, Transport,
+        StationFaultEvidence, StationLifecycleEvent, StationStopEvidence, Transport,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -457,6 +457,23 @@ mod tests {
                 stage: StationFailureStage::CandidateSelection,
                 reason: StationAttemptFailureReason::NoCandidate,
             }),
+        );
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&expected).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
+    fn complete_station_stop_frontier_round_trips_with_request_identity() {
+        let expected = Envelope::new(
+            7,
+            5,
+            0,
+            42,
+            Event::StationStopped(StationStopEvidence::COMPLETE),
         );
         let mut encoder = FrameEncoder::new();
         let frame = encoder.encode(&expected).unwrap();

@@ -59,6 +59,44 @@ fn discovers_pointer_cell_table_slot_and_call_arguments() {
 }
 
 #[test]
+fn floating_point_blocker_preserves_later_interface_call_evidence() {
+    let symbol = symbol(
+        vec![
+            0x07, 0x20, 0x05, 0x00, // flw f0, 0(a0)
+            0xb7, 0x07, 0x00, 0x00, // lui a5, 0
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5)
+            0x83, 0xa2, 0x07, 0x01, // lw t0, 16(a5)
+            0xe7, 0x80, 0x02, 0x00, // jalr ra, 0(t0)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        vec![
+            artifact::SymbolRelocation {
+                address: 4,
+                kind: artifact::RelocationKind::Hi20,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+            artifact::SymbolRelocation {
+                address: 8,
+                kind: artifact::RelocationKind::Lo12I,
+                symbol: "g_services".to_owned(),
+                addend: 0,
+            },
+        ],
+    );
+
+    let discovery = discover_interface_calls(&symbol).unwrap();
+    assert_eq!(discovery.calls.len(), 1);
+    assert_eq!(discovery.calls[0].site, 16);
+    assert_eq!(discovery.decode_blockers.len(), 1);
+    assert_eq!(
+        discovery.decode_blockers[0].class,
+        artifact::UnsupportedInstructionClass::FloatingPoint
+    );
+    assert_eq!(discovery.decode_blockers[0].address, 0);
+}
+
+#[test]
 fn discovers_context_relative_nested_callback_without_platform_knowledge() {
     let symbol = symbol(
         vec![

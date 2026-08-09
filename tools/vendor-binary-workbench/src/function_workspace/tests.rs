@@ -132,6 +132,7 @@ fn write_ir(path: &std::path::Path) {
         call_graph_diagnostics: Vec::new(),
         direct_diagnostics: Vec::new(),
         reference_diagnostics: Vec::new(),
+        decode_blockers: Vec::new(),
         call_graph_blockers: Vec::new(),
         direct_blockers: Vec::new(),
         reference_blockers: Vec::new(),

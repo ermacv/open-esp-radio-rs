@@ -26,6 +26,7 @@ pub(crate) struct ProjectIrDocuments {
     pub(crate) pseudo: Option<String>,
     pub(crate) sources: usize,
     pub(crate) functions: usize,
+    pub(crate) decode_blockers: usize,
     pub(crate) registers: usize,
     pub(crate) field_candidates: usize,
 }
@@ -56,6 +57,11 @@ pub(crate) fn generate_project_profile(
         target,
     )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
+    let decode_blockers = report
+        .functions
+        .iter()
+        .map(|function| function.decode_blockers.len())
+        .sum();
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
         &companions,
@@ -78,6 +84,7 @@ pub(crate) fn generate_project_profile(
         pseudo,
         sources: artifacts.len(),
         functions: report.functions.len(),
+        decode_blockers,
         registers: report.mmio_registers.len(),
         field_candidates,
     })

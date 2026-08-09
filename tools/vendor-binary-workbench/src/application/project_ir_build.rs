@@ -22,9 +22,14 @@ pub(crate) struct ProjectIrBuildRequest {
     pub(crate) check: bool,
 }
 
-struct BuiltProfile<'a> {
+struct BuiltProfileSummary<'a> {
     profile: &'a ProjectIrProfile,
-    documents: ProjectIrDocuments,
+    sources: usize,
+    functions: usize,
+    decode_blockers: usize,
+    registers: usize,
+    field_candidates: usize,
+    documents: usize,
 }
 
 struct ResolvedInputs {
@@ -38,6 +43,7 @@ pub(crate) struct ProfileDocument<'a> {
     pub(crate) status: &'static str,
     pub(crate) sources: usize,
     pub(crate) functions: usize,
+    pub(crate) decode_blockers: usize,
     pub(crate) registers: usize,
     pub(crate) field_candidates: usize,
     pub(crate) json: &'a Path,
@@ -65,6 +71,7 @@ pub(crate) fn build_project_ir<'a>(
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let mut built = Vec::with_capacity(selected.len());
+    let mut stale = Vec::new();
     for profile in selected {
         let inputs = resolve_inputs(profile, run_spec)?;
         let documents = linked_ir_export::generate_project_profile(
@@ -75,19 +82,35 @@ pub(crate) fn build_project_ir<'a>(
             target,
             &effective_code,
         )?;
-        built.push(BuiltProfile { profile, documents });
+        if request.check {
+            check_profile(profile, &documents, &mut stale);
+        } else {
+            write_profile(profile, &documents)?;
+        }
+        built.push(BuiltProfileSummary {
+            profile,
+            sources: documents.sources,
+            functions: documents.functions,
+            decode_blockers: documents.decode_blockers,
+            registers: documents.registers,
+            field_candidates: documents.field_candidates,
+            documents: 1 + usize::from(documents.pseudo.is_some()),
+        });
+        // Artifact-wide JSON and pseudo-Rust strings are intentionally
+        // dropped before the next profile is analyzed.
     }
-
-    if request.check {
-        check_all(&built)?;
-    } else {
-        write_all(&built)?;
+    if !stale.is_empty() {
+        return Err(crate::Error::invalid(format!(
+            "generated project IR differs or is missing: {}; rerun ir build without --check",
+            stale
+                .iter()
+                .map(|path: &PathBuf| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
     }
     let status = if request.check { "verified" } else { "written" };
-    let document_count = built
-        .iter()
-        .map(|built| 1 + usize::from(built.documents.pseudo.is_some()))
-        .sum::<usize>();
+    let document_count = built.iter().map(|built| built.documents).sum::<usize>();
     Ok(BuildDocument {
         schema: 1,
         command: "ir build",
@@ -98,10 +121,11 @@ pub(crate) fn build_project_ir<'a>(
             .map(|built| ProfileDocument {
                 id: &built.profile.id,
                 status,
-                sources: built.documents.sources,
-                functions: built.documents.functions,
-                registers: built.documents.registers,
-                field_candidates: built.documents.field_candidates,
+                sources: built.sources,
+                functions: built.functions,
+                decode_blockers: built.decode_blockers,
+                registers: built.registers,
+                field_candidates: built.field_candidates,
                 json: &built.profile.output,
                 pseudo: built.profile.pseudo_rust.as_deref(),
             })
@@ -215,28 +239,16 @@ fn resolve_inputs(profile: &ProjectIrProfile, run_spec: &RunSpec) -> Result<Reso
     })
 }
 
-fn check_all(profiles: &[BuiltProfile<'_>]) -> Result<()> {
-    let mut stale = Vec::new();
-    for built in profiles {
-        check_document(&built.profile.output, &built.documents.json, &mut stale);
-        if let (Some(path), Some(contents)) = (
-            built.profile.pseudo_rust.as_deref(),
-            built.documents.pseudo.as_deref(),
-        ) {
-            check_document(path, contents, &mut stale);
-        }
-    }
-    if stale.is_empty() {
-        Ok(())
-    } else {
-        Err(crate::Error::invalid(format!(
-            "generated project IR differs or is missing: {}; rerun ir build without --check",
-            stale
-                .iter()
-                .map(|path| path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(", ")
-        )))
+fn check_profile(
+    profile: &ProjectIrProfile,
+    documents: &ProjectIrDocuments,
+    stale: &mut Vec<PathBuf>,
+) {
+    check_document(&profile.output, &documents.json, stale);
+    if let (Some(path), Some(contents)) =
+        (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
+    {
+        check_document(path, contents, stale);
     }
 }
 
@@ -246,20 +258,12 @@ fn check_document(path: &Path, expected: &str, stale: &mut Vec<PathBuf>) {
     }
 }
 
-fn write_all(profiles: &[BuiltProfile<'_>]) -> Result<()> {
-    for built in profiles {
-        super::generated_file::write_or_check(
-            &built.profile.output,
-            &built.documents.json,
-            false,
-            "linked IR",
-        )?;
-        if let (Some(path), Some(contents)) = (
-            built.profile.pseudo_rust.as_deref(),
-            built.documents.pseudo.as_deref(),
-        ) {
-            super::generated_file::write_or_check(path, contents, false, "pseudo-Rust")?;
-        }
+fn write_profile(profile: &ProjectIrProfile, documents: &ProjectIrDocuments) -> Result<()> {
+    super::generated_file::write_or_check(&profile.output, &documents.json, false, "linked IR")?;
+    if let (Some(path), Some(contents)) =
+        (profile.pseudo_rust.as_deref(), documents.pseudo.as_deref())
+    {
+        super::generated_file::write_or_check(path, contents, false, "pseudo-Rust")?;
     }
     Ok(())
 }

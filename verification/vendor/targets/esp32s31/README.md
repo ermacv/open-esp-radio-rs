@@ -123,8 +123,10 @@ copyable drafts for gaps. Users edit reviewed names, fields, access rules,
 reset values and enumerations only in `registers/peripherals/*.toml`; the
 generated report never feeds SVD or PAC generation.
 
-The checked project defines separate `rom-phy` and `archive-phy` linked-IR
-profiles. Each primary input receives the other linked ELF as its reviewed
+The checked project defines artifact-wide `rom-all` and `archive-all`
+linked-IR profiles. Every named code symbol is a root; one unsupported
+instruction becomes a per-PC decode blocker instead of discarding the whole
+function. Each primary input receives the other linked ELF as its reviewed
 companion through `local.toml`, then register review merges both reports:
 
 ```console

@@ -51,12 +51,12 @@ pub(crate) const MMIO_FACTS: ArtifactSchema = ArtifactSchema {
 };
 
 pub(crate) const INTERFACE_FACTS: ArtifactSchema = ArtifactSchema {
-    version: 4,
+    version: 5,
     command: "interfaces discover",
 };
 
 pub(crate) const LINKED_IR: ArtifactSchema = ArtifactSchema {
-    version: 36,
+    version: 37,
     command: "ir export",
 };
 
@@ -100,14 +100,14 @@ mod tests {
         assert_eq!(
             INTERFACE_FACTS,
             ArtifactSchema {
-                version: 4,
+                version: 5,
                 command: "interfaces discover",
             }
         );
         assert_eq!(
             LINKED_IR,
             ArtifactSchema {
-                version: 36,
+                version: 37,
                 command: "ir export",
             }
         );

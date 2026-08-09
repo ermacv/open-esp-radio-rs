@@ -48,9 +48,10 @@ fn print_human(document: &BuildDocument<'_>) {
     );
     for profile in &document.profiles {
         outputln!(
-            "  {:<20} functions={:<6} registers={:<5} fields={:<5} {}",
+            "  {:<20} functions={:<6} decode-blockers={:<6} registers={:<5} fields={:<5} {}",
             profile.id,
             profile.functions,
+            profile.decode_blockers,
             profile.registers,
             profile.field_candidates,
             profile.json.display()

@@ -35,7 +35,7 @@ impl IrDoctorReport {
         );
         for profile in &self.profiles {
             outputln!(
-                "  {:<20} roots={:<20} inputs={:<20} output={:<14} functions={} registers={} fields={}",
+                "  {:<20} roots={:<20} inputs={:<20} output={:<14} functions={} decode-blockers={} registers={} fields={}",
                 profile.id,
                 profile.symbol_prefix.as_ref().map_or_else(
                     || profile.roots.to_owned(),
@@ -44,6 +44,7 @@ impl IrDoctorReport {
                 profile.input_status,
                 profile.output_status,
                 profile.functions,
+                profile.decode_blockers,
                 profile.registers,
                 profile.field_candidates
             );
@@ -68,6 +69,7 @@ struct IrProfileReport {
     contract_status: &'static str,
     output_status: &'static str,
     functions: usize,
+    decode_blockers: usize,
     registers: usize,
     field_candidates: usize,
     review_linked: bool,
@@ -155,27 +157,29 @@ pub(super) fn inspect(
                 "invalid"
             }
         };
-        let (output_status, functions, registers, fields) = if !profile.output.is_file() {
-            warnings += 1;
-            ("not-generated", 0, 0, 0)
-        } else {
-            match inspect_linked_ir(&profile.output) {
-                Ok(summary) => (
-                    "ready",
-                    summary.functions,
-                    summary.registers,
-                    summary.field_candidates,
-                ),
-                Err(error) => {
-                    errors += 1;
-                    diagnostics.push(IrProfileDiagnostic {
-                        kind: "output",
-                        error: error.to_string(),
-                    });
-                    ("invalid", 0, 0, 0)
+        let (output_status, functions, decode_blockers, registers, fields) =
+            if !profile.output.is_file() {
+                warnings += 1;
+                ("not-generated", 0, 0, 0, 0)
+            } else {
+                match inspect_linked_ir(&profile.output) {
+                    Ok(summary) => (
+                        "ready",
+                        summary.functions,
+                        summary.decode_blockers,
+                        summary.registers,
+                        summary.field_candidates,
+                    ),
+                    Err(error) => {
+                        errors += 1;
+                        diagnostics.push(IrProfileDiagnostic {
+                            kind: "output",
+                            error: error.to_string(),
+                        });
+                        ("invalid", 0, 0, 0, 0)
+                    }
                 }
-            }
-        };
+            };
         let pseudo_status = match profile.pseudo_rust.as_deref() {
             None => "not-configured",
             Some(path) if path.is_file() => "ready",
@@ -199,6 +203,7 @@ pub(super) fn inspect(
             contract_status,
             output_status,
             functions,
+            decode_blockers,
             registers,
             field_candidates: fields,
             review_linked: linked_outputs.contains(&profile.output),

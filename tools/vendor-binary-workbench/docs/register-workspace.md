@@ -147,7 +147,7 @@ destination.
 
 ### Linked-IR enrichment
 
-The basic report needs only `mmio discover` facts. Optional schema-v36
+The basic report needs only `mmio discover` facts. Optional schema-v37
 `ir export` JSON reports add evidence that the artifact-wide MMIO pass does not
 carry: poll masks, direct branch predicates, producer-return chains and links
 from register bits to guarded semantic actions.

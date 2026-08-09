@@ -5,6 +5,7 @@ use std::path::Path;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct LinkedIrSummary {
     pub(crate) functions: usize,
+    pub(crate) decode_blockers: usize,
     pub(crate) registers: usize,
     pub(crate) field_candidates: usize,
 }
@@ -19,6 +20,7 @@ pub(crate) fn inspect_linked_ir(path: &Path) -> crate::Result<LinkedIrSummary> {
     })?;
     Ok(LinkedIrSummary {
         functions: document.summary.functions,
+        decode_blockers: document.summary.decode_blockers,
         registers: document.summary.mmio_registers,
         field_candidates: document.summary.mmio_field_candidates,
     })
@@ -34,6 +36,7 @@ mod tests {
         )
         .unwrap();
         document["summary"]["functions"] = serde_json::json!(3);
+        document["summary"]["decode_blockers"] = serde_json::json!(5);
         document["summary"]["mmio_registers"] = serde_json::json!(2);
         document["summary"]["mmio_field_candidates"] = serde_json::json!(4);
         document
@@ -48,6 +51,7 @@ mod tests {
         std::fs::write(&path, serde_json::to_string_pretty(&document()).unwrap()).unwrap();
         let summary = inspect_linked_ir(&path).unwrap();
         assert_eq!(summary.functions, 3);
+        assert_eq!(summary.decode_blockers, 5);
         assert_eq!(summary.registers, 2);
         assert_eq!(summary.field_candidates, 4);
 
@@ -58,7 +62,7 @@ mod tests {
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 36")
+                .contains("expected schema_version 37")
         );
         std::fs::remove_file(path).unwrap();
     }

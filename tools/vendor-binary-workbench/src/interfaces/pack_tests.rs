@@ -80,7 +80,7 @@ fn write_facts(path: &Path, digest: &str) {
         path,
         format!(
             r#"{{
-  "schema_version": 4,
+  "schema_version": 5,
   "command": "interfaces discover",
   "analysis_scope": {{
     "architecture":"riscv32",
@@ -153,7 +153,8 @@ fn write_facts(path: &Path, digest: &str) {
     "functions":["post_event"],
     "call_sites":1
   }}],
-  "decode_failures":[]
+  "decode_blockers":[],
+  "analysis_failures":[]
 }}"#
         ),
     )

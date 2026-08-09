@@ -106,6 +106,16 @@ instruction sites, call kinds, and recoverable argument expressions. It
 rejects a call whose artifact/root/load chain/slot disagrees with the
 aggregate candidate.
 
+Unsupported instructions do not erase all interface evidence from their
+owning function. Schema 5 records each one in `decode_blockers` with its exact
+PC, raw encoding, width and classification. F and CSR instructions have known
+linear control flow, so discovery continues after conservatively invalidating
+any possible integer destination. System, vendor-custom, unknown-extension and
+invalid encodings terminate only that CFG path because their successor cannot
+be proven. A blocker always prevents a completeness claim; it is never modeled
+as a no-op. Truncated or structurally malformed code remains a separate
+`analysis_failures` entry.
+
 ## Linkage boundary
 
 Relocations are the strongest archive-level evidence for an externally named

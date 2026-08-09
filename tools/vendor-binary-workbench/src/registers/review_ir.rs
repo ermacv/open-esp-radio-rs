@@ -1,4 +1,4 @@
-//! Selected schema-v36 linked-IR evidence used by the manual register report.
+//! Selected schema-v37 linked-IR evidence used by the manual register report.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_and_merges_schema_v36_field_evidence() {
+    fn loads_and_merges_schema_v37_field_evidence() {
         let base = std::env::temp_dir().join(format!(
             "vendor-workbench-register-review-ir-{}",
             std::process::id()
@@ -238,14 +238,14 @@ mod tests {
         std::fs::write(
             &path,
             report(1, "rtos.event.send").replacen(
-                "\"schema_version\": 36",
+                "\"schema_version\": 37",
                 "\"schema_version\": 32",
                 1,
             ),
         )
         .unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("requires linked-IR schema 36"));
+        assert!(error.to_string().contains("requires linked-IR schema 37"));
 
         std::fs::write(
             &path,

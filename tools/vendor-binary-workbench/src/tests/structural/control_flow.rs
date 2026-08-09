@@ -1,6 +1,70 @@
 use super::super::*;
 
 #[test]
+fn floating_point_decode_blocker_does_not_discard_later_integer_ir() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "float_then_integer".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x07, 0x20, 0x05, 0x00, // flw f0, 0(a0)
+            0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(trace.blockers.len(), 1, "{trace:#?}");
+    assert_eq!(
+        trace.blockers[0],
+        "decode-blocker class=floating-point pc=0x1000 width=4 raw=0x00052007"
+    );
+    assert_ne!(trace.return_value, SymbolicValue::Unknown);
+    assert!(!trace.is_reference_eligible());
+}
+
+#[test]
+fn vendor_custom_decode_blocker_stops_unknown_control_flow() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "custom_then_integer".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x0b, 0x00, 0x00, 0x00, // custom-0 encoding
+            0x13, 0x05, 0x15, 0x00, // addi a0, a0, 1 (not proven reachable)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(trace.blockers.len(), 1, "{trace:#?}");
+    assert!(trace.blockers[0].contains("class=vendor-custom"));
+    assert_eq!(trace.return_value, SymbolicValue::Unknown);
+}
+
+#[test]
 fn forward_local_jump_skips_dead_instructions() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,

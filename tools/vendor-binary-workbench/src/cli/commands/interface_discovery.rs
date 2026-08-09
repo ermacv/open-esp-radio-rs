@@ -111,16 +111,17 @@ fn print_report(discovery: &Discovery) {
         .filter(|call| !call.call.target.loads.is_empty())
         .count();
     outputln!(
-        "Summary: artifacts={} functions={} indirect-candidates={} table-slot-candidates={} decode-failures={} semantic-claims=false completeness-claim=false",
+        "Summary: artifacts={} functions={} indirect-candidates={} table-slot-candidates={} decode-blockers={} analysis-failures={} semantic-claims=false completeness-claim=false",
         discovery.linkage.artifacts.len(),
         discovery.functions.iter().sum::<usize>(),
         discovery.calls.len(),
         table_calls,
+        discovery.decode_blockers.len(),
         discovery.failures.len(),
     );
-    if !discovery.failures.is_empty() {
+    if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
         outputln!(
-            "Decode failures are retained in the JSON report as scoped incompleteness, not a failure of the usable findings."
+            "Decode blockers are retained with instruction provenance in the JSON report; usable findings from other instructions and functions remain available."
         );
     }
 }
@@ -173,14 +174,14 @@ pub(super) fn run(
             "interface discovery JSON report"
         );
     }
-    if !discovery.failures.is_empty() {
+    if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
         tracing::warn!(
-            decode_failures = discovery.failures.len(),
+            decode_blockers = discovery.decode_blockers.len(),
+            analysis_failures = discovery.failures.len(),
             "interface discovery retained partial findings"
         );
     }
-    // Interface discovery explicitly makes no completeness claim. Per-function
-    // decode failures remain typed evidence in the report and must not discard
-    // usable calls from the rest of a large image.
+    // Interface discovery explicitly makes no completeness claim. Per-PC
+    // blockers remain typed evidence and do not discard usable calls.
     Ok(true)
 }

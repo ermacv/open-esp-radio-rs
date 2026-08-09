@@ -29,11 +29,24 @@ pub(crate) struct InterfaceDecodeFailure {
     pub(crate) error: String,
 }
 
+#[derive(Clone)]
+pub(crate) struct InterfaceDecodeBlocker {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) function: String,
+    pub(crate) address: u64,
+    pub(crate) width: u8,
+    pub(crate) raw: u32,
+    pub(crate) class: &'static str,
+    pub(crate) linear_control_flow: bool,
+}
+
 pub(crate) struct ProjectInterfaceDiscovery {
     pub(crate) linkage: ProjectLinkageInventory,
     pub(crate) functions: Vec<usize>,
     pub(crate) reviewed_boundaries: Vec<usize>,
     pub(crate) calls: Vec<DiscoveredInterfaceCall>,
+    pub(crate) decode_blockers: Vec<InterfaceDecodeBlocker>,
     pub(crate) failures: Vec<InterfaceDecodeFailure>,
 }
 
@@ -46,6 +59,7 @@ pub(crate) fn discover_project_interfaces(
     let mut functions = Vec::with_capacity(linkage.artifacts.len());
     let mut reviewed_boundaries = Vec::with_capacity(linkage.artifacts.len());
     let mut calls = Vec::new();
+    let mut decode_blockers = Vec::new();
     let mut failures = Vec::new();
     for (artifact_index, artifact) in linkage.artifacts.iter().enumerate() {
         let source = artifact.sources.first().ok_or_else(|| {
@@ -77,15 +91,30 @@ pub(crate) fn discover_project_interfaces(
         reviewed_boundaries.push(reviewed_count);
         for symbol in symbols {
             match discover_interface_calls(&symbol) {
-                Ok(discovered) => calls.extend(
-                    discovered
-                        .into_iter()
-                        .filter(|call| !options.tables_only || !call.target.loads.is_empty())
-                        .map(|call| DiscoveredInterfaceCall {
+                Ok(discovered) => {
+                    decode_blockers.extend(discovered.decode_blockers.into_iter().map(|blocker| {
+                        InterfaceDecodeBlocker {
                             artifact: artifact_index,
-                            call,
-                        }),
-                ),
+                            member: symbol.member.clone(),
+                            function: symbol.name.clone(),
+                            address: blocker.address,
+                            width: blocker.width,
+                            raw: blocker.raw,
+                            class: blocker.class.as_str(),
+                            linear_control_flow: blocker.linear_control_flow,
+                        }
+                    }));
+                    calls.extend(
+                        discovered
+                            .calls
+                            .into_iter()
+                            .filter(|call| !options.tables_only || !call.target.loads.is_empty())
+                            .map(|call| DiscoveredInterfaceCall {
+                                artifact: artifact_index,
+                                call,
+                            }),
+                    );
+                }
                 Err(error) => failures.push(InterfaceDecodeFailure {
                     artifact: artifact_index,
                     member: symbol.member,
@@ -101,6 +130,7 @@ pub(crate) fn discover_project_interfaces(
         functions,
         reviewed_boundaries,
         calls,
+        decode_blockers,
         failures,
     })
 }

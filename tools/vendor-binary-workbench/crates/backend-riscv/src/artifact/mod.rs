@@ -10,16 +10,19 @@ mod relocations;
 mod sections;
 mod symbols;
 
-pub use decode::{andi_immediate, decode_symbol, relocated_call_is_tail};
+pub use decode::{
+    andi_immediate, decode_symbol, decode_symbol_for_analysis, relocated_call_is_tail,
+};
 pub use inventory::inspect_artifact;
 pub use model::{
-    ArtifactCodeRange, ArtifactCodeRecoveryBlocker, ArtifactCodeSectionCoverage,
-    ArtifactContainerKind, ArtifactDirectControlFlowEvidence, ArtifactDirectControlFlowKind,
-    ArtifactFunctionBoundaryCandidate, ArtifactInventory, ArtifactObjectInventory,
-    ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
+    AnalysisInstruction, ArtifactCodeRange, ArtifactCodeRecoveryBlocker,
+    ArtifactCodeSectionCoverage, ArtifactContainerKind, ArtifactDirectControlFlowEvidence,
+    ArtifactDirectControlFlowKind, ArtifactFunctionBoundaryCandidate, ArtifactInventory,
+    ArtifactObjectInventory, ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
     ArtifactSymbolDefinitionState, ArtifactSymbolFact, ArtifactSymbolKind, ArtifactSymbolScope,
     ArtifactSymbolTable, ArtifactSymbolVisibility, CodeSymbolSelection, DecodedInstruction,
     ExecutableSection, MemoryRegion, RelocationKind, ReviewedCodeRange, SymbolRelocation,
+    UnsupportedInstruction, UnsupportedInstructionClass,
 };
 pub use sections::load_executable_sections;
 pub use symbols::{load_code_symbols, load_reviewed_code_ranges};

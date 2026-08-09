@@ -35,15 +35,23 @@ that every user must learn.
 - [ ] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage.
-- [ ] Define and test what "analyze all functions" means for ELF, linked ELF,
-  archive members, local/internal symbols, recovered code boundaries, aliases,
-  overlapping symbols and decode failures.
-- [ ] Cover the ISA selected by the real target. ESP32-S31 declares
+- [x] Make artifact-wide IR the checked ESP32-S31 project default. The
+  `rom-all` and `archive-all` profiles use `roots = "all"`; named local and
+  externally visible code symbols plus reviewed recovered boundaries are
+  retained with explicit selection provenance.
+- [ ] Finish the definition of "analyze all functions" for aliases and
+  overlapping symbols; named ELF roots, archive members, local/internal
+  symbols, recovered code boundaries and decode blockers are covered.
+- [ ] Implement semantics for the remaining ISA selected by the real target.
+  ESP32-S31 declares
   `riscv32imafc`, while the current `rv-asm` boundary only decodes I/M/A/C;
-  the 2026-08-09 inventory retained 155 fail-closed decode blockers, including
-  valid floating-point, CSR and vendor/system instructions. Unsupported
-  instructions must remain explicit blockers, but one instruction must not
-  discard the rest of an otherwise recoverable function.
+  the 2026-08-09 inventory found 155 affected interface functions, including
+  valid floating-point, CSR and vendor/system instructions.
+- [x] Preserve unsupported instructions as per-PC fail-closed blockers instead
+  of discarding the entire function. F/CSR permit conservative linear
+  continuation; system/vendor/invalid instructions stop only their current CFG
+  path. Concrete execution remains strict and cannot consume this tolerant
+  structural stream.
 - [x] Make project IR root selection explicit: `roots = "all"` is the normal
   full-symbol mode and `roots = "symbol-prefix"` requires a non-empty prefix;
   an empty-string convention is not part of project configuration.
@@ -165,17 +173,18 @@ Cargo compilation/linking is excluded:
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-Result: all 12 configured stages verified, elapsed 50.84 s, peak RSS 219,164
-KiB. The facts contain 2,128 register-width observations across four MMIO
-ranges and 25,854 bounded diagnostics. Treat this as a regression reference,
-not a universal performance promise: artifact hashes, build profile and host
-matter. Future optimizations must compare equivalent generated outputs and
-record both time and peak RSS.
+With both project profiles in artifact-wide mode, the write run completed in
+89.31 s at 253,148 KiB peak RSS and the reproducing check completed in 87.63 s
+at 299,552 KiB. All 12 stages passed. Before sequential profile publication,
+the same workload retained every generated JSON/pseudo document and peaked at
+about 2.5 GiB; `ir build` now drops each profile's documents before generating
+the next one.
 
-The same host also completed explicit all-symbol linked IR for both real source
-artifacts. ROM: 1,935 roots, 488 MMIO identities, 416 complete functions,
-45.66 s, 216,488 KiB peak RSS, 64 MiB JSON and 7.0 MiB pseudo-Rust. Linked
-archive image: 171 roots, 106 MMIO identities, 66 complete functions, 11.60 s,
-92,036 KiB peak RSS, 19 MiB JSON and 2.5 MiB pseudo-Rust. These results prove
-artifact-wide generation is functional; they do not turn best-effort partial
-functions into completeness claims.
+ROM IR contains 1,935 roots, 492 MMIO identities and 416 complete functions;
+schema 37 inventories 945 unsupported instruction sites across exactly 155
+functions. The linked archive image contains 171 roots, 106 MMIO identities,
+66 complete functions and no decode blockers. Interface schema 5 retains 593
+reached blocker sites across all three scanned containers and reports zero
+analysis failures. These are regression references, not universal performance
+promises: artifact hashes, build profile and host matter, and best-effort
+partial functions remain incomplete.

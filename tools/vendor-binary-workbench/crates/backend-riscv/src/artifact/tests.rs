@@ -183,6 +183,117 @@ fn decoder_reads_mixed_width_code_without_objdump() {
 }
 
 #[test]
+fn analysis_decoder_preserves_explicit_extension_blockers() {
+    let flw = 0x0005_2007_u32;
+    let csrrw = (0x300_u32 << 20) | (10 << 15) | (1 << 12) | (11 << 7) | 0x73;
+    let custom = 0x0000_000b_u32;
+    let addi = 0x0015_0513_u32;
+    let symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "extension_mix".to_owned(),
+        address: 0x2000,
+        bytes: [flw, addi, csrrw, addi, custom, addi]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+
+    assert!(decode_symbol(&symbol).is_err());
+    let decoded = decode_symbol_for_analysis(&symbol).unwrap();
+    assert_eq!(decoded.len(), 6);
+    assert!(matches!(decoded[1], AnalysisInstruction::Supported(_)));
+    assert_eq!(decoded[0].address(), 0x2000);
+    assert!(matches!(
+        decoded[0],
+        AnalysisInstruction::Unsupported(UnsupportedInstruction {
+            class: UnsupportedInstructionClass::FloatingPoint,
+            linear_control_flow: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        decoded[2],
+        AnalysisInstruction::Unsupported(UnsupportedInstruction {
+            class: UnsupportedInstructionClass::Csr,
+            integer_destination: Some(11),
+            linear_control_flow: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        decoded[4],
+        AnalysisInstruction::Unsupported(UnsupportedInstruction {
+            class: UnsupportedInstructionClass::VendorCustom,
+            linear_control_flow: false,
+            ..
+        })
+    ));
+}
+
+#[test]
+fn analysis_decoder_classifies_compressed_float_memory_operations() {
+    // Quadrant 0, funct3 011 is C.FLW on RV32 with the F extension.
+    let symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "compressed_float".to_owned(),
+        address: 0x3000,
+        bytes: 0x6000_u16.to_le_bytes().to_vec(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let decoded = decode_symbol_for_analysis(&symbol).unwrap();
+    assert!(matches!(
+        decoded.as_slice(),
+        [AnalysisInstruction::Unsupported(UnsupportedInstruction {
+            class: UnsupportedInstructionClass::FloatingPoint,
+            width: 2,
+            linear_control_flow: true,
+            ..
+        })]
+    ));
+}
+
+#[test]
+fn analysis_decoder_distinguishes_standard_float_and_vendor_csrs() {
+    let csr = |address: u32| (address << 20) | (2 << 12) | (10 << 7) | 0x73;
+    let symbol = ArtifactSymbolDefinition {
+        member: None,
+        name: "csr_classes".to_owned(),
+        address: 0x4000,
+        bytes: [csr(0x300), csr(0x001), csr(0x7c1), csr(0xbcc)]
+            .into_iter()
+            .flat_map(u32::to_le_bytes)
+            .collect(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let classes = decode_symbol_for_analysis(&symbol)
+        .unwrap()
+        .into_iter()
+        .map(|instruction| match instruction {
+            AnalysisInstruction::Unsupported(blocker) => blocker.class,
+            AnalysisInstruction::Supported(instruction) => {
+                panic!("unexpected supported CSR: {instruction:?}")
+            }
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        classes,
+        [
+            UnsupportedInstructionClass::Csr,
+            UnsupportedInstructionClass::FloatingPointCsr,
+            UnsupportedInstructionClass::VendorCsr,
+            UnsupportedInstructionClass::VendorCsr,
+        ]
+    );
+}
+
+#[test]
 fn compressed_andi_immediate_is_sign_extended() {
     // c.andi a5, -2
     let (instruction, width) = Inst::decode(0x9b_f9, Xlen::Rv32).unwrap();

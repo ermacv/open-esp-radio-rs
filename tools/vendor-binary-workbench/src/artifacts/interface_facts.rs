@@ -383,6 +383,18 @@ struct DecodeFailureDocument<'a> {
 }
 
 #[derive(Serialize)]
+struct DecodeBlockerDocument<'a> {
+    artifact: usize,
+    member: &'a Option<String>,
+    function: &'a str,
+    address: String,
+    width: u8,
+    raw: String,
+    class: &'static str,
+    linear_control_flow: bool,
+}
+
+#[derive(Serialize)]
 pub(crate) struct InterfaceFactsDocument<'a> {
     schema_version: u32,
     command: &'static str,
@@ -390,7 +402,8 @@ pub(crate) struct InterfaceFactsDocument<'a> {
     artifacts: Vec<ArtifactDocument<'a>>,
     calls: Vec<CallDocument>,
     table_candidates: Vec<TableGroupDocument>,
-    decode_failures: Vec<DecodeFailureDocument<'a>>,
+    decode_blockers: Vec<DecodeBlockerDocument<'a>>,
+    analysis_failures: Vec<DecodeFailureDocument<'a>>,
 }
 
 pub(crate) fn build_interface_facts(
@@ -433,7 +446,21 @@ pub(crate) fn build_interface_facts(
             .map(|call| call_document(discovery, call))
             .collect(),
         table_candidates: table_group_documents(discovery),
-        decode_failures: discovery
+        decode_blockers: discovery
+            .decode_blockers
+            .iter()
+            .map(|blocker| DecodeBlockerDocument {
+                artifact: blocker.artifact,
+                member: &blocker.member,
+                function: &blocker.function,
+                address: format!("{:#010x}", blocker.address),
+                width: blocker.width,
+                raw: format!("{:#010x}", blocker.raw),
+                class: blocker.class,
+                linear_control_flow: blocker.linear_control_flow,
+            })
+            .collect(),
+        analysis_failures: discovery
             .failures
             .iter()
             .map(|failure| DecodeFailureDocument {

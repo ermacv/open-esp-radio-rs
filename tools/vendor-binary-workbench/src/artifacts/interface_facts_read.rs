@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v4 interface discovery facts.
+//! Typed consumer projection for schema-v5 interface discovery facts.
 
 #![allow(
     dead_code,
@@ -18,7 +18,8 @@ pub(crate) struct StoredInterfaceFacts {
     pub(crate) artifacts: Vec<StoredInterfaceArtifact>,
     pub(crate) calls: Vec<StoredInterfaceCall>,
     pub(crate) table_candidates: Vec<StoredInterfaceTable>,
-    decode_failures: Vec<StoredDecodeFailure>,
+    decode_blockers: Vec<StoredDecodeBlocker>,
+    analysis_failures: Vec<StoredDecodeFailure>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,6 +183,19 @@ struct StoredDecodeFailure {
     member: Option<String>,
     function: String,
     error: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredDecodeBlocker {
+    artifact: usize,
+    member: Option<String>,
+    function: String,
+    address: String,
+    width: u8,
+    raw: String,
+    class: String,
+    linear_control_flow: bool,
 }
 
 pub(crate) fn parse_interface_facts(input: &str) -> Result<StoredInterfaceFacts> {

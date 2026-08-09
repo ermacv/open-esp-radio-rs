@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v36.
+//! Complete owned DTO for linked-IR schema v37.
 
 #![allow(
     dead_code,
@@ -73,6 +73,8 @@ pub(crate) struct StoredReportSummary {
     artifacts: usize,
     reviewed_code_boundaries: usize,
     pub(crate) functions: usize,
+    decode_blocker_functions: usize,
+    pub(crate) decode_blockers: usize,
     root_functions: usize,
     included_reachable_functions: usize,
     exported: usize,
@@ -148,10 +150,21 @@ pub(crate) struct StoredFunction {
     call_graph_diagnostics: Vec<StoredDiagnostic>,
     direct_diagnostics: Vec<StoredDiagnostic>,
     reference_diagnostics: Vec<StoredDiagnostic>,
+    decode_blockers: Vec<StoredDecodeBlocker>,
     call_graph_blockers: Vec<String>,
     direct_blockers: Vec<String>,
     reference_blockers: Vec<String>,
     pub(crate) pseudo: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredDecodeBlocker {
+    address: u64,
+    width: u8,
+    raw: u32,
+    class: String,
+    linear_control_flow: bool,
 }
 
 #[derive(Debug, Deserialize)]

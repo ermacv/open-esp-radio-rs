@@ -25,11 +25,21 @@ cargo vendor-binary-workbench ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v36 records the selection mode plus root and
+`reachable-internal`, and schema v37 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
 silently imported into the closure.
+
+Schema v37 also inventories unsupported instructions explicitly. Every
+function has a typed `decode_blockers` array containing the instruction PC,
+width, raw encoding, extension class and whether the base ISA proves linear
+continuation. The summary counts both blockers and affected functions. These
+records cover the complete symbol byte range, while `direct_blockers` retain
+only blockers reached by structural CFG exploration. F and CSR instructions
+may therefore preserve useful later integer/MMIO evidence, but any blocker
+still makes the function incomplete. Concrete verification uses the strict
+decoder and never executes an unsupported instruction.
 
 A project inventory can aggregate several independently linked or relocatable
 inputs in one report. Multiple inputs must have stable source names:
@@ -47,14 +57,14 @@ cargo vendor-binary-workbench ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v36 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v37 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
 
 When the command is resolved from a project with `[code]`, every primary input
 also receives the accepted reviewed ranges authenticated for its source and
-artifact SHA-256. Schema v36 records those ranges in each source artifact as
+artifact SHA-256. Schema v37 records those ranges in each source artifact as
 `reviewed_code_boundaries` (member, section, reviewed name and exact offsets),
 and the summary records their count. A report therefore never hides whether a
 function came from an ELF symbol or from explicit human boundary review.

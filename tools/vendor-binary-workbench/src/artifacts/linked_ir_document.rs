@@ -46,6 +46,8 @@ struct ReportSummary {
     artifacts: usize,
     reviewed_code_boundaries: usize,
     functions: usize,
+    decode_blocker_functions: usize,
+    decode_blockers: usize,
     root_functions: usize,
     included_reachable_functions: usize,
     exported: usize,
@@ -117,6 +119,16 @@ impl ReportSummary {
                 .map(|artifact| artifact.reviewed_code.len())
                 .sum(),
             functions: report.functions.len(),
+            decode_blocker_functions: report
+                .functions
+                .iter()
+                .filter(|function| !function.decode_blockers.is_empty())
+                .count(),
+            decode_blockers: report
+                .functions
+                .iter()
+                .map(|function| function.decode_blockers.len())
+                .sum(),
             root_functions,
             included_reachable_functions: report.functions.len() - root_functions,
             exported: report.exported_functions,

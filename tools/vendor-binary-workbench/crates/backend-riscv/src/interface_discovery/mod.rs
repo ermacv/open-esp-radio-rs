@@ -17,25 +17,55 @@ pub use model::{
 };
 use state::*;
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct InterfaceDiscovery {
+    pub calls: Vec<InterfaceCallCandidate>,
+    pub decode_blockers: Vec<artifact::UnsupportedInstruction>,
+}
+
+impl std::ops::Deref for InterfaceDiscovery {
+    type Target = [InterfaceCallCandidate];
+
+    fn deref(&self) -> &Self::Target {
+        &self.calls
+    }
+}
+
 /// Discover indirect calls with recoverable straight-line/merged pointer
 /// provenance. Results are candidates, not semantic or completeness claims.
 pub fn discover_interface_calls(
     symbol: &artifact::ArtifactSymbolDefinition,
-) -> Result<Vec<InterfaceCallCandidate>> {
-    let instructions = artifact::decode_symbol(symbol)?;
+) -> Result<InterfaceDiscovery> {
+    let instructions = artifact::decode_symbol_for_analysis(symbol)?;
     if instructions.is_empty() {
-        return Ok(Vec::new());
+        return Ok(InterfaceDiscovery::default());
     }
     let instruction_indices = instructions
         .iter()
         .enumerate()
-        .map(|(index, instruction)| (instruction.address as u32, index))
+        .map(|(index, instruction)| (instruction.address() as u32, index))
         .collect::<BTreeMap<_, _>>();
     let mut states = BTreeMap::from([(0usize, initial_state())]);
     let mut queue = VecDeque::from([0usize]);
+    let mut decode_blockers = BTreeMap::new();
 
     while let Some(index) = queue.pop_front() {
-        let decoded = instructions[index];
+        let decoded_or_blocker = instructions[index];
+        let Some(decoded) = decoded_or_blocker.supported() else {
+            let artifact::AnalysisInstruction::Unsupported(blocker) = decoded_or_blocker else {
+                unreachable!();
+            };
+            decode_blockers.insert(blocker.address, blocker);
+            let mut values = states[&index].clone();
+            if let Some(destination) = blocker.integer_destination {
+                values[usize::from(destination)] = Value::Unknown;
+            }
+            values[0] = Value::Constant(0);
+            if blocker.linear_control_flow && index + 1 < instructions.len() {
+                enqueue_state(index + 1, &values, &mut states, &mut queue);
+            }
+            continue;
+        };
         let pc = decoded.address as u32;
         let instruction = decoded.instruction;
         let mut values = states[&index].clone();
@@ -211,7 +241,9 @@ pub fn discover_interface_calls(
 
     let mut calls = BTreeSet::new();
     for (index, values) in states {
-        let decoded = instructions[index];
+        let Some(decoded) = instructions[index].supported() else {
+            continue;
+        };
         let Inst::Jalr { offset, base, dest } = decoded.instruction else {
             continue;
         };
@@ -242,7 +274,10 @@ pub fn discover_interface_calls(
         });
     }
 
-    Ok(calls.into_iter().collect())
+    Ok(InterfaceDiscovery {
+        calls: calls.into_iter().collect(),
+        decode_blockers: decode_blockers.into_values().collect(),
+    })
 }
 
 #[cfg(test)]

@@ -157,6 +157,25 @@ pub(crate) fn build_linked_ir_for_source(
         } else {
             "local"
         };
+        let decode_blockers = artifact::decode_symbol_for_analysis(&symbol)
+            .map(|instructions| {
+                instructions
+                    .into_iter()
+                    .filter_map(|instruction| match instruction {
+                        artifact::AnalysisInstruction::Supported(_) => None,
+                        artifact::AnalysisInstruction::Unsupported(blocker) => {
+                            Some(LinkedDecodeBlocker {
+                                address: blocker.address,
+                                width: blocker.width,
+                                raw: blocker.raw,
+                                class: blocker.class.as_str(),
+                                linear_control_flow: blocker.linear_control_flow,
+                            })
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
         let DirectCallGraph {
             calls: direct_calls,
             direct_mmio_predicates,
@@ -261,6 +280,7 @@ pub(crate) fn build_linked_ir_for_source(
                     call_graph_diagnostics,
                     direct_diagnostics,
                     reference_diagnostics,
+                    decode_blockers,
                     call_graph_blockers,
                     direct_blockers,
                     reference_blockers,
@@ -306,6 +326,7 @@ pub(crate) fn build_linked_ir_for_source(
                     call_graph_diagnostics,
                     direct_diagnostics,
                     reference_diagnostics: Vec::new(),
+                    decode_blockers,
                     call_graph_blockers,
                     direct_blockers,
                     reference_blockers: Vec::new(),

@@ -63,8 +63,9 @@ pub mod reference_analysis;
 pub mod static_analysis;
 
 pub use interface_discovery::{
-    InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceLoad,
-    InterfacePointer, InterfaceRoot, InterfaceSymbolAddressing, discover_interface_calls,
+    InterfaceArgumentValue, InterfaceCallCandidate, InterfaceCallKind, InterfaceDiscovery,
+    InterfaceLoad, InterfacePointer, InterfaceRoot, InterfaceSymbolAddressing,
+    discover_interface_calls,
 };
 pub use reference_analysis::{ReferenceResolver, ReferenceSymbolKey};
 pub use static_analysis::{

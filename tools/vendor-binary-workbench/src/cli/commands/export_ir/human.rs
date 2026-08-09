@@ -88,7 +88,7 @@ pub(super) fn print_report(
     );
     let _ = writeln!(
         output,
-        "Summary: artifacts={} functions={} roots={} reachable={} MMIO-registers={} MMIO-shapes={} field-candidates={} semantic-calls={} complete={} diagnostics={}",
+        "Summary: artifacts={} functions={} roots={} reachable={} decode-blockers={} MMIO-registers={} MMIO-shapes={} field-candidates={} semantic-calls={} complete={} diagnostics={}",
         artifacts.len(),
         report.functions.len(),
         root_functions,
@@ -97,6 +97,11 @@ pub(super) fn print_report(
         } else {
             0
         },
+        report
+            .functions
+            .iter()
+            .map(|function| function.decode_blockers.len())
+            .sum::<usize>(),
         report.mmio_registers.len(),
         report.mmio_access_shapes,
         report

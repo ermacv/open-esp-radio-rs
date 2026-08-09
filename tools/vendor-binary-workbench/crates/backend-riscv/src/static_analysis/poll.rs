@@ -151,7 +151,7 @@ pub(super) fn poll_exit_predicate(
     reason = "poll recognition validates one complete structural checkpoint"
 )]
 pub(super) fn recognize_structural_poll_loop(
-    instructions: &[artifact::DecodedInstruction],
+    instructions: &[artifact::AnalysisInstruction],
     loop_start_index: usize,
     branch_index: usize,
     condition: &BranchCondition,
@@ -181,16 +181,24 @@ pub(super) fn recognize_structural_poll_loop(
     }
 
     let loop_instructions = &instructions[loop_start_index..=branch_index];
+    if loop_instructions
+        .iter()
+        .any(|instruction| instruction.supported().is_none())
+    {
+        return None;
+    }
     let load_count = loop_instructions
         .iter()
         .filter(|decoded| {
             matches!(
-                decoded.instruction,
-                Inst::Lb { .. }
-                    | Inst::Lbu { .. }
-                    | Inst::Lh { .. }
-                    | Inst::Lhu { .. }
-                    | Inst::Lw { .. }
+                decoded.supported().map(|decoded| decoded.instruction),
+                Some(
+                    Inst::Lb { .. }
+                        | Inst::Lbu { .. }
+                        | Inst::Lh { .. }
+                        | Inst::Lhu { .. }
+                        | Inst::Lw { .. }
+                )
             )
         })
         .count();
@@ -199,24 +207,26 @@ pub(super) fn recognize_structural_poll_loop(
             .iter()
             .any(|decoded| {
                 matches!(
-                    decoded.instruction,
-                    Inst::Sb { .. }
-                        | Inst::Sh { .. }
-                        | Inst::Sw { .. }
-                        | Inst::Beq { .. }
-                        | Inst::Bne { .. }
-                        | Inst::Blt { .. }
-                        | Inst::Bge { .. }
-                        | Inst::Bltu { .. }
-                        | Inst::Bgeu { .. }
-                        | Inst::Jal { .. }
-                        | Inst::Jalr { .. }
-                        | Inst::Fence { .. }
-                        | Inst::Ecall
-                        | Inst::Ebreak
-                        | Inst::LrW { .. }
-                        | Inst::ScW { .. }
-                        | Inst::AmoW { .. }
+                    decoded.supported().map(|decoded| decoded.instruction),
+                    Some(
+                        Inst::Sb { .. }
+                            | Inst::Sh { .. }
+                            | Inst::Sw { .. }
+                            | Inst::Beq { .. }
+                            | Inst::Bne { .. }
+                            | Inst::Blt { .. }
+                            | Inst::Bge { .. }
+                            | Inst::Bltu { .. }
+                            | Inst::Bgeu { .. }
+                            | Inst::Jal { .. }
+                            | Inst::Jalr { .. }
+                            | Inst::Fence { .. }
+                            | Inst::Ecall
+                            | Inst::Ebreak
+                            | Inst::LrW { .. }
+                            | Inst::ScW { .. }
+                            | Inst::AmoW { .. }
+                    )
                 )
             })
     {

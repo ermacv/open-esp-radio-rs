@@ -20,24 +20,22 @@ pack = "code/boundaries.toml"
 output = "generated/reports/code-boundaries.md"
 
 [[analysis.ir]]
-id = "rom-phy"
+id = "rom-all"
 sources = ["rom"]
-roots = "symbol-prefix"
-symbol-prefix = "phy_"
+roots = "all"
 include-reachable = true
 entry-contract = "esp32s31-phy-registered"
-output = "generated/findings/rom-phy.ir.json"
-pseudo-rust = "generated/reports/rom-phy.pseudo.rs"
+output = "generated/findings/rom-all.ir.json"
+pseudo-rust = "generated/reports/rom-all.pseudo.rs"
 
 [[analysis.ir]]
-id = "archive-phy"
+id = "archive-all"
 sources = ["archive"]
-roots = "symbol-prefix"
-symbol-prefix = "phy_"
+roots = "all"
 include-reachable = true
 entry-contract = "esp32s31-phy-registered"
-output = "generated/findings/archive-phy.ir.json"
-pseudo-rust = "generated/reports/archive-phy.pseudo.rs"
+output = "generated/findings/archive-all.ir.json"
+pseudo-rust = "generated/reports/archive-all.pseudo.rs"
 
 [registers]
 facts = "generated/findings/mmio.json"
@@ -47,8 +45,8 @@ owned-ranges = ["modem-radio-core"]
 [registers.review]
 output = "generated/reports/register-review.md"
 linked-ir = [
-    "generated/findings/rom-phy.ir.json",
-    "generated/findings/archive-phy.ir.json",
+    "generated/findings/rom-all.ir.json",
+    "generated/findings/archive-all.ir.json",
 ]
 
 [registers.svd]
@@ -88,7 +86,7 @@ pack = "interfaces/reviewed.toml"
 
 [functions]
 pack = "functions/reviewed.toml"
-profiles = ["rom-phy", "archive-phy"]
+profiles = ["rom-all", "archive-all"]
 
 [functions.review]
 output = "generated/reports/function-review.md"

@@ -165,11 +165,11 @@ pub fn trace_binary_symbol_with_branches_bounded(
 ) -> Result<FunctionAnalysis> {
     let mut state = StructuralTraceState::new(specialized_arguments);
 
-    let instructions = artifact::decode_symbol(symbol)?;
+    let instructions = artifact::decode_symbol_for_analysis(symbol)?;
     let instruction_indices = instructions
         .iter()
         .enumerate()
-        .map(|(index, instruction)| (instruction.address as u32, index))
+        .map(|(index, instruction)| (instruction.address() as u32, index))
         .collect::<BTreeMap<_, _>>();
     let mut instruction_index = 0usize;
     let mut instruction_steps = 0usize;
@@ -182,7 +182,7 @@ pub fn trace_binary_symbol_with_branches_bounded(
     // arm.
     let mut emitted_forced_branch_decisions = BTreeSet::<u32>::new();
     let mut checkpoints = BTreeMap::<u32, StructuralCheckpoint>::new();
-    while let Some(decoded) = instructions.get(instruction_index).copied() {
+    while let Some(decoded_or_blocker) = instructions.get(instruction_index).copied() {
         if instruction_steps >= budget.max_instruction_steps {
             state.blockers.push(format!(
                 "structural trace exceeds the artifact-wide budget of {} instruction steps",
@@ -199,21 +199,38 @@ pub fn trace_binary_symbol_with_branches_bounded(
             break;
         }
         instruction_steps += 1;
-        let pc = decoded.address;
-        let width = decoded.width;
-        let instruction = decoded.instruction;
+        let pc = decoded_or_blocker.address();
+        let width = decoded_or_blocker.width();
         let visits = instruction_visits.entry(pc as u32).or_default();
         if *visits >= MAX_STRUCTURAL_INSTRUCTION_VISITS {
             state.blockers.push(format!(
-                "control-flow loop bounded unrolling exceeds {MAX_STRUCTURAL_INSTRUCTION_VISITS} visits at {pc:#x}: {instruction}"
+                "control-flow loop bounded unrolling exceeds {MAX_STRUCTURAL_INSTRUCTION_VISITS} visits at {pc:#x}"
             ));
             break;
         }
         *visits += 1;
         checkpoints.insert(pc as u32, state.checkpoint());
+        let Some(decoded) = decoded_or_blocker.supported() else {
+            let artifact::AnalysisInstruction::Unsupported(blocker) = decoded_or_blocker else {
+                unreachable!();
+            };
+            state.blockers.push(blocker.to_string());
+            if let Some(destination) = blocker.integer_destination {
+                state.values[usize::from(destination)] = SymbolicValue::Unknown;
+            }
+            state.values[0] = SymbolicValue::Constant(0);
+            if blocker.linear_control_flow {
+                instruction_index += 1;
+                continue;
+            }
+            break;
+        };
+        let instruction = decoded.instruction;
         match apply_relocated_call(
             decoded,
-            instructions.get(instruction_index + 1).copied(),
+            instructions
+                .get(instruction_index + 1)
+                .and_then(|instruction| instruction.supported()),
             symbol,
             relocated_calls,
             pointer_context,

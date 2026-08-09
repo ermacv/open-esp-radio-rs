@@ -240,9 +240,10 @@ pub(crate) fn discover_project_interfaces_operation(
         check,
         "interface discovery report",
     )?;
-    if !discovery.failures.is_empty() {
+    if !discovery.decode_blockers.is_empty() || !discovery.failures.is_empty() {
         tracing::warn!(
-            decode_failures = discovery.failures.len(),
+            decode_blockers = discovery.decode_blockers.len(),
+            analysis_failures = discovery.failures.len(),
             "interface discovery retained partial findings"
         );
     }

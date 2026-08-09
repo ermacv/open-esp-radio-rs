@@ -584,6 +584,15 @@ pub(crate) struct ScenarioSuggestion {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct LinkedDecodeBlocker {
+    pub(crate) address: u64,
+    pub(crate) width: u8,
+    pub(crate) raw: u32,
+    pub(crate) class: &'static str,
+    pub(crate) linear_control_flow: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedIrFunction {
     pub(crate) source: String,
     pub(crate) identity: String,
@@ -613,6 +622,7 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) call_graph_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) direct_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) reference_diagnostics: Vec<LinkedDiagnostic>,
+    pub(crate) decode_blockers: Vec<LinkedDecodeBlocker>,
     pub(crate) call_graph_blockers: Vec<String>,
     pub(crate) direct_blockers: Vec<String>,
     pub(crate) reference_blockers: Vec<String>,

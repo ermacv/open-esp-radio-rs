@@ -414,6 +414,91 @@ pub struct DecodedInstruction {
     pub instruction: Inst,
 }
 
+/// Decoder-independent classification for an instruction that the current
+/// RV32 semantic backend cannot lift.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnsupportedInstructionClass {
+    FloatingPoint,
+    FloatingPointCsr,
+    Csr,
+    VendorCsr,
+    System,
+    VendorCustom,
+    OtherExtension,
+    Invalid,
+}
+
+impl UnsupportedInstructionClass {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::FloatingPoint => "floating-point",
+            Self::FloatingPointCsr => "floating-point-csr",
+            Self::Csr => "csr",
+            Self::VendorCsr => "vendor-csr",
+            Self::System => "system",
+            Self::VendorCustom => "vendor-custom",
+            Self::OtherExtension => "other-extension",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
+/// One architecturally sized instruction that the current decoder cannot
+/// lift. Raw bytes and their exact PC remain available as review evidence.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct UnsupportedInstruction {
+    pub address: u64,
+    pub width: u8,
+    pub raw: u32,
+    pub class: UnsupportedInstructionClass,
+    pub integer_destination: Option<u8>,
+    pub linear_control_flow: bool,
+}
+
+impl std::fmt::Display for UnsupportedInstruction {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "decode-blocker class={} pc={:#x} width={} raw={:#010x}",
+            self.class.as_str(),
+            self.address,
+            self.width,
+            self.raw
+        )
+    }
+}
+
+/// Loss-tolerant instruction stream used only by structural analysis.
+/// Concrete execution continues to require [`DecodedInstruction`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AnalysisInstruction {
+    Supported(DecodedInstruction),
+    Unsupported(UnsupportedInstruction),
+}
+
+impl AnalysisInstruction {
+    pub const fn address(self) -> u64 {
+        match self {
+            Self::Supported(instruction) => instruction.address,
+            Self::Unsupported(instruction) => instruction.address,
+        }
+    }
+
+    pub const fn width(self) -> u8 {
+        match self {
+            Self::Supported(instruction) => instruction.width,
+            Self::Unsupported(instruction) => instruction.width,
+        }
+    }
+
+    pub const fn supported(self) -> Option<DecodedInstruction> {
+        match self {
+            Self::Supported(instruction) => Some(instruction),
+            Self::Unsupported(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExecutableSection {
     pub name: String,

@@ -1,5 +1,11 @@
 #![no_main]
 #![no_std]
+// Embassy moves each generated task future once into its static task arena.
+// Those values are intentionally large and do not live on a CPU stack. Owned
+// driver crates remain under the 4 KiB `large_assignments` build lint, while
+// this final image is guarded by authoritative post-LTO `.stack_sizes` frames
+// and runtime high-water qualification.
+#![allow(large_assignments)]
 
 #[cfg(not(any(feature = "boot-smoke", feature = "open-radio-hil")))]
 compile_error!("select a HIL scenario feature: boot-smoke or open-radio-hil");
@@ -15,7 +21,7 @@ compile_error!("profile-psram-data and profile-sram-data are mutually exclusive"
 compile_error!("select profile-psram-data or profile-sram-data");
 
 #[cfg(feature = "open-radio-hil")]
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU32, Ordering};
 use core::{
     arch::{asm, global_asm},
     ffi::CStr,
@@ -46,6 +52,14 @@ const DATA_SENTINEL: u32 = 0x5353_31d2;
 const INTERNAL_SRAM_START: u32 = 0x2f00_0000;
 const INTERNAL_SRAM_END: u32 = 0x2f07_afc0;
 const INTERNAL_STACK_END: u32 = INTERNAL_SRAM_END;
+#[cfg(feature = "open-radio-hil")]
+const STACK_PAINT_WORD: u32 = 0xa55a_a55a;
+#[cfg(feature = "open-radio-hil")]
+const STACK_PAINT_MARGIN_BYTES: u32 = 256;
+#[cfg(feature = "open-radio-hil")]
+const STACK_PAINT_BOTTOM_RESERVE_BYTES: u32 = 256;
+#[cfg(feature = "open-radio-hil")]
+const APP_CORE_STACK_BYTES: u32 = 16_384;
 
 #[cfg(feature = "code-flash")]
 const PROFILE_CODE_START: u32 = 0x4000_0140;
@@ -72,6 +86,8 @@ static APP_EXECUTOR: StaticCell<Executor<1>> = StaticCell::new();
 static APP_SEND_SPAWNER: StaticCell<SendSpawner> = StaticCell::new();
 #[cfg(feature = "open-radio-hil")]
 static APP_SEND_SPAWNER_PTR: AtomicPtr<SendSpawner> = AtomicPtr::new(ptr::null_mut());
+#[cfg(feature = "open-radio-hil")]
+static APP_STACK_PAINT_END: AtomicU32 = AtomicU32::new(0);
 #[cfg(feature = "open-radio-hil")]
 #[unsafe(link_section = ".critical.bss.open_radio_app_core_stack")]
 static mut APP_CORE_STACK: Stack<16384> = Stack::new();
@@ -115,6 +131,7 @@ unsafe extern "C" {
     static __runtime_dma_bss_start: u8;
     static __runtime_dma_bss_end: u8;
     static _stack_end: u8;
+    static _stack_start: u8;
 }
 
 // Stage two does not return through the bootloader reset entry. It owns data,
@@ -209,6 +226,19 @@ _runtime_start:
     addi a1, a1, 4
     j 15b
 16:
+    # Paint every currently unused CPU0 stack word before Rust starts. The
+    # reserved top margin contains the handoff frame and is counted as used.
+    la t0, _stack_end
+    addi t0, t0, 256
+    mv t1, sp
+    addi t1, t1, -256
+    li t2, 0xa55aa55a
+17:
+    bgeu t0, t1, 18f
+    sw t2, 0(t0)
+    addi t0, t0, 4
+    j 17b
+18:
     fence.i
     la t0, _vector_table
     ori t0, t0, 3
@@ -269,6 +299,7 @@ extern "C" fn runtime_main() -> ! {
             .start_app_core(
                 unsafe { &mut *ptr::addr_of_mut!(APP_CORE_STACK) },
                 move || {
+                    paint_app_core_stack();
                     // Core 1 enters directly from ROM rather than through
                     // `_runtime_start`, so hand global interrupt enable to
                     // its executor explicitly after esp-hal has installed
@@ -437,6 +468,82 @@ fn current_stack_pointer() -> u32 {
     let value: usize;
     unsafe { asm!("mv {value}, sp", value = out(reg) value, options(nomem, nostack)) };
     value as u32
+}
+
+#[cfg(feature = "open-radio-hil")]
+fn paint_app_core_stack() {
+    let bottom = ptr::addr_of_mut!(APP_CORE_STACK) as *mut u8 as usize as u32;
+    let paint_start = bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
+    let paint_end = current_stack_pointer().saturating_sub(STACK_PAINT_MARGIN_BYTES);
+    let maximum_end = bottom + APP_CORE_STACK_BYTES;
+    if paint_end <= paint_start || paint_end > maximum_end {
+        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=app-stack-layout\r\n");
+    }
+    let mut address = paint_start;
+    while address < paint_end {
+        unsafe { (address as usize as *mut u32).write_volatile(STACK_PAINT_WORD) };
+        address += 4;
+    }
+    APP_STACK_PAINT_END.store(paint_end, Ordering::Release);
+}
+
+#[cfg(feature = "open-radio-hil")]
+pub(crate) fn stack_usage_snapshot() -> open_esp_radio_hil_protocol::StackUsage {
+    let cpu0_bottom = symbol(ptr::addr_of!(_stack_end));
+    let cpu0_top = symbol(ptr::addr_of!(_stack_start));
+    let cpu0_paint_start = cpu0_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES;
+    let cpu0_paint_end = cpu0_top.saturating_sub(STACK_PAINT_MARGIN_BYTES);
+
+    let cpu1_bottom = ptr::addr_of!(APP_CORE_STACK) as *const u8 as usize as u32;
+    let cpu1_top = cpu1_bottom + APP_CORE_STACK_BYTES;
+    let cpu1_paint_end = APP_STACK_PAINT_END.load(Ordering::Acquire);
+
+    open_esp_radio_hil_protocol::StackUsage {
+        minimum_free_percent: stack_minimum_free_percent(),
+        cpu0: measure_stack(cpu0_bottom, cpu0_paint_start, cpu0_paint_end, cpu0_top),
+        cpu1: measure_stack(
+            cpu1_bottom,
+            cpu1_bottom + STACK_PAINT_BOTTOM_RESERVE_BYTES,
+            cpu1_paint_end,
+            cpu1_top,
+        ),
+    }
+}
+
+#[cfg(feature = "open-radio-hil")]
+fn measure_stack(
+    bottom: u32,
+    paint_start: u32,
+    paint_end: u32,
+    top: u32,
+) -> open_esp_radio_hil_protocol::StackWatermark {
+    if bottom >= paint_start || paint_start >= paint_end || paint_end > top {
+        fail(c"OPEN_RADIO_HIL runtime=FAIL reason=stack-paint-layout\r\n");
+    }
+    let mut lowest_used = paint_end;
+    let mut address = paint_start;
+    while address < paint_end {
+        let word = unsafe { (address as usize as *const u32).read_volatile() };
+        if word != STACK_PAINT_WORD {
+            lowest_used = address;
+            break;
+        }
+        address += 4;
+    }
+    open_esp_radio_hil_protocol::StackWatermark {
+        capacity_bytes: top - bottom,
+        free_bytes: lowest_used - paint_start,
+        used_bytes: (top - bottom) - (lowest_used - paint_start),
+    }
+}
+
+#[cfg(feature = "open-radio-hil")]
+fn stack_minimum_free_percent() -> u8 {
+    let value = option_env!("OPEN_RADIO_STACK_MINIMUM_FREE_PERCENT")
+        .expect("HIL runner must provide the target stack headroom policy");
+    value
+        .parse::<u8>()
+        .expect("stack headroom policy must be an unsigned percentage")
 }
 
 fn print(message: &'static CStr) {

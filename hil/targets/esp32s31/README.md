@@ -29,6 +29,12 @@ cargo hil wifi stop|start|scan|monitor|roundtrip --serial /dev/ttyACM0
 cargo hil traffic rx|tx|bidirectional|tcp-rx|tcp-tx|tcp-bidirectional|icmp ...
 ```
 
+Every `cargo hil build` emits LLVM stack-size metadata for both images and
+writes `runtime-stack.txt` and `bootstrap-stack.txt`. Frames above 8 KiB are
+reported for review; a frame over 32 KiB fails before packing. Each UDP/TCP
+session also carries typed CPU0/CPU1 high-water evidence and fails on the host
+below 25% free stack.
+
 Credentials, IPv4 policy and retained calibration are sent over the typed HIL
 protocol and never select firmware source. Scenario manifests contain only
 non-secret build policy. Dated results belong under

@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 19;
+pub const PROTOCOL_VERSION: u16 = 21;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 // Keep the largest protocol enum comfortably below one RX frame. This value
 // bounds executor poll-stack pressure as well as wire latency; complete MPDUs
@@ -418,6 +418,9 @@ pub struct Capabilities {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Command {
     GetCapabilities,
+    /// Return the boot-lifetime CPU stack high-water marks. This diagnostic
+    /// query is valid only outside an active traffic session.
+    QueryStackUsage,
     UploadStartupArtifact(StartupArtifactChunk),
     ProvisionNetwork(NetworkConfiguration),
     Configure(SessionConfig),
@@ -685,6 +688,12 @@ impl StationEpochEvidence {
 pub enum StationDisconnectReason {
     /// The connected beacon monitor proved that the selected AP disappeared.
     BeaconLoss,
+    /// The AP sent an IEEE 802.11 deauthentication frame.
+    PeerDeauthentication { reason_code: u16 },
+    /// The AP sent an IEEE 802.11 disassociation frame.
+    PeerDisassociation { reason_code: u16 },
+    /// Restoring active power-management state failed at the peer-visible TX edge.
+    ActiveStateRestoreFailed,
     /// Another connected link policy returned the peer owner without claiming
     /// a beacon deadline; this must not qualify an AP-loss test.
     LinkPolicy,
@@ -807,9 +816,24 @@ pub struct LinkHealth {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StackWatermark {
+    pub capacity_bytes: u32,
+    pub free_bytes: u32,
+    pub used_bytes: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct StackUsage {
+    pub minimum_free_percent: u8,
+    pub cpu0: StackWatermark,
+    pub cpu1: StackWatermark,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum EvidenceRecord {
     Transport(TransportEvidence),
     Link(LinkHealth),
+    Stack(StackUsage),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -827,6 +851,8 @@ pub struct Finished {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     Hello(Capabilities),
+    /// Correlated response to [`Command::QueryStackUsage`].
+    StackUsage(StackUsage),
     Accepted,
     Rejected(RejectReason),
     State(StateChange),

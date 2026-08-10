@@ -201,11 +201,17 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let structured_report = structured
         .map(|evidence| {
             format!(
-                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n",
+                "- Typed session evidence: `{}` bytes / `{}` datagrams / `{}` us; CRC32C `0x{:08x}`\n\
+                 - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
                 evidence.transport.rx_bytes,
                 evidence.transport.rx_units,
                 evidence.transport.elapsed_micros,
                 evidence.finished.evidence_crc32c,
+                evidence.stack.cpu0.free_bytes,
+                evidence.stack.cpu0.capacity_bytes,
+                evidence.stack.cpu1.free_bytes,
+                evidence.stack.cpu1.capacity_bytes,
+                evidence.stack.minimum_free_percent,
             )
         })
         .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));

@@ -4,7 +4,8 @@ use std::{path::PathBuf, process::ExitCode};
 
 use clap::{Parser, Subcommand, ValueEnum};
 use open_esp_radio_memory_report::{
-    MemoryPolicy, Result, analyze, audit, diff, render_audit, render_diff, render_report,
+    MemoryPolicy, Result, StackBudget, analyze, analyze_stack, audit, audit_stack, diff,
+    render_audit, render_diff, render_report, render_stack_report,
 };
 
 #[derive(Debug, Parser)]
@@ -26,6 +27,15 @@ enum Command {
         before: PathBuf,
         #[arg(long)]
         after: PathBuf,
+        #[arg(long)]
+        policy: PathBuf,
+        #[arg(long, value_enum, default_value_t)]
+        format: OutputFormat,
+    },
+    /// Report and enforce compiler-measured firmware stack-frame sizes.
+    Stack {
+        #[arg(long)]
+        elf: PathBuf,
         #[arg(long)]
         policy: PathBuf,
         #[arg(long, value_enum, default_value_t)]
@@ -77,6 +87,16 @@ fn run(cli: Cli) -> Result<()> {
             let after = analyze(&after, &policy)?;
             let report = diff(&before, &after);
             print_value(format, &report, || render_diff(&report))?;
+        }
+        Command::Stack {
+            elf,
+            policy,
+            format,
+        } => {
+            let budget = StackBudget::load(&policy)?;
+            let report = analyze_stack(&elf, &budget)?;
+            print_value(format, &report, || render_stack_report(&report))?;
+            audit_stack(&report)?;
         }
     }
     Ok(())

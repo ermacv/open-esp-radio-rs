@@ -516,6 +516,17 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         publish_event_reliably(session_id, request_id, Event::Hello(capabilities))
                             .await;
                     }
+                    Command::QueryStackUsage => {
+                        let response = if network_provisioned
+                            && state == SessionState::Idle
+                            && session_id == 0
+                        {
+                            Event::StackUsage(crate::stack_usage_snapshot())
+                        } else {
+                            Event::Rejected(RejectReason::InvalidState)
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::UploadStartupArtifact(chunk) => {
                         let response = if !capabilities.features.startup_artifact {
                             Event::Rejected(RejectReason::Unsupported)
@@ -950,17 +961,22 @@ async fn transition_state(
 }
 
 async fn publish_result(result: SessionResult, request_id: u32) {
-    let evidence = EvidenceRecord::Transport(result.evidence);
-    let checksum = evidence_crc32c(core::slice::from_ref(&evidence))
-        .expect("one transport evidence record fits the protocol digest buffer");
-    publish_event_reliably(result.session_id, request_id, Event::Evidence(evidence)).await;
+    let evidence = [
+        EvidenceRecord::Transport(result.evidence),
+        EvidenceRecord::Stack(crate::stack_usage_snapshot()),
+    ];
+    let checksum = evidence_crc32c(&evidence)
+        .expect("transport and stack evidence fit the protocol digest buffer");
+    for record in evidence {
+        publish_event_reliably(result.session_id, request_id, Event::Evidence(record)).await;
+    }
     publish_event_reliably(
         result.session_id,
         request_id,
         Event::Finished(Finished {
             summary: ResultSummary {
                 passed: result.passed,
-                evidence_records: 1,
+                evidence_records: evidence.len() as u16,
             },
             evidence_crc32c: checksum,
         }),

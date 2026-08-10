@@ -27,10 +27,12 @@ struct Options {
     maximum_p95: Option<Duration>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct LatencySummary {
     transmitted: u16,
     received: u16,
+    readiness_attempts: u8,
+    lost_sequences: Vec<u16>,
     minimum_us: u64,
     average_us: u64,
     p50_us: u64,
@@ -40,7 +42,7 @@ struct LatencySummary {
 }
 
 impl LatencySummary {
-    fn loss_percent(self) -> f64 {
+    fn loss_percent(&self) -> f64 {
         f64::from(self.transmitted - self.received) * 100.0 / f64::from(self.transmitted)
     }
 }
@@ -58,8 +60,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let summary = measure(&socket, options)?;
     let acceptance_failure = if options.count - summary.received > options.maximum_lost {
         Some(format!(
-            "ICMP lost {} replies, above the configured maximum {}",
+            "ICMP lost {} replies at sequences {:?}, above the configured maximum {}",
             options.count - summary.received,
+            summary.lost_sequences,
             options.maximum_lost,
         ))
     } else if options.maximum_p95.is_some_and(|maximum| {
@@ -78,17 +81,18 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let report_path = output.join("report.md");
     fs::write(
         &report_path,
-        report(options, summary, acceptance_failure.as_deref()),
+        report(options, &summary, acceptance_failure.as_deref()),
     )?;
     if let Some(failure) = acceptance_failure {
         return Err(format!("{failure}; report={}", report_path.display()).into());
     }
     println!(
         "OPENRADIOHOST result=PASS mode=icmp transmitted={} received={} loss_percent={:.3} \
-         min_us={} avg_us={} p50_us={} p95_us={} p99_us={} max_us={} report={}",
+         readiness_attempts={} min_us={} avg_us={} p50_us={} p95_us={} p99_us={} max_us={} report={}",
         summary.transmitted,
         summary.received,
         summary.loss_percent(),
+        summary.readiness_attempts,
         summary.minimum_us,
         summary.average_us,
         summary.p50_us,
@@ -101,7 +105,9 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
 }
 
 fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
+    let readiness_attempts = wait_until_reachable(socket, options.payload_bytes, options.timeout)?;
     let mut samples = Vec::with_capacity(usize::from(options.count));
+    let mut lost_sequences = Vec::new();
     let mut next_send = Instant::now();
     for sequence in 0..options.count {
         let now = Instant::now();
@@ -112,6 +118,8 @@ fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
         socket.send_echo(sequence, options.payload_bytes)?;
         if socket.wait_for_echo(sequence, options.timeout)? {
             samples.push(started.elapsed());
+        } else {
+            lost_sequences.push(sequence);
         }
         next_send = started + options.interval;
     }
@@ -128,6 +136,8 @@ fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
     Ok(LatencySummary {
         transmitted: options.count,
         received: u16::try_from(samples.len()).expect("sample count is bounded by u16"),
+        readiness_attempts,
+        lost_sequences,
         minimum_us: micros(samples[0]),
         average_us: u64::try_from(total_us / samples.len() as u128).unwrap_or(u64::MAX),
         p50_us: percentile(50),
@@ -137,7 +147,26 @@ fn measure(socket: &IcmpSocket, options: Options) -> Result<LatencySummary> {
     })
 }
 
-fn report(options: Options, summary: LatencySummary, acceptance_failure: Option<&str>) -> String {
+fn wait_until_reachable(
+    socket: &IcmpSocket,
+    payload_bytes: usize,
+    timeout: Duration,
+) -> Result<u8> {
+    const MAX_ATTEMPTS: u8 = 3;
+    for attempt in 1..=MAX_ATTEMPTS {
+        let sequence = u16::MAX - u16::from(attempt);
+        socket.send_echo(sequence, payload_bytes)?;
+        if socket.wait_for_echo(sequence, timeout)? {
+            return Ok(attempt);
+        }
+    }
+    Err(
+        format!("ICMP target did not become reachable after {MAX_ATTEMPTS} readiness attempts")
+            .into(),
+    )
+}
+
+fn report(options: Options, summary: &LatencySummary, acceptance_failure: Option<&str>) -> String {
     let result = if acceptance_failure.is_some() {
         "FAIL"
     } else {
@@ -153,15 +182,19 @@ fn report(options: Options, summary: LatencySummary, acceptance_failure: Option<
          - Device: `{}`\n\
          - Payload: `{}` bytes\n\
          - Interval/timeout: `{}` / `{}` us\n\
+         - Readiness attempts before measurement: `{}`\n\
          - Transmitted/received: `{}` / `{}`\n\
+         - Lost measurement sequences: `{:?}`\n\
          - Loss: `{:.3}%`\n\
          - RTT min/avg/p50/p95/p99/max: `{}` / `{}` / `{}` / `{}` / `{}` / `{}` us\n",
         options.device,
         options.payload_bytes,
         options.interval.as_micros(),
         options.timeout.as_micros(),
+        summary.readiness_attempts,
         summary.transmitted,
         summary.received,
+        summary.lost_sequences,
         summary.loss_percent(),
         summary.minimum_us,
         summary.average_us,

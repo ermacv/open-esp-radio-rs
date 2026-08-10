@@ -82,6 +82,7 @@ struct Options {
     tx_port: u16,
     tx_payload: usize,
     tx_rate_bps: Option<u64>,
+    tx_floor_bps: Option<u64>,
     serial: PathBuf,
     phy: Phy,
 }
@@ -1088,6 +1089,17 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
         .into());
     }
     let host_tx = qualified_tx_bursts[0];
+    if let Some(required_floor) = options.tx_floor_bps {
+        let measured_device = tx_floor.saturating_mul(1_000);
+        let measured_host = host_tx.throughput_kbps().saturating_mul(1_000);
+        if measured_device < required_floor || measured_host < required_floor {
+            return Err(format!(
+                "concurrent TX is below the configured floor: required={} device={} host={} bit/s",
+                required_floor, measured_device, measured_host
+            )
+            .into());
+        }
+    }
     if let Some(evidence) = structured {
         let expected_rx_bytes = evidence
             .transport
@@ -1221,6 +1233,7 @@ fn print_help() {
          --tx-payload <64..1472> target-to-host payload (default 1472)\n\
          --tx-port <port>   host UDP sink (default 9002)\n\
          --tx-rate <bps>    optional target-to-host offered-load bound\n\
+         --tx-floor <bps>   required device and host TX rate; default 90% of --tx-rate\n\
          --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
          --phy <ht40|he20> expected negotiated PHY (default he20)\n\n\
          Flash `cargo hil flash bidirectional` and wait for DHCP first."
@@ -1241,6 +1254,7 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         tx_port: DEFAULT_TX_PORT,
         tx_payload: DEFAULT_TX_PAYLOAD,
         tx_rate_bps: None,
+        tx_floor_bps: None,
         serial: PathBuf::from("/dev/ttyACM0"),
         phy: Phy::He20,
     };
@@ -1273,6 +1287,7 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
             }
             "--tx-port" => options.tx_port = value.parse::<u16>()?,
             "--tx-rate" => options.tx_rate_bps = Some(parse_rate(value)?),
+            "--tx-floor" => options.tx_floor_bps = Some(parse_rate(value)?),
             "--serial" => options.serial = PathBuf::from(value),
             "--phy" => {
                 options.phy = match value.as_str() {
@@ -1287,6 +1302,16 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
     }
     if options.port == 0 || options.tx_port == 0 {
         return Err("--port and --tx-port must be nonzero".into());
+    }
+    if options.tx_floor_bps.is_none() {
+        options.tx_floor_bps = options.tx_rate_bps.map(|rate| rate.saturating_mul(9) / 10);
+    }
+    if options
+        .tx_rate_bps
+        .zip(options.tx_floor_bps)
+        .is_some_and(|(rate, floor)| floor > rate)
+    {
+        return Err("--tx-floor cannot exceed --tx-rate".into());
     }
     Ok(options)
 }
@@ -2668,6 +2693,10 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
         .tx_rate_bps
         .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
         .unwrap_or_else(|| String::from("saturated"));
+    let required_tx_floor = options
+        .tx_floor_bps
+        .map(|rate| format!("{:.3} Mbit/s", rate as f64 / 1_000_000.0))
+        .unwrap_or_else(|| String::from("not configured"));
     let host_tx_mbps = host_tx.throughput_kbps() as f64 / 1_000.0;
     let host_tx_bytes = host_tx.bytes;
     let host_tx_datagrams = host_tx.datagrams;
@@ -2679,12 +2708,18 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
     let structured_report = structured
         .map(|evidence| {
             format!(
-                "- Typed session RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; CRC32C `0x{:08x}`\n",
+                "- Typed session RX/TX: `{}` / `{}` bytes; `{}` / `{}` datagrams; CRC32C `0x{:08x}`\n\
+                 - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n",
                 evidence.transport.rx_bytes,
                 evidence.transport.tx_bytes,
                 evidence.transport.rx_units,
                 evidence.transport.tx_units,
                 evidence.finished.evidence_crc32c,
+                evidence.stack.cpu0.free_bytes,
+                evidence.stack.cpu0.capacity_bytes,
+                evidence.stack.cpu1.free_bytes,
+                evidence.stack.cpu1.capacity_bytes,
+                evidence.stack.minimum_free_percent,
             )
         })
         .unwrap_or_else(|| String::from("- Typed session evidence: compatibility mode\n"));
@@ -2698,6 +2733,7 @@ fn write_report(output: &Path, options: &Options, evidence: BidirectionalEvidenc
              - Actual host offer: `{:.3} Mbit/s`\n\
              - Host payload: `{}` bytes in `{}` datagrams\n\
              - Target TX payload / offered bound: `{}` bytes / `{target_tx_rate}`\n\
+             - Required target-to-host floor: `{required_tx_floor}`\n\
              - Host received target TX: `{host_tx_mbps:.3} Mbit/s`, `{host_tx_bytes}` bytes in `{host_tx_datagrams}` datagrams\n\
              - Host target-TX missing/reordered/duplicate datagrams: `{host_tx_missing}` / `{host_tx_reordered}` / `{host_tx_duplicates}`\n\
              - Host target-TX maximum packet interarrival: `{host_tx_maximum_interarrival_us}` us before sequence `{host_tx_sequence_after_maximum_interarrival:?}`\n\
@@ -2939,7 +2975,28 @@ mod tests {
         assert_eq!(options.duration, Duration::from_secs(5));
         assert_eq!(options.tx_payload, 1_300);
         assert_eq!(options.tx_rate_bps, Some(50_000_000));
+        assert_eq!(options.tx_floor_bps, Some(45_000_000));
         assert_eq!(options.tx_port, 9_100);
+
+        let explicit_floor = parse_options(&[
+            "192.168.178.141".into(),
+            "--tx-rate".into(),
+            "50M".into(),
+            "--tx-floor".into(),
+            "40M".into(),
+        ])
+        .unwrap();
+        assert_eq!(explicit_floor.tx_floor_bps, Some(40_000_000));
+        assert!(
+            parse_options(&[
+                "192.168.178.141".into(),
+                "--tx-rate".into(),
+                "40M".into(),
+                "--tx-floor".into(),
+                "41M".into(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]

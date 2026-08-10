@@ -18,6 +18,7 @@ mod flash_mapping;
 use core::{arch::asm, ffi::CStr, mem::size_of, ptr};
 
 use open_esp_radio_hil_esp32s31_board as board;
+use static_cell::ConstStaticCell;
 
 const RUNTIME_MAGIC: u32 = 0x3247_5453;
 const RUNTIME_ABI_VERSION: u32 = 1;
@@ -62,6 +63,13 @@ const FLASH_TUNING_REFERENCE_DATA: [u32; FLASH_TUNING_REFERENCE_WORDS] = flash_t
 #[used]
 #[unsafe(link_section = ".flash.tuning.reference")]
 static FLASH_TUNING_REFERENCE: [u32; FLASH_TUNING_REFERENCE_WORDS] = FLASH_TUNING_REFERENCE_DATA;
+
+// Flash tuning compares complete XIP pages while the flash cache is disabled,
+// so its 124-KiB scratch area must live in internal SRAM. Keeping this unique
+// owner static prevents the early-boot stack from being consumed by a
+// short-lived local array; tune_120mhz still validates every original page.
+static FLASH_TUNING_SCRATCH: ConstStaticCell<[u32; esp_hal::flash::FLASH_TUNING_SCRATCH_WORDS]> =
+    ConstStaticCell::new([0; esp_hal::flash::FLASH_TUNING_SCRATCH_WORDS]);
 
 unsafe extern "C" {
     fn ets_install_usb_printf();
@@ -139,11 +147,14 @@ fn main() -> ! {
     let tuning_physical_start = unsafe { flash_mapping::physical_address(tuning_address) }
         .unwrap_or_else(|| fail(c"OPEN_RADIO_HIL bootstrap=FAIL reason=tuning-physical\r\n"));
     if unsafe {
-        flash.tune_120mhz(esp_hal::flash::FlashXipRegion {
-            physical_start: tuning_physical_start,
-            virtual_start: tuning_address,
-            size: size_of::<[u32; FLASH_TUNING_REFERENCE_WORDS]>(),
-        })
+        flash.tune_120mhz(
+            esp_hal::flash::FlashXipRegion {
+                physical_start: tuning_physical_start,
+                virtual_start: tuning_address,
+                size: size_of::<[u32; FLASH_TUNING_REFERENCE_WORDS]>(),
+            },
+            FLASH_TUNING_SCRATCH.take(),
+        )
     }
     .is_err()
     {

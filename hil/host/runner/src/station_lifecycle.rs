@@ -82,10 +82,25 @@ fn qualify(capture: &SerialCapture, timeout: Duration, cycles: u8) -> Result<()>
     // scan/join/WPA2.  A lifecycle command is valid only after the unsolicited
     // connected edge has published the Station owner at the public boundary.
     capture.wait_for_connected_station(timeout)?;
+    report_stack(capture, timeout, "initial-connected")?;
     for cycle in 1..=cycles {
         qualify_cycle(capture, timeout, cycle)?;
+        report_stack(capture, timeout, "reconnect-complete")?;
         println!("station_reconnect_cycle={cycle}/{cycles} status=PASS");
     }
+    Ok(())
+}
+
+fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
+    let usage = capture.query_stack_usage(timeout)?;
+    println!(
+        "stack_stage={stage} cpu0_free={}/{} cpu1_free={}/{} required_percent={}",
+        usage.cpu0.free_bytes,
+        usage.cpu0.capacity_bytes,
+        usage.cpu1.free_bytes,
+        usage.cpu1.capacity_bytes,
+        usage.minimum_free_percent,
+    );
     Ok(())
 }
 

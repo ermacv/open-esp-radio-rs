@@ -15,6 +15,7 @@ mod paced_tcp;
 mod paced_udp;
 mod packet_socket;
 mod rx_traffic;
+mod stack_audit;
 mod startup_artifact;
 mod station_ap_absence;
 mod station_ap_loss;
@@ -214,7 +215,8 @@ fn print_help() {
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \
-         PSRAM/SRAM placement contract, and emits an ESP application image.\n\
+         PSRAM/SRAM placement and stack-frame budgets, and emits an ESP \
+         application image.\n\
          Traffic commands provision Wi-Fi at runtime from \
          OPEN_RADIO_HIL_STA_SSID and OPEN_RADIO_HIL_STA_PASSWORD. Set \
          OPEN_RADIO_HIL_STA_IPV4_CIDR and, optionally, \
@@ -556,6 +558,8 @@ fn build_resolved(
         "{},code-psram,profile-psram-data",
         scenario.runtime_feature()
     );
+    let stack_policy_path = root.join("hil/targets/esp32s31/stack.toml");
+    let stack_budget = open_esp_radio_memory_report::StackBudget::load(&stack_policy_path)?;
     let mut runtime = cargo_command();
     runtime
         .arg("build")
@@ -574,8 +578,18 @@ fn build_resolved(
         runtime.env(variable, value);
     }
     add_local_esp_hal_patches(&mut runtime, local_esp_hal);
+    stack_audit::enable_stack_checks(&mut runtime, &stack_budget);
     run_command(&mut runtime, "build stage-two runtime")?;
     require_file(&runtime_elf, "runtime ELF")?;
+
+    let stack_report = stack_audit::analyze_elf_stack(&runtime_elf, &stack_budget)?;
+    let stack_report_path = output.join("runtime-stack.txt");
+    fs::write(
+        &stack_report_path,
+        open_esp_radio_memory_report::render_stack_report(&stack_report),
+    )?;
+    eprintln!("stack_report={}", stack_report_path.display());
+    open_esp_radio_memory_report::audit_stack(&stack_report)?;
 
     let mut objcopy = Command::new(program_from_env("LLVM_OBJCOPY", "llvm-objcopy"));
     objcopy
@@ -599,8 +613,20 @@ fn build_resolved(
         bootstrap.arg("--locked");
     }
     add_local_esp_hal_patches(&mut bootstrap, local_esp_hal);
+    stack_audit::enable_stack_checks(&mut bootstrap, &stack_budget);
     run_command(&mut bootstrap, "build Flash/SRAM bootstrap")?;
     require_file(&bootstrap_elf, "bootstrap ELF")?;
+    let bootstrap_stack_report = stack_audit::analyze_elf_stack(&bootstrap_elf, &stack_budget)?;
+    let bootstrap_stack_report_path = output.join("bootstrap-stack.txt");
+    fs::write(
+        &bootstrap_stack_report_path,
+        open_esp_radio_memory_report::render_stack_report(&bootstrap_stack_report),
+    )?;
+    eprintln!(
+        "bootstrap_stack_report={}",
+        bootstrap_stack_report_path.display()
+    );
+    open_esp_radio_memory_report::audit_stack(&bootstrap_stack_report)?;
 
     let partition_table = root.join("hil/targets/esp32s31/partitions/hil.csv");
     let mut save_image = Command::new(program_from_env("ESPFLASH", "espflash"));
@@ -628,6 +654,7 @@ fn build_resolved(
 
     eprintln!("runtime_crc32={crc:08x}");
     eprintln!("placement_audit=PASS");
+    eprintln!("stack_frame_audit=PASS");
     eprintln!("autonomous_source_graph=PASS");
     Ok(Artifacts {
         output,

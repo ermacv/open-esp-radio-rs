@@ -396,6 +396,7 @@ fn write_report(
              - Host RX EOF/pattern errors: `{}` / `{}`\n\
              - RX enqueued/software-dropped: `{}` / `{}`\n\
              - Hardware BUFFER_FULL/FIFO_OVERFLOW: `{}` / `{}`\n\
+             - Stack minimum free: CPU0 `{}/{}` bytes; CPU1 `{}/{}` bytes; required `{}%`\n\
              - Typed evidence CRC32C: `0x{:08x}`\n\n\
              Byte equality and the deterministic absolute-offset pattern are required independently.\n\n\
              UART evidence is in [`uart.log`](uart.log).\n",
@@ -426,6 +427,11 @@ fn write_report(
             target.dropped,
             target.buffer_full,
             target.fifo_overflow,
+            structured.stack.cpu0.free_bytes,
+            structured.stack.cpu0.capacity_bytes,
+            structured.stack.cpu1.free_bytes,
+            structured.stack.cpu1.capacity_bytes,
+            structured.stack.minimum_free_percent,
             structured.finished.evidence_crc32c,
         ),
     )?;

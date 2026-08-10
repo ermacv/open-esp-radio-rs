@@ -17,12 +17,19 @@ cargo memory report \
   --policy hil/targets/esp32s31/memory/tcp.toml
 
 cargo memory audit --elf ELF --policy POLICY
+cargo memory stack --elf ELF --policy hil/targets/esp32s31/stack.toml
 cargo memory diff \
   --before OLD.ELF --after NEW.ELF --policy POLICY
 ```
 
 Every command supports `--format human|json`. `stdout` contains only the
 selected report; errors are written to `stderr`.
+
+`stack` requires compiler-emitted `.stack_sizes` metadata. Target policy owns a
+review threshold, a hard per-frame limit, the compiler move limit and runtime
+headroom. Generated async `poll` functions are included. Local frames do not
+prove indirect call chains, so HIL stack painting remains independently
+mandatory.
 
 The analyzer reports linker-region capacity, allocated sections, explicit
 reservations, genuinely unassigned address space, policy-attributed consumers

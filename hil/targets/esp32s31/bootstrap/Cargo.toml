@@ -11,6 +11,7 @@ build = "build.rs"
 esp-bootloader-esp-idf = { workspace = true, features = ["embedded-storage", "esp32s31"] }
 esp-hal = { workspace = true, features = ["esp32s31", "rt", "unstable"] }
 open-esp-radio-hil-esp32s31-board = { path = "../board" }
+static_cell.workspace = true
 
 [lints.rust]
 unexpected_cfgs = "allow"

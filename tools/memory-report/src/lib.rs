@@ -3,6 +3,7 @@
 mod analyze;
 mod policy;
 mod render;
+mod stack;
 
 use std::{io, path::PathBuf};
 
@@ -15,6 +16,10 @@ pub use policy::{
     RegionPolicy, ReservePolicy,
 };
 pub use render::{MemoryDiff, diff, render_audit, render_diff, render_report};
+pub use stack::{
+    StackBudget, StackFrame, StackReport, StackSourceLocation, analyze_stack, audit_stack,
+    render_stack_report,
+};
 use thiserror::Error;
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -34,6 +39,8 @@ pub enum Error {
     Elf { path: PathBuf, message: String },
     #[error("memory audit failed\n{0}")]
     Audit(String),
+    #[error("stack audit failed\n{0}")]
+    StackAudit(String),
     #[error("failed to serialize JSON: {0}")]
     Json(#[from] serde_json::Error),
 }

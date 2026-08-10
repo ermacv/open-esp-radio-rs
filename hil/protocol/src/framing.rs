@@ -262,9 +262,9 @@ mod tests {
     use super::*;
     use crate::{
         Command, Completion, Direction, Envelope, Event, FlowConfig, Ipv4Endpoint, SessionConfig,
-        SessionLinkRequirements, StartupArtifactChunk, StationAttemptFailureReason,
-        StationDisconnectReason, StationFailureStage, StationLifecycleEvent, Transport, WifiRole,
-        WifiRoleTransitionEvidence,
+        SessionLinkRequirements, StackUsage, StackWatermark, StartupArtifactChunk,
+        StationAttemptFailureReason, StationDisconnectReason, StationFailureStage,
+        StationLifecycleEvent, Transport, WifiRole, WifiRoleTransitionEvidence,
     };
 
     fn command(sequence: u32) -> Envelope<Command> {
@@ -425,6 +425,41 @@ mod tests {
     }
 
     #[test]
+    fn stack_usage_query_and_correlated_response_round_trip() {
+        let command = Envelope::new(7, 2, 0, 9, Command::QueryStackUsage);
+        let mut encoder = FrameEncoder::new();
+        let frame = encoder.encode(&command).unwrap();
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(command));
+
+        let response = Envelope::new(
+            7,
+            3,
+            0,
+            9,
+            Event::StackUsage(StackUsage {
+                minimum_free_percent: 25,
+                cpu0: StackWatermark {
+                    capacity_bytes: 100,
+                    free_bytes: 50,
+                    used_bytes: 50,
+                },
+                cpu1: StackWatermark {
+                    capacity_bytes: 80,
+                    free_bytes: 40,
+                    used_bytes: 40,
+                },
+            }),
+        );
+        let frame = encoder.encode(&response).unwrap();
+        let mut observed = None;
+        decoder.feed(frame, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(response));
+    }
+
+    #[test]
     fn station_beacon_loss_generation_round_trips() {
         let expected = Envelope::new(
             7,
@@ -569,7 +604,7 @@ mod tests {
             rx_bytes: 2_400,
             ..match first {
                 EvidenceRecord::Transport(evidence) => evidence,
-                EvidenceRecord::Link(_) => unreachable!(),
+                EvidenceRecord::Link(_) | EvidenceRecord::Stack(_) => unreachable!(),
             }
         });
 

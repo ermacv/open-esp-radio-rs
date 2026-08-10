@@ -1953,6 +1953,7 @@ dependencies = [
  "libc",
  "open-esp-radio-hil-protocol",
  "open-esp-radio-ieee80211",
+ "open-esp-radio-memory-report",
  "serialport",
  "zeroize",
 ]
@@ -1965,6 +1966,7 @@ version = "0.1.0"
 name = "open-esp-radio-memory-report"
 version = "0.1.0"
 dependencies = [
+ "addr2line 0.27.1",
  "clap",
  "object 0.39.1",
  "rustc-demangle",

@@ -104,18 +104,22 @@ fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> 
         return Err("firmware does not advertise explicit Wi-Fi role control".into());
     }
     capture.wait_for_connected_station(options.timeout)?;
+    report_stack(capture, options.timeout, "connected")?;
 
     let stopped = stop_station(capture, options.timeout)?;
+    report_stack(capture, options.timeout, "station-stopped")?;
     println!("wifi_station_stopped_generation={}", stopped.generation);
     if operation == Operation::Stop {
         return Ok(());
     }
     if operation == Operation::Start {
         start_station(capture, options.timeout)?;
+        report_stack(capture, options.timeout, "station-started")?;
         return Ok(());
     }
 
     let scan = scan(capture, options.timeout)?;
+    report_stack(capture, options.timeout, "scan-complete")?;
     println!(
         "wifi_scan_generation={} observed_frames={} unique_bss={} configured_ssid_channel={} configured_ssid_rssi_dbm={}",
         scan.generation,
@@ -126,6 +130,7 @@ fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> 
     );
     if operation == Operation::Scan {
         start_station(capture, options.timeout)?;
+        report_stack(capture, options.timeout, "station-restarted")?;
         return Ok(());
     }
 
@@ -145,6 +150,7 @@ fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> 
     require_transition(started, WifiRole::Idle, WifiRole::Monitor)?;
     thread::sleep(options.monitor_duration);
     let stopped = capture.wait_monitor_stop(capture.request_monitor_stop()?, options.timeout)?;
+    report_stack(capture, options.timeout, "monitor-stopped")?;
     if stopped.generation != started.generation
         || stopped.channel != channel
         || stopped.generation_mismatches != 0
@@ -165,6 +171,20 @@ fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> 
         stopped.last_observed_channel,
     );
     start_station(capture, options.timeout)?;
+    report_stack(capture, options.timeout, "station-restarted")?;
+    Ok(())
+}
+
+fn report_stack(capture: &SerialCapture, timeout: Duration, stage: &str) -> Result<()> {
+    let usage = capture.query_stack_usage(timeout)?;
+    println!(
+        "stack_stage={stage} cpu0_free={}/{} cpu1_free={}/{} required_percent={}",
+        usage.cpu0.free_bytes,
+        usage.cpu0.capacity_bytes,
+        usage.cpu1.free_bytes,
+        usage.cpu1.capacity_bytes,
+        usage.minimum_free_percent,
+    );
     Ok(())
 }
 

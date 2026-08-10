@@ -13,6 +13,7 @@ use embassy_futures::select::{Either, select};
 use embassy_net::{
     Config as NetworkConfig, Ipv4Address, Ipv4Cidr, Stack, StackResources, StaticConfigV4,
 };
+use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, channel::Channel};
 use embassy_time::{Instant, Timer};
 use esp_hal::{
     efuse::{self, InterfaceMacAddress},
@@ -34,9 +35,10 @@ use open_esp_radio::{
     },
 };
 use open_esp_radio_esp32s31_embassy_wifi::{
-    Esp32s31MacIrqObservation, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
-    Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
-    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiParts,
+    ConnectedDisconnectReason, Esp32s31MacIrqObservation, Esp32s31MonitorFrame,
+    Esp32s31MonitorFrames, Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts,
+    Esp32s31RadioRunner, Esp32s31StationLifecycleObservation, Esp32s31WifiControl,
+    Esp32s31WifiDevice, Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::{
@@ -83,6 +85,36 @@ static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxOb
 static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
     [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
 > = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
+static STATION_LIFECYCLE: Channel<CriticalSectionRawMutex, StationLinkEdge, 16> = Channel::new();
+
+#[derive(Clone, Copy, Debug)]
+enum StationLinkEdge {
+    Connected,
+    Disconnected(StationDisconnectReason),
+}
+
+fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
+    let edge = match observation {
+        Esp32s31StationLifecycleObservation::Connected => StationLinkEdge::Connected,
+        Esp32s31StationLifecycleObservation::Disconnected(reason) => {
+            StationLinkEdge::Disconnected(match reason {
+                ConnectedDisconnectReason::BeaconLoss => StationDisconnectReason::BeaconLoss,
+                ConnectedDisconnectReason::PeerDeauthentication { reason_code } => {
+                    StationDisconnectReason::PeerDeauthentication { reason_code }
+                }
+                ConnectedDisconnectReason::PeerDisassociation { reason_code } => {
+                    StationDisconnectReason::PeerDisassociation { reason_code }
+                }
+                ConnectedDisconnectReason::ActiveStateRestoreFailed => {
+                    StationDisconnectReason::ActiveStateRestoreFailed
+                }
+            })
+        }
+    };
+    STATION_LIFECYCLE
+        .try_send(edge)
+        .expect("qualification station lifecycle queue must not overflow");
+}
 
 // Qualification observers execute on the RX/TX hot paths. Their atomics stay
 // in internal SRAM so measuring a production image does not introduce PSRAM
@@ -348,6 +380,34 @@ async fn network_report_task(stack: Stack<'static>) {
     report_network(stack).await
 }
 
+#[embassy_executor::task]
+async fn station_lifecycle_task() {
+    let mut generation = 0_u32;
+    let mut connected = false;
+    loop {
+        match STATION_LIFECYCLE.receive().await {
+            StationLinkEdge::Connected => {
+                if !connected {
+                    publish_station_lifecycle(StationLifecycleEvent::Connected { generation })
+                        .await;
+                    connected = true;
+                }
+            }
+            StationLinkEdge::Disconnected(reason) => {
+                if connected {
+                    publish_station_lifecycle(StationLifecycleEvent::Disconnected {
+                        generation,
+                        reason,
+                    })
+                    .await;
+                    generation = generation.wrapping_add(1);
+                    connected = false;
+                }
+            }
+        }
+    }
+}
+
 fn network_config(configuration: NetworkIpv4Configuration) -> NetworkConfig {
     match configuration {
         NetworkIpv4Configuration::Dhcp => NetworkConfig::dhcpv4(Default::default()),
@@ -412,6 +472,7 @@ pub async fn run(
     trng: Trng,
 ) {
     DIAGNOSTIC_STAGE.store(10, Ordering::Release);
+    spawner.spawn(station_lifecycle_task().expect("station lifecycle task must allocate once"));
     let startup = crate::console::receive_startup_configuration().await;
     if OPEN_RADIO_TCP_BENCH {
         protocol_spawner
@@ -447,6 +508,7 @@ pub async fn run(
         aggregate_tx: &AGGREGATE_TX,
         connected_rx: CONNECTED_RX_OBSERVER.take(),
         mac_irq: observe_mac_irq,
+        station_lifecycle: observe_station_lifecycle,
     });
     let artifact_was_supplied = startup.phy_calibration_artifact.is_some();
     let calibration_cache = startup
@@ -523,10 +585,6 @@ pub async fn run(
         .await
         .unwrap_or_else(|error| panic!("production station start failed: {error:?}"));
     DIAGNOSTIC_STAGE.store(30, Ordering::Release);
-    publish_station_lifecycle(StationLifecycleEvent::Connected {
-        generation: station.generation().value(),
-    })
-    .await;
     set_wifi_role(WifiRole::Station);
     emergency_log(format_args!(
         "OPEN_RADIO_HIL result=PASS stage=station-connected generation={}",
@@ -558,15 +616,14 @@ pub async fn run(
         role = match role {
             ProductWifiRole::Station(station) => match receive_wifi_control_request().await {
                 WifiControlRequest::Cycle { request_id } => {
-                    let stopped_generation = station.generation().value();
                     let idle = station.stop().await.unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")
                     });
-                    publish_station_lifecycle(StationLifecycleEvent::Disconnected {
-                        generation: stopped_generation,
-                        reason: StationDisconnectReason::ReconnectRequested,
-                    })
-                    .await;
+                    STATION_LIFECYCLE
+                        .send(StationLinkEdge::Disconnected(
+                            StationDisconnectReason::ReconnectRequested,
+                        ))
+                        .await;
                     let station = idle
                         .start_station(station_request(
                             credentials.ssid(),
@@ -576,10 +633,6 @@ pub async fn run(
                         .unwrap_or_else(|error| {
                             panic!("production station restart failed: {error:?}")
                         });
-                    publish_station_lifecycle(StationLifecycleEvent::Connected {
-                        generation: station.generation().value(),
-                    })
-                    .await;
                     complete_station_epoch_cycle(request_id, StationEpochEvidence::COMPLETE).await;
                     ProductWifiRole::Station(station)
                 }
@@ -588,11 +641,11 @@ pub async fn run(
                     let idle = station.stop().await.unwrap_or_else(|error| {
                         panic!("production station stop failed: {error:?}")
                     });
-                    publish_station_lifecycle(StationLifecycleEvent::Disconnected {
-                        generation: stopped_generation,
-                        reason: StationDisconnectReason::LinkPolicy,
-                    })
-                    .await;
+                    STATION_LIFECYCLE
+                        .send(StationLinkEdge::Disconnected(
+                            StationDisconnectReason::LinkPolicy,
+                        ))
+                        .await;
                     set_wifi_role(WifiRole::Idle);
                     complete_wifi_role_transition(
                         request_id,
@@ -618,10 +671,6 @@ pub async fn run(
                         .unwrap_or_else(|error| {
                             panic!("production station start failed: {error:?}")
                         });
-                    publish_station_lifecycle(StationLifecycleEvent::Connected {
-                        generation: station.generation().value(),
-                    })
-                    .await;
                     set_wifi_role(WifiRole::Station);
                     complete_wifi_role_transition(
                         request_id,

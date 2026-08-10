@@ -49,6 +49,10 @@ correlated completion only after the production typestate transition returns:
 - unsolicited lifecycle: connected, peer loss, attempt failure and retry
   exhaustion.
 
+`QueryStackUsage` returns correlated boot-lifetime CPU0/CPU1 high-water marks
+only while the session state is idle. The host rejects either core below the
+target policy; diagnostic text is never stack evidence.
+
 The HIL reports only facts visible at the public boundary. Returning
 `WifiIdle` proves the driver's quiescence contract; the protocol does not
 invent separate PAC, IRQ or DMA flags which the application cannot observe.

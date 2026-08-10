@@ -1,0 +1,26 @@
+schema = 1
+
+# CPU0 thread mode and its hardware ISRs share this downward-growing stack.
+stack_start_symbol = "_stack_start"
+stack_end_symbol = "_stack_end"
+
+# Ordinary functions should remain below 8 KiB. Owner-bearing async state
+# machines above this line are reported for review, not silently accepted.
+warn_frame_bytes = 8192
+
+# Rust may transiently materialize a large async future before it reaches its
+# Embassy task arena. 32 KiB is nearly twice the currently reviewed maximum
+# frame and rejects the former 52,864-byte owner-future move before flashing.
+# Runtime painting below independently enforces aggregate call-chain headroom.
+max_frame_bytes = 32768
+
+# Reject implicit copies/moves large enough to hide owner graphs or buffers in
+# compiler temporaries. The lint is enforced while building the final fat-LTO
+# qualification image.
+max_move_bytes = 4096
+
+# Runtime stack painting must retain this headroom on both CPU stacks in every
+# required HIL workload.
+runtime_minimum_free_percent = 25
+
+reported_frame_count = 30

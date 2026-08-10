@@ -16,11 +16,11 @@ use std::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Direction, Envelope, Event, EvidenceRecord, Finished, FrameDecoder,
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
-    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
-    StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent, Transport,
-    TransportEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk,
-    WifiMonitorRequest, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    evidence_crc32c,
+    SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StackUsage,
+    StartupArtifactChunk, StartupArtifactStatus, StateChange, StationEpochEvidence,
+    StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorCaptureRequest,
+    WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest, WifiRoleTransitionEvidence,
+    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -90,7 +90,37 @@ pub(crate) struct WifiCommandHandle {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
+    pub(crate) stack: StackUsage,
     pub(crate) finished: Finished,
+}
+
+fn validate_stack_usage(usage: StackUsage) -> Result<()> {
+    if usage.minimum_free_percent == 0 || usage.minimum_free_percent > 100 {
+        return Err(format!(
+            "device reported invalid stack headroom policy: {}%",
+            usage.minimum_free_percent
+        )
+        .into());
+    }
+    for (name, watermark) in [("cpu0", usage.cpu0), ("cpu1", usage.cpu1)] {
+        if watermark.capacity_bytes == 0
+            || watermark.free_bytes > watermark.capacity_bytes
+            || watermark.used_bytes > watermark.capacity_bytes
+            || watermark.free_bytes + watermark.used_bytes != watermark.capacity_bytes
+        {
+            return Err(format!("device reported inconsistent {name} stack watermark").into());
+        }
+        if u64::from(watermark.free_bytes) * 100
+            < u64::from(watermark.capacity_bytes) * u64::from(usage.minimum_free_percent)
+        {
+            return Err(format!(
+                "{name} stack headroom is below policy: free={} capacity={} required={}%",
+                watermark.free_bytes, watermark.capacity_bytes, usage.minimum_free_percent
+            )
+            .into());
+        }
+    }
+    Ok(())
 }
 
 pub(crate) struct MonitorCaptureEvidence {
@@ -489,6 +519,17 @@ impl SerialCapture {
             Event::Evidence(EvidenceRecord::Transport(transport)) => transport,
             _ => unreachable!("session evidence predicate accepted only transport evidence"),
         };
+        let stack_evidence = self
+            .wait_for_protocol_after(session.first_event, timeout, |message| {
+                message.session_id == session.session_id
+                    && matches!(message.body, Event::Evidence(EvidenceRecord::Stack(_)))
+            })
+            .ok_or("device did not publish structured stack evidence")?;
+        let stack = match stack_evidence.body {
+            Event::Evidence(EvidenceRecord::Stack(stack)) => stack,
+            _ => unreachable!("stack evidence predicate accepted only stack evidence"),
+        };
+        validate_stack_usage(stack)?;
         let remaining = deadline.saturating_duration_since(Instant::now());
         let finished = self
             .wait_for_protocol_after(session.first_event, remaining, |message| {
@@ -500,15 +541,18 @@ impl SerialCapture {
             Event::Finished(finished) => finished,
             _ => unreachable!("session completion predicate accepted only Finished"),
         };
-        if finished.summary.evidence_records != 1 {
+        if finished.summary.evidence_records != 2 {
             return Err(format!(
-                "device reported {} evidence records, host received one",
+                "device reported {} evidence records, host received two",
                 finished.summary.evidence_records
             )
             .into());
         }
-        let record = EvidenceRecord::Transport(transport);
-        let checksum = evidence_crc32c(core::slice::from_ref(&record))
+        let records = [
+            EvidenceRecord::Transport(transport),
+            EvidenceRecord::Stack(stack),
+        ];
+        let checksum = evidence_crc32c(&records)
             .map_err(|error| format!("cannot checksum structured HIL evidence: {error}"))?;
         if checksum != finished.evidence_crc32c {
             return Err(format!(
@@ -519,6 +563,7 @@ impl SerialCapture {
         }
         Ok(SessionEvidence {
             transport,
+            stack,
             finished,
         })
     }
@@ -588,6 +633,20 @@ impl SerialCapture {
 
     pub(crate) fn request_station_stop(&self) -> Result<WifiCommandHandle> {
         self.request_wifi_command(Command::StopStation, "station stop")
+    }
+
+    pub(crate) fn query_stack_usage(&self, timeout: Duration) -> Result<StackUsage> {
+        let response = self.send_command(0, Command::QueryStackUsage, timeout)?;
+        match response.body {
+            Event::StackUsage(usage) => {
+                validate_stack_usage(usage)?;
+                Ok(usage)
+            }
+            Event::Rejected(reason) => {
+                Err(format!("device rejected stack-usage query: {reason:?}").into())
+            }
+            _ => Err("device returned an invalid stack-usage response".into()),
+        }
     }
 
     pub(crate) fn request_station_start(&self) -> Result<WifiCommandHandle> {
@@ -1278,12 +1337,39 @@ fn observed_network_ipv4(transcript: &str) -> Option<Ipv4Addr> {
 
 #[cfg(test)]
 mod tests {
-    use open_esp_radio_hil_protocol::{Direction, SessionLinkRequirements, SessionReady};
+    use open_esp_radio_hil_protocol::{
+        Direction, SessionLinkRequirements, SessionReady, StackUsage, StackWatermark,
+    };
 
     use super::{
         NetworkIpv4Configuration, observed_network_ipv4, parse_network_ipv4_configuration,
-        session_ready_covers,
+        session_ready_covers, validate_stack_usage,
     };
+
+    #[test]
+    fn runtime_stack_policy_rejects_low_headroom_on_either_core() {
+        let watermark = StackWatermark {
+            capacity_bytes: 16_000,
+            free_bytes: 4_000,
+            used_bytes: 12_000,
+        };
+        assert!(
+            validate_stack_usage(StackUsage {
+                minimum_free_percent: 25,
+                cpu0: watermark,
+                cpu1: watermark,
+            })
+            .is_ok()
+        );
+        assert!(
+            validate_stack_usage(StackUsage {
+                minimum_free_percent: 26,
+                cpu0: watermark,
+                cpu1: watermark,
+            })
+            .is_err()
+        );
+    }
 
     #[test]
     fn bidirectional_readiness_covers_both_owned_data_planes() {

@@ -7,6 +7,7 @@ mod interfaces;
 mod model;
 mod registers;
 mod render;
+mod verification;
 
 use super::{ProjectContext, Result};
 use model::{DoctorReport, RunSpecReport};
@@ -38,6 +39,7 @@ pub(super) fn run(context: ProjectContext<'_>) -> Result<bool> {
     code::collect(&context, &mut report);
     registers::collect(&context, &mut report);
     interfaces::collect(&context, &mut report);
+    verification::collect(&context, &mut report);
     inputs::collect(&context, &mut report);
 
     render::render(&report);

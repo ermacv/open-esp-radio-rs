@@ -43,6 +43,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: ProjectVerifyArgs,
         session: Box<ProjectSession>,
     },
+    ProjectCheck {
+        arguments: ProjectCheckArgs,
+        session: Box<ProjectSession>,
+    },
     ProjectPublish {
         arguments: CheckArgs,
         session: Box<ProjectSession>,
@@ -124,6 +128,7 @@ pub(in crate::cli) enum TargetCommand {
     ExportIr(IrExportArgs),
     VerifyContractChannel(VerifyContractArgs),
     VerifyContractRfInit(VerifyContractArgs),
+    VerifyContractBluetoothTxPower(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),

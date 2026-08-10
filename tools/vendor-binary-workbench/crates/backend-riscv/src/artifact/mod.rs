@@ -21,16 +21,17 @@ pub use decode::{
 pub use inventory::inspect_artifact;
 pub use model::{
     AnalysisInstruction, ArtifactCodeRange, ArtifactCodeRecoveryBlocker,
-    ArtifactCodeSectionCoverage, ArtifactContainerKind, ArtifactDirectControlFlowEvidence,
-    ArtifactDirectControlFlowKind, ArtifactFunctionBoundaryCandidate, ArtifactInventory,
-    ArtifactObjectInventory, ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
+    ArtifactCodeSectionCoverage, ArtifactContainerKind, ArtifactDataSymbolDefinition,
+    ArtifactDirectControlFlowEvidence, ArtifactDirectControlFlowKind,
+    ArtifactFunctionBoundaryCandidate, ArtifactInventory, ArtifactObjectInventory,
+    ArtifactObjectKind, ArtifactSymbolBinding, ArtifactSymbolDefinition,
     ArtifactSymbolDefinitionState, ArtifactSymbolFact, ArtifactSymbolKind, ArtifactSymbolScope,
     ArtifactSymbolTable, ArtifactSymbolVisibility, CodeSymbolSelection, DecodedInstruction,
     ExecutableSection, MemoryRegion, RelocationKind, ReviewedCodeRange, SymbolRelocation,
     UnsupportedInstruction, UnsupportedInstructionClass,
 };
 pub use sections::load_executable_sections;
-pub use symbols::{load_code_symbols, load_reviewed_code_ranges};
+pub use symbols::{load_code_symbols, load_data_symbols, load_reviewed_code_ranges};
 
 #[cfg(test)]
 mod tests;

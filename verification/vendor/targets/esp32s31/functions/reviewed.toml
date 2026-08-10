@@ -34,3 +34,187 @@ name = "record_rx_linked_list_snapshot"
 role = "diagnostic.rx-descriptor-snapshot"
 summary = "Snapshots RX descriptor and MMIO state into the diagnostic ring consumed by wdev_dump_rx_linked_list."
 accept-incomplete = true
+
+# The linked vendor image exports one 508-byte `phy_param` object. This type
+# names only exact machine-level observations that are also classified by the
+# executable semantic harness. It is evidence about the vendor layout, not a
+# claim that the Rust `PhyState` has the same representation.
+[[types]]
+id = "vendor-phy-parameter-image"
+name = "VendorPhyParameterImage"
+description = "Reviewed projections of the linked vendor phy_param state and configuration image."
+
+[[types.bindings]]
+profile = "archive-all"
+source = "archive"
+name = "linked_phy_param"
+kind = "global"
+symbol = "phy_param"
+
+[[types.fields]]
+offset = 0x000
+width = 16
+status = "reviewed"
+name = "temperature_result"
+display-type = "i16"
+description = "Temperature result observed by channel and calibration flows."
+
+[[types.fields]]
+offset = 0x002
+width = 8
+status = "reviewed"
+name = "pbus_rx_path"
+display-type = "u8"
+description = "PBUS receive-path selector consumed by RF and Bluetooth calibration."
+
+[[types.fields]]
+offset = 0x00e
+width = 16
+status = "reviewed"
+name = "power_offset"
+display-type = "i16"
+description = "Transmit-power offset input used by Bluetooth power calibration."
+
+[[types.fields]]
+offset = 0x016
+width = 8
+status = "reviewed"
+name = "rf_init_control"
+display-type = "u8"
+description = "RF initialization and temperature-sensor control byte."
+
+[[types.fields]]
+offset = 0x018
+width = 8
+status = "reviewed"
+name = "bluetooth_power_attenuation"
+display-type = "u8"
+description = "Bluetooth transmit-power attenuation result."
+
+[[types.fields]]
+offset = 0x01a
+width = 16
+status = "reviewed"
+name = "sar_reference_code_0"
+display-type = "u16"
+description = "First observed SAR reference code used by power calibration."
+
+[[types.fields]]
+offset = 0x020
+width = 16
+status = "reviewed"
+name = "frequency_offset"
+display-type = "i16"
+description = "Frequency offset input consumed while selecting a channel."
+
+[[types.fields]]
+offset = 0x028
+width = 8
+status = "reviewed"
+name = "dot11p_configuration_low"
+display-type = "u8"
+description = "Observed low byte of the 802.11p channel configuration."
+
+[[types.fields]]
+offset = 0x02b
+width = 8
+status = "reviewed"
+name = "power_target_adjustment"
+display-type = "u8"
+description = "Power-target adjustment input used by Bluetooth calibration."
+
+[[types.fields]]
+offset = 0x04f
+width = 8
+status = "reviewed"
+name = "crystal_selector"
+display-type = "u8"
+description = "Crystal-frequency selector shared by RF and channel initialization."
+
+[[types.fields]]
+offset = 0x0a4
+width = 32
+status = "reviewed"
+name = "calibration_completion_flags"
+display-type = "u32"
+description = "Calibration completion flags read and updated by PHY initialization flows."
+
+[[types.fields]]
+offset = 0x0d0
+width = 32
+status = "reviewed"
+name = "tx_gain_configuration_word"
+display-type = "u32"
+description = "Machine-word observation containing the transmit-gain configuration bytes."
+
+[[types.fields]]
+offset = 0x0dc
+width = 32
+status = "reviewed"
+name = "tx_capacitance_word_0"
+display-type = "u32"
+description = "First machine word of the six-byte transmit-capacitance state."
+
+[[types.fields]]
+offset = 0x0f8
+width = 32
+status = "reviewed"
+name = "bluetooth_power_result_word_0"
+display-type = "u32"
+description = "First machine word of the Bluetooth transmit-power result."
+
+[[types.fields]]
+offset = 0x104
+width = 32
+status = "reviewed"
+name = "bluetooth_dco_row_0_word_0"
+display-type = "u32"
+description = "First machine word of Bluetooth DCO row zero."
+
+[[types.fields]]
+offset = 0x11c
+width = 16
+status = "reviewed"
+name = "current_channel"
+display-type = "u16"
+description = "Current Wi-Fi channel published by the channel transition."
+
+[[types.fields]]
+offset = 0x18e
+width = 8
+status = "reviewed"
+name = "rfpll_parameter"
+display-type = "u8"
+description = "RF PLL calibration parameter observed during initialization."
+
+[[types.fields]]
+offset = 0x193
+width = 8
+status = "reviewed"
+name = "channel_frequency_override"
+display-type = "u8"
+description = "Optional channel-frequency override consumed by RF initialization."
+
+[[types.fields]]
+offset = 0x19e
+width = 8
+status = "reviewed"
+name = "xtal_duty_result_0"
+display-type = "u8"
+description = "First byte of the crystal-duty calibration result."
+
+[[types.fields]]
+offset = 0x1ac
+width = 32
+status = "reviewed"
+name = "rf_init_calibration_scratch"
+display-type = "u32"
+description = "Machine-word observation of RF initialization calibration scratch state."
+
+[[types.fields]]
+offset = 0x1af
+width = 8
+status = "reviewed"
+name = "front_end_control"
+display-type = "u8"
+description = "Front-end control byte consumed during RF initialization."

@@ -111,7 +111,7 @@ pub fn vendor_bluetooth_tx_power_state_footprint(
         "esp32s31-bluetooth-tx-power",
         result,
         phy_param,
-        open_esp_radio_esp32s31_phy::phy_cold::PHY_COLD_PARAMETER_LEN as u32,
+        VENDOR_PHY_PARAM_LEN,
         BLUETOOTH_TX_POWER_STATE_FOOTPRINT,
     )
 }
@@ -536,8 +536,8 @@ fn tx_power_completion(
 }
 
 pub fn rust_bluetooth_tx_power_events(
-    mut state: PhyColdState,
-) -> Result<(Vec<BluetoothTxPowerEvent>, PhyColdState)> {
+    mut state: PhyState,
+) -> Result<(Vec<BluetoothTxPowerEvent>, PhyState)> {
     let mut transition: PhyBluetoothTxPowerTransition = state.bluetooth_tx_power_transition();
     let mut events = Vec::new();
     for _ in 0..200_000 {
@@ -642,19 +642,15 @@ pub fn rust_bluetooth_tx_power_events(
                 PhyBluetoothTxPowerCompletion::Cleanup(completion)
             }
             PhyBluetoothTxPowerAction::Complete(outcome) => {
+                let calibration = outcome.calibration;
                 state.apply_bluetooth_tx_power_outcome(outcome);
-                let bytes = state.parameter_image();
                 events.push(BluetoothTxPowerEvent::Complete(
                     BluetoothTxPowerProjection {
-                        point_corrections: [
-                            bytes[0x0f8] as i8,
-                            bytes[0x0f9] as i8,
-                            bytes[0x0fa] as i8,
-                        ],
-                        power_curve: [bytes[0x0fb] as i8, bytes[0x0fc] as i8, bytes[0x0fd] as i8],
-                        power_adjustment: bytes[0x0fe] as i8,
-                        attenuation: bytes[0x018],
-                        current_channel: u16::from_le_bytes([bytes[0x100], bytes[0x101]]),
+                        point_corrections: calibration.point_corrections,
+                        power_curve: calibration.power_curve,
+                        power_adjustment: calibration.power_adjustment,
+                        attenuation: calibration.final_attenuation,
+                        current_channel: calibration.current_channel,
                         calibrated: state.bluetooth_tx_power_calibrated(),
                     },
                 ));

@@ -222,6 +222,16 @@ that every user must learn.
   remain explicit completeness blockers. This validates indexed absolute
   objects, but reviewed nominal types and executable models still need real
   project instances.
+- [x] Validate the first real linked-image logical type. Absolute RAM evidence
+  is now rebased onto the narrowest sized ELF data symbol, the reviewed
+  `VendorPhyParameterImage` binds 196 exact `(offset, width)` observations for
+  `phy_param`, and 21 high-confidence fields are named from executable
+  semantic contracts. Overlapping byte/halfword/word observations remain
+  distinct evidence instead of being rejected as false width conflicts.
+- [x] Complete semantic annotation of the reviewed ESP32-S31 Wi-Fi OS adapter
+  surface. All 54 named slots and all 176 resolved call sites now link to one
+  of 57 reusable catalog operations; only the existing 18 explicitly compiled
+  call models authorize execution.
 
 ## P1 — project usability and maintainability
 
@@ -249,7 +259,11 @@ that every user must learn.
   workspaces during one cold pipeline run. The TUI receives code, functions,
   registers, interfaces, root-cause queue and comparisons through one typed
   snapshot, but its collectors still parse some IR inputs independently and
-  project navigation remains a separate load/projection stage.
+  project navigation remains a separate load/projection stage. The
+  function/interface join no longer performs a nested all-functions scan:
+  indexing concrete callers reduced real `functions review` time from
+  102.57 s to 3.62 s with byte-identical output. Remaining repeated loads are
+  now the dominant cost.
 - [ ] Stream large persistent JSON documents to files and hash them while
   writing instead of materializing a complete `String` and reparsing it for a
   downstream stage. The schema-38 four-profile run peaked at 1,252,836 KiB;
@@ -378,6 +392,19 @@ separated as `zero-fill-or-illegal-trap`; no site remains in the generic
 `invalid` class. A whole-symbol scan found 945 unsupported byte sequences, but
 352 occur after a return or another path terminator and are intentionally not
 presented as function blockers.
+
+The typed `PhyState` probe refresh exposed a separate provenance-cost
+regression on 2026-08-10. A cold four-profile `project analyze --jobs 4`
+required 478.49 s / 1,428,996 KiB. Profiling showed recursive
+`MemoryObjectRoot` clone/drop work consuming most linked-IR CPU: every pointer
+chase copied the complete immutable `Dereferenced`/`Indexed` ancestry.
+Sharing recursive roots with `Arc` retained the exact serialized model while
+reducing `libpp-all` from about 127 s to 2.83 s, all four IR profiles from
+about 291 s to 20.45 s, and MMIO discovery from about 166 s to 10.20 s. The
+complete non-cached `project analyze --check` now takes 51.48 s / 1,248,392
+KiB and verifies all thirteen outputs byte-for-byte. Navigation root matching
+was also changed from a symbols-per-call scan to exact artifact/name/address
+indexes; the generated navigation SHA-256 remained unchanged.
 The linked archive image contains 171 roots, 547 MMIO identities, 66 complete
 functions and no decode blockers. `libpp-all` contains 1,312 roots, 566
 complete functions, 561 MMIO identities and 1,588 memory fields;

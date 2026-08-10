@@ -172,6 +172,29 @@ pub(super) fn memory_object_accesses_for_trace(
     output
 }
 
+/// Rebase statically known linked-image addresses onto the narrowest sized
+/// ELF data symbol. This turns accesses such as `0x1000828c + 0xf8` into
+/// reviewable `phy_param + 0xf8` evidence without inferring a nominal type.
+pub(super) fn attribute_data_symbols(
+    accesses: &mut [MemoryObjectAccess],
+    resolver: &ReferenceResolver,
+) {
+    for access in accesses {
+        let LinkedMemoryObject::Absolute { address, .. } = access.object else {
+            continue;
+        };
+        let Some((member, symbol, offset)) = resolver.data_symbol_location(address, access.width)
+        else {
+            continue;
+        };
+        access.object = LinkedMemoryObject::Global {
+            member: member.map(str::to_owned),
+            symbol: symbol.to_owned(),
+        };
+        access.offset = access.offset.wrapping_add(offset);
+    }
+}
+
 fn memory_read_sources_for_trace(trace: &FunctionAnalysis) -> BTreeMap<u32, MemoryObjectLocation> {
     fn collect_event(
         event: &DraftReferenceEvent,

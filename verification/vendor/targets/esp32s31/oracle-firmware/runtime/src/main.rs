@@ -37,13 +37,11 @@ use open_esp_radio::esp32s31::{
     phy::{
         phy_channel::{
             PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelExternalBinding,
-            PhyChipChannelRequest, PhyChipChannelTransition,
+            PhyChipChannelParameters, PhyChipChannelRequest, PhyChipChannelTransition,
         },
-        phy_cold::{
-            PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation, PhyColdMmioBinding,
-            PhyColdState,
-        },
+        phy_cold::{PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation, PhyColdMmioBinding},
         phy_i2c::{PhyI2cAddress, PhyRfInitPrefixAction},
+        phy_state::{PhyConfig, PhyState},
         phy_temperature::{
             PhyTemperatureAction, PhyTemperatureCompletion, PhyTemperatureExternalBinding,
             PhyTemperatureI2cBinding,
@@ -599,6 +597,46 @@ fn log_parameter_image(source: &str, parameter: &[u8; 0x1fc]) {
             "OPEN_RADIO_PARAMETER source={source} offset={:#05x} values={values:02x?}",
             chunk * 16
         ));
+    }
+}
+
+/// Decode only the named vendor fields required by the open channel graph.
+///
+/// This is an oracle/qualification boundary: offsets describe the pinned
+/// vendor `phy_param` ABI and never become a layout of [`PhyState`].
+fn vendor_channel_parameters(parameter: &[u8; 0x1fc]) -> PhyChipChannelParameters {
+    let mut tx_gain_seed = [0_u32; 6];
+    let mut index = 0;
+    while index != tx_gain_seed.len() {
+        let offset = 0x0a8 + index * core::mem::size_of::<u32>();
+        tx_gain_seed[index] = u32::from_le_bytes([
+            parameter[offset],
+            parameter[offset + 1],
+            parameter[offset + 2],
+            parameter[offset + 3],
+        ]);
+        index += 1;
+    }
+
+    let mut tx_gain_curve = [0_u8; 6];
+    tx_gain_curve.copy_from_slice(&parameter[0x0f1..0x0f7]);
+    let mut tx_capacitance = [0_u8; 6];
+    tx_capacitance.copy_from_slice(&parameter[0x0dc..0x0e2]);
+
+    PhyChipChannelParameters {
+        frequency_offset: i16::from_le_bytes([parameter[0x020], parameter[0x021]]),
+        crystal_selector: parameter[0x04f],
+        channel_14_mic_enabled: parameter[0x026] != 0,
+        dot11p_enabled: parameter[0x028] != 0,
+        dot11p_config: parameter[0x029],
+        tx_gain_skip_publication: parameter[0x007] != 0,
+        tx_gain_seed,
+        tx_gain_config: u16::from_le_bytes([parameter[0x0d0], parameter[0x0d1]]),
+        tx_gain_curve,
+        tx_gain_correction: parameter[0x0f7] as i8,
+        tx_gain_base: parameter[0x123],
+        tx_gain_attenuation: parameter[0x008],
+        tx_capacitance,
     }
 }
 
@@ -1268,7 +1306,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
         image
     };
-    let mut state = PhyColdState::from_parameter_image(parameter_image);
+    let channel_parameters = vendor_channel_parameters(&parameter_image);
 
     // The sole WIFI token is transferred to open-radio after the PHY oracle
     // completed. The returned guard only retains the already
@@ -1340,7 +1378,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let mut transition = PhyChipChannelTransition::new(PhyChipChannelRequest {
         channel_or_frequency: TARGET_CHANNEL,
         cbw: 0,
-        parameters: state.channel_parameters(),
+        parameters: channel_parameters,
     });
     let mut operations = 0_u32;
 
@@ -1348,7 +1386,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let action = transition.action();
         match action {
             PhyChipChannelAction::Complete(outcome) => {
-                state.apply_channel_outcome(outcome);
                 emergency_log(format_args!(
                     "OPEN_RADIO_ORACLE_HIL stage=open-channel \
                      channel={} frequency={} temperature={} operations={}",
@@ -1361,7 +1398,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 log_selected_phy_mmio("vendor");
                 log_listen_frequency_memory("vendor");
                 log_differing_phy_mmio_pages("vendor");
-                log_parameter_image("vendor", state.parameter_image());
+                log_parameter_image("vendor", &parameter_image);
                 log_vendor_analog_fingerprint();
                 let vendor_channel_result =
                     unsafe { phy_change_channel(u32::from(TARGET_CHANNEL), 1, 0, 0) };
@@ -1369,15 +1406,18 @@ async fn main(_spawner: embassy_executor::Spawner) {
                     "OPEN_RADIO_ORACLE_HIL stage=vendor-channel-after-open \
                      result={vendor_channel_result}"
                 ));
-                // Feed the Rust-owned profile derived from the vendor
-                // parameter image into the open MAC table builder. A
+                // Feed the source-owned production profile into the open MAC
+                // table builder. The vendor image above remains evidence for
+                // the channel qualification boundary only. A
                 // quarter-dBm ceiling of 20 yields the vendor-observed gain
                 // code 5; calling `hal_init_tx_pwr` and then patching only its
                 // legacy table left the TB/RU table at code 20.
                 // SOURCE: complete ROM `phy_get_max_pwr`, complete blob
                 // `hal_init_tx_pwr`, and vendor-first-tx-snapshot.log.
                 owner.parts_mut().0.install_phy_tx_power_profile(
-                    state.tx_target_power_profile().with_maximum_quarter_dbm(20),
+                    PhyState::new(PhyConfig::production())
+                        .tx_target_power_profile()
+                        .with_maximum_quarter_dbm(20),
                 );
                 let (mut platform, mut registers) = owner.into_parts();
                 let _ = run_open_mac_rx(&mut platform, &mut registers).await;

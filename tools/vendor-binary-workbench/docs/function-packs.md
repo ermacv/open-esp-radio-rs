@@ -252,9 +252,11 @@ observed field offset remains relative to the loaded pointee. Dynamic pointer
 arithmetic is retained as incomplete memory provenance and cannot be promoted
 to a reviewed fixed field.
 
-Validation requires every binding to match generated evidence, rejects binding
-one object to several logical types, and rejects conflicting observed widths
-at one offset. Omitted observed `(offset, width)` entries are counted as
+Validation requires every binding to match generated evidence and rejects
+binding one object to several logical types. Several observed widths may share
+an offset: for example, a byte field can overlap a word access made while
+copying the containing structure. Each exact `(offset, width)` remains a
+separate evidence and review item. Omitted observed entries are counted as
 unreviewed. Logical names and display
 types remain presentation claims: they do not prove a C or Rust layout,
 alignment, ownership, aliasing, initialization, synchronization, or linker

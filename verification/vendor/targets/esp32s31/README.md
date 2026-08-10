@@ -11,12 +11,12 @@ SVD register names.
 
 ## Normal workflow
 
-Most users need four project commands:
+Most users need four project operations:
 
 1. `project inputs init` once per machine, to bind private artifacts;
 2. `project analyze --jobs 2`, to refresh all reverse-engineering evidence;
 3. `project verify`, to execute every configured vendor/Rust proof suite;
-4. `project analyze --check` and `project verify --check` in CI.
+4. `project check` as the complete non-mutating CI gate.
 
 The checked project deliberately omits private artifact paths. Initialize an
 ignored sibling `local.toml` from authenticated local artifacts:
@@ -73,11 +73,17 @@ cargo vendor-binary-workbench-esp32s31 project verify \
 
 cargo vendor-binary-workbench-esp32s31 project verify --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench-esp32s31 project check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --jobs 2
 ```
 
 This generates or checks the complete symbol inventory, the cross-report
-navigation index, MMIO/interface facts, both linked-IR profiles, and the register/function reviews, then validates the
-reviewed register, interface, and function files.
+navigation index, MMIO/interface facts, all four linked-IR profiles, and the
+register/function reviews, then validates the reviewed register, interface,
+and function files. `project check` additionally reproduces all behavioral
+suites and verifies the publication outputs without changing them.
 `project verify` executes the nine checked proof boundaries with their own
 source selection, probe prefix, profiles, dispositions, baselines and gate,
 then writes one `generated/reports/verification.json`. Use `--suite ID` for a

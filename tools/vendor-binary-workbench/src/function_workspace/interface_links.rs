@@ -1,8 +1,8 @@
 //! Exact static call-site links from validated interface bindings into function review.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use super::FunctionWorkspace;
+use super::{FunctionFact, FunctionWorkspace};
 use crate::{Result, interfaces::ResolvedInterfaceSlot};
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -55,6 +55,24 @@ pub(crate) fn link_reviewed_interfaces(
     workspace: &FunctionWorkspace,
     bindings: &[ResolvedInterfaceSlot],
 ) -> Result<Vec<FunctionInterfaceLink>> {
+    // Interface evidence names the concrete caller symbol. Index those facts
+    // once instead of scanning every generated function for every
+    // root/binding/call combination. On the real ESP32-S31 workspace the old
+    // nested scan multiplied 5,132 functions by 54 bindings, 176 calls and a
+    // second 5,132-function scan.
+    let mut functions_by_caller =
+        BTreeMap::<(&str, &str, &str, Option<&str>), Vec<&FunctionFact>>::new();
+    for function in &workspace.facts.functions {
+        functions_by_caller
+            .entry((
+                function.profile.as_str(),
+                function.source.as_str(),
+                function.symbol.as_str(),
+                function.member.as_deref(),
+            ))
+            .or_default()
+            .push(function);
+    }
     let mut output = Vec::new();
     for reviewed_function in &workspace.facts.functions {
         let reachable = std::iter::once(reviewed_function.identity.as_str())
@@ -70,15 +88,19 @@ pub(crate) fn link_reviewed_interfaces(
         for binding in bindings {
             let mut calls = BTreeSet::new();
             for call in &binding.calls {
-                for function in workspace
-                    .facts
-                    .functions
+                let key = (
+                    reviewed_function.profile.as_str(),
+                    binding.source.as_str(),
+                    call.function.as_str(),
+                    call.member.as_deref(),
+                );
+                let Some(candidates) = functions_by_caller.get(&key) else {
+                    continue;
+                };
+                for function in candidates
                     .iter()
-                    .filter(|function| function.profile == reviewed_function.profile)
+                    .copied()
                     .filter(|function| reachable.contains(function.identity.as_str()))
-                    .filter(|function| function.source == binding.source)
-                    .filter(|function| function.symbol == call.function)
-                    .filter(|function| function.member == call.member)
                 {
                     let linked_ir = function
                         .calls

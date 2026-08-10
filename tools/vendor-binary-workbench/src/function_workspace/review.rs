@@ -1,10 +1,14 @@
 //! Human-oriented function and context review report.
 
-use std::{collections::BTreeMap, fmt::Write as _};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt::Write as _,
+};
 
 use super::{
-    FunctionFact, FunctionInterfaceLink, FunctionReviewStatus, FunctionWorkspace, ReviewedFunction,
-    ReviewedMemoryObject,
+    FunctionFact, FunctionInterfaceLink, FunctionMemoryObjectFact, FunctionReviewStatus,
+    FunctionWorkspace, ReviewedFunction, ReviewedLogicalType, ReviewedMemoryObject,
+    ReviewedTypeField,
 };
 use crate::Result;
 
@@ -113,14 +117,17 @@ pub(crate) fn render_function_review(
                 )
                 .expect("writing to String cannot fail");
             }
-            output.push_str("\n| Offset | Width | Status | Name | Display type | Description |\n");
-            output.push_str("| ---: | ---: | --- | --- | --- | --- |\n");
+            output.push_str("\n| Offset | Width | Access | Vendor functions | Status | Name | Display type | Description |\n");
+            output.push_str("| ---: | ---: | --- | --- | --- | --- | --- | --- |\n");
             for field in &logical_type.fields {
+                let usage = logical_type_field_usage(workspace, logical_type, field);
                 writeln!(
                     output,
-                    "| `{:+#x}` | {} | {} | {} | {} | {} |",
+                    "| `{:+#x}` | {} | {} | {} | {} | {} | {} | {} |",
                     field.offset,
                     field.width,
+                    usage.access_label(),
+                    usage.function_preview(),
                     review_status(field.status),
                     field
                         .name
@@ -196,6 +203,117 @@ pub(crate) fn render_function_review(
         unreviewed_reachable,
     );
     Ok(output)
+}
+
+#[derive(Default)]
+struct LogicalTypeFieldUsage {
+    read: bool,
+    written: bool,
+    functions: BTreeSet<String>,
+}
+
+impl LogicalTypeFieldUsage {
+    fn access_label(&self) -> &'static str {
+        match (self.read, self.written) {
+            (true, true) => "R/W",
+            (true, false) => "R",
+            (false, true) => "W",
+            (false, false) => "-",
+        }
+    }
+
+    fn function_preview(&self) -> String {
+        const LIMIT: usize = 6;
+        let mut names = self
+            .functions
+            .iter()
+            .take(LIMIT)
+            .map(|name| format!("`{}`", markdown_code(name)))
+            .collect::<Vec<_>>();
+        if self.functions.len() > LIMIT {
+            names.push(format!("+{} more", self.functions.len() - LIMIT));
+        }
+        if names.is_empty() {
+            "-".to_owned()
+        } else {
+            names.join("<br>")
+        }
+    }
+}
+
+fn logical_type_field_usage(
+    workspace: &FunctionWorkspace,
+    logical_type: &ReviewedLogicalType,
+    reviewed_field: &ReviewedTypeField,
+) -> LogicalTypeFieldUsage {
+    let mut usage = LogicalTypeFieldUsage::default();
+    for binding in &logical_type.bindings {
+        for function in workspace.facts.functions.iter().filter(|function| {
+            function.profile == binding.profile && function.source == binding.source
+        }) {
+            for field in function.memory_fields.iter().filter(|field| {
+                field.offset == reviewed_field.offset
+                    && field.width == reviewed_field.width
+                    && reviewed_object_matches(&binding.object, &field.object, function)
+            }) {
+                usage.read |= field.reads != 0;
+                usage.written |= field.writes != 0;
+                if field.origins.is_empty() {
+                    usage.functions.insert(function.identity.clone());
+                } else {
+                    usage.functions.extend(field.origins.iter().cloned());
+                }
+            }
+        }
+    }
+    usage
+}
+
+fn reviewed_object_matches(
+    reviewed: &ReviewedMemoryObject,
+    observed: &FunctionMemoryObjectFact,
+    function: &FunctionFact,
+) -> bool {
+    match (reviewed, observed) {
+        (
+            ReviewedMemoryObject::Argument {
+                function: expected,
+                index: left,
+            },
+            FunctionMemoryObjectFact::Argument { index: right },
+        ) => (function.identity == *expected || function.symbol == *expected) && left == right,
+        (
+            ReviewedMemoryObject::Global {
+                member: left_member,
+                symbol: left_symbol,
+            },
+            FunctionMemoryObjectFact::Global {
+                member: right_member,
+                symbol: right_symbol,
+            },
+        ) => left_member == right_member && left_symbol == right_symbol,
+        (
+            ReviewedMemoryObject::Dereferenced {
+                pointer: left,
+                pointer_offset: left_offset,
+            },
+            FunctionMemoryObjectFact::Dereferenced {
+                pointer: right,
+                pointer_offset: right_offset,
+            },
+        ) => left_offset == right_offset && reviewed_object_matches(left, right, function),
+        (
+            ReviewedMemoryObject::Absolute {
+                address_space: left_space,
+                address: left_address,
+            },
+            FunctionMemoryObjectFact::Absolute {
+                address_space: right_space,
+                address: right_address,
+            },
+        ) => left_space == right_space && left_address == right_address,
+        _ => false,
+    }
 }
 
 fn reviewed_function<'a>(

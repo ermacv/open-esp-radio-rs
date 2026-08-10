@@ -269,19 +269,19 @@ fn validate_vendor_shape(vendor_inventory: &Path, svd: &MmioMap) -> Result<Strin
     }) {
         return Err("wifi_assert regressed from a diagnostic boundary to an unknown ABI".into());
     }
-    if !trace
-        .reference_blockers
-        .iter()
-        .any(|blocker| blocker.contains("symbolic-cfg") && blocker.contains("unmodeled-memory"))
-    {
+    let bounded_private_loop = trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("control-flow loop bounded unrolling exceeds") && blocker.contains("0x58")
+    });
+    if !bounded_private_loop {
         return Err(format!(
-            "{MEMBER}::{SYMBOL} no longer exposes its caller-owned descriptor/state memory boundary"
+            "{MEMBER}::{SYMBOL} no longer exposes its reviewed private descriptor loop boundary: {:?}",
+            trace.reference_blockers
         )
         .into());
     }
 
     Ok(format!(
-        "vendor-member {MEMBER}\nvendor-size 0x17a\nvendor-reload-attempts {RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT}\nvendor-chain-guard 0xdeadbeef\nvendor-call-boundary {}\n",
+        "vendor-member {MEMBER}\nvendor-size 0x17a\nvendor-reload-attempts {RX_DESCRIPTOR_RELOAD_ATTEMPT_LIMIT}\nvendor-chain-guard 0xdeadbeef\nprivate-descriptor-loop bounded-at-0x58\nvendor-call-boundary {}\n",
         expected_calls
             .iter()
             .map(|(_, symbol)| *symbol)
@@ -631,10 +631,29 @@ mod tests {
     fn composition_rejects_address_value_order_extra_access_and_return_mutations() {
         let case = CASES[0];
         let exact = expected_rust_events(case);
+        let ownership_address = 0x3fce_0000;
+        let timeline = (0..4)
+            .flat_map(|_| {
+                [
+                    execution::ExecutionTimelineEvent::Atomic {
+                        operation: execution::AtomicOperation::LoadReserved,
+                        ordering: execution::AtomicOrdering::Acquire,
+                        address: ownership_address,
+                        succeeded: None,
+                    },
+                    execution::ExecutionTimelineEvent::Atomic {
+                        operation: execution::AtomicOperation::StoreConditional,
+                        ordering: execution::AtomicOrdering::Release,
+                        address: ownership_address,
+                        succeeded: Some(true),
+                    },
+                ]
+            })
+            .collect();
         let result = execution::ExecutionResult {
             events: exact.clone(),
             event_producers: Vec::new(),
-            timeline: Vec::new(),
+            timeline,
             return_value: expected_return(case),
             steps: 0,
             branches: Default::default(),

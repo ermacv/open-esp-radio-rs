@@ -40,7 +40,14 @@ cargo vendor-binary-workbench project verify \
 
 cargo vendor-binary-workbench project verify --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench project check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
+
+`project check` is the single CI gate when analysis evidence, accepted
+behavioral baselines and publication outputs must all reproduce. It delegates
+to the same three typed workflows in check mode and never updates evidence.
 
 Candidate generation never promotes or overwrites accepted baselines. It
 writes one deterministic `<suite-id>.toml` into an existing review directory;

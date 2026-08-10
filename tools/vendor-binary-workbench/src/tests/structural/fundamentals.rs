@@ -47,7 +47,7 @@ fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
         address.memory_object_location_with_reads(&BTreeMap::new()),
         Some(MemoryObjectLocation {
             root: MemoryObjectRoot::Indexed {
-                root: Box::new(MemoryObjectRoot::Absolute {
+                root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
                     address: 0x1002_f560,
                 }),
                 argument: 0,
@@ -766,7 +766,7 @@ fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
         address.memory_object_location_with_reads(&sources),
         Some(MemoryObjectLocation {
             root: MemoryObjectRoot::Dereferenced {
-                pointer: Box::new(MemoryObjectRoot::Absolute {
+                pointer: std::sync::Arc::new(MemoryObjectRoot::Absolute {
                     address: 0x2010_4000,
                 }),
                 pointer_offset: 0,

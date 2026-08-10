@@ -17,6 +17,7 @@ mod interface_discovery;
 mod interface_discovery_options;
 mod interface_pack;
 mod ir_build;
+mod project_check;
 mod project_configure;
 mod project_doctor;
 mod project_function_doctor;
@@ -113,6 +114,13 @@ pub(super) fn run_project_verification(
     project_verification::run(arguments, project_manifest, project, run_spec, svd, target)
 }
 
+pub(super) fn run_project_check(
+    arguments: super::ProjectCheckArgs,
+    session: &crate::application::ProjectSession,
+) -> Result<bool> {
+    project_check::run(arguments, session)
+}
+
 pub(super) fn run_symbol_inventory(
     arguments: super::SymbolInventoryArgs,
     run_spec: &crate::run_spec::RunSpec,
@@ -190,6 +198,12 @@ pub(super) fn run_target(
             svd,
             target.require_available_harness()?,
             "rf-init",
+        ),
+        TargetCommand::VerifyContractBluetoothTxPower(arguments) => verify_contract::run(
+            arguments,
+            svd,
+            target.require_available_harness()?,
+            "bluetooth-tx-power",
         ),
         TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
         TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd),

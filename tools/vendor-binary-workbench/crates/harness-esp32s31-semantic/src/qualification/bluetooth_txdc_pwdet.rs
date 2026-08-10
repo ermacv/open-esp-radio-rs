@@ -65,7 +65,7 @@ pub fn vendor_bluetooth_txdc_pwdet_state_footprint(
         "esp32s31-bluetooth-txdc-pwdet",
         result,
         phy_param,
-        open_esp_radio_esp32s31_phy::phy_cold::PHY_COLD_PARAMETER_LEN as u32,
+        VENDOR_PHY_PARAM_LEN,
         BLUETOOTH_TXDC_PWDET_STATE_FOOTPRINT,
     )
 }
@@ -262,8 +262,8 @@ fn txdc_pwdet_search_completion(
 }
 
 pub fn rust_bluetooth_txdc_pwdet_events(
-    mut state: PhyColdState,
-) -> Result<(Vec<BluetoothTxDcPwdetEvent>, PhyColdState)> {
+    mut state: PhyState,
+) -> Result<(Vec<BluetoothTxDcPwdetEvent>, PhyState)> {
     let mut transition: PhyBluetoothTxDcPwdetTransition = state.bluetooth_tx_dc_pwdet_transition();
     let mut events = Vec::new();
     for _ in 0..2_000_000 {

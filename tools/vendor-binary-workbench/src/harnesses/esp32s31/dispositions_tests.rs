@@ -9,7 +9,7 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
         .expect("workbench remains under tools");
     let path = root.join("verification/vendor/targets/esp32s31/dispositions/phy.toml");
     let manifest = Manifest::load(&path).unwrap();
-    assert_eq!(manifest.entries().count(), 9);
+    assert_eq!(manifest.entries().count(), 10);
 
     let disable_agc = manifest.resolve("rom", "phy_disable_agc");
     assert_eq!(disable_agc.disposition, Disposition::Direct);
@@ -51,9 +51,17 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
     );
 
     let bb_init = manifest.resolve("archive", "phy_bb_init");
+    assert!(bb_init.entry.unwrap().qualification_blockers.is_empty());
+
+    let bluetooth_tx_gain = manifest.resolve("archive", "phy_bt_tx_gain_init");
     assert_eq!(
-        bb_init.entry.unwrap().qualification_blockers,
-        [("archive".to_owned(), "phy_bt_tx_gain_init".to_owned())]
+        bluetooth_tx_gain.disposition,
+        Disposition::ReplacedByComposition
+    );
+    assert_eq!(bluetooth_tx_gain.protocol, Protocol::Shared);
+    assert_eq!(
+        bluetooth_tx_gain.entry.unwrap().rust_component.as_deref(),
+        Some("open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition")
     );
 
     let channel = manifest.resolve("archive", "phy_chip_set_chan");

@@ -13,6 +13,17 @@ pub struct ArtifactSymbolDefinition {
     pub relocations: Vec<SymbolRelocation>,
 }
 
+/// Sized data symbol from an executable image. This is used only to recover
+/// object-relative memory provenance; it makes no nominal-type claim.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ArtifactDataSymbolDefinition {
+    pub member: Option<String>,
+    pub name: String,
+    pub address: u32,
+    pub size: u32,
+    pub exported: bool,
+}
+
 /// A human-reviewed function range inside an executable section.
 ///
 /// Offsets are section-relative so the identity remains stable for

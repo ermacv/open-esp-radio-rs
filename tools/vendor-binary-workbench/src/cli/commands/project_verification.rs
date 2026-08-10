@@ -24,6 +24,25 @@ pub(super) fn run(
     svd: &MmioMap,
     target: &TargetSpec,
 ) -> Result<bool> {
+    let report = execute(arguments, project_manifest, project, run_spec, svd, target)?;
+    let passed = report.passed;
+    let output = &project
+        .verification
+        .as_ref()
+        .expect("verification workspace was checked by execute")
+        .report;
+    crate::cli::output::render_report(&report, || render_human(&report, output));
+    Ok(passed)
+}
+
+pub(super) fn execute(
+    arguments: ProjectVerifyArgs,
+    project_manifest: &std::path::Path,
+    project: &ProjectSpec,
+    run_spec: Option<&RunSpec>,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<ProjectVerificationReport> {
     let workspace = project
         .verification
         .as_ref()
@@ -94,8 +113,7 @@ pub(super) fn run(
             "project verification report",
         )?;
     }
-    crate::cli::output::render_report(&report, || render_human(&report, &workspace.report));
-    Ok(passed)
+    Ok(report)
 }
 
 fn select_suites<'a>(

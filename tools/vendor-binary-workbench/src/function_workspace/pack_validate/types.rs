@@ -87,29 +87,10 @@ pub(super) fn validate_types(
                 ),
             ));
         }
-        let mut widths_by_offset = std::collections::BTreeMap::<i64, BTreeSet<u8>>::new();
         let observed_keys = observed
             .iter()
-            .map(|field| {
-                widths_by_offset
-                    .entry(field.offset)
-                    .or_default()
-                    .insert(field.width);
-                (field.offset, field.width)
-            })
+            .map(|field| (field.offset, field.width))
             .collect::<BTreeSet<_>>();
-        if let Some((offset, widths)) = widths_by_offset
-            .iter()
-            .find(|(_, widths)| widths.len() != 1)
-        {
-            return Err(ValidationError::pack(
-                "types",
-                format!(
-                    "logical type {:?} has conflicting observed widths at {offset:+#x}: {widths:?}",
-                    logical_type.id
-                ),
-            ));
-        }
         let mut fields = BTreeSet::new();
         let mut field_names = BTreeSet::new();
         for field in &logical_type.fields {

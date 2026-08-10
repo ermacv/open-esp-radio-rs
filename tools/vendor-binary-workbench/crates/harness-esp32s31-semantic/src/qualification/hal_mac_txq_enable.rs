@@ -232,11 +232,16 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
         &StructuralPointerContext::default(),
         None,
     )?;
-    let [context_flags_read, context_owner_read, context_flags_write] =
-        suffix_trace.reference_events.as_slice()
+    let [
+        context_flags_read,
+        context_owner_read,
+        context_flags_write,
+        scheduler_owner_read,
+        scheduler_flags_read,
+    ] = suffix_trace.reference_events.as_slice()
     else {
         return Err(format!(
-            "{SYMBOL} post-GetAccess suffix must expose three queue-context effects, got {:?}",
+            "{SYMBOL} post-GetAccess suffix must expose the five reviewed queue/scheduler-context effects, got {:?}",
             suffix_trace.reference_events
         )
         .into());
@@ -250,6 +255,24 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
         read_token: 0,
         and_mask: 0xfd,
         or_mask: 0,
+    };
+    let scheduler_owner_address = SymbolicValue::Expression {
+        operation: ExpressionOperation::Add,
+        left: Box::new(SymbolicValue::MemoryImage {
+            read_token: 1,
+            and_mask: u32::MAX,
+            or_mask: 0,
+        }),
+        right: Box::new(SymbolicValue::Constant(52)),
+    };
+    let scheduler_flags_address = SymbolicValue::Expression {
+        operation: ExpressionOperation::Add,
+        left: Box::new(SymbolicValue::MemoryImage {
+            read_token: 2,
+            and_mask: u32::MAX,
+            or_mask: 0,
+        }),
+        right: Box::new(SymbolicValue::Constant(47)),
     };
     if !matches!(
         context_flags_read,
@@ -278,9 +301,27 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
             value: Some(value),
             ..
         } if address == &context_flags_address && value == &expected_context_value
+    ) || !matches!(
+        scheduler_owner_read,
+        DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 32,
+            address,
+            value: None,
+            ..
+        } if address == &scheduler_owner_address
+    ) || !matches!(
+        scheduler_flags_read,
+        DraftReferenceEvent::Memory {
+            access: MemoryAccess::Read,
+            width: 8,
+            address,
+            value: None,
+            ..
+        } if address == &scheduler_flags_address
     ) {
         return Err(format!(
-            "{SYMBOL} vendor queue-context suffix no longer clears only access bits 0..1: {:?}",
+            "{SYMBOL} vendor queue/scheduler-context suffix differs from the reviewed replacement boundary: {:?}",
             &suffix_trace.reference_events
         )
         .into());
@@ -293,7 +334,7 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
     }
 
     Ok(format!(
-        "vendor-member {}\nqueue-map a0=0..3 -> CONTROL[3-a0]\nregister-transaction read32; write32 read0|{ENABLE_VALID:#010x}\nreplaced-context-effect access-flags &= 0xfd\nsuffix-calls {}\n",
+        "vendor-member {}\nqueue-map a0=0..3 -> CONTROL[3-a0]\nregister-transaction read32; write32 read0|{ENABLE_VALID:#010x}\nreplaced-context-effect access-flags &= 0xfd\nexcluded-he-scheduler-context owner=queue.owner scheduler=owner+0x34 flags=scheduler+0x2f\nsuffix-calls {}\n",
         symbol.member.as_deref().unwrap_or("<linked>"),
         expected_calls.join(",")
     ))

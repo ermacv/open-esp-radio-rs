@@ -12,6 +12,11 @@ pub struct ReferenceResolver {
     pub exported_symbol_keys: BTreeSet<ReferenceSymbolKey>,
     pub relocated_calls: StructuralRelocatedCalls,
     pub pointer_context: StructuralPointerContext,
+    /// Sized data definitions used to rebase absolute RAM observations.
+    ///
+    /// Public for construction of synthetic resolver fixtures. Production
+    /// callers should use one of the `load*` constructors.
+    pub data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
 }
 
 fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> ReferenceSymbolKey {
@@ -173,6 +178,7 @@ impl ReferenceResolver {
         } else {
             None
         };
+        let mut data_symbols = artifact::load_data_symbols(artifact)?;
         for companion in companions {
             let Some(image) = image.as_mut() else {
                 return Err(format!(
@@ -182,6 +188,7 @@ impl ReferenceResolver {
                 .into());
             };
             image.add_companion(companion)?;
+            data_symbols.extend(artifact::load_data_symbols(companion)?);
             let companion_exported_symbols = artifact::load_code_symbols(
                 companion,
                 "",
@@ -204,6 +211,22 @@ impl ReferenceResolver {
                 );
             }
         }
+        data_symbols.sort_by(|left, right| {
+            (
+                left.size,
+                !left.exported,
+                left.address,
+                &left.member,
+                &left.name,
+            )
+                .cmp(&(
+                    right.size,
+                    !right.exported,
+                    right.address,
+                    &right.member,
+                    &right.name,
+                ))
+        });
         let mut pointer_context = StructuralPointerContext::from_harness(harness);
         for &table in harness.contracts.external_tables {
             let spec = table.spec();
@@ -383,6 +406,7 @@ impl ReferenceResolver {
             exported_symbol_keys,
             relocated_calls,
             pointer_context,
+            data_symbols,
         })
     }
 
@@ -451,5 +475,105 @@ impl ReferenceResolver {
 
     pub fn symbol_is_exported(&self, symbol: &artifact::ArtifactSymbolDefinition) -> bool {
         self.exported_symbol_keys.contains(&symbol_key(symbol))
+    }
+
+    /// Resolve a concrete memory access to the narrowest containing data
+    /// symbol. Exported aliases win ties, while unresolved/zero-sized symbols
+    /// never participate.
+    pub fn data_symbol_location(
+        &self,
+        address: u32,
+        width: u8,
+    ) -> Option<(Option<&str>, &str, i64)> {
+        if width == 0 || !width.is_multiple_of(8) {
+            return None;
+        }
+        let bytes = u32::from(width / 8);
+        let end = address.checked_add(bytes)?;
+        self.data_symbols
+            .iter()
+            .find(|symbol| {
+                address >= symbol.address && end <= symbol.address.saturating_add(symbol.size)
+            })
+            .map(|symbol| {
+                (
+                    symbol.member.as_deref(),
+                    symbol.name.as_str(),
+                    i64::from(address - symbol.address),
+                )
+            })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn resolver_with_data_symbols(
+        mut data_symbols: Vec<artifact::ArtifactDataSymbolDefinition>,
+    ) -> ReferenceResolver {
+        data_symbols.sort_by(|left, right| {
+            (
+                left.size,
+                !left.exported,
+                left.address,
+                &left.member,
+                &left.name,
+            )
+                .cmp(&(
+                    right.size,
+                    !right.exported,
+                    right.address,
+                    &right.member,
+                    &right.name,
+                ))
+        });
+        ReferenceResolver {
+            symbols: Vec::new(),
+            symbols_by_address: BTreeMap::new(),
+            symbol_ids: BTreeMap::new(),
+            exported_symbol_keys: BTreeSet::new(),
+            relocated_calls: BTreeMap::new(),
+            pointer_context: StructuralPointerContext::default(),
+            data_symbols,
+        }
+    }
+
+    #[test]
+    fn data_symbol_location_prefers_narrow_exported_evidence_and_checks_width() {
+        let resolver = resolver_with_data_symbols(vec![
+            artifact::ArtifactDataSymbolDefinition {
+                member: None,
+                name: "image".to_owned(),
+                address: 0x1000,
+                size: 0x100,
+                exported: true,
+            },
+            artifact::ArtifactDataSymbolDefinition {
+                member: None,
+                name: "private_state".to_owned(),
+                address: 0x1020,
+                size: 0x20,
+                exported: false,
+            },
+            artifact::ArtifactDataSymbolDefinition {
+                member: None,
+                name: "state".to_owned(),
+                address: 0x1020,
+                size: 0x20,
+                exported: true,
+            },
+        ]);
+
+        assert_eq!(
+            resolver.data_symbol_location(0x1024, 32),
+            Some((None, "state", 4))
+        );
+        assert_eq!(
+            resolver.data_symbol_location(0x103f, 16),
+            Some((None, "image", 0x3f))
+        );
+        assert_eq!(resolver.data_symbol_location(0x1024, 7), None);
+        assert_eq!(resolver.data_symbol_location(u32::MAX, 32), None);
     }
 }

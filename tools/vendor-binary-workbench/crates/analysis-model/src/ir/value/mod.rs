@@ -1,6 +1,6 @@
 //! Symbolic 32-bit values and proven indexed-MMIO domains.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalTableRef, FunctionTableRef};
 
@@ -20,7 +20,7 @@ pub enum MemoryObjectRoot {
     /// object. The pointer cell remains explicit so an absolute RAM cell,
     /// context field and relocated global never collapse into one object.
     Dereferenced {
-        pointer: Box<MemoryObjectRoot>,
+        pointer: Arc<MemoryObjectRoot>,
         pointer_offset: i64,
     },
     /// Statically known RAM address without a symbol identity.
@@ -31,7 +31,7 @@ pub enum MemoryObjectRoot {
     /// stride. This preserves array provenance without claiming an index
     /// domain or a nominal element type.
     Indexed {
-        root: Box<MemoryObjectRoot>,
+        root: Arc<MemoryObjectRoot>,
         argument: u8,
         stride: i64,
     },

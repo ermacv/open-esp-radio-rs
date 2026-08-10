@@ -30,3 +30,7 @@ pub(crate) fn collect(context: &ProjectContext<'_>) -> ProjectStatusReport {
         ],
     )
 }
+
+pub(crate) fn verification_report_status(context: &ProjectContext<'_>) -> model::Component {
+    verification::last_report_component(context)
+}

@@ -1,6 +1,10 @@
 //! Project verification-suite configuration and last-run readiness.
 
-use std::{collections::BTreeSet, fs, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 use serde::Deserialize;
 
@@ -25,9 +29,16 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
         vec![
             suite_configuration(workspace),
             suite_inputs(workspace, context.run_spec, context.project_path),
-            last_report(workspace, &context.project.id, context.project_path),
+            last_report_component(context),
         ],
     )
+}
+
+pub(super) fn last_report_component(context: &ProjectContext<'_>) -> Component {
+    let Some(workspace) = context.project.verification.as_ref() else {
+        return Component::new("last-verification", Readiness::NotConfigured);
+    };
+    last_report(workspace, &context.project.id, context.project_path)
 }
 
 fn suite_inputs(
@@ -166,7 +177,20 @@ struct StoredAggregateReport {
     complete_project_run: bool,
     replacement_graph: StoredReplacementGraph,
     rust_component_index: StoredRustComponentIndex,
-    suites: Vec<serde_json::Value>,
+    suites: Vec<StoredSuiteReport>,
+}
+
+#[derive(Deserialize)]
+struct StoredSuiteReport {
+    id: String,
+    artifacts: Vec<StoredArtifact>,
+}
+
+#[derive(Deserialize)]
+struct StoredArtifact {
+    role: String,
+    path: PathBuf,
+    sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -241,6 +265,47 @@ fn last_report(
             .detail("path", workspace.report.display().to_string())
             .diagnostic("project verification report does not describe this complete project");
     }
+    let expected_suite_ids = workspace
+        .suites
+        .iter()
+        .map(|suite| suite.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let stored_suite_ids = report
+        .suites
+        .iter()
+        .map(|suite| suite.id.as_str())
+        .collect::<BTreeSet<_>>();
+    if stored_suite_ids != expected_suite_ids {
+        return Component::new("last-verification", Readiness::Incomplete)
+            .detail("path", workspace.report.display().to_string())
+            .diagnostic("project verification report has a stale suite selection")
+            .next_action(format!(
+                "run `vendor-binary-workbench project verify --project {}`",
+                project_path.display()
+            ));
+    }
+    let currency = match artifact_currency(&report.suites) {
+        Ok(currency) => currency,
+        Err(error) => {
+            return Component::new("last-verification", Readiness::Invalid)
+                .detail("path", workspace.report.display().to_string())
+                .diagnostic(error);
+        }
+    };
+    if !currency.stale.is_empty() || !currency.missing.is_empty() {
+        return Component::new("last-verification", Readiness::Incomplete)
+            .detail("path", workspace.report.display().to_string())
+            .detail("passed", report.passed)
+            .detail("fresh", false)
+            .detail("checked_inputs", currency.checked)
+            .detail("stale_inputs", currency.stale)
+            .detail("missing_inputs", currency.missing)
+            .diagnostic("project verification report no longer matches its recorded inputs")
+            .next_action(format!(
+                "run `vendor-binary-workbench project verify --project {}`",
+                project_path.display()
+            ));
+    }
     Component::new(
         "last-verification",
         if report.passed {
@@ -252,6 +317,8 @@ fn last_report(
     .detail("path", workspace.report.display().to_string())
     .detail("suites", report.suites.len())
     .detail("passed", report.passed)
+    .detail("fresh", true)
+    .detail("checked_inputs", currency.checked)
     .detail(
         "vendor_functions",
         report.replacement_graph.summary.vendor_functions,
@@ -314,6 +381,50 @@ fn last_report(
     )
 }
 
+#[derive(Debug, Default, Eq, PartialEq)]
+struct ArtifactCurrency {
+    checked: usize,
+    stale: Vec<String>,
+    missing: Vec<String>,
+}
+
+fn artifact_currency(suites: &[StoredSuiteReport]) -> Result<ArtifactCurrency, String> {
+    let mut recorded = BTreeMap::<PathBuf, (String, String)>::new();
+    for suite in suites {
+        for artifact in &suite.artifacts {
+            let label = format!("{}:{}", suite.id, artifact.role);
+            if let Some((previous_digest, previous_label)) = recorded.get(&artifact.path) {
+                if previous_digest != &artifact.sha256 {
+                    return Err(format!(
+                        "verification report records conflicting digests for {} ({previous_label} and {label})",
+                        artifact.path.display()
+                    ));
+                }
+                continue;
+            }
+            recorded.insert(artifact.path.clone(), (artifact.sha256.clone(), label));
+        }
+    }
+
+    let mut currency = ArtifactCurrency {
+        checked: recorded.len(),
+        ..ArtifactCurrency::default()
+    };
+    for (path, (expected, label)) in recorded {
+        if !path.is_file() {
+            currency.missing.push(format!("{label}={}", path.display()));
+            continue;
+        }
+        let actual = crate::artifact_sha256(&path).map_err(|error| {
+            format!("cannot hash verification input {}: {error}", path.display())
+        })?;
+        if actual != expected {
+            currency.stale.push(format!("{label}={}", path.display()));
+        }
+    }
+    Ok(currency)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -331,5 +442,45 @@ mod tests {
         .unwrap();
         let component = suite_configuration(project.verification.as_ref().unwrap());
         assert_eq!(component.status, Readiness::Ready, "{component:?}");
+    }
+
+    #[test]
+    fn artifact_currency_deduplicates_inputs_and_detects_changes() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-verification-currency-{}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let input = directory.join("input.toml");
+        fs::write(&input, "first").unwrap();
+        let digest = crate::artifact_sha256(&input).unwrap();
+        let suites = vec![StoredSuiteReport {
+            id: "one".to_owned(),
+            artifacts: vec![
+                StoredArtifact {
+                    role: "profile".to_owned(),
+                    path: input.clone(),
+                    sha256: digest.clone(),
+                },
+                StoredArtifact {
+                    role: "same-profile".to_owned(),
+                    path: input.clone(),
+                    sha256: digest,
+                },
+            ],
+        }];
+
+        assert_eq!(
+            artifact_currency(&suites).unwrap(),
+            ArtifactCurrency {
+                checked: 1,
+                ..ArtifactCurrency::default()
+            }
+        );
+        fs::write(&input, "second").unwrap();
+        let currency = artifact_currency(&suites).unwrap();
+        assert_eq!(currency.checked, 1);
+        assert_eq!(currency.stale.len(), 1);
+        fs::remove_dir_all(directory).unwrap();
     }
 }

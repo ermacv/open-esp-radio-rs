@@ -44,8 +44,9 @@ then exercise the same strict reader used by downstream workspaces.
 The navigation join consumes these projections directly; it has no shortened
 copies of the symbol, interface or linked-IR envelopes.
 
-Invocation reports such as `project analyze`, `project publish`, `ir build`
-and `project status` are deliberately separate typed models. Their `schema`
+Invocation reports such as `project analyze`, `project check`, `project
+publish`, `ir build` and `project status` are deliberately separate typed
+models. Their `schema`
 field versions a command result, not a stored evidence artifact. Publication
 metadata belongs to those command reports and is not embedded into persistent
 symbol/MMIO/interface/linked-IR data.
@@ -56,3 +57,6 @@ actions while JSON keeps the action attached to every responsible component.
 `project analyze` emits command-result schema 2, which distinguishes a
 content-verified write-mode `up-to-date` stage from a stage executed as
 `written` or `verified`.
+`project check` emits command-result schema 1 and combines the non-mutating
+analysis, verification and publication verdicts without embedding or
+duplicating their persistent evidence documents.

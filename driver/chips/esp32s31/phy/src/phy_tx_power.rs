@@ -645,10 +645,13 @@ impl PhyTxPowerTransition {
             point_corrections: self.point_corrections,
             power_adjustment: self.power_adjustment,
             final_attenuation: self.attenuation,
-            current_channel: if self.parameters.already_calibrated {
-                0
-            } else {
-                11
+            // The Wi-Fi calibration publishes its final channel into the
+            // shared PHY state. The vendor Bluetooth wrapper reuses the
+            // three-channel calibration search without publishing that
+            // implementation detail into the same field.
+            current_channel: match (self.parameters.already_calibrated, self.mode) {
+                (true, _) | (false, PhyTxPowerMode::Bluetooth { .. }) => 0,
+                (false, PhyTxPowerMode::Wifi) => 11,
             },
             calibration_performed: !self.parameters.already_calibrated,
         }
@@ -1187,6 +1190,33 @@ mod tests {
         regulatory_override: bool,
     ) -> PhyTxTargetPowerProfile {
         PhyTxTargetPowerProfile::new(maximum, targets, regulatory_override)
+    }
+
+    fn uncalibrated_parameters() -> PhyTxPowerParameters {
+        PhyTxPowerParameters {
+            already_calibrated: false,
+            crystal_selector: 0,
+            environment: PhyTxCalibrationParameters {
+                pbus_tx_path_value: 0,
+                pbus_rx_path_value: 0,
+                dco: [0; 4],
+            },
+            capacitance: [0; 6],
+            target_adjustment: 0,
+            power_offset: 0,
+            initial_attenuation: 0,
+            clear_tone_after_ready: false,
+            reference_codes: [0; 2],
+        }
+    }
+
+    #[test]
+    fn bluetooth_calibration_does_not_publish_its_search_channel() {
+        let wifi = PhyTxPowerTransition::new(uncalibrated_parameters());
+        let bluetooth = PhyTxPowerTransition::new_bluetooth(uncalibrated_parameters(), 0x20);
+
+        assert_eq!(wifi.outcome().current_channel, 11);
+        assert_eq!(bluetooth.outcome().current_channel, 0);
     }
 
     #[test]

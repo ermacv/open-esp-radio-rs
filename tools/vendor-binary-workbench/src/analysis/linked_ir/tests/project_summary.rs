@@ -36,6 +36,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),
@@ -132,6 +133,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
     };
 
     let map = MmioMap {

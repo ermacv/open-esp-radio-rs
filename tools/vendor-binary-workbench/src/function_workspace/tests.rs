@@ -95,6 +95,25 @@ fn write_ir(path: &std::path::Path) {
             paths: vec!["entry".to_owned()],
             write_values: vec!["7".to_owned()],
         });
+    // A narrow semantic field may overlap a machine-word access performed by
+    // a structure copy. Both are valid observations and remain distinct
+    // review items identified by `(offset, width)`.
+    helper_effects
+        .memory_fields
+        .push(crate::LinkedSummaryMemoryField {
+            object: crate::LinkedMemoryObject::Global {
+                member: Some("state.o".to_owned()),
+                symbol: "phy_state".to_owned(),
+            },
+            offset: 12,
+            width: 32,
+            reads: 1,
+            writes: 0,
+            write_mask: 0,
+            origins: vec!["rom::vendor_helper".to_owned()],
+            paths: vec!["entry / structure copy".to_owned()],
+            write_values: Vec::new(),
+        });
     helper_effects.semantic_operations.push(semantic_summary());
 
     let function = |identity: &str,
@@ -319,7 +338,8 @@ display-type = "u16"
     assert_eq!(summary.reviewed_fields, 1);
     assert_eq!(summary.logical_types, 2);
     assert_eq!(summary.type_bindings, 2);
-    assert_eq!(summary.type_fields, 2);
+    assert_eq!(summary.type_fields, 3);
+    assert_eq!(summary.unreviewed_type_fields, 1);
     let binding = crate::interfaces::ResolvedInterfaceSlot {
         id: "fixture::wifi-osi@+0x38".to_owned(),
         contract: "fixture::wifi-osi".to_owned(),
@@ -403,8 +423,13 @@ display-type = "u16"
     assert!(report_text.contains("Reviewed logical types"));
     assert!(report_text.contains("`PhyGlobalState`"));
     assert!(report_text.contains("`state.o::phy_state`"));
+    assert!(report_text.contains("Vendor functions"));
+    assert!(
+        report_text.contains("| R/W | `rom::vendor_irq` |"),
+        "{report_text}"
+    );
 
-    let conflicting = reviewed.replace("offset = 12\nwidth = 16", "offset = 12\nwidth = 32");
+    let conflicting = reviewed.replace("offset = 12\nwidth = 16", "offset = 12\nwidth = 24");
     std::fs::write(&pack, conflicting).unwrap();
     let error = FunctionWorkspace::load(&reports, &pack).unwrap_err();
     assert!(error.to_string().contains("duplicate or unobserved field"));

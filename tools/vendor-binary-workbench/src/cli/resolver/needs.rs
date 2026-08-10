@@ -55,6 +55,7 @@ impl ResolutionNeeds {
             Command::ProjectStatus(_) => Self::new(true, false, false, false, true, false, true),
             Command::ProjectAnalyze(_) => Self::new(true, true, false, false, true, true, true),
             Command::ProjectVerify(_) => Self::new(true, true, false, true, true, true, true),
+            Command::ProjectCheck(_) => Self::new(true, true, false, true, true, true, true),
             Command::ProjectPublish(_) => Self::new(true, false, false, false, true, false, false),
 
             Command::FunctionInitPack(_)
@@ -93,6 +94,7 @@ impl ResolutionNeeds {
             | Command::InspectCompare(_) => Self::new(false, true, false, true, true, true, true),
             Command::VerifyContractChannel(_)
             | Command::VerifyContractRfInit(_)
+            | Command::VerifyContractBluetoothTxPower(_)
             | Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
             | Command::GenerateDriver(_)

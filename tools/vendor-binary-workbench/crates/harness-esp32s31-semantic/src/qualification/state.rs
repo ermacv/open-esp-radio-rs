@@ -1,5 +1,6 @@
 //! Reviewed state-footprint ownership and access validation.
 
+use super::VENDOR_PHY_PARAM_LEN;
 use crate::{Result, execution};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -316,7 +317,7 @@ pub fn vendor_rf_init_state_footprint(
         "esp32s31-rf-init",
         result,
         phy_param,
-        open_esp_radio_esp32s31_phy::phy_cold::PHY_COLD_PARAMETER_LEN as u32,
+        VENDOR_PHY_PARAM_LEN,
         RF_INIT_STATE_FOOTPRINT,
     )
 }
@@ -329,7 +330,7 @@ pub fn vendor_channel_state_footprint(
         "esp32s31-channel",
         result,
         phy_param,
-        open_esp_radio_esp32s31_phy::phy_cold::PHY_COLD_PARAMETER_LEN as u32,
+        VENDOR_PHY_PARAM_LEN,
         CHANNEL_STATE_FOOTPRINT,
     )
 }

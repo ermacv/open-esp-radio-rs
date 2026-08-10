@@ -90,6 +90,7 @@ pub(super) fn parse_report(
                         reads: field.reads,
                         writes: field.writes,
                         write_mask: field.write_mask,
+                        origins: field.origins,
                     })
                     .collect(),
                 semantic_operations: summary

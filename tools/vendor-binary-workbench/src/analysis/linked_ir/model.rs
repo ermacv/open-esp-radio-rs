@@ -219,28 +219,35 @@ pub(crate) enum LinkedMemoryObject {
 
 impl LinkedMemoryObject {
     pub(crate) fn from_root(value: MemoryObjectRoot, address_space: &str) -> Self {
+        Self::from_root_ref(&value, address_space)
+    }
+
+    fn from_root_ref(value: &MemoryObjectRoot, address_space: &str) -> Self {
         match value {
-            MemoryObjectRoot::Argument { index } => Self::Argument { index },
-            MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global { member, symbol },
+            MemoryObjectRoot::Argument { index } => Self::Argument { index: *index },
+            MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global {
+                member: member.clone(),
+                symbol: symbol.clone(),
+            },
             MemoryObjectRoot::Dereferenced {
                 pointer,
                 pointer_offset,
             } => Self::Dereferenced {
-                pointer: Box::new(Self::from_root(*pointer, address_space)),
-                pointer_offset,
+                pointer: Box::new(Self::from_root_ref(pointer, address_space)),
+                pointer_offset: *pointer_offset,
             },
             MemoryObjectRoot::Absolute { address } => Self::Absolute {
                 address_space: address_space.to_owned(),
-                address,
+                address: *address,
             },
             MemoryObjectRoot::Indexed {
                 root,
                 argument,
                 stride,
             } => Self::Indexed {
-                object: Box::new(Self::from_root(*root, address_space)),
-                argument,
-                stride,
+                object: Box::new(Self::from_root_ref(root, address_space)),
+                argument: *argument,
+                stride: *stride,
             },
         }
     }

@@ -104,6 +104,16 @@ pub(crate) struct ProjectVerifyArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct ProjectCheckArgs {
+    /// Treat unreviewed generated material as a check failure.
+    #[arg(long)]
+    pub(crate) deny_unreviewed: bool,
+    /// Worker threads for independent analysis; zero selects up to four available workers.
+    #[arg(long, default_value_t = 0, value_name = "N")]
+    pub(crate) jobs: u8,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct CheckArgs {
     /// Compare generated output with the checked-in file without changing it.
     #[arg(long)]

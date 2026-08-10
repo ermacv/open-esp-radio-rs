@@ -288,7 +288,7 @@ fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
         address.memory_object_location_with_reads(&BTreeMap::new()),
         Some(MemoryObjectLocation {
             root: MemoryObjectRoot::Indexed {
-                root: Box::new(MemoryObjectRoot::Absolute {
+                root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
                     address: 0x1002_f560,
                 }),
                 argument: 0,

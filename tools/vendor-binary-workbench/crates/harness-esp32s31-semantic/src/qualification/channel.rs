@@ -319,15 +319,15 @@ pub fn normalize_vendor_channel(
 
 #[cfg(test)]
 pub fn rust_channel_events(channel_or_frequency: u16, cbw: u8) -> Result<Vec<ChannelEvent>> {
-    rust_channel_events_with_state(PhyColdState::new(), channel_or_frequency, cbw)
+    rust_channel_events_with_state(PhyState::default(), channel_or_frequency, cbw)
         .map(|(events, _)| events)
 }
 
 pub fn rust_channel_events_with_state(
-    mut state: PhyColdState,
+    mut state: PhyState,
     channel_or_frequency: u16,
     cbw: u8,
-) -> Result<(Vec<ChannelEvent>, PhyColdState)> {
+) -> Result<(Vec<ChannelEvent>, PhyState)> {
     let mut transition = PhyChipChannelTransition::new(PhyChipChannelRequest {
         channel_or_frequency,
         cbw,

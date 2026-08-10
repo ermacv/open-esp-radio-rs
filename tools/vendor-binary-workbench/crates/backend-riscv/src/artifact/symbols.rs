@@ -157,6 +157,90 @@ pub fn load_code_symbols(
     Ok(symbols)
 }
 
+fn collect_data_symbols(
+    data: &[u8],
+    member: Option<&str>,
+    output: &mut Vec<ArtifactDataSymbolDefinition>,
+) -> Result<()> {
+    let file = object::File::parse(data)?;
+    if file.architecture() != object::Architecture::Riscv32 || !file.is_little_endian() {
+        return Err(
+            format!("artifact member {member:?} is not little-endian RISC-V 32-bit").into(),
+        );
+    }
+    if file.kind() == ObjectKind::Relocatable {
+        return Ok(());
+    }
+    for symbol in file.symbols() {
+        if symbol.kind() != SymbolKind::Data || !symbol.is_definition() || symbol.size() == 0 {
+            continue;
+        }
+        let Ok(address) = u32::try_from(symbol.address()) else {
+            continue;
+        };
+        let Ok(size) = u32::try_from(symbol.size()) else {
+            continue;
+        };
+        if address == 0 || address.checked_add(size).is_none() {
+            continue;
+        }
+        output.push(ArtifactDataSymbolDefinition {
+            member: member.map(str::to_owned),
+            name: symbol.name()?.to_owned(),
+            address,
+            size,
+            exported: symbol.is_global() || symbol.is_weak(),
+        });
+    }
+    Ok(())
+}
+
+/// Load sized data symbols from linked images without running code-section
+/// coverage analysis. Relocatable members are skipped because their section
+/// relative addresses are not runtime identities.
+pub fn load_data_symbols(path: &Path) -> Result<Vec<ArtifactDataSymbolDefinition>> {
+    let data = fs::read(path)?;
+    let mut symbols = Vec::new();
+    match FileKind::parse(data.as_slice())? {
+        FileKind::Archive => {
+            let archive = ArchiveFile::parse(data.as_slice())?;
+            for member in archive.members() {
+                let member = member?;
+                let name = String::from_utf8_lossy(member.name()).into_owned();
+                let member_data = member.data(data.as_slice())?;
+                if matches!(FileKind::parse(member_data), Ok(FileKind::Elf32)) {
+                    collect_data_symbols(member_data, Some(&name), &mut symbols)?;
+                }
+            }
+        }
+        FileKind::Elf32 => collect_data_symbols(&data, None, &mut symbols)?,
+        kind => return Err(format!("unsupported artifact kind: {kind:?}").into()),
+    }
+    symbols.sort_by(|left, right| {
+        (
+            left.address,
+            left.size,
+            !left.exported,
+            &left.member,
+            &left.name,
+        )
+            .cmp(&(
+                right.address,
+                right.size,
+                !right.exported,
+                &right.member,
+                &right.name,
+            ))
+    });
+    symbols.dedup_by(|left, right| {
+        left.address == right.address
+            && left.size == right.size
+            && left.member == right.member
+            && left.name == right.name
+    });
+    Ok(symbols)
+}
+
 fn collect_reviewed_ranges(
     data: &[u8],
     member: Option<&str>,

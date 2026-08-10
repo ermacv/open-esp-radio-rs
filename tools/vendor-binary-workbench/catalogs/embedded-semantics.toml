@@ -217,3 +217,300 @@ argument-roles = ["size"]
 return-role = "pointer"
 effects = ["memory.allocate"]
 replacement = "rust.owned-allocation-policy"
+
+[[operations]]
+id = "rtos.task.yield-from-isr"
+domain = "rtos"
+summary = "Request a scheduler yield after interrupt-context work"
+argument-roles = []
+return-role = "none"
+effects = ["scheduler.yield-request"]
+replacement = "interrupt.deferred-wakeup"
+
+[[operations]]
+id = "rtos.semaphore.give"
+domain = "rtos"
+summary = "Release one permit to an RTOS semaphore"
+argument-roles = ["semaphore"]
+return-role = "success"
+effects = ["scheduler.semaphore-release"]
+replacement = "async.signal-or-semaphore-release"
+
+[[operations]]
+id = "rtos.mutex.lock"
+domain = "rtos"
+summary = "Acquire an RTOS mutex"
+argument-roles = ["mutex"]
+return-role = "success"
+effects = ["scheduler.mutex-acquire"]
+replacement = "async.mutex-lock"
+
+[[operations]]
+id = "rtos.mutex.unlock"
+domain = "rtos"
+summary = "Release an RTOS mutex"
+argument-roles = ["mutex"]
+return-role = "success"
+effects = ["scheduler.mutex-release"]
+replacement = "async.mutex-unlock"
+
+[[operations]]
+id = "rtos.queue.send"
+domain = "rtos"
+summary = "Enqueue an item with a bounded wait duration"
+argument-roles = ["queue", "item", "wait-duration"]
+return-role = "success"
+effects = ["scheduler.queue-send", "scheduler.may-block"]
+replacement = "async.channel-send"
+
+[[operations]]
+id = "rtos.queue.receive"
+domain = "rtos"
+summary = "Receive an item into caller-owned storage with a bounded wait duration"
+argument-roles = ["queue", "item-out", "wait-duration"]
+return-role = "success"
+effects = ["scheduler.queue-receive", "scheduler.may-block", "memory.output-write"]
+replacement = "async.channel-receive"
+
+[[operations]]
+id = "rtos.queue.pending-count"
+domain = "rtos"
+summary = "Query the number of pending items in a queue"
+argument-roles = ["queue"]
+return-role = "count"
+effects = ["scheduler.queue-observe"]
+replacement = "async.channel-len"
+
+[[operations]]
+id = "rtos.queue.delete"
+domain = "rtos"
+summary = "Delete an RTOS queue and release its runtime resources"
+argument-roles = ["queue"]
+return-role = "none"
+effects = ["scheduler.queue-delete", "memory.deallocate"]
+replacement = "rust.drop-channel"
+
+[[operations]]
+id = "rtos.task.delete"
+domain = "rtos"
+summary = "Delete an RTOS task identified by its handle"
+argument-roles = ["task"]
+return-role = "none"
+effects = ["scheduler.task-delete"]
+replacement = "async.task-cancel"
+
+[[operations]]
+id = "time.milliseconds.to-ticks"
+domain = "time"
+summary = "Convert a millisecond duration to scheduler ticks"
+argument-roles = ["duration-millis"]
+return-role = "duration-ticks"
+effects = ["time.duration-conversion"]
+replacement = "duration.from-millis"
+
+[[operations]]
+id = "memory.deallocate"
+domain = "memory"
+summary = "Release a dynamically allocated memory object"
+argument-roles = ["pointer"]
+return-role = "none"
+effects = ["memory.deallocate"]
+replacement = "rust.drop-owned-allocation"
+
+[[operations]]
+id = "memory.allocate"
+domain = "memory"
+summary = "Allocate caller-sized storage"
+argument-roles = ["size"]
+return-role = "pointer"
+effects = ["memory.allocate"]
+replacement = "rust.owned-allocation-policy"
+
+[[operations]]
+id = "memory.allocate-zeroed"
+domain = "memory"
+summary = "Allocate caller-sized storage initialized to zero"
+argument-roles = ["size"]
+return-role = "pointer"
+effects = ["memory.allocate", "memory.initialize-zero"]
+replacement = "rust.zeroed-owned-allocation"
+
+[[operations]]
+id = "power.sleep-lock.acquire"
+domain = "power"
+summary = "Prevent the platform from entering a sleep state"
+argument-roles = []
+return-role = "none"
+effects = ["power.sleep-inhibit-acquire"]
+replacement = "power.sleep-guard-acquire"
+
+[[operations]]
+id = "power.sleep-lock.release"
+domain = "power"
+summary = "Release a previously acquired sleep-state inhibitor"
+argument-roles = []
+return-role = "none"
+effects = ["power.sleep-inhibit-release"]
+replacement = "power.sleep-guard-release"
+
+[[operations]]
+id = "radio.phy.disable"
+domain = "radio"
+summary = "Disable the shared radio PHY"
+argument-roles = []
+return-role = "none"
+effects = ["radio.phy-disable"]
+replacement = "radio.phy-state-transition"
+
+[[operations]]
+id = "radio.phy.enable"
+domain = "radio"
+summary = "Enable the shared radio PHY"
+argument-roles = []
+return-role = "none"
+effects = ["radio.phy-enable"]
+replacement = "radio.phy-state-transition"
+
+[[operations]]
+id = "timer.arm"
+domain = "timer"
+summary = "Arm a platform timer using its native duration unit"
+argument-roles = ["timer", "duration", "repeat"]
+return-role = "none"
+effects = ["time.timer-arm"]
+replacement = "async.timer-registration"
+
+[[operations]]
+id = "timer.disarm"
+domain = "timer"
+summary = "Cancel a previously armed platform timer"
+argument-roles = ["timer"]
+return-role = "none"
+effects = ["time.timer-cancel"]
+replacement = "async.timer-cancel"
+
+[[operations]]
+id = "timer.complete"
+domain = "timer"
+summary = "Record completion of a platform timer callback"
+argument-roles = ["timer"]
+return-role = "none"
+effects = ["time.timer-complete"]
+replacement = "async.timer-completion"
+
+[[operations]]
+id = "clock.wifi.enable"
+domain = "clock"
+summary = "Enable the Wi-Fi peripheral clock domain"
+argument-roles = []
+return-role = "none"
+effects = ["clock.domain-enable"]
+replacement = "clock.wifi-guard-acquire"
+
+[[operations]]
+id = "clock.wifi.disable"
+domain = "clock"
+summary = "Disable the Wi-Fi peripheral clock domain"
+argument-roles = []
+return-role = "none"
+effects = ["clock.domain-disable"]
+replacement = "clock.wifi-guard-release"
+
+[[operations]]
+id = "coexistence.status.query"
+domain = "coexistence"
+summary = "Read the current radio coexistence status word"
+argument-roles = []
+return-role = "status"
+effects = ["coexistence.status-query"]
+replacement = "coexistence.typed-status-provider"
+
+[[operations]]
+id = "coexistence.wifi.request"
+domain = "coexistence"
+summary = "Request a Wi-Fi coexistence grant for a typed interval"
+argument-roles = ["request-kind", "request-priority", "duration"]
+return-role = "status"
+effects = ["coexistence.request"]
+replacement = "coexistence.async-request"
+
+[[operations]]
+id = "coexistence.wifi.release"
+domain = "coexistence"
+summary = "Release a previously requested Wi-Fi coexistence grant"
+argument-roles = ["request-kind"]
+return-role = "status"
+effects = ["coexistence.release"]
+replacement = "coexistence.release"
+
+[[operations]]
+id = "coexistence.event-duration.query"
+domain = "coexistence"
+summary = "Query a coexistence event duration into caller-owned storage"
+argument-roles = ["event-kind", "duration-out"]
+return-role = "status"
+effects = ["coexistence.duration-query", "memory.output-write"]
+replacement = "coexistence.typed-duration-provider"
+
+[[operations]]
+id = "coexistence.schedule.interval.set"
+domain = "coexistence"
+summary = "Set the coexistence scheduler interval"
+argument-roles = ["interval"]
+return-role = "status"
+effects = ["coexistence.schedule-update"]
+replacement = "coexistence.scheduler-set-interval"
+
+[[operations]]
+id = "coexistence.schedule.interval.get"
+domain = "coexistence"
+summary = "Read the coexistence scheduler interval"
+argument-roles = []
+return-role = "interval"
+effects = ["coexistence.schedule-query"]
+replacement = "coexistence.scheduler-interval"
+
+[[operations]]
+id = "coexistence.schedule.period.get"
+domain = "coexistence"
+summary = "Read the current coexistence scheduler period"
+argument-roles = []
+return-role = "period"
+effects = ["coexistence.schedule-query"]
+replacement = "coexistence.scheduler-period"
+
+[[operations]]
+id = "coexistence.schedule.flexible-period.set"
+domain = "coexistence"
+summary = "Enable or disable the flexible coexistence scheduler period"
+argument-roles = ["enabled"]
+return-role = "status"
+effects = ["coexistence.schedule-update"]
+replacement = "coexistence.scheduler-set-flexible-period"
+
+[[operations]]
+id = "coexistence.schedule.flexible-period.get"
+domain = "coexistence"
+summary = "Read whether the coexistence scheduler uses a flexible period"
+argument-roles = []
+return-role = "enabled"
+effects = ["coexistence.schedule-query"]
+replacement = "coexistence.scheduler-flexible-period"
+
+[[operations]]
+id = "coexistence.schedule.phase.get"
+domain = "coexistence"
+summary = "Resolve one coexistence scheduler phase by index"
+argument-roles = ["phase-index"]
+return-role = "phase"
+effects = ["coexistence.schedule-query"]
+replacement = "coexistence.scheduler-phase"
+
+[[operations]]
+id = "regdma.write-wait.configure"
+domain = "regdma"
+summary = "Populate a register-DMA link with write-and-wait content"
+argument-roles = ["link", "write-value", "wait-duration"]
+return-role = "none"
+effects = ["memory.output-write", "regdma.program"]
+replacement = "regdma.typed-link-builder"

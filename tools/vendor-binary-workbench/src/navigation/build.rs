@@ -1,6 +1,9 @@
 //! Deterministic cross-report join construction.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use super::model::{
     ArtifactDocument, IDENTITY_SCHEME, InterfaceCallObservation, InterfaceRootObservation,
@@ -210,6 +213,7 @@ fn add_interfaces(
         document.sources.extend(item.sources.iter().cloned());
         interface_artifacts.insert(item.index, (item.sha256, item.sources));
     }
+    let mut root_index = InterfaceRootIndex::new(symbols.keys());
     let mut unmatched_roots = 0;
     for call in report.calls {
         let (sha256, sources) = interface_artifacts
@@ -227,29 +231,20 @@ fn add_interfaces(
             name: call.function.clone(),
             object_address: call.function_address,
         };
-        let caller = symbol(symbols, &caller_key);
-        caller.sources.extend(sources.iter().cloned());
-        caller.interface_calls.insert(InterfaceCallObservation {
-            site: format!("{:#x}", call.site),
-            kind: call.kind.clone(),
-        });
+        {
+            let caller = symbol(symbols, &caller_key);
+            caller.sources.extend(sources.iter().cloned());
+            caller.interface_calls.insert(InterfaceCallObservation {
+                site: format!("{:#x}", call.site),
+                kind: call.kind.clone(),
+            });
+        }
+        // The caller may be absent from inventory and linked IR. Preserve the
+        // old incremental join semantics by making the newly observed symbol
+        // available to later interface-root lookups too.
+        root_index.insert(&caller_key);
 
-        let root_matches = symbols
-            .keys()
-            .filter(|key| {
-                key.artifact_sha256 == *sha256
-                    && match &call.target.root {
-                        StoredInterfaceRoot::RelocatedSymbol { member, symbol, .. } => {
-                            key.member == *member && key.name == *symbol
-                        }
-                        StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
-                            key.object_address == *address
-                        }
-                        StoredInterfaceRoot::FunctionArgument { .. } => false,
-                    }
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let root_matches = root_index.matches(sha256, &call.target.root);
         if root_matches.is_empty()
             && !matches!(
                 call.target.root,
@@ -269,6 +264,61 @@ fn add_interfaces(
         }
     }
     Ok(unmatched_roots)
+}
+
+/// Indexed view of the two exact root identities used by interface facts.
+///
+/// Navigation used to scan every accumulated symbol for every interface call.
+/// Real projects have tens of thousands of symbols and thousands of calls,
+/// making that join quadratic. These indexes retain the same `BTreeSet`
+/// ordering while reducing each lookup to logarithmic map access.
+struct InterfaceRootIndex {
+    relocated: BTreeMap<(String, Option<String>, String), BTreeSet<SymbolKey>>,
+    absolute: BTreeMap<(String, u32), BTreeSet<SymbolKey>>,
+}
+
+impl InterfaceRootIndex {
+    fn new<'a>(symbols: impl Iterator<Item = &'a SymbolKey>) -> Self {
+        let mut index = Self {
+            relocated: BTreeMap::new(),
+            absolute: BTreeMap::new(),
+        };
+        for symbol in symbols {
+            index.insert(symbol);
+        }
+        index
+    }
+
+    fn insert(&mut self, symbol: &SymbolKey) {
+        self.relocated
+            .entry((
+                symbol.artifact_sha256.clone(),
+                symbol.member.clone(),
+                symbol.name.clone(),
+            ))
+            .or_default()
+            .insert(symbol.clone());
+        self.absolute
+            .entry((symbol.artifact_sha256.clone(), symbol.object_address))
+            .or_default()
+            .insert(symbol.clone());
+    }
+
+    fn matches(&self, artifact_sha256: &str, root: &StoredInterfaceRoot) -> Vec<SymbolKey> {
+        match root {
+            StoredInterfaceRoot::RelocatedSymbol { member, symbol, .. } => {
+                self.relocated
+                    .get(&(artifact_sha256.to_owned(), member.clone(), symbol.clone()))
+            }
+            StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
+                self.absolute.get(&(artifact_sha256.to_owned(), *address))
+            }
+            StoredInterfaceRoot::FunctionArgument { .. } => None,
+        }
+        .into_iter()
+        .flat_map(|matches| matches.iter().cloned())
+        .collect()
+    }
 }
 
 fn interface_root_kind(root: &StoredInterfaceRoot) -> &'static str {

@@ -72,6 +72,23 @@ Use `project publish` to preflight and write all configured outputs, or
 [project publication](project-publication.md). The individual `registers`
 commands remain available for inspecting or overriding one output.
 
+## One CI entry point
+
+`project check` is the complete non-mutating gate after generated evidence and
+accepted behavioral baselines have been reviewed:
+
+```console
+cargo vendor-binary-workbench project check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --jobs 4
+```
+
+It runs the equivalent of `project analyze --check`, `project verify --check`
+and `project publish --check`, then emits one typed aggregate result. Use
+`--deny-unreviewed` when the project intends its analysis-review backlog to be
+empty. This command never accepts candidate evidence, rewrites baselines or
+updates generated files.
+
 This separation prevents an ordinary vendor-artifact refresh from silently
 turning inferred names, field partitions, or semantics into a public API.
 When a configured function or interface pack is still missing, the human

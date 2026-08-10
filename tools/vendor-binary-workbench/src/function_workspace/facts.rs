@@ -56,6 +56,7 @@ pub(crate) struct FunctionMemoryFieldFact {
     pub(crate) reads: usize,
     pub(crate) writes: usize,
     pub(crate) write_mask: u32,
+    pub(crate) origins: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

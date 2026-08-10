@@ -344,7 +344,7 @@ Arguments without a declared range remain unknown.
 `contract = "state"` means the vendor bytes are decoded at the binary boundary
 while the Rust probe publishes a stable canonical projection through typed
 getters. The observed Rust address is the trace protocol output, not the
-private layout of `PhyColdState`. The current schema covers dot11p, current
+private layout of `PhyState`. The current schema covers dot11p, current
 power level, BT power tracking, BLE channel base, initialization mode,
 temperature tracking and slow TX-power tracking.
 

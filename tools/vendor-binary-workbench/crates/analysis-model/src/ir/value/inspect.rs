@@ -108,7 +108,7 @@ impl SymbolicValue {
                 let source = read_sources.get(read_token)?;
                 Some(MemoryObjectLocation {
                     root: MemoryObjectRoot::Dereferenced {
-                        pointer: Box::new(source.root.clone()),
+                        pointer: std::sync::Arc::new(source.root.clone()),
                         pointer_offset: source.offset,
                     },
                     offset: 0,
@@ -585,7 +585,7 @@ impl MemoryObjectLocation {
     fn with_index(self, argument: u8, stride: i64) -> Self {
         Self {
             root: MemoryObjectRoot::Indexed {
-                root: Box::new(self.root),
+                root: std::sync::Arc::new(self.root),
                 argument,
                 stride,
             },
@@ -636,7 +636,7 @@ mod tests {
             address.memory_object_location_with_reads(&BTreeMap::new()),
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Indexed {
-                    root: Box::new(MemoryObjectRoot::Absolute {
+                    root: std::sync::Arc::new(MemoryObjectRoot::Absolute {
                         address: 0x1002_f560,
                     }),
                     argument: 0,
@@ -688,7 +688,7 @@ mod tests {
             address.memory_object_location_with_reads(&reads),
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Dereferenced {
-                    pointer: Box::new(MemoryObjectRoot::RelocatedSymbol {
+                    pointer: std::sync::Arc::new(MemoryObjectRoot::RelocatedSymbol {
                         member: Some("globals.o".to_owned()),
                         symbol: "g_state".to_owned(),
                     }),
@@ -716,7 +716,7 @@ mod tests {
             address.memory_object_location_with_reads(&reads),
             Some(MemoryObjectLocation {
                 root: MemoryObjectRoot::Dereferenced {
-                    pointer: Box::new(MemoryObjectRoot::Absolute {
+                    pointer: std::sync::Arc::new(MemoryObjectRoot::Absolute {
                         address: 0x2010_4000,
                     }),
                     pointer_offset: 0,
@@ -737,5 +737,29 @@ mod tests {
                 offset: 0,
             })
         );
+    }
+
+    #[test]
+    fn cloned_memory_roots_share_recursive_provenance() {
+        let root = MemoryObjectRoot::Dereferenced {
+            pointer: std::sync::Arc::new(MemoryObjectRoot::Indexed {
+                root: std::sync::Arc::new(MemoryObjectRoot::Argument { index: 2 }),
+                argument: 1,
+                stride: 0x20,
+            }),
+            pointer_offset: 8,
+        };
+        let cloned = root.clone();
+        let (
+            MemoryObjectRoot::Dereferenced { pointer, .. },
+            MemoryObjectRoot::Dereferenced {
+                pointer: cloned_pointer,
+                ..
+            },
+        ) = (&root, &cloned)
+        else {
+            unreachable!("fixture uses dereferenced roots")
+        };
+        assert!(std::sync::Arc::ptr_eq(pointer, cloned_pointer));
     }
 }

@@ -257,6 +257,11 @@ enum ProjectCommand {
         after_long_help = "Verification uses project suites and caller-owned run bindings. Use `--check` in CI to reproduce the aggregate report without writing it."
     )]
     Verify(ProjectVerifyArgs),
+    /// Reproduce analysis, verification and publication outputs without writing them.
+    #[command(
+        after_long_help = "This is the authoritative CI entry point. It checks analysis evidence, every verification suite and all publication outputs."
+    )]
+    Check(ProjectCheckArgs),
     /// Generate or verify reviewed SVD, PAC and binding outputs.
     #[command(
         after_long_help = "Use `--check` in CI to validate publication outputs without writing them."
@@ -275,6 +280,7 @@ impl ProjectCommand {
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
             Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
             Self::Verify(arguments) => Command::ProjectVerify(arguments),
+            Self::Check(arguments) => Command::ProjectCheck(arguments),
             Self::Publish(arguments) => Command::ProjectPublish(arguments),
         }
     }
@@ -376,6 +382,7 @@ impl VerifyCommand {
 leaf_commands!(VerifyContractCommand {
     Channel(VerifyContractArgs) => Command::VerifyContractChannel, VerifyContract,
     RfInit(VerifyContractArgs) => Command::VerifyContractRfInit, VerifyContract,
+    BluetoothTxPower(VerifyContractArgs) => Command::VerifyContractBluetoothTxPower, VerifyContract,
 });
 
 impl Workflow {
@@ -412,6 +419,7 @@ pub(crate) enum Command {
     ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
     ProjectVerify(ProjectVerifyArgs),
+    ProjectCheck(ProjectCheckArgs),
     ProjectPublish(CheckArgs),
     FunctionInitPack(OutputArgs),
     FunctionValidate(ValidationArgs),
@@ -436,6 +444,7 @@ pub(crate) enum Command {
     BuildIr(IrBuildArgs),
     VerifyContractChannel(VerifyContractArgs),
     VerifyContractRfInit(VerifyContractArgs),
+    VerifyContractBluetoothTxPower(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),
@@ -564,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn project_analysis_has_one_write_or_check_interface() {
+    fn project_analysis_and_ci_check_have_typed_interfaces() {
         let invocation = ParsedInvocation::parse([
             "project".to_owned(),
             "analyze".to_owned(),
@@ -581,11 +590,17 @@ mod tests {
         assert!(arguments.deny_unreviewed);
         assert_eq!(arguments.jobs, 2);
 
-        for removed in ["build", "check"] {
-            let error =
-                ParsedInvocation::parse(["project".to_owned(), removed.to_owned()]).unwrap_err();
-            assert!(error.to_string().contains("unrecognized subcommand"));
-        }
+        let invocation =
+            ParsedInvocation::parse(["project".to_owned(), "check".to_owned()]).unwrap();
+        let Command::ProjectCheck(arguments) = invocation.command else {
+            panic!("unexpected argument type")
+        };
+        assert!(!arguments.deny_unreviewed);
+        assert_eq!(arguments.jobs, 0);
+
+        let error =
+            ParsedInvocation::parse(["project".to_owned(), "build".to_owned()]).unwrap_err();
+        assert!(error.to_string().contains("unrecognized subcommand"));
     }
 
     #[test]

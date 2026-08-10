@@ -57,20 +57,20 @@ use open_esp_radio_esp32s31_phy::{
     },
     phy_cold::{
         PhyColdExternalBinding, PhyColdI2cAction, PhyColdLocalStep, PhyColdObservationRequest,
-        PhyColdObservationResult, PhyColdPbusAction, PhyColdPbusHardwareResult, PhyColdState,
-        PhyRfColdInit,
+        PhyColdObservationResult, PhyColdPbusAction, PhyColdPbusHardwareResult, PhyRfColdInit,
     },
     phy_dc_iq::{PhyDcIqAccumulatorSnapshot, PhyDcIqReadinessSnapshot},
     phy_i2c::{PhyRfInitPrefixAction, PhyRfInitPrefixOutcome},
     phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion},
     phy_signal_power::PhySignalPowerAccumulatorSnapshot,
+    phy_state::PhyState,
     phy_temperature::{PhyTemperatureAction, PhyTemperatureCompletion},
     phy_tx_cal::{PhyToneSarAction, PhyToneSarCompletion},
     phy_tx_power::{
         PhyPowerControlPointAction, PhyPowerControlPointCompletion, PhyTxPowerAction,
         PhyTxPowerCompletion,
     },
-    phy_txdc::{PhyTxDcAction, PhyTxDcCompletion, PhyTxDcParameters},
+    phy_txdc::{PhyTxDcAction, PhyTxDcCompletion},
     phy_txdc_pwdet::{
         PhyTxDcPwdetAction, PhyTxDcPwdetCompletion, PhyTxDcPwdetSearchAction,
         PhyTxDcPwdetSearchCompletion,
@@ -173,6 +173,12 @@ const ROM_PHY_PARAM_POINTER: u32 = 0x2f07_fc40;
 const TEMPERATURE_DAC: u8 = 5;
 const TEMPERATURE_CODE: u8 = 0;
 const TX_CAP_READ: u8 = 0;
+
+/// Size of the pinned vendor `phy_param` image.
+///
+/// This is vendor ABI evidence and deliberately does not describe the layout
+/// or size of Rust [`PhyState`].
+const VENDOR_PHY_PARAM_LEN: u32 = 0x1fc;
 
 #[cfg(test)]
 mod tests;

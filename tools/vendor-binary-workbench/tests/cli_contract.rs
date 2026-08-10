@@ -727,7 +727,7 @@ fn direct_target_audit_json_is_one_typed_report() {
 }
 
 #[test]
-fn project_analyze_is_the_only_project_analysis_entry_point() {
+fn project_analysis_and_ci_check_are_distinct_typed_entry_points() {
     let help = run(&["project", "analyze", "--help"]);
     assert!(help.status.success());
     let help = String::from_utf8_lossy(&help.stdout);
@@ -735,12 +735,16 @@ fn project_analyze_is_the_only_project_analysis_entry_point() {
     assert!(help.contains("--deny-unreviewed"));
     assert!(help.contains("--progress"));
 
-    for removed in ["build", "check"] {
-        let output = run(&["project", removed]);
-        assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
-        assert!(String::from_utf8_lossy(&output.stderr).contains("unrecognized subcommand"));
-    }
+    let check_help = run(&["project", "check", "--help"]);
+    assert!(check_help.status.success());
+    let check_help = String::from_utf8_lossy(&check_help.stdout);
+    assert!(check_help.contains("--deny-unreviewed"));
+    assert!(check_help.contains("--jobs"));
+
+    let removed = run(&["project", "build"]);
+    assert_eq!(removed.status.code(), Some(2));
+    assert!(removed.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&removed.stderr).contains("unrecognized subcommand"));
 }
 
 #[test]

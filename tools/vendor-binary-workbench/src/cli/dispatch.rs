@@ -38,6 +38,9 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
                 &session.target,
             )
         }
+        ResolvedInvocation::ProjectCheck { arguments, session } => {
+            commands::run_project_check(arguments, &session)
+        }
         ResolvedInvocation::ProjectPublish { arguments, session } => {
             commands::run_project_publication(
                 arguments,

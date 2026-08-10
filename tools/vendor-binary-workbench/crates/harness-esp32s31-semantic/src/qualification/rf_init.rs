@@ -479,7 +479,7 @@ fn rust_rf_init_phase(
 }
 
 fn rust_rf_init_projection(
-    state: &PhyColdState,
+    state: &PhyState,
     outcome: PhyRfInitPrefixOutcome,
 ) -> Result<RfInitStateProjection> {
     let PhyRfInitPrefixOutcome::ChannelFrequencyInitialized {
@@ -637,7 +637,7 @@ fn complete_rf_init_external(
     }
 }
 
-pub fn rust_rf_init_events(state: PhyColdState) -> Result<(Vec<RfInitEvent>, PhyColdState)> {
+pub fn rust_rf_init_events(state: PhyState) -> Result<(Vec<RfInitEvent>, PhyState)> {
     let rc_already_complete = state.rc_calibration_complete();
     let mut init = PhyRfColdInit::new(state);
     let mut events = Vec::new();

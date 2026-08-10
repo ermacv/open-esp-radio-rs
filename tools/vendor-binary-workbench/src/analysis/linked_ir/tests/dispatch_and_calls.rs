@@ -261,6 +261,7 @@ fn direct_call_graph_survives_reference_summary_inlining() {
             ("vendor_child".to_owned(), Some(child_id)),
         )]),
         pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
     };
     let map = MmioMap {
         registers: Vec::new(),

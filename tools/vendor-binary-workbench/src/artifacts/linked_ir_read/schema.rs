@@ -591,7 +591,7 @@ pub(crate) struct StoredMemoryField {
     pub(crate) reads: usize,
     pub(crate) writes: usize,
     pub(crate) write_mask: u32,
-    origins: Vec<String>,
+    pub(crate) origins: Vec<String>,
     paths: Vec<String>,
     write_values: Vec<String>,
 }

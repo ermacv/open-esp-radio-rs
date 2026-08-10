@@ -93,6 +93,10 @@ pub(super) fn resolve_command(
             arguments,
             session: Box::new(environment.into_project_session()?),
         },
+        Command::ProjectCheck(arguments) => ResolvedInvocation::ProjectCheck {
+            arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::ProjectPublish(arguments) => ResolvedInvocation::ProjectPublish {
             arguments,
             session: Box::new(environment.into_project_session()?),
@@ -272,6 +276,12 @@ pub(super) fn resolve_command(
         },
         Command::VerifyContractRfInit(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::VerifyContractRfInit(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
+        Command::VerifyContractBluetoothTxPower(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::VerifyContractBluetoothTxPower(arguments),
             target: environment.target,
             svd: environment.svd,
             project: environment.project.map(Box::new),

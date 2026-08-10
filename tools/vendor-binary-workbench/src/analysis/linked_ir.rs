@@ -272,7 +272,8 @@ fn build_linked_functions_for_roots(
             },
         ) {
             Ok(trace) => {
-                let memory_accesses = memory_object_accesses_for_trace(&trace);
+                let mut memory_accesses = memory_object_accesses_for_trace(&trace);
+                attribute_data_symbols(&mut memory_accesses, resolver);
                 let memory_fields = memory_object_fields_for_accesses(&memory_accesses);
                 let context_accesses = context_accesses_for_memory_objects(&memory_accesses);
                 let context_fields = context_fields_for_accesses(&context_accesses);

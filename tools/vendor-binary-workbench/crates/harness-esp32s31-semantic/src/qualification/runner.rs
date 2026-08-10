@@ -146,7 +146,7 @@ pub fn verify_esp32s31_channel(
     let total = cases.len();
     let mut case_reports = Vec::with_capacity(total);
     let mut vendor_session = execution::ExecutionSession::default();
-    let mut rust_state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut rust_state = open_esp_radio_esp32s31_phy::PhyState::default();
     for (case_index, (name, channel_or_frequency, cbw)) in cases.into_iter().enumerate() {
         let mut scenario = verification::vendor_channel_scenario(
             channel_or_frequency,
@@ -282,7 +282,7 @@ pub fn verify_esp32s31_rf_init(
         .ok_or("vendor artifact has no g_phyFuns symbol")?;
 
     let mut vendor_session = execution::ExecutionSession::default();
-    let mut rust_state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut rust_state = open_esp_radio_esp32s31_phy::PhyState::default();
     let mut passed = 0_usize;
     let mut total_steps = 0_u64;
     let mut all_branches = BTreeSet::new();
@@ -423,9 +423,8 @@ pub fn verify_esp32s31_bluetooth_txdc(
     let scenario = verification::vendor_bluetooth_txdc_scenario(phy_param, phy_functions_pointer);
     let result = execution::execute(&image, svd, "phy_bt_txdc_cal_new", scenario)?;
     let vendor_events = verification::normalize_vendor_bluetooth_txdc(&image, &result, phy_param)?;
-    let (rust_events, _) = verification::rust_bluetooth_txdc_events(
-        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
-    )?;
+    let (rust_events, _) =
+        verification::rust_bluetooth_txdc_events(open_esp_radio_esp32s31_phy::PhyState::default())?;
     let matched = vendor_events == rust_events;
     let difference = if matched {
         None
@@ -500,7 +499,7 @@ pub fn verify_esp32s31_bluetooth_tx_power(
     let vendor_events =
         verification::normalize_vendor_bluetooth_tx_power(&image, &result, phy_param)?;
     let (rust_events, _) = verification::rust_bluetooth_tx_power_events(
-        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
+        open_esp_radio_esp32s31_phy::PhyState::default(),
     )?;
     let matched = vendor_events == rust_events;
     let difference = if matched {
@@ -576,7 +575,7 @@ pub fn verify_esp32s31_bluetooth_txdc_pwdet(
     let vendor_events =
         verification::normalize_vendor_bluetooth_txdc_pwdet(&image, &result, phy_param)?;
     let (rust_events, _) = verification::rust_bluetooth_txdc_pwdet_events(
-        open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new(),
+        open_esp_radio_esp32s31_phy::PhyState::default(),
     )?;
     let matched = vendor_events == rust_events;
     let difference = if matched {

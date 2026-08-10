@@ -49,4 +49,4 @@ artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d7
 
 [[inputs]]
 source = "rust"
-artifact-sha256 = "02f1892aee1f7b62f88ac886a858bbdf7fde0f76381cbd52726864959b7682e2"
+artifact-sha256 = "ed6e88f770f3f4bba50176ceed3d43b0e16b1095371e5867460aee852e4cd380"

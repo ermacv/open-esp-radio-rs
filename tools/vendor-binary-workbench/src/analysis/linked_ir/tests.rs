@@ -22,6 +22,7 @@ fn empty_resolver() -> ReferenceResolver {
         exported_symbol_keys: BTreeSet::new(),
         relocated_calls: BTreeMap::new(),
         pointer_context: direct::StructuralPointerContext::default(),
+        data_symbols: Vec::new(),
     }
 }
 

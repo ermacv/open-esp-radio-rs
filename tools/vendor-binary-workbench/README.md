@@ -63,11 +63,12 @@ callers authenticate inputs and bind them through an untracked project-local
 | `project browse` | Browse project state and run typed trace comparisons in a read-only TUI | [Read-only project browser](docs/tui.md) |
 | `project analyze [--check]` | Generate or non-mutatingly verify project-owned symbol/navigation, MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
 | `project verify [--check]` | Execute all project-owned vendor/Rust suites and write or reproduce one aggregate report | [Verification](docs/verification.md) |
+| `project check` | Run analysis, behavioral verification, and publication checks as one non-mutating CI gate | [Project analysis](docs/project-pipeline.md#one-ci-entry-point) |
 | `project publish` | Strictly validate reviewed registers and write or check configured SVD/PAC/bindings | [Project publication](docs/project-publication.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `code init-pack` / `validate` / `review` | Review conservative function-boundary candidates recovered inside executable-code gaps | [Reviewed code boundaries](docs/code-boundaries.md) |
 | `interfaces discover` | Recover pointer provenance, table-slot candidates and indirect-call sites without assigning platform semantics | [Interface discovery](docs/interface-discovery.md) |
-| `interfaces init-pack` / `sync-pack` / `validate` | Initialize or safely synchronize observations, review table layouts and ABI, then bind reusable semantics | [Interface packs](docs/interface-packs.md) |
+| `interfaces init-pack` / `validate` | Initialize a sparse reviewed overlay, validate table layouts and ABI, then bind reusable semantics | [Interface packs](docs/interface-packs.md) |
 | `functions init-pack` / `validate` / `review` | Review function roles and context layouts, then render a source-like reading view | [Function and context packs](docs/function-packs.md) |
 | `mmio discover` | Build a register/access/field-candidate inventory from ELF and archives | [MMIO discovery](docs/mmio-discovery.md) |
 | `registers init-model` / `import-svd` / `review` / `validate` / `export-svd` / `generate-pac` / `generate-bindings` | Review discovered addresses and functions, maintain the register model, and derive clean SVD/PAC/binding outputs | [Register workspace](docs/register-workspace.md) |

@@ -1288,7 +1288,7 @@ pub extern "C" fn open_phy_trace_phy_11p_set(
     output: &mut CanonicalDot11pState,
 ) {
     let initial = *output;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_dot11p_configuration(initial.enabled, initial.configuration);
     state.set_dot11p_configuration(enabled as u8, configuration as u8);
     let projected = state.dot11p_configuration();
@@ -1305,7 +1305,7 @@ pub extern "C" fn open_phy_trace_phy_current_level_set(
     output: &mut CanonicalCurrentLevelState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_current_level(initial);
     state.set_current_level(value as u8);
     output.value = state.current_level();
@@ -1318,7 +1318,7 @@ pub extern "C" fn open_phy_trace_phy_bt_power_track(
     output: &mut CanonicalBtPowerTrackingState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_bt_power_tracking(initial);
     state.set_bt_power_tracking(value as u8);
     output.value = state.bt_power_tracking();
@@ -1331,7 +1331,7 @@ pub extern "C" fn open_phy_trace_phy_ble_set_chan_base(
     output: &mut CanonicalBleChannelBaseState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_ble_channel_base(initial);
     state.set_ble_channel_base(value as u8);
     output.value = state.ble_channel_base();
@@ -1344,7 +1344,7 @@ pub extern "C" fn open_phy_trace_phy_init_param_set(
     output: &mut CanonicalInitializationParameterState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_initialization_parameter(u32::from(initial != 0));
     state.set_initialization_parameter(value);
     output.value = u8::from(state.initialization_parameter());
@@ -1358,7 +1358,7 @@ pub extern "C" fn open_phy_trace_phy_track_temp_debug(
     output: &mut CanonicalTemperatureTrackingState,
 ) {
     let initial = *output;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_temperature_tracking_debug(initial.first, initial.second);
     state.set_temperature_tracking_debug(first as u8, second as u8);
     let projected = state.temperature_tracking_debug();
@@ -1598,7 +1598,7 @@ pub extern "C" fn open_phy_trace_txpwr_track_slow(
     output: &mut CanonicalSlowTxPowerTrackingState,
 ) {
     let initial = output.value;
-    let mut state = open_esp_radio_esp32s31_phy::phy_cold::PhyColdState::new();
+    let mut state = open_esp_radio_esp32s31_phy::phy_state::PhyState::default();
     state.set_tx_power_tracking_slow(initial);
     state.set_tx_power_tracking_slow(value as u8);
     output.value = state.tx_power_tracking_slow();

@@ -130,13 +130,9 @@ pub fn normalize_vendor_bluetooth_txdc(
 }
 
 pub fn rust_bluetooth_txdc_events(
-    mut state: PhyColdState,
-) -> Result<(Vec<BluetoothTxDcEvent>, PhyColdState)> {
-    let parameters = PhyTxDcParameters {
-        pbus_rx_path_value: state.parameter_image()[0x002],
-    };
-    let mut transition =
-        PhyBluetoothTxDcTransition::new(parameters, state.parameter_image()[0x014]);
+    mut state: PhyState,
+) -> Result<(Vec<BluetoothTxDcEvent>, PhyState)> {
+    let mut transition: PhyBluetoothTxDcTransition = state.bluetooth_tx_dc_transition();
     let mut events = Vec::new();
     for _ in 0..20_000 {
         let action = transition.action();

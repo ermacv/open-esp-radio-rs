@@ -2263,7 +2263,12 @@ fn observe_rx_report(report: &DeviceReport, expected_format: u8) -> Result<RxQua
             & 0x0fff;
         if reorder.first_tid > 7
             || reorder.first_distance != distance
-            || reorder.first_distance >= reorder.window
+            // A forward frame outside the initial window is valid: the
+            // reorder algorithm advances its window and accounts for the
+            // missing prefix. Only the backward half of the 12-bit sequence
+            // space is stale. Exact UDP delivery below still rejects any loss
+            // inside the measured stream.
+            || reorder.first_distance >= 0x0800
         {
             return Err(format!(
                 "invalid first RX reorder frame: tid={} start={} sequence={} distance={} window={}",
@@ -3202,6 +3207,19 @@ mod tests {
         assert_eq!(rx.reorder.buffered, 3);
         assert_eq!(rx.reorder.released, 5_000);
         assert_eq!(rx.reorder.maximum_occupied, 7);
+        report.rx_reorder[0].first_frame_sequence = 28;
+        report.rx_reorder[0].first_distance = 22;
+        assert!(qualify_rx_report(&report, 4).is_ok());
+        report.rx_reorder[0].first_frame_sequence = 5;
+        report.rx_reorder[0].first_distance = 0x0fff;
+        assert!(
+            qualify_rx_report(&report, 4)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid first RX reorder frame")
+        );
+        report.rx_reorder[0].first_frame_sequence = 6;
+        report.rx_reorder[0].first_distance = 0;
         assert_eq!(report.ampdu.len(), 1);
         assert_eq!(report.ampdu_histograms[0].full32, 120);
         assert_eq!(report.ampdu_timings[0].exchange_max_us, 210);

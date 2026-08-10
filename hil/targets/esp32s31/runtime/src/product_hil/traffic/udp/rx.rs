@@ -2,7 +2,10 @@
 
 use core::sync::atomic::Ordering;
 
-use embassy_futures::yield_now;
+use embassy_futures::{
+    select::{Either, select},
+    yield_now,
+};
 use embassy_net::{Stack, udp::UdpSocket};
 use embassy_time::{Duration, Instant, Timer, with_timeout};
 use open_esp_radio_esp32s31_embassy_wifi::Esp32s31QualificationSnapshot;
@@ -92,9 +95,34 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
     ));
 
     loop {
-        let session = match config.session_source {
-            UdpRxSessionSource::Console => receive_session_start().await,
-            UdpRxSessionSource::Bidirectional { sessions, .. } => sessions.receive().await,
+        // A bound UDP socket is not proof that the host neighbor entry and the
+        // complete Wi-Fi/IP ingress path are live. Before admitting a measured
+        // session, consume an out-of-band negative-sequence probe and publish
+        // a second typed readiness edge. Positive packets outside a session
+        // are deliberately discarded instead of contaminating evidence.
+        let session = loop {
+            match select(
+                receive_rx_session(config.session_source),
+                socket.recv_from_with(|packet, _| iperf2_udp_sequence(packet)),
+            )
+            .await
+            {
+                Either::First(session) => break session,
+                Either::Second(Some(sequence)) if sequence < 0 => {
+                    publish_event_reliably(
+                        0,
+                        0,
+                        HilEvent::ServiceReady(ServiceInfo {
+                            transport: HilTransport::Udp,
+                            direction: HilDirection::Rx,
+                            local_port: config.local_port,
+                            maximum_payload_bytes: config.payload_capacity as u16,
+                        }),
+                    )
+                    .await;
+                }
+                Either::Second(_) => {}
+            }
         };
         publish_event_reliably(
             session.session_id,
@@ -368,5 +396,12 @@ pub(in crate::product_hil) async fn run_open_radio_udp_rx_benchmark<'a>(
                 complete_session(session.session_id, evidence, passed).await;
             }
         }
+    }
+}
+
+async fn receive_rx_session(source: UdpRxSessionSource) -> crate::console::ActiveSession {
+    match source {
+        UdpRxSessionSource::Console => receive_session_start().await,
+        UdpRxSessionSource::Bidirectional { sessions, .. } => sessions.receive().await,
     }
 }

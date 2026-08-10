@@ -12,10 +12,10 @@ tools/audit-driver-safety.sh
 
 # Verify generated code from its canonical input instead of inspecting Rust
 # source text for particular identifiers or function spellings.
-cargo vendor-binary-workbench project configure \
+cargo vendor-binary-workbench-esp32s31 project configure \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
-cargo vendor-binary-workbench project publish \
+cargo vendor-binary-workbench-esp32s31 project publish \
     --project verification/vendor/targets/esp32s31/vendor-project.toml \
     --check
 
@@ -159,7 +159,7 @@ test -f "$runtime_elf"
 # pinned radio API table or the contiguous radio implementation body. System
 # ROM outside these ranges (for example ets_printf) remains permitted.
 cargo vendor-binary-workbench image audit-targets \
-    --target-spec verification/vendor/targets/esp32s31/target.spec \
+    --target-spec verification/vendor/targets/esp32s31/target.toml \
     --artifact "$runtime_elf" \
     --forbid 'esp32s31-eco0-radio-api=0x2f800bf0..0x2f8016bc' \
     --forbid 'esp32s31-eco0-radio-body=0x2f823c12..0x2f83e6d0'

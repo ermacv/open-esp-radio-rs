@@ -31,7 +31,6 @@ const RX_BENCH_INTERVAL_COMPLETE_MARKER: &str = "stage=udp-rx-interval-complete"
 const RADIO_RUNNER_FAILURE_MARKER: &str = "result=FAIL stage=production-runner";
 const RX_PROBE_PAYLOAD: usize = 64;
 const RX_PROBE_RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
-const RX_SESSION_WARMUP_SETTLE: Duration = Duration::from_secs(1);
 const DHCP_DISCOVERY_GRACE: Duration = Duration::from_millis(500);
 const PROTOCOL_READY_TIMEOUT: Duration = Duration::from_secs(10);
 const STARTUP_ARTIFACT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -723,12 +722,16 @@ impl SerialCapture {
     }
 
     pub(crate) fn wait_for_connected_station(&self, timeout: Duration) -> Result<u32> {
+        let boot_id = self
+            .latest_boot_id()
+            .ok_or("device did not publish a current HIL boot identity")?;
         let event = self
             .wait_for_protocol_after(0, timeout, |message| {
-                matches!(
-                    message.body,
-                    Event::StationLifecycle(StationLifecycleEvent::Connected { .. })
-                )
+                message.boot_id == boot_id
+                    && matches!(
+                        message.body,
+                        Event::StationLifecycle(StationLifecycleEvent::Connected { .. })
+                    )
             })
             .ok_or("device did not publish connected station readiness")?;
         match event.body {
@@ -1099,10 +1102,11 @@ fn parse_network_ipv4_configuration(
 
 /// Wait until the target owns its IPv4 address and UDP RX service.
 ///
-/// Runtime-session images use a negative warm-up datagram that cannot open a
-/// sample; `Arm`/`Start` provide the measured synchronization. Compatibility
-/// images still use one positive datagram and the target idle timeout to prove
-/// the complete UDP RX path before a measured stream begins.
+/// Runtime-session images require a typed service-ready edge emitted only
+/// after the target consumes a negative warm-up datagram. `Arm`/`Start` then
+/// provide measured synchronization. Compatibility images still use one
+/// positive datagram and the target idle timeout to prove the complete UDP RX
+/// path before a measured stream begins.
 pub(crate) fn await_udp_rx_ready(
     capture: &SerialCapture,
     address_hint: Ipv4Addr,
@@ -1154,17 +1158,34 @@ pub(crate) fn await_udp_rx_ready(
         }
 
         if runtime_session {
-            // Resolve the host neighbor and exercise the complete Wi-Fi/IP/UDP
-            // ingress before the measured interval. A negative sequence is a
-            // terminal control datagram: the target drains it after `Start`
-            // without opening or accounting an RX sample.
+            // A send completion proves only local enqueueing. Require a fresh
+            // target event after the packet so unresolved ARP or a socket that
+            // has not yet been polled cannot truncate the measured prefix.
+            let boot_id = capture
+                .latest_boot_id()
+                .ok_or("device did not publish a current HIL boot identity")?;
+            let event_start = capture.protocol_event_count();
             packet[..4].copy_from_slice(&(-1_i32).to_be_bytes());
             socket.send(&packet)?;
-            thread::sleep(RX_SESSION_WARMUP_SETTLE);
-            return Ok(UdpRxReady {
-                address,
-                runtime_session: true,
-            });
+            if capture
+                .wait_for_protocol_after(event_start, RX_PROBE_RESPONSE_TIMEOUT, |message| {
+                    message.boot_id == boot_id
+                        && matches!(
+                            message.body,
+                            Event::ServiceReady(service)
+                                if service.transport == Transport::Udp
+                                    && service.direction == Direction::Rx
+                                    && service.local_port == port
+                        )
+                })
+                .is_some()
+            {
+                return Ok(UdpRxReady {
+                    address,
+                    runtime_session: true,
+                });
+            }
+            continue;
         }
 
         let completed_intervals = capture.marker_count(RX_BENCH_INTERVAL_COMPLETE_MARKER);

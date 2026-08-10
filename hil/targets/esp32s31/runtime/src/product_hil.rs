@@ -22,7 +22,9 @@ use open_esp_radio::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WifiMacAddress, WifiMonitorConfig, WifiScanRequest as DriverWifiScanRequest,
     WifiSsid,
-    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
+    esp32s31::phy::{
+        PhyCalibrationIdentity, PhyCalibrationPath, phy_rfpll::phy_get_rf_cal_version,
+    },
     esp32s31::wifi::mac::rx::RxBasebandFormat,
     wifi::{
         ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
@@ -447,11 +449,12 @@ pub async fn run(
         mac_irq: observe_mac_irq,
     });
     let artifact_was_supplied = startup.phy_calibration_artifact.is_some();
-    let config = match startup.phy_calibration_artifact {
-        Some(artifact) => config.with_calibration_cache(
-            crate::phy_calibration_artifact::decode(artifact.bytes())
-                .expect("host PHY calibration artifact has an unsupported or invalid schema"),
-        ),
+    let calibration_cache = startup
+        .phy_calibration_artifact
+        .as_ref()
+        .and_then(|artifact| crate::phy_calibration_artifact::decode(artifact.bytes()));
+    let config = match calibration_cache {
+        Some(cache) => config.with_calibration_cache(cache),
         None => config,
     };
 
@@ -465,10 +468,17 @@ pub async fn run(
         initialization,
     } = radio.into_parts();
     if let Some(cache) = initialization.calibration_cache {
-        let disposition = if artifact_was_supplied {
-            StartupArtifactDisposition::Restored
-        } else {
-            StartupArtifactDisposition::Created
+        let disposition = match initialization.start.wifi.registration.calibration_path {
+            PhyCalibrationPath::FullAfterRejectedCache => StartupArtifactDisposition::Replaced,
+            PhyCalibrationPath::FullForCache if artifact_was_supplied => {
+                // Transport-valid bytes can still carry an unknown HIL wire
+                // schema. They are untrusted input, so a decode rejection
+                // falls back to full calibration and replaces the artifact.
+                StartupArtifactDisposition::Replaced
+            }
+            PhyCalibrationPath::FullForCache | PhyCalibrationPath::FullUncached => {
+                StartupArtifactDisposition::Created
+            }
         };
         let encoded =
             crate::phy_calibration_artifact::encode(&cache, PHY_CALIBRATION_ARTIFACT.take())

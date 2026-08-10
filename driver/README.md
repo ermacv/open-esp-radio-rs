@@ -64,8 +64,10 @@ runner enters a terminal fault and no reusable idle owner is fabricated.
 requested channels, returns a bounded value-only report and restores idle.
 It cannot associate. Station owns its separate candidate scan plus
 authentication, association, WPA2, connected and reconnect policy. Monitor is
-an exclusive capture role. AP, BLE, Bluetooth, IEEE 802.15.4 and coexistence
-are not implemented and therefore have no placeholder public owner types.
+an exclusive capture role. The production STA API is deliberately always
+awake; the internal power-save protocol work is not a supported lifecycle.
+AP, BLE, Bluetooth, IEEE 802.15.4 and coexistence are not implemented and
+therefore have no placeholder public owner types.
 
 ISR handlers are private backend details: they record pending work and wake the
 runner. Examples contain no ISR, PAC, DMA or register assembly.

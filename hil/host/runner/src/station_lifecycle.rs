@@ -78,6 +78,10 @@ fn qualify(capture: &SerialCapture, timeout: Duration, cycles: u8) -> Result<()>
     if !capabilities.features.station_epoch_control {
         return Err("firmware does not advertise station epoch control".into());
     }
+    // Network provisioning is acknowledged before the radio task finishes
+    // scan/join/WPA2.  A lifecycle command is valid only after the unsolicited
+    // connected edge has published the Station owner at the public boundary.
+    capture.wait_for_connected_station(timeout)?;
     for cycle in 1..=cycles {
         qualify_cycle(capture, timeout, cycle)?;
         println!("station_reconnect_cycle={cycle}/{cycles} status=PASS");

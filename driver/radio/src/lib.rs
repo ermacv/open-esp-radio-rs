@@ -5,7 +5,7 @@
 extern crate std;
 
 #[cfg(feature = "wifi")]
-pub mod config;
+mod config;
 #[cfg(feature = "esp32s31-wifi-embassy")]
 #[doc(hidden)]
 pub mod embassy_supervisor;
@@ -16,8 +16,8 @@ pub mod supervisor;
 
 #[cfg(feature = "wifi")]
 pub use config::{
-    WifiAccessPointConfig, WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError,
-    WifiMonitorConfig, WifiPlan, WifiStandaloneMonitorPlan, WifiStationConfig,
+    WifiConfig, WifiConfigError, WifiMacAddress, WifiMacAddressError, WifiMonitorConfig, WifiPlan,
+    WifiStandaloneMonitorPlan, WifiStationConfig,
 };
 #[cfg(feature = "wifi")]
 pub use open_esp_radio_wifi_softmac::{
@@ -26,12 +26,11 @@ pub use open_esp_radio_wifi_softmac::{
 };
 #[cfg(feature = "wifi")]
 pub use requests::{
-    MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationPowerPolicy, StationRequest,
-    StationScanChannelIter, StationScanChannelOrderIter, StationScanChannels,
-    StationScanChannelsError, StationScanPolicy, StationSecurity, WifiScanRequest,
-    WifiServicePlanningError, WifiServicePlanningFailure, WifiServiceRequest,
-    WifiServiceRequestError, WifiServiceRequestFailure, WifiSsid, WifiSsidError,
-    WifiSupervisorConfiguration,
+    MonitorCapturePolicy, MonitorRequest, StationDiscovery, StationRequest, StationScanChannelIter,
+    StationScanChannelOrderIter, StationScanChannels, StationScanChannelsError, StationScanPolicy,
+    StationSecurity, WifiScanRequest, WifiServicePlanningError, WifiServicePlanningFailure,
+    WifiServiceRequest, WifiServiceRequestError, WifiServiceRequestFailure, WifiSsid,
+    WifiSsidError, WifiSupervisorConfiguration,
 };
 #[cfg(feature = "wifi")]
 pub use supervisor::{

@@ -1298,7 +1298,7 @@ impl ProductionWifiEpochRunner {
         request: StationRequest,
         scan_only: bool,
     ) -> Result<(ProductionStationControl, ProductionStationTask), ProductionWifiFault> {
-        let (discovery, security, reconnect, _validated_power) = request.into_parts();
+        let (discovery, security, reconnect) = request.into_parts();
         let (wifi, station_resources, monitor_resources) = stopped.into_parts();
         let previous = self.parked_monitor.replace(Some(monitor_resources));
         debug_assert!(previous.is_none(), "only one Wi-Fi role may be active");
@@ -1798,7 +1798,6 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                                     ),
                                 }
                             },
-                            || Esp32s31RadioError::UnsupportedPowerPolicy,
                             Esp32s31RadioError::RoleActive,
                             |_faulted: &ProductionWifiFault| Esp32s31RadioError::HardwareFault,
                         ),

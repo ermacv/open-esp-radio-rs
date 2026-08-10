@@ -17,8 +17,8 @@ use open_esp_radio_esp32s31_wifi_mac::{irq::MacInterruptRoute, rx::RxPhyInfo};
 use open_esp_radio_wifi_softmac::MonitorSink;
 
 use crate::{
-    RadioController, RadioSubsystemGeneration, StationPowerPolicy, StationRequest,
-    WifiStartFailure, WifiStartReport, WifiSupervisorConfiguration,
+    RadioController, RadioSubsystemGeneration, StationRequest, WifiStartFailure, WifiStartReport,
+    WifiSupervisorConfiguration,
     embassy_supervisor::{
         EmbassyWifiActiveRoleControl, EmbassyWifiActiveRoleExit, EmbassyWifiRoleEpochOutcome,
         EmbassyWifiRoleEpochRunner, EmbassyWifiRoleFrontier, EmbassyWifiStartKind,
@@ -141,23 +141,16 @@ impl<S> Esp32s31StationSupervisorEpoch<S> {
 
 /// Board-specific classification and public-error hooks around the common
 /// owner-holding station supervisor protocol.
-pub struct Esp32s31StationSupervisorHooks<C, U, R, F> {
+pub struct Esp32s31StationSupervisorHooks<C, R, F> {
     classify: C,
-    unsupported_power: U,
     reject_while_active: R,
     fault_error: F,
 }
 
-impl<C, U, R, F> Esp32s31StationSupervisorHooks<C, U, R, F> {
-    pub const fn new(
-        classify: C,
-        unsupported_power: U,
-        reject_while_active: R,
-        fault_error: F,
-    ) -> Self {
+impl<C, R, F> Esp32s31StationSupervisorHooks<C, R, F> {
+    pub const fn new(classify: C, reject_while_active: R, fault_error: F) -> Self {
         Self {
             classify,
-            unsupported_power,
             reject_while_active,
             fault_error,
         }
@@ -167,10 +160,9 @@ impl<C, U, R, F> Esp32s31StationSupervisorHooks<C, U, R, F> {
 /// Run one complete ESP32-S31 station epoch inside the physical supervisor.
 ///
 /// The board binding prepares the concrete station owner and classifies its
-/// terminal frontier. This function owns the common control protocol: reject
-/// unsupported power policy before moving `stopped`, acknowledge start only
-/// after task preparation, keep the controller beside the owner future, and
-/// acknowledge stop only after the returned owner is classified reusable.
+/// terminal frontier. This function acknowledges start only after task
+/// preparation, keeps the controller beside the owner future, and
+/// acknowledges stop only after the returned owner is classified reusable.
 pub async fn run_esp32s31_station_supervisor_epoch<
     'control,
     M,
@@ -180,14 +172,13 @@ pub async fn run_esp32s31_station_supervisor_epoch<
     E,
     Prepare,
     Classify,
-    UnsupportedPower,
     RejectActive,
     FaultError,
 >(
     endpoint: &mut EmbassyWifiSupervisorEndpoint<'_, M, E>,
     epoch: Esp32s31StationSupervisorEpoch<S>,
     prepare: Prepare,
-    hooks: Esp32s31StationSupervisorHooks<Classify, UnsupportedPower, RejectActive, FaultError>,
+    hooks: Esp32s31StationSupervisorHooks<Classify, RejectActive, FaultError>,
 ) -> EmbassyWifiRoleEpochOutcome<S, F>
 where
     M: RawMutex + 'control,
@@ -205,7 +196,6 @@ where
     Classify: FnOnce(
         Esp32s31StationExit<R::Owner, R, R::Error, R::Fault>,
     ) -> EmbassyWifiRoleFrontier<S, F>,
-    UnsupportedPower: FnOnce() -> E,
     RejectActive: FnMut(EmbassyWifiStartKind) -> E,
     FaultError: FnMut(&F) -> E,
 {
@@ -216,18 +206,9 @@ where
     } = epoch;
     let Esp32s31StationSupervisorHooks {
         classify,
-        unsupported_power,
         reject_while_active,
         mut fault_error,
     } = hooks;
-    if !matches!(request.power_policy(), StationPowerPolicy::AlwaysAwake) {
-        endpoint
-            .respond(EmbassyWifiSupervisorResponse::Station(Err(
-                WifiStartFailure::rejected(request, unsupported_power()),
-            )))
-            .await;
-        return EmbassyWifiRoleEpochOutcome::NotStarted(stopped);
-    }
 
     let (mut controller, task) = match prepare(stopped, request) {
         Ok(prepared) => prepared,

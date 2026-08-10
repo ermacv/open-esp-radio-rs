@@ -12,7 +12,6 @@ use crate::{connected::Esp32s31WifiDevice, monitor::Esp32s31MonitorFrames};
 pub enum Esp32s31RadioError {
     Planning(WifiServicePlanningError),
     RoleActive(EmbassyWifiStartKind),
-    UnsupportedPowerPolicy,
     HardwareFault,
 }
 

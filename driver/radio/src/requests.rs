@@ -83,24 +83,12 @@ impl fmt::Debug for StationSecurity {
     }
 }
 
-/// Station RF power policy requested for connected epochs.
-///
-/// Power-save is a policy request, not a claim that the current backend has
-/// already implemented the complete TSF/TIM/RF-owner transaction. A backend
-/// must reject an unsupported value before moving the stopped owner.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum StationPowerPolicy {
-    AlwaysAwake,
-    LegacyPowerSave { wake_guard_micros: u32 },
-}
-
 /// Complete owned request for one station service epoch.
 pub struct StationRequest {
     ssid: WifiSsid,
     security: StationSecurity,
     reconnect: StaReconnectPolicy,
     scan: StationScanPolicy,
-    power: StationPowerPolicy,
 }
 
 impl StationRequest {
@@ -115,13 +103,7 @@ impl StationRequest {
             security,
             reconnect,
             scan,
-            power: StationPowerPolicy::AlwaysAwake,
         }
-    }
-
-    pub const fn with_power_policy(mut self, power: StationPowerPolicy) -> Self {
-        self.power = power;
-        self
     }
 
     pub const fn ssid(&self) -> &WifiSsid {
@@ -140,23 +122,11 @@ impl StationRequest {
         self.scan
     }
 
-    pub const fn power_policy(&self) -> StationPowerPolicy {
-        self.power
-    }
-
-    pub fn into_parts(
-        self,
-    ) -> (
-        StationDiscovery,
-        StationSecurity,
-        StaReconnectPolicy,
-        StationPowerPolicy,
-    ) {
+    pub fn into_parts(self) -> (StationDiscovery, StationSecurity, StaReconnectPolicy) {
         (
             StationDiscovery::new(self.ssid, self.scan),
             self.security,
             self.reconnect,
-            self.power,
         )
     }
 }
@@ -169,7 +139,6 @@ impl fmt::Debug for StationRequest {
             .field("security", &self.security)
             .field("reconnect", &self.reconnect)
             .field("scan", &self.scan)
-            .field("power", &self.power)
             .finish()
     }
 }

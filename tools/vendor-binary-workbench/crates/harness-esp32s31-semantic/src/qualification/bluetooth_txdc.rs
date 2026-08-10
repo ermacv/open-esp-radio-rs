@@ -43,7 +43,7 @@ pub fn vendor_bluetooth_txdc_scenario(
     scenario
 }
 
-fn bluetooth_txdc_projection(
+pub(super) fn bluetooth_txdc_projection(
     image: &execution::ExecutableImage,
     result: &execution::ExecutionResult,
     phy_param: u32,
@@ -137,84 +137,6 @@ pub fn rust_bluetooth_txdc_events(
     for _ in 0..20_000 {
         let action = transition.action();
         let completion = match action {
-            PhyTxDcAction::ConfigurePbusDebugMode => {
-                events.push(BluetoothTxDcEvent::ConfigurePbusDebugMode);
-                PhyTxDcCompletion::PbusDebugModeConfigured
-            }
-            PhyTxDcAction::ReadPbus { selector, path } => {
-                events.push(BluetoothTxDcEvent::ReadPbus { selector, path });
-                PhyTxDcCompletion::PbusRead {
-                    selector,
-                    path,
-                    value: 0,
-                }
-            }
-            PhyTxDcAction::ForcePbus(transaction) => {
-                events.push(BluetoothTxDcEvent::ForcePbus {
-                    selector: transaction.selector(),
-                    path: transaction.path(),
-                    value: transaction.value(),
-                });
-                PhyTxDcCompletion::PbusCompleted(transaction)
-            }
-            PhyTxDcAction::ConfigureTxClock => {
-                events.push(BluetoothTxDcEvent::ConfigureTxClock { enabled: true });
-                PhyTxDcCompletion::TxClockConfigured
-            }
-            PhyTxDcAction::ConfigureTone {
-                enabled,
-                selector,
-                step,
-            } => {
-                events.push(BluetoothTxDcEvent::ConfigureTone {
-                    enabled,
-                    selector,
-                    step,
-                });
-                PhyTxDcCompletion::ToneConfigured {
-                    enabled,
-                    selector,
-                    step,
-                }
-            }
-            PhyTxDcAction::DelayMicros { phase, micros } => {
-                events.push(BluetoothTxDcEvent::DelayMicros(micros));
-                PhyTxDcCompletion::DelayElapsed { phase, micros }
-            }
-            PhyTxDcAction::TriggerMeasurement {
-                gain_index,
-                iteration,
-            } => PhyTxDcCompletion::MeasurementTriggered {
-                gain_index,
-                iteration,
-            },
-            PhyTxDcAction::PollReady {
-                gain_index,
-                iteration,
-            } => PhyTxDcCompletion::ReadySampled {
-                gain_index,
-                iteration,
-                ready: true,
-            },
-            PhyTxDcAction::ReadComparators {
-                gain_index,
-                iteration,
-            } => PhyTxDcCompletion::ComparatorsRead {
-                gain_index,
-                iteration,
-                comparator_high: [false, false],
-            },
-            PhyTxDcAction::ClearMeasurement => PhyTxDcCompletion::MeasurementCleared,
-            PhyTxDcAction::ConfigurePbusWorkMode => {
-                events.push(BluetoothTxDcEvent::ConfigurePbusWorkMode);
-                PhyTxDcCompletion::PbusWorkModeConfigured {
-                    settle_required: false,
-                }
-            }
-            PhyTxDcAction::ConfigurePbusWorkModePulse => {
-                PhyTxDcCompletion::PbusWorkModePulseConfigured
-            }
-            PhyTxDcAction::ClearPbusWorkModePulse => PhyTxDcCompletion::PbusWorkModePulseCleared,
             PhyTxDcAction::Complete(outcome) => {
                 state.apply_bluetooth_tx_dc_outcome(outcome);
                 let dco = [outcome.dco[0], outcome.dco[1], outcome.dco[2]];
@@ -227,10 +149,98 @@ pub fn rust_bluetooth_txdc_events(
             PhyTxDcAction::Failed(failure) => {
                 return Err(format!("Rust BT TXDC transition failed: {failure:?}").into());
             }
+            action => bluetooth_txdc_action_completion(&mut events, action)?,
         };
         transition
             .advance(completion)
             .map_err(|error| format!("Rust BT TXDC rejected completion: {error:?}"))?;
     }
     Err("Rust BT TXDC transition exceeded its semantic step bound".into())
+}
+
+pub(super) fn bluetooth_txdc_action_completion(
+    events: &mut Vec<BluetoothTxDcEvent>,
+    action: PhyTxDcAction,
+) -> Result<PhyTxDcCompletion> {
+    Ok(match action {
+        PhyTxDcAction::ConfigurePbusDebugMode => {
+            events.push(BluetoothTxDcEvent::ConfigurePbusDebugMode);
+            PhyTxDcCompletion::PbusDebugModeConfigured
+        }
+        PhyTxDcAction::ReadPbus { selector, path } => {
+            events.push(BluetoothTxDcEvent::ReadPbus { selector, path });
+            PhyTxDcCompletion::PbusRead {
+                selector,
+                path,
+                value: 0,
+            }
+        }
+        PhyTxDcAction::ForcePbus(transaction) => {
+            events.push(BluetoothTxDcEvent::ForcePbus {
+                selector: transaction.selector(),
+                path: transaction.path(),
+                value: transaction.value(),
+            });
+            PhyTxDcCompletion::PbusCompleted(transaction)
+        }
+        PhyTxDcAction::ConfigureTxClock => {
+            events.push(BluetoothTxDcEvent::ConfigureTxClock { enabled: true });
+            PhyTxDcCompletion::TxClockConfigured
+        }
+        PhyTxDcAction::ConfigureTone {
+            enabled,
+            selector,
+            step,
+        } => {
+            events.push(BluetoothTxDcEvent::ConfigureTone {
+                enabled,
+                selector,
+                step,
+            });
+            PhyTxDcCompletion::ToneConfigured {
+                enabled,
+                selector,
+                step,
+            }
+        }
+        PhyTxDcAction::DelayMicros { phase, micros } => {
+            events.push(BluetoothTxDcEvent::DelayMicros(micros));
+            PhyTxDcCompletion::DelayElapsed { phase, micros }
+        }
+        PhyTxDcAction::TriggerMeasurement {
+            gain_index,
+            iteration,
+        } => PhyTxDcCompletion::MeasurementTriggered {
+            gain_index,
+            iteration,
+        },
+        PhyTxDcAction::PollReady {
+            gain_index,
+            iteration,
+        } => PhyTxDcCompletion::ReadySampled {
+            gain_index,
+            iteration,
+            ready: true,
+        },
+        PhyTxDcAction::ReadComparators {
+            gain_index,
+            iteration,
+        } => PhyTxDcCompletion::ComparatorsRead {
+            gain_index,
+            iteration,
+            comparator_high: [false, false],
+        },
+        PhyTxDcAction::ClearMeasurement => PhyTxDcCompletion::MeasurementCleared,
+        PhyTxDcAction::ConfigurePbusWorkMode => {
+            events.push(BluetoothTxDcEvent::ConfigurePbusWorkMode);
+            PhyTxDcCompletion::PbusWorkModeConfigured {
+                settle_required: false,
+            }
+        }
+        PhyTxDcAction::ConfigurePbusWorkModePulse => PhyTxDcCompletion::PbusWorkModePulseConfigured,
+        PhyTxDcAction::ClearPbusWorkModePulse => PhyTxDcCompletion::PbusWorkModePulseCleared,
+        terminal => {
+            return Err(format!("BT TXDC completion driver received {terminal:?}").into());
+        }
+    })
 }

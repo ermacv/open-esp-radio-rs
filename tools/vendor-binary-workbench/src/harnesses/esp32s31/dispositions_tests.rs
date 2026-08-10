@@ -63,6 +63,16 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
         bluetooth_tx_gain.entry.unwrap().rust_component.as_deref(),
         Some("open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition")
     );
+    assert_eq!(
+        bluetooth_tx_gain
+            .entry
+            .unwrap()
+            .semantic_contract
+            .as_ref()
+            .unwrap()
+            .label(),
+        "esp32s31-bluetooth-tx-gain-init"
+    );
 
     let channel = manifest.resolve("archive", "phy_chip_set_chan");
     assert_eq!(

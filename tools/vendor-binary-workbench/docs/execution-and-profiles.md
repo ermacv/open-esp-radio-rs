@@ -367,7 +367,15 @@ DCO rows and completion flag. The Bluetooth TX-power contract covers
 saved/restored PHY-I2C fields, complete shared debug/work-mode transitions, BT
 PBus/DCO setup, RFPLL channel and TX-cap selection, every tone/SAR delay and
 the typed BT power curve. Its directional footprint also checks the shared
-PBus and DCO state consumed during cleanup.
+PBus and DCO state consumed during cleanup. The Bluetooth TX-gain parent
+contract is hierarchical: it first locks the six direct child selections and
+their arguments, then compares the actually active RFPLL, TX-cap, TXDC,
+TX-power, PWDET and publication phases with
+`PhyBluetoothTxGainInitTransition`. Cold and retained calls share one vendor
+execution session and one Rust `PhyState`; retained no-op children are not
+misreported as effects merely because the vendor entered their wrapper. The
+final comparison includes the three DCO rows and the gain-producing power
+curve, adjustment, attenuation and calibration state.
 Vendor baselines come from the linked ELF rather than the Rust object
 representation. This compares external actions and typed final state without
 requiring Rust to reproduce the vendor stack, function boundaries or polling
@@ -382,6 +390,13 @@ open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
 
 cargo vendor-binary-workbench verify contract rf-init \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --vendor-artifact \
+    verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
+open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+  --vendor-companion "$ESP32S31_ROM_ELF"
+
+cargo vendor-binary-workbench-esp32s31 verify contract bluetooth-tx-gain-init \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\

@@ -2,7 +2,7 @@
 
 use super::*;
 
-const BLUETOOTH_TXDC_PWDET_STATE_FOOTPRINT: &[StateFootprintRange] = &[
+pub(super) const BLUETOOTH_TXDC_PWDET_STATE_FOOTPRINT: &[StateFootprintRange] = &[
     StateFootprintRange {
         offset: 0x010,
         length: 2,
@@ -269,83 +269,6 @@ pub fn rust_bluetooth_txdc_pwdet_events(
     for _ in 0..2_000_000 {
         let action = transition.action();
         let completion = match action {
-            PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
-                power_table_low: 0,
-                power_control_field: 0,
-            },
-            PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
-                events.push(BluetoothTxDcPwdetEvent::ConfigureTxClock { enabled });
-                PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
-            }
-            PhyTxDcPwdetAction::ConfigurePowerDetector => {
-                events.push(BluetoothTxDcPwdetEvent::ConfigurePowerDetector);
-                PhyTxDcPwdetCompletion::PowerDetectorConfigured
-            }
-            PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
-                events.push(BluetoothTxDcPwdetEvent::ConfigurePbusDebugMode);
-                PhyTxDcPwdetCompletion::PbusDebugModeConfigured
-            }
-            PhyTxDcPwdetAction::ReadPbus { selector, path } => {
-                events.push(BluetoothTxDcPwdetEvent::ReadPbus { selector, path });
-                PhyTxDcPwdetCompletion::PbusRead {
-                    selector,
-                    path,
-                    value: 0,
-                }
-            }
-            PhyTxDcPwdetAction::ForcePbus(transaction) => {
-                events.push(BluetoothTxDcPwdetEvent::ForcePbus {
-                    selector: transaction.selector(),
-                    path: transaction.path(),
-                    value: transaction.value(),
-                });
-                PhyTxDcPwdetCompletion::PbusCompleted(transaction)
-            }
-            PhyTxDcPwdetAction::ConfigureTone {
-                enabled,
-                selector,
-                attenuation,
-            } => {
-                events.push(BluetoothTxDcPwdetEvent::ConfigureTone {
-                    enabled,
-                    selector,
-                    attenuation,
-                });
-                PhyTxDcPwdetCompletion::ToneConfigured {
-                    enabled,
-                    selector,
-                    attenuation,
-                }
-            }
-            PhyTxDcPwdetAction::DelayMicros { phase, micros } => {
-                events.push(BluetoothTxDcPwdetEvent::DelayMicros(micros));
-                PhyTxDcPwdetCompletion::DelayElapsed { phase, micros }
-            }
-            PhyTxDcPwdetAction::ConfigureSarCalibration => {
-                PhyTxDcPwdetCompletion::SarCalibrationConfigured
-            }
-            PhyTxDcPwdetAction::Search(action) => {
-                PhyTxDcPwdetCompletion::Search(txdc_pwdet_search_completion(&mut events, action))
-            }
-            PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
-                events.push(BluetoothTxDcPwdetEvent::ConfigurePbusWorkMode);
-                PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
-                    settle_required: false,
-                }
-            }
-            PhyTxDcPwdetAction::ConfigurePbusWorkModePulse => {
-                PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured
-            }
-            PhyTxDcPwdetAction::ClearPbusWorkModePulse => {
-                PhyTxDcPwdetCompletion::PbusWorkModePulseCleared
-            }
-            PhyTxDcPwdetAction::RestoreRegisters {
-                power_table_low,
-                power_control_field,
-            } => PhyTxDcPwdetCompletion::RegistersRestored {
-                power_table_low,
-                power_control_field,
-            },
             PhyTxDcPwdetAction::Complete(outcome) => {
                 state.apply_bluetooth_tx_dc_pwdet_outcome(outcome);
                 events.push(BluetoothTxDcPwdetEvent::Complete { dco: outcome.dco });
@@ -354,10 +277,99 @@ pub fn rust_bluetooth_txdc_pwdet_events(
             PhyTxDcPwdetAction::Failed(failure) => {
                 return Err(format!("Rust BT TXDC PWDET transition failed: {failure:?}").into());
             }
+            action => bluetooth_txdc_pwdet_action_completion(&mut events, action)?,
         };
         transition
             .advance(completion)
             .map_err(|error| format!("Rust BT TXDC PWDET rejected completion: {error:?}"))?;
     }
     Err("Rust BT TXDC PWDET transition exceeded its semantic step bound".into())
+}
+
+pub(super) fn bluetooth_txdc_pwdet_action_completion(
+    events: &mut Vec<BluetoothTxDcPwdetEvent>,
+    action: PhyTxDcPwdetAction,
+) -> Result<PhyTxDcPwdetCompletion> {
+    Ok(match action {
+        PhyTxDcPwdetAction::CaptureRegisters => PhyTxDcPwdetCompletion::RegistersCaptured {
+            power_table_low: 0,
+            power_control_field: 0,
+        },
+        PhyTxDcPwdetAction::ConfigureTxClock { enabled } => {
+            events.push(BluetoothTxDcPwdetEvent::ConfigureTxClock { enabled });
+            PhyTxDcPwdetCompletion::TxClockConfigured { enabled }
+        }
+        PhyTxDcPwdetAction::ConfigurePowerDetector => {
+            events.push(BluetoothTxDcPwdetEvent::ConfigurePowerDetector);
+            PhyTxDcPwdetCompletion::PowerDetectorConfigured
+        }
+        PhyTxDcPwdetAction::ConfigurePbusDebugMode => {
+            events.push(BluetoothTxDcPwdetEvent::ConfigurePbusDebugMode);
+            PhyTxDcPwdetCompletion::PbusDebugModeConfigured
+        }
+        PhyTxDcPwdetAction::ReadPbus { selector, path } => {
+            events.push(BluetoothTxDcPwdetEvent::ReadPbus { selector, path });
+            PhyTxDcPwdetCompletion::PbusRead {
+                selector,
+                path,
+                value: 0,
+            }
+        }
+        PhyTxDcPwdetAction::ForcePbus(transaction) => {
+            events.push(BluetoothTxDcPwdetEvent::ForcePbus {
+                selector: transaction.selector(),
+                path: transaction.path(),
+                value: transaction.value(),
+            });
+            PhyTxDcPwdetCompletion::PbusCompleted(transaction)
+        }
+        PhyTxDcPwdetAction::ConfigureTone {
+            enabled,
+            selector,
+            attenuation,
+        } => {
+            events.push(BluetoothTxDcPwdetEvent::ConfigureTone {
+                enabled,
+                selector,
+                attenuation,
+            });
+            PhyTxDcPwdetCompletion::ToneConfigured {
+                enabled,
+                selector,
+                attenuation,
+            }
+        }
+        PhyTxDcPwdetAction::DelayMicros { phase, micros } => {
+            events.push(BluetoothTxDcPwdetEvent::DelayMicros(micros));
+            PhyTxDcPwdetCompletion::DelayElapsed { phase, micros }
+        }
+        PhyTxDcPwdetAction::ConfigureSarCalibration => {
+            PhyTxDcPwdetCompletion::SarCalibrationConfigured
+        }
+        PhyTxDcPwdetAction::Search(action) => {
+            PhyTxDcPwdetCompletion::Search(txdc_pwdet_search_completion(events, action))
+        }
+        PhyTxDcPwdetAction::ConfigurePbusWorkMode => {
+            events.push(BluetoothTxDcPwdetEvent::ConfigurePbusWorkMode);
+            PhyTxDcPwdetCompletion::PbusWorkModeConfigured {
+                settle_required: false,
+            }
+        }
+        PhyTxDcPwdetAction::ConfigurePbusWorkModePulse => {
+            PhyTxDcPwdetCompletion::PbusWorkModePulseConfigured
+        }
+        PhyTxDcPwdetAction::ClearPbusWorkModePulse => {
+            PhyTxDcPwdetCompletion::PbusWorkModePulseCleared
+        }
+        PhyTxDcPwdetAction::RestoreRegisters {
+            power_table_low,
+            power_control_field,
+        } => PhyTxDcPwdetCompletion::RegistersRestored {
+            power_table_low,
+            power_control_field,
+        },
+        terminal => {
+            return Err(format!("BT TXDC PWDET completion driver received {terminal:?}").into());
+        }
+    })
 }

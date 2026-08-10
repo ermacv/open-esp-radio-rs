@@ -2,7 +2,7 @@
 
 use super::*;
 
-const BLUETOOTH_TX_POWER_STATE_FOOTPRINT: &[StateFootprintRange] = &[
+pub(super) const BLUETOOTH_TX_POWER_STATE_FOOTPRINT: &[StateFootprintRange] = &[
     StateFootprintRange {
         offset: 0x003,
         length: 1,
@@ -185,7 +185,7 @@ pub fn vendor_bluetooth_tx_power_scenario(
     scenario
 }
 
-fn vendor_bluetooth_tx_power_projection(
+pub(super) fn vendor_bluetooth_tx_power_projection(
     image: &execution::ExecutableImage,
     result: &execution::ExecutionResult,
     phy_param: u32,
@@ -364,7 +364,7 @@ fn append_i2c_request_events(
     }
 }
 
-fn append_rfpll_action(
+pub(super) fn append_rfpll_action(
     events: &mut Vec<BluetoothTxPowerEvent>,
     action: RfpllFrequencyAction,
 ) -> RfpllFrequencyCompletion {
@@ -514,7 +514,7 @@ fn point_completion(
     }
 }
 
-fn tx_power_completion(
+pub(super) fn tx_power_completion(
     events: &mut Vec<BluetoothTxPowerEvent>,
     action: PhyTxPowerAction,
 ) -> PhyTxPowerCompletion {
@@ -543,104 +543,6 @@ pub fn rust_bluetooth_tx_power_events(
     for _ in 0..200_000 {
         let action = transition.action();
         let completion = match action {
-            PhyBluetoothTxPowerAction::I2c(request) => {
-                PhyBluetoothTxPowerCompletion::I2c(append_i2c_request_events(&mut events, request))
-            }
-            PhyBluetoothTxPowerAction::Prepare(action) => {
-                use open_esp_radio_esp32s31_phy::phy_tx_cal::{
-                    PhyTxCalibrationEnvironmentAction as Action,
-                    PhyTxCalibrationEnvironmentCompletion as Completion,
-                };
-                let completion = match action {
-                    Action::ConfigurePbusDebugMode => {
-                        events.push(BluetoothTxPowerEvent::ConfigurePbusDebugMode);
-                        Completion::PbusDebugModeConfigured
-                    }
-                    Action::ForcePbus(transaction) => {
-                        events.push(BluetoothTxPowerEvent::ForcePbus {
-                            selector: transaction.selector(),
-                            path: transaction.path(),
-                            value: transaction.value(),
-                        });
-                        Completion::PbusCompleted(transaction)
-                    }
-                    Action::ConfigureTxClock { enabled } => {
-                        events.push(BluetoothTxPowerEvent::ConfigureTxClock { enabled });
-                        Completion::TxClockConfigured { enabled }
-                    }
-                    Action::ConfigurePowerDetector => Completion::PowerDetectorConfigured,
-                    Action::ConfigureCalibrationMode => Completion::CalibrationModeConfigured,
-                    unsupported => {
-                        return Err(format!(
-                            "BT prepare emitted unsupported action {unsupported:?}"
-                        )
-                        .into());
-                    }
-                };
-                PhyBluetoothTxPowerCompletion::Prepare(completion)
-            }
-            PhyBluetoothTxPowerAction::ForcePbus(transaction) => {
-                events.push(BluetoothTxPowerEvent::ForcePbus {
-                    selector: transaction.selector(),
-                    path: transaction.path(),
-                    value: transaction.value(),
-                });
-                PhyBluetoothTxPowerCompletion::PbusCompleted(transaction)
-            }
-            PhyBluetoothTxPowerAction::ReadPbus { selector, path } => {
-                events.push(BluetoothTxPowerEvent::ReadPbus { selector, path });
-                PhyBluetoothTxPowerCompletion::PbusRead {
-                    selector,
-                    path,
-                    value: 0,
-                }
-            }
-            PhyBluetoothTxPowerAction::Calibration(action) => {
-                PhyBluetoothTxPowerCompletion::Calibration(tx_power_completion(&mut events, action))
-            }
-            PhyBluetoothTxPowerAction::Cleanup(action) => {
-                use open_esp_radio_esp32s31_phy::phy_tx_cal::{
-                    PhyTxCalibrationEnvironmentAction as Action,
-                    PhyTxCalibrationEnvironmentCompletion as Completion,
-                };
-                let completion = match action {
-                    Action::StopTone => {
-                        events.push(BluetoothTxPowerEvent::StopTone);
-                        Completion::ToneStopped
-                    }
-                    Action::ConfigureTxClock { enabled } => {
-                        events.push(BluetoothTxPowerEvent::ConfigureTxClock { enabled });
-                        Completion::TxClockConfigured { enabled }
-                    }
-                    Action::ForcePbus(transaction) => {
-                        events.push(BluetoothTxPowerEvent::ForcePbus {
-                            selector: transaction.selector(),
-                            path: transaction.path(),
-                            value: transaction.value(),
-                        });
-                        Completion::PbusCompleted(transaction)
-                    }
-                    Action::ConfigurePbusWorkMode => {
-                        events.push(BluetoothTxPowerEvent::ConfigurePbusWorkMode);
-                        Completion::PbusWorkModeConfigured {
-                            settle_required: false,
-                        }
-                    }
-                    Action::DelayMicros { phase, micros } => {
-                        events.push(BluetoothTxPowerEvent::DelayMicros(micros));
-                        Completion::DelayElapsed { phase, micros }
-                    }
-                    Action::ConfigurePbusWorkModePulse => Completion::PbusWorkModePulseConfigured,
-                    Action::ClearPbusWorkModePulse => Completion::PbusWorkModePulseCleared,
-                    unsupported => {
-                        return Err(format!(
-                            "BT cleanup emitted unsupported action {unsupported:?}"
-                        )
-                        .into());
-                    }
-                };
-                PhyBluetoothTxPowerCompletion::Cleanup(completion)
-            }
             PhyBluetoothTxPowerAction::Complete(outcome) => {
                 let calibration = outcome.calibration;
                 state.apply_bluetooth_tx_power_outcome(outcome);
@@ -659,10 +561,118 @@ pub fn rust_bluetooth_tx_power_events(
             PhyBluetoothTxPowerAction::Failed(failure) => {
                 return Err(format!("Rust BT TX-power transition failed: {failure:?}").into());
             }
+            action => bluetooth_tx_power_action_completion(&mut events, action)?,
         };
         transition.advance(completion).map_err(|error| {
             format!("Rust BT TX-power transition rejected completion: {error:?}")
         })?;
     }
     Err("Rust BT TX-power transition exceeded its semantic step bound".into())
+}
+
+pub(super) fn bluetooth_tx_power_action_completion(
+    events: &mut Vec<BluetoothTxPowerEvent>,
+    action: PhyBluetoothTxPowerAction,
+) -> Result<PhyBluetoothTxPowerCompletion> {
+    Ok(match action {
+        PhyBluetoothTxPowerAction::I2c(request) => {
+            PhyBluetoothTxPowerCompletion::I2c(append_i2c_request_events(events, request))
+        }
+        PhyBluetoothTxPowerAction::Prepare(action) => {
+            use open_esp_radio_esp32s31_phy::phy_tx_cal::{
+                PhyTxCalibrationEnvironmentAction as Action,
+                PhyTxCalibrationEnvironmentCompletion as Completion,
+            };
+            let completion = match action {
+                Action::ConfigurePbusDebugMode => {
+                    events.push(BluetoothTxPowerEvent::ConfigurePbusDebugMode);
+                    Completion::PbusDebugModeConfigured
+                }
+                Action::ForcePbus(transaction) => {
+                    events.push(BluetoothTxPowerEvent::ForcePbus {
+                        selector: transaction.selector(),
+                        path: transaction.path(),
+                        value: transaction.value(),
+                    });
+                    Completion::PbusCompleted(transaction)
+                }
+                Action::ConfigureTxClock { enabled } => {
+                    events.push(BluetoothTxPowerEvent::ConfigureTxClock { enabled });
+                    Completion::TxClockConfigured { enabled }
+                }
+                Action::ConfigurePowerDetector => Completion::PowerDetectorConfigured,
+                Action::ConfigureCalibrationMode => Completion::CalibrationModeConfigured,
+                unsupported => {
+                    return Err(
+                        format!("BT prepare emitted unsupported action {unsupported:?}").into(),
+                    );
+                }
+            };
+            PhyBluetoothTxPowerCompletion::Prepare(completion)
+        }
+        PhyBluetoothTxPowerAction::ForcePbus(transaction) => {
+            events.push(BluetoothTxPowerEvent::ForcePbus {
+                selector: transaction.selector(),
+                path: transaction.path(),
+                value: transaction.value(),
+            });
+            PhyBluetoothTxPowerCompletion::PbusCompleted(transaction)
+        }
+        PhyBluetoothTxPowerAction::ReadPbus { selector, path } => {
+            events.push(BluetoothTxPowerEvent::ReadPbus { selector, path });
+            PhyBluetoothTxPowerCompletion::PbusRead {
+                selector,
+                path,
+                value: 0,
+            }
+        }
+        PhyBluetoothTxPowerAction::Calibration(action) => {
+            PhyBluetoothTxPowerCompletion::Calibration(tx_power_completion(events, action))
+        }
+        PhyBluetoothTxPowerAction::Cleanup(action) => {
+            use open_esp_radio_esp32s31_phy::phy_tx_cal::{
+                PhyTxCalibrationEnvironmentAction as Action,
+                PhyTxCalibrationEnvironmentCompletion as Completion,
+            };
+            let completion = match action {
+                Action::StopTone => {
+                    events.push(BluetoothTxPowerEvent::StopTone);
+                    Completion::ToneStopped
+                }
+                Action::ConfigureTxClock { enabled } => {
+                    events.push(BluetoothTxPowerEvent::ConfigureTxClock { enabled });
+                    Completion::TxClockConfigured { enabled }
+                }
+                Action::ForcePbus(transaction) => {
+                    events.push(BluetoothTxPowerEvent::ForcePbus {
+                        selector: transaction.selector(),
+                        path: transaction.path(),
+                        value: transaction.value(),
+                    });
+                    Completion::PbusCompleted(transaction)
+                }
+                Action::ConfigurePbusWorkMode => {
+                    events.push(BluetoothTxPowerEvent::ConfigurePbusWorkMode);
+                    Completion::PbusWorkModeConfigured {
+                        settle_required: false,
+                    }
+                }
+                Action::DelayMicros { phase, micros } => {
+                    events.push(BluetoothTxPowerEvent::DelayMicros(micros));
+                    Completion::DelayElapsed { phase, micros }
+                }
+                Action::ConfigurePbusWorkModePulse => Completion::PbusWorkModePulseConfigured,
+                Action::ClearPbusWorkModePulse => Completion::PbusWorkModePulseCleared,
+                unsupported => {
+                    return Err(
+                        format!("BT cleanup emitted unsupported action {unsupported:?}").into(),
+                    );
+                }
+            };
+            PhyBluetoothTxPowerCompletion::Cleanup(completion)
+        }
+        terminal => {
+            return Err(format!("BT TX-power completion driver received {terminal:?}").into());
+        }
+    })
 }

@@ -9,6 +9,7 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+mod bluetooth_tx_gain;
 mod bluetooth_tx_power;
 mod bluetooth_txdc;
 mod bluetooth_txdc_pwdet;
@@ -23,6 +24,7 @@ mod state;
 mod wdev_append_rx_blocks;
 mod wdev_process_fiq;
 
+pub use bluetooth_tx_gain::*;
 pub use bluetooth_tx_power::*;
 pub use bluetooth_txdc::*;
 pub use bluetooth_txdc_pwdet::*;
@@ -34,8 +36,9 @@ pub use rf_init::*;
 #[cfg(test)]
 use rf_init::{rf_phase, vendor_rf_init_phase};
 pub use runner::{
-    verify_esp32s31_bluetooth_tx_power, verify_esp32s31_bluetooth_txdc,
-    verify_esp32s31_bluetooth_txdc_pwdet, verify_esp32s31_channel, verify_esp32s31_rf_init,
+    verify_esp32s31_bluetooth_tx_gain_init, verify_esp32s31_bluetooth_tx_power,
+    verify_esp32s31_bluetooth_txdc, verify_esp32s31_bluetooth_txdc_pwdet, verify_esp32s31_channel,
+    verify_esp32s31_rf_init,
 };
 pub use sta_join_state::*;
 pub use state::*;
@@ -48,8 +51,9 @@ pub use wdev_process_fiq::*;
 
 use open_esp_radio_esp32s31_phy::{
     phy_bluetooth::{
-        PhyBluetoothTxDcPwdetTransition, PhyBluetoothTxDcTransition, PhyBluetoothTxPowerAction,
-        PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerTransition,
+        PhyBluetoothTxDcPwdetTransition, PhyBluetoothTxDcTransition, PhyBluetoothTxGainInitAction,
+        PhyBluetoothTxGainInitCompletion, PhyBluetoothTxGainInitLocalStep,
+        PhyBluetoothTxPowerAction, PhyBluetoothTxPowerCompletion, PhyBluetoothTxPowerTransition,
     },
     phy_channel::{
         PhyChipChannelAction, PhyChipChannelCompletion, PhyChipChannelRequest,

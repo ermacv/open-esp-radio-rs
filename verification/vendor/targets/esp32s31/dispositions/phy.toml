@@ -180,6 +180,7 @@ symbol = "phy_bt_tx_gain_init"
 disposition = "replaced-by-composition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_bluetooth::PhyBluetoothTxGainInitTransition"
+semantic-contract = "esp32s31-bluetooth-tx-gain-init"
 
 [[functions]]
 source = "archive"

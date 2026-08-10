@@ -241,6 +241,15 @@ that every user must learn.
   surface. All 54 named slots and all 176 resolved call sites now link to one
   of 57 reusable catalog operations; only the existing 18 explicitly compiled
   call models authorize execution.
+- [x] Qualify the first recovered parent composition rather than only its
+  leaves. `phy_bt_tx_gain_init` now locks its linked direct-call topology and
+  arguments, drives `PhyBluetoothTxGainInitTransition` through the same
+  deterministic child models, and matches both cold and retained state. The
+  real linked image completed 506,725 concrete steps across the two cases.
+- [ ] Qualify the two remaining release parents hierarchically:
+  `phy_bb_init` over the reviewed baseband children, then
+  `register_chipv7_phy` over RF-init and baseband. Do not duplicate leaf
+  effect models in the parents.
 
 ## P1 — project usability and maintainability
 

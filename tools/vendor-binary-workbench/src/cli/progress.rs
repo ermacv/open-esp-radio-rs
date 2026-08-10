@@ -44,6 +44,9 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::VerifyContractChannel(_) => "Channel contract verification",
         Command::VerifyContractRfInit(_) => "RF-init contract verification",
         Command::VerifyContractBluetoothTxPower(_) => "Bluetooth TX-power contract verification",
+        Command::VerifyContractBluetoothTxGainInit(_) => {
+            "Bluetooth TX-gain parent contract verification"
+        }
         Command::ExecuteRun(_) => "Vendor function execution",
         Command::ExecuteCompare(_) => "Function comparison",
         Command::VerifyProfiles(_) => "Profile verification",

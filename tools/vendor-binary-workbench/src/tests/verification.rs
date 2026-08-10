@@ -32,7 +32,10 @@ fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
         .expect("workbench remains under tools");
     let path = root.join("verification/vendor/targets/esp32s31/baselines/phy.toml");
     let expected = load_evidence_baseline(&path).unwrap();
-    assert_eq!(expected.len(), 104);
+    assert_eq!(expected.len(), 107);
+    for symbol in ["phy_bb_init", "phy_bt_tx_gain_init", "register_chipv7_phy"] {
+        assert!(expected.contains_key(&("archive".to_owned(), symbol.to_owned())));
+    }
     assert!(compare_evidence_baseline(&expected, &expected).passed);
 
     let mut downgraded = expected.clone();

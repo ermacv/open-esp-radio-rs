@@ -385,6 +385,7 @@ leaf_commands!(VerifyContractCommand {
     BluetoothTxPower(VerifyContractArgs) => Command::VerifyContractBluetoothTxPower, VerifyContract,
     BluetoothTxGainInit(VerifyContractArgs) => Command::VerifyContractBluetoothTxGainInit, VerifyContract,
     BasebandInit(VerifyContractArgs) => Command::VerifyContractBasebandInit, VerifyContract,
+    RegisterInit(VerifyContractArgs) => Command::VerifyContractRegisterInit, VerifyContract,
 });
 
 impl Workflow {
@@ -449,6 +450,7 @@ pub(crate) enum Command {
     VerifyContractBluetoothTxPower(VerifyContractArgs),
     VerifyContractBluetoothTxGainInit(VerifyContractArgs),
     VerifyContractBasebandInit(VerifyContractArgs),
+    VerifyContractRegisterInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),

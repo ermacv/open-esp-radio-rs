@@ -131,6 +131,7 @@ pub(in crate::cli) enum TargetCommand {
     VerifyContractBluetoothTxPower(VerifyContractArgs),
     VerifyContractBluetoothTxGainInit(VerifyContractArgs),
     VerifyContractBasebandInit(VerifyContractArgs),
+    VerifyContractRegisterInit(VerifyContractArgs),
     ExecuteRun(ExecuteRunArgs),
     ExecuteCompare(ExecuteCompareArgs),
     VerifyProfiles(VerifyProfilesArgs),

@@ -181,6 +181,7 @@ pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result
         "esp32s31-bluetooth-tx-power" => ("archive", "phy_bt_tx_pwctrl_init"),
         "esp32s31-bluetooth-tx-gain-init" => ("archive", "phy_bt_tx_gain_init"),
         "esp32s31-baseband-init" => ("archive", "phy_bb_init"),
+        "esp32s31-register-init" => ("archive", "register_chipv7_phy"),
         _ => return Ok(None),
     };
     if (source, vendor_symbol) != expected {
@@ -234,6 +235,14 @@ pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result
         }
         "esp32s31-baseband-init" => {
             verification::verify_esp32s31_baseband_init(
+                request.svd,
+                request.vendor_artifact,
+                companion,
+            )?
+            .matched
+        }
+        "esp32s31-register-init" => {
+            verification::verify_esp32s31_register_init(
                 request.svd,
                 request.vendor_artifact,
                 companion,
@@ -313,6 +322,38 @@ const SEMANTIC_COMMON_SOURCES: &[EvidenceSource] = &[
         name: "qualification/runner.rs",
         contents: include_str!("qualification/runner.rs"),
     },
+    EvidenceSource {
+        name: "qualification/runner/parents.rs",
+        contents: include_str!("qualification/runner/parents.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/bb_init/environment.rs",
+        contents: include_str!("qualification/bb_init/environment.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion.rs",
+        contents: include_str!("qualification/completion.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion/common.rs",
+        contents: include_str!("qualification/completion/common.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion/parent.rs",
+        contents: include_str!("qualification/completion/parent.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion/rx_gain.rs",
+        contents: include_str!("qualification/completion/rx_gain.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion/rx_iq.rs",
+        contents: include_str!("qualification/completion/rx_iq.rs"),
+    },
+    EvidenceSource {
+        name: "qualification/completion/tx.rs",
+        contents: include_str!("qualification/completion/tx.rs"),
+    },
 ];
 
 pub fn driver_adapter_evidence_sources(id: &str) -> Option<DriverAdapterEvidenceSources> {
@@ -364,6 +405,10 @@ pub fn semantic_contract_evidence_sources(id: &str) -> Option<SemanticContractEv
         "esp32s31-baseband-init" => EvidenceSource {
             name: "qualification/bb_init.rs",
             contents: include_str!("qualification/bb_init.rs"),
+        },
+        "esp32s31-register-init" => EvidenceSource {
+            name: "qualification/register_init.rs",
+            contents: include_str!("qualification/register_init.rs"),
         },
         _ => return None,
     };

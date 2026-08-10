@@ -298,6 +298,12 @@ pub(super) fn resolve_command(
             svd: environment.svd,
             project: environment.project.map(Box::new),
         },
+        Command::VerifyContractRegisterInit(arguments) => ResolvedInvocation::Target {
+            command: TargetCommand::VerifyContractRegisterInit(arguments),
+            target: environment.target,
+            svd: environment.svd,
+            project: environment.project.map(Box::new),
+        },
         Command::ExecuteRun(arguments) => ResolvedInvocation::Target {
             command: TargetCommand::ExecuteRun(arguments),
             target: environment.target,

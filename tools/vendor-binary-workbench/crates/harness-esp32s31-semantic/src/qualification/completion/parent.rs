@@ -3,6 +3,34 @@
 use super::*;
 
 impl DeterministicPhyCompletion {
+    pub(crate) fn register(
+        &mut self,
+        action: open_esp_radio_esp32s31_phy::phy_register::PhyRegisterAction,
+    ) -> Result<open_esp_radio_esp32s31_phy::phy_register::PhyRegisterCompletion> {
+        use open_esp_radio_esp32s31_phy::phy_register::{
+            PhyRegisterAction as Action, PhyRegisterCompletion as Completion,
+            PhyRegisterMmioCompletion,
+        };
+        Ok(match action {
+            Action::Mmio(action) => Completion::Mmio(PhyRegisterMmioCompletion { action }),
+            Action::DelayMicros { phase, micros } => Completion::DelayElapsed { phase, micros },
+            Action::SampleI2cMasterReset { index, sample } => Completion::I2cMasterResetSampled {
+                index,
+                sample,
+                busy: false,
+            },
+            Action::Rf(action) => {
+                let binding = PhyColdExternalBinding::lower(action).map_err(|error| {
+                    format!("cannot lower register RF action {action:?}: {error:?}")
+                })?;
+                Completion::Rf(complete_rf_init_external(binding)?)
+            }
+            Action::Baseband(action) => Completion::Baseband(self.baseband(action)?),
+            Action::Temperature(action) => Completion::Temperature(self.temperature(action)?),
+            Action::ReadFinalI2c { address } => Completion::FinalI2cRead { address, value: 0 },
+        })
+    }
+
     pub(super) fn channel(
         &mut self,
         action: PhyChipChannelAction,

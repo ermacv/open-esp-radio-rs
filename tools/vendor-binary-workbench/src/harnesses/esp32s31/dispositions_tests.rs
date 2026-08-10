@@ -46,6 +46,10 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
     let root = root.entry.unwrap();
     assert!(root.rust_component.is_some());
     assert!(root.qualification_blockers.is_empty());
+    assert_eq!(
+        root.semantic_contract.as_ref().unwrap().label(),
+        "esp32s31-register-init"
+    );
 
     let bb_init = manifest.resolve("archive", "phy_bb_init");
     let bb_init = bb_init.entry.unwrap();

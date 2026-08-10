@@ -535,7 +535,7 @@ fn complete_i2c_binding(
     Err("semantic PHY-I2C binding exceeded its finite edge limit".into())
 }
 
-fn complete_rf_init_external(
+pub(super) fn complete_rf_init_external(
     binding: PhyColdExternalBinding,
 ) -> Result<open_esp_radio_esp32s31_phy::phy_i2c::PhyRfInitPrefixCompletion> {
     match binding {

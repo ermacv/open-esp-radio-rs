@@ -409,6 +409,13 @@ cargo vendor-binary-workbench-esp32s31 verify contract baseband-init \
     verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
 open-esp-radio-vendor-oracle-esp32s31-trace-elf \
   --vendor-companion "$ESP32S31_ROM_ELF"
+
+cargo vendor-binary-workbench-esp32s31 verify contract register-init \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml \
+  --vendor-artifact \
+    verification/vendor/targets/esp32s31/oracle-firmware/target/riscv32imafc-unknown-none-elf/release/\
+open-esp-radio-vendor-oracle-esp32s31-trace-elf \
+  --vendor-companion "$ESP32S31_ROM_ELF"
 ```
 
 The current matrix covers channel numbers 1–13 for both zero/nonzero CBW

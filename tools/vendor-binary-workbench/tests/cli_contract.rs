@@ -338,6 +338,7 @@ fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
         "rf-init",
         "bluetooth-tx-gain-init",
         "baseband-init",
+        "register-init",
     ] {
         let output = run(&[
             "verify",

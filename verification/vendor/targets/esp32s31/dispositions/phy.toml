@@ -153,6 +153,7 @@ disposition = "replaced-by-composition"
 protocol = "shared"
 rust-component = "open_esp_radio_esp32s31_phy::phy_register::PhyRegisterTransition"
 hil-evidence = "qualification/targets/esp32s31/records/2026-07-31-driver-repo-he20-bidirectional.md"
+semantic-contract = "esp32s31-register-init"
 
 [[functions]]
 source = "archive"

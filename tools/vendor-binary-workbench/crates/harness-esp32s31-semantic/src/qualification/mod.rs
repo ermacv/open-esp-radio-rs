@@ -18,6 +18,7 @@ mod channel;
 mod completion;
 mod hal_mac_txq_enable;
 mod iq_estimator;
+mod register_init;
 mod report;
 mod rf_init;
 mod runner;
@@ -35,6 +36,7 @@ pub use channel::*;
 use completion::DeterministicPhyCompletion;
 pub use hal_mac_txq_enable::*;
 pub use iq_estimator::*;
+pub use register_init::*;
 pub use report::*;
 pub use rf_init::*;
 #[cfg(test)]
@@ -42,7 +44,8 @@ use rf_init::{rf_phase, vendor_rf_init_phase};
 pub use runner::{
     verify_esp32s31_baseband_init, verify_esp32s31_bluetooth_tx_gain_init,
     verify_esp32s31_bluetooth_tx_power, verify_esp32s31_bluetooth_txdc,
-    verify_esp32s31_bluetooth_txdc_pwdet, verify_esp32s31_channel, verify_esp32s31_rf_init,
+    verify_esp32s31_bluetooth_txdc_pwdet, verify_esp32s31_channel, verify_esp32s31_register_init,
+    verify_esp32s31_rf_init,
 };
 pub use sta_join_state::*;
 pub use state::*;

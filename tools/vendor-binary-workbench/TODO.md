@@ -250,13 +250,15 @@ that every user must learn.
   arguments, drives `PhyBluetoothTxGainInitTransition` through the same
   deterministic child models, and matches both cold and retained state. The
   real linked image completed 506,725 concrete steps across the two cases.
-- [ ] Qualify the final release parent `register_chipv7_phy` over RF-init and
-  baseband without duplicating leaf effect models. `phy_bb_init` is now a real
-  semantic contract: its linked 26-call topology, arguments and reviewed RAM
-  footprint match `PhyBbInitTransition` in both cold and retained cases. The
-  pinned linked image completed 959,177 concrete steps across those cases.
-  The remaining release-parent work is the outer registration prelude/tail,
-  RF/baseband child ordering and final state projection.
+- [x] Qualify the release parents hierarchically without duplicating leaf
+  effect models. `phy_bb_init` locks its linked 26-call topology, arguments
+  and reviewed RAM footprint in cold and retained cases (959,177 steps).
+  `register_chipv7_phy` additionally locks its 19 direct calls, outer
+  prelude/RF/baseband/temperature/tail order, complete `phy_param` transfer
+  and the exact 524-byte caller-owned calibration image on the supported cold
+  full-calibration path (868,143 steps). Retained-cache hardware replay remains
+  intentionally outside the production transition and therefore outside this
+  contract.
 
 ## P1 — project usability and maintainability
 

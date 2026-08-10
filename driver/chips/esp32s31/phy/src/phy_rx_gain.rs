@@ -763,7 +763,7 @@ enum InitStep {
 ///
 /// The reference calibration guard and table-generation guard are explicit
 /// owned booleans. A successful DC outcome is held inside this transition
-/// until the enclosing `PhyColdState` commits it; no raw parameter pointer is
+/// until the enclosing `PhyState` commits it; no raw parameter pointer is
 /// exposed while hardware calibration is active.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PhyRxGainInitTransition {

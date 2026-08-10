@@ -1,9 +1,7 @@
 //! ESP32-S31 application materialization of a validated radio topology.
 
 use open_esp_radio_esp32s31_hal::Radio;
-use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, phy_cold::PhyCalibrationRecord,
-};
+use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyCalibrationCache, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi::cold_start::start_esp32s31_wifi;
 pub use open_esp_radio_esp32s31_wifi::cold_start::{
     Esp32s31WifiColdStart as Esp32s31WifiStart,
@@ -152,11 +150,15 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedStation<P> {
                 access_point_hardware_address,
             ),
         ) {
-            Ok(mac) => Ok(Esp32s31StationReady {
-                interface: self.interface,
-                plan: self.plan,
-                wifi: enter_esp32s31_wifi_runtime(mac),
-            }),
+            Ok(mac) => {
+                let runtime = enter_esp32s31_wifi_runtime(mac);
+                Ok(Esp32s31StationReady {
+                    interface: self.interface,
+                    plan: self.plan,
+                    wifi: runtime.wifi,
+                    calibration_cache: runtime.calibration_cache,
+                })
+            }
             Err(failure) => Err(Esp32s31StationMacStartFailure {
                 interface: self.interface,
                 plan: self.plan,
@@ -175,6 +177,7 @@ pub struct Esp32s31StationReady<P> {
     interface: BoundVirtualInterface,
     plan: WifiPlan,
     wifi: Esp32s31WifiStopped<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
 }
 
 impl<P> Esp32s31StationReady<P> {
@@ -186,8 +189,14 @@ impl<P> Esp32s31StationReady<P> {
         self.plan
     }
 
-    pub fn into_parts(self) -> (WifiPlan, Esp32s31WifiStopped<P>) {
-        (self.plan, self.wifi)
+    pub fn into_parts(
+        self,
+    ) -> (
+        WifiPlan,
+        Esp32s31WifiStopped<P>,
+        Option<PhyCalibrationCache>,
+    ) {
+        (self.plan, self.wifi, self.calibration_cache)
     }
 }
 
@@ -247,10 +256,14 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedMonitor<P> {
                 access_point_hardware_address,
             ),
         ) {
-            Ok(mac) => Ok(Esp32s31MonitorReady {
-                plan: self.plan,
-                wifi: enter_esp32s31_wifi_runtime(mac),
-            }),
+            Ok(mac) => {
+                let runtime = enter_esp32s31_wifi_runtime(mac);
+                Ok(Esp32s31MonitorReady {
+                    plan: self.plan,
+                    wifi: runtime.wifi,
+                    calibration_cache: runtime.calibration_cache,
+                })
+            }
             Err(failure) => Err(Esp32s31MonitorMacStartFailure {
                 plan: self.plan,
                 failure,
@@ -263,6 +276,7 @@ impl<P: Esp32s31WifiMacPlatform> Esp32s31PreparedMonitor<P> {
 pub struct Esp32s31MonitorReady<P> {
     plan: WifiStandaloneMonitorPlan,
     wifi: Esp32s31WifiStopped<P>,
+    calibration_cache: Option<PhyCalibrationCache>,
 }
 
 impl<P> Esp32s31MonitorReady<P> {
@@ -270,8 +284,14 @@ impl<P> Esp32s31MonitorReady<P> {
         self.plan
     }
 
-    pub fn into_parts(self) -> (WifiStandaloneMonitorPlan, Esp32s31WifiStopped<P>) {
-        (self.plan, self.wifi)
+    pub fn into_parts(
+        self,
+    ) -> (
+        WifiStandaloneMonitorPlan,
+        Esp32s31WifiStopped<P>,
+        Option<PhyCalibrationCache>,
+    ) {
+        (self.plan, self.wifi, self.calibration_cache)
     }
 }
 
@@ -317,7 +337,7 @@ impl<P> Esp32s31RadioStartFailure<P> {
 pub async fn start_esp32s31_radio<P, D, O>(
     radio: Radio<P>,
     config: Esp32s31RadioStartConfig,
-    calibration_record: Option<PhyCalibrationRecord>,
+    calibration_cache: Option<PhyCalibrationCache>,
     observer: O,
 ) -> Result<Esp32s31StartedRadio<P>, Esp32s31RadioStartFailure<P>>
 where
@@ -340,7 +360,7 @@ where
             return Err(Esp32s31RadioStartFailure::Configuration { radio, error });
         }
     };
-    let wifi = start_esp32s31_wifi::<P, D, O>(radio, config.wifi, calibration_record, observer)
+    let wifi = start_esp32s31_wifi::<P, D, O>(radio, config.wifi, calibration_cache, observer)
         .await
         .map_err(Esp32s31RadioStartFailure::Wifi)?;
     Ok(Esp32s31StartedRadio { plan, wifi })

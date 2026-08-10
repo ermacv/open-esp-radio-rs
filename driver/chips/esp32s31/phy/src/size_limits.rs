@@ -3,7 +3,7 @@
 use core::mem::size_of;
 
 use crate::{
-    PhyRegisterTransition,
+    PhyCalibrationCache, PhyRegisterTransition, PhyState,
     phy_bb::PhyBbInitTransition,
     phy_rx_gain::{PhyRxGainInitTransition, PhyRxGainPublishTransition},
 };
@@ -12,18 +12,20 @@ use crate::{
 // than snapshots of compiler-selected padding. A transition that crosses a
 // boundary must be split or receive an explicit SRAM-budget review.
 //
-// `PhyRegisterTransition` now optionally owns the complete 524-byte retained
-// calibration record while it also owns the live 508-byte PHY state. That
-// overlap is required only across full calibration and its exact vendor-order
-// backup; it replaces an equally sized caller buffer rather than introducing
-// an unbounded allocation. Keep the rounded ceiling explicit so further state
-// growth still fails at compile time.
-const PHY_REGISTER_TRANSITION_LIMIT: usize = 3_072;
+// Registration briefly owns both the live semantic state and its typed
+// calibration snapshot. These ceilings are rounded above the reviewed RV32
+// layouts; they prevent a return to an opaque 508-byte state plus a 524-byte
+// duplicate without making compiler padding part of the API.
+const PHY_STATE_LIMIT: usize = 384;
+const PHY_CALIBRATION_CACHE_LIMIT: usize = 320;
+const PHY_REGISTER_TRANSITION_LIMIT: usize = 2_560;
 const PHY_BB_INIT_TRANSITION_LIMIT: usize = 1_600;
 const PHY_RX_GAIN_INIT_TRANSITION_LIMIT: usize = 1_088;
 const PHY_RX_GAIN_PUBLISH_TRANSITION_LIMIT: usize = 832;
 
 const _: () = {
+    assert!(size_of::<PhyState>() <= PHY_STATE_LIMIT);
+    assert!(size_of::<PhyCalibrationCache>() <= PHY_CALIBRATION_CACHE_LIMIT);
     assert!(size_of::<PhyRegisterTransition>() <= PHY_REGISTER_TRANSITION_LIMIT);
     assert!(size_of::<PhyBbInitTransition>() <= PHY_BB_INIT_TRANSITION_LIMIT);
     assert!(size_of::<PhyRxGainInitTransition>() <= PHY_RX_GAIN_INIT_TRANSITION_LIMIT);

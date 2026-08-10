@@ -13,11 +13,10 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyCalibrationIdentity, PhyRegisterOutcome, PhyRegisterRunError,
-    PhyRegisterTransition, PhyTargetObserver, PhyTargetPortCounters, PhyTargetPortError,
-    PhyTxTargetPowerProfile, TargetPhyRegisterPort,
-    phy_cold::{PhyCalibrationRecord, PhyColdState},
-    run_phy_register, select_phy_channel,
+    PhyAsyncDelay, PhyCalibrationCache, PhyCalibrationIdentity, PhyRegisterOutcome,
+    PhyRegisterRunError, PhyRegisterTransition, PhyState, PhyTargetObserver, PhyTargetPortCounters,
+    PhyTargetPortError, PhyTxTargetPowerProfile, TargetPhyRegisterPort, run_phy_register,
+    select_phy_channel,
 };
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -60,9 +59,9 @@ pub struct Esp32s31WifiColdStartReport {
 /// Complete owner set returned at the cold-MAC boundary.
 pub struct Esp32s31WifiColdStart<P> {
     radio: Radio<P, Powered>,
-    phy: PhyColdState,
+    phy: PhyState,
     tx_power: PhyTxTargetPowerProfile,
-    calibration_record: Option<PhyCalibrationRecord>,
+    calibration_cache: Option<PhyCalibrationCache>,
     report: Esp32s31WifiColdStartReport,
 }
 
@@ -71,24 +70,24 @@ impl<P> Esp32s31WifiColdStart<P> {
         self.report
     }
 
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.calibration_record.as_ref()
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
     }
 
     pub fn into_parts(
         self,
     ) -> (
         Radio<P, Powered>,
-        PhyColdState,
+        PhyState,
         PhyTxTargetPowerProfile,
-        Option<PhyCalibrationRecord>,
+        Option<PhyCalibrationCache>,
         Esp32s31WifiColdStartReport,
     ) {
         (
             self.radio,
             self.phy,
             self.tx_power,
-            self.calibration_record,
+            self.calibration_cache,
             self.report,
         )
     }
@@ -109,8 +108,8 @@ pub enum Esp32s31WifiColdStartFailure<P> {
     },
     InitialChannel {
         radio: Radio<P, Powered>,
-        phy: PhyColdState,
-        calibration_record: Option<PhyCalibrationRecord>,
+        phy: PhyState,
+        calibration_cache: Option<PhyCalibrationCache>,
         report: Esp32s31WifiColdStartReport,
         error: PhyTargetPortError,
     },
@@ -121,7 +120,7 @@ pub enum Esp32s31WifiColdStartFailure<P> {
 pub async fn start_esp32s31_wifi<P, D, O>(
     radio: Radio<P>,
     config: Esp32s31WifiColdStartConfig,
-    calibration_record: Option<PhyCalibrationRecord>,
+    calibration_cache: Option<PhyCalibrationCache>,
     observer: O,
 ) -> Result<Esp32s31WifiColdStart<P>, Esp32s31WifiColdStartFailure<P>>
 where
@@ -138,9 +137,9 @@ where
     let mut powered = radio
         .power_up()
         .map_err(Esp32s31WifiColdStartFailure::Power)?;
-    let mut transition = PhyRegisterTransition::with_default_profile_and_calibration(
+    let mut transition = PhyRegisterTransition::with_production_config_and_calibration(
         config.calibration_identity,
-        calibration_record,
+        calibration_cache,
     );
     let mut port = TargetPhyRegisterPort::<_, D, _>::new(&mut powered, observer.clone());
     let registration = match run_phy_register(&mut transition, &mut port).await {
@@ -158,7 +157,7 @@ where
     };
     let port_counters = port.counters();
     drop(port);
-    let calibration_record = transition.take_calibration_record();
+    let calibration_cache = transition.take_calibration_cache();
     let mut phy = match transition.into_state() {
         Ok(state) => state,
         Err(transition) => {
@@ -191,7 +190,7 @@ where
         return Err(Esp32s31WifiColdStartFailure::InitialChannel {
             radio: powered,
             phy,
-            calibration_record,
+            calibration_cache,
             report,
             error,
         });
@@ -204,7 +203,7 @@ where
         radio: powered,
         phy,
         tx_power,
-        calibration_record,
+        calibration_cache,
         report,
     })
 }

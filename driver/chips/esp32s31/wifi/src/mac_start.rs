@@ -1,10 +1,7 @@
 //! Executor-neutral transition from calibrated PHY ownership to cold MAC ownership.
 
 use open_esp_radio_esp32s31_hal::{Radio, state::Powered};
-use open_esp_radio_esp32s31_phy::{
-    PhyTxTargetPowerProfile,
-    phy_cold::{PhyCalibrationRecord, PhyColdState},
-};
+use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState, PhyTxTargetPowerProfile};
 use open_esp_radio_esp32s31_wifi_mac::init::{
     MacClockControl, MacCoexPtiSource, MacColdStartError, MacColdStartOutcome, MacDelayEntropy,
     MacSlowClockCalibrationSource, MacTxPowerSource, initialize_wifi_mac,
@@ -73,8 +70,8 @@ pub struct Esp32s31WifiMacStartReport {
 /// DMA and interrupt policy is activated.
 pub struct Esp32s31WifiMacReady<P> {
     radio: Radio<P, Powered>,
-    phy: PhyColdState,
-    calibration_record: Option<PhyCalibrationRecord>,
+    phy: PhyState,
+    calibration_cache: Option<PhyCalibrationCache>,
     report: Esp32s31WifiMacStartReport,
 }
 
@@ -83,8 +80,8 @@ impl<P> Esp32s31WifiMacReady<P> {
         self.report
     }
 
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.calibration_record.as_ref()
+    pub const fn calibration_cache(&self) -> Option<&PhyCalibrationCache> {
+        self.calibration_cache.as_ref()
     }
 
     pub fn radio_mut(&mut self) -> &mut Radio<P, Powered> {
@@ -95,11 +92,11 @@ impl<P> Esp32s31WifiMacReady<P> {
         self,
     ) -> (
         Radio<P, Powered>,
-        PhyColdState,
-        Option<PhyCalibrationRecord>,
+        PhyState,
+        Option<PhyCalibrationCache>,
         Esp32s31WifiMacStartReport,
     ) {
-        (self.radio, self.phy, self.calibration_record, self.report)
+        (self.radio, self.phy, self.calibration_cache, self.report)
     }
 }
 
@@ -107,8 +104,8 @@ impl<P> Esp32s31WifiMacReady<P> {
 pub struct Esp32s31WifiMacStartFailure<P> {
     pub error: MacColdStartError,
     radio: Radio<P, Powered>,
-    phy: PhyColdState,
-    calibration_record: Option<PhyCalibrationRecord>,
+    phy: PhyState,
+    calibration_cache: Option<PhyCalibrationCache>,
     wifi_report: Esp32s31WifiColdStartReport,
 }
 
@@ -117,15 +114,15 @@ impl<P> Esp32s31WifiMacStartFailure<P> {
         self,
     ) -> (
         Radio<P, Powered>,
-        PhyColdState,
-        Option<PhyCalibrationRecord>,
+        PhyState,
+        Option<PhyCalibrationCache>,
         Esp32s31WifiColdStartReport,
         MacColdStartError,
     ) {
         (
             self.radio,
             self.phy,
-            self.calibration_record,
+            self.calibration_cache,
             self.wifi_report,
             self.error,
         )
@@ -141,7 +138,7 @@ where
     P: Esp32s31WifiMacPlatform,
 {
     let wifi_report = cold.report();
-    let (mut radio, phy, tx_power, calibration_record, _) = cold.into_parts();
+    let (mut radio, phy, tx_power, calibration_cache, _) = cold.into_parts();
     let mac = {
         let (platform, registers) = radio.cold_parts_mut();
         platform.install_phy_tx_power_profile(tx_power);
@@ -162,7 +159,7 @@ where
                 error,
                 radio,
                 phy,
-                calibration_record,
+                calibration_cache,
                 wifi_report,
             });
         }
@@ -170,7 +167,7 @@ where
     Ok(Esp32s31WifiMacReady {
         radio,
         phy,
-        calibration_record,
+        calibration_cache,
         report: Esp32s31WifiMacStartReport {
             wifi: wifi_report,
             mac,

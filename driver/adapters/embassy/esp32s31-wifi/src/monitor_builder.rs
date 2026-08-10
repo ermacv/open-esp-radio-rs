@@ -4,9 +4,7 @@
 
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyCalibrationRecord,
-};
+use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::{
     mac_start::Esp32s31WifiMacStartReport,
@@ -281,10 +279,6 @@ where
 {
     pub const fn report(&self) -> Esp32s31MonitorBuildReport {
         self.report
-    }
-
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.context.calibration_record()
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
@@ -727,10 +721,6 @@ where
 {
     pub const fn report(&self) -> Esp32s31MonitorBuildReport {
         self.owner.report()
-    }
-
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.owner.calibration_record()
     }
 
     pub const fn current_channel(&self) -> WifiChannel {

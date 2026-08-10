@@ -7,7 +7,7 @@ use open_esp_radio_esp32s31_hal::{
 };
 #[cfg(target_arch = "riscv32")]
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyColdState,
+    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
     switch_phy_channel_with_mac_restart,
 };
 use open_esp_radio_ieee80211::channel::{WifiChannel, WifiChannelWidth};
@@ -44,7 +44,7 @@ pub async fn switch_esp32s31_wifi_channel<
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
 >(
-    state: &mut PhyColdState,
+    state: &mut PhyState,
     channel: WifiChannel,
     platform: &mut P,
     registers: &mut RadioRegisters,

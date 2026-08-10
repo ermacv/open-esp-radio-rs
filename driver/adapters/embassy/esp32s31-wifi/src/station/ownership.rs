@@ -1,7 +1,7 @@
 //! Common ownership boundary between stopped Wi-Fi and one station role.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_phy::phy_cold::{PhyCalibrationRecord, PhyColdState};
+use open_esp_radio_esp32s31_phy::PhyState;
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi::runtime::{
     Esp32s31WifiRuntimeContext, Esp32s31WifiRuntimeParts, Esp32s31WifiStopped,
@@ -26,12 +26,8 @@ pub struct Esp32s31StationRoleOwner<P> {
 impl<P> Esp32s31StationRoleOwner<P> {
     /// Borrow the persistent PHY and platform authority for one finite role
     /// transaction without exposing the stopped-owner constructor.
-    pub fn radio_mut(&mut self) -> (&mut PhyColdState, &mut P) {
+    pub fn radio_mut(&mut self) -> (&mut PhyState, &mut P) {
         (self.context.phy_mut(), &mut self.platform)
-    }
-
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.context.calibration_record()
     }
 
     pub fn set_current_channel(&mut self, channel: WifiChannel) {
@@ -58,7 +54,7 @@ impl<P> Esp32s31StationRoleOwner<P> {
 impl<P> Esp32s31StationRadioOwner for Esp32s31StationRoleOwner<P> {
     type Platform = P;
 
-    fn radio_mut(&mut self) -> (&mut PhyColdState, &mut Self::Platform) {
+    fn radio_mut(&mut self) -> (&mut PhyState, &mut Self::Platform) {
         Esp32s31StationRoleOwner::radio_mut(self)
     }
 }

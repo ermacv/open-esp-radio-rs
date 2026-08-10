@@ -698,7 +698,7 @@ mod tests {
 
     #[test]
     fn bluetooth_gain_image_matches_the_linked_vendor_cold_state() {
-        let state = crate::phy_cold::PhyColdState::new();
+        let state = crate::phy_state::PhyState::default();
         let image = state.bluetooth_tx_gain_image();
         assert_eq!(
             image.output_72,
@@ -719,8 +719,8 @@ mod tests {
 
     #[test]
     fn bluetooth_txdc_outcome_updates_only_three_bt_rows() {
-        let mut state = crate::phy_cold::PhyColdState::new();
-        let wifi_before = state.parameter_image()[0x0a8..0x0d0].to_vec();
+        let mut state = crate::phy_state::PhyState::default();
+        let wifi_before = state.tx_dc_pwdet_parameters();
         let outcome = crate::phy_txdc::PhyTxDcOutcome {
             dco: [
                 [0x101, 0x102, 0x103, 0x104],
@@ -734,19 +734,11 @@ mod tests {
         state.apply_bluetooth_tx_dc_outcome(outcome);
 
         assert!(state.bluetooth_tx_dc_calibrated());
-        assert_eq!(&state.parameter_image()[0x0a8..0x0d0], wifi_before);
-        for row in 0..3 {
-            for column in 0..4 {
-                let offset = 0x104 + row * 8 + column * 2;
-                assert_eq!(
-                    u16::from_le_bytes([
-                        state.parameter_image()[offset],
-                        state.parameter_image()[offset + 1],
-                    ]),
-                    outcome.dco[row][column]
-                );
-            }
-        }
+        assert_eq!(state.tx_dc_pwdet_parameters(), wifi_before);
+        assert_eq!(
+            state.bluetooth_tx_dco(),
+            [outcome.dco[0], outcome.dco[1], outcome.dco[2]]
+        );
     }
 
     fn power_parameters() -> PhyBluetoothTxPowerParameters {
@@ -881,8 +873,8 @@ mod tests {
 
     #[test]
     fn bluetooth_power_outcome_publishes_bt_fields_only() {
-        let mut state = crate::phy_cold::PhyColdState::new();
-        let wifi_before = state.parameter_image()[0x0f1..0x0f8].to_vec();
+        let mut state = crate::phy_state::PhyState::default();
+        let wifi_before = state.tx_power_parameters();
         state.apply_bluetooth_tx_power_outcome(PhyBluetoothTxPowerOutcome {
             calibration: crate::phy_tx_power::PhyTxPowerOutcome {
                 reference_codes: [80, 120],
@@ -895,11 +887,13 @@ mod tests {
             },
         });
         assert!(state.bluetooth_tx_power_calibrated());
-        assert_eq!(&state.parameter_image()[0x0f1..0x0f8], wifi_before);
-        assert_eq!(&state.parameter_image()[0x0f8..0x0fb], &[6, 249, 8]);
-        assert_eq!(&state.parameter_image()[0x0fb..0x0fe], &[253, 4, 5]);
-        assert_eq!(state.parameter_image()[0x0fe], 247);
-        assert_eq!(state.parameter_image()[0x018], 13);
-        assert_eq!(&state.parameter_image()[0x100..0x102], &[0, 0]);
+        let wifi_after = state.tx_power_parameters();
+        assert_eq!(wifi_after.reference_codes, wifi_before.reference_codes);
+        assert_eq!(wifi_after.capacitance, wifi_before.capacitance);
+        assert_eq!(wifi_after.initial_attenuation, 13);
+        assert_eq!(
+            state.bluetooth_tx_power_result(),
+            ([-3, 4, 5], [6, -7, 8], -9)
+        );
     }
 }

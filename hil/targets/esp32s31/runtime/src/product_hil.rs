@@ -22,9 +22,7 @@ use open_esp_radio::{
     MonitorCapturePolicy, MonitorRequest, StationRequest, StationScanChannels, StationScanPolicy,
     StationSecurity, WifiMacAddress, WifiMonitorConfig, WifiScanRequest as DriverWifiScanRequest,
     WifiSsid,
-    esp32s31::phy::{
-        PhyCalibrationIdentity, phy_cold::PhyCalibrationRecord, phy_rfpll::phy_get_rf_cal_version,
-    },
+    esp32s31::phy::{PhyCalibrationIdentity, phy_rfpll::phy_get_rf_cal_version},
     esp32s31::wifi::mac::rx::RxBasebandFormat,
     wifi::{
         ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
@@ -80,6 +78,9 @@ static NETWORK_RESOURCES: ConstStaticCell<StackResources<NETWORK_SOCKET_COUNT>> 
     ConstStaticCell::new(StackResources::new());
 static CONNECTED_RX_OBSERVER: ConstStaticCell<rx_qualification::HilConnectedRxObserver> =
     ConstStaticCell::new(rx_qualification::HilConnectedRxObserver::new(4_323));
+static PHY_CALIBRATION_ARTIFACT: ConstStaticCell<
+    [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
+> = ConstStaticCell::new([0; crate::phy_calibration_artifact::MAX_ENCODED_LEN]);
 
 // Qualification observers execute on the RX/TX hot paths. Their atomics stay
 // in internal SRAM so measuring a production image does not introduce PSRAM
@@ -445,8 +446,12 @@ pub async fn run(
         connected_rx: CONNECTED_RX_OBSERVER.take(),
         mac_irq: observe_mac_irq,
     });
-    let config = match startup.phy_calibration_record {
-        Some(bytes) => config.with_calibration_record(PhyCalibrationRecord::from_bytes(bytes)),
+    let artifact_was_supplied = startup.phy_calibration_artifact.is_some();
+    let config = match startup.phy_calibration_artifact {
+        Some(artifact) => config.with_calibration_cache(
+            crate::phy_calibration_artifact::decode(artifact.bytes())
+                .expect("host PHY calibration artifact has an unsupported or invalid schema"),
+        ),
         None => config,
     };
 
@@ -459,13 +464,16 @@ pub async fn run(
         wifi,
         initialization,
     } = radio.into_parts();
-    if let Some(record) = initialization.calibration_record {
-        let disposition = if startup.phy_calibration_record.is_some() {
+    if let Some(cache) = initialization.calibration_cache {
+        let disposition = if artifact_was_supplied {
             StartupArtifactDisposition::Restored
         } else {
             StartupArtifactDisposition::Created
         };
-        publish_startup_artifact(disposition, started_at.elapsed().as_micros(), &record).await;
+        let encoded =
+            crate::phy_calibration_artifact::encode(&cache, PHY_CALIBRATION_ARTIFACT.take())
+                .expect("typed PHY calibration artifact exceeds its explicit HIL storage budget");
+        publish_startup_artifact(disposition, started_at.elapsed().as_micros(), encoded).await;
     }
     let Esp32s31WifiParts {
         control,

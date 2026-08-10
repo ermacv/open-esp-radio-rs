@@ -1,7 +1,7 @@
 //! Role-neutral ownership after the one-way cold-MAC/runtime transition.
 
 use open_esp_radio_esp32s31_hal::RadioRegisters;
-use open_esp_radio_esp32s31_phy::phy_cold::{PhyCalibrationRecord, PhyColdState};
+use open_esp_radio_esp32s31_phy::{PhyCalibrationCache, PhyState};
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_ieee80211::channel::WifiChannel;
 
@@ -24,8 +24,7 @@ pub struct Esp32s31WifiStopped<P> {
     platform: P,
     registers: RadioRegisters,
     interrupt_setup: MacInterruptSetup,
-    phy: PhyColdState,
-    calibration_record: Option<PhyCalibrationRecord>,
+    phy: PhyState,
     start_report: Esp32s31WifiMacStartReport,
     transition_report: Esp32s31WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
@@ -38,10 +37,6 @@ impl<P> Esp32s31WifiStopped<P> {
 
     pub const fn transition_report(&self) -> Esp32s31WifiRuntimeTransitionReport {
         self.transition_report
-    }
-
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.calibration_record.as_ref()
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
@@ -62,7 +57,6 @@ impl<P> Esp32s31WifiStopped<P> {
             interrupt_setup: self.interrupt_setup,
             context: Esp32s31WifiRuntimeContext {
                 phy: self.phy,
-                calibration_record: self.calibration_record,
                 start_report: self.start_report,
                 transition_report: self.transition_report,
                 current_channel: self.current_channel,
@@ -91,24 +85,19 @@ pub struct Esp32s31WifiRuntimeParts<P> {
 /// route returns the exact [`MacInterruptSetup`].
 #[doc(hidden)]
 pub struct Esp32s31WifiRuntimeContext {
-    phy: PhyColdState,
-    calibration_record: Option<PhyCalibrationRecord>,
+    phy: PhyState,
     start_report: Esp32s31WifiMacStartReport,
     transition_report: Esp32s31WifiRuntimeTransitionReport,
     current_channel: WifiChannel,
 }
 
 impl Esp32s31WifiRuntimeContext {
-    pub fn phy_mut(&mut self) -> &mut PhyColdState {
+    pub fn phy_mut(&mut self) -> &mut PhyState {
         &mut self.phy
     }
 
     pub const fn current_channel(&self) -> WifiChannel {
         self.current_channel
-    }
-
-    pub const fn calibration_record(&self) -> Option<&PhyCalibrationRecord> {
-        self.calibration_record.as_ref()
     }
 
     pub fn set_current_channel(&mut self, channel: WifiChannel) {
@@ -128,7 +117,6 @@ impl Esp32s31WifiRuntimeContext {
             registers,
             interrupt_setup,
             phy: self.phy,
-            calibration_record: self.calibration_record,
             start_report: self.start_report,
             transition_report: self.transition_report,
             current_channel: self.current_channel,
@@ -141,27 +129,36 @@ impl Esp32s31WifiRuntimeContext {
 /// This is the only normal conversion from [`Esp32s31WifiMacReady`]. It masks
 /// and acknowledges cold interrupt state before exposing the setup token used
 /// by a finite task-owned interrupt epoch.
-pub fn enter_esp32s31_wifi_runtime<P>(mut mac: Esp32s31WifiMacReady<P>) -> Esp32s31WifiStopped<P> {
+pub struct Esp32s31WifiRuntimeStart<P> {
+    pub wifi: Esp32s31WifiStopped<P>,
+    pub calibration_cache: Option<PhyCalibrationCache>,
+}
+
+pub fn enter_esp32s31_wifi_runtime<P>(
+    mut mac: Esp32s31WifiMacReady<P>,
+) -> Esp32s31WifiRuntimeStart<P> {
     let cold_interrupt_mask = {
         let (_, registers) = mac.radio_mut().cold_parts_mut();
         let mask = registers.mac_interrupt_enable();
         registers.mask_and_clear_mac_interrupts(u32::MAX);
         mask
     };
-    let (radio, phy, calibration_record, start_report) = mac.into_parts();
+    let (radio, phy, calibration_cache, start_report) = mac.into_parts();
     let (platform, registers) = radio.into_parts();
     let (registers, interrupt_setup) = registers.into_running();
     let current_channel = start_report.wifi.initial_channel;
-    Esp32s31WifiStopped {
-        platform,
-        registers,
-        interrupt_setup,
-        phy,
-        calibration_record,
-        start_report,
-        transition_report: Esp32s31WifiRuntimeTransitionReport {
-            cold_interrupt_mask,
+    Esp32s31WifiRuntimeStart {
+        wifi: Esp32s31WifiStopped {
+            platform,
+            registers,
+            interrupt_setup,
+            phy,
+            start_report,
+            transition_report: Esp32s31WifiRuntimeTransitionReport {
+                cold_interrupt_mask,
+            },
+            current_channel,
         },
-        current_channel,
+        calibration_cache,
     }
 }

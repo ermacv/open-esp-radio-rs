@@ -10,9 +10,7 @@ use open_esp_radio_esp32s31_hal::{
     phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
     wifi_bb::PhyWifiBbControl,
 };
-use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyColdState,
-};
+use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError};
 use open_esp_radio_esp32s31_registers::MacInterruptSetup;
 use open_esp_radio_esp32s31_wifi_mac::tx::TxHardware;
 use open_esp_radio_esp32s31_wifi_sta::{
@@ -176,7 +174,7 @@ pub struct Esp32s31StationScanResources<
     const RECORDS: usize,
     const TX_BUFFER_SIZE: usize,
 > {
-    pub phy: &'radio mut PhyColdState,
+    pub phy: &'radio mut PhyState,
     pub platform: &'radio mut P,
     pub phy_observer: Q,
     pub phy_delay: D,

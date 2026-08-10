@@ -7,17 +7,17 @@ use open_esp_radio_esp32s31_hal::{
     wifi_bb::PhyWifiBbControl,
 };
 use open_esp_radio_esp32s31_phy::{
-    PhyAsyncDelay, PhyTargetObserver, PhyTargetPortError, phy_cold::PhyColdState,
+    PhyAsyncDelay, PhyState, PhyTargetObserver, PhyTargetPortError,
     switch_phy_channel_with_mac_restart,
 };
 
 /// Persistent PHY authority used by either an initial scan or a reconnect scan.
 ///
-/// `PhyColdState` is the recovered PHY state image created by registration;
+/// `PhyState` is the typed PHY state created by registration;
 /// despite its historical name, the same unique value carries mutable channel
 /// state for the complete powered-radio lifetime.
 pub struct Esp32s31ScanPhy<'state, P, O, D> {
-    state: &'state mut PhyColdState,
+    state: &'state mut PhyState,
     platform: &'state mut P,
     observer: O,
     _delay: PhantomData<fn() -> D>,
@@ -29,11 +29,7 @@ where
     O: PhyTargetObserver,
     D: PhyAsyncDelay,
 {
-    pub const fn new(
-        state: &'state mut PhyColdState,
-        platform: &'state mut P,
-        observer: O,
-    ) -> Self {
+    pub const fn new(state: &'state mut PhyState, platform: &'state mut P, observer: O) -> Self {
         Self {
             state,
             platform,
@@ -80,7 +76,7 @@ where
 
     /// Return the exact persistent state, platform and observer owners after
     /// the scan transaction has stopped RX and selected its candidate.
-    pub fn into_parts(self) -> (&'state mut PhyColdState, &'state mut P, O) {
+    pub fn into_parts(self) -> (&'state mut PhyState, &'state mut P, O) {
         (self.state, self.platform, self.observer)
     }
 }

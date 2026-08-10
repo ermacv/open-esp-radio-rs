@@ -23,7 +23,7 @@ use crate::{
     },
     phy_cold::{
         PhyColdExternalBinding, PhyColdI2cAction, PhyColdI2cError, PhyColdI2cObservation,
-        PhyColdObservationRequest, PhyColdPbusObservation, PhyColdState,
+        PhyColdObservationRequest, PhyColdPbusObservation,
     },
     phy_dc_iq::{PhyDcIqCompletion, PhyDcIqExternalBinding},
     phy_dcode::{PhyDcodeCompletion, PhyDcodeExternalBinding},
@@ -52,6 +52,7 @@ use crate::{
         PhyRxIqInitExternalBinding, PhyRxIqRfCalibrationCompletion,
         PhyRxIqRfCalibrationExternalBinding,
     },
+    phy_state::PhyState,
     phy_temperature::{PhyTemperatureCompletion, PhyTemperatureExternalBinding},
     phy_tx_cal::{
         PhyPowerAttenuationCompletion, PhyPowerAttenuationExternalBinding, PhyToneSarCompletion,
@@ -825,7 +826,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
         O: PhyTargetObserver,
     >(
-        state: &mut PhyColdState,
+        state: &mut PhyState,
         channel_or_frequency: u16,
         cbw: u8,
         platform: &mut P,
@@ -868,7 +869,7 @@ impl<D: PhyAsyncDelay> TargetCompleter<D> {
         P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
         O: PhyTargetObserver,
     >(
-        state: &mut PhyColdState,
+        state: &mut PhyState,
         channel_or_frequency: u16,
         cbw: u8,
         platform: &mut P,
@@ -1317,7 +1318,7 @@ pub async fn select_phy_channel<
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
 >(
-    state: &mut PhyColdState,
+    state: &mut PhyState,
     channel_or_frequency: u16,
     cbw: u8,
     platform: &mut P,
@@ -1341,7 +1342,7 @@ pub async fn switch_phy_channel_with_mac_restart<
     P: PhyWifiBbControl + PhyTemperatureSystemControl + PhyI2cMasterControl,
     O: PhyTargetObserver,
 >(
-    state: &mut PhyColdState,
+    state: &mut PhyState,
     channel_or_frequency: u16,
     cbw: u8,
     platform: &mut P,

@@ -845,19 +845,19 @@ pub enum PhyBbInitLocalStep {
 /// executor as one action. The type has no allocator, waker, retry loop,
 /// pointer to `phy_param`, or ROM callback table.
 pub struct PhyBbInitTransition {
-    state: crate::phy_cold::PhyColdState,
+    state: crate::phy_state::PhyState,
     channel_or_frequency: u16,
     step: PhyBbInitStep,
     calibration_performed: bool,
 }
 
 impl PhyBbInitTransition {
-    pub const fn new(state: crate::phy_cold::PhyColdState) -> Self {
+    pub const fn new(state: crate::phy_state::PhyState) -> Self {
         Self::new_on_channel(state, 11)
     }
 
     pub const fn new_on_channel(
-        state: crate::phy_cold::PhyColdState,
+        state: crate::phy_state::PhyState,
         channel_or_frequency: u16,
     ) -> Self {
         Self {
@@ -868,11 +868,11 @@ impl PhyBbInitTransition {
         }
     }
 
-    pub const fn state(&self) -> &crate::phy_cold::PhyColdState {
+    pub const fn state(&self) -> &crate::phy_state::PhyState {
         &self.state
     }
 
-    pub fn into_state(self) -> crate::phy_cold::PhyColdState {
+    pub fn into_state(self) -> crate::phy_state::PhyState {
         self.state
     }
 
@@ -1598,7 +1598,7 @@ mod tests {
 
     #[test]
     fn complete_parent_enters_or_skips_the_guarded_calibration_prefix() {
-        let mut fresh = super::PhyBbInitTransition::new(crate::phy_cold::PhyColdState::new());
+        let mut fresh = super::PhyBbInitTransition::new(crate::phy_state::PhyState::default());
         assert_eq!(
             fresh.step_local().unwrap(),
             super::PhyBbInitLocalStep::External(super::PhyBbInitAction::Mmio(
@@ -1619,11 +1619,9 @@ mod tests {
             ))
         );
 
-        let mut image = *crate::phy_cold::PhyColdState::new().parameter_image();
-        image[0x0a4] |= 0x08;
-        let mut retained = super::PhyBbInitTransition::new(
-            crate::phy_cold::PhyColdState::from_parameter_image(image),
-        );
+        let mut retained_state = crate::phy_state::PhyState::default();
+        retained_state.mark_baseband_calibration_complete();
+        let mut retained = super::PhyBbInitTransition::new(retained_state);
         complete_parent_mmio(&mut retained, PhyBbMmioAction::EnableBasebandInitialization);
         complete_parent_mmio(
             &mut retained,
@@ -1641,7 +1639,7 @@ mod tests {
 
     #[test]
     fn complete_parent_skips_only_the_bt_coexistence_child() {
-        let mut transition = super::PhyBbInitTransition::new(crate::phy_cold::PhyColdState::new());
+        let mut transition = super::PhyBbInitTransition::new(crate::phy_state::PhyState::default());
         transition.step = super::PhyBbInitStep::TxCfr(PhyTxCfrTransition::new());
         transition
             .advance_external(super::PhyBbInitCompletion::TxCfr(
@@ -1677,11 +1675,9 @@ mod tests {
 
     #[test]
     fn complete_parent_tail_preserves_conditional_disable_and_tracking_order() {
-        let mut image = *crate::phy_cold::PhyColdState::new().parameter_image();
-        image[0x196] = 1;
-        let mut transition = super::PhyBbInitTransition::new(
-            crate::phy_cold::PhyColdState::from_parameter_image(image),
-        );
+        let mut state = crate::phy_state::PhyState::default();
+        state.set_initialization_parameter(1);
+        let mut transition = super::PhyBbInitTransition::new(state);
         transition.step = super::PhyBbInitStep::SetIdleMode;
 
         complete_parent_mmio(
@@ -1715,7 +1711,7 @@ mod tests {
 
     #[test]
     fn complete_parent_failure_always_restores_idle_mode_and_agc() {
-        let state = crate::phy_cold::PhyColdState::new();
+        let state = crate::phy_state::PhyState::default();
         let parameters = state.channel_parameters();
         let mut transition = super::PhyBbInitTransition::new(state);
         transition.step =

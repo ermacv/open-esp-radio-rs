@@ -46,8 +46,7 @@ pub struct Esp32s31RadioConfig {
     pub(crate) access_point_mac: open_esp_radio::WifiMacAddress,
     pub(crate) calibration: open_esp_radio::esp32s31::phy::PhyCalibrationIdentity,
     pub(crate) initial_channel: open_esp_radio::wifi::ieee80211::channel::WifiChannel,
-    pub(crate) calibration_record:
-        Option<open_esp_radio::esp32s31::phy::phy_cold::PhyCalibrationRecord>,
+    pub(crate) calibration_cache: Option<open_esp_radio::esp32s31::phy::PhyCalibrationCache>,
     pub(crate) maximum_tx_power_quarter_dbm: Option<i8>,
     #[cfg(feature = "qualification")]
     pub(crate) qualification: Option<Esp32s31QualificationHooks>,
@@ -65,20 +64,20 @@ impl Esp32s31RadioConfig {
             access_point_mac,
             calibration,
             initial_channel,
-            calibration_record: None,
+            calibration_cache: None,
             maximum_tx_power_quarter_dbm: None,
             #[cfg(feature = "qualification")]
             qualification: None,
         }
     }
 
-    /// Supply a caller-owned retained PHY calibration record. The driver
+    /// Supply a caller-owned retained PHY calibration cache. The driver
     /// validates its embedded identity before deciding whether it is reusable.
-    pub fn with_calibration_record(
+    pub fn with_calibration_cache(
         mut self,
-        record: open_esp_radio::esp32s31::phy::phy_cold::PhyCalibrationRecord,
+        cache: open_esp_radio::esp32s31::phy::PhyCalibrationCache,
     ) -> Self {
-        self.calibration_record = Some(record);
+        self.calibration_cache = Some(cache);
         self
     }
 

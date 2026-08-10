@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn executor_awaits_only_lowered_identity_bound_operations() {
-        let mut transition = PhyRegisterTransition::with_default_profile();
+        let mut transition = PhyRegisterTransition::with_production_config();
         let mut port = StopAfterFirstMmio { calls: 0 };
 
         assert_eq!(

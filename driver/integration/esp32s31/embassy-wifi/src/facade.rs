@@ -116,10 +116,8 @@ impl Esp32s31Radio {
 
 /// Value-only cold-start evidence available without exposing PHY, register or
 /// calibration owners.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Esp32s31RadioInitialization {
     pub start: open_esp_radio::esp32s31::Esp32s31WifiMacStartReport,
     pub transition: open_esp_radio::esp32s31::Esp32s31WifiRuntimeTransitionReport,
-    pub calibration_record:
-        Option<[u8; open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN]>,
+    pub calibration_cache: Option<open_esp_radio::esp32s31::phy::PhyCalibrationCache>,
 }

@@ -1831,7 +1831,7 @@ pub async fn new(
         access_point_mac,
         calibration,
         initial_channel,
-        calibration_record,
+        calibration_cache,
         maximum_tx_power_quarter_dbm,
         #[cfg(feature = "qualification")]
         qualification,
@@ -1850,7 +1850,7 @@ pub async fn new(
     let started = start_esp32s31_radio::<_, EmbassyEsp32s31PhyDelay, _>(
         owned,
         Esp32s31RadioStartConfig::new(topology, wifi_start),
-        calibration_record,
+        calibration_cache,
         NoopPhyTargetObserver,
     )
     .await
@@ -1863,11 +1863,11 @@ pub async fn new(
         .map_err(|_| Esp32s31NewError::MacStart)?;
     let station_interface = station.interface();
     let station_address = station_interface.interface.address;
-    let (_wifi_plan, wifi) = station.into_parts();
+    let (_wifi_plan, wifi, calibration_cache) = station.into_parts();
     let initialization = Esp32s31RadioInitialization {
         start: wifi.start_report(),
         transition: wifi.transition_report(),
-        calibration_record: wifi.calibration_record().map(|record| *record.bytes()),
+        calibration_cache,
     };
     qualification_event!(
         "open-radio: cold PHY ready, full_calibration={}",

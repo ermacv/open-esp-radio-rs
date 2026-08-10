@@ -19,7 +19,6 @@ use esp_hal::{
     peripherals::USB_DEVICE,
     usb::usb_serial_jtag::{UsbSerialJtag, UsbSerialJtagTx},
 };
-use open_esp_radio::esp32s31::phy::phy_cold::PHY_COLD_CALIBRATION_RECORD_LEN;
 use open_esp_radio_hil_protocol::{
     Capabilities, Command, Completion, Direction, Envelope, Event, EvidenceRecord, Finished,
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
@@ -120,11 +119,23 @@ pub struct ActiveSession {
 
 pub struct StartupConfiguration {
     pub network: NetworkConfiguration,
-    pub phy_calibration_record: Option<[u8; PHY_COLD_CALIBRATION_RECORD_LEN]>,
+    pub phy_calibration_artifact: Option<StartupArtifact>,
+}
+
+#[derive(Clone, Copy)]
+pub struct StartupArtifact {
+    bytes: [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
+    len: u16,
+}
+
+impl StartupArtifact {
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes[..usize::from(self.len)]
+    }
 }
 
 struct StartupArtifactAssembler {
-    bytes: [u8; PHY_COLD_CALIBRATION_RECORD_LEN],
+    bytes: [u8; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
     expected_total: Option<u16>,
     expected_crc32c: u32,
     received: usize,
@@ -134,7 +145,7 @@ struct StartupArtifactAssembler {
 impl StartupArtifactAssembler {
     const fn new() -> Self {
         Self {
-            bytes: [0; PHY_COLD_CALIBRATION_RECORD_LEN],
+            bytes: [0; crate::phy_calibration_artifact::MAX_ENCODED_LEN],
             expected_total: None,
             expected_crc32c: 0,
             received: 0,
@@ -144,7 +155,7 @@ impl StartupArtifactAssembler {
 
     fn push(&mut self, chunk: &StartupArtifactChunk) -> Result<(), ()> {
         chunk.validate().map_err(|_| ())?;
-        if usize::from(chunk.total_length()) != self.bytes.len() {
+        if usize::from(chunk.total_length()) > self.bytes.len() {
             return Err(());
         }
         if chunk.offset() == 0 {
@@ -164,8 +175,8 @@ impl StartupArtifactAssembler {
         self.bytes[self.received..end].copy_from_slice(chunk.bytes());
         self.received = end;
         if chunk.is_final() {
-            if self.received != self.bytes.len()
-                || startup_artifact_crc32c(&self.bytes) != self.expected_crc32c
+            if self.received != usize::from(chunk.total_length())
+                || startup_artifact_crc32c(&self.bytes[..self.received]) != self.expected_crc32c
             {
                 self.expected_total = None;
                 self.received = 0;
@@ -180,8 +191,11 @@ impl StartupArtifactAssembler {
         self.expected_total.is_some() && !self.complete
     }
 
-    fn completed_record(&self) -> Option<[u8; PHY_COLD_CALIBRATION_RECORD_LEN]> {
-        self.complete.then_some(self.bytes)
+    fn completed_artifact(&self) -> Option<StartupArtifact> {
+        self.complete.then_some(StartupArtifact {
+            bytes: self.bytes,
+            len: u16::try_from(self.received).ok()?,
+        })
     }
 }
 
@@ -524,7 +538,7 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         } else if STARTUP_CONFIGURATIONS
                             .try_send(StartupConfiguration {
                                 network,
-                                phy_calibration_record: startup_artifact.completed_record(),
+                                phy_calibration_artifact: startup_artifact.completed_artifact(),
                             })
                             .is_err()
                         {

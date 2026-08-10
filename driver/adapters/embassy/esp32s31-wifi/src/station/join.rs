@@ -9,7 +9,7 @@ use open_esp_radio_esp32s31_hal::{
     phy_i2c::PhyI2cMasterControl, phy_temperature::PhyTemperatureSystemControl,
     wifi_bb::PhyWifiBbControl,
 };
-use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyTargetObserver, phy_cold::PhyColdState};
+use open_esp_radio_esp32s31_phy::{PhyAsyncDelay, PhyState, PhyTargetObserver};
 use open_esp_radio_esp32s31_wifi_mac::{
     crypto::{CcmpKeyHardware, StaGroupCcmpSlot, StaPairwiseCcmpSlot},
     he::He20PeerHardware,
@@ -110,7 +110,7 @@ pub struct Esp32s31StationJoinResources<
     const DMA_STORAGE_SIZE: usize,
 > {
     pub hardware: &'hardware mut H,
-    pub phy: &'state mut PhyColdState,
+    pub phy: &'state mut PhyState,
     pub platform: &'state mut P,
     pub phy_observer: PO,
     pub receive: Esp32s31PreconnectedRx<'storage, D, COUNT, DMA_BUFFER_SIZE>,

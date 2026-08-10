@@ -56,11 +56,23 @@ use crate::phy_frequency::{
     PhyChannelFrequencyInitControl, PhyChannelFrequencyInitFailure, PhyChannelFrequencyInitOutcome,
     PhyChannelFrequencyInitRequest, PhyChannelFrequencyInitTransition,
 };
-use crate::phy_param::{PHY_PARAM_LEN, saturate_phy_value};
 use crate::phy_pbus::{
     PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusClearOutcome, PhyPbusClearTransition,
     PhyPbusForceTest,
 };
+
+const fn saturate_phy_value(value: i32, upper: u8, lower: u8) -> u8 {
+    if value < lower as i32 {
+        lower
+    } else if value > upper as i32 {
+        upper
+    } else {
+        value as u8
+    }
+}
+
+#[cfg(test)]
+const LEGACY_PHY_PARAMETER_LEN: usize = 0x1fc;
 use crate::phy_xtal_duty::{
     XtalDutyCalibrationAction, XtalDutyCalibrationCompletion, XtalDutyCalibrationOutcome,
     XtalDutyCalibrationParameters, XtalDutyCalibrationTransition,
@@ -304,9 +316,9 @@ const PHY_I2C_MASTER_DYNAMIC_INDICES: [usize; 19] = [
 ];
 
 #[cfg(test)]
-fn master_dynamic_values(parameter: &[u8; PHY_PARAM_LEN]) -> [u8; 19] {
+fn master_dynamic_values(parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> [u8; 19] {
     master_dynamic_values_from_snapshot(PhyRfInitParameterSnapshot::new(
-        FilterDcapParameters::from_parameter_image(parameter),
+        FilterDcapParameters::from_legacy_parameter_image(parameter),
         parameter[0x18e],
     ))
 }
@@ -341,7 +353,7 @@ fn master_dynamic_values_from_snapshot(parameter: PhyRfInitParameterSnapshot) ->
 }
 
 #[cfg(test)]
-fn master_command(index: usize, parameter: &[u8; PHY_PARAM_LEN]) -> u32 {
+fn master_command(index: usize, parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> u32 {
     let (block, register, fixed_value) = PHY_I2C_MASTER_TEMPLATE[index];
     let dynamic_values = master_dynamic_values(parameter);
     let mut cursor = 0;
@@ -1293,7 +1305,8 @@ impl FilterDcapParameters {
         }
     }
 
-    pub fn from_parameter_image(parameter: &[u8; PHY_PARAM_LEN]) -> Self {
+    #[cfg(test)]
+    pub fn from_legacy_parameter_image(parameter: &[u8; LEGACY_PHY_PARAMETER_LEN]) -> Self {
         Self::new(
             parameter[0xe9],
             parameter[0xea],
@@ -2952,7 +2965,7 @@ mod tests {
             0x5aab_0367
         );
     }
-    use crate::phy_param::PHY_PARAM_LEN;
+    use super::LEGACY_PHY_PARAMETER_LEN;
     use crate::phy_pbus::{PhyPbusClearAction, PhyPbusClearCompletion, PhyPbusForceTest};
     use crate::phy_rfpll::{RfpllFrequencyAction, RfpllFrequencyCompletion};
     use crate::phy_rx_dco::{PhyRxDcoAction, PhyRxDcoCompletion};
@@ -3459,7 +3472,7 @@ mod tests {
 
     #[test]
     fn master_command_table_matches_complete_vendor_body() {
-        let mut parameter = [0_u8; PHY_PARAM_LEN];
+        let mut parameter = [0_u8; LEGACY_PHY_PARAMETER_LEN];
         parameter[0x18e] = 0x55;
         parameter[0xe9] = 0x12;
         parameter[0xea] = 0x34;
@@ -3516,7 +3529,7 @@ mod tests {
         ];
         assert_eq!(expected.len(), PHY_I2C_MASTER_COMMAND_COUNT);
         let snapshot = PhyRfInitParameterSnapshot::new(
-            FilterDcapParameters::from_parameter_image(&parameter),
+            FilterDcapParameters::from_legacy_parameter_image(&parameter),
             parameter[0x18e],
         );
         for (index, (block, register, value)) in expected.into_iter().enumerate() {
@@ -3782,14 +3795,14 @@ mod tests {
             Err(FilterDcapTransitionError::AlreadyComplete)
         );
 
-        let mut image = [0_u8; PHY_PARAM_LEN];
+        let mut image = [0_u8; LEGACY_PHY_PARAMETER_LEN];
         image[0xe9] = 1;
         image[0xea] = 2;
         image[0xed] = 3;
         image[0xee] = 4;
         image[0xf0] = 5;
         assert_eq!(
-            FilterDcapParameters::from_parameter_image(&image),
+            FilterDcapParameters::from_legacy_parameter_image(&image),
             FilterDcapParameters::new(1, 2, 3, 4, 5)
         );
     }

@@ -22,7 +22,6 @@ pub mod phy_dc_iq;
 pub mod phy_dcode;
 pub mod phy_frequency;
 pub mod phy_i2c;
-mod phy_param;
 pub mod phy_pbus;
 pub mod phy_pbus_memory;
 pub mod phy_pwdet;
@@ -34,6 +33,7 @@ pub mod phy_rx_gain_cal;
 pub mod phy_rx_saturation;
 pub mod phy_rxiq;
 pub mod phy_signal_power;
+pub mod phy_state;
 pub mod phy_temperature;
 pub mod phy_tx_cal;
 pub mod phy_tx_power;
@@ -48,7 +48,11 @@ pub use executor::{PhyRegisterPort, PhyRegisterRunError, run_phy_register};
 pub use phy_register::{
     PhyCalibrationIdentity, PhyCalibrationPath, PhyRegisterAction, PhyRegisterCompletion,
     PhyRegisterExternalBinding, PhyRegisterFailure, PhyRegisterLocalStep, PhyRegisterOutcome,
-    PhyRegisterTransition, default_phy_register_init_profile,
+    PhyRegisterTransition,
+};
+pub use phy_state::{
+    PHY_CALIBRATION_SNAPSHOT_SCHEMA, PhyBluetoothCalibration, PhyCalibrationCache,
+    PhyCalibrationSnapshot, PhyCommonCalibration, PhyConfig, PhyState, PhyWifiCalibration,
 };
 pub use phy_tx_power::{PhyTxTargetPowerPair, PhyTxTargetPowerProfile};
 /// Shared one-microsecond sampling bound used by every target executor and by

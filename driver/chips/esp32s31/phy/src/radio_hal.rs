@@ -76,7 +76,7 @@ pub(crate) fn configure_phy_registers(
 
 /// Complete pinned `libphy.a[phy_rx_gain.o]::phy_rx_table_init`, size `0x7c`.
 ///
-/// The unique [`crate::phy_cold::PhyColdState`] owner must call
+/// The unique [`crate::phy_state::PhyState`] owner must call
 /// `prepare_rx_table_init` before executing this action. That explicit local
 /// step performs the reference's `*(u16 *)(phy_param + 0x120) = 0x4f4f`
 /// mutation. This leaf

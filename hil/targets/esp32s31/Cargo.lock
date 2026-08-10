@@ -1473,6 +1473,8 @@ dependencies = [
  "open-esp-radio-esp32s31-wifi-esp-hal",
  "open-esp-radio-hil-esp32s31-telemetry",
  "open-esp-radio-hil-protocol",
+ "postcard",
+ "serde",
  "static_cell",
 ]
 

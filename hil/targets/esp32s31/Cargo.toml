@@ -44,6 +44,8 @@ open-esp-radio-wifi-embassy = { path = "../../../driver/adapters/embassy/wifi" }
 open-esp-radio-hil-protocol = { path = "../../protocol" }
 open-esp-radio-hil-esp32s31-telemetry = { path = "telemetry" }
 portable-atomic = { version = "1.11", default-features = false }
+postcard = { version = "1.1.3", default-features = false }
+serde = { version = "1.0.219", default-features = false, features = ["derive"] }
 static_cell = "2.1.1"
 
 [profile.release]

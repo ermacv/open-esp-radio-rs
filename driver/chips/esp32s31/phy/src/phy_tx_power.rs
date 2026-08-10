@@ -10,7 +10,6 @@
 
 use crate::{
     phy_i2c::{PhyI2cAddress, analog_registers},
-    phy_param::PHY_PARAM_LEN,
     phy_rfpll::{
         RfpllFrequencyAction, RfpllFrequencyCompletion, RfpllFrequencyFailure,
         RfpllFrequencyRequest, RfpllFrequencyTransition,
@@ -61,15 +60,15 @@ pub struct PhyTxTargetPowerProfile {
 }
 
 impl PhyTxTargetPowerProfile {
-    pub(crate) fn from_parameter_image(parameter: &[u8; PHY_PARAM_LEN]) -> Self {
-        let mut target = [0_i8; PHY_TX_TARGET_POWER_COUNT];
-        for (destination, source) in target.iter_mut().zip(&parameter[0x50..0x62]) {
-            *destination = *source as i8;
-        }
+    pub(crate) const fn new(
+        maximum: i8,
+        target: [i8; PHY_TX_TARGET_POWER_COUNT],
+        regulatory_override: bool,
+    ) -> Self {
         Self {
-            maximum: parameter[0x06] as i8,
+            maximum,
             target,
-            regulatory_override: parameter[0x64] == 1,
+            regulatory_override,
         }
     }
 
@@ -1178,13 +1177,7 @@ mod tests {
         targets: [i8; PHY_TX_TARGET_POWER_COUNT],
         regulatory_override: bool,
     ) -> PhyTxTargetPowerProfile {
-        let mut parameter = [0_u8; PHY_PARAM_LEN];
-        parameter[0x06] = maximum as u8;
-        for (destination, source) in parameter[0x50..0x62].iter_mut().zip(targets) {
-            *destination = source as u8;
-        }
-        parameter[0x64] = regulatory_override as u8;
-        PhyTxTargetPowerProfile::from_parameter_image(&parameter)
+        PhyTxTargetPowerProfile::new(maximum, targets, regulatory_override)
     }
 
     #[test]
@@ -1276,10 +1269,11 @@ mod tests {
 
     #[test]
     fn cold_state_exports_an_owned_target_profile_snapshot() {
-        let mut parameter = [0_u8; PHY_PARAM_LEN];
-        parameter[0x06] = 80;
-        parameter[0x50] = 44;
-        let state = crate::phy_cold::PhyColdState::from_parameter_image(parameter);
+        let mut targets = [0; PHY_TX_TARGET_POWER_COUNT];
+        targets[0] = 44;
+        let state = crate::phy_state::PhyState::new(
+            crate::phy_state::PhyConfig::esp32s31_default().with_target_power(80, targets, false),
+        );
         let profile = state.tx_target_power_profile();
         drop(state);
         assert_eq!(

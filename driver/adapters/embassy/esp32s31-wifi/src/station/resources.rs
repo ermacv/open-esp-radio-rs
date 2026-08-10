@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use open_esp_radio_esp32s31_phy::phy_cold::PhyColdState;
+use open_esp_radio_esp32s31_phy::PhyState;
 use open_esp_radio_ieee80211::scan::ScanTable;
 
 /// RX DMA arena and the address layout derived from that exact allocation.
@@ -50,7 +50,7 @@ impl<'storage, S, const COUNT: usize> Esp32s31StationDmaResources<'storage, S, C
 pub trait Esp32s31StationRadioOwner {
     type Platform;
 
-    fn radio_mut(&mut self) -> (&mut PhyColdState, &mut Self::Platform);
+    fn radio_mut(&mut self) -> (&mut PhyState, &mut Self::Platform);
 }
 
 /// Persistent physical-radio and interrupt authority owned by one station
@@ -90,7 +90,7 @@ impl<'role, O, I> Esp32s31StationRadioResources<'role, O, I> {
 }
 
 impl<O: Esp32s31StationRadioOwner, I> Esp32s31StationRadioResources<'_, O, I> {
-    pub fn parts_mut(&mut self) -> (&mut PhyColdState, &mut O::Platform, &mut I) {
+    pub fn parts_mut(&mut self) -> (&mut PhyState, &mut O::Platform, &mut I) {
         let (phy, platform) = self.owner.radio_mut();
         (phy, platform, &mut self.interrupt)
     }

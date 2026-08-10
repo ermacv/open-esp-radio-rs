@@ -38,6 +38,8 @@ use static_cell::StaticCell;
 #[cfg(feature = "open-radio-hil")]
 mod console;
 #[cfg(feature = "open-radio-hil")]
+mod phy_calibration_artifact;
+#[cfg(feature = "open-radio-hil")]
 mod product_hil;
 
 const DATA_SENTINEL: u32 = 0x5353_31d2;

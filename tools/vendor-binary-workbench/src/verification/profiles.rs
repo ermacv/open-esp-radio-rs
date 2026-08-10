@@ -113,6 +113,81 @@ struct RangeInput {
     length: u32,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
+struct CallResponseInput {
+    symbol: String,
+    #[serde(default)]
+    return_words: Vec<u32>,
+    #[serde(default)]
+    outputs: Vec<CallOutputInput>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "kebab-case",
+    rename_all_fields = "kebab-case"
+)]
+enum CallOutputInput {
+    PrivateStackU8 { pointer_argument: u8, value: u8 },
+}
+
+impl CallResponseInput {
+    fn finish(
+        self,
+        scenario: &str,
+        side: &str,
+    ) -> Result<(String, crate::execution::ModeledCallResponse)> {
+        if self.symbol.is_empty() || self.symbol.chars().any(char::is_whitespace) {
+            return Err(crate::Error::invalid(format!(
+                "scenario {scenario} {side} call response requires one non-empty symbol"
+            )));
+        }
+        if self.return_words.len() > 2 {
+            return Err(crate::Error::invalid(format!(
+                "scenario {scenario} {side} call {} declares more than RV32 a0/a1 return words",
+                self.symbol
+            )));
+        }
+        let mut return_words = [None; 2];
+        for (index, value) in self.return_words.into_iter().enumerate() {
+            return_words[index] = Some(value);
+        }
+        let mut output_arguments = BTreeSet::new();
+        let mut outputs = Vec::with_capacity(self.outputs.len());
+        for output in self.outputs {
+            let CallOutputInput::PrivateStackU8 {
+                pointer_argument,
+                value,
+            } = output;
+            if pointer_argument >= 8 {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {scenario} {side} call {} output argument a{pointer_argument} exceeds RV32 a0..a7",
+                    self.symbol
+                )));
+            }
+            if !output_arguments.insert(pointer_argument) {
+                return Err(crate::Error::invalid(format!(
+                    "scenario {scenario} {side} call {} repeats output argument a{pointer_argument}",
+                    self.symbol
+                )));
+            }
+            outputs.push(crate::execution::ModeledCallOutput::PrivateStackU8 {
+                pointer_argument,
+                value,
+            });
+        }
+        Ok((
+            self.symbol,
+            crate::execution::ModeledCallResponse {
+                return_words,
+                outputs,
+            },
+        ))
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ScenarioInput {
@@ -139,6 +214,10 @@ struct ScenarioInput {
     vendor_tables: Vec<crate::execution_model::TableInstance>,
     #[serde(default)]
     rust_tables: Vec<crate::execution_model::TableInstance>,
+    #[serde(default)]
+    vendor_calls: Vec<CallResponseInput>,
+    #[serde(default)]
+    rust_calls: Vec<CallResponseInput>,
     #[serde(default)]
     vendor_memory_instances: Vec<RuntimeMemoryInstance>,
     #[serde(default)]
@@ -231,6 +310,16 @@ impl ScenarioInput {
         output.rust_symbol_words = self.rust_ram_symbols;
         output.vendor_table_instances = self.vendor_tables;
         output.rust_table_instances = self.rust_tables;
+        output.vendor_call_responses = self
+            .vendor_calls
+            .into_iter()
+            .map(|response| response.finish(&output.name, "vendor"))
+            .collect::<Result<_>>()?;
+        output.rust_call_responses = self
+            .rust_calls
+            .into_iter()
+            .map(|response| response.finish(&output.name, "Rust"))
+            .collect::<Result<_>>()?;
         output.vendor_memory_instances = self.vendor_memory_instances;
         output.rust_memory_instances = self.rust_memory_instances;
         output.vendor_observations = self.vendor_observations;
@@ -406,9 +495,9 @@ fn parse(input: &str) -> Result<Vec<Profile>> {
 }
 
 fn finish(document: ProfileDocument) -> Result<Vec<Profile>> {
-    if document.schema != 1 {
+    if document.schema != 2 {
         return Err(crate::Error::invalid(
-            "verification profile TOML requires schema = 1",
+            "verification profile TOML requires schema = 2",
         ));
     }
     if document.profiles.is_empty() {

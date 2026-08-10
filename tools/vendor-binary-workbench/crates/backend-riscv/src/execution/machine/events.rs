@@ -3,7 +3,8 @@
 use rv_asm::Reg;
 
 use super::super::{
-    ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent, OrderedCall, TableLifecycleEvent,
+    ExecutionEvent, ExecutionProducer, ExecutionTimelineEvent, ModeledCallOutput,
+    ModeledCallResponse, OrderedCall, TableLifecycleEvent, execution_stack_contains,
 };
 use super::Machine;
 use crate::Result;
@@ -76,8 +77,12 @@ impl Machine<'_> {
             });
     }
 
-    pub(super) fn modeled_call_result(&mut self, symbol: &str, site: u32) -> Result<Option<u32>> {
-        let Some(responses) = self.call_returns.get_mut(symbol) else {
+    pub(super) fn modeled_call_response(
+        &mut self,
+        symbol: &str,
+        site: u32,
+    ) -> Result<Option<ModeledCallResponse>> {
+        let Some(responses) = self.call_responses.get_mut(symbol) else {
             return Ok(None);
         };
         responses.pop_front().map(Some).ok_or_else(|| {
@@ -86,6 +91,51 @@ impl Machine<'_> {
             )
             .into()
         })
+    }
+
+    pub(in crate::execution) fn apply_modeled_call_response(
+        &mut self,
+        symbol: &str,
+        site: u32,
+        response: ModeledCallResponse,
+    ) -> Result<()> {
+        let mut output_arguments = std::collections::BTreeSet::new();
+        for output in response.outputs {
+            match output {
+                ModeledCallOutput::PrivateStackU8 {
+                    pointer_argument,
+                    value,
+                } => {
+                    if pointer_argument >= 8 {
+                        return Err(format!(
+                            "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} exceeds RV32 a0..a7"
+                        )
+                        .into());
+                    }
+                    if !output_arguments.insert(pointer_argument) {
+                        return Err(format!(
+                            "modeled call {symbol} at {site:#010x} repeats output argument a{pointer_argument}"
+                        )
+                        .into());
+                    }
+                    let address =
+                        self.registers[usize::from(Reg::A0.0) + usize::from(pointer_argument)];
+                    if !execution_stack_contains(address) {
+                        return Err(format!(
+                            "modeled call {symbol} at {site:#010x} output argument a{pointer_argument} points outside private stack: {address:#010x}"
+                        )
+                        .into());
+                    }
+                    self.write(address, 8, u32::from(value))?;
+                }
+            }
+        }
+        for (index, value) in response.return_words.into_iter().enumerate() {
+            if let Some(value) = value {
+                self.registers[usize::from(Reg::A0.0) + index] = value;
+            }
+        }
+        Ok(())
     }
 
     pub(in crate::execution) fn record_event(&mut self, event: ExecutionEvent) {

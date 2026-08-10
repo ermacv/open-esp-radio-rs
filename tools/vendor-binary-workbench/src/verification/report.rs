@@ -7,7 +7,7 @@ use serde::Serialize;
 use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 6;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 7;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]

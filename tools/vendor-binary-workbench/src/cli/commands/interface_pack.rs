@@ -243,11 +243,10 @@ fn validate(
 
 fn execution_model_label(model: crate::ExternalReturnModel) -> String {
     match model {
+        crate::ExternalReturnModel::Void => "void".to_owned(),
         crate::ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
         crate::ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
-        crate::ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
-            format!("private-stack-output-u8:a{pointer_argument}")
-        }
+        crate::ExternalReturnModel::SymbolicU64 => "symbolic-u64".to_owned(),
         crate::ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
     }
 }

@@ -41,6 +41,8 @@ pub(crate) struct ReviewScopeReport {
     pub(crate) profiles: Vec<String>,
     pub(crate) roots: usize,
     pub(crate) functions: usize,
+    /// Distinct explicit roots that require reviewed Rust coverage.
+    pub(crate) replacement_functions: usize,
     pub(crate) function_identities: Vec<String>,
     pub(crate) function_keys: Vec<String>,
     pub(crate) complete_functions: usize,

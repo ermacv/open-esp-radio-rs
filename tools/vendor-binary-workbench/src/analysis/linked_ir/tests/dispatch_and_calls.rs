@@ -64,6 +64,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         site: Some(0x1004),
         tail: false,
         result_modeled: false,
+        execution_model: None,
         semantics: None,
         semantic_operation: None,
         semantic_contract: None,
@@ -328,6 +329,7 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
             execution_model: Some(ReviewedExternalCallExecutionModel {
                 id: "wifi-osi-models.delay-us".to_owned(),
                 return_model: ExternalReturnModel::Constant(0),
+                outputs: Vec::new(),
             }),
             tail: false,
             evidence: ReviewedExternalCallEvidence::ObservedCallSite,
@@ -368,6 +370,14 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     assert_eq!(call.typed_arguments[0].direction, "unknown");
     assert!(call.trampoline.is_none());
     assert!(call.result_modeled);
+    assert_eq!(
+        call.execution_model,
+        Some(LinkedExternalExecutionModel {
+            id: "wifi-osi-models.delay-us".to_owned(),
+            return_model: "constant:0x00000000".to_owned(),
+            outputs: Vec::new(),
+        })
+    );
     assert!(
         pseudo.contains(
             "reviewed_abi.ets_delay_us(arg0); // site 0x00000040; model=wifi-osi-models.delay-us"
@@ -391,6 +401,7 @@ fn call_compaction_keeps_only_bindings_shared_by_every_argument_shape() {
         site: Some(0x24),
         tail: false,
         result_modeled: false,
+        execution_model: None,
         semantics: None,
         semantic_operation: None,
         semantic_contract: None,

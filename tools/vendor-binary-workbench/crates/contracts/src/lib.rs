@@ -7,14 +7,26 @@ use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExternalReturnModel {
+    /// The call itself is the modeled observable effect and has no ABI return
+    /// value. Consumers must not invent a result merely to keep analysis
+    /// moving.
+    Void,
     Constant(u32),
     SymbolicU32,
-    PrivateStackOutputU8 {
-        pointer_argument: u8,
-    },
+    /// Two-word RV32 ABI result in `a0` (low) and `a1` (high).
+    SymbolicU64,
     /// The ABI identity and human semantics are known, but observable effects
     /// and return propagation are not modeled for validation.
     Unmodeled,
+}
+
+/// One independently modeled write through a call argument.
+///
+/// The structural layer currently authorizes only private-stack destinations;
+/// allocator and arbitrary caller-memory ownership require separate models.
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ExternalOutputModel {
+    PrivateStackU8 { pointer_argument: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -97,6 +109,7 @@ pub struct DirectSemanticFunctionSpec {
 pub struct ExternalCallModelSpec {
     pub id: &'static str,
     pub return_model: ExternalReturnModel,
+    pub outputs: &'static [ExternalOutputModel],
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

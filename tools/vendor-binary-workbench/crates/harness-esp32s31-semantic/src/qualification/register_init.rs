@@ -89,10 +89,10 @@ pub fn vendor_register_init_scenario(
     scenario.arguments = vec![0, REGISTER_CALIBRATION_IMAGE, 0];
     scenario.max_steps = 2_000_000;
     scenario
-        .call_returns
+        .call_responses
         .entry("rtc_clk_xtal_freq_get".to_owned())
         .or_default()
-        .push_back(40);
+        .push_back(execution::ModeledCallResponse::scalar(40));
     scenario.mmio_initial.insert(0x2010_f028, 0);
     scenario.mmio_initial.insert(0x2010_f804, 0x5b << 16);
     scenario.mmio_initial.insert(0x2071_5050, 0);

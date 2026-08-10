@@ -392,6 +392,26 @@ impl SymbolicValue {
                 bit,
                 inverted: !inverted,
             },
+            Some(BitSource::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted,
+            }) => BitSource::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            Some(BitSource::ExternalOutput {
+                call_token,
+                output_index,
+                bit,
+                inverted,
+            }) => BitSource::ExternalOutput {
+                call_token,
+                output_index,
+                bit,
+                inverted: !inverted,
+            },
             Some(BitSource::Unknown) => BitSource::Unknown,
             Some(BitSource::Constant(false)) => unreachable!(),
         };
@@ -420,7 +440,9 @@ impl SymbolicValue {
                     && divisor_high.is_resolved()
             }
             Self::SymbolAddress { lo_addend, .. } => lo_addend.is_some(),
-            Self::ExternalResult(_) => true,
+            Self::ExternalResult(_) | Self::ExternalResultHigh(_) | Self::ExternalOutput { .. } => {
+                true
+            }
             Self::ReviewedExternalTable(_)
             | Self::ReviewedExternalFunction { .. }
             | Self::FunctionTable(_)
@@ -460,6 +482,13 @@ impl SymbolicValue {
                 format!("function-pointer:{}::{target:#010x}", table.id())
             }
             Self::ExternalResult(call_token) => format!("external-result:{call_token}"),
+            Self::ExternalResultHigh(call_token) => {
+                format!("external-result-high:{call_token}")
+            }
+            Self::ExternalOutput {
+                call_token,
+                output_index,
+            } => format!("external-output:{call_token}:{output_index}"),
             Self::Expression {
                 operation,
                 left,
@@ -566,6 +595,25 @@ impl SymbolicValue {
                         } => {
                             let inverse = if *inverted { "!" } else { "" };
                             Some(format!("{bit}={inverse}external{call_token}.{source}"))
+                        }
+                        BitSource::ExternalResultHigh {
+                            call_token,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!("{bit}={inverse}external{call_token}.high.{source}"))
+                        }
+                        BitSource::ExternalOutput {
+                            call_token,
+                            output_index,
+                            bit: source,
+                            inverted,
+                        } => {
+                            let inverse = if *inverted { "!" } else { "" };
+                            Some(format!(
+                                "{bit}={inverse}external{call_token}.output{output_index}.{source}"
+                            ))
                         }
                         BitSource::Unknown => Some(format!("{bit}=?")),
                     })

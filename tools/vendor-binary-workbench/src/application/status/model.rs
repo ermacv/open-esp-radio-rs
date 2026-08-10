@@ -54,6 +54,7 @@ pub struct ReviewScopeDetail {
     pub profiles: Vec<String>,
     pub roots: usize,
     pub functions: usize,
+    pub replacement_functions: usize,
     pub complete_functions: usize,
     pub mmio_registers: usize,
     pub linked_mmio_registers: usize,

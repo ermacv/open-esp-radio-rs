@@ -13,6 +13,7 @@ fn write_ir(path: &std::path::Path) {
         site: Some(site),
         tail: false,
         result_modeled: false,
+        execution_model: None,
         semantics: None,
         semantic_operation,
         semantic_contract: None,
@@ -360,6 +361,7 @@ display-type = "u16"
             set: "fixture.services-v1".to_owned(),
             model: "queue-send-from-isr".to_owned(),
             return_model: crate::ExternalReturnModel::Constant(1),
+            outputs: Vec::new(),
         }),
         functions: ["vendor_helper".to_owned()].into(),
         calls: vec![crate::interfaces::ResolvedInterfaceCall {

@@ -557,6 +557,7 @@ mod tests {
             profiles: vec!["radio".to_owned()],
             roots: 1,
             functions: 1,
+            replacement_functions: 1,
             complete_functions: 1,
             mmio_registers: 0,
             table_calls: 0,

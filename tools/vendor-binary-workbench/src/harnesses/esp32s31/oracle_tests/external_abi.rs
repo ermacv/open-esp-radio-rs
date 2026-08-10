@@ -38,8 +38,13 @@ fn wifi_osi_rand_tail_call_resolves_from_relocation() {
     .unwrap();
     assert!(generated.source.contains("pub trait ReferencePlatform"));
     assert!(generated.source.contains(
-        "let external_result0 = platform.external_call(\"esp32s31-radio-rev0::wifi-osi-v9\", \"esp32s31-wifi-osi-v9.rand\", &[]);"
+        "let external_outcome0 = platform.external_call(\"esp32s31-radio-rev0::wifi-osi-v9\", \"esp32s31-wifi-osi-v9.rand\", &[]);"
     ));
+    assert!(
+        generated
+            .source
+            .contains("let external_result0 = external_outcome0.return_words[0];")
+    );
     assert!(!generated.source.contains("external_table_version"));
     assert!(!generated.source.contains("external_table_magic"));
     assert!(!generated.source.contains("external_table_size"));
@@ -113,7 +118,7 @@ fn reviewed_wifi_osi_slot_is_named_without_an_execution_model() {
 }
 
 #[test]
-fn semantic_only_rtos_slot_is_visible_but_remains_a_reference_blocker() {
+fn modeled_rtos_slot_still_rejects_an_unproven_output_pointer() {
     let symbol = wifi_osi_tail_symbol(0x068);
     let trace = trace_binary_symbol(
         &symbol,
@@ -133,10 +138,13 @@ fn semantic_only_rtos_slot_is_visible_but_remains_a_reference_blocker() {
                 && candidates[0].semantic_operation.as_deref()
                     == Some("rtos.queue.send-from-isr")
                 && candidates[0].execution_model.as_ref().is_some_and(|model|
-                    model.return_model == ExternalReturnModel::Unmodeled)
+                    model.return_model == ExternalReturnModel::SymbolicU32
+                        && model.outputs == vec![ExternalOutputModel::PrivateStackU8 {
+                            pointer_argument: 2
+                        }])
     ));
     assert!(trace.reference_blockers.iter().any(|blocker| {
-        blocker.contains("unmodeled-reviewed-external-call")
+        blocker.contains("unsupported-reviewed-external-output-pointer")
             && blocker.contains("queue_send_from_isr")
     }));
 }

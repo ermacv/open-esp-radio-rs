@@ -9,7 +9,7 @@ pub use machine::execute;
 pub use model::{
     AtomicOperation, AtomicOrdering, ExecutionEvent, ExecutionProducer, ExecutionResult,
     ExecutionSession, ExecutionTimelineEvent, IndirectCall, MemoryAlias, MemoryChange, MemoryOwner,
-    MemoryOwnership, OrderedCall, ResetPolicy, Scenario,
+    MemoryOwnership, ModeledCallOutput, ModeledCallResponse, OrderedCall, ResetPolicy, Scenario,
 };
 
 use open_radio_vendor_execution_model::{

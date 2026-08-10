@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Concrete coverage for leaves whose logical queue argument selects the
 # reversed physical CONTROL[3-queue] PAC bank.
 

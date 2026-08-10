@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Both source-owned bool inputs and distinct initial images prove the
 # non-symmetric vendor transaction: disable clears bit 29 at 0x2010d858, but
 # both branches set bit 21 at 0x2010d830.

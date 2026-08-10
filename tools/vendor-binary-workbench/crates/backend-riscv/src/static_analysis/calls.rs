@@ -142,27 +142,18 @@ fn apply_reviewed_external_call(
         [candidate] => candidate.execution_model.as_ref(),
         _ => None,
     };
-    let mut private_stack_output = None;
+    let mut secondary_result = None;
     let result = match execution_model.map(|model| model.return_model) {
+        Some(ExternalReturnModel::Void) => SymbolicValue::Unknown,
         Some(ExternalReturnModel::Constant(value)) => SymbolicValue::Constant(value),
         Some(ExternalReturnModel::SymbolicU32) => {
             SymbolicValue::ExternalResult(state.next_external_call_token)
         }
-        Some(ExternalReturnModel::PrivateStackOutputU8 { pointer_argument }) => {
-            let Some(SymbolicValue::StackAddress(offset)) =
-                arguments.get(usize::from(pointer_argument))
-            else {
-                state.reference_blockers.push(format!(
-                    "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument} is not private stack",
-                    candidates[0].id, candidates[0].name
-                ));
-                return StructuralCallControl::Stop;
-            };
-            let output = SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
-            std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
-            private_stack_output = Some((*offset, output));
-            arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
-            SymbolicValue::Unknown
+        Some(ExternalReturnModel::SymbolicU64) => {
+            secondary_result = Some(SymbolicValue::ExternalResultHigh(
+                state.next_external_call_token,
+            ));
+            SymbolicValue::ExternalResult(state.next_external_call_token)
         }
         Some(ExternalReturnModel::Unmodeled) | None => {
             state.reference_blockers.push(format!(
@@ -176,6 +167,54 @@ fn apply_reviewed_external_call(
             SymbolicValue::Unknown
         }
     };
+    let mut private_stack_outputs = Vec::new();
+    if let Some(model) = execution_model {
+        for (output_index, output) in model.outputs.iter().enumerate() {
+            let ExternalOutputModel::PrivateStackU8 { pointer_argument } = output;
+            let Ok(output_index) = u8::try_from(output_index) else {
+                state.reference_blockers.push(format!(
+                    "unsupported-reviewed-external-output-count at {pc:#x}: {} ({}) has more than 256 outputs",
+                    candidates[0].id, candidates[0].name
+                ));
+                state
+                    .reference_events
+                    .push(DraftReferenceEvent::ReviewedExternalCall {
+                        token: state.next_external_call_token,
+                        site: pc,
+                        candidates,
+                        arguments,
+                    });
+                state.next_external_call_token += 1;
+                return StructuralCallControl::Stop;
+            };
+            let Some(SymbolicValue::StackAddress(offset)) =
+                arguments.get(usize::from(*pointer_argument))
+            else {
+                state.reference_blockers.push(format!(
+                    "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument} is not private stack",
+                    candidates[0].id, candidates[0].name
+                ));
+                state
+                    .reference_events
+                    .push(DraftReferenceEvent::ReviewedExternalCall {
+                        token: state.next_external_call_token,
+                        site: pc,
+                        candidates,
+                        arguments,
+                    });
+                state.next_external_call_token += 1;
+                return StructuralCallControl::Stop;
+            };
+            let output = SymbolicValue::ExternalOutput {
+                call_token: state.next_external_call_token,
+                output_index,
+            }
+            .and(0xff);
+            std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
+            private_stack_outputs.push((*offset, output));
+            arguments[usize::from(*pointer_argument)] = SymbolicValue::Constant(0);
+        }
+    }
     state
         .reference_events
         .push(DraftReferenceEvent::ReviewedExternalCall {
@@ -184,7 +223,7 @@ fn apply_reviewed_external_call(
             candidates,
             arguments,
         });
-    if let Some((offset, value)) = private_stack_output {
+    for (offset, value) in private_stack_outputs {
         state
             .reference_events
             .push(DraftReferenceEvent::PrivateStackStore {
@@ -203,6 +242,9 @@ fn apply_reviewed_external_call(
         pc.wrapping_add(u32::from(width)),
         result,
     );
+    if let Some(secondary_result) = secondary_result {
+        structural_set(&mut state.values, Reg::A1, secondary_result);
+    }
     StructuralCallControl::Advance(1)
 }
 
@@ -324,13 +366,14 @@ pub(super) fn apply_relocated_call(
             return StructuralCallControl::Stop;
         }
         let result = match function.return_model {
+            ExternalReturnModel::Void => SymbolicValue::Unknown,
             ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
             ExternalReturnModel::SymbolicU32 => {
                 SymbolicValue::ExternalResult(state.next_external_call_token)
             }
-            ExternalReturnModel::PrivateStackOutputU8 { .. } => {
+            ExternalReturnModel::SymbolicU64 => {
                 state.reference_blockers.push(format!(
-                    "unsupported-modeled-direct-output at {pc:#x}: {name}"
+                    "unsupported-modeled-direct-wide-return at {pc:#x}: {name}"
                 ));
                 return StructuralCallControl::Stop;
             }

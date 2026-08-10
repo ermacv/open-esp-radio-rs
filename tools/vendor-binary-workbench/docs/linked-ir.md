@@ -25,7 +25,7 @@ cargo vendor-binary-workbench ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v39 records the selection mode plus root and
+`reachable-internal`, and schema v40 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -97,7 +97,7 @@ cargo vendor-binary-workbench ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v39 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v40 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -165,7 +165,7 @@ unique exact fragment, its number of occurrences and its first ordinal. The
 diagnostic record also carries a classified `kind`, an optional instruction
 `site`, and a stable `root_id` used by review queues. Pseudo-source uses the
 compact `rendered` form with an explicit `[repeated N times]` suffix. The old
-parallel string blocker arrays are not part of schema v39. This is mechanical report compaction, not
+parallel string blocker arrays are not part of schema v40. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
@@ -469,12 +469,22 @@ schema stays an ordinary internal call. This lets callers such as
 the helper is an RTOS event API or weakening its ordinary body analysis.
 
 A directly relocated platform function may additionally carry an executable
-return model. This is a stronger contract than a semantic annotation: only a
-reviewed `constant` or `symbolic-u32` model lets structural execution cross an
-otherwise unresolved boundary. The resulting `modeled-direct-external` call
-retains its operation, evidence ID and replacement hint. ESP32-S31 uses this
-for the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
+call model. This is a stronger contract than a semantic annotation: only a
+reviewed `void`, `constant`, `symbolic-u32` or `symbolic-u64` return model lets
+structural execution cross an otherwise unresolved direct-call boundary. `void` means the
+ordered call is the modeled observable effect and no ABI result exists; it must
+not be represented by a dummy constant. `symbolic-u64` preserves independent
+RV32 `a0` and `a1` words. Reviewed private-stack byte outputs remain independent
+from the return value and carry their call token and output ordinal through
+data-flow and generated reference code. A `modeled-direct-external` call
+retains its operation, evidence ID and replacement hint. ESP32-S31 uses a constant model for
+the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
 `unmodeled` return/effects remains fail-closed.
+
+Reviewed trampoline calls additionally persist the complete executable model
+in linked-IR schema v40: model ID, return model, and each output kind, pointer
+argument and width. This keeps navigation and later review honest without
+teaching the generic schema RTOS-specific meanings.
 
 Known function-table calls additionally carry a structured `trampoline`
 record. It includes the table pointer and backing symbols, version, magic and

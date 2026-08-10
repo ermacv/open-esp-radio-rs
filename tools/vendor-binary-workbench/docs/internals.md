@@ -180,6 +180,8 @@ to linked-IR/function review. The interface pack remains the sole owner of
 roots, container loads, layout guards, slot offsets, ABI types and semantic
 annotations. The harness model set contains only executable return/RAM/event
 behavior, so there is no second compiled copy of the reviewed layout to drift.
+The explicit `Void` return model records a fully modeled ordered call with no
+ABI result; it is deliberately distinct from fail-closed `Unmodeled` behavior.
 Runtime table contents are scenario-owned
 `TableInstance` values and never mutate the reviewed layout pack.
 
@@ -451,6 +453,7 @@ project-linking reports. Its child modules own one analysis phase each:
 | `model.rs` | Stable linked-IR report types |
 | `identity.rs` | Function identity catalog and diagnostic compaction |
 | `calls.rs` | Call normalization, typed arguments, and semantic annotations |
+| `calls/abi.rs` | Reviewed direct/trampoline ABI projection and typed execution models |
 | `direct_trace.rs` | Direct call-graph exploration and guarded MMIO provenance |
 | `provenance.rs` | Return-bit provenance and wrapper traversal |
 | `effects.rs` | Direct MMIO, delay, and context-access extraction |
@@ -496,7 +499,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, multi-report loading and queries |
-| `facts/parse.rs` | Strict schema-v39 linked-IR projection, including indexed/dereferenced memory objects, site-bearing calls, typed diagnostics and guard expressions |
+| `facts/parse.rs` | Strict schema-v40 linked-IR projection, including indexed/dereferenced memory objects, site-bearing calls, typed diagnostics and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -545,7 +548,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v39 Serde document |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v40 Serde document |
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |
@@ -554,7 +557,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `cli/commands/export_ir/human/summary.rs` | Aggregate report section |
 | `cli/commands/export_ir/tests.rs` | CLI artifact-value adaptation tests |
 
-Schema v37 serializes the typed `LinkedIrReport` model directly; the removed
+Schema v40 serializes the typed `LinkedIrReport` model directly; the removed
 schema-v31 handwritten renderer has no compatibility path. Renderers are
 consumers of `LinkedIrReport`; they must not independently
 recover calls, guards, MMIO fields, or semantic actions. This keeps JSON,

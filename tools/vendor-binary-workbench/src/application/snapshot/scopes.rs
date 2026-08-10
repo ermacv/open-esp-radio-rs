@@ -33,6 +33,7 @@ pub(super) fn collect(
             profiles: scope.profiles,
             roots: scope.roots,
             functions: scope.functions,
+            replacement_functions: scope.replacement_functions,
             complete_functions: scope.complete_functions,
             mmio_registers: scope.mmio_registers,
             table_calls: scope.table_calls,

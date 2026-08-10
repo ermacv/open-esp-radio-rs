@@ -47,9 +47,9 @@ fn reviewed_call_model_intercepts_linked_code_and_is_fully_consumed() {
         .symbols_by_address
         .insert(0x1014, "platform_service".to_owned());
     let scenario = Scenario {
-        call_returns: BTreeMap::from([(
+        call_responses: BTreeMap::from([(
             "platform_service".to_owned(),
-            VecDeque::from([0x1234_5678]),
+            VecDeque::from([ModeledCallResponse::scalar(0x1234_5678)]),
         )]),
         ..Scenario::default()
     };
@@ -58,6 +58,69 @@ fn reviewed_call_model_intercepts_linked_code_and_is_fully_consumed() {
     assert_eq!(result.return_value, 0x1234_5678);
     assert_eq!(result.ordered_calls.len(), 1);
     assert_eq!(result.ordered_calls[0].symbol, "platform_service");
+}
+
+#[test]
+fn modeled_call_response_applies_two_word_return_and_private_stack_output() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let svd = empty_svd();
+    let mut machine = Machine::new(&image, &svd, 0x1000, Scenario::default());
+    let output_address = STACK_POINTER - 4;
+    machine.set_register(rv_asm::Reg::A0, 0x1111_1111);
+    machine.set_register(rv_asm::Reg::A1, 0x2222_2222);
+    machine.set_register(rv_asm::Reg::A2, output_address);
+    machine.record_call(0x1000, "platform_service".to_owned());
+
+    machine
+        .apply_modeled_call_response(
+            "platform_service",
+            0x1000,
+            ModeledCallResponse {
+                return_words: [Some(0x1234_5678), Some(0x9abc_def0)],
+                outputs: vec![ModeledCallOutput::PrivateStackU8 {
+                    pointer_argument: 2,
+                    value: 0x5a,
+                }],
+            },
+        )
+        .unwrap();
+
+    assert_eq!(machine.register(rv_asm::Reg::A0), 0x1234_5678);
+    assert_eq!(machine.register(rv_asm::Reg::A1), 0x9abc_def0);
+    assert_eq!(machine.read(output_address, 8).unwrap(), 0x5a);
+    assert_eq!(machine.ordered_calls[0].arguments[2], output_address);
+    assert!(matches!(
+        machine.timeline.as_slice(),
+        [
+            ExecutionTimelineEvent::Call(_),
+            ExecutionTimelineEvent::RamWrite { width: 8, address, value: 0x5a },
+            ExecutionTimelineEvent::RamRead { width: 8, address: read_address, value: 0x5a },
+        ] if *address == output_address && *read_address == output_address
+    ));
+}
+
+#[test]
+fn modeled_call_response_rejects_non_stack_output_pointer() {
+    let image = tiny_image(vec![0x67, 0x80, 0x00, 0x00], 4);
+    let svd = empty_svd();
+    let mut machine = Machine::new(&image, &svd, 0x1000, Scenario::default());
+    machine.set_register(rv_asm::Reg::A2, 0x1000);
+
+    let error = machine
+        .apply_modeled_call_response(
+            "platform_service",
+            0x1000,
+            ModeledCallResponse {
+                return_words: [Some(1), None],
+                outputs: vec![ModeledCallOutput::PrivateStackU8 {
+                    pointer_argument: 2,
+                    value: 1,
+                }],
+            },
+        )
+        .unwrap_err();
+
+    assert!(error.to_string().contains("points outside private stack"));
 }
 
 #[test]
@@ -81,7 +144,7 @@ fn reviewed_call_model_rejects_missing_and_unused_responses() {
         .insert(0x1014, "platform_service".to_owned());
 
     let missing = Scenario {
-        call_returns: BTreeMap::from([("platform_service".to_owned(), VecDeque::new())]),
+        call_responses: BTreeMap::from([("platform_service".to_owned(), VecDeque::new())]),
         ..Scenario::default()
     };
     assert!(
@@ -92,7 +155,13 @@ fn reviewed_call_model_rejects_missing_and_unused_responses() {
     );
 
     let unused = Scenario {
-        call_returns: BTreeMap::from([("platform_service".to_owned(), VecDeque::from([1, 2]))]),
+        call_responses: BTreeMap::from([(
+            "platform_service".to_owned(),
+            VecDeque::from([
+                ModeledCallResponse::scalar(1),
+                ModeledCallResponse::scalar(2),
+            ]),
+        )]),
         ..Scenario::default()
     };
     assert!(

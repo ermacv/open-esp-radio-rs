@@ -140,7 +140,7 @@ fn declared_argument_domain_requires_an_executed_case_for_every_value() {
 
 #[test]
 fn malformed_profile_retains_its_physical_source_line() {
-    let input = "schema = 1\n\n[[profiles]]\nname = \"fixture\"\nvendor-source = \"fixture\"\nvendor-symbol = \"vendor\"\nrust-symbol = \"rust\"\nunknown = \"value\"\n";
+    let input = "schema = 2\n\n[[profiles]]\nname = \"fixture\"\nvendor-source = \"fixture\"\nvendor-symbol = \"vendor\"\nrust-symbol = \"rust\"\nunknown = \"value\"\n";
     let path = std::env::temp_dir().join(format!(
         "vendor-workbench-profile-diagnostic-{}.toml",
         std::process::id()
@@ -162,7 +162,7 @@ fn malformed_profile_retains_its_physical_source_line() {
 #[test]
 fn profile_models_runtime_tables_as_layout_instances() {
     let profiles = parse(
-        "schema = 1\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"installed\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x4000\nlayout-size = 0x20\npointer-cells = [0x3000]\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"vendor_callback\" } }]\n\n[[profiles.cases.rust-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x5000\nlayout-size = 0x20\npointer-cells = []\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"rust_callback\" } }]\n",
+        "schema = 2\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"installed\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x4000\nlayout-size = 0x20\npointer-cells = [0x3000]\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"vendor_callback\" } }]\n\n[[profiles.cases.rust-tables]]\nlayout-id = \"reviewed-services-v1\"\nbase-address = 0x5000\nlayout-size = 0x20\npointer-cells = []\nslots = [{ offset = 0x4, target = { kind = \"symbol\", value = \"rust_callback\" } }]\n",
     )
     .unwrap();
 
@@ -181,16 +181,44 @@ fn profile_models_runtime_tables_as_layout_instances() {
     assert_eq!(scenario.rust_table_instances[0].base_address, 0x5000);
 
     let error = parse(
-        "schema = 1\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"missing-layout\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"missing\"\n",
+        "schema = 2\n\n[[profiles]]\nname = \"callback-table\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"missing-layout\"\n\n[[profiles.cases.vendor-tables]]\nlayout-id = \"missing\"\n",
     )
     .unwrap_err();
     assert!(error.to_string().contains("missing field"));
 }
 
 #[test]
+fn profile_models_vendor_and_rust_call_responses_independently() {
+    let profiles = parse(
+        "schema = 2\n\n[[profiles]]\nname = \"external-call\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"ready\"\n\n[[profiles.cases.vendor-calls]]\nsymbol = \"queue_send_from_isr\"\nreturn-words = [1, 2]\noutputs = [{ kind = \"private-stack-u8\", pointer-argument = 2, value = 90 }]\n\n[[profiles.cases.rust-calls]]\nsymbol = \"wake_task\"\nreturn-words = [7]\n",
+    )
+    .unwrap();
+
+    let scenario = &profiles[0].scenarios[0];
+    assert_eq!(scenario.vendor_call_responses.len(), 1);
+    assert_eq!(scenario.vendor_call_responses[0].0, "queue_send_from_isr");
+    assert_eq!(
+        scenario.vendor_call_responses[0].1.return_words,
+        [Some(1), Some(2)]
+    );
+    assert_eq!(
+        scenario.vendor_call_responses[0].1.outputs,
+        [crate::execution::ModeledCallOutput::PrivateStackU8 {
+            pointer_argument: 2,
+            value: 90,
+        }]
+    );
+    assert_eq!(scenario.rust_call_responses[0].0, "wake_task");
+    assert_eq!(
+        scenario.rust_call_responses[0].1.return_words,
+        [Some(7), None]
+    );
+}
+
+#[test]
 fn profile_keeps_runtime_memory_identity_separate_from_logical_types() {
     let profiles = parse(
-        "schema = 1\n\n[[profiles]]\nname = \"memory-alias\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"shared-state\"\narguments = [0x3fff0000]\n\n[[profiles.cases.vendor-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"dereferenced-global\", symbol = \"g_state\", pointer_offset = 0x4 }]\n\n[[profiles.cases.rust-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"absolute\", address_space = \"dram\", address = 0x3fff0000 }]\n",
+        "schema = 2\n\n[[profiles]]\nname = \"memory-alias\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"shared-state\"\narguments = [0x3fff0000]\n\n[[profiles.cases.vendor-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"dereferenced-global\", symbol = \"g_state\", pointer_offset = 0x4 }]\n\n[[profiles.cases.rust-memory-instances]]\nid = \"state-0\"\nbase-address = 0x3fff0000\nlength = 0x40\nbindings = [{ kind = \"argument\", index = 0 }, { kind = \"absolute\", address_space = \"dram\", address = 0x3fff0000 }]\n",
     )
     .unwrap();
 
@@ -218,7 +246,7 @@ fn profile_keeps_runtime_memory_identity_separate_from_logical_types() {
 #[test]
 fn profile_models_reviewed_register_behavior_as_a_device_factory() {
     let profiles = parse(
-        "schema = 1\n\n[[profiles]]\nname = \"device\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"irq\"\n\n[[profiles.cases.device-models]]\nkind = \"w1c\"\nid = \"irq-status\"\naddress = 0x60008020\nwidth = 32\ninitial_value = 0xf\nclear_mask = 0x3\nread_clear_mask = 0xc\n",
+        "schema = 2\n\n[[profiles]]\nname = \"device\"\nvendor-source = \"rom\"\nvendor-symbol = \"vendor_entry\"\nrust-symbol = \"rust_entry\"\n\n[[profiles.cases]]\nname = \"irq\"\n\n[[profiles.cases.device-models]]\nkind = \"w1c\"\nid = \"irq-status\"\naddress = 0x60008020\nwidth = 32\ninitial_value = 0xf\nclear_mask = 0x3\nread_clear_mask = 0xc\n",
     )
     .unwrap();
 

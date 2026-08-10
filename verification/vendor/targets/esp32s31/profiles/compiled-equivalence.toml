@@ -1,4 +1,4 @@
-schema = 1
+schema = 2
 # Concrete compiled-equivalence scenarios. This is validator input, not a
 # prose function ledger. Every conditional branch outcome must be covered.
 

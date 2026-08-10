@@ -88,6 +88,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                     profiles: report.profiles.clone(),
                     roots: report.roots,
                     functions: report.functions,
+                    replacement_functions: report.replacement_functions,
                     complete_functions: report.complete_functions,
                     mmio_registers: report.mmio_registers,
                     linked_mmio_registers: report.linked_mmio_registers,

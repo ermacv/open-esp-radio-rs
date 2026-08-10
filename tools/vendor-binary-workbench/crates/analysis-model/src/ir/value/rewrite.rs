@@ -181,6 +181,30 @@ impl SymbolicValue {
                     bit,
                     inverted,
                 },
+                BitSource::ExternalResultHigh {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResultHigh {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("callee external-call token {call_token} has no caller mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::ExternalOutput {
+                    call_token,
+                    output_index,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalOutput {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("callee external-call token {call_token} has no caller mapping")
+                    })?,
+                    output_index,
+                    bit,
+                    inverted,
+                },
             };
         }
         Ok(Self::from_bits(substituted))
@@ -356,6 +380,30 @@ impl SymbolicValue {
                     call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
                         format!("caller external-call token {call_token} has no flattened mapping")
                     })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::ExternalResultHigh {
+                    call_token,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalResultHigh {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("caller external-call token {call_token} has no flattened mapping")
+                    })?,
+                    bit,
+                    inverted,
+                },
+                BitSource::ExternalOutput {
+                    call_token,
+                    output_index,
+                    bit,
+                    inverted,
+                } => BitSource::ExternalOutput {
+                    call_token: *external_tokens.get(call_token as usize).ok_or_else(|| {
+                        format!("caller external-call token {call_token} has no flattened mapping")
+                    })?,
+                    output_index,
                     bit,
                     inverted,
                 },

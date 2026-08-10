@@ -11,8 +11,8 @@ use rv_asm::Reg;
 use super::{
     DeviceModelDescriptor, DeviceModelInstance, DeviceModelOutcome, ExecutableImage,
     ExecutionEvent, ExecutionProducer, ExecutionResult, ExecutionTimelineEvent, IndirectCall,
-    MemoryAlias, MemoryOwnership, MemoryRange, OrderedCall, RETURN_SENTINEL, STACK_POINTER,
-    Scenario, TableLifecycleEvent,
+    MemoryAlias, MemoryOwnership, MemoryRange, ModeledCallResponse, OrderedCall, RETURN_SENTINEL,
+    STACK_POINTER, Scenario, TableLifecycleEvent,
 };
 use crate::{MmioMap, Result};
 
@@ -48,7 +48,7 @@ pub(super) struct Machine<'a> {
     pub(super) table_layouts: Vec<TableRuntimeLayout>,
     pub(super) table_lifecycle: Vec<TableLifecycleEvent>,
     pub(super) table_lifecycle_complete: bool,
-    pub(super) call_returns: BTreeMap<String, VecDeque<u32>>,
+    pub(super) call_responses: BTreeMap<String, VecDeque<ModeledCallResponse>>,
     /// Address reserved by the most recent `lr.w` on this hart. The concrete
     /// executor is intentionally single-hart, so an overlapping local RAM
     /// write is the only modeled cause of reservation loss.
@@ -143,7 +143,7 @@ impl<'a> Machine<'a> {
             table_layouts,
             table_lifecycle,
             table_lifecycle_complete: true,
-            call_returns: scenario.call_returns,
+            call_responses: scenario.call_responses,
             word_reservation: None,
             steps: 0,
             max_steps: if scenario.max_steps == 0 {
@@ -218,7 +218,7 @@ pub fn execute(
         return Err(format!("unconsumed MMIO read responses: {unconsumed:?}").into());
     }
     let unconsumed_calls: Vec<_> = machine
-        .call_returns
+        .call_responses
         .iter()
         .filter_map(|(symbol, values)| (!values.is_empty()).then_some((symbol, values.len())))
         .collect();

@@ -210,7 +210,7 @@ fn verification_json_report_contains_reproducible_inputs() {
     let report = fs::read_to_string(&path).unwrap();
     let loaded_evidence = load_evidence_report(&path).unwrap();
     fs::remove_file(path).unwrap();
-    assert!(report.contains("\"schema_version\": 6"));
+    assert!(report.contains("\"schema_version\": 7"));
     assert!(report.contains("\"command\": \"verify inventory\""));
     assert!(report.contains("\"calling_convention\": \"riscv-ilp32\""));
     assert!(report.contains("\"passed\": true"));

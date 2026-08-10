@@ -2,6 +2,15 @@
 
 use super::*;
 
+mod abi;
+
+pub(super) use abi::{
+    direct_semantic_typed_arguments, external_return_model, linked_event_dispatch_contract,
+};
+use abi::{
+    external_return_is_modeled, linked_external_execution_model, reviewed_external_typed_arguments,
+};
+
 pub(super) fn canonical_arguments(arguments: &[SymbolicValue]) -> Vec<String> {
     arguments.iter().map(SymbolicValue::canonical).collect()
 }
@@ -26,63 +35,6 @@ pub(super) fn affine_argument_bindings(arguments: &[SymbolicValue]) -> Vec<Linke
                     }
                 },
             })
-        })
-        .collect()
-}
-
-pub(super) fn direct_semantic_typed_arguments(
-    function: &crate::DirectSemanticFunctionSpec,
-    arguments: &[String],
-) -> Vec<LinkedCallArgument> {
-    arguments
-        .iter()
-        .take(usize::from(function.argument_count))
-        .enumerate()
-        .map(|(position, value)| {
-            let semantic = function.semantic.arguments.get(position);
-            LinkedCallArgument {
-                position,
-                name: semantic.map_or_else(
-                    || format!("arg{position}"),
-                    |argument| argument.name.to_owned(),
-                ),
-                c_type: semantic
-                    .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
-                direction: semantic
-                    .map_or("unknown", |argument| external_direction(argument.direction)),
-                value: value.clone(),
-            }
-        })
-        .collect()
-}
-
-fn reviewed_external_typed_arguments(
-    candidates: &[ReviewedExternalCall],
-    arguments: &[SymbolicValue],
-) -> Vec<LinkedCallArgument> {
-    arguments
-        .iter()
-        .enumerate()
-        .map(|(position, value)| {
-            let types = candidates
-                .iter()
-                .filter_map(|candidate| candidate.argument_types.get(position))
-                .collect::<BTreeSet<_>>();
-            LinkedCallArgument {
-                position,
-                name: format!("arg{position}"),
-                c_type: if types.len() == 1 {
-                    (*types.first().expect("one reviewed argument type")).clone()
-                } else {
-                    types
-                        .into_iter()
-                        .map(String::as_str)
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                },
-                direction: "unknown",
-                value: value.canonical(),
-            }
         })
         .collect()
 }
@@ -175,44 +127,6 @@ pub(super) fn branch_expression(condition: &BranchCondition) -> String {
     }
 }
 
-pub(super) fn external_return_model(model: ExternalReturnModel) -> String {
-    match model {
-        ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
-        ExternalReturnModel::SymbolicU32 => "symbolic-u32".to_owned(),
-        ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
-            format!("private-stack-output-u8:arg{pointer_argument}")
-        }
-        ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
-    }
-}
-
-pub(super) fn linked_event_dispatch_contract(
-    semantic: crate::ExternalSemanticSpec,
-) -> Option<LinkedEventDispatchContract> {
-    let dispatch = semantic.event_dispatch?;
-    Some(LinkedEventDispatchContract {
-        mechanism: dispatch.mechanism,
-        execution_context: dispatch.execution_context,
-        receiver: dispatch.receiver,
-        argument_roles: dispatch
-            .argument_roles
-            .iter()
-            .map(|binding| LinkedEventDispatchArgumentRole {
-                role: binding.role,
-                argument: binding.argument,
-            })
-            .collect(),
-    })
-}
-
-pub(super) fn external_direction(direction: crate::ExternalArgumentDirection) -> &'static str {
-    match direction {
-        crate::ExternalArgumentDirection::Input => "input",
-        crate::ExternalArgumentDirection::Output => "output",
-        crate::ExternalArgumentDirection::InputOutput => "input-output",
-    }
-}
-
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(super) struct LinkedCallIdentity {
     kind: &'static str,
@@ -220,6 +134,7 @@ pub(super) struct LinkedCallIdentity {
     site: Option<u32>,
     tail: bool,
     result_modeled: bool,
+    execution_model: Option<LinkedExternalExecutionModel>,
     semantics: Option<String>,
     semantic_operation: Option<String>,
     semantic_contract: Option<LinkedSemanticContract>,
@@ -238,6 +153,7 @@ impl From<&LinkedCall> for LinkedCallIdentity {
             site: call.site,
             tail: call.tail,
             result_modeled: call.result_modeled,
+            execution_model: call.execution_model.clone(),
             semantics: call.semantics.clone(),
             semantic_operation: call.semantic_operation.clone(),
             semantic_contract: call.semantic_contract.clone(),
@@ -505,9 +421,9 @@ pub(super) fn collect_call_event(
                     .join(" | "),
                 site: Some(*site),
                 tail: tails.len() == 1 && *tails.first().expect("one reviewed call shape"),
-                result_modeled: execution_model.is_some_and(|model| {
-                    !matches!(model.return_model, ExternalReturnModel::Unmodeled)
-                }),
+                result_modeled: execution_model
+                    .is_some_and(|model| external_return_is_modeled(model.return_model)),
+                execution_model: execution_model.map(linked_external_execution_model),
                 semantics: Some(format!(
                     "reviewed ABI; candidates={}; executable-model={}",
                     candidates
@@ -561,7 +477,8 @@ pub(super) fn collect_call_event(
             target: function.name.clone(),
             site: Some(*site),
             tail: false,
-            result_modeled: !matches!(function.return_model, ExternalReturnModel::Unmodeled),
+            result_modeled: external_return_is_modeled(function.return_model),
+            execution_model: None,
             semantics: Some(format!(
                 "reviewed direct platform ABI; args={}; return={}; model={}; operation={}",
                 function.argument_count,
@@ -596,6 +513,7 @@ pub(super) fn collect_call_event(
             site: None,
             tail: false,
             result_modeled: false,
+            execution_model: None,
             semantics: Some("diagnostic/logging boundary".to_owned()),
             semantic_operation: Some("diagnostic.emit".to_owned()),
             semantic_contract: Some(LinkedSemanticContract {
@@ -629,6 +547,7 @@ pub(super) fn collect_call_event(
             site: Some(*site),
             tail: false,
             result_modeled: false,
+            execution_model: None,
             semantics: None,
             semantic_operation: None,
             semantic_contract: None,
@@ -657,6 +576,7 @@ pub(super) fn collect_call_event(
             site: Some(*site),
             tail: true,
             result_modeled: false,
+            execution_model: None,
             semantics: None,
             semantic_operation: None,
             semantic_contract: None,
@@ -681,6 +601,7 @@ pub(super) fn collect_call_event(
             site: None,
             tail: false,
             result_modeled: *result_modeled,
+            execution_model: None,
             semantics: Some("callee body was composed by the reference resolver".to_owned()),
             semantic_operation: None,
             semantic_contract: None,
@@ -711,6 +632,7 @@ pub(super) fn collect_call_event(
             site: Some(*site),
             tail: false,
             result_modeled: false,
+            execution_model: None,
             semantics: Some(format!(
                 "scratch argument={scratch_argument} size={scratch_size}"
             )),
@@ -739,6 +661,7 @@ pub(super) fn collect_call_event(
             site: None,
             tail: false,
             result_modeled: *result_modeled,
+            execution_model: None,
             semantics: Some(format!(
                 "composed callee with scratch argument={scratch_argument} size={scratch_size}"
             )),

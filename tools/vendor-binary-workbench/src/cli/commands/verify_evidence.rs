@@ -85,7 +85,7 @@ mod tests {
         let candidate = directory.join(format!("vendor-workbench-review-{suffix}.candidate.toml"));
         fs::write(
             &report,
-            r#"{"schema_version":6,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
+            r#"{"schema_version":7,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
         )
         .unwrap();
         let document = "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"leaf\"\nkind = \"symbolic\"\n";

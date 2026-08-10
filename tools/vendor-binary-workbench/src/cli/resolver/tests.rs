@@ -72,11 +72,11 @@ fn command_resources_are_classified_by_one_positive_plan() {
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default())),
-        ResolutionNeeds::new(true, true, false, false, true, true, true)
+        ResolutionNeeds::new(true, true, false, false, true, true, true).with_configured_harness()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::ProjectVerify(Default::default())),
-        ResolutionNeeds::new(true, true, false, true, true, true, true)
+        ResolutionNeeds::new(true, true, false, true, true, true, true).with_configured_harness()
     );
     assert_eq!(
         ResolutionNeeds::for_command(&Command::RegisterValidate(Default::default())),
@@ -90,6 +90,16 @@ fn command_resources_are_classified_by_one_positive_plan() {
         ResolutionNeeds::for_command(&Command::GenerateReference(Default::default())),
         ResolutionNeeds::new(true, true, true, true, true, true, true)
     );
+}
+
+#[test]
+fn composite_analysis_requires_only_a_selected_harness() {
+    let analysis = ResolutionNeeds::for_command(&Command::ProjectAnalyze(Default::default()));
+    assert!(!analysis.requires_harness(false));
+    assert!(analysis.requires_harness(true));
+
+    let status = ResolutionNeeds::for_command(&Command::ProjectStatus(Default::default()));
+    assert!(!status.requires_harness(true));
 }
 
 #[test]

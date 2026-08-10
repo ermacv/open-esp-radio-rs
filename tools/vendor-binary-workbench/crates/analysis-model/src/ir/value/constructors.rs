@@ -40,6 +40,22 @@ impl SymbolicValue {
                     inverted: false,
                 })
             }
+            Self::ExternalResultHigh(call_token) => {
+                core::array::from_fn(|bit| BitSource::ExternalResultHigh {
+                    call_token: *call_token,
+                    bit: bit as u8,
+                    inverted: false,
+                })
+            }
+            Self::ExternalOutput {
+                call_token,
+                output_index,
+            } => core::array::from_fn(|bit| BitSource::ExternalOutput {
+                call_token: *call_token,
+                output_index: *output_index,
+                bit: bit as u8,
+                inverted: false,
+            }),
             Self::RegisterImage {
                 read_token,
                 address,

@@ -19,29 +19,29 @@ project result. `verify source` and `verify inventory` are focused leaf tools;
 proprietary artifacts.
 
 ```console
-cargo vendor-binary-workbench verify source \
+cargo vendor-binary-workbench-esp32s31 verify source \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --vendor-artifact "$ESP32S31_ROM_ELF" \
   --rust-artifact target/verification/esp32s31-probes/riscv32imafc-unknown-none-elf/release/open-esp-radio-verification-esp32s31-probes-elf
 
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \
   --json-report /tmp/esp32s31-verification.json
 
-cargo vendor-binary-workbench project verify \
+cargo vendor-binary-workbench-esp32s31 project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
 mkdir -p /tmp/evidence-candidates
-cargo vendor-binary-workbench project verify \
+cargo vendor-binary-workbench-esp32s31 project verify \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --candidate-evidence-dir /tmp/evidence-candidates
 
-cargo vendor-binary-workbench project verify --check \
+cargo vendor-binary-workbench-esp32s31 project verify --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench project check \
+cargo vendor-binary-workbench-esp32s31 project check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
@@ -53,6 +53,11 @@ Candidate generation never promotes or overwrites accepted baselines. It
 writes one deterministic `<suite-id>.toml` into an existing review directory;
 the reviewer must compare identities, proof classes and hashes before copying
 accepted rows into the project.
+
+These examples use the ESP32-S31 Cargo alias because the selected platform
+pack requires its compiled harness. A generic build now rejects that mismatch
+during command resolution, before starting artifact-wide analysis or
+verification.
 
 Run-spec paths are relative to the run spec. Explicit CLI inputs override the
 same run-spec role. Artifact revision and authenticity remain caller-owned;
@@ -105,7 +110,7 @@ production component.
 makes a green regression gate distinct from complete project mapping: a proof
 can pass while its production Rust owner is still unknown.
 
-Project-report schema v5 also contains `rust_component_index`. No additional
+Project-report schema v6 also contains `rust_component_index`. No additional
 project configuration owns this data: reviewed component paths still come
 from dispositions, Cargo workspace/package roots come from `cargo metadata`,
 and suite ELF paths come from the existing run-spec roles. Rust source is

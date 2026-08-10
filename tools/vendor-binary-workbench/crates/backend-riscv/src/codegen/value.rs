@@ -50,6 +50,8 @@ enum SourceWord {
     MemoryRead(u32),
     CallResult(u32),
     ExternalResult(u32),
+    ExternalResultHigh(u32),
+    ExternalOutput { call_token: u32, output_index: u8 },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -72,6 +74,11 @@ fn source_word(group: BitGroup, arguments: &[String; RV32_MODELED_ARGUMENT_COUNT
         SourceWord::MemoryRead(token) => format!("memory_read{token}"),
         SourceWord::CallResult(token) => call_result_name(token),
         SourceWord::ExternalResult(token) => format!("external_result{token}"),
+        SourceWord::ExternalResultHigh(token) => format!("external_result{token}_high"),
+        SourceWord::ExternalOutput {
+            call_token,
+            output_index,
+        } => format!("external_output{call_token}_{output_index}"),
     };
     if group.inverted {
         format!("!{source}")
@@ -204,6 +211,27 @@ pub(super) fn render_value_scoped(
             } else {
                 Err(format!(
                     "symbolic value refers to missing external-call token {token}"
+                ))
+            }
+        }
+        SymbolicValue::ExternalResultHigh(token) => {
+            if usize::try_from(*token).is_ok_and(|token| token < external_results) {
+                Ok(format!("external_result{token}_high"))
+            } else {
+                Err(format!(
+                    "symbolic value refers to missing external-call token {token}"
+                ))
+            }
+        }
+        SymbolicValue::ExternalOutput {
+            call_token,
+            output_index,
+        } => {
+            if usize::try_from(*call_token).is_ok_and(|token| token < external_results) {
+                Ok(format!("external_output{call_token}_{output_index}"))
+            } else {
+                Err(format!(
+                    "symbolic value refers to missing external-call token {call_token}"
                 ))
             }
         }
@@ -461,6 +489,50 @@ pub(super) fn render_value_scoped(
                         }
                         let group = BitGroup {
                             source: SourceWord::ExternalResult(call_token),
+                            inverted,
+                            shift: destination as i8 - bit as i8,
+                        };
+                        *groups.entry(group).or_default() |= 1 << destination;
+                    }
+                    BitSource::ExternalResultHigh {
+                        call_token,
+                        bit,
+                        inverted,
+                    } => {
+                        if usize::try_from(call_token)
+                            .ok()
+                            .is_none_or(|token| token >= external_results)
+                        {
+                            return Err(format!(
+                                "symbolic bit refers to missing external-call token {call_token}"
+                            ));
+                        }
+                        let group = BitGroup {
+                            source: SourceWord::ExternalResultHigh(call_token),
+                            inverted,
+                            shift: destination as i8 - bit as i8,
+                        };
+                        *groups.entry(group).or_default() |= 1 << destination;
+                    }
+                    BitSource::ExternalOutput {
+                        call_token,
+                        output_index,
+                        bit,
+                        inverted,
+                    } => {
+                        if usize::try_from(call_token)
+                            .ok()
+                            .is_none_or(|token| token >= external_results)
+                        {
+                            return Err(format!(
+                                "symbolic bit refers to missing external-call token {call_token}"
+                            ));
+                        }
+                        let group = BitGroup {
+                            source: SourceWord::ExternalOutput {
+                                call_token,
+                                output_index,
+                            },
                             inverted,
                             shift: destination as i8 - bit as i8,
                         };

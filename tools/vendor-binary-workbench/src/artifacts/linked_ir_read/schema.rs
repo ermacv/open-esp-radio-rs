@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v39.
+//! Complete owned DTO for linked-IR schema v40.
 
 #![allow(
     dead_code,
@@ -253,6 +253,7 @@ pub(crate) struct StoredCall {
     pub(crate) site: Option<u32>,
     tail: bool,
     result_modeled: bool,
+    execution_model: Option<StoredExternalExecutionModel>,
     semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
     semantic_contract: Option<StoredSemanticContract>,
@@ -265,6 +266,22 @@ pub(crate) struct StoredCall {
     argument_bindings: Vec<StoredArgumentBinding>,
     typed_arguments: Vec<StoredCallArgument>,
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredExternalExecutionModel {
+    id: String,
+    return_model: String,
+    outputs: Vec<StoredExternalOutputModel>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct StoredExternalOutputModel {
+    kind: String,
+    pointer_argument: u8,
+    width: u8,
 }
 
 impl StoredCall {

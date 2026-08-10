@@ -195,7 +195,7 @@ fn harness_source(reference_function: &str, probe_symbol: &str) -> String {
     writeln!(output).unwrap();
     writeln!(output, "struct Platform;").unwrap();
     writeln!(output, "impl generated::ReferencePlatform for Platform {{").unwrap();
-    writeln!(output, "    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> u32 {{ unsupported(\"external-call\") }}").unwrap();
+    writeln!(output, "    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> generated::ReferenceExternalCallOutcome {{ unsupported(\"external-call\") }}").unwrap();
     writeln!(output, "    fn direct_external_call(&mut self, _function: &str, _arguments: &[u32]) -> u32 {{ unsupported(\"direct-external-call\") }}").unwrap();
     writeln!(output, "    fn diagnostic_call(&mut self, _function: &str, _arguments: &[u32]) {{ unsupported(\"diagnostic-call\") }}").unwrap();
     writeln!(output, "}}").unwrap();
@@ -388,6 +388,12 @@ pub(crate) fn generate_compile_and_prove_exact_mmio_leaf(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_harness_qualifies_the_external_call_outcome() {
+        let source = harness_source("reference_fixture", "probe_fixture");
+        assert!(source.contains("-> generated::ReferenceExternalCallOutcome"));
+    }
 
     #[test]
     fn harness_keeps_all_rv32_register_arguments_and_traps_other_boundaries() {

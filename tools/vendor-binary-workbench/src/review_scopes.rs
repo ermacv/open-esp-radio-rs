@@ -10,7 +10,7 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 3;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 4;
 
 mod model;
 pub(crate) use model::{ReviewScopeMmio, ReviewScopeReport, ReviewScopesDocument};
@@ -302,9 +302,11 @@ fn analyze_scope(
     }
 
     let mut selected = BTreeSet::new();
+    let mut root_identities = BTreeSet::new();
     let mut queue = VecDeque::new();
     for root in &scope.roots {
         let identity = resolve_root(root, &nodes)?;
+        root_identities.insert(identity.clone());
         if selected.insert(identity.clone()) {
             queue.push_back(identity);
         }
@@ -323,7 +325,10 @@ fn analyze_scope(
     }
 
     let mut mmio = BTreeMap::<(u32, u8), (bool, bool)>::new();
-    let mut vendors = BTreeSet::<(String, String)>::new();
+    // Reachable functions are analysis inventory. Only explicit roots are
+    // replacement boundaries: private vendor helpers may be folded into one
+    // reviewed Rust composition without invented 1:1 component identities.
+    let replacement_vendors = replacement_vendors(&root_identities, &nodes);
     let function_identities = selected.iter().cloned().collect::<Vec<_>>();
     let function_keys = selected
         .iter()
@@ -340,6 +345,7 @@ fn analyze_scope(
         profiles: scope.profiles.clone(),
         roots: scope.roots.len(),
         functions: selected.len(),
+        replacement_functions: replacement_vendors.len(),
         function_identities,
         function_keys: function_keys.clone(),
         complete_functions: 0,
@@ -372,7 +378,6 @@ fn analyze_scope(
         for key in &node.mmio {
             mmio.entry(*key).or_default().0 = true;
         }
-        vendors.insert((node.source.clone(), node.symbol.clone()));
         report.complete_functions += usize::from(node.complete);
         report.table_calls += node.table_calls;
         report.context_fields += node.context_fields;
@@ -449,7 +454,7 @@ fn analyze_scope(
             },
         )
         .collect();
-    for (source, symbol) in &vendors {
+    for (source, symbol) in &replacement_vendors {
         let function = format!("{source}::{symbol}");
         let Some(replacement) = replacements.iter().find(|replacement| {
             replacement.vendor.source == *source && replacement.vendor.symbol == *symbol
@@ -622,6 +627,19 @@ fn resolve_dependency(dependency: &str, nodes: &BTreeMap<String, FunctionNode>) 
     matches.next().is_none().then_some(first)
 }
 
+fn replacement_vendors(
+    root_identities: &BTreeSet<String>,
+    nodes: &BTreeMap<String, FunctionNode>,
+) -> BTreeSet<(String, String)> {
+    root_identities
+        .iter()
+        .map(|identity| {
+            let node = &nodes[identity];
+            (node.source.clone(), node.symbol.clone())
+        })
+        .collect()
+}
+
 fn load_replacements(project: &ProjectSpec) -> Result<Vec<StoredReplacement>> {
     let Some(workspace) = &project.verification else {
         return Ok(Vec::new());
@@ -651,6 +669,43 @@ fn load_replacements(project: &ProjectSpec) -> Result<Vec<StoredReplacement>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn node(source: &str, symbol: &str) -> FunctionNode {
+        FunctionNode {
+            source: source.to_owned(),
+            symbol: symbol.to_owned(),
+            dependencies: Vec::new(),
+            mmio: Vec::new(),
+            table_calls: 0,
+            context_fields: 0,
+            memory_fields: 0,
+            decode_blockers: Vec::new(),
+            diagnostics: Vec::new(),
+            unresolved_call_sites: Vec::new(),
+            direct_blockers: 0,
+            call_graph_blockers: 0,
+            reference_blockers: 0,
+            unresolved_calls: 0,
+            complete: true,
+        }
+    }
+
+    #[test]
+    fn replacement_boundary_contains_only_explicit_roots() {
+        let nodes = BTreeMap::from([
+            ("vendor::root".to_owned(), node("vendor", "root")),
+            (
+                "vendor::private_helper".to_owned(),
+                node("vendor", "private_helper"),
+            ),
+        ]);
+        let roots = BTreeSet::from(["vendor::root".to_owned()]);
+
+        assert_eq!(
+            replacement_vendors(&roots, &nodes),
+            BTreeSet::from([("vendor".to_owned(), "root".to_owned())])
+        );
+    }
 
     #[test]
     fn unique_exported_definition_links_an_unresolved_cross_profile_call() {

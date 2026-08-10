@@ -1,3 +1,4 @@
+#[cfg(feature = "esp32s31-harness")]
 use std::path::PathBuf;
 
 use super::*;

@@ -169,10 +169,11 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
         artifacts: artifacts
             .iter()
             .map(|(role, artifact)| {
+                let canonical = fs::canonicalize(artifact)?;
                 Ok(VerificationArtifactDocument {
                     role: role.as_ref().to_owned(),
-                    path: artifact.display().to_string(),
-                    sha256: format!("{:x}", Sha256::digest(fs::read(artifact)?)),
+                    path: canonical.display().to_string(),
+                    sha256: format!("{:x}", Sha256::digest(fs::read(&canonical)?)),
                 })
             })
             .collect::<Result<Vec<_>>>()?,
@@ -187,6 +188,46 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
             )
             .collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verification_artifacts_are_canonical_and_cwd_independent() {
+        let manifest = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/../Cargo.toml");
+        let target = TargetSpec {
+            id: "fixture".to_owned(),
+            harness: None,
+            architecture: crate::target::Architecture::Riscv32,
+            calling_convention: crate::target::CallingConvention::RiscvIlp32,
+            endianness: crate::target::Endianness::Little,
+            pointer_width: 32,
+            rust_target: "riscv32imac-unknown-none-elf".to_owned(),
+            memory_map: None,
+            svd_paths: Vec::new(),
+            pac_bindings: None,
+        };
+        let evidence = EvidenceSet::new();
+        let report = verification_core_report(VerificationCoreInputs {
+            target: &target,
+            gate: VerificationGate::Completion,
+            summary: VerifySummary::default(),
+            orphan_probes: 0,
+            evidence_baseline_passed: true,
+            passed: true,
+            evidence: &evidence,
+            artifacts: &[("manifest", manifest.as_path())],
+            qualification_gaps: &[],
+        })
+        .unwrap();
+        assert_eq!(report.artifacts.len(), 1);
+        assert_eq!(
+            Path::new(&report.artifacts[0].path),
+            fs::canonicalize(manifest).unwrap()
+        );
+    }
 }
 
 pub(crate) fn write_verification_json_report(

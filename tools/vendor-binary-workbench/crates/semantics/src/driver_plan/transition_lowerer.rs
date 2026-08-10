@@ -167,7 +167,9 @@ fn render_bit_source(source: BitSource) -> Result<String> {
         | BitSource::Memory { .. }
         | BitSource::PrivateStack { .. }
         | BitSource::CallResult { .. }
-        | BitSource::ExternalResult { .. } => {
+        | BitSource::ExternalResult { .. }
+        | BitSource::ExternalResultHigh { .. }
+        | BitSource::ExternalOutput { .. } => {
             Err(format!("unsupported transition bit source: {source:?}").into())
         }
     }
@@ -271,6 +273,8 @@ fn render_value(value: &SymbolicValue) -> Result<String> {
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. }
         | SymbolicValue::ExternalResult(_)
+        | SymbolicValue::ExternalResultHigh(_)
+        | SymbolicValue::ExternalOutput { .. }
         | SymbolicValue::WideSignedDivide { .. } => {
             Err(format!("value has no executor-neutral transition lowering: {value:?}").into())
         }

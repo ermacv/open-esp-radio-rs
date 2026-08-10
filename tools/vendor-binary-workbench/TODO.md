@@ -35,10 +35,13 @@ that every user must learn.
 - [ ] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
   record every incomplete or misleading stage. The verification segment now
-  has nine typed project suites and a reproducible aggregate gate: the
-  2026-08-09 ESP32-S31 run matched all 138 reviewed proofs with zero mismatch,
-  incomplete result or orphan probe. Project status still correctly reports
-  the interface/function review backlog, so the end-to-end audit remains open.
+  has nine typed project suites and a reproducible aggregate gate. The
+  2026-08-10 ESP32-S31 run matches 141 reviewed proofs with zero mismatch,
+  incomplete result or orphan probe, but 85 accepted evidence identities are
+  stale after the typed external-call/profile migration and require deliberate baseline
+  review. Verification artifact paths are now canonical, so report freshness
+  is independent of the current working directory. Project status still
+  correctly reports the function-analysis backlog, so the audit remains open.
 - [x] Make real-project verification one project operation rather than a set of
   remembered leaf commands. Suites own source roles, probe roles/prefixes,
   profile/disposition fragments, baseline and gate; `project verify --check`
@@ -127,8 +130,15 @@ that every user must learn.
   MMIO, all blocker classes and replacement coverage. `project status` reads
   the compact artifact instead of repeating scope reconstruction, while
   `ir build` refreshes it after a focused profile rebuild.
+- [x] Separate the recursive analysis closure from the Rust replacement
+  boundary. Review-scope schema 4 requires reviewed production coverage only
+  for explicit roots; reachable private helpers remain full blocker/MMIO/call
+  inventory and can be absorbed by a root-level composition. On the real
+  project this removed 85 false 1:1 uncovered replacements and left only the actual
+  uncovered TX roots `hal_mac_tx_config_edca` and
+  `hal_mac_tx_get_blockack`.
 - [x] Turn release scopes into an actionable root-cause queue. Linked-IR
-  schema 39 carries typed diagnostic kind/site/root IDs, review-scope schema 3
+  schema 40 carries typed diagnostic kind/site/root IDs, review-scope schema 4
   groups repeated causes and joins replacement coverage, and the read-only TUI
   exposes a Blockers view with function navigation. Parallel legacy string
   blocker arrays were removed from the persistent IR schema.
@@ -157,6 +167,12 @@ that every user must learn.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
+- [x] Distinguish a modeled external `void` call from unmodeled behavior.
+  `Void` records the ordered call without inventing a dummy return; reviewed
+  ESP32-S31 critical-section, timer, queue, tick and selected coexistence/NVS
+  boundaries now use 27 behavior-only models. Enabling them exposed deeper
+  station-state call-graph evidence instead of stopping at the first adapter
+  call.
 - [x] Model reviewed directly relocated platform inputs separately from
   diagnostics and table slots. The structural executor can propagate an
   explicit constant or symbolic return and codegen calls a distinct platform
@@ -244,9 +260,21 @@ that every user must learn.
   semantic contracts. Overlapping byte/halfword/word observations remain
   distinct evidence instead of being rejected as false width conflicts.
 - [x] Complete semantic annotation of the reviewed ESP32-S31 Wi-Fi OS adapter
-  surface. All 54 named slots and all 176 resolved call sites now link to one
-  of 57 reusable catalog operations; only the existing 18 explicitly compiled
-  call models authorize execution.
+  surface. All 54 named slots and all resolved call sites link to reusable
+  catalog operations; only explicit compiled call models authorize execution.
+- [ ] Complete executable external-call behavior beyond scalar results. The
+  generic contract, structural analysis, generated reference ABI, concrete
+  executor, profile schema 2 and linked-IR schema 40 now preserve independent
+  RV32 `a0`/`a1` returns and reviewed private-stack byte outputs. This covers
+  `queue_send_from_isr`, coexistence PTI output and `esp_timer_get_time`
+  without weakening them to one `SymbolicU32`. The remaining distinct problem
+  is allocator-owned memory and lifetime for `wifi_zalloc`.
+  The schema-v40 real-project run persists 148 modeled libpp call sites (75
+  `symbolic-u32`, 17 `symbolic-u64`, 55 `void`, one constant) and 18 independent
+  private-stack outputs. It removes two Wi-Fi RX call-graph blockers and one
+  Wi-Fi interrupt blocker; remaining release blockers are predominantly memory
+  ownership, branch-aware stack composition and unresolved indirect control
+  flow rather than scalar ABI loss.
 - [x] Qualify the first recovered parent composition rather than only its
   leaves. `phy_bt_tx_gain_init` now locks its linked direct-call topology and
   arguments, drives `PhyBluetoothTxGainInitTransition` through the same

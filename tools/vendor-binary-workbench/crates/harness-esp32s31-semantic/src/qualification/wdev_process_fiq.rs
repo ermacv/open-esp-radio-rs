@@ -97,13 +97,13 @@ const CASES: &[Case] = &[
     },
 ];
 
-fn zeros(count: usize) -> VecDeque<u32> {
-    std::iter::repeat_n(0, count).collect()
+fn zeros(count: usize) -> VecDeque<execution::ModeledCallResponse> {
+    std::iter::repeat_n(execution::ModeledCallResponse::scalar(0), count).collect()
 }
 
 fn vendor_scenario(status: u32) -> execution::Scenario {
     let iterations = usize::from(status != 0) + 1;
-    let mut call_returns = BTreeMap::from([
+    let mut call_responses = BTreeMap::from([
         ("hal_mac_is_dma_enable".to_owned(), zeros(iterations)),
         (
             "hal_mac_interrupt_get_bsscolor".to_owned(),
@@ -113,11 +113,11 @@ fn vendor_scenario(status: u32) -> execution::Scenario {
         ("pwr_hal_get_intr_raw_signal".to_owned(), zeros(iterations)),
     ]);
     if status != 0 {
-        call_returns.insert("hal_mac_interrupt_clr_bsscolor".to_owned(), zeros(1));
-        call_returns.insert("hal_pwr_interrupt_clr_event".to_owned(), zeros(2));
+        call_responses.insert("hal_mac_interrupt_clr_bsscolor".to_owned(), zeros(1));
+        call_responses.insert("hal_pwr_interrupt_clr_event".to_owned(), zeros(2));
         for (mask, symbol, _) in WORK_CALLS {
             if status & mask != 0 {
-                call_returns.insert((*symbol).to_owned(), zeros(1));
+                call_responses.insert((*symbol).to_owned(), zeros(1));
             }
         }
     }
@@ -127,7 +127,7 @@ fn vendor_scenario(status: u32) -> execution::Scenario {
     }
     execution::Scenario {
         mmio_reads: BTreeMap::from([(MAC_STATUS, reads)]),
-        call_returns,
+        call_responses,
         max_steps: 2_000,
         ..execution::Scenario::default()
     }

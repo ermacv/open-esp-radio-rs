@@ -11,9 +11,9 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
     BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
-    DraftReferenceTerminator, ExpressionOperation, ExternalReturnModel, FunctionAnalysis,
-    MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver, ReviewedExternalCall, SymbolicValue,
-    artifact, direct,
+    DraftReferenceTerminator, ExpressionOperation, ExternalOutputModel, ExternalReturnModel,
+    FunctionAnalysis, MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver,
+    ReviewedExternalCall, ReviewedExternalCallExecutionModel, SymbolicValue, artifact, direct,
 };
 
 const MAX_CALL_GRAPH_STATES: usize = 127;

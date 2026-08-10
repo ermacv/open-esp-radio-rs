@@ -5,7 +5,9 @@
 //! configured platform harness and checks that the two sides agree.
 
 use super::{InterfacePack, validation::ValidationResult};
-use crate::{ExternalCallModelSetRef, HarnessContractSpec};
+use crate::{
+    ExternalCallModelSetRef, ExternalOutputModel, ExternalReturnModel, HarnessContractSpec,
+};
 
 pub(super) fn resolve(
     pack: &InterfacePack,
@@ -42,7 +44,7 @@ pub(super) fn resolve(
                 let Some(model_id) = slot.execution_model.as_deref() else {
                     continue;
                 };
-                model_set.model(model_id).ok_or_else(|| {
+                let model = model_set.model(model_id).ok_or_else(|| {
                     super::validation::ValidationError::slot(
                         anchor,
                         slot,
@@ -50,6 +52,65 @@ pub(super) fn resolve(
                         format!("execution contract {id:?} has no call model {model_id:?}"),
                     )
                 })?;
+                let model = model.spec();
+                if model.outputs.len() > 8 {
+                    return Err(super::validation::ValidationError::slot(
+                        anchor,
+                        slot,
+                        "execution-model",
+                        format!(
+                            "call model {model_id:?} declares {} outputs; RV32 supports at most eight argument-bound outputs",
+                            model.outputs.len()
+                        ),
+                    ));
+                }
+                if model.return_model == ExternalReturnModel::Unmodeled
+                    && !model.outputs.is_empty()
+                {
+                    return Err(super::validation::ValidationError::slot(
+                        anchor,
+                        slot,
+                        "execution-model",
+                        format!(
+                            "call model {model_id:?} cannot attach executable outputs to an unmodeled call"
+                        ),
+                    ));
+                }
+                let arguments = slot.arguments.as_deref().unwrap_or_default();
+                let mut output_arguments = std::collections::BTreeSet::new();
+                for output in model.outputs {
+                    let ExternalOutputModel::PrivateStackU8 { pointer_argument } = output;
+                    let Some(argument_type) = arguments.get(usize::from(*pointer_argument)) else {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} output refers to missing argument a{pointer_argument}"
+                            ),
+                        ));
+                    };
+                    if !matches!(argument_type.as_str(), "out-ptr" | "mut-ptr") {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} output argument a{pointer_argument} has non-output ABI type {argument_type:?}"
+                            ),
+                        ));
+                    }
+                    if !output_arguments.insert(*pointer_argument) {
+                        return Err(super::validation::ValidationError::slot(
+                            anchor,
+                            slot,
+                            "execution-model",
+                            format!(
+                                "call model {model_id:?} declares more than one output for argument a{pointer_argument}"
+                            ),
+                        ));
+                    }
+                }
             }
             Ok(Some(model_set))
         })

@@ -6,7 +6,7 @@ use toml_edit::{Document, DocumentMut, Item};
 
 use super::{InterfaceFactStep, InterfaceFacts, SemanticCatalogs};
 use crate::Result;
-use crate::{ExternalReturnModel, HarnessContractSpec};
+use crate::{ExternalOutputModel, ExternalReturnModel, HarnessContractSpec};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewStatus {
@@ -211,6 +211,7 @@ pub(crate) struct ResolvedExternalCallExecutionModel {
     pub(crate) set: String,
     pub(crate) model: String,
     pub(crate) return_model: ExternalReturnModel,
+    pub(crate) outputs: Vec<ExternalOutputModel>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

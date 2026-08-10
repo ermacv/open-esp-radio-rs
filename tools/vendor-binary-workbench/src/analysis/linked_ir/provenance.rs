@@ -132,6 +132,35 @@ fn return_bit_descriptor(
             address: None,
             register: None,
         },
+        BitSource::ExternalResultHigh {
+            call_token,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "external-result-high",
+            source_bit: bit,
+            inverted,
+            argument: None,
+            token: Some(call_token),
+            target: call_results.get(&call_token).cloned(),
+            address: None,
+            register: None,
+        },
+        BitSource::ExternalOutput {
+            call_token,
+            output_index,
+            bit,
+            inverted,
+        } => ReturnBitDescriptor {
+            kind: "external-output",
+            source_bit: bit,
+            inverted,
+            argument: Some(output_index),
+            token: Some(call_token),
+            target: call_results.get(&call_token).cloned(),
+            address: None,
+            register: None,
+        },
         BitSource::Unknown | BitSource::Constant(_) => return None,
     };
     Some(descriptor)

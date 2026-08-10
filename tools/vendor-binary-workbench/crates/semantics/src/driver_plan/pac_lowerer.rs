@@ -114,7 +114,9 @@ fn render_bit_source(source: BitSource, state: &RenderState) -> Result<String> {
         | BitSource::Memory { .. }
         | BitSource::PrivateStack { .. }
         | BitSource::CallResult { .. }
-        | BitSource::ExternalResult { .. } => {
+        | BitSource::ExternalResult { .. }
+        | BitSource::ExternalResultHigh { .. }
+        | BitSource::ExternalOutput { .. } => {
             Err(format!("unsupported bit source in PAC leaf: {source:?}").into())
         }
     }
@@ -221,6 +223,8 @@ fn render_value(value: &SymbolicValue, state: &RenderState) -> Result<String> {
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. }
         | SymbolicValue::ExternalResult(_)
+        | SymbolicValue::ExternalResultHigh(_)
+        | SymbolicValue::ExternalOutput { .. }
         | SymbolicValue::WideSignedDivide { .. }
         | SymbolicValue::MemoryImage { .. } => {
             Err(format!("symbolic value has no PAC leaf lowering: {value:?}").into())

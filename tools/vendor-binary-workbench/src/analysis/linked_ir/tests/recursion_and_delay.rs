@@ -10,6 +10,7 @@ fn recursive_effect_summary_reaches_a_fixed_point() {
         site: Some(0),
         tail: false,
         result_modeled: false,
+        execution_model: None,
         semantics: None,
         semantic_operation: None,
         semantic_contract: None,

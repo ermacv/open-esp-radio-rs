@@ -11,11 +11,11 @@ mod value;
 use std::{collections::BTreeMap, fmt::Write as _};
 
 use crate::{
-    BranchCondition, BranchOperation, ExternalReturnModel, IndexedMmioGuard, IndexedMmioRegister,
-    MemoryAccess, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT, RV32_REGISTER_ARGUMENT_COUNT,
-    RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody, ResolvedReferenceEvent,
-    ResolvedReferenceFlow, ResolvedReferenceProgram, ResolvedReferenceTerminator,
-    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+    BranchCondition, BranchOperation, ExternalOutputModel, ExternalReturnModel, IndexedMmioGuard,
+    IndexedMmioRegister, MemoryAccess, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
+    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody,
+    ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
+    ResolvedReferenceTerminator, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
 };
 use events::render_events;
 use flow::{FlowReturn, render_flow, render_outcome};
@@ -385,6 +385,27 @@ pub fn generate(
     writeln!(output).unwrap();
     writeln!(
         output,
+        "/// Harness-provided effects of one reviewed external ABI call."
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]"
+    )
+    .unwrap();
+    writeln!(output, "pub struct ReferenceExternalCallOutcome {{").unwrap();
+    writeln!(output, "    /// RV32 ABI return registers a0 and a1.").unwrap();
+    writeln!(output, "    pub return_words: [u32; 2],").unwrap();
+    writeln!(
+        output,
+        "    /// Scalar out-parameters, indexed by the reviewed model output ordinal."
+    )
+    .unwrap();
+    writeln!(output, "    pub outputs: [u32; 8],").unwrap();
+    writeln!(output, "}}").unwrap();
+    writeln!(output).unwrap();
+    writeln!(
+        output,
         "/// Harness-reviewed external ABI and diagnostic boundaries."
     )
     .unwrap();
@@ -392,12 +413,12 @@ pub fn generate(
     writeln!(output, "pub trait ReferencePlatform {{").unwrap();
     writeln!(
         output,
-        "    /// Returns the modeled result selected by the harness contract."
+        "    /// Returns the independently modeled ABI return and out-parameter effects."
     )
     .unwrap();
     writeln!(
         output,
-        "    fn external_call(&mut self, contract: &str, model: &str, arguments: &[u32]) -> u32;"
+        "    fn external_call(&mut self, contract: &str, model: &str, arguments: &[u32]) -> ReferenceExternalCallOutcome;"
     )
     .unwrap();
     writeln!(

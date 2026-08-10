@@ -45,7 +45,33 @@ pub(super) fn render_event(
                 model.id,
                 call_arguments.join(", ")
             );
-            writeln!(output, "{indent}let external_result{token} = {invocation};").unwrap();
+            writeln!(
+                output,
+                "{indent}let external_outcome{token} = {invocation};"
+            )
+            .unwrap();
+            match model.return_model {
+                ExternalReturnModel::Void | ExternalReturnModel::Unmodeled => {}
+                ExternalReturnModel::Constant(_) | ExternalReturnModel::SymbolicU32 => {
+                    writeln!(
+                        output,
+                        "{indent}let external_result{token} = external_outcome{token}.return_words[0];"
+                    )
+                    .unwrap();
+                }
+                ExternalReturnModel::SymbolicU64 => {
+                    writeln!(
+                        output,
+                        "{indent}let external_result{token} = external_outcome{token}.return_words[0];"
+                    )
+                    .unwrap();
+                    writeln!(
+                        output,
+                        "{indent}let external_result{token}_high = external_outcome{token}.return_words[1];"
+                    )
+                    .unwrap();
+                }
+            }
             if let ExternalReturnModel::Constant(expected) = model.return_model {
                 writeln!(
                         output,
@@ -54,7 +80,23 @@ pub(super) fn render_event(
                     )
                     .unwrap();
             }
-            writeln!(output, "{indent}let _ = external_result{token};").unwrap();
+            for (output_index, output_model) in model.outputs.iter().enumerate() {
+                match output_model {
+                    ExternalOutputModel::PrivateStackU8 { .. } => {
+                        writeln!(
+                            output,
+                            "{indent}let external_output{token}_{output_index} = external_outcome{token}.outputs[{output_index}] & 0xff_u32;"
+                        )
+                        .unwrap();
+                        writeln!(
+                            output,
+                            "{indent}let _ = external_output{token}_{output_index};"
+                        )
+                        .unwrap();
+                    }
+                }
+            }
+            writeln!(output, "{indent}let _ = external_outcome{token};").unwrap();
             state.external_results.push(());
         }
         ResolvedReferenceEvent::ModeledDirectCall {

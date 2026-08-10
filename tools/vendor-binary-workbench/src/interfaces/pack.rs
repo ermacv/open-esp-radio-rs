@@ -624,6 +624,7 @@ fn build_bindings(
                         set: model_set.spec().id.to_owned(),
                         model: model.id.to_owned(),
                         return_model: model.return_model,
+                        outputs: model.outputs.to_vec(),
                     }
                 }),
                 functions,

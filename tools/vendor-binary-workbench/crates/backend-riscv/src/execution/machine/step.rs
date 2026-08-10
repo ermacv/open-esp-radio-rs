@@ -106,9 +106,10 @@ impl Machine<'_> {
         if let Some(call) = self.image.relocated_call_at(self.pc).cloned() {
             let link = self.image.relocated_call_link_register(self.pc)?;
             let continuation = self.pc.wrapping_add(8);
-            if let Some(result) = self.modeled_call_result(&call.name, self.pc)? {
-                self.record_call(self.pc, call.name);
-                self.set_register(Reg::A0, result);
+            let name = call.name.clone();
+            if let Some(response) = self.modeled_call_response(&name, self.pc)? {
+                self.record_call(self.pc, name.clone());
+                self.apply_modeled_call_response(&name, self.pc, response)?;
                 if link == Reg::ZERO {
                     let return_address = self.register(Reg::RA);
                     if return_address == RETURN_SENTINEL {
@@ -418,10 +419,10 @@ impl Machine<'_> {
             Inst::Jal { offset, dest } => {
                 let target = self.pc.wrapping_add(offset.as_u32());
                 if let Some(symbol) = self.image.symbol_at(target)
-                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                    && let Some(response) = self.modeled_call_response(symbol, self.pc)?
                 {
                     self.record_call(self.pc, symbol.to_owned());
-                    self.set_register(Reg::A0, result);
+                    self.apply_modeled_call_response(symbol, self.pc, response)?;
                     if dest == Reg::ZERO {
                         let return_address = self.register(Reg::RA);
                         if return_address == RETURN_SENTINEL {
@@ -446,7 +447,7 @@ impl Machine<'_> {
             Inst::Jalr { offset, base, dest } => {
                 let target = self.register(base).wrapping_add(offset.as_u32()) & !1;
                 if let Some(symbol) = self.image.symbol_at(target)
-                    && let Some(result) = self.modeled_call_result(symbol, self.pc)?
+                    && let Some(response) = self.modeled_call_response(symbol, self.pc)?
                 {
                     self.record_call(self.pc, symbol.to_owned());
                     self.indirect_calls.insert(IndirectCall {
@@ -457,7 +458,7 @@ impl Machine<'_> {
                         }),
                     });
                     self.record_indirect_table_call(self.pc, target, symbol);
-                    self.set_register(Reg::A0, result);
+                    self.apply_modeled_call_response(symbol, self.pc, response)?;
                     if dest == Reg::ZERO {
                         let return_address = self.register(Reg::RA);
                         if return_address == RETURN_SENTINEL {

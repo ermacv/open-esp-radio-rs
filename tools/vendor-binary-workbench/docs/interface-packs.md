@@ -272,6 +272,15 @@ The resolved model establishes the reviewed bridge from pack evidence into a
 behavior-only compiled harness model and is visible in interface/function
 review reports. Runtime table location, contents, lifecycle and indirect dispatch are
 scenario state; they belong to `TableInstance`, not to the interface pack.
+Its return model distinguishes `void` from `unmodeled`: `void` authorizes the
+ordered external call as the complete modeled effect without manufacturing a
+return value, while `unmodeled` remains a validation blocker. RV32 models may
+instead produce one `u32`, an `a0`/`a1` `u64`, or reviewed caller-visible
+outputs. The first output vocabulary is deliberately narrow:
+`private-stack-u8` writes one byte through an ABI argument proven to point into
+the executor's private stack. Invalid pointers, duplicate outputs, incompatible
+slot argument types, or more outputs than the fixed no-std outcome capacity
+fail closed.
 Execution-profile TOML creates source-specific instances with
 `[[profiles.cases.vendor-tables]]` and
 `[[profiles.cases.rust-tables]]`; each table owns its structured `slots`

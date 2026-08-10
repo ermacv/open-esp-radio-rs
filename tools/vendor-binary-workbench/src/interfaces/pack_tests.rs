@@ -7,13 +7,14 @@ use std::{
 
 use super::*;
 use crate::{
-    ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec, ExternalReturnModel,
-    HarnessContractSpec,
+    ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec, ExternalOutputModel,
+    ExternalReturnModel, HarnessContractSpec,
 };
 
 const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
     id: "queue-send-from-isr",
     return_model: ExternalReturnModel::Constant(1),
+    outputs: &[],
 }];
 const EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
     id: "fixture.services-v1",
@@ -24,6 +25,26 @@ const EXECUTION_MODEL_SET: ExternalCallModelSetRef =
 const EXECUTION_MODEL_SETS: &[ExternalCallModelSetRef] = &[EXECUTION_MODEL_SET];
 const EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
     external_call_model_sets: EXECUTION_MODEL_SETS,
+    entry_contracts: &[],
+    diagnostic_calls: &[],
+};
+const INVALID_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStackU8 {
+    pointer_argument: 1,
+}];
+const INVALID_EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
+    id: "queue-send-from-isr",
+    return_model: ExternalReturnModel::SymbolicU32,
+    outputs: INVALID_OUTPUTS,
+}];
+const INVALID_EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
+    id: "fixture.services-v1",
+    models: INVALID_EXECUTION_MODELS,
+};
+const INVALID_EXECUTION_MODEL_SET: ExternalCallModelSetRef =
+    ExternalCallModelSetRef::new(&INVALID_EXECUTION_MODEL_SET_SPEC);
+const INVALID_EXECUTION_MODEL_SETS: &[ExternalCallModelSetRef] = &[INVALID_EXECUTION_MODEL_SET];
+const INVALID_EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
+    external_call_model_sets: INVALID_EXECUTION_MODEL_SETS,
     entry_contracts: &[],
     diagnostic_calls: &[],
 };
@@ -290,6 +311,34 @@ fn explicit_execution_model_resolves_without_promoting_semantic_annotation() {
             .contains("requires size")
     );
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn execution_model_output_requires_a_reviewed_output_pointer_argument() {
+    let directory = fixture_directory();
+    let facts = directory.join("facts.json");
+    let pack = directory.join("pack.toml");
+    let catalog = directory.join("semantics.toml");
+    let digest = fake_digest('7');
+    write_facts(&facts, &digest);
+    write_catalog(&catalog);
+    std::fs::write(&pack, executable_reviewed_pack(&digest)).unwrap();
+
+    let error = InterfaceWorkspace::load(
+        &facts,
+        &pack,
+        &[catalog],
+        "riscv-ilp32",
+        Some(&INVALID_EXECUTION_CONTRACTS),
+    )
+    .unwrap_err();
+    std::fs::remove_dir_all(directory).unwrap();
+
+    assert!(
+        error
+            .to_string()
+            .contains("argument a1 has non-output ABI type \"const-ptr\"")
+    );
 }
 
 #[test]

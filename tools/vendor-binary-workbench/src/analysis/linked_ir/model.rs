@@ -157,12 +157,27 @@ pub(crate) struct LinkedCallGuardScope {
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedExternalOutputModel {
+    pub(crate) kind: &'static str,
+    pub(crate) pointer_argument: u8,
+    pub(crate) width: u8,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub(crate) struct LinkedExternalExecutionModel {
+    pub(crate) id: String,
+    pub(crate) return_model: String,
+    pub(crate) outputs: Vec<LinkedExternalOutputModel>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub(crate) struct LinkedCall {
     pub(crate) kind: &'static str,
     pub(crate) target: String,
     pub(crate) site: Option<u32>,
     pub(crate) tail: bool,
     pub(crate) result_modeled: bool,
+    pub(crate) execution_model: Option<LinkedExternalExecutionModel>,
     pub(crate) semantics: Option<String>,
     pub(crate) semantic_operation: Option<String>,
     pub(crate) semantic_contract: Option<LinkedSemanticContract>,

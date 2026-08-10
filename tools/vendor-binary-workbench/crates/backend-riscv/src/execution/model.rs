@@ -196,6 +196,31 @@ pub struct OrderedCall {
     pub arguments: [u32; 8],
 }
 
+/// One concrete write performed by a reviewed external call response.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ModeledCallOutput {
+    /// Write one byte through an RV32 argument whose address must belong to
+    /// the executor-private stack.
+    PrivateStackU8 { pointer_argument: u8, value: u8 },
+}
+
+/// Independently modeled ABI effects for one concrete external call.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ModeledCallResponse {
+    /// Optional values for RV32 return registers a0 (low) and a1 (high).
+    pub return_words: [Option<u32>; 2],
+    pub outputs: Vec<ModeledCallOutput>,
+}
+
+impl ModeledCallResponse {
+    pub const fn scalar(value: u32) -> Self {
+        Self {
+            return_words: [Some(value), None],
+            outputs: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Scenario {
     pub arguments: Vec<u32>,
@@ -217,10 +242,10 @@ pub struct Scenario {
     /// Reviewed ownership of RAM that can outlive this call. Externally owned
     /// ranges become poison at every call boundary unless explicitly seeded.
     pub memory_ownership: Vec<MemoryOwnership>,
-    /// Explicit scalar results for named linked calls that form a reviewed
-    /// platform/driver boundary. Each invocation consumes one value. A
+    /// Explicit responses for named linked calls that form a reviewed
+    /// platform/driver boundary. Each invocation consumes one response. A
     /// declared model with too few or unused responses fails closed.
-    pub call_returns: BTreeMap<String, VecDeque<u32>>,
+    pub call_responses: BTreeMap<String, VecDeque<ModeledCallResponse>>,
     /// Concrete callback/service tables installed by the scenario. They are
     /// materialized as 32-bit little-endian RAM words before the call starts.
     pub table_instances: Vec<TableInstance>,

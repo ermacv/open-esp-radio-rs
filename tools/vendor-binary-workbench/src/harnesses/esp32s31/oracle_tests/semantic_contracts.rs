@@ -250,7 +250,7 @@ impl ReferenceMemory for CalibrationMemory {
 
 struct CalibrationPlatform;
 impl ReferencePlatform for CalibrationPlatform {
-    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> u32 { 0 }
+    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> ReferenceExternalCallOutcome { ReferenceExternalCallOutcome::default() }
     fn direct_external_call(&mut self, _function: &str, _arguments: &[u32]) -> u32 { 0 }
     fn diagnostic_call(&mut self, _function: &str, _arguments: &[u32]) {}
 }
@@ -493,7 +493,7 @@ impl ReferenceMemory for EstimatorMemory {
 
 struct EstimatorPlatform;
 impl ReferencePlatform for EstimatorPlatform {
-    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> u32 { 0 }
+    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> ReferenceExternalCallOutcome { ReferenceExternalCallOutcome::default() }
     fn direct_external_call(&mut self, _function: &str, _arguments: &[u32]) -> u32 { 0 }
     fn diagnostic_call(&mut self, _function: &str, _arguments: &[u32]) {}
 }

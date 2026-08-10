@@ -79,6 +79,11 @@ pub enum SymbolicValue {
         target: u32,
     },
     ExternalResult(u32),
+    ExternalResultHigh(u32),
+    ExternalOutput {
+        call_token: u32,
+        output_index: u8,
+    },
     Expression {
         operation: ExpressionOperation,
         left: Arc<SymbolicValue>,
@@ -170,6 +175,17 @@ pub enum BitSource {
         bit: u8,
         inverted: bool,
     },
+    ExternalResultHigh {
+        call_token: u32,
+        bit: u8,
+        inverted: bool,
+    },
+    ExternalOutput {
+        call_token: u32,
+        output_index: u8,
+        bit: u8,
+        inverted: bool,
+    },
 }
 
 impl BitSource {
@@ -239,6 +255,26 @@ impl BitSource {
                 inverted,
             } => Self::ExternalResult {
                 call_token,
+                bit,
+                inverted: !inverted,
+            },
+            Self::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted,
+            } => Self::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            Self::ExternalOutput {
+                call_token,
+                output_index,
+                bit,
+                inverted,
+            } => Self::ExternalOutput {
+                call_token,
+                output_index,
                 bit,
                 inverted: !inverted,
             },

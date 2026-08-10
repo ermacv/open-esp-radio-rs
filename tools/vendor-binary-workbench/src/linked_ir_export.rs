@@ -291,6 +291,7 @@ pub(crate) fn register_reviewed_external_calls(
                 ReviewedExternalCallExecutionModel {
                     id: model.id.clone(),
                     return_model: model.return_model,
+                    outputs: model.outputs.clone(),
                 }
             }),
             tail: false,
@@ -348,6 +349,7 @@ pub(crate) fn register_reviewed_external_calls(
                 ReviewedExternalCallExecutionModel {
                     id: model.id.clone(),
                     return_model: model.return_model,
+                    outputs: model.outputs.clone(),
                 }
             }),
             tail: projected.tail,

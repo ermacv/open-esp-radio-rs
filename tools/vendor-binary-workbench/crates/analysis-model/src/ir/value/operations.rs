@@ -304,6 +304,26 @@ impl SymbolicValue {
                 bit,
                 inverted: !inverted,
             },
+            BitSource::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted,
+            } => BitSource::ExternalResultHigh {
+                call_token,
+                bit,
+                inverted: !inverted,
+            },
+            BitSource::ExternalOutput {
+                call_token,
+                output_index,
+                bit,
+                inverted,
+            } => BitSource::ExternalOutput {
+                call_token,
+                output_index,
+                bit,
+                inverted: !inverted,
+            },
             BitSource::Unknown => BitSource::Unknown,
         }))
     }
@@ -381,6 +401,26 @@ impl SymbolicValue {
                         inverted,
                     } => BitSource::ExternalResult {
                         call_token,
+                        bit,
+                        inverted: !inverted,
+                    },
+                    BitSource::ExternalResultHigh {
+                        call_token,
+                        bit,
+                        inverted,
+                    } => BitSource::ExternalResultHigh {
+                        call_token,
+                        bit,
+                        inverted: !inverted,
+                    },
+                    BitSource::ExternalOutput {
+                        call_token,
+                        output_index,
+                        bit,
+                        inverted,
+                    } => BitSource::ExternalOutput {
+                        call_token,
+                        output_index,
                         bit,
                         inverted: !inverted,
                     },

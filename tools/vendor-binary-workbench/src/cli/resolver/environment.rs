@@ -196,7 +196,7 @@ pub(super) fn resolve_from(
     if needs.backend {
         target.require_available_backend()?;
     }
-    if needs.harness {
+    if needs.requires_harness(target.harness.is_some()) {
         target.require_available_harness()?;
     }
     trace_resolved_target(&command, project_path.as_deref(), project.as_ref(), &target);

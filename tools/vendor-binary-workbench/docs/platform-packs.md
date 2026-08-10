@@ -96,7 +96,8 @@ cargo vendor-binary-workbench-esp32s31 project doctor \
 ```
 
 Generic project, artifact, MMIO and IR operations remain available; selecting
-a platform pack whose harness was not compiled in fails explicitly. Adding a compiled addon
+a platform pack whose harness was not compiled in fails during resolution,
+before expensive analysis stages run. Adding a compiled addon
 therefore requires a feature and one registry descriptor, not changes to the
 generic backend or a dynamic ABI plugin protocol.
 

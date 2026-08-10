@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 #[cfg(test)]
+#[cfg(all(test, feature = "esp32s31-harness"))]
 use sha2::{Digest, Sha256};
 
 use crate::{Result, profiles};
@@ -182,7 +183,7 @@ pub(crate) fn profile_evidence(profile: &profiles::Profile) -> EvidenceIdentity 
     .expect("static execution-profile evidence components are valid")
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) fn semantic_contract_digest_from_sources(
     label: &str,
     sources: &[(&str, &str)],

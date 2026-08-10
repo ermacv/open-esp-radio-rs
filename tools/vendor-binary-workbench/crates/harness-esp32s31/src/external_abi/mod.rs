@@ -7,83 +7,157 @@
 
 use open_radio_vendor_contracts::{
     ExternalCallModelRef, ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec,
-    ExternalReturnModel,
+    ExternalOutputModel, ExternalReturnModel,
 };
+
+const COEX_PTI_OUTPUTS: &[ExternalOutputModel] = &[ExternalOutputModel::PrivateStackU8 {
+    pointer_argument: 1,
+}];
+const QUEUE_SEND_FROM_ISR_OUTPUTS: &[ExternalOutputModel] =
+    &[ExternalOutputModel::PrivateStackU8 {
+        pointer_argument: 2,
+    }];
 
 const ESP32S31_WIFI_OSI_MODELS: &[ExternalCallModelSpec] = &[
     ExternalCallModelSpec {
         id: "env-is-chip",
         return_model: ExternalReturnModel::Constant(1),
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "wifi-int-disable",
-        return_model: ExternalReturnModel::Unmodeled,
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "wifi-int-restore",
-        return_model: ExternalReturnModel::Unmodeled,
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "rand",
         return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "random",
         return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-yield-from-isr",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "queue-send",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "task-ms-to-tick",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "queue-msg-waiting",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "slow-clock-calibration-get",
         return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "coex-pti-get",
-        return_model: ExternalReturnModel::PrivateStackOutputU8 {
-            pointer_argument: 1,
-        },
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: COEX_PTI_OUTPUTS,
     },
     ExternalCallModelSpec {
         id: "queue-send-from-isr",
-        return_model: ExternalReturnModel::Unmodeled,
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: QUEUE_SEND_FROM_ISR_OUTPUTS,
     },
     ExternalCallModelSpec {
         id: "task-delay",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "event-post",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "timer-arm-us",
-        return_model: ExternalReturnModel::Unmodeled,
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "timer-disarm",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "timer-done",
+        return_model: ExternalReturnModel::Void,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-status-get",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-wifi-release",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "coex-schedule-interval-set",
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-open",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-close",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-commit",
-        return_model: ExternalReturnModel::Unmodeled,
+        return_model: ExternalReturnModel::SymbolicU32,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-set-blob",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-get-blob",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "nvs-erase-key",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
     },
     ExternalCallModelSpec {
         id: "log-writev",
         return_model: ExternalReturnModel::Unmodeled,
+        outputs: &[],
+    },
+    ExternalCallModelSpec {
+        id: "esp-timer-get-time",
+        return_model: ExternalReturnModel::SymbolicU64,
+        outputs: &[],
     },
 ];
 

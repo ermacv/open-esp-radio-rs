@@ -60,6 +60,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                 field("Release gate", scope.release),
                 field("Profiles", scope.profiles.join(", ")),
                 field("Roots", scope.roots),
+                field("Replacement roots", scope.replacement_functions),
                 field(
                     "Functions",
                     format!(

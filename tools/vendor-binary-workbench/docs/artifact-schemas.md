@@ -15,9 +15,17 @@ part of their contract; consumers must parse the typed structure.
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
 | MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 39 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 40 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Review scopes | 4 | `project analyze` | `review_scopes.rs`, `review_scopes/model.rs` |
+| Verification report | 7 | `verify source` / `verify inventory` | `verification/report.rs` |
+| Project verification report | 6 | `project verify` | `verification/project_report.rs` |
 
-MMIO schema 5, interface schema 5 and linked-IR schema 39 carry
+Verification report artifact paths are canonical absolute paths. Verification
+currency therefore does not depend on the process working directory used by a
+later `project status` or `project check`; generated reports remain local
+project state and are regenerated when the checkout moves.
+
+MMIO schema 5, interface schema 5 and linked-IR schema 40 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.

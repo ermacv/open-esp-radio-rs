@@ -524,6 +524,7 @@ pub(super) fn explore_direct_calls(
                     tail: artifact::relocated_call_is_tail(symbol, relocation.address)
                         .unwrap_or(false),
                     result_modeled: false,
+                    execution_model: None,
                     semantics: Some(
                         "unresolved call relocation; arguments and callee effects are unavailable"
                             .to_owned(),

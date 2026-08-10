@@ -164,7 +164,7 @@ The ESP32-S31 profile file contains both ROM and archive entries, so it is
 executed by the source-aware `verify inventory` command below. `verify profiles`
 is available for a focused profile file that targets one vendor artifact.
 
-Profile files are strict TOML with `schema = 1`, one or more `[[profiles]]`
+Profile files are strict TOML with `schema = 2`, one or more `[[profiles]]`
 tables, and one or more nested `[[profiles.cases]]` tables. A profile requires
 `name`, `vendor-source`, `vendor-symbol`, and `rust-symbol`; `contract`
 (`"scenario"` or `"state"`) and `compare-return` are optional. Closed ABI
@@ -183,6 +183,28 @@ Dynamically resolved indirect calls are reported as
 `COVERED-CONTROL-FLOW`; their child branch inventory is included in coverage.
 Profiles are executable coverage input; they are not a parallel function
 ledger.
+
+Schema 2 models reviewed external-call responses independently for the vendor
+and Rust images. Each response is consumed in call order for its exact symbol,
+may provide at most the RV32 `a0`/`a1` return words, and may write reviewed
+outputs through private-stack pointer arguments:
+
+```toml
+[[profiles.cases.vendor-calls]]
+symbol = "queue_send_from_isr"
+return-words = [1]
+outputs = [{ kind = "private-stack-u8", pointer-argument = 2, value = 1 }]
+
+[[profiles.cases.rust-calls]]
+symbol = "wake_receiver"
+return-words = [0]
+```
+
+The two sides need not use the same external symbol or ABI adapter. Unknown
+fields, more than two return words, duplicate output arguments, non-`a0..a7`
+arguments, an invalid private-stack pointer, or an unused response make the
+profile invalid or the execution incomplete. There is no schema-1 compatibility
+path.
 
 ### Runtime table instances
 

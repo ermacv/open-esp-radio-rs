@@ -829,3 +829,221 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
         }] if candidates[0].name == "semphr_give" && arguments.len() == 1
     ));
 }
+
+#[test]
+fn reviewed_void_external_call_is_an_executable_boundary_without_a_fake_result() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "reviewed_void_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![ReviewedExternalCall {
+            id: "pack::services@+0x10".to_owned(),
+            contract: "pack::services".to_owned(),
+            name: "critical_exit".to_owned(),
+            argument_types: vec!["u32".to_owned()],
+            return_type: "void".to_owned(),
+            variadic: false,
+            semantic_operation: Some("critical-section.exit".to_owned()),
+            replacement_hint: None,
+            execution_model: Some(ReviewedExternalCallExecutionModel {
+                id: "critical-exit".to_owned(),
+                return_model: ExternalReturnModel::Void,
+                outputs: Vec::new(),
+            }),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert_eq!(trace.return_value, SymbolicValue::Unknown);
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall { candidates, .. }]
+            if candidates[0].execution_model.as_ref().is_some_and(|model|
+                model.return_model == ExternalReturnModel::Void)
+    ));
+}
+
+#[test]
+fn reviewed_external_call_keeps_return_and_private_stack_output_independent() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "reviewed_return_and_output".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x13, 0x01, 0x01, 0xff, // addi sp, sp, -16
+            0x13, 0x06, 0x01, 0x00, // mv a2, sp
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x83, 0x45, 0x01, 0x00, // lbu a1, 0(sp)
+            0x33, 0x05, 0xb5, 0x00, // add a0, a0, a1
+            0x13, 0x01, 0x01, 0x01, // addi sp, sp, 16
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1008),
+        vec![ReviewedExternalCall {
+            id: "pack::services@+0x68".to_owned(),
+            contract: "pack::services".to_owned(),
+            name: "queue_send_from_isr".to_owned(),
+            argument_types: vec![
+                "opaque-handle".to_owned(),
+                "mut-ptr".to_owned(),
+                "out-ptr".to_owned(),
+            ],
+            return_type: "i32".to_owned(),
+            variadic: false,
+            semantic_operation: Some("rtos.queue.send-from-isr".to_owned()),
+            replacement_hint: None,
+            execution_model: Some(ReviewedExternalCallExecutionModel {
+                id: "queue-send-from-isr".to_owned(),
+                return_model: ExternalReturnModel::SymbolicU32,
+                outputs: vec![ExternalOutputModel::PrivateStackU8 {
+                    pointer_argument: 2,
+                }],
+            }),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert!(matches!(
+        &trace.return_value,
+        SymbolicValue::Expression {
+            operation: ExpressionOperation::Add,
+            left,
+            right,
+        } if **left == SymbolicValue::ExternalResult(0)
+            && matches!(right.bits()[0], BitSource::PrivateStack { read_token: 0, bit: 0, .. })
+    ));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [
+            DraftReferenceEvent::ReviewedExternalCall { token: 0, .. },
+            DraftReferenceEvent::PrivateStackStore { width: 8, .. },
+            DraftReferenceEvent::PrivateStackLoad { width: 8, .. },
+        ]
+    ));
+    let DraftReferenceEvent::PrivateStackStore { value, .. } = &trace.reference_events[1] else {
+        unreachable!("event shape was asserted above")
+    };
+    assert!(matches!(
+        value.bits()[0],
+        BitSource::ExternalOutput {
+            call_token: 0,
+            output_index: 0,
+            bit: 0,
+            inverted: false,
+        }
+    ));
+    let mut visiting = BTreeSet::from([parent.address as u32]);
+    let flattened = resolve_reference_trace(
+        &parent,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &context,
+        None,
+        &map(),
+        &mut visiting,
+    )
+    .unwrap();
+    let generated = generate_reference(&flattened, "fixture.elf", "digest", None, &[]).unwrap();
+    assert!(
+        generated
+            .source
+            .contains("let external_result0 = external_outcome0.return_words[0];")
+    );
+    assert!(
+        generated
+            .source
+            .contains("let external_output0_0 = external_outcome0.outputs[0] & 0xff_u32;")
+    );
+}
+
+#[test]
+fn reviewed_external_u64_result_keeps_a0_and_a1_independent() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "reviewed_u64_result".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x33, 0x45, 0xb5, 0x00, // xor a0, a0, a1
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Default::default(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![ReviewedExternalCall {
+            id: "pack::services@+0x108".to_owned(),
+            contract: "pack::services".to_owned(),
+            name: "esp_timer_get_time".to_owned(),
+            argument_types: Vec::new(),
+            return_type: "i64".to_owned(),
+            variadic: false,
+            semantic_operation: Some("time.monotonic-micros.get".to_owned()),
+            replacement_hint: None,
+            execution_model: Some(ReviewedExternalCallExecutionModel {
+                id: "esp-timer-get-time".to_owned(),
+                return_model: ExternalReturnModel::SymbolicU64,
+                outputs: Vec::new(),
+            }),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    assert_eq!(
+        trace.return_value,
+        SymbolicValue::expression(
+            ExpressionOperation::BitXor,
+            SymbolicValue::ExternalResult(0),
+            SymbolicValue::ExternalResultHigh(0),
+        )
+    );
+    let generated = generate_reference(&trace, "fixture.elf", "digest", None, &[]).unwrap();
+    assert!(
+        generated
+            .source
+            .contains("let external_result0 = external_outcome0.return_words[0];")
+    );
+    assert!(
+        generated
+            .source
+            .contains("let external_result0_high = external_outcome0.return_words[1];")
+    );
+}

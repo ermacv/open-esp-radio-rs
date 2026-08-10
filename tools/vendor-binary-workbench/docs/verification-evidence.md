@@ -50,7 +50,7 @@ The baseline is not rewritten during protected verification. First persist the
 complete report, including a failing result:
 
 ```console
-cargo vendor-binary-workbench verify inventory \
+cargo vendor-binary-workbench-esp32s31 verify inventory \
   --project verification/vendor/targets/esp32s31/vendor-project.toml \
   --run-spec /path/to/authenticated.toml \
   --gate regression --match-floor 104 \

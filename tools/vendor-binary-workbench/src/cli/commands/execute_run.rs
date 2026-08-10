@@ -98,10 +98,10 @@ pub(super) fn run(arguments: ExecuteRunArgs, svd: &MmioMap) -> Result<bool> {
     for assignment in arguments.call {
         let (symbol, value) = parse_call_return(&assignment, "--call")?;
         scenario
-            .call_returns
+            .call_responses
             .entry(symbol)
             .or_default()
-            .push_back(value);
+            .push_back(execution::ModeledCallResponse::scalar(value));
     }
     if let Some(value) = arguments.stack_fill {
         let value = parse_u32(&value)

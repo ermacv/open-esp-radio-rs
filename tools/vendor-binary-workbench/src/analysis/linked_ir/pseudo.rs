@@ -31,6 +31,8 @@ enum PseudoBitBase {
     PrivateStack(u32),
     CallResult(u32),
     ExternalResult(u32),
+    ExternalResultHigh(u32),
+    ExternalOutput { call_token: u32, output_index: u8 },
 }
 
 impl PseudoBitBase {
@@ -43,6 +45,11 @@ impl PseudoBitBase {
             Self::PrivateStack(token) => format!("private_stack_read{token}"),
             Self::CallResult(token) => format!("call{token}"),
             Self::ExternalResult(token) => format!("external{token}"),
+            Self::ExternalResultHigh(token) => format!("external{token}_high"),
+            Self::ExternalOutput {
+                call_token,
+                output_index,
+            } => format!("external{call_token}_output{output_index}"),
         }
     }
 }
@@ -92,6 +99,28 @@ fn pseudo_bit_source(source: &BitSource) -> Option<(PseudoBitBase, u8, bool)> {
             bit,
             inverted,
         } => Some((PseudoBitBase::ExternalResult(*call_token), *bit, *inverted)),
+        BitSource::ExternalResultHigh {
+            call_token,
+            bit,
+            inverted,
+        } => Some((
+            PseudoBitBase::ExternalResultHigh(*call_token),
+            *bit,
+            *inverted,
+        )),
+        BitSource::ExternalOutput {
+            call_token,
+            output_index,
+            bit,
+            inverted,
+        } => Some((
+            PseudoBitBase::ExternalOutput {
+                call_token: *call_token,
+                output_index: *output_index,
+            },
+            *bit,
+            *inverted,
+        )),
         BitSource::Unknown | BitSource::Constant(_) => None,
     }
 }
@@ -150,6 +179,11 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
         ),
         SymbolicValue::CallResult(token) => format!("call{token}"),
         SymbolicValue::ExternalResult(token) => format!("external{token}"),
+        SymbolicValue::ExternalResultHigh(token) => format!("external{token}_high"),
+        SymbolicValue::ExternalOutput {
+            call_token,
+            output_index,
+        } => format!("external{call_token}_output{output_index}"),
         SymbolicValue::Expression {
             operation,
             left,

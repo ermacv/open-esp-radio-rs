@@ -1,6 +1,6 @@
 //! Observable and draft reference events.
 
-use open_radio_vendor_contracts::ExternalReturnModel;
+use open_radio_vendor_contracts::{ExternalOutputModel, ExternalReturnModel};
 
 use super::*;
 
@@ -65,6 +65,7 @@ pub struct ReviewedExternalCall {
 pub struct ReviewedExternalCallExecutionModel {
     pub id: String,
     pub return_model: ExternalReturnModel,
+    pub outputs: Vec<ExternalOutputModel>,
 }
 
 /// Reviewed executable model for a directly relocated platform call.

@@ -78,6 +78,7 @@ name = "task_yield_from_isr"
 arguments = []
 return = "void"
 semantic = "rtos.task.yield-from-isr"
+execution-model = "task-yield-from-isr"
 
 [[anchors.slots]]
 offset = 0x040
@@ -118,6 +119,7 @@ name = "queue_send"
 arguments = ["opaque-handle", "mut-ptr", "u32"]
 return = "i32"
 semantic = "rtos.queue.send"
+execution-model = "queue-send"
 
 [[anchors.slots]]
 offset = 0x068
@@ -149,6 +151,7 @@ name = "queue_msg_waiting"
 arguments = ["opaque-handle"]
 return = "u32"
 semantic = "rtos.queue.pending-count"
+execution-model = "queue-msg-waiting"
 
 [[anchors.slots]]
 offset = 0x098
@@ -180,6 +183,7 @@ name = "task_ms_to_tick"
 arguments = ["u32"]
 return = "i32"
 semantic = "time.milliseconds.to-ticks"
+execution-model = "task-ms-to-tick"
 
 [[anchors.slots]]
 offset = 0x0b0
@@ -272,6 +276,7 @@ name = "timer_disarm"
 arguments = ["mut-ptr"]
 return = "void"
 semantic = "timer.disarm"
+execution-model = "timer-disarm"
 
 [[anchors.slots]]
 offset = 0x0e8
@@ -282,6 +287,7 @@ name = "timer_done"
 arguments = ["mut-ptr"]
 return = "void"
 semantic = "timer.complete"
+execution-model = "timer-done"
 
 [[anchors.slots]]
 offset = 0x0f0
@@ -323,6 +329,7 @@ name = "esp_timer_get_time"
 arguments = []
 return = "i64"
 semantic = "time.monotonic-micros.get"
+execution-model = "esp-timer-get-time"
 
 [[anchors.slots]]
 offset = 0x124
@@ -485,6 +492,7 @@ name = "coex_status_get"
 arguments = []
 return = "u32"
 semantic = "coexistence.status.query"
+execution-model = "coex-status-get"
 
 [[anchors.slots]]
 offset = 0x198
@@ -505,6 +513,7 @@ name = "coex_wifi_release"
 arguments = ["u32"]
 return = "i32"
 semantic = "coexistence.wifi.release"
+execution-model = "coex-wifi-release"
 
 [[anchors.slots]]
 offset = 0x1a4
@@ -536,6 +545,7 @@ name = "coex_schm_interval_set"
 arguments = ["u32"]
 return = "i32"
 semantic = "coexistence.schedule.interval.set"
+execution-model = "coex-schedule-interval-set"
 
 [[anchors.slots]]
 offset = 0x1b8

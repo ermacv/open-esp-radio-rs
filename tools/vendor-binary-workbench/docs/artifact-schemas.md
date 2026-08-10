@@ -55,9 +55,12 @@ field versions a command result, not a stored evidence artifact. Publication
 metadata belongs to those command reports and is not embedded into persistent
 symbol/MMIO/interface/linked-IR data.
 
-`project status` currently emits command-result schema 2. Each non-ready
+`project status` currently emits command-result schema 3. Each non-ready
 component may carry a typed `next_action`; human output groups identical
 actions while JSON keeps the action attached to every responsible component.
+The `inventory` component state denotes valid artifact-wide review debt that
+does not gate project readiness. Configured release scopes remain the review
+gate.
 `project analyze` emits command-result schema 2, which distinguishes a
 content-verified write-mode `up-to-date` stage from a stage executed as
 `written` or `verified`.

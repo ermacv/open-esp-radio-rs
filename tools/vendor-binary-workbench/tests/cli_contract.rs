@@ -112,7 +112,7 @@ fn project_status_json_is_pipe_safe_and_dependency_warnings_are_suppressed() {
     );
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("stdout must be one JSON document");
-    assert_eq!(document["schema"], 2);
+    assert_eq!(document["schema"], 3);
     assert_eq!(document["command"], "project status");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(

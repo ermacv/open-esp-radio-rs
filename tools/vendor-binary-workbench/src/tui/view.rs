@@ -421,6 +421,7 @@ pub(super) fn selected_style(index: usize, selected: usize) -> Style {
 fn readiness(value: Readiness) -> (&'static str, Color) {
     match value {
         Readiness::Ready => ("ready", Color::Green),
+        Readiness::Inventory => ("inventory", Color::Cyan),
         Readiness::Incomplete => ("incomplete", Color::Yellow),
         Readiness::NotConfigured => ("not configured", Color::DarkGray),
         Readiness::Invalid => ("invalid", Color::Red),

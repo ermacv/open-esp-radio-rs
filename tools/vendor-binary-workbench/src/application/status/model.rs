@@ -154,6 +154,8 @@ impl From<Vec<ReviewScopeDetail>> for DetailValue {
 #[serde(rename_all = "kebab-case")]
 pub enum Readiness {
     Ready,
+    /// Valid non-gating artifact-wide evidence remains available for review.
+    Inventory,
     Incomplete,
     NotConfigured,
     Invalid,
@@ -163,6 +165,7 @@ impl Readiness {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Ready => "ready",
+            Self::Inventory => "inventory",
             Self::Incomplete => "incomplete",
             Self::NotConfigured => "not-configured",
             Self::Invalid => "invalid",
@@ -228,7 +231,7 @@ impl Phase {
             Readiness::Incomplete
         } else if components
             .iter()
-            .any(|component| component.status == Readiness::Ready)
+            .any(|component| matches!(component.status, Readiness::Ready | Readiness::Inventory))
         {
             Readiness::Ready
         } else {
@@ -309,6 +312,14 @@ mod tests {
             )
             .status,
             Readiness::Incomplete
+        );
+        assert_eq!(
+            Phase::collect(
+                "phase",
+                vec![Component::new("full-artifact", Readiness::Inventory)]
+            )
+            .status,
+            Readiness::Ready
         );
     }
 }

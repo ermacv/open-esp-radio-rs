@@ -44,17 +44,21 @@ run currently matches them. Use `verify inventory` for that gate and
 
 ## States and exit behavior
 
-Components and phases use four states:
+Components and phases use five states:
 
 - `ready`: all configured evidence for that component is valid and current;
+- `inventory`: valid artifact-wide evidence has a non-gating manual-review
+  backlog; configured release scopes decide project readiness;
 - `incomplete`: a required input/output is missing, stale, or still unreviewed;
 - `not-configured`: the optional component does not belong to this project;
 - `invalid`: configured data exists but fails parsing, compatibility, or
   semantic validation.
 
 The overall project is `invalid` if any phase is invalid. Otherwise it is
-`incomplete` while any configured phase is incomplete; optional
-`not-configured` phases do not prevent readiness.
+`incomplete` while any configured phase is incomplete. `inventory` and
+optional `not-configured` components do not prevent readiness. Full-artifact
+backlog remains visible in component details and can still be enforced by the
+leaf workflow's explicit `--deny-unreviewed` mode.
 
 By default, incomplete is a successful informational result while invalid
 returns failure. This lets a newly initialized project produce a useful status

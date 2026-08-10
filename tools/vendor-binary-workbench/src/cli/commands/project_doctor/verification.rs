@@ -32,7 +32,7 @@ pub(super) fn collect(context: &ProjectContext<'_>, report: &mut DoctorReport) {
                 .diagnostic
                 .unwrap_or_else(|| "verification report is incomplete".to_owned()),
         ),
-        Readiness::Ready | Readiness::NotConfigured => {}
+        Readiness::Ready | Readiness::Inventory | Readiness::NotConfigured => {}
     }
     report.capability(capability);
 }

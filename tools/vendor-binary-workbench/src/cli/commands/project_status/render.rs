@@ -1,4 +1,4 @@
-//! Stable human summary and schema-2 JSON document.
+//! Stable human summary and schema-3 JSON document.
 
 use std::collections::BTreeMap;
 
@@ -127,7 +127,7 @@ pub(super) fn document(
         })
         .collect();
     StatusDocument {
-        schema: 2,
+        schema: 3,
         command: "project status",
         project: ProjectIdentity {
             id: &report.project_id,
@@ -185,7 +185,7 @@ mod tests {
         );
         let document: serde_json::Value =
             serde_json::from_str(&json_document(&document(&report, None)).unwrap()).unwrap();
-        assert_eq!(document["schema"], 2);
+        assert_eq!(document["schema"], 3);
         assert_eq!(document["overall"], "incomplete");
         assert_eq!(
             document["phases"]["analysis"]["components"][0]["profiles"],

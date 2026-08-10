@@ -13,6 +13,32 @@ use crate::{
     },
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ScopeGate {
+    release_count: usize,
+    release_blocked: usize,
+    inventory_blocked: usize,
+}
+
+fn scope_gate(states: impl IntoIterator<Item = (bool, bool)>) -> ScopeGate {
+    states.into_iter().fold(
+        ScopeGate {
+            release_count: 0,
+            release_blocked: 0,
+            inventory_blocked: 0,
+        },
+        |mut gate, (release, blocked)| {
+            if release {
+                gate.release_count += 1;
+                gate.release_blocked += usize::from(blocked);
+            } else {
+                gate.inventory_blocked += usize::from(blocked);
+            }
+            gate
+        },
+    )
+}
+
 pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
     Phase::collect(
         "review",
@@ -39,7 +65,21 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
     match crate::review_scopes::load_for_project(context.project) {
         Ok(document) => {
             let reports = document.scopes;
-            let blocked = reports.iter().any(|report| report.has_blockers());
+            let gate = scope_gate(
+                reports
+                    .iter()
+                    .map(|report| (report.release, report.has_blockers())),
+            );
+            if gate.release_count == 0 {
+                return Component::new("scopes", Readiness::Incomplete)
+                    .detail("report", workspace.output.display().to_string())
+                    .detail("count", reports.len())
+                    .diagnostic("no release review scopes are configured")
+                    .next_action(format!(
+                        "configure [review].release-scopes in {}",
+                        context.project_path.display()
+                    ));
+            }
             let details = reports
                 .iter()
                 .map(|report| ReviewScopeDetail {
@@ -73,7 +113,7 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
                 .collect::<Vec<_>>();
             let mut component = Component::new(
                 "scopes",
-                if blocked {
+                if gate.release_blocked != 0 {
                     Readiness::Incomplete
                 } else {
                     Readiness::Ready
@@ -81,11 +121,13 @@ fn scopes(context: &ProjectContext<'_>) -> Component {
             )
             .detail("report", workspace.output.display().to_string())
             .detail("count", reports.len())
+            .detail("release_count", gate.release_count)
+            .detail("release_blocked", gate.release_blocked)
+            .detail("inventory_blocked", gate.inventory_blocked)
             .detail("scopes", details);
-            if blocked {
-                component = component.next_action(
-                    "resolve decode/control-flow blockers in the configured review scopes",
-                );
+            if gate.release_blocked != 0 {
+                component = component
+                    .next_action("resolve blockers in the configured release review scopes");
             }
             component
         }
@@ -118,12 +160,12 @@ fn code(context: &ProjectContext<'_>) -> Component {
     match workspace {
         Ok(workspace) => {
             let summary = workspace.summary();
-            let mut component = Component::new(
+            Component::new(
                 "code_boundaries",
                 if summary.unreviewed == 0 {
                     Readiness::Ready
                 } else {
-                    Readiness::Incomplete
+                    Readiness::Inventory
                 },
             )
             .detail("facts", inventory.output.display().to_string())
@@ -131,16 +173,9 @@ fn code(context: &ProjectContext<'_>) -> Component {
             .detail("candidates", summary.observed_candidates)
             .detail("accepted", summary.accepted)
             .detail("rejected", summary.rejected)
-            .detail("unreviewed", summary.unreviewed);
-            if summary.unreviewed != 0 {
-                component = component.next_action(format!(
-                    "review {} candidate(s) in {}; regenerate the reading view with `{}`",
-                    summary.unreviewed,
-                    paths.pack.display(),
-                    project_command(context, "code review")
-                ));
-            }
-            component
+            .detail("unreviewed", summary.unreviewed)
+            .detail("inventory_backlog", summary.unreviewed)
+            .detail("gating", false)
         }
         Err(error) => Component::new("code_boundaries", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
@@ -183,12 +218,12 @@ fn registers(context: &ProjectContext<'_>) -> Component {
             .detail("model", paths.model.display().to_string())
             .diagnostic(error);
     }
-    let mut component = Component::new(
+    Component::new(
         "registers",
         if summary.unreviewed == 0 {
             Readiness::Ready
         } else {
-            Readiness::Incomplete
+            Readiness::Inventory
         },
     )
     .detail("owned_ranges", paths.owned_ranges.join(","))
@@ -201,24 +236,13 @@ fn registers(context: &ProjectContext<'_>) -> Component {
     .detail("non_operational", summary.non_operational)
     .detail("manual", summary.manual)
     .detail("unreviewed", summary.unreviewed)
+    .detail("inventory_backlog", summary.unreviewed)
+    .detail("gating", false)
     .detail("fields", summary.fields)
     .detail("review_ir_reports", paths.review_ir_reports.len())
     .detail("api_pack_configured", paths.api_pack.is_some())
     .detail("lint_pack_configured", paths.lint_pack.is_some())
-    .detail("evidence_catalogs", paths.evidence_catalogs.len());
-    if summary.unreviewed != 0 {
-        let report = paths.review_output.as_deref().map_or_else(
-            || paths.facts.display().to_string(),
-            |path| path.display().to_string(),
-        );
-        component = component.next_action(format!(
-            "inspect {} unreviewed observation(s) in {report}; edit {}; regenerate with `{}`",
-            summary.unreviewed,
-            paths.model.display(),
-            project_command(context, "registers review")
-        ));
-    }
-    component
+    .detail("evidence_catalogs", paths.evidence_catalogs.len())
 }
 
 fn interfaces(context: &ProjectContext<'_>) -> Component {
@@ -258,12 +282,12 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
     ) {
         Ok(workspace) => {
             let summary = workspace.summary();
-            let mut component = Component::new(
+            Component::new(
                 "interfaces",
                 if summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0 {
                     Readiness::Ready
                 } else {
-                    Readiness::Incomplete
+                    Readiness::Inventory
                 },
             )
             .detail("facts", paths.facts.display().to_string())
@@ -274,20 +298,15 @@ fn interfaces(context: &ProjectContext<'_>) -> Component {
             .detail("reviewed_slots", summary.reviewed_slots)
             .detail("ignored_slots", summary.ignored_slots)
             .detail("unreviewed_slots", summary.unreviewed_slots)
+            .detail(
+                "inventory_backlog",
+                summary.unreviewed_anchors + summary.unreviewed_slots,
+            )
+            .detail("gating", false)
             .detail("semantic_links", summary.semantic_links)
             .detail("execution_contracts", summary.execution_contracts)
             .detail("execution_models", summary.execution_models)
-            .detail("resolved_calls", summary.resolved_calls);
-            if summary.unreviewed_anchors != 0 || summary.unreviewed_slots != 0 {
-                component = component.next_action(format!(
-                    "review {} anchor(s) and {} slot(s) in {}; validate with `{}`",
-                    summary.unreviewed_anchors,
-                    summary.unreviewed_slots,
-                    pack.display(),
-                    project_command(context, "interfaces validate")
-                ));
-            }
-            component
+            .detail("resolved_calls", summary.resolved_calls)
         }
         Err(error) => Component::new("interfaces", Readiness::Invalid)
             .detail("facts", paths.facts.display().to_string())
@@ -326,7 +345,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
     match FunctionWorkspace::load(&reports, &paths.pack) {
         Ok(workspace) => {
             let summary = workspace.summary();
-            let mut component = Component::new(
+            Component::new(
                 "functions",
                 if summary.unreviewed_functions == 0
                     && summary.unreviewed_contexts == 0
@@ -335,7 +354,7 @@ fn functions(context: &ProjectContext<'_>) -> Component {
                 {
                     Readiness::Ready
                 } else {
-                    Readiness::Incomplete
+                    Readiness::Inventory
                 },
             )
             .detail("pack", paths.pack.display().to_string())
@@ -351,23 +370,15 @@ fn functions(context: &ProjectContext<'_>) -> Component {
             .detail("logical_types", summary.logical_types)
             .detail("type_bindings", summary.type_bindings)
             .detail("unreviewed_type_fields", summary.unreviewed_type_fields)
-            .detail("accepted_incomplete", summary.accepted_incomplete);
-            let outstanding = summary.unreviewed_functions
-                + summary.unreviewed_contexts
-                + summary.unreviewed_fields
-                + summary.unreviewed_type_fields;
-            if outstanding != 0 {
-                let report = paths.review_output.as_deref().map_or_else(
-                    || paths.pack.display().to_string(),
-                    |path| path.display().to_string(),
-                );
-                component = component.next_action(format!(
-                    "inspect {outstanding} unreviewed function/context item(s) in {report}; edit {}; regenerate with `{}`",
-                    paths.pack.display(),
-                    project_command(context, "functions review")
-                ));
-            }
-            component
+            .detail("accepted_incomplete", summary.accepted_incomplete)
+            .detail(
+                "inventory_backlog",
+                summary.unreviewed_functions
+                    + summary.unreviewed_contexts
+                    + summary.unreviewed_fields
+                    + summary.unreviewed_type_fields,
+            )
+            .detail("gating", false)
         }
         Err(error) => Component::new("functions", Readiness::Invalid)
             .detail("pack", paths.pack.display().to_string())
@@ -380,4 +391,25 @@ fn project_command(context: &ProjectContext<'_>, command: &str) -> String {
         "vendor-binary-workbench {command} --project {}",
         context.project_path.display()
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn artifact_inventory_blockers_do_not_gate_release_readiness() {
+        let gate = scope_gate([(false, true), (true, false), (false, true)]);
+        assert_eq!(gate.release_count, 1);
+        assert_eq!(gate.release_blocked, 0);
+        assert_eq!(gate.inventory_blocked, 2);
+    }
+
+    #[test]
+    fn release_blockers_remain_gating() {
+        let gate = scope_gate([(true, false), (true, true), (false, true)]);
+        assert_eq!(gate.release_count, 2);
+        assert_eq!(gate.release_blocked, 1);
+        assert_eq!(gate.inventory_blocked, 1);
+    }
 }

@@ -1,6 +1,7 @@
 //! Public facts produced by artifact loading and decoding.
 
 use rv_asm::Inst;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct ArtifactSymbolDefinition {
@@ -9,7 +10,12 @@ pub struct ArtifactSymbolDefinition {
     pub address: u64,
     pub bytes: Vec<u8>,
     pub addresses_resolved: bool,
-    pub memory_regions: Vec<MemoryRegion>,
+    /// Immutable image layout shared by every symbol from the same object.
+    ///
+    /// A linked image commonly contributes thousands of functions but only a
+    /// handful of memory regions. Keeping a full `Vec` in every cloned symbol
+    /// made artifact-wide analysis copy the same strings millions of times.
+    pub memory_regions: Arc<[MemoryRegion]>,
     pub relocations: Vec<SymbolRelocation>,
 }
 

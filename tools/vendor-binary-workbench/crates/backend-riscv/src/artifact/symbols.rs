@@ -1,6 +1,6 @@
 //! Extraction of sized code symbols and their relocation context.
 
-use std::{fs, path::Path};
+use std::{collections::HashMap, fs, path::Path, sync::Arc};
 
 use object::{
     FileKind, Object, ObjectKind, ObjectSection, ObjectSymbol, SectionKind, SymbolKind,
@@ -26,7 +26,7 @@ fn collect_object_symbols(
         return Err(format!("artifact member {member:?} is not little-endian").into());
     }
     let addresses_resolved = file.kind() != ObjectKind::Relocatable;
-    let memory_regions = if addresses_resolved {
+    let memory_regions: Arc<[MemoryRegion]> = if addresses_resolved {
         file.sections()
             .filter_map(|section| {
                 let writable = match section.kind() {
@@ -52,10 +52,12 @@ fn collect_object_symbols(
                     name: section.name().unwrap_or("<unnamed>").to_owned(),
                 })
             })
-            .collect()
+            .collect::<Vec<_>>()
+            .into()
     } else {
-        Vec::new()
+        Arc::default()
     };
+    let mut section_relocations = HashMap::new();
 
     for symbol in file.symbols() {
         if symbol.kind() != SymbolKind::Text
@@ -90,8 +92,14 @@ fn collect_object_symbols(
         let symbol_end = symbol_start
             .checked_add(symbol.size())
             .ok_or_else(|| format!("symbol {name} address range overflows"))?;
+        if !section_relocations.contains_key(&section_index) {
+            section_relocations.insert(
+                section_index,
+                relocations::collect_section_relocations(&file, section_index)?,
+            );
+        }
         let mut relocations = Vec::new();
-        for relocation in relocations::collect_section_relocations(&file, section_index)? {
+        for relocation in &section_relocations[&section_index] {
             if relocation.address < symbol_start || relocation.address >= symbol_end {
                 continue;
             }
@@ -100,7 +108,7 @@ fn collect_object_symbols(
                 address: u32::try_from(relocation.address)
                     .map_err(|_| format!("relocation in {name} exceeds RV32 address space"))?,
                 kind: relocation.kind,
-                symbol: relocation.symbol,
+                symbol: relocation.symbol.clone(),
                 addend,
             });
         }
@@ -262,7 +270,7 @@ fn collect_reviewed_ranges(
         .into());
     }
     let addresses_resolved = file.kind() != ObjectKind::Relocatable;
-    let memory_regions = if addresses_resolved {
+    let memory_regions: Arc<[MemoryRegion]> = if addresses_resolved {
         file.sections()
             .filter_map(|section| {
                 let writable = match section.kind() {
@@ -287,10 +295,12 @@ fn collect_reviewed_ranges(
                     }
                 })
             })
-            .collect()
+            .collect::<Vec<_>>()
+            .into()
     } else {
-        Vec::new()
+        Arc::default()
     };
+    let mut section_relocations = HashMap::new();
     for range in matching {
         let section = file
             .sections()
@@ -332,7 +342,14 @@ fn collect_reviewed_ranges(
             .address()
             .checked_add(range.end_offset)
             .ok_or_else(|| format!("reviewed code range {} end address overflows", range.name))?;
-        let mut relocations = relocations::collect_section_relocations(&file, section.index())?
+        if !section_relocations.contains_key(&section.index()) {
+            section_relocations.insert(
+                section.index(),
+                relocations::collect_section_relocations(&file, section.index())?,
+            );
+        }
+        let mut relocations = section_relocations[&section.index()]
+            .iter()
             .into_iter()
             .filter(|relocation| relocation.address >= address && relocation.address < end_address)
             .map(|relocation| {
@@ -342,7 +359,7 @@ fn collect_reviewed_ranges(
                         format!("relocation in {} exceeds RV32 address space", range.name)
                     })?,
                     kind: relocation.kind,
-                    symbol: relocation.symbol,
+                    symbol: relocation.symbol.clone(),
                     addend,
                 })
             })

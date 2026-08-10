@@ -85,14 +85,14 @@ pub enum SymbolicValue {
     ExternalResult(u32),
     Expression {
         operation: ExpressionOperation,
-        left: Box<SymbolicValue>,
-        right: Box<SymbolicValue>,
+        left: Arc<SymbolicValue>,
+        right: Arc<SymbolicValue>,
     },
     WideSignedDivide {
-        dividend_low: Box<SymbolicValue>,
-        dividend_high: Box<SymbolicValue>,
-        divisor_low: Box<SymbolicValue>,
-        divisor_high: Box<SymbolicValue>,
+        dividend_low: Arc<SymbolicValue>,
+        dividend_high: Arc<SymbolicValue>,
+        divisor_low: Arc<SymbolicValue>,
+        divisor_high: Arc<SymbolicValue>,
         high_word: bool,
     },
     RegisterImage {

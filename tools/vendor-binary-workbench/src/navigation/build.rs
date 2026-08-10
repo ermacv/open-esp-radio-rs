@@ -311,13 +311,48 @@ impl InterfaceRootIndex {
                     .get(&(artifact_sha256.to_owned(), member.clone(), symbol.clone()))
             }
             StoredInterfaceRoot::AbsoluteAddress { address, .. } => {
-                self.absolute.get(&(artifact_sha256.to_owned(), *address))
+                // Zero is the fail-closed unknown pointer value emitted by
+                // interface discovery, not a usable runtime symbol identity.
+                // Joining it to every undefined/section-relative symbol at
+                // object offset zero created hundreds of thousands of false
+                // navigation edges in real linked-library projects.
+                (*address != 0)
+                    .then(|| self.absolute.get(&(artifact_sha256.to_owned(), *address)))
+                    .flatten()
             }
             StoredInterfaceRoot::FunctionArgument { .. } => None,
         }
         .into_iter()
         .flat_map(|matches| matches.iter().cloned())
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod index_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_zero_absolute_root_never_joins_zero_offset_symbols() {
+        let key = SymbolKey {
+            artifact_sha256: "11".repeat(32),
+            member: None,
+            name: "undefined".to_owned(),
+            object_address: 0,
+        };
+        let index = InterfaceRootIndex::new(std::iter::once(&key));
+
+        assert!(
+            index
+                .matches(
+                    &key.artifact_sha256,
+                    &StoredInterfaceRoot::AbsoluteAddress {
+                        canonical: "0x00000000".to_owned(),
+                        address: 0,
+                    },
+                )
+                .is_empty()
+        );
     }
 }
 

@@ -12,7 +12,7 @@ fn floating_point_decode_blocker_does_not_discard_later_integer_ir() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -46,7 +46,7 @@ fn vendor_custom_decode_blocker_stops_unknown_control_flow() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -77,7 +77,7 @@ fn forward_local_jump_skips_dead_instructions() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -102,7 +102,7 @@ fn local_jump_loop_fails_closed() {
         address: 0x1000,
         bytes: vec![0x6f, 0x00, 0x00, 0x00], // j 0x1000
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -134,7 +134,7 @@ fn constant_counted_loop_is_bounded_and_fully_unrolled() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -167,7 +167,7 @@ fn calibration_sized_constant_loop_is_bounded_and_fully_unrolled() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -200,7 +200,7 @@ fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x1000, symbol.clone())]);
@@ -240,7 +240,7 @@ fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x1000, symbol.clone())]);
@@ -307,7 +307,7 @@ fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
         address: 0x1000,
         bytes: vec![0x6f, 0x10, 0x00, 0x00], // j 0x2000
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
@@ -316,7 +316,7 @@ fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
         address: 0x2000,
         bytes: vec![0x73, 0x00, 0x10, 0x00], // body is deliberately unsupported
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, delay)]);
@@ -355,7 +355,7 @@ fn constant_conditional_branch_follows_only_the_feasible_edge() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -383,7 +383,7 @@ fn symbolic_conditional_branch_fails_closed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -414,7 +414,7 @@ fn bounded_symbolic_cfg_becomes_structured_reference_flow() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let mut visiting = BTreeSet::from([0x1000]);
@@ -487,7 +487,7 @@ fn loop_invariant_symbolic_branch_is_one_structured_decision() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let mut visiting = BTreeSet::from([0x1000]);
@@ -534,7 +534,7 @@ fn constant_call_argument_specializes_a_child_branch() {
             0x6f, 0x00, 0x40, 0x00, // j 0x1008
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -547,7 +547,7 @@ fn constant_call_argument_specializes_a_child_branch() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x1008, child)]);

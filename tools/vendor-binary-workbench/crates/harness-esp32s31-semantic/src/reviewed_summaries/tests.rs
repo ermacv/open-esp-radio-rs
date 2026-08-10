@@ -12,7 +12,7 @@ fn symbol(bytes: Vec<u8>) -> artifact::ArtifactSymbolDefinition {
         address: 0x1000_732a,
         bytes,
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     }
 }
@@ -24,7 +24,7 @@ fn pp_post_symbol() -> artifact::ArtifactSymbolDefinition {
         address: 0,
         bytes: PP_POST_BODY.to_vec(),
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: PP_POST_RELOCATIONS
             .iter()
             .map(|&(address, kind, symbol)| artifact::SymbolRelocation {
@@ -125,7 +125,7 @@ fn exact_i2c_poll_body_generates_an_explicit_busy_loop() {
         address: 0x2f82_9ffa,
         bytes: PHY_CHIP_I2C_READ_REG_ORG_BODY.to_vec(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let trace = reference_intrinsic_trace(&symbol, &map(), &StructuralPointerContext::default())
@@ -156,7 +156,7 @@ fn changed_i2c_poll_body_does_not_receive_the_reviewed_summary() {
         address: 0x2f82_9ffa,
         bytes,
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -173,7 +173,7 @@ fn i2c_write_summary_requires_exact_body_and_phy_entry_contract() {
         address: 0x2f82_a30e,
         bytes,
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let exact = make_symbol(PHY_CHIP_I2C_WRITE_REG_BODY.to_vec());

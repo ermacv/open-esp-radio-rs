@@ -248,8 +248,8 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
     };
     let context_flags_address = SymbolicValue::Expression {
         operation: ExpressionOperation::Add,
-        left: Box::new(SymbolicValue::input(0)),
-        right: Box::new(SymbolicValue::Constant(40)),
+        left: std::sync::Arc::new(SymbolicValue::input(0)),
+        right: std::sync::Arc::new(SymbolicValue::Constant(40)),
     };
     let expected_context_value = SymbolicValue::MemoryImage {
         read_token: 0,
@@ -258,21 +258,21 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
     };
     let scheduler_owner_address = SymbolicValue::Expression {
         operation: ExpressionOperation::Add,
-        left: Box::new(SymbolicValue::MemoryImage {
+        left: std::sync::Arc::new(SymbolicValue::MemoryImage {
             read_token: 1,
             and_mask: u32::MAX,
             or_mask: 0,
         }),
-        right: Box::new(SymbolicValue::Constant(52)),
+        right: std::sync::Arc::new(SymbolicValue::Constant(52)),
     };
     let scheduler_flags_address = SymbolicValue::Expression {
         operation: ExpressionOperation::Add,
-        left: Box::new(SymbolicValue::MemoryImage {
+        left: std::sync::Arc::new(SymbolicValue::MemoryImage {
             read_token: 2,
             and_mask: u32::MAX,
             or_mask: 0,
         }),
-        right: Box::new(SymbolicValue::Constant(47)),
+        right: std::sync::Arc::new(SymbolicValue::Constant(47)),
     };
     if !matches!(
         context_flags_read,

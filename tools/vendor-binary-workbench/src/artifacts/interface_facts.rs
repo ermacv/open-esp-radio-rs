@@ -474,5 +474,5 @@ pub(crate) fn build_interface_facts(
 }
 
 pub(crate) fn render_interface_facts(document: &InterfaceFactsDocument<'_>) -> Result<String> {
-    Ok(serde_json::to_string_pretty(&document)? + "\n")
+    Ok(serde_json::to_string(&document)? + "\n")
 }

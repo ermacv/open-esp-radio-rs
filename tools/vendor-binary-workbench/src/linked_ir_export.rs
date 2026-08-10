@@ -42,6 +42,7 @@ pub(crate) fn generate_project_profile(
     interfaces: Option<&InterfaceWorkspace>,
     jobs: usize,
 ) -> Result<ProjectIrDocuments> {
+    let started = std::time::Instant::now();
     let mut artifacts = inputs
         .into_iter()
         .map(|(source, path)| named_artifact_path(&source, path))
@@ -67,6 +68,8 @@ pub(crate) fn generate_project_profile(
         .iter()
         .map(|function| function.decode_blockers.len())
         .sum();
+    let analysis_elapsed = started.elapsed();
+    let render_started = std::time::Instant::now();
     let document = crate::artifacts::build_linked_ir_document(
         &artifacts,
         &companions,
@@ -84,6 +87,13 @@ pub(crate) fn generate_project_profile(
             profile.include_reachable,
         )
     });
+    tracing::debug!(
+        profile = profile.id,
+        functions = report.functions.len(),
+        analysis_ms = analysis_elapsed.as_millis(),
+        render_ms = render_started.elapsed().as_millis(),
+        "rendered project linked-IR profile"
+    );
     Ok(ProjectIrDocuments {
         json,
         pseudo,
@@ -97,7 +107,13 @@ pub(crate) fn generate_project_profile(
 
 #[tracing::instrument(
     name = "build_linked_ir",
-    skip(artifacts, companions, svd, target),
+    skip(
+        artifacts,
+        companions,
+        svd,
+        target,
+        interfaces
+    ),
     fields(artifacts = artifacts.len(), companions = companions.len(), symbol_prefix, include_reachable)
 )]
 pub(crate) fn analyze(

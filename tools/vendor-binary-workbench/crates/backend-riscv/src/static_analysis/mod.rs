@@ -231,14 +231,85 @@ pub fn trace_binary_symbol_with_branches_bounded(
     forced_branches: &BTreeMap<u32, bool>,
     budget: StructuralTraceBudget,
 ) -> Result<FunctionAnalysis> {
-    let mut state = StructuralTraceState::new(specialized_arguments);
+    let program = StructuralProgram::decode(symbol)?;
+    trace_structural_program_with_branches_bounded(
+        symbol,
+        &program,
+        svd,
+        relocated_calls,
+        pointer_context,
+        specialized_arguments,
+        forced_branches,
+        budget,
+    )
+}
 
-    let instructions = artifact::decode_symbol_for_analysis(symbol)?;
-    let instruction_indices = instructions
-        .iter()
-        .enumerate()
-        .map(|(index, instruction)| (instruction.address() as u32, index))
-        .collect::<BTreeMap<_, _>>();
+/// Decoded, indexed function body reusable across forced branch scenarios.
+///
+/// Artifact-wide explorers replay the same function for multiple branch
+/// decisions. Decoding and rebuilding control-flow indexes for every replay
+/// is pure duplicate work and does not add evidence.
+pub struct StructuralProgram {
+    instructions: Vec<artifact::AnalysisInstruction>,
+    instruction_indices: BTreeMap<u32, usize>,
+    loop_checkpoint_addresses: BTreeSet<u32>,
+}
+
+impl StructuralProgram {
+    pub fn decode(symbol: &artifact::ArtifactSymbolDefinition) -> Result<Self> {
+        let instructions = artifact::decode_symbol_for_analysis(symbol)?;
+        let instruction_indices = instructions
+            .iter()
+            .enumerate()
+            .map(|(index, instruction)| (instruction.address() as u32, index))
+            .collect::<BTreeMap<_, _>>();
+        // Checkpoints are consumed only when a later conditional branch targets
+        // an earlier instruction during polling-loop recognition. Retaining one
+        // at every instruction copied symbolic stack and pointer provenance on
+        // every step, although almost all checkpoints could never be queried.
+        let loop_checkpoint_addresses = instructions
+            .iter()
+            .filter_map(|instruction| {
+                let decoded = instruction.supported()?;
+                let offset = match decoded.instruction {
+                    Inst::Beq { offset, .. }
+                    | Inst::Bne { offset, .. }
+                    | Inst::Blt { offset, .. }
+                    | Inst::Bge { offset, .. }
+                    | Inst::Bltu { offset, .. }
+                    | Inst::Bgeu { offset, .. } => offset,
+                    _ => return None,
+                };
+                let target = (decoded.address as u32).wrapping_add(offset.as_u32());
+                (target < decoded.address as u32).then_some(target)
+            })
+            .collect::<BTreeSet<_>>();
+        Ok(Self {
+            instructions,
+            instruction_indices,
+            loop_checkpoint_addresses,
+        })
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "a reusable structural program retains the existing explicit trace contract"
+)]
+pub fn trace_structural_program_with_branches_bounded(
+    symbol: &artifact::ArtifactSymbolDefinition,
+    program: &StructuralProgram,
+    svd: &MmioMap,
+    relocated_calls: &StructuralRelocatedCalls,
+    pointer_context: &StructuralPointerContext,
+    specialized_arguments: Option<&Rv32CallArguments>,
+    forced_branches: &BTreeMap<u32, bool>,
+    budget: StructuralTraceBudget,
+) -> Result<FunctionAnalysis> {
+    let mut state = StructuralTraceState::new(specialized_arguments);
+    let instructions = &program.instructions;
+    let instruction_indices = &program.instruction_indices;
+    let loop_checkpoint_addresses = &program.loop_checkpoint_addresses;
     let mut instruction_index = 0usize;
     let mut instruction_steps = 0usize;
     let mut instruction_visits = BTreeMap::<u32, u16>::new();
@@ -277,7 +348,9 @@ pub fn trace_binary_symbol_with_branches_bounded(
             break;
         }
         *visits += 1;
-        checkpoints.insert(pc as u32, state.checkpoint());
+        if loop_checkpoint_addresses.contains(&(pc as u32)) {
+            checkpoints.insert(pc as u32, state.checkpoint());
+        }
         let Some(decoded) = decoded_or_blocker.supported() else {
             let artifact::AnalysisInstruction::Unsupported(blocker) = decoded_or_blocker else {
                 unreachable!();

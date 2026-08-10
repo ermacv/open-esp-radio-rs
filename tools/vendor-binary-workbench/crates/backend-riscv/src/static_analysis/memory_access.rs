@@ -14,7 +14,7 @@ fn remember_pointer_read_source(
         return;
     }
     if let Some(location) = address.memory_object_location_with_reads(&state.memory_read_sources) {
-        state.memory_read_sources.insert(read_token, location);
+        std::sync::Arc::make_mut(&mut state.memory_read_sources).insert(read_token, location);
     }
 }
 
@@ -25,7 +25,7 @@ fn remember_absolute_pointer_read_source(
     address: u32,
 ) {
     if width == 32 {
-        state.memory_read_sources.insert(
+        std::sync::Arc::make_mut(&mut state.memory_read_sources).insert(
             read_token,
             MemoryObjectLocation {
                 root: MemoryObjectRoot::Absolute { address },
@@ -441,7 +441,7 @@ pub(super) fn apply_memory_instruction(
             };
             match address {
                 Some(StructuralAddress::PrivateStack(offset)) => {
-                    state.stack.store(offset, width, &value);
+                    std::sync::Arc::make_mut(&mut state.stack).store(offset, width, &value);
                     state
                         .reference_events
                         .push(DraftReferenceEvent::PrivateStackStore {

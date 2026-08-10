@@ -394,7 +394,7 @@ impl ReferenceResolver {
                     address: u64::from(target),
                     bytes: Vec::new(),
                     addresses_resolved: true,
-                    memory_regions: Vec::new(),
+                    memory_regions: Default::default(),
                     relocations: Vec::new(),
                 },
             );

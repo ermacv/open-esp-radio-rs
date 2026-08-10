@@ -197,7 +197,7 @@ pub(super) fn apply_relocated_call(
                 }
             }),
             symbol,
-            &mut state.stack,
+            std::sync::Arc::make_mut(&mut state.stack),
             &mut state.reference_events,
             &mut state.next_memory_read_token,
         )
@@ -523,7 +523,7 @@ pub(super) fn apply_call_instruction(
                     };
                     let output =
                         SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
-                    state.stack.store(*offset, 8, &output);
+                    std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
                     private_stack_output = Some((*offset, output));
                     // The validated private pointer has already been consumed by
                     // the internal stack effect. Do not let a callee-local

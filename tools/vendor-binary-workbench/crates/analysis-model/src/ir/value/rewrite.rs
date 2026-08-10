@@ -33,13 +33,13 @@ impl SymbolicValue {
         {
             return Ok(Self::Expression {
                 operation: *operation,
-                left: Box::new(left.substitute(
+                left: Arc::new(left.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                 )?),
-                right: Box::new(right.substitute(
+                right: Arc::new(right.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
@@ -56,25 +56,25 @@ impl SymbolicValue {
         } = self
         {
             return Ok(Self::WideSignedDivide {
-                dividend_low: Box::new(dividend_low.substitute(
+                dividend_low: Arc::new(dividend_low.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                 )?),
-                dividend_high: Box::new(dividend_high.substitute(
+                dividend_high: Arc::new(dividend_high.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                 )?),
-                divisor_low: Box::new(divisor_low.substitute(
+                divisor_low: Arc::new(divisor_low.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                 )?),
-                divisor_high: Box::new(divisor_high.substitute(
+                divisor_high: Arc::new(divisor_high.substitute(
                     arguments,
                     read_tokens,
                     memory_read_tokens,
@@ -213,14 +213,14 @@ impl SymbolicValue {
         {
             return Ok(Self::Expression {
                 operation: *operation,
-                left: Box::new(left.rewrite_call_context(
+                left: Arc::new(left.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
                 )?),
-                right: Box::new(right.rewrite_call_context(
+                right: Arc::new(right.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
@@ -238,28 +238,28 @@ impl SymbolicValue {
         } = self
         {
             return Ok(Self::WideSignedDivide {
-                dividend_low: Box::new(dividend_low.rewrite_call_context(
+                dividend_low: Arc::new(dividend_low.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
                 )?),
-                dividend_high: Box::new(dividend_high.rewrite_call_context(
+                dividend_high: Arc::new(dividend_high.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
                 )?),
-                divisor_low: Box::new(divisor_low.rewrite_call_context(
+                divisor_low: Arc::new(divisor_low.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
                     call_results,
                     private_stack_reads,
                 )?),
-                divisor_high: Box::new(divisor_high.rewrite_call_context(
+                divisor_high: Arc::new(divisor_high.rewrite_call_context(
                     read_tokens,
                     memory_read_tokens,
                     external_tokens,
@@ -380,8 +380,8 @@ impl SymbolicValue {
         {
             return Ok(Self::Expression {
                 operation: *operation,
-                left: Box::new(left.rewrite_private_stack_context(private_stack_reads)?),
-                right: Box::new(right.rewrite_private_stack_context(private_stack_reads)?),
+                left: Arc::new(left.rewrite_private_stack_context(private_stack_reads)?),
+                right: Arc::new(right.rewrite_private_stack_context(private_stack_reads)?),
             });
         }
         if let Self::WideSignedDivide {
@@ -393,16 +393,16 @@ impl SymbolicValue {
         } = self
         {
             return Ok(Self::WideSignedDivide {
-                dividend_low: Box::new(
+                dividend_low: Arc::new(
                     dividend_low.rewrite_private_stack_context(private_stack_reads)?,
                 ),
-                dividend_high: Box::new(
+                dividend_high: Arc::new(
                     dividend_high.rewrite_private_stack_context(private_stack_reads)?,
                 ),
-                divisor_low: Box::new(
+                divisor_low: Arc::new(
                     divisor_low.rewrite_private_stack_context(private_stack_reads)?,
                 ),
-                divisor_high: Box::new(
+                divisor_high: Arc::new(
                     divisor_high.rewrite_private_stack_context(private_stack_reads)?,
                 ),
                 high_word: *high_word,

@@ -10,7 +10,7 @@ fn symbol(
         address: 0,
         bytes,
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations,
     }
 }

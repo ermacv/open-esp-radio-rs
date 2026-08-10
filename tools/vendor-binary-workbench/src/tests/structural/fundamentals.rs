@@ -16,7 +16,7 @@ fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let trace = trace_binary_symbol(
@@ -71,7 +71,7 @@ fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let trace = trace_binary_symbol(
@@ -112,7 +112,7 @@ fn single_read_backedge_becomes_a_structural_mmio_poll() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(symbol.address as u32, symbol.clone())]);
@@ -172,7 +172,7 @@ fn structural_poll_does_not_expose_an_unmodeled_final_read_value() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(symbol.address as u32, symbol.clone())]);
@@ -291,7 +291,7 @@ fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let trace = trace_binary_symbol(
@@ -354,7 +354,7 @@ fn pointer_loaded_from_caller_ram_preserves_distinct_pointee_provenance() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let trace = trace_binary_symbol(
@@ -399,7 +399,7 @@ fn floating_word_memory_preserves_context_address_and_value_provenance() {
             .flat_map(u32::to_le_bytes)
             .collect(),
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -461,7 +461,7 @@ fn floating_bit_move_preserves_integer_argument_into_context_store() {
             .flat_map(u32::to_le_bytes)
             .collect(),
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -516,7 +516,7 @@ fn floating_comparison_of_exact_bits_preserves_later_integer_control_data() {
         .flat_map(u32::to_le_bytes)
         .collect(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -561,7 +561,7 @@ fn hi20_lo12_relocations_preserve_symbolic_data_reads_and_writes() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
                 address: 0,
@@ -652,7 +652,7 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
                 address: 0,
@@ -729,7 +729,8 @@ fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
             length: 4,
             writable: true,
             name: "dram".to_owned(),
-        }],
+        }]
+        .into(),
         relocations: Vec::new(),
     };
     let trace = trace_binary_symbol(
@@ -788,7 +789,7 @@ fn mismatched_hi20_lo12_symbols_fail_closed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: vec![
             artifact::SymbolRelocation {
                 address: 0,

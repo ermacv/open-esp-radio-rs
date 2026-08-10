@@ -326,7 +326,7 @@ fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition 
         address: 0x1000,
         bytes,
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: vec![artifact::SymbolRelocation {
             address: 0x1004,
             kind: artifact::RelocationKind::Lo12I,

@@ -287,7 +287,7 @@ pub(crate) fn build_linked_ir_document<'a>(
 }
 
 pub(crate) fn render_linked_ir(document: &LinkedIrDocument<'_>) -> Result<String> {
-    Ok(serde_json::to_string_pretty(document)? + "\n")
+    Ok(serde_json::to_string(document)? + "\n")
 }
 
 pub(crate) fn write_linked_ir(path: &Path, document: &LinkedIrDocument<'_>) -> Result<()> {

@@ -710,7 +710,7 @@ pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<boo
         .ok_or_else(|| crate::Error::invalid("[analysis.navigation] is absent"))?
         .output;
     let document = crate::navigation::build(project)?;
-    let rendered = serde_json::to_string_pretty(&document)? + "\n";
+    let rendered = serde_json::to_string(&document)? + "\n";
     super::super::generated_file::write_or_check(output, &rendered, check, "navigation index")?;
     Ok(true)
 }

@@ -246,7 +246,7 @@ fn code_section_coverage<'data>(
                 address: section.address() + start,
                 bytes: bytes.to_vec(),
                 addresses_resolved: file.kind() != ObjectKind::Relocatable,
-                memory_regions: Vec::new(),
+                memory_regions: Default::default(),
                 relocations: Vec::new(),
             };
             let decoded = match super::decode::decode_symbol(&definition) {

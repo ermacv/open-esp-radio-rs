@@ -8,7 +8,7 @@ fn inventory_symbol_identity_binds_only_the_selected_definition() {
         address: 0x20,
         bytes: vec![1, 2, 3, 4],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: vec![crate::artifact::SymbolRelocation {
             address: 0x22,
             kind: crate::artifact::RelocationKind::Call,

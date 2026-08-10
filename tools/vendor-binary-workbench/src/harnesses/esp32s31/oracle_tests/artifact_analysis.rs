@@ -85,7 +85,7 @@ fn wifi_osi_result_survives_direct_call_composition() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let mut child = wifi_osi_tail_symbol(0x0bc);

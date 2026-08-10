@@ -9,7 +9,7 @@ fn symbol(name: &str, address: u64, bytes: Vec<u8>) -> artifact::ArtifactSymbolD
         address,
         bytes,
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     }
 }

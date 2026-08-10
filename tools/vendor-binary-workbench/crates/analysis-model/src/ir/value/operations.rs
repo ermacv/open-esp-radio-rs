@@ -415,8 +415,8 @@ impl SymbolicValue {
         }
         Self::Expression {
             operation,
-            left: Box::new(left),
-            right: Box::new(right),
+            left: Arc::new(left),
+            right: Arc::new(right),
         }
     }
 
@@ -446,10 +446,10 @@ impl SymbolicValue {
             return (Self::Unknown, Self::Unknown);
         }
         let word = |high_word| Self::WideSignedDivide {
-            dividend_low: Box::new(dividend_low.clone()),
-            dividend_high: Box::new(dividend_high.clone()),
-            divisor_low: Box::new(divisor_low.clone()),
-            divisor_high: Box::new(divisor_high.clone()),
+            dividend_low: Arc::new(dividend_low.clone()),
+            dividend_high: Arc::new(dividend_high.clone()),
+            divisor_low: Arc::new(divisor_low.clone()),
+            divisor_high: Arc::new(divisor_high.clone()),
             high_word,
         };
         (word(false), word(true))

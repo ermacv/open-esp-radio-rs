@@ -223,7 +223,7 @@ fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -237,7 +237,7 @@ fn unused_callee_write_to_caller_private_stack_is_internal_scratch() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -273,7 +273,7 @@ fn consumed_callee_write_to_caller_private_stack_is_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -287,7 +287,7 @@ fn consumed_callee_write_to_caller_private_stack_is_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -323,7 +323,7 @@ fn callee_read_from_initialized_caller_private_stack_is_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -335,7 +335,7 @@ fn callee_read_from_initialized_caller_private_stack_is_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -368,7 +368,7 @@ fn entry_stack_argument_is_a_distinct_rv32_abi_input() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -413,7 +413,7 @@ fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -425,7 +425,7 @@ fn outgoing_stack_argument_is_substituted_into_a_direct_callee() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2004, child)]);
@@ -460,7 +460,7 @@ fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -473,7 +473,7 @@ fn incoming_stack_argument_survives_an_unrelated_callee_stack_write() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -511,7 +511,7 @@ fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -524,7 +524,7 @@ fn pointer_reloaded_after_a_call_recovers_caller_memory_provenance() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -577,7 +577,7 @@ fn deferred_pointer_without_caller_memory_provenance_fails_closed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -590,7 +590,7 @@ fn deferred_pointer_without_caller_memory_provenance_fails_closed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);

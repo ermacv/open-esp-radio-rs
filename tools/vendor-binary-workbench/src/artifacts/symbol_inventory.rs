@@ -370,7 +370,7 @@ pub(crate) fn build_symbol_inventory_document(
 }
 
 pub(crate) fn render_symbol_inventory(document: &SymbolInventoryDocument) -> crate::Result<String> {
-    let mut output = serde_json::to_string_pretty(document)?;
+    let mut output = serde_json::to_string(document)?;
     output.push('\n');
     Ok(output)
 }

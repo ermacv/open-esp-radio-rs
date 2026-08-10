@@ -386,6 +386,13 @@ fn explore_symbol(
     pointer_context: &StructuralPointerContext,
 ) -> FunctionExploration {
     let mut result = FunctionExploration::default();
+    let program = match direct::StructuralProgram::decode(symbol) {
+        Ok(program) => program,
+        Err(error) => {
+            result.diagnostics.insert(("decode", error.to_string()));
+            return result;
+        }
+    };
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
 
@@ -400,8 +407,9 @@ fn explore_symbol(
             break;
         }
         result.explored_states += 1;
-        let trace = match direct::trace_binary_symbol_with_branches_bounded(
+        let trace = match direct::trace_structural_program_with_branches_bounded(
             symbol,
+            &program,
             map,
             relocated_calls,
             pointer_context,
@@ -756,7 +764,7 @@ mod tests {
                 0x67, 0x80, 0x00, 0x00, // ret
             ],
             addresses_resolved: true,
-            memory_regions: Vec::new(),
+            memory_regions: Default::default(),
             relocations: Vec::new(),
         };
         let map = MmioMap {
@@ -822,7 +830,7 @@ mod tests {
                 0x67, 0x80, 0x00, 0x00, // ret
             ],
             addresses_resolved: true,
-            memory_regions: Vec::new(),
+            memory_regions: Default::default(),
             relocations: Vec::new(),
         };
         let symbols = (0..4)

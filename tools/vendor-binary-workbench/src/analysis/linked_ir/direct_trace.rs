@@ -452,6 +452,13 @@ pub(super) fn explore_direct_calls(
     }
 
     let mut result = DirectCallGraph::default();
+    let program = match direct::StructuralProgram::decode(symbol) {
+        Ok(program) => program,
+        Err(error) => {
+            record_blocker(&mut result.blockers, error.to_string());
+            return result;
+        }
+    };
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
     let mut explored_states = 0usize;
@@ -467,8 +474,9 @@ pub(super) fn explore_direct_calls(
             break;
         }
         explored_states += 1;
-        let trace = match direct::trace_binary_symbol_with_branches_bounded(
+        let trace = match direct::trace_structural_program_with_branches_bounded(
             symbol,
+            &program,
             svd,
             &resolver.relocated_calls,
             &resolver.pointer_context,

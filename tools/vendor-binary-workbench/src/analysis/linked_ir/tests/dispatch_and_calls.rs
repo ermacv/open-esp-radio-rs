@@ -33,7 +33,7 @@ fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
         address: 0x2f80_003c,
         bytes: Vec::new(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {

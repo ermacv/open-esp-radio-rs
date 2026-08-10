@@ -10,7 +10,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         address: 0x1000,
         bytes: vec![0x67, 0x80, 0x00, 0x00],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let second = artifact::ArtifactSymbolDefinition {
@@ -82,7 +82,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     let serial = summarize_linked_ir_with_jobs(
         build_linked_functions_for_roots(
             &resolver,
-            resolver.symbols.clone(),
+            resolver.symbols.iter().collect(),
             "",
             &map,
             "primary",
@@ -95,7 +95,7 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
     let parallel = summarize_linked_ir_with_jobs(
         build_all_linked_functions_parallel(
             &resolver,
-            resolver.symbols.clone(),
+            resolver.symbols.iter().collect(),
             &map,
             "primary",
             false,
@@ -120,7 +120,7 @@ fn decode_blockers_only_include_cfg_reachable_instructions() {
         ]
         .concat(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let resolver = ReferenceResolver {

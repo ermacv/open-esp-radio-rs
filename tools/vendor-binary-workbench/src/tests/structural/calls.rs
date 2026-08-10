@@ -25,7 +25,7 @@ fn returning_direct_call_is_flattened_from_binary_symbols() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -37,7 +37,7 @@ fn returning_direct_call_is_flattened_from_binary_symbols() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -70,7 +70,7 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -85,7 +85,7 @@ fn direct_call_to_symbolic_cfg_callee_is_scoped_and_composed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -140,7 +140,7 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let parent = artifact::ArtifactSymbolDefinition {
@@ -152,7 +152,7 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -167,7 +167,7 @@ fn nested_call_graph_keeps_each_composed_token_scope_local() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x1000, parent), (0x2000, child)]);
@@ -213,7 +213,7 @@ fn caller_cfg_can_branch_on_a_composed_callee_result() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -228,7 +228,7 @@ fn caller_cfg_can_branch_on_a_composed_callee_result() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -278,7 +278,7 @@ fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
@@ -287,7 +287,7 @@ fn caller_cfg_rejects_an_unmodeled_callee_result_used_as_a_condition() {
         address: 0x2000,
         bytes: vec![0x73, 0x00, 0x10, 0x00],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, delay)]);
@@ -326,7 +326,7 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let delay = artifact::ArtifactSymbolDefinition {
@@ -335,7 +335,7 @@ fn caller_cfg_allows_an_unmodeled_callee_result_when_it_is_discarded() {
         address: 0x2000,
         bytes: vec![0x73, 0x00, 0x10, 0x00],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, delay)]);
@@ -382,7 +382,7 @@ fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let child = artifact::ArtifactSymbolDefinition {
@@ -391,7 +391,7 @@ fn relocated_returning_call_is_flattened_without_executing_auipc_jalr() {
         address: 0x2000,
         bytes: vec![0x67, 0x80, 0x00, 0x00], // ret
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let symbols = BTreeMap::from([(0x2000, child)]);
@@ -430,7 +430,7 @@ fn constant_size_memcpy_relocation_becomes_ordered_memory_effects() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -488,7 +488,7 @@ fn constant_size_memset_relocation_preserves_byte_and_return_pointer() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -540,7 +540,7 @@ fn dynamic_size_memcpy_relocation_remains_fail_closed() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: false,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -578,7 +578,7 @@ fn unresolved_call_relocation_fails_closed() {
             0x67, 0x00, 0x03, 0x00, // jalr zero, 0(t1)
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -618,7 +618,7 @@ fn unresolved_returning_relocation_continues_with_abi_clobbers() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -668,7 +668,7 @@ fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -713,7 +713,7 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -747,7 +747,7 @@ fn modeled_direct_platform_call_propagates_constant_result() {
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let relocations = BTreeMap::from([(
@@ -784,7 +784,7 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
             0x67, 0x80, 0x00, 0x00, // ret
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let mut context = StructuralPointerContext::default();

@@ -11,10 +11,10 @@ pub(super) struct StructuralCheckpoint {
     pub(super) reference_blockers_len: usize,
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
-    pub(super) memory_read_sources: BTreeMap<u32, MemoryObjectLocation>,
+    pub(super) memory_read_sources: std::sync::Arc<BTreeMap<u32, MemoryObjectLocation>>,
     pub(super) next_call_token: u32,
     pub(super) next_external_call_token: u32,
-    pub(super) stack: SymbolicStack,
+    pub(super) stack: std::sync::Arc<SymbolicStack>,
 }
 
 #[derive(Clone, Debug)]
@@ -174,7 +174,7 @@ pub(super) fn recognize_structural_poll_loop(
         || next_memory_read_token != checkpoint.next_memory_read_token
         || next_call_token != checkpoint.next_call_token
         || next_external_call_token != checkpoint.next_external_call_token
-        || stack != &checkpoint.stack
+        || stack != checkpoint.stack.as_ref()
         || events.len() != checkpoint.events_len + 1
         || reference_events.len() != checkpoint.reference_events_len + 1
     {

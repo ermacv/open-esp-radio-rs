@@ -44,8 +44,8 @@ fn affine_value(base: SymbolicValue, offset: u32) -> SymbolicValue {
     } else {
         SymbolicValue::Expression {
             operation: ExpressionOperation::Add,
-            left: Box::new(base),
-            right: Box::new(SymbolicValue::Constant(offset)),
+            left: std::sync::Arc::new(base),
+            right: std::sync::Arc::new(SymbolicValue::Constant(offset)),
         }
     }
 }

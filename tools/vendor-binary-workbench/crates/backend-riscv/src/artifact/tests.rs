@@ -173,7 +173,7 @@ fn decoder_reads_mixed_width_code_without_objdump() {
             0x01, 0x00, // c.nop
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let decoded = decode_symbol(&symbol).unwrap();
@@ -197,7 +197,7 @@ fn analysis_decoder_preserves_explicit_extension_blockers() {
             .flat_map(u32::to_le_bytes)
             .collect(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -242,7 +242,7 @@ fn analysis_decoder_classifies_compressed_float_memory_operations() {
         address: 0x3000,
         bytes: 0x6000_u16.to_le_bytes().to_vec(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let decoded = decode_symbol_for_analysis(&symbol).unwrap();
@@ -265,7 +265,7 @@ fn analysis_decoder_preserves_zero_fill_as_ambiguous_trap_evidence() {
         address: 0x3800,
         bytes: 0_u16.to_le_bytes().to_vec(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let decoded = decode_symbol_for_analysis(&symbol).unwrap();
@@ -294,7 +294,7 @@ fn reachable_blockers_exclude_padding_after_return() {
         ]
         .concat(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
 
@@ -386,7 +386,7 @@ fn floating_decoder_only_invalidates_real_integer_destinations() {
             address: 0,
             bytes: raw.to_le_bytes().to_vec(),
             addresses_resolved: true,
-            memory_regions: Vec::new(),
+            memory_regions: Default::default(),
             relocations: Vec::new(),
         };
         let decoded = decode_symbol_for_analysis(&symbol).unwrap();
@@ -465,7 +465,7 @@ fn analysis_decoder_distinguishes_standard_float_and_vendor_csrs() {
             .flat_map(u32::to_le_bytes)
             .collect(),
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     let classes = decode_symbol_for_analysis(&symbol)
@@ -687,7 +687,7 @@ fn relocated_call_link_register_distinguishes_call_and_tail_call() {
             0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
         ],
         addresses_resolved: true,
-        memory_regions: Vec::new(),
+        memory_regions: Default::default(),
         relocations: Vec::new(),
     };
     assert_eq!(relocated_call_is_tail(&symbol, 0x1000), Some(false));

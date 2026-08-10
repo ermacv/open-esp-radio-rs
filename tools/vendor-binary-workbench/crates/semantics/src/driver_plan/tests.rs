@@ -137,12 +137,12 @@ fn get_event_policy(disposition: EffectDisposition) -> EffectPolicy {
 fn indexed_queue_address() -> SymbolicValue {
     SymbolicValue::Expression {
         operation: crate::ExpressionOperation::ShiftLeft,
-        left: Box::new(SymbolicValue::Expression {
+        left: std::sync::Arc::new(SymbolicValue::Expression {
             operation: crate::ExpressionOperation::Subtract,
-            left: Box::new(SymbolicValue::Constant(0x0201_04d7)),
-            right: Box::new(SymbolicValue::input(0)),
+            left: std::sync::Arc::new(SymbolicValue::Constant(0x0201_04d7)),
+            right: std::sync::Arc::new(SymbolicValue::input(0)),
         }),
-        right: Box::new(SymbolicValue::Constant(4)),
+        right: std::sync::Arc::new(SymbolicValue::Constant(4)),
     }
 }
 

@@ -175,6 +175,7 @@ pub(crate) fn build_linked_ir_for_source(
     include_reachable: bool,
     jobs: usize,
 ) -> LinkedIrReport {
+    let started = std::time::Instant::now();
     let mut root_keys = BTreeSet::new();
     let roots = resolver
         .symbols
@@ -182,7 +183,6 @@ pub(crate) fn build_linked_ir_for_source(
         .filter(|symbol| {
             symbol.name.starts_with(symbol_prefix) && root_keys.insert(symbol_key(symbol))
         })
-        .cloned()
         .collect::<Vec<_>>();
     let jobs = linked_ir_worker_count(jobs, roots.len());
     let functions = if jobs > 1 && symbol_prefix.is_empty() {
@@ -206,12 +206,22 @@ pub(crate) fn build_linked_ir_for_source(
             include_reachable,
         )
     };
-    summarize_linked_ir_with_jobs(functions, jobs)
+    let function_analysis_elapsed = started.elapsed();
+    let summary_started = std::time::Instant::now();
+    let report = summarize_linked_ir_with_jobs(functions, jobs);
+    tracing::debug!(
+        source,
+        functions = report.functions.len(),
+        function_analysis_ms = function_analysis_elapsed.as_millis(),
+        effect_summary_ms = summary_started.elapsed().as_millis(),
+        "completed linked-IR source analysis"
+    );
+    report
 }
 
 fn build_linked_functions_for_roots(
     resolver: &ReferenceResolver,
-    roots: Vec<artifact::ArtifactSymbolDefinition>,
+    roots: Vec<&artifact::ArtifactSymbolDefinition>,
     symbol_prefix: &str,
     svd: &MmioMap,
     source: &str,
@@ -243,12 +253,12 @@ fn build_linked_functions_for_roots(
         } else {
             "local"
         };
-        let decode_blockers = reachable_decode_blockers(&symbol);
+        let decode_blockers = reachable_decode_blockers(symbol);
         let DirectCallGraph {
             calls: direct_calls,
             direct_mmio_predicates,
             blockers,
-        } = explore_direct_calls(&symbol, resolver, &identities, svd);
+        } = explore_direct_calls(symbol, resolver, &identities, svd);
         let direct_mmio_predicates = direct_mmio_predicates.into_iter().collect::<Vec<_>>();
         if include_reachable {
             for call in direct_calls.iter().filter(|call| call.kind == "internal") {
@@ -256,7 +266,7 @@ fn build_linked_functions_for_roots(
                     continue;
                 };
                 if scheduled.insert(symbol_key(callee)) {
-                    pending.push_back(callee.clone());
+                    pending.push_back(callee);
                     progress.pb_inc_length(1);
                 }
             }
@@ -264,7 +274,7 @@ fn build_linked_functions_for_roots(
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
         match resolver.trace_symbol_bounded(
-            &symbol,
+            symbol,
             svd,
             direct::StructuralTraceBudget {
                 max_instruction_steps: MAX_CALL_GRAPH_INSTRUCTION_STEPS_PER_TRACE,
@@ -289,7 +299,7 @@ fn build_linked_functions_for_roots(
                 } else {
                     compact_calls(direct_calls)
                 };
-                annotate_direct_semantic_calls(&mut calls, &symbol, resolver, &identities);
+                annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
                 let flow_kind = if trace.reference_flow.is_some() {
                     "structured"
                 } else if trace.is_reference_eligible() {
@@ -353,7 +363,7 @@ fn build_linked_functions_for_roots(
             Err(error) => {
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
                 let mut calls = compact_calls(direct_calls);
-                annotate_direct_semantic_calls(&mut calls, &symbol, resolver, &identities);
+                annotate_direct_semantic_calls(&mut calls, symbol, resolver, &identities);
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
@@ -417,7 +427,7 @@ fn linked_ir_worker_count(requested: usize, functions: usize) -> usize {
 
 fn build_all_linked_functions_parallel(
     resolver: &ReferenceResolver,
-    mut roots: Vec<artifact::ArtifactSymbolDefinition>,
+    mut roots: Vec<&artifact::ArtifactSymbolDefinition>,
     svd: &MmioMap,
     source: &str,
     namespace_identities: bool,

@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn loads_and_merges_schema_v37_field_evidence() {
+    fn loads_and_merges_schema_v39_field_evidence() {
         let base = std::env::temp_dir().join(format!(
             "vendor-workbench-register-review-ir-{}",
             std::process::id()
@@ -238,8 +238,8 @@ mod tests {
         std::fs::write(
             &path,
             report(1, "rtos.event.send").replacen(
-                "\"schema_version\": 39",
-                "\"schema_version\": 32",
+                "\"schema_version\":39",
+                "\"schema_version\":32",
                 1,
             ),
         )
@@ -249,7 +249,7 @@ mod tests {
 
         std::fs::write(
             &path,
-            report(1, "rtos.event.send").replacen("\"mask\": 240", "\"mask\": 224", 1),
+            report(1, "rtos.event.send").replacen("\"mask\":240", "\"mask\":224", 1),
         )
         .unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();

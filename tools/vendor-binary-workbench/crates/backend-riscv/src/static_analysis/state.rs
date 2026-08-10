@@ -14,11 +14,11 @@ pub(super) struct StructuralTraceState {
     pub(super) unresolved_branch: Option<BranchCondition>,
     pub(super) next_mmio_read_token: u32,
     pub(super) next_memory_read_token: u32,
-    pub(super) memory_read_sources: BTreeMap<u32, MemoryObjectLocation>,
+    pub(super) memory_read_sources: std::sync::Arc<BTreeMap<u32, MemoryObjectLocation>>,
     pub(super) next_call_token: u32,
     pub(super) next_external_call_token: u32,
     pub(super) next_private_stack_read_token: u32,
-    pub(super) stack: SymbolicStack,
+    pub(super) stack: std::sync::Arc<SymbolicStack>,
     pub(super) private_stack_may_be_modified_by_call: bool,
 }
 
@@ -63,11 +63,11 @@ impl StructuralTraceState {
             unresolved_branch: None,
             next_mmio_read_token: 0,
             next_memory_read_token: 0,
-            memory_read_sources: BTreeMap::new(),
+            memory_read_sources: std::sync::Arc::default(),
             next_call_token: 0,
             next_external_call_token: 0,
             next_private_stack_read_token: 0,
-            stack,
+            stack: std::sync::Arc::new(stack),
             private_stack_may_be_modified_by_call: false,
         }
     }

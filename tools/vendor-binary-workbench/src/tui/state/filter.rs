@@ -12,6 +12,7 @@ impl BrowserState {
     fn unfiltered_item_count(&self, section: Section) -> usize {
         match section {
             Section::Overview => self.snapshot.project_status.phases.len(),
+            Section::Scopes => self.snapshot.review_scopes.len(),
             Section::Code => self.snapshot.code.boundaries.len(),
             Section::Functions => self.snapshot.functions.len(),
             Section::Blockers => self.snapshot.review_queue.len(),
@@ -43,6 +44,18 @@ impl BrowserState {
                             })
                     })
             }
+            Section::Scopes => self.snapshot.review_scopes.get(index).is_some_and(|scope| {
+                contains(&scope.id)
+                    || scope.profiles.iter().any(|profile| contains(profile))
+                    || scope
+                        .function_identities
+                        .iter()
+                        .any(|function| contains(function))
+                    || scope
+                        .mmio_addresses
+                        .iter()
+                        .any(|address| contains(&format!("{address:#010x}")))
+            }),
             Section::Code => self
                 .snapshot
                 .code

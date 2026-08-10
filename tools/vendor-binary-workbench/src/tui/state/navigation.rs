@@ -8,6 +8,19 @@ impl BrowserState {
             return self.begin_compare();
         }
         let target = match self.section {
+            Section::Scopes => self
+                .snapshot
+                .review_scopes
+                .get(self.selected())
+                .and_then(|scope| {
+                    scope.function_identities.iter().find_map(|identity| {
+                        self.snapshot
+                            .functions
+                            .iter()
+                            .position(|function| function.identity == *identity)
+                    })
+                })
+                .map(|index| (Section::Functions, index, "scope function")),
             Section::Functions => {
                 self.snapshot
                     .functions

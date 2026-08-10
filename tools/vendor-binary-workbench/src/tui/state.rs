@@ -13,6 +13,7 @@ mod navigation;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum Section {
     Overview,
+    Scopes,
     Code,
     Functions,
     Blockers,
@@ -24,8 +25,9 @@ pub(super) enum Section {
 }
 
 impl Section {
-    pub(super) const ALL: [Self; 9] = [
+    pub(super) const ALL: [Self; 10] = [
         Self::Overview,
+        Self::Scopes,
         Self::Code,
         Self::Functions,
         Self::Blockers,
@@ -39,6 +41,7 @@ impl Section {
     pub(super) const fn title(self) -> &'static str {
         match self {
             Self::Overview => "Overview",
+            Self::Scopes => "Scopes",
             Self::Code => "Code",
             Self::Functions => "Functions",
             Self::Blockers => "Blockers",
@@ -288,7 +291,7 @@ mod tests {
         CodeWorkspaceReport, DiagnosticRecord, DiagnosticSeverity, FunctionReviewState,
         FunctionSelection, FunctionSummary, InterfaceSlotSummary, InterfaceWorkspaceReport,
         ProjectStatusPhase, ProjectStatusReport, ProjectTargetIdentity, Readiness, RegisterSummary,
-        RegisterWorkspaceReport,
+        RegisterWorkspaceReport, ReviewScopeSummary,
     };
 
     fn snapshot(generation: u64, phases: usize, diagnostics: usize) -> WorkspaceSnapshot {
@@ -348,6 +351,7 @@ mod tests {
                 contracts: Vec::new(),
                 slots: Vec::new(),
             },
+            review_scopes: Vec::new(),
             review_queue: Vec::new(),
             comparisons: Vec::new(),
             diagnostics: (0..diagnostics)
@@ -521,6 +525,56 @@ mod tests {
         assert_eq!(state.section, Section::Registers);
         assert_eq!(state.activate(), Action::Continue);
         assert_eq!(state.section, Section::Functions);
+    }
+
+    #[test]
+    fn activation_opens_the_first_function_in_a_release_scope() {
+        let mut workspace = snapshot(1, 0, 0);
+        workspace.functions.push(FunctionSummary {
+            profile: "radio".to_owned(),
+            source: "rom".to_owned(),
+            identity: "rom:init".to_owned(),
+            symbol: "init".to_owned(),
+            member: None,
+            selection: FunctionSelection::SymbolPrefixRoot,
+            review_status: FunctionReviewState::Reviewed,
+            reviewed_name: None,
+            role: None,
+            summary: None,
+            complete: true,
+            blockers: Vec::new(),
+            decode_blockers: 0,
+            decode_blocker_classes: Vec::new(),
+            decode_blocker_operations: Vec::new(),
+            semantic_operations: Vec::new(),
+            registers: Vec::new(),
+            mmio_sites: Vec::new(),
+            calls: 0,
+        });
+        workspace.review_scopes.push(ReviewScopeSummary {
+            id: "radio-init".to_owned(),
+            release: true,
+            profiles: vec!["radio".to_owned()],
+            roots: 1,
+            functions: 1,
+            complete_functions: 1,
+            mmio_registers: 0,
+            table_calls: 0,
+            context_fields: 0,
+            memory_fields: 0,
+            blockers: 0,
+            decode_blockers: 0,
+            unresolved_calls: 0,
+            replacement_gaps: 0,
+            function_identities: vec!["rom:init".to_owned()],
+            mmio_addresses: Vec::new(),
+        });
+        let mut state = BrowserState::new(workspace);
+        state.section = Section::Scopes;
+
+        assert_eq!(state.activate(), Action::Continue);
+        assert_eq!(state.section, Section::Functions);
+        assert_eq!(state.selected(), 0);
     }
 
     #[test]

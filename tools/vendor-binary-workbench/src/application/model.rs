@@ -465,6 +465,26 @@ pub struct ReviewQueueSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewScopeSummary {
+    pub id: String,
+    pub release: bool,
+    pub profiles: Vec<String>,
+    pub roots: usize,
+    pub functions: usize,
+    pub complete_functions: usize,
+    pub mmio_registers: usize,
+    pub table_calls: usize,
+    pub context_fields: usize,
+    pub memory_fields: usize,
+    pub blockers: usize,
+    pub decode_blockers: usize,
+    pub unresolved_calls: usize,
+    pub replacement_gaps: usize,
+    pub function_identities: Vec<String>,
+    pub mmio_addresses: Vec<u32>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceSnapshot {
     pub generation: u64,
     pub project_status: crate::ProjectStatusReport,
@@ -473,6 +493,7 @@ pub struct WorkspaceSnapshot {
     pub logical_types: Vec<LogicalTypeSummary>,
     pub registers: RegisterWorkspaceReport,
     pub interfaces: InterfaceWorkspaceReport,
+    pub review_scopes: Vec<ReviewScopeSummary>,
     pub review_queue: Vec<ReviewQueueSummary>,
     pub comparisons: Vec<ComparisonProfileSummary>,
     pub diagnostics: Vec<DiagnosticRecord>,

@@ -169,6 +169,10 @@ that every user must learn.
 - [ ] Exercise the read-only TUI on the real ESP32-S31 project and make it a
   useful optional frontend over the same reports; it must not introduce a
   second analysis implementation.
+- [x] Add a scope-first TUI view over the persisted review-scope artifact.
+  Release membership, completeness, replacement gaps and exact function/MMIO
+  identities are visible without rerunning reachability, and Enter follows a
+  scope member into the existing lazy Functions view.
 - [x] Verify the real ESP32-S31 Overview, Functions and Registers views at
   80×24; keep compact tabs/status/help visible, redraw only on change, and use
   distinct header-aware table viewport math so active Register and Comparison

@@ -20,6 +20,7 @@ and key hints without hiding a readiness state or exit key.
 | View | Contents |
 | --- | --- |
 | Overview | Lifecycle phases, readiness, component diagnostics |
+| Scopes | Release and review scopes, completeness, replacement gaps and exact function/MMIO membership |
 | Code | Generated executable-gap candidates, reviewed boundaries, artifact guards and control-flow evidence |
 | Functions | Recovered functions, review status, typed per-PC decode blockers, replay-required scenario candidates and pseudo-Rust |
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
@@ -37,7 +38,7 @@ and key hints without hiding a readiness state or exit key.
 | `/`, text, Enter | Edit and apply a case-insensitive section filter |
 | Esc | Clear an active filter; otherwise exit |
 | PageUp/PageDown, `u`/`d` | Scroll the detail pane without changing the selected row |
-| Enter | Follow function/register/interface/semantic/type cross-references; run a comparison in Comparisons |
+| Enter | Follow scope/function/register/interface/semantic/type cross-references; run a comparison in Comparisons |
 | `r` | Reload the project |
 | `c` | Execute the selected comparison profile |
 | `q`, Esc, Ctrl-C | Exit |
@@ -89,6 +90,12 @@ selected by default, repeated diagnostics share one stable root ID, and Enter
 follows the first affected function when it exists. Priorities are review
 ordering, not proof results; the underlying typed diagnostic and its exact
 sites remain authoritative.
+The Scopes view is the entry point for release-oriented review. It shows the
+complete/total function count, review queue size, decode and call gaps,
+replacement coverage, register membership and the exact stable function
+identities stored in the generated scope artifact. Enter follows the first
+available member into Functions. The view does not rebuild reachability or
+infer scope membership independently from the CLI pipeline.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
 an editable verification-profile draft with explicit TODO arguments; the

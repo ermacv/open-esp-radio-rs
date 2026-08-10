@@ -17,6 +17,7 @@ mod comparisons;
 mod functions;
 mod interfaces;
 mod registers;
+mod scopes;
 
 const SELECTED: Style = Style::new()
     .fg(Color::Black)
@@ -46,6 +47,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
     render_tabs(frame, state, tabs);
     match state.section {
         Section::Overview => render_overview(frame, state, content),
+        Section::Scopes => scopes::render(frame, state, content),
         Section::Code => code::render(frame, state, content),
         Section::Functions => functions::render(frame, state, content),
         Section::Blockers => blockers::render(frame, state, content),
@@ -368,7 +370,8 @@ fn section_title(section: Section, compact: bool) -> &'static str {
         return section.title();
     }
     match section {
-        Section::Overview => "Overview",
+        Section::Overview => "Home",
+        Section::Scopes => "Scope",
         Section::Code => "Code",
         Section::Functions => "Funcs",
         Section::Blockers => "Blocks",
@@ -506,6 +509,7 @@ mod tests {
                 contracts: Vec::new(),
                 slots: Vec::new(),
             },
+            review_scopes: Vec::new(),
             review_queue: Vec::new(),
             comparisons: vec![ComparisonProfileSummary {
                 name: "trace-init".to_owned(),

@@ -6,6 +6,7 @@ mod functions;
 mod interfaces;
 mod registers;
 mod review_queue;
+mod scopes;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,6 +45,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     let (functions, logical_types) = self::functions::collect(resolved, &mut diagnostics);
     let registers = self::registers::collect(resolved, &mut diagnostics);
     let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
+    let review_scopes = self::scopes::collect(resolved, &mut diagnostics);
     let review_queue = self::review_queue::collect(resolved, &mut diagnostics);
     let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
     diagnostics.sort_by(|left, right| {
@@ -58,6 +60,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         logical_types,
         registers,
         interfaces,
+        review_scopes,
         review_queue,
         comparisons,
         diagnostics,

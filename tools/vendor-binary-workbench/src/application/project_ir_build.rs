@@ -73,6 +73,7 @@ pub(crate) fn build_project_ir<'a>(
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
     let interfaces = linked_ir_export::load_project_interfaces(project, target)?;
+    let interface_origins = linked_ir_export::load_project_interface_origins(project)?;
     let mut built = Vec::with_capacity(selected.len());
     let mut stale = Vec::new();
     for profile in selected {
@@ -85,6 +86,7 @@ pub(crate) fn build_project_ir<'a>(
             target,
             &effective_code,
             interfaces.as_ref(),
+            &interface_origins,
             request.jobs,
         )?;
         if request.check {

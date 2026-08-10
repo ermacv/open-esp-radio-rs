@@ -82,7 +82,7 @@ pub(crate) struct StoredInterfaceCall {
     pub(crate) kind: String,
     link_register: u8,
     pub(crate) target: StoredInterfaceTarget,
-    root_linkage: StoredRootLinkage,
+    pub(crate) root_linkage: StoredRootLinkage,
     pub(crate) arguments: Vec<StoredInterfaceArgument>,
 }
 
@@ -160,20 +160,20 @@ pub(crate) enum StoredInterfaceArgument {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredRootLinkage {
-    mode: String,
-    symbols: Vec<String>,
-    resolutions: Vec<String>,
-    candidates: Vec<StoredSymbolLocation>,
+pub(crate) struct StoredRootLinkage {
+    pub(crate) mode: String,
+    pub(crate) symbols: Vec<String>,
+    pub(crate) resolutions: Vec<String>,
+    pub(crate) candidates: Vec<StoredSymbolLocation>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredSymbolLocation {
-    artifact: usize,
-    member: Option<String>,
-    address: String,
-    kind: String,
+pub(crate) struct StoredSymbolLocation {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) address: String,
+    pub(crate) kind: String,
 }
 
 #[derive(Debug, Deserialize)]

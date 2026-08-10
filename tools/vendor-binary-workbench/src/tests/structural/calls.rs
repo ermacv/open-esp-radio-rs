@@ -799,6 +799,8 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
             variadic: false,
             semantic_operation: None,
             replacement_hint: None,
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
         }],
     );

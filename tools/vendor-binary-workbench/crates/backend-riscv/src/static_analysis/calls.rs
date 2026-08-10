@@ -90,6 +90,13 @@ fn apply_reviewed_external_call(
         ));
         return StructuralCallControl::Stop;
     }
+    let tail = dest == Reg::ZERO;
+    if candidates.iter().any(|candidate| candidate.tail != tail) {
+        state.blockers.push(format!(
+            "reviewed external ABI call shape changed at {pc:#x}: {instruction}"
+        ));
+        return StructuralCallControl::Stop;
+    }
     for load_site in candidates
         .iter()
         .filter_map(|candidate| candidate.slot_load_site)

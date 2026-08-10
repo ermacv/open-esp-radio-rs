@@ -82,6 +82,21 @@ fn validate_call(
     if !keys.insert(call.clone()) {
         return Err(crate::Error::invalid("duplicate interface call fact"));
     }
+    if call
+        .root_linkage
+        .candidates
+        .iter()
+        .any(|candidate| facts.artifact(candidate.artifact).is_none())
+    {
+        return Err(crate::Error::invalid(
+            "interface call root linkage refers to an unknown artifact",
+        ));
+    }
+    if call.root_linkage.resolutions.iter().any(String::is_empty) {
+        return Err(crate::Error::invalid(
+            "interface call root linkage has an empty resolution",
+        ));
+    }
     for load in &call.loads {
         if !matches!(load.width, 8 | 16 | 32 | 64) {
             return Err(crate::Error::invalid(format!(

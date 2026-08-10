@@ -16,9 +16,9 @@ pub(crate) use render_common::{
 
 use crate::{
     EntryContractRef, LinkedIrReport, MmioMap, ReferenceResolver, Result, ReviewedExternalCall,
-    StructuralCallSite, TargetSpec, build_linked_ir_for_source, harnesses,
-    interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_jobs,
-    project_ir::ProjectIrProfile,
+    ReviewedExternalCallEvidence, StructuralCallSite, TargetSpec, artifacts::LinkUnitOriginFact,
+    build_linked_ir_for_source, harnesses, interfaces::InterfaceWorkspace, link_project_calls,
+    merge_linked_ir_with_jobs, project_ir::ProjectIrProfile,
 };
 
 #[derive(Debug)]
@@ -40,6 +40,7 @@ pub(crate) fn generate_project_profile(
     target: &TargetSpec,
     effective_code: &crate::analysis::EffectiveCodeCatalog,
     interfaces: Option<&InterfaceWorkspace>,
+    interface_origins: &[LinkUnitOriginFact],
     jobs: usize,
 ) -> Result<ProjectIrDocuments> {
     let started = std::time::Instant::now();
@@ -60,6 +61,7 @@ pub(crate) fn generate_project_profile(
         svd,
         target,
         interfaces,
+        interface_origins,
         jobs,
     )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
@@ -112,7 +114,8 @@ pub(crate) fn generate_project_profile(
         companions,
         svd,
         target,
-        interfaces
+        interfaces,
+        interface_origins
     ),
     fields(artifacts = artifacts.len(), companions = companions.len(), symbol_prefix, include_reachable)
 )]
@@ -125,6 +128,7 @@ pub(crate) fn analyze(
     svd: &MmioMap,
     target: &TargetSpec,
     interfaces: Option<&InterfaceWorkspace>,
+    interface_origins: &[LinkUnitOriginFact],
     jobs: usize,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let harness = target.harness.as_deref();
@@ -141,7 +145,12 @@ pub(crate) fn analyze(
             &artifact.reviewed_code,
         )?;
         if let Some(interfaces) = interfaces {
-            register_reviewed_external_calls(&mut resolver, interfaces);
+            register_reviewed_external_calls(
+                &mut resolver,
+                interfaces,
+                &artifact.source,
+                interface_origins,
+            );
         }
         reports.push(build_linked_ir_for_source(
             &resolver,
@@ -165,6 +174,22 @@ pub(crate) fn analyze(
         }));
     }
     Ok((entry_contract, report))
+}
+
+pub(crate) fn load_project_interface_origins(
+    project: &crate::project::ProjectSpec,
+) -> Result<Vec<LinkUnitOriginFact>> {
+    let Some(symbols) = project.symbol_inventory.as_ref() else {
+        return Ok(Vec::new());
+    };
+    if !symbols.output.is_file() {
+        tracing::debug!(
+            path = %symbols.output.display(),
+            "symbol inventory is unavailable; linked interface projection is disabled"
+        );
+        return Ok(Vec::new());
+    }
+    crate::artifacts::load_link_unit_origins(&symbols.output)
 }
 
 pub(crate) fn load_project_interfaces(
@@ -193,6 +218,8 @@ pub(crate) fn load_project_interfaces(
 fn register_reviewed_external_calls(
     resolver: &mut ReferenceResolver,
     interfaces: &InterfaceWorkspace,
+    source: &str,
+    origins: &[LinkUnitOriginFact],
 ) {
     for slot in interfaces.bindings() {
         let reviewed = ReviewedExternalCall {
@@ -210,6 +237,8 @@ fn register_reviewed_external_calls(
                 .semantic_annotation
                 .as_ref()
                 .and_then(|semantic| semantic.replacement.clone()),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
         };
         if let (Some(table), Ok(offset)) = (&slot.external_table, u32::try_from(slot.offset)) {
@@ -225,6 +254,7 @@ fn register_reviewed_external_calls(
         }
         for call in &slot.calls {
             let mut reviewed = reviewed.clone();
+            reviewed.tail = call.kind == "tail-jump";
             reviewed.slot_load_site = call.slot_load_site;
             let candidates = resolver
                 .pointer_context
@@ -239,6 +269,41 @@ fn register_reviewed_external_calls(
                 candidates.push(reviewed);
                 candidates.sort();
             }
+        }
+    }
+    for projected in interfaces.project_link_unit_calls(source, origins) {
+        let slot = projected.binding;
+        let reviewed = ReviewedExternalCall {
+            id: slot.id.clone(),
+            contract: slot.contract.clone(),
+            name: slot.name.clone(),
+            argument_types: slot.arguments.clone(),
+            return_type: slot.return_type.clone(),
+            variadic: slot.variadic,
+            semantic_operation: slot
+                .semantic_annotation
+                .as_ref()
+                .map(|semantic| semantic.operation.clone()),
+            replacement_hint: slot
+                .semantic_annotation
+                .as_ref()
+                .and_then(|semantic| semantic.replacement.clone()),
+            tail: projected.tail,
+            evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
+            slot_load_site: projected.slot_load_site,
+        };
+        let candidates = resolver
+            .pointer_context
+            .reviewed_external_calls
+            .entry(StructuralCallSite::from_identity(
+                projected.member,
+                projected.function,
+                projected.site,
+            ))
+            .or_default();
+        if !candidates.contains(&reviewed) {
+            candidates.push(reviewed);
+            candidates.sort();
         }
     }
 }

@@ -297,6 +297,15 @@ it. If an independent target-harness contract supplies a semantic ID for the
 same exact caller/site, function review fails on disagreement with the
 interface pack instead of choosing one.
 
+For project linked-ELF profiles, the same workspace can also reuse reviewed
+archive evidence without pretending to link archives. Symbol-inventory origin
+provenance first selects exactly one same-source archive definition. Interface
+facts then join that archive call to the reviewed table pointer cell and
+require the linked call to have the identical decoded target/load and call
+shape. RISC-V linker relaxation is allowed to move the instruction. A missing
+or ambiguous origin, pointer cell, contract, or shape leaves the linked call
+unnamed and blocked.
+
 This separation keeps the generic backend useful for any RV32 vendor artifact:
 
 ```text

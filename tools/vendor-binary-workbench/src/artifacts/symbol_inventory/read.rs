@@ -176,6 +176,25 @@ struct StoredSymbolCandidate {
     kind: String,
 }
 
+/// Exact, association-only provenance from one authoritative link-unit
+/// definition to its sole archive definition candidate.
+///
+/// This does not claim that the workbench reproduced linker selection.  It is
+/// only emitted for the inventory's fail-closed `unique-name-and-kind` case.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct LinkUnitOriginFact {
+    pub(crate) linked_sources: Vec<String>,
+    pub(crate) linked_artifact_sha256: String,
+    pub(crate) linked_member: Option<String>,
+    pub(crate) symbol: String,
+    pub(crate) linked_address: u64,
+    pub(crate) kind: String,
+    pub(crate) origin_sources: Vec<String>,
+    pub(crate) origin_artifact_sha256: String,
+    pub(crate) origin_member: Option<String>,
+    pub(crate) origin_address: u64,
+}
+
 pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolInventory> {
     super::super::expect_identity(input, SYMBOL_INVENTORY)?;
     let document: StoredSymbolInventory = serde_json::from_str(input)?;
@@ -355,6 +374,57 @@ pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInven
         ambiguous_archive_origins: document.summary.ambiguous_archive_origins,
         missing_archive_origins: document.summary.missing_archive_origins,
     })
+}
+
+pub(crate) fn load_link_unit_origins(path: &Path) -> crate::Result<Vec<LinkUnitOriginFact>> {
+    let input = std::fs::read_to_string(path)?;
+    let document = parse_symbol_inventory(&input).map_err(|error| {
+        crate::Error::invalid(format!(
+            "unsupported symbol inventory in {}: {error}",
+            path.display()
+        ))
+    })?;
+    let artifacts = document
+        .artifacts
+        .iter()
+        .map(|artifact| (artifact.index, artifact))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut origins = Vec::new();
+    for symbol in &document.symbols {
+        if symbol.origin_association != "unique-name-and-kind" {
+            continue;
+        }
+        let linked = artifacts.get(&symbol.artifact).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "symbol {:?} refers to missing linked artifact {}",
+                symbol.name, symbol.artifact
+            ))
+        })?;
+        let origin = symbol
+            .origin_candidates
+            .first()
+            .expect("validated unique origin has one candidate");
+        let origin_artifact = artifacts.get(&origin.artifact).ok_or_else(|| {
+            crate::Error::invalid(format!(
+                "symbol {:?} refers to missing origin artifact {}",
+                symbol.name, origin.artifact
+            ))
+        })?;
+        origins.push(LinkUnitOriginFact {
+            linked_sources: linked.sources.clone(),
+            linked_artifact_sha256: linked.artifact.sha256.clone(),
+            linked_member: symbol.member.clone(),
+            symbol: symbol.name.clone(),
+            linked_address: hex_u64(&symbol.address)?,
+            kind: symbol.kind.clone(),
+            origin_sources: origin_artifact.sources.clone(),
+            origin_artifact_sha256: origin_artifact.artifact.sha256.clone(),
+            origin_member: origin.member.clone(),
+            origin_address: hex_u64(&origin.address)?,
+        });
+    }
+    origins.sort();
+    Ok(origins)
 }
 
 pub(crate) fn load_code_boundary_facts(path: &Path) -> crate::Result<CodeBoundaryFacts> {

@@ -28,8 +28,9 @@ pub(crate) use linked_ir_read::{
 pub(crate) use mmio_facts::{MmioFactsDocument, build_mmio_facts, render_mmio_facts};
 pub(crate) use mmio_facts_read::parse_mmio_facts;
 pub(crate) use symbol_inventory::{
-    StoredSymbolInventory, SymbolInventoryDocument, build_symbol_inventory_document,
-    inspect_symbol_inventory, parse_symbol_inventory, render_symbol_inventory,
+    LinkUnitOriginFact, StoredSymbolInventory, SymbolInventoryDocument,
+    build_symbol_inventory_document, inspect_symbol_inventory, load_link_unit_origins,
+    parse_symbol_inventory, render_symbol_inventory,
 };
 
 use serde::Deserialize;

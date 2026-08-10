@@ -40,8 +40,36 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
             .calls
             .into_iter()
             .map(|call| {
+                if call.root_linkage.mode != "association-only" {
+                    return Err(crate::Error::invalid(format!(
+                        "unsupported interface root-linkage mode {:?}",
+                        call.root_linkage.mode
+                    )));
+                }
                 let slot_load_site = call.target.loads.last().and_then(|load| load.site);
-                InterfaceCallFact {
+                let root_linkage = InterfaceRootLinkageFact {
+                    symbols: call.root_linkage.symbols,
+                    resolutions: call.root_linkage.resolutions,
+                    candidates: call
+                        .root_linkage
+                        .candidates
+                        .into_iter()
+                        .map(|candidate| {
+                            Ok(InterfaceSymbolLocationFact {
+                                artifact: candidate.artifact,
+                                member: candidate.member,
+                                address: crate::parse_u32(&candidate.address).ok_or_else(|| {
+                                    crate::Error::invalid(format!(
+                                        "invalid interface root-linkage address {:?}",
+                                        candidate.address
+                                    ))
+                                })?,
+                                kind: candidate.kind,
+                            })
+                        })
+                        .collect::<Result<Vec<_>>>()?,
+                };
+                Ok(InterfaceCallFact {
                     artifact: call.artifact,
                     member: call.member,
                     function: call.function,
@@ -55,9 +83,10 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
                     slot_offset: call.target.slot_offset,
                     jalr_offset: call.target.jalr_offset,
                     arguments: call.arguments.into_iter().map(argument).collect(),
-                }
+                    root_linkage,
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>>>()?,
     };
     super::validate::validate(&facts)?;
     Ok(facts)

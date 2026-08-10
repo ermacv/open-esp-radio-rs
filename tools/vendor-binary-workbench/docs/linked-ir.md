@@ -117,6 +117,20 @@ global definitions remain ambiguous, and local definitions are never selected.
 but arguments, return propagation and addresses are not substituted, so the
 original reference blocker and incomplete function status remain intact.
 
+When a project also has reviewed interface facts, linked IR can project a
+reviewed archive interface call onto the authoritative linked ELF. This is a
+separate, fail-closed join. It requires the symbol inventory's sole
+`unique-name-and-kind` archive origin, a uniquely associated reviewed table
+pointer cell, and the same decoded indirect target shape: container depth,
+load offsets and widths, indexed selector, slot offset, call/tail shape, and
+`jalr` offset. Instruction addresses are not required to retain the same
+function-relative offset because linker relaxation can change instruction
+widths and positions. Ambiguous contracts are left unresolved. Successful
+calls carry `semantic_contract.source =
+"archive-origin-interface-association"` and retain the exact evidence rule;
+the semantic name remains descriptive and does not authorize an executable
+call model.
+
 An unresolved returning relocation or indirect `jalr ra` is also an opaque ABI
 boundary for function-local structural analysis. The analyzer records an
 explicit completeness blocker, invalidates caller-saved integer and floating

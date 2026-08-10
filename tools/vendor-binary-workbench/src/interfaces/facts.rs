@@ -101,6 +101,22 @@ pub(crate) struct InterfaceCallFact {
     pub(crate) slot_offset: Option<i32>,
     pub(crate) jalr_offset: i32,
     pub(crate) arguments: Vec<InterfaceArgumentFact>,
+    pub(crate) root_linkage: InterfaceRootLinkageFact,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct InterfaceRootLinkageFact {
+    pub(crate) symbols: Vec<String>,
+    pub(crate) resolutions: Vec<String>,
+    pub(crate) candidates: Vec<InterfaceSymbolLocationFact>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct InterfaceSymbolLocationFact {
+    pub(crate) artifact: usize,
+    pub(crate) member: Option<String>,
+    pub(crate) address: u32,
+    pub(crate) kind: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

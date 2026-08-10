@@ -93,6 +93,9 @@ impl ResolvedProjectAnalysisOperations<'_> {
             paths.extend(interfaces.pack.iter().cloned());
             paths.extend(interfaces.semantic_catalogs.iter().cloned());
         }
+        if let Some(symbols) = project.symbol_inventory.as_ref() {
+            paths.push(symbols.output.clone());
+        }
         paths
     }
 

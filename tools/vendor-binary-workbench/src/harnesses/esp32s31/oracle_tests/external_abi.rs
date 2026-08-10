@@ -86,6 +86,8 @@ fn reviewed_wifi_osi_slot_is_named_without_an_execution_model() {
             variadic: false,
             semantic_operation: None,
             replacement_hint: None,
+            tail: true,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
         }],
     );

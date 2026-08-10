@@ -36,6 +36,10 @@ pub(super) fn run(
         .map(|project| crate::linked_ir_export::load_project_interfaces(project, target))
         .transpose()?
         .flatten();
+    let interface_origins = project
+        .map(crate::linked_ir_export::load_project_interface_origins)
+        .transpose()?
+        .unwrap_or_default();
     if let Some(catalog) = &effective_code {
         for artifact in &mut artifacts {
             artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
@@ -50,6 +54,7 @@ pub(super) fn run(
         svd,
         target,
         interfaces.as_ref(),
+        &interface_origins,
         usize::from(arguments.jobs),
     )?;
 

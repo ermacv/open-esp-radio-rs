@@ -10,6 +10,30 @@ pub enum MemoryAccess {
     Write,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub enum ReviewedExternalCallEvidence {
+    ObservedCallSite,
+    ArchiveOriginProjection,
+}
+
+impl ReviewedExternalCallEvidence {
+    pub const fn source(self) -> &'static str {
+        match self {
+            Self::ObservedCallSite => "reviewed-interface-pack",
+            Self::ArchiveOriginProjection => "archive-origin-interface-association",
+        }
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Self::ObservedCallSite => "reviewed-layout-and-observed-call-site",
+            Self::ArchiveOriginProjection => {
+                "unique-archive-origin-and-identical-indirect-target-shape"
+            }
+        }
+    }
+}
+
 /// Reviewed structural ABI identity for an indirect external call.
 ///
 /// This is intentionally owned project data. It describes how a call should
@@ -25,6 +49,8 @@ pub struct ReviewedExternalCall {
     pub variadic: bool,
     pub semantic_operation: Option<String>,
     pub replacement_hint: Option<String>,
+    pub tail: bool,
+    pub evidence: ReviewedExternalCallEvidence,
     /// Instruction that loaded the reviewed slot pointer for this call site.
     ///
     /// This is evidence used to retire the matching structural blocker; it is

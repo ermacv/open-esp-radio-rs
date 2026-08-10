@@ -208,6 +208,15 @@ that every user must learn.
   `linker_resolution_claim = false`. The real project has 2,897 unique member
   associations, zero ambiguous associations and 1,673 definitions with no
   archive origin.
+- [x] Project reviewed archive interface evidence onto authoritative linked
+  ELF calls without turning archive association into linker truth. The join is
+  fail-closed over unique symbol origin, reviewed pointer-cell association and
+  identical decoded indirect-target/call shape; linker-relaxed instruction
+  positions may differ. The real 2026-08-10 profiles now name 175 `libpp` and
+  626 `libnet80211` calls, including RTOS, timer, NVS, allocation, clock and
+  coexistence operations, with explicit
+  `archive-origin-interface-association` provenance. Semantic annotation still
+  does not authorize execution.
 - [x] Add pluggable peripheral execution models for W1C, read-to-clear,
   self-clearing bits, FIFO and indexed banks while retaining simple scripted
   MMIO as the generic baseline.

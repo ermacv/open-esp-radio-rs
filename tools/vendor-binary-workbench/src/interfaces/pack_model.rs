@@ -253,6 +253,7 @@ pub(crate) struct InterfaceWorkspace {
     contracts: Vec<ResolvedInterfaceContract>,
     bindings: Vec<ResolvedInterfaceSlot>,
     unreviewed_observations: Vec<UnreviewedInterfaceObservation>,
+    facts: InterfaceFacts,
 }
 
 impl InterfaceWorkspace {
@@ -283,6 +284,7 @@ impl InterfaceWorkspace {
             contracts,
             bindings,
             unreviewed_observations,
+            facts,
         })
     }
 
@@ -292,6 +294,10 @@ impl InterfaceWorkspace {
 
     pub(crate) fn bindings(&self) -> &[ResolvedInterfaceSlot] {
         &self.bindings
+    }
+
+    pub(super) const fn facts(&self) -> &InterfaceFacts {
+        &self.facts
     }
 
     pub(crate) fn unreviewed_observations(&self) -> &[UnreviewedInterfaceObservation] {

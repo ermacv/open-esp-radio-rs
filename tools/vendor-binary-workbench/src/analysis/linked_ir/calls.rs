@@ -573,6 +573,16 @@ pub(super) fn collect_call_event(
             candidates,
             arguments,
         } => {
+            let evidence = candidates
+                .iter()
+                .map(|candidate| candidate.evidence)
+                .collect::<BTreeSet<_>>();
+            let evidence = (evidence.len() == 1)
+                .then(|| *evidence.first().expect("one reviewed evidence kind"));
+            let tails = candidates
+                .iter()
+                .map(|candidate| candidate.tail)
+                .collect::<BTreeSet<_>>();
             let operations = candidates
                 .iter()
                 .filter_map(|candidate| candidate.semantic_operation.as_deref())
@@ -591,7 +601,7 @@ pub(super) fn collect_call_event(
                     .collect::<Vec<_>>()
                     .join(" | "),
                 site: Some(*site),
-                tail: false,
+                tail: tails.len() == 1 && *tails.first().expect("one reviewed call shape"),
                 result_modeled: false,
                 semantics: Some(format!(
                     "reviewed ABI; candidates={}; executable-model=false",
@@ -609,13 +619,18 @@ pub(super) fn collect_call_event(
                 )),
                 semantic_operation,
                 semantic_contract: Some(LinkedSemanticContract {
-                    source: "reviewed-interface-pack",
+                    source: evidence.map_or("ambiguous-reviewed-interface-evidence", |evidence| {
+                        evidence.source()
+                    }),
                     id: candidates
                         .iter()
                         .map(|candidate| candidate.id.as_str())
                         .collect::<Vec<_>>()
                         .join(" | "),
-                    evidence: "reviewed-layout-and-observed-call-site".to_owned(),
+                    evidence: evidence.map_or_else(
+                        || "ambiguous-reviewed-interface-evidence".to_owned(),
+                        |evidence| evidence.description().to_owned(),
+                    ),
                     event_dispatch: None,
                 }),
                 replacement_hint: (replacements.len() == 1)

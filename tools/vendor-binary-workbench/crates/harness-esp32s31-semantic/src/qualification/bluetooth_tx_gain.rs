@@ -105,7 +105,10 @@ pub fn vendor_bluetooth_tx_gain_init_state_footprint(
     )
 }
 
-fn linked_symbol_range(vendor_artifact: &Path, symbol: &str) -> Result<std::ops::Range<u32>> {
+pub(super) fn linked_symbol_range(
+    vendor_artifact: &Path,
+    symbol: &str,
+) -> Result<std::ops::Range<u32>> {
     let definitions = crate::artifact::load_code_symbols(
         vendor_artifact,
         symbol,

@@ -23,9 +23,179 @@ pub enum BasebandChildPhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BasebandInitEvent {
-    Mmio(open_esp_radio_esp32s31_phy::phy_bb::PhyBbMmioAction),
+    Parent(BasebandParentPhase),
     Child(BasebandChildPhase),
     Complete { calibration_performed: bool },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BasebandParentPhase {
+    EnableInitialization,
+    SetMode(open_esp_radio_esp32s31_phy::phy_bb::PhyBbBasebandMode),
+    RxTable,
+    RfRxSaturation(open_esp_radio_esp32s31_phy::phy_bb::PhyRfRxSaturationPhase),
+    RegisterInit,
+    UpdateAgc,
+    UpdatePostInit,
+    EnableAgc,
+    SetWifiEnabled(bool),
+    ConfigureI2cTxRate,
+    ConfigureTxPowerTracking(bool),
+}
+
+fn parent_phase(
+    action: open_esp_radio_esp32s31_phy::phy_bb::PhyBbMmioAction,
+) -> BasebandParentPhase {
+    use open_esp_radio_esp32s31_phy::phy_bb::PhyBbMmioAction as Action;
+    match action {
+        Action::EnableBasebandInitialization => BasebandParentPhase::EnableInitialization,
+        Action::SetBasebandMode { mode } => BasebandParentPhase::SetMode(mode),
+        Action::UpdateAgcRegisters => BasebandParentPhase::UpdateAgc,
+        Action::UpdatePostInitRegisters => BasebandParentPhase::UpdatePostInit,
+        Action::EnableAgc => BasebandParentPhase::EnableAgc,
+        Action::SetWifiEnabled { enabled } => BasebandParentPhase::SetWifiEnabled(enabled),
+        Action::ConfigureTxPowerTracking { enabled } => {
+            BasebandParentPhase::ConfigureTxPowerTracking(enabled)
+        }
+        Action::ConfigureRfRxSaturation { phase } => BasebandParentPhase::RfRxSaturation(phase),
+        Action::ConfigureI2cTxRate => BasebandParentPhase::ConfigureI2cTxRate,
+        Action::ProgramGainMemory(_) | Action::ConfigureRxTable { .. } => {
+            BasebandParentPhase::RxTable
+        }
+        Action::EnableIqCorrection
+        | Action::SetWifiAgcSaturationGain { .. }
+        | Action::ConfigureBasebandWatchdog
+        | Action::EnableMacBaseband
+        | Action::ConfigureNoiseFloorAuto
+        | Action::ConfigureAntenna
+        | Action::ConfigureBtFilter
+        | Action::ConfigurePhyRegisters { .. } => BasebandParentPhase::RegisterInit,
+    }
+}
+
+fn push_event(events: &mut Vec<BasebandInitEvent>, event: BasebandInitEvent) {
+    if events.last() != Some(&event) {
+        events.push(event);
+    }
+}
+
+pub fn normalize_vendor_baseband_init(
+    vendor_artifact: &Path,
+    result: &execution::ExecutionResult,
+) -> Result<Vec<BasebandInitEvent>> {
+    use open_esp_radio_esp32s31_phy::phy_bb::{PhyBbBasebandMode, PhyRfRxSaturationPhase};
+
+    let parent = linked_symbol_range(vendor_artifact, "phy_bb_init")?;
+    let direct_calls = result
+        .ordered_calls
+        .iter()
+        .filter(|call| parent.contains(&call.site))
+        .collect::<Vec<_>>();
+    let calibration_performed = direct_calls
+        .iter()
+        .any(|call| call.symbol == "phy_txdc_cal_init");
+    let mut events = vec![
+        BasebandInitEvent::Parent(BasebandParentPhase::EnableInitialization),
+        BasebandInitEvent::Parent(BasebandParentPhase::SetMode(PhyBbBasebandMode::Calibration)),
+    ];
+    for call in direct_calls {
+        let event = match call.symbol.as_str() {
+            "phy_txdc_cal_init" => BasebandInitEvent::Child(BasebandChildPhase::TxDc),
+            "phy_pwdet_code_cal" => BasebandInitEvent::Child(BasebandChildPhase::PowerDetector),
+            "phy_tx_cap_init" => BasebandInitEvent::Child(BasebandChildPhase::TxCap),
+            "phy_tsens_temp_read" => BasebandInitEvent::Child(BasebandChildPhase::Temperature),
+            "phy_tx_pwctrl_init" => BasebandInitEvent::Child(BasebandChildPhase::TxPower),
+            "phy_txdc_cal_pwdet_init" => {
+                if call.arguments[..3] != [1, 0, 0] {
+                    return Err(format!(
+                        "vendor baseband parent requested unexpected TXDC/PWDET tuple ({}, {}, {})",
+                        call.arguments[0], call.arguments[1], call.arguments[2]
+                    )
+                    .into());
+                }
+                BasebandInitEvent::Child(BasebandChildPhase::TxDcPwdet)
+            }
+            "phy_dcode_cal_init" => BasebandInitEvent::Child(BasebandChildPhase::Dcode),
+            "phy_txiq_cal_init" => BasebandInitEvent::Child(BasebandChildPhase::TxIq),
+            "phy_set_tx_cfr_mem" => {
+                if call.arguments[0] != 32 {
+                    return Err(format!(
+                        "vendor baseband parent requested {} TX-CFR entries",
+                        call.arguments[0]
+                    )
+                    .into());
+                }
+                BasebandInitEvent::Child(BasebandChildPhase::TxCfr)
+            }
+            "phy_bt_tx_gain_init" => BasebandInitEvent::Child(BasebandChildPhase::BluetoothTxGain),
+            "phy_set_pbus_mem" => BasebandInitEvent::Child(BasebandChildPhase::PbusMemory),
+            "phy_rxiq_cal_init" => BasebandInitEvent::Child(BasebandChildPhase::RxIq),
+            "phy_rx_table_init" => BasebandInitEvent::Parent(BasebandParentPhase::RxTable),
+            "phy_rfrx_sat_rst" => BasebandInitEvent::Parent(BasebandParentPhase::RfRxSaturation(
+                if call.arguments[0] == 0 {
+                    PhyRfRxSaturationPhase::PrepareCheck
+                } else if call.arguments[0] == 1 {
+                    PhyRfRxSaturationPhase::Finalize
+                } else {
+                    return Err(format!(
+                        "vendor baseband parent requested invalid RX-saturation phase {}",
+                        call.arguments[0]
+                    )
+                    .into());
+                },
+            )),
+            "phy_check_rx_sat" => BasebandInitEvent::Child(BasebandChildPhase::RxSaturation),
+            "phy_set_rx_gain_table" => {
+                if call.arguments[..2] != [0x985, 0] {
+                    return Err(format!(
+                        "vendor baseband parent requested unexpected RX-gain tuple ({:#x}, {})",
+                        call.arguments[0], call.arguments[1]
+                    )
+                    .into());
+                }
+                BasebandInitEvent::Child(BasebandChildPhase::RxGain)
+            }
+            "phy_reg_init" => BasebandInitEvent::Parent(BasebandParentPhase::RegisterInit),
+            "phy_bb_agc_reg_update" => BasebandInitEvent::Parent(BasebandParentPhase::UpdateAgc),
+            "phy_reg_update_new" => BasebandInitEvent::Parent(BasebandParentPhase::UpdatePostInit),
+            "phy_enable_agc" => BasebandInitEvent::Parent(BasebandParentPhase::EnableAgc),
+            "phy_chip_set_chan" => {
+                if call.arguments[..2] != [11, 0] {
+                    return Err(format!(
+                        "vendor baseband parent selected unexpected channel tuple ({}, {})",
+                        call.arguments[0], call.arguments[1]
+                    )
+                    .into());
+                }
+                push_event(
+                    &mut events,
+                    BasebandInitEvent::Child(BasebandChildPhase::Channel),
+                );
+                BasebandInitEvent::Parent(BasebandParentPhase::SetMode(PhyBbBasebandMode::Idle))
+            }
+            "phy_wifi_enable_set" => BasebandInitEvent::Parent(
+                BasebandParentPhase::SetWifiEnabled(call.arguments[0] != 0),
+            ),
+            "phy_i2c_txrate_init" => {
+                BasebandInitEvent::Parent(BasebandParentPhase::ConfigureI2cTxRate)
+            }
+            "phy_bb_txpwr_track" => BasebandInitEvent::Parent(
+                BasebandParentPhase::ConfigureTxPowerTracking(call.arguments[0] != 0),
+            ),
+            symbol => {
+                return Err(format!(
+                    "vendor baseband parent emitted unreviewed direct call {symbol} at {:#010x}",
+                    call.site
+                )
+                .into());
+            }
+        };
+        push_event(&mut events, event);
+    }
+    events.push(BasebandInitEvent::Complete {
+        calibration_performed,
+    });
+    Ok(events)
 }
 
 fn child_phase(
@@ -71,12 +241,13 @@ pub fn rust_baseband_init_events(
             PhyBbInitLocalStep::StateAdvanced => continue,
             PhyBbInitLocalStep::External(action) => {
                 match action {
-                    PhyBbInitAction::Mmio(action) => events.push(BasebandInitEvent::Mmio(action)),
+                    PhyBbInitAction::Mmio(action) => {
+                        let phase = BasebandInitEvent::Parent(parent_phase(action));
+                        push_event(&mut events, phase);
+                    }
                     action => {
                         let phase = child_phase(action).expect("non-MMIO action has a child phase");
-                        if events.last() != Some(&BasebandInitEvent::Child(phase)) {
-                            events.push(BasebandInitEvent::Child(phase));
-                        }
+                        push_event(&mut events, BasebandInitEvent::Child(phase));
                     }
                 }
                 let completion = completion_driver.baseband(action)?;

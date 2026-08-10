@@ -256,9 +256,11 @@ that every user must learn.
   effect models in the parents. The shared deterministic completion layer is
   now split by TX, RX-IQ, RX-gain and parent responsibilities; both cold and
   retained `PhyBbInitTransition` paths complete through it, and the existing
-  Bluetooth parent still matches the real linked image. The remaining work is
-  the vendor `phy_bb_init` projection/footprint comparison and then the outer
-  registration composition.
+  Bluetooth parent still matches the real linked image. The vendor projection
+  now locks all 26 direct-call sites, ordering and reviewed arguments without
+  promoting that structural evidence to a verdict. The remaining work is its
+  concrete cold/retained execution plus reviewed footprint comparison and then
+  the outer registration composition.
 
 ## P1 — project usability and maintainability
 

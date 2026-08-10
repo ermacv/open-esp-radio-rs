@@ -18,7 +18,7 @@ const NONE_ENTRY_SPEC: EntryContractSpec = EntryContractSpec {
 const ENTRY_CONTRACTS: [EntryContractRef; 1] = [EntryContractRef::new(&NONE_ENTRY_SPEC)];
 
 static CONTRACTS: HarnessContractSpec = HarnessContractSpec {
-    external_tables: &[],
+    external_call_model_sets: &[],
     entry_contracts: &ENTRY_CONTRACTS,
     diagnostic_calls: &[],
 };
@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn neutral_harness_exposes_only_the_empty_entry_contract() {
-        assert!(CONTRACTS.external_tables.is_empty());
+        assert!(CONTRACTS.external_call_model_sets.is_empty());
         assert!(CONTRACTS.diagnostic_calls.is_empty());
         assert_eq!(entry_contract("none").unwrap().id(), "none");
         assert!(entry_contract("platform-init").is_err());

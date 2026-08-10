@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
-use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalTableRef, FunctionTableRef};
+use open_radio_vendor_contracts::FunctionTableRef;
 
 pub const PRIVATE_STACK_READ_TOKEN_FLAG: u32 = 1 << 31;
 
@@ -66,15 +66,11 @@ pub enum SymbolicValue {
         post_offset: i64,
     },
     CallResult(u32),
-    ExternalTable(ExternalTableRef),
-    ExternalFunction {
-        table: ExternalTableRef,
-        function: ExternalFunctionRef,
-    },
-    /// Function pointer loaded from a reviewed table slot without an
-    /// executable call model.
+    ReviewedExternalTable(String),
+    /// Function pointer loaded from a reviewed table slot. Executable
+    /// behavior, when present, is carried by the reviewed call candidate.
     ReviewedExternalFunction {
-        table: ExternalTableRef,
+        contract: String,
         offset: u32,
     },
     FunctionTable(FunctionTableRef),

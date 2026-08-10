@@ -88,9 +88,7 @@ impl SymbolicValue {
         }
         if matches!(
             self,
-            Self::ExternalTable(_)
-                | Self::ExternalFunction { .. }
-                | Self::ReviewedExternalFunction { .. }
+            Self::ReviewedExternalTable(_) | Self::ReviewedExternalFunction { .. }
         ) {
             return Err("non-scalar value escaped across a call boundary".to_owned());
         }
@@ -274,9 +272,7 @@ impl SymbolicValue {
         }
         if matches!(
             self,
-            Self::ExternalTable(_)
-                | Self::ExternalFunction { .. }
-                | Self::ReviewedExternalFunction { .. }
+            Self::ReviewedExternalTable(_) | Self::ReviewedExternalFunction { .. }
         ) {
             return Err("non-scalar value escaped across a call boundary".to_owned());
         }
@@ -412,8 +408,7 @@ impl SymbolicValue {
             self,
             Self::SymbolAddress { .. }
                 | Self::StackAddress(_)
-                | Self::ExternalTable(_)
-                | Self::ExternalFunction { .. }
+                | Self::ReviewedExternalTable(_)
                 | Self::ReviewedExternalFunction { .. }
                 | Self::FunctionTable(_)
                 | Self::FunctionPointer { .. }

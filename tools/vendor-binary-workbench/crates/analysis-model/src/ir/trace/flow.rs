@@ -121,14 +121,8 @@ pub fn collect_reference_flow_inputs(flow: &DraftReferenceFlow, output: &mut BTr
                 }
             }
             DraftReferenceEvent::DelayMicros { micros } => collect_value_inputs(micros, output),
-            DraftReferenceEvent::ExternalCall {
-                table: _,
-                function,
-                arguments,
-                ..
-            } => {
-                let argument_count = function.spec().argument_count;
-                for value in arguments.iter().take(usize::from(argument_count)) {
+            DraftReferenceEvent::ReviewedExternalCall { arguments, .. } => {
+                for value in arguments {
                     collect_value_inputs(value, output);
                 }
             }

@@ -799,6 +799,7 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
             variadic: false,
             semantic_operation: None,
             replacement_hint: None,
+            execution_model: None,
             tail: false,
             evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
@@ -824,6 +825,7 @@ fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantic
             site: 0x1000,
             candidates,
             arguments,
+            ..
         }] if candidates[0].name == "semphr_give" && arguments.len() == 1
     ));
 }

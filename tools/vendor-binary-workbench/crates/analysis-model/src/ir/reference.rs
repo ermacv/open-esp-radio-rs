@@ -14,7 +14,6 @@ use super::{
     ExpressionOperation, FunctionAnalysis, IndexedMmioGuard, IndexedMmioRegister, MemoryAccess,
     ObservableEvent, SymbolicValue, collect_value_inputs,
 };
-use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalTableRef};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedReferenceEvent {
@@ -92,11 +91,10 @@ pub enum ResolvedReferenceEvent {
         destination_region: String,
         length: u32,
     },
-    ExternalCall {
+    ReviewedExternalCall {
         token: u32,
         site: u32,
-        table: ExternalTableRef,
-        function: ExternalFunctionRef,
+        call: super::ReviewedExternalCall,
         arguments: Box<[SymbolicValue]>,
     },
     ModeledDirectCall {
@@ -236,14 +234,10 @@ fn collect_resolved_flow_inputs(flow: &ResolvedReferenceFlow, output: &mut BTree
                 collect_value_inputs(destination, output);
             }
             ResolvedReferenceEvent::DelayMicros { micros } => collect_value_inputs(micros, output),
-            ResolvedReferenceEvent::ExternalCall {
-                table: _,
-                function,
-                arguments,
-                ..
+            ResolvedReferenceEvent::ReviewedExternalCall {
+                call, arguments, ..
             } => {
-                let argument_count = function.spec().argument_count;
-                for value in arguments.iter().take(usize::from(argument_count)) {
+                for value in arguments.iter().take(call.argument_types.len()) {
                     collect_value_inputs(value, output);
                 }
             }
@@ -437,19 +431,6 @@ impl ResolvedReferenceEvent {
                     "private-stack store at {offset:+#x} escaped reference composition"
                 ));
             }
-            DraftReferenceEvent::ExternalCall {
-                token,
-                site,
-                table,
-                function,
-                arguments,
-            } => Self::ExternalCall {
-                token: *token,
-                site: *site,
-                table: *table,
-                function: *function,
-                arguments: arguments.clone(),
-            },
             DraftReferenceEvent::ModeledDirectCall {
                 token,
                 site,
@@ -462,16 +443,42 @@ impl ResolvedReferenceEvent {
                 arguments: arguments.clone(),
             },
             DraftReferenceEvent::ReviewedExternalCall {
-                site, candidates, ..
+                token,
+                site,
+                candidates,
+                arguments,
             } => {
-                return Err(format!(
-                    "reviewed external call at {site:#010x} has no executable model: {}",
-                    candidates
-                        .iter()
-                        .map(|candidate| candidate.id.as_str())
-                        .collect::<Vec<_>>()
-                        .join(" | ")
-                ));
+                let [call] = candidates.as_slice() else {
+                    return Err(format!(
+                        "reviewed external call at {site:#010x} is ambiguous: {}",
+                        candidates
+                            .iter()
+                            .map(|candidate| candidate.id.as_str())
+                            .collect::<Vec<_>>()
+                            .join(" | ")
+                    ));
+                };
+                let Some(model) = &call.execution_model else {
+                    return Err(format!(
+                        "reviewed external call at {site:#010x} has no executable model: {}",
+                        call.id
+                    ));
+                };
+                if matches!(
+                    model.return_model,
+                    open_radio_vendor_contracts::ExternalReturnModel::Unmodeled
+                ) {
+                    return Err(format!(
+                        "reviewed external call at {site:#010x} has an incomplete executable model: {}",
+                        model.id
+                    ));
+                }
+                Self::ReviewedExternalCall {
+                    token: *token,
+                    site: *site,
+                    call: call.clone(),
+                    arguments: arguments.clone(),
+                }
             }
             DraftReferenceEvent::DiagnosticCall {
                 function,

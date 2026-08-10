@@ -30,32 +30,6 @@ pub(super) fn affine_argument_bindings(arguments: &[SymbolicValue]) -> Vec<Linke
         .collect()
 }
 
-pub(super) fn external_typed_arguments(
-    function: crate::ExternalFunctionRef,
-    arguments: &[SymbolicValue],
-) -> Vec<LinkedCallArgument> {
-    let function = function.spec();
-    arguments
-        .iter()
-        .enumerate()
-        .map(|(position, value)| {
-            let semantic = function.semantic.arguments.get(position);
-            LinkedCallArgument {
-                position,
-                name: semantic.map_or_else(
-                    || format!("arg{position}"),
-                    |argument| argument.name.to_owned(),
-                ),
-                c_type: semantic
-                    .map_or_else(|| "u32".to_owned(), |argument| argument.c_type.to_owned()),
-                direction: semantic
-                    .map_or("unknown", |argument| external_direction(argument.direction)),
-                value: value.canonical(),
-            }
-        })
-        .collect()
-}
-
 pub(super) fn direct_semantic_typed_arguments(
     function: &crate::DirectSemanticFunctionSpec,
     arguments: &[String],
@@ -201,26 +175,6 @@ pub(super) fn branch_expression(condition: &BranchCondition) -> String {
     }
 }
 
-pub(super) fn external_semantics(event: &DraftReferenceEvent) -> Option<String> {
-    let DraftReferenceEvent::ExternalCall {
-        table, function, ..
-    } = event
-    else {
-        return None;
-    };
-    let table = table.spec();
-    let function = function.spec();
-    Some(format!(
-        "table={} version={} slot={:#x} args={} return={:?} operation={}",
-        table.id,
-        table.version,
-        function.offset,
-        function.argument_count,
-        function.return_model,
-        function.semantic.operation,
-    ))
-}
-
 pub(super) fn external_return_model(model: ExternalReturnModel) -> String {
     match model {
         ExternalReturnModel::Constant(value) => format!("constant:{value:#010x}"),
@@ -229,31 +183,6 @@ pub(super) fn external_return_model(model: ExternalReturnModel) -> String {
             format!("private-stack-output-u8:arg{pointer_argument}")
         }
         ExternalReturnModel::Unmodeled => "unmodeled".to_owned(),
-    }
-}
-
-pub(super) fn linked_trampoline(
-    table: crate::ExternalTableRef,
-    function: crate::ExternalFunctionRef,
-) -> LinkedTrampoline {
-    let table = table.spec();
-    let function = function.spec();
-    LinkedTrampoline {
-        table: table.id.to_owned(),
-        pointer_symbol: table.pointer_symbol.to_owned(),
-        backing_symbol: table.backing_symbol.to_owned(),
-        version: table.version,
-        magic: table.magic,
-        table_size: table.size,
-        magic_offset: table.magic_offset,
-        function_id: function.id.to_owned(),
-        slot: function.offset,
-        c_name: function.c_name.to_owned(),
-        argument_count: function.argument_count,
-        return_model: external_return_model(function.return_model),
-        operation: function.semantic.operation.to_owned(),
-        return_type: function.semantic.return_type.to_owned(),
-        replacement_hint: function.semantic.replacement.map(str::to_owned),
     }
 }
 
@@ -535,43 +464,11 @@ pub(super) fn collect_call_event(
     calls: &mut BTreeSet<LinkedCall>,
 ) {
     let call = match event {
-        DraftReferenceEvent::ExternalCall {
-            site,
-            table,
-            function,
-            arguments,
-            ..
-        } => Some(LinkedCall {
-            kind: "external",
-            target: format!("{}::{}", table.spec().id, function.spec().c_name),
-            site: Some(*site),
-            tail: false,
-            result_modeled: matches!(
-                function.spec().return_model,
-                ExternalReturnModel::Constant(_) | ExternalReturnModel::SymbolicU32
-            ),
-            semantics: external_semantics(event),
-            semantic_operation: Some(function.spec().semantic.operation.to_owned()),
-            semantic_contract: Some(LinkedSemanticContract {
-                source: "registered-external-table-slot",
-                id: format!("{}::{}", table.spec().id, function.spec().id),
-                evidence: "exact-pointer-cell-and-slot".to_owned(),
-                event_dispatch: linked_event_dispatch_contract(function.spec().semantic),
-            }),
-            replacement_hint: function.spec().semantic.replacement.map(str::to_owned),
-            project_symbol: None,
-            project_candidates: Vec::new(),
-            trampoline: Some(linked_trampoline(*table, *function)),
-            argument_shapes: 1,
-            arguments: canonical_arguments(arguments),
-            argument_bindings: affine_argument_bindings(arguments),
-            typed_arguments: external_typed_arguments(*function, arguments),
-            guard_paths: None,
-        }),
         DraftReferenceEvent::ReviewedExternalCall {
             site,
             candidates,
             arguments,
+            ..
         } => {
             let evidence = candidates
                 .iter()
@@ -593,6 +490,12 @@ pub(super) fn collect_call_event(
                 .iter()
                 .filter_map(|candidate| candidate.replacement_hint.as_deref())
                 .collect::<BTreeSet<_>>();
+            let execution_models = candidates
+                .iter()
+                .filter_map(|candidate| candidate.execution_model.as_ref())
+                .collect::<BTreeSet<_>>();
+            let execution_model = (candidates.len() == 1 && execution_models.len() == 1)
+                .then(|| *execution_models.first().expect("one execution model"));
             Some(LinkedCall {
                 kind: "reviewed-external",
                 target: candidates
@@ -602,9 +505,11 @@ pub(super) fn collect_call_event(
                     .join(" | "),
                 site: Some(*site),
                 tail: tails.len() == 1 && *tails.first().expect("one reviewed call shape"),
-                result_modeled: false,
+                result_modeled: execution_model.is_some_and(|model| {
+                    !matches!(model.return_model, ExternalReturnModel::Unmodeled)
+                }),
                 semantics: Some(format!(
-                    "reviewed ABI; candidates={}; executable-model=false",
+                    "reviewed ABI; candidates={}; executable-model={}",
                     candidates
                         .iter()
                         .map(|candidate| format!(
@@ -615,7 +520,8 @@ pub(super) fn collect_call_event(
                             if candidate.variadic { " variadic" } else { "" }
                         ))
                         .collect::<Vec<_>>()
-                        .join(" | ")
+                        .join(" | "),
+                    execution_model.map_or("none", |model| model.id.as_str()),
                 )),
                 semantic_operation,
                 semantic_contract: Some(LinkedSemanticContract {

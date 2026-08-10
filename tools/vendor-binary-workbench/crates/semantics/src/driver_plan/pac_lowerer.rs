@@ -216,8 +216,7 @@ fn render_value(value: &SymbolicValue, state: &RenderState) -> Result<String> {
         | SymbolicValue::StackAddress(_)
         | SymbolicValue::SymbolAddress { .. }
         | SymbolicValue::CallResult(_)
-        | SymbolicValue::ExternalTable(_)
-        | SymbolicValue::ExternalFunction { .. }
+        | SymbolicValue::ReviewedExternalTable(_)
         | SymbolicValue::ReviewedExternalFunction { .. }
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. }

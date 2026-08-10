@@ -31,7 +31,7 @@ pub type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option
 
 #[derive(Clone, Debug, Default)]
 pub struct StructuralPointerContext {
-    pub external_pointer_cells: BTreeMap<u32, ExternalTableRef>,
+    pub reviewed_external_pointer_cells: BTreeMap<u32, String>,
     pub function_pointer_cells: BTreeMap<u32, FunctionTableRef>,
     pub data_pointer_cells: BTreeMap<u32, SymbolicValue>,
     pub relocated_pointer_symbols: BTreeMap<String, SymbolicValue>,
@@ -46,12 +46,6 @@ impl StructuralPointerContext {
     pub fn from_harness(harness: &'static RiscvHarnessSpec) -> Self {
         let contracts = harness.contracts;
         let mut context = Self::default();
-        for &table in contracts.external_tables {
-            context.relocated_pointer_symbols.insert(
-                table.spec().pointer_symbol.to_owned(),
-                SymbolicValue::ExternalTable(table),
-            );
-        }
         context.diagnostic_calls.extend(
             contracts
                 .diagnostic_calls

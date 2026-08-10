@@ -228,21 +228,6 @@ impl ReferenceResolver {
                 ))
         });
         let mut pointer_context = StructuralPointerContext::from_harness(harness);
-        for &table in harness.contracts.external_tables {
-            let spec = table.spec();
-            pointer_context.relocated_pointer_symbols.insert(
-                spec.pointer_symbol.to_owned(),
-                SymbolicValue::ExternalTable(table),
-            );
-            if let Some(address) = image
-                .as_ref()
-                .and_then(|image| image.symbol_address(spec.pointer_symbol))
-            {
-                pointer_context
-                    .external_pointer_cells
-                    .insert(address, table);
-            }
-        }
         let entry_spec = entry_contract.spec();
         if let Some(table) = entry_spec.function_table {
             let image = image.as_ref().ok_or_else(|| {

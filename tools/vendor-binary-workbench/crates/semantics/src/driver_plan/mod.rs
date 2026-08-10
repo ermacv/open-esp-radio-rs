@@ -320,7 +320,7 @@ fn plan_action(
         | ResolvedReferenceEvent::Memory { .. }
         | ResolvedReferenceEvent::WordToBytesMemoryLoop { .. }
         | ResolvedReferenceEvent::BytesToWordMemoryLoop { .. }
-        | ResolvedReferenceEvent::ExternalCall { .. }
+        | ResolvedReferenceEvent::ReviewedExternalCall { .. }
         | ResolvedReferenceEvent::ModeledDirectCall { .. }
         | ResolvedReferenceEvent::DiagnosticCall { .. }
         | ResolvedReferenceEvent::ComposedCall { .. }

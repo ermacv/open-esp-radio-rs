@@ -7,7 +7,7 @@ use rv_asm::{Inst, Reg};
 use crate::{
     BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
     DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation, ExternalReturnModel,
-    ExternalTableRef, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister,
+    FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister,
     LocatedObservableEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
     ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
     ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,

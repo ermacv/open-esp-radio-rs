@@ -173,7 +173,7 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) variadic: bool,
     pub(crate) semantic: Option<String>,
     pub(crate) semantic_annotation: Option<ResolvedSemanticAnnotation>,
-    pub(crate) external_table: Option<String>,
+    pub(crate) execution_model_set: Option<String>,
     pub(crate) execution_model: Option<ResolvedExternalCallExecutionModel>,
     pub(crate) functions: BTreeSet<String>,
     pub(crate) calls: Vec<ResolvedInterfaceCall>,
@@ -208,21 +208,14 @@ pub(crate) struct ResolvedSemanticAnnotation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedExternalCallExecutionModel {
     pub(crate) id: String,
-    pub(crate) table: String,
-    pub(crate) function: String,
-    pub(crate) c_name: String,
+    pub(crate) set: String,
+    pub(crate) model: String,
     pub(crate) return_model: ExternalReturnModel,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedInterfaceExecutionContract {
     pub(crate) id: String,
-    pub(crate) pointer_symbol: String,
-    pub(crate) backing_symbol: String,
-    pub(crate) version: u32,
-    pub(crate) magic: u32,
-    pub(crate) size: u32,
-    pub(crate) magic_offset: u32,
 }
 
 /// Reviewed layout/guard contract joined to current binary evidence.

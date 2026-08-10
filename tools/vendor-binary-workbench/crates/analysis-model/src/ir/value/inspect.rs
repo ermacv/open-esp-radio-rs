@@ -421,8 +421,7 @@ impl SymbolicValue {
             }
             Self::SymbolAddress { lo_addend, .. } => lo_addend.is_some(),
             Self::ExternalResult(_) => true,
-            Self::ExternalTable(_)
-            | Self::ExternalFunction { .. }
+            Self::ReviewedExternalTable(_)
             | Self::ReviewedExternalFunction { .. }
             | Self::FunctionTable(_)
             | Self::FunctionPointer { .. }
@@ -450,14 +449,11 @@ impl SymbolicValue {
                 lo_addend.map_or_else(|| "?".to_owned(), |addend| format!("{addend:+#x}"))
             ),
             Self::CallResult(call_token) => format!("call-result:{call_token}"),
-            Self::ExternalTable(table) => {
-                format!("external-table:{}", table.spec().id)
+            Self::ReviewedExternalTable(contract) => {
+                format!("reviewed-external-table:{contract}")
             }
-            Self::ExternalFunction { table, function } => {
-                format!("external-function:{}::{function:?}", table.spec().id)
-            }
-            Self::ReviewedExternalFunction { table, offset } => {
-                format!("reviewed-external-function:{}+{offset:#x}", table.spec().id)
+            Self::ReviewedExternalFunction { contract, offset } => {
+                format!("reviewed-external-function:{contract}+{offset:#x}")
             }
             Self::FunctionTable(table) => format!("function-table:{}", table.id()),
             Self::FunctionPointer { table, target } => {

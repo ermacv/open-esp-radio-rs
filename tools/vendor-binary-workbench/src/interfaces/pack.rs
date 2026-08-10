@@ -10,7 +10,7 @@ use super::{
     ResolvedInterfaceExecutionContract, ResolvedInterfaceSlot, ResolvedSemanticAnnotation,
     ReviewStatus, SemanticCatalogs, UnreviewedInterfaceObservation, validate_dotted_id,
 };
-use crate::{ExternalTableRef, HarnessContractSpec};
+use crate::{ExternalCallModelSetRef, HarnessContractSpec};
 
 impl InterfacePack {
     pub(super) fn validate(
@@ -116,10 +116,16 @@ impl InterfacePack {
             validate_anchor_evidence(anchor, facts, &matches)?;
             matches_by_anchor.push(matches);
         }
-        let execution_tables = super::execution_models::resolve(self, execution_contracts)?;
-        let bindings = build_bindings(self, facts, catalogs, &matches_by_anchor, &execution_tables);
+        let execution_model_sets = super::execution_models::resolve(self, execution_contracts)?;
+        let bindings = build_bindings(
+            self,
+            facts,
+            catalogs,
+            &matches_by_anchor,
+            &execution_model_sets,
+        );
         let unreviewed_observations = build_unreviewed_observations(self, facts, &matched_by);
-        let contracts = build_contracts(self, &bindings, &execution_tables);
+        let contracts = build_contracts(self, &bindings, &execution_model_sets);
         let mut summary = build_summary(self, facts, catalogs, &matched_by, &matches_by_anchor);
         summary.resolved_calls = bindings.iter().map(|binding| binding.calls.len()).sum();
         summary.execution_contracts = contracts
@@ -466,14 +472,14 @@ fn build_bindings(
     facts: &InterfaceFacts,
     catalogs: &SemanticCatalogs,
     matches_by_anchor: &[Vec<usize>],
-    execution_tables: &[Option<ExternalTableRef>],
+    execution_model_sets: &[Option<ExternalCallModelSetRef>],
 ) -> Vec<ResolvedInterfaceSlot> {
     let mut bindings = Vec::new();
-    for ((anchor, matches), execution_table) in pack
+    for ((anchor, matches), execution_model_set) in pack
         .anchors
         .iter()
         .zip(matches_by_anchor)
-        .zip(execution_tables)
+        .zip(execution_model_sets)
     {
         for slot in anchor
             .slots
@@ -604,21 +610,19 @@ fn build_bindings(
                         replacement: operation.replacement.clone(),
                     }
                 }),
-                external_table: execution_table.map(|table| table.spec().id.to_owned()),
+                execution_model_set: execution_model_set
+                    .map(|model_set| model_set.spec().id.to_owned()),
                 execution_model: slot.execution_model.as_deref().map(|model_id| {
-                    let table = execution_table
-                        .expect("an execution model requires a resolved execution contract")
-                        .spec();
-                    let model = table
-                        .functions
-                        .iter()
-                        .find(|model| model.id == model_id)
+                    let model_set = execution_model_set
+                        .expect("an execution model requires a resolved execution contract");
+                    let model = model_set
+                        .model(model_id)
                         .expect("execution model was validated");
+                    let model = model.spec();
                     ResolvedExternalCallExecutionModel {
-                        id: format!("{}.{}", table.id, model.id),
-                        table: table.id.to_owned(),
-                        function: model.id.to_owned(),
-                        c_name: model.c_name.to_owned(),
+                        id: format!("{}.{}", model_set.spec().id, model.id),
+                        set: model_set.spec().id.to_owned(),
+                        model: model.id.to_owned(),
                         return_model: model.return_model,
                     }
                 }),
@@ -694,13 +698,13 @@ fn indexed_slot_index(
 fn build_contracts(
     pack: &InterfacePack,
     bindings: &[ResolvedInterfaceSlot],
-    execution_tables: &[Option<ExternalTableRef>],
+    execution_model_sets: &[Option<ExternalCallModelSetRef>],
 ) -> Vec<ResolvedInterfaceContract> {
     pack.anchors
         .iter()
-        .zip(execution_tables)
+        .zip(execution_model_sets)
         .filter(|(anchor, _)| anchor.status == ReviewStatus::Reviewed)
-        .map(|(anchor, execution_table)| ResolvedInterfaceContract {
+        .map(|(anchor, execution_model_set)| ResolvedInterfaceContract {
             id: format!("{}::{}", pack.id, anchor.id),
             pack: pack.id.clone(),
             anchor: anchor.id.clone(),
@@ -721,16 +725,9 @@ fn build_contracts(
                 .slot_stride
                 .expect("reviewed anchor requires slot stride"),
             guards: anchor.guards.clone(),
-            execution_contract: execution_table.map(|table| {
-                let table = table.spec();
+            execution_contract: execution_model_set.map(|model_set| {
                 ResolvedInterfaceExecutionContract {
-                    id: table.id.to_owned(),
-                    pointer_symbol: table.pointer_symbol.to_owned(),
-                    backing_symbol: table.backing_symbol.to_owned(),
-                    version: table.version,
-                    magic: table.magic,
-                    size: table.size,
-                    magic_offset: table.magic_offset,
+                    id: model_set.spec().id.to_owned(),
                 }
             }),
             slots: bindings

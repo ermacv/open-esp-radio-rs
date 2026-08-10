@@ -280,7 +280,7 @@ mod tests {
             variadic: false,
             semantic: None,
             semantic_annotation: None,
-            external_table: None,
+            execution_model_set: None,
             execution_model: None,
             functions: BTreeSet::new(),
             calls: Vec::new(),

@@ -150,10 +150,12 @@ pub(super) fn apply_memory_instruction(
                 (_, Some(StructuralAddress::Absolute(address)))
                     if width == 32
                         && pointer_context
-                            .external_pointer_cells
+                            .reviewed_external_pointer_cells
                             .contains_key(&address) =>
                 {
-                    SymbolicValue::ExternalTable(pointer_context.external_pointer_cells[&address])
+                    SymbolicValue::ReviewedExternalTable(
+                        pointer_context.reviewed_external_pointer_cells[&address].clone(),
+                    )
                 }
                 (_, Some(StructuralAddress::Absolute(address)))
                     if width == 32
@@ -168,7 +170,9 @@ pub(super) fn apply_memory_instruction(
                 {
                     pointer_context.data_pointer_cells[&address].clone()
                 }
-                (_, Some(StructuralAddress::ExternalTableSlot(table, offset))) if width == 32 => {
+                (_, Some(StructuralAddress::ReviewedExternalTableSlot(contract, offset)))
+                    if width == 32 =>
+                {
                     let Ok(offset) = u32::try_from(offset) else {
                         state.reference_blockers.push(format!(
                             "negative-external-abi-slot at {pc:#x}: {instruction}"
@@ -176,21 +180,17 @@ pub(super) fn apply_memory_instruction(
                         structural_set(&mut state.values, dest, SymbolicValue::Unknown);
                         return true;
                     };
-                    match table.function_at(offset) {
-                        Some(function) => SymbolicValue::ExternalFunction { table, function },
-                        None if pointer_context
-                            .reviewed_external_slots
-                            .contains_key(&(table.spec().id.to_owned(), offset)) =>
-                        {
-                            SymbolicValue::ReviewedExternalFunction { table, offset }
-                        }
-                        None => {
-                            state.reference_blockers.push(format!(
-                                "unregistered-external-abi-slot at {pc:#x}: {}+{offset:#x}",
-                                table.spec().id
-                            ));
-                            SymbolicValue::Unknown
-                        }
+                    if pointer_context
+                        .reviewed_external_slots
+                        .contains_key(&(contract.clone(), offset))
+                    {
+                        SymbolicValue::ReviewedExternalFunction { contract, offset }
+                    } else {
+                        state.reference_blockers.push(format!(
+                            "unregistered-external-abi-slot at {pc:#x}: {}+{offset:#x}",
+                            contract
+                        ));
+                        SymbolicValue::Unknown
                     }
                 }
                 (_, Some(StructuralAddress::FunctionTableSlot(table, offset))) if width == 32 => {

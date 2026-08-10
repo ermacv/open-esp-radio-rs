@@ -198,10 +198,12 @@ that every user must learn.
   execution. The real `rom-all` profile contains 20 named opaque calls and no
   `unregistered-external-abi-slot`; 16 calls correctly remain blocked as
   `unmodeled-reviewed-external-call`.
-- [ ] Remove table layout, pointer-symbol, version, magic and ordinary slot ABI
-  duplication from compiled harnesses. Execution-model resolution now has its
-  own module; next reduce the harness contract to executable return/RAM/event
-  behavior joined by the reviewed pack's explicit model foreign key.
+- [x] Remove table layout, pointer-symbol, version, magic and ordinary slot ABI
+  duplication from compiled harnesses. The reviewed interface pack is now the
+  only owner of anchors, container paths, guards, layout and slot ABI. Compiled
+  harnesses expose behavior-only `ExternalCallModelSet` values, joined solely
+  by the reviewed slot's explicit model foreign key; generated references no
+  longer reproduce table version/magic/size guards.
 - [x] Treat a linked ELF as authoritative link selection and archives as source
   inventory; add origin provenance instead of implementing a linker. Direct
   absolute LinkUnit symbols are now preserved: 15 archive calls formerly

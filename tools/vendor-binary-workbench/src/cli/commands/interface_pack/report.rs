@@ -80,18 +80,6 @@ pub(super) struct InterfaceContractDocument<'a> {
     pub(super) guards: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) execution_contract: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_pointer_symbol: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_backing_symbol: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_version: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_magic: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_size: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) execution_magic_offset: Option<u32>,
     pub(super) slots: usize,
 }
 
@@ -128,9 +116,8 @@ pub(super) struct InterfaceBindingDocument<'a> {
 #[derive(Serialize)]
 pub(super) struct InterfaceExecutionModelDocument<'a> {
     pub(super) id: &'a str,
-    pub(super) table: &'a str,
-    pub(super) function: &'a str,
-    pub(super) c_name: &'a str,
+    pub(super) set: &'a str,
+    pub(super) model: &'a str,
     pub(super) return_model: String,
 }
 

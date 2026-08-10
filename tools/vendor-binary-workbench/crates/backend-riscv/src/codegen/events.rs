@@ -47,7 +47,7 @@ pub(super) fn render_events(
             | ResolvedReferenceEvent::BytesToWordMemoryLoop { .. } => {
                 memory::render_event(output, event, state, indent)?;
             }
-            ResolvedReferenceEvent::ExternalCall { .. }
+            ResolvedReferenceEvent::ReviewedExternalCall { .. }
             | ResolvedReferenceEvent::ModeledDirectCall { .. }
             | ResolvedReferenceEvent::DiagnosticCall { .. }
             | ResolvedReferenceEvent::ComposedCall { .. }

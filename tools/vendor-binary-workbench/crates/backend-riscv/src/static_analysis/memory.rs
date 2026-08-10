@@ -6,7 +6,7 @@ use super::*;
 pub(super) enum StructuralAddress {
     Absolute(u32),
     PrivateStack(i32),
-    ExternalTableSlot(ExternalTableRef, i32),
+    ReviewedExternalTableSlot(String, i32),
     FunctionTableSlot(FunctionTableRef, i32),
     CallerMemory(SymbolicValue),
     SymbolMemory(SymbolicValue),
@@ -29,9 +29,9 @@ pub(super) fn structural_effective_address(
         SymbolicValue::StackAddress(base) => {
             Some(StructuralAddress::PrivateStack(base.wrapping_add(offset)))
         }
-        SymbolicValue::ExternalTable(table) => {
-            Some(StructuralAddress::ExternalTableSlot(*table, offset))
-        }
+        SymbolicValue::ReviewedExternalTable(contract) => Some(
+            StructuralAddress::ReviewedExternalTableSlot(contract.clone(), offset),
+        ),
         SymbolicValue::FunctionTable(table) => {
             Some(StructuralAddress::FunctionTableSlot(*table, offset))
         }
@@ -66,9 +66,9 @@ pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<Structur
     match value {
         SymbolicValue::Constant(address) => Some(StructuralAddress::Absolute(*address)),
         SymbolicValue::StackAddress(offset) => Some(StructuralAddress::PrivateStack(*offset)),
-        SymbolicValue::ExternalTable(table) => {
-            Some(StructuralAddress::ExternalTableSlot(*table, 0))
-        }
+        SymbolicValue::ReviewedExternalTable(contract) => Some(
+            StructuralAddress::ReviewedExternalTableSlot(contract.clone(), 0),
+        ),
         SymbolicValue::FunctionTable(table) => {
             Some(StructuralAddress::FunctionTableSlot(*table, 0))
         }
@@ -174,7 +174,8 @@ pub(super) fn memory_intrinsic_load_byte(
             Ok(SymbolicValue::memory_read(read_token, 8, false))
         }
         Some(
-            StructuralAddress::ExternalTableSlot(..) | StructuralAddress::FunctionTableSlot(..),
+            StructuralAddress::ReviewedExternalTableSlot(..)
+            | StructuralAddress::FunctionTableSlot(..),
         )
         | None => Err(format!(
             "source address {} has no byte-addressable memory provenance",
@@ -276,7 +277,8 @@ pub(super) fn memory_intrinsic_store_byte(
             Ok(())
         }
         Some(
-            StructuralAddress::ExternalTableSlot(..) | StructuralAddress::FunctionTableSlot(..),
+            StructuralAddress::ReviewedExternalTableSlot(..)
+            | StructuralAddress::FunctionTableSlot(..),
         )
         | None => Err(format!(
             "destination address {} has no writable byte-memory provenance",

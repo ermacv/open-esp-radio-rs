@@ -175,9 +175,12 @@ behavior. `InterfaceWorkspace` produces stable `ResolvedInterfaceContract`
 and slot identities from facts, the reviewed pack and semantic catalogs. A
 semantic annotation never becomes executable behavior implicitly. Optional
 `execution-contract` and `execution-model` foreign keys must resolve against
-the selected compiled platform harness and agree on layout size, slot offset,
-ABI arity and semantic operation before the execution model is exposed to
-linked-IR/function review. Runtime table contents are scenario-owned
+the selected compiled platform harness before the execution model is exposed
+to linked-IR/function review. The interface pack remains the sole owner of
+roots, container loads, layout guards, slot offsets, ABI types and semantic
+annotations. The harness model set contains only executable return/RAM/event
+behavior, so there is no second compiled copy of the reviewed layout to drift.
+Runtime table contents are scenario-owned
 `TableInstance` values and never mutate the reviewed layout pack.
 
 `WorkbenchError` deliberately has no `From<String>` or `From<&str>` escape

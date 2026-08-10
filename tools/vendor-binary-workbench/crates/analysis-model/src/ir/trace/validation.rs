@@ -249,18 +249,11 @@ pub(super) fn validate_reference_events_detailed(
                 })
             }
             DraftReferenceEvent::DelayMicros { micros } => value_error("delay value", micros),
-            DraftReferenceEvent::ExternalCall {
-                table: _,
-                function,
-                arguments,
-                ..
-            } => arguments
-                .iter()
-                .take(usize::from(function.spec().argument_count))
-                .enumerate()
-                .find_map(|(index, value)| {
+            DraftReferenceEvent::ReviewedExternalCall { arguments, .. } => {
+                arguments.iter().enumerate().find_map(|(index, value)| {
                     value_error(&format!("external-call argument {index}"), value)
-                }),
+                })
+            }
             DraftReferenceEvent::ModeledDirectCall {
                 function,
                 arguments,

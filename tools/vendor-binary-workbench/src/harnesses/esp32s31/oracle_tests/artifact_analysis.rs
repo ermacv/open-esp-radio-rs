@@ -98,7 +98,7 @@ fn wifi_osi_result_survives_direct_call_composition() {
         &parent,
         &symbols,
         &BTreeMap::new(),
-        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        &reviewed_wifi_osi_context(),
         None,
         &map(),
         &mut visiting,
@@ -113,11 +113,14 @@ fn wifi_osi_result_survives_direct_call_composition() {
     );
     assert!(matches!(
         trace.reference_events.as_slice(),
-        [DraftReferenceEvent::ExternalCall {
+        [DraftReferenceEvent::ReviewedExternalCall {
             token: 0,
-            function,
+            candidates,
             ..
-        }] if *function == external_abi::RAND
+        }] if candidates.len() == 1
+            && candidates[0].name == "rand"
+            && candidates[0].execution_model.as_ref().is_some_and(|model|
+                model.id == "esp32s31-wifi-osi-v9.rand")
     ));
 }
 

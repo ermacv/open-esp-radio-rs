@@ -262,14 +262,15 @@ execution-model = "queue-send-from-isr"
 
 `interfaces validate` resolves these into a stable
 `ResolvedInterfaceContract` and slot identity such as
-`project-pack::wifi-osi-v9@+0x38`. It rejects a missing harness/table/model,
-layout-size mismatch, wrong model offset, argument-count mismatch, or a
-semantic mismatch. Neither a familiar slot name nor a matching offset is used
-to infer executable behavior.
+`project-pack::wifi-osi-v9@+0x38`. It rejects a missing harness, model set or
+model. Layout, offsets, ABI and semantic annotations are validated entirely
+inside the reviewed pack and its current facts; the compiled model deliberately
+does not duplicate them. Neither a familiar slot name, a matching offset nor a
+semantic operation is used to infer executable behavior.
 
-The resolved model currently establishes the reviewed bridge from pack
-evidence into the compiled harness and is visible in interface/function review
-reports. Runtime table location, contents, lifecycle and indirect dispatch are
+The resolved model establishes the reviewed bridge from pack evidence into a
+behavior-only compiled harness model and is visible in interface/function
+review reports. Runtime table location, contents, lifecycle and indirect dispatch are
 scenario state; they belong to `TableInstance`, not to the interface pack.
 Execution-profile TOML creates source-specific instances with
 `[[profiles.cases.vendor-tables]]` and

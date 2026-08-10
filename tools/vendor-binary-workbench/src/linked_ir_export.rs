@@ -16,9 +16,10 @@ pub(crate) use render_common::{
 
 use crate::{
     EntryContractRef, LinkedIrReport, MmioMap, ReferenceResolver, Result, ReviewedExternalCall,
-    ReviewedExternalCallEvidence, StructuralCallSite, TargetSpec, artifacts::LinkUnitOriginFact,
-    build_linked_ir_for_source, harnesses, interfaces::InterfaceWorkspace, link_project_calls,
-    merge_linked_ir_with_jobs, project_ir::ProjectIrProfile,
+    ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel, StructuralCallSite,
+    TargetSpec, artifacts::LinkUnitOriginFact, build_linked_ir_for_source, harnesses,
+    interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_jobs,
+    project_ir::ProjectIrProfile,
 };
 
 #[derive(Debug)]
@@ -215,12 +216,61 @@ pub(crate) fn load_project_interfaces(
     )?))
 }
 
-fn register_reviewed_external_calls(
+pub(crate) fn register_reviewed_external_calls(
     resolver: &mut ReferenceResolver,
     interfaces: &InterfaceWorkspace,
     source: &str,
     origins: &[LinkUnitOriginFact],
 ) {
+    for contract in interfaces.contracts() {
+        let container_offset = match contract.container_path.as_slice() {
+            [] => 0,
+            [step] if step.width == contract.pointer_width && step.selector.is_none() => {
+                step.offset
+            }
+            _ => continue,
+        };
+        if container_offset != 0
+            && !matches!(
+                contract.root,
+                crate::interfaces::InterfaceRootSelector::AbsoluteAddress { .. }
+            )
+        {
+            continue;
+        }
+        let value = crate::SymbolicValue::ReviewedExternalTable(contract.id.clone());
+        match &contract.root {
+            crate::interfaces::InterfaceRootSelector::RelocatedSymbol {
+                member,
+                symbol,
+                addend,
+                ..
+            } if *addend == 0 => {
+                resolver
+                    .pointer_context
+                    .relocated_pointer_symbols
+                    .insert(symbol.clone(), value.clone());
+                for definition in &resolver.data_symbols {
+                    if definition.name == *symbol && definition.member == *member {
+                        resolver
+                            .pointer_context
+                            .reviewed_external_pointer_cells
+                            .insert(definition.address as u32, contract.id.clone());
+                    }
+                }
+            }
+            crate::interfaces::InterfaceRootSelector::AbsoluteAddress { address } => {
+                let Some(address) = address.checked_add_signed(container_offset) else {
+                    continue;
+                };
+                resolver
+                    .pointer_context
+                    .reviewed_external_pointer_cells
+                    .insert(address, contract.id.clone());
+            }
+            _ => {}
+        }
+    }
     for slot in interfaces.bindings() {
         let reviewed = ReviewedExternalCall {
             id: slot.id.clone(),
@@ -237,15 +287,21 @@ fn register_reviewed_external_calls(
                 .semantic_annotation
                 .as_ref()
                 .and_then(|semantic| semantic.replacement.clone()),
+            execution_model: slot.execution_model.as_ref().map(|model| {
+                ReviewedExternalCallExecutionModel {
+                    id: model.id.clone(),
+                    return_model: model.return_model,
+                }
+            }),
             tail: false,
             evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
         };
-        if let (Some(table), Ok(offset)) = (&slot.external_table, u32::try_from(slot.offset)) {
+        if let Ok(offset) = u32::try_from(slot.offset) {
             let candidates = resolver
                 .pointer_context
                 .reviewed_external_slots
-                .entry((table.clone(), offset))
+                .entry((slot.contract.clone(), offset))
                 .or_default();
             if !candidates.contains(&reviewed) {
                 candidates.push(reviewed.clone());
@@ -288,6 +344,12 @@ fn register_reviewed_external_calls(
                 .semantic_annotation
                 .as_ref()
                 .and_then(|semantic| semantic.replacement.clone()),
+            execution_model: slot.execution_model.as_ref().map(|model| {
+                ReviewedExternalCallExecutionModel {
+                    id: model.id.clone(),
+                    return_model: model.return_model,
+                }
+            }),
             tail: projected.tail,
             evidence: ReviewedExternalCallEvidence::ArchiveOriginProjection,
             slot_load_site: projected.slot_load_site,

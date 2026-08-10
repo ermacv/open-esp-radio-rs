@@ -327,14 +327,15 @@ pub(super) fn call_result_identity(
         | DraftReferenceEvent::ComposedCallWithScratch { token, symbol, .. } => {
             Some((*token, symbol.clone()))
         }
-        DraftReferenceEvent::ExternalCall {
-            token,
-            table,
-            function,
-            ..
+        DraftReferenceEvent::ReviewedExternalCall {
+            token, candidates, ..
         } => Some((
             *token,
-            format!("{}::{}", table.spec().id, function.spec().c_name),
+            candidates
+                .iter()
+                .map(|candidate| format!("{}::{}", candidate.contract, candidate.name))
+                .collect::<Vec<_>>()
+                .join(" | "),
         )),
         _ => None,
     }

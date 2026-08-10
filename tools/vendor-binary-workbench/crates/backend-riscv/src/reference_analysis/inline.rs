@@ -49,7 +49,7 @@ pub fn inline_reference_summary(
         .filter(|event| {
             matches!(
                 event,
-                DraftReferenceEvent::ExternalCall { .. }
+                DraftReferenceEvent::ReviewedExternalCall { .. }
                     | DraftReferenceEvent::ModeledDirectCall { .. }
             )
         })
@@ -316,10 +316,9 @@ pub fn inline_reference_summary(
                     value: Some(value),
                 }
             }
-            DraftReferenceEvent::ExternalCall {
+            DraftReferenceEvent::ReviewedExternalCall {
                 site,
-                table,
-                function,
+                candidates,
                 arguments: external_arguments,
                 ..
             } => {
@@ -339,11 +338,10 @@ pub fn inline_reference_summary(
                 let token = next_external_token;
                 next_external_token += 1;
                 external_tokens.push(token);
-                DraftReferenceEvent::ExternalCall {
+                DraftReferenceEvent::ReviewedExternalCall {
                     token,
                     site: *site,
-                    table: *table,
-                    function: *function,
+                    candidates: candidates.clone(),
                     arguments: mapped_arguments,
                 }
             }

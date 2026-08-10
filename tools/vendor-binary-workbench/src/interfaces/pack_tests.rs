@@ -7,55 +7,23 @@ use std::{
 
 use super::*;
 use crate::{
-    ExternalArgumentDirection, ExternalArgumentSpec, ExternalFunctionSpec, ExternalReturnModel,
-    ExternalSemanticSpec, ExternalTableRef, ExternalTableSpec, HarnessContractSpec,
+    ExternalCallModelSetRef, ExternalCallModelSetSpec, ExternalCallModelSpec, ExternalReturnModel,
+    HarnessContractSpec,
 };
 
-const EXECUTION_ARGUMENTS: &[ExternalArgumentSpec] = &[
-    ExternalArgumentSpec {
-        name: "queue",
-        c_type: "void *",
-        direction: ExternalArgumentDirection::Input,
-    },
-    ExternalArgumentSpec {
-        name: "item",
-        c_type: "const void *",
-        direction: ExternalArgumentDirection::Input,
-    },
-    ExternalArgumentSpec {
-        name: "task_woken",
-        c_type: "void *",
-        direction: ExternalArgumentDirection::Output,
-    },
-];
-const EXECUTION_FUNCTIONS: &[ExternalFunctionSpec] = &[ExternalFunctionSpec {
+const EXECUTION_MODELS: &[ExternalCallModelSpec] = &[ExternalCallModelSpec {
     id: "queue-send-from-isr",
-    offset: 16,
-    c_name: "queue_send_from_isr",
-    argument_count: 3,
     return_model: ExternalReturnModel::Constant(1),
-    semantic: ExternalSemanticSpec {
-        operation: "rtos.queue.send-from-isr",
-        arguments: EXECUTION_ARGUMENTS,
-        return_type: "bool",
-        replacement: Some("async.channel.try-send"),
-        event_dispatch: None,
-    },
 }];
-const EXECUTION_TABLE_SPEC: ExternalTableSpec = ExternalTableSpec {
+const EXECUTION_MODEL_SET_SPEC: ExternalCallModelSetSpec = ExternalCallModelSetSpec {
     id: "fixture.services-v1",
-    pointer_symbol: "g_services",
-    backing_symbol: "services",
-    version: 1,
-    magic: 0x1234_5678,
-    size: 32,
-    magic_offset: 28,
-    functions: EXECUTION_FUNCTIONS,
+    models: EXECUTION_MODELS,
 };
-const EXECUTION_TABLE: ExternalTableRef = ExternalTableRef::new(&EXECUTION_TABLE_SPEC);
-const EXECUTION_TABLES: &[ExternalTableRef] = &[EXECUTION_TABLE];
+const EXECUTION_MODEL_SET: ExternalCallModelSetRef =
+    ExternalCallModelSetRef::new(&EXECUTION_MODEL_SET_SPEC);
+const EXECUTION_MODEL_SETS: &[ExternalCallModelSetRef] = &[EXECUTION_MODEL_SET];
 const EXECUTION_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
-    external_tables: EXECUTION_TABLES,
+    external_call_model_sets: EXECUTION_MODEL_SETS,
     entry_contracts: &[],
     diagnostic_calls: &[],
 };

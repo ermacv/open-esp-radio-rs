@@ -8,20 +8,17 @@ mod events;
 mod flow;
 mod value;
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::Write as _,
-};
+use std::{collections::BTreeMap, fmt::Write as _};
 
 use crate::{
-    BranchCondition, BranchOperation, ExternalReturnModel, ExternalTableRef, IndexedMmioGuard,
-    IndexedMmioRegister, MemoryAccess, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
-    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody,
-    ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
-    ResolvedReferenceTerminator, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+    BranchCondition, BranchOperation, ExternalReturnModel, IndexedMmioGuard, IndexedMmioRegister,
+    MemoryAccess, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT, RV32_REGISTER_ARGUMENT_COUNT,
+    RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody, ResolvedReferenceEvent,
+    ResolvedReferenceFlow, ResolvedReferenceProgram, ResolvedReferenceTerminator,
+    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
 };
 use events::render_events;
-use flow::{FlowReturn, collect_external_tables, render_flow, render_outcome};
+use flow::{FlowReturn, render_flow, render_outcome};
 #[cfg(test)]
 use value::render_value;
 use value::{CallResultAvailability, MmioReadAddress, render_value_scoped};
@@ -57,7 +54,6 @@ pub(in crate::codegen) struct RenderState {
     pub(in crate::codegen) bounded_poll_count: usize,
     pub(in crate::codegen) call_results: Vec<CallResultAvailability>,
     pub(in crate::codegen) external_results: Vec<()>,
-    pub(in crate::codegen) validated_external_tables: BTreeSet<ExternalTableRef>,
     pub(in crate::codegen) arguments: [String; RV32_MODELED_ARGUMENT_COUNT],
     /// Lexical prefix for argument bindings of nested composed calls.
     /// Call-result and read names live inside explicit Rust blocks, but
@@ -76,7 +72,6 @@ impl Default for RenderState {
             bounded_poll_count: 0,
             call_results: Vec::new(),
             external_results: Vec::new(),
-            validated_external_tables: BTreeSet::new(),
             arguments: core::array::from_fn(|index| format!("args[{index}]")),
             composed_argument_prefix: String::new(),
         }
@@ -208,40 +203,6 @@ pub fn generate(
             output,
             "// Composed direct-call dependency: {}",
             comment_text(dependency)
-        )
-        .unwrap();
-    }
-    let mut external_tables = BTreeSet::new();
-    match &trace.body {
-        ResolvedReferenceBody::Linear { events, .. } => {
-            for event in events {
-                match event {
-                    ResolvedReferenceEvent::ExternalCall { table, .. } => {
-                        external_tables.insert(*table);
-                    }
-                    ResolvedReferenceEvent::ComposedCall { flow, .. } => {
-                        collect_external_tables(flow, &mut external_tables);
-                    }
-                    _ => {}
-                }
-            }
-        }
-        ResolvedReferenceBody::Flow(flow) => {
-            collect_external_tables(flow, &mut external_tables);
-        }
-    }
-    for table in external_tables {
-        let spec = table.spec();
-        writeln!(output, "// External ABI: {}", spec.id).unwrap();
-        writeln!(output, "// External ABI pointer: {}", spec.pointer_symbol).unwrap();
-        writeln!(output, "// External ABI backing: {}", spec.backing_symbol).unwrap();
-        writeln!(output, "// External ABI version: {:#010x}", spec.version).unwrap();
-        writeln!(output, "// External ABI magic: {:#010x}", spec.magic).unwrap();
-        writeln!(output, "// External ABI size: {:#x}", spec.size).unwrap();
-        writeln!(
-            output,
-            "// External ABI magic offset: {:#x}",
-            spec.magic_offset
         )
         .unwrap();
     }
@@ -431,27 +392,12 @@ pub fn generate(
     writeln!(output, "pub trait ReferencePlatform {{").unwrap();
     writeln!(
         output,
-        "    fn external_table_version(&mut self, table: &str) -> u32;"
-    )
-    .unwrap();
-    writeln!(
-        output,
-        "    fn external_table_magic(&mut self, table: &str) -> u32;"
-    )
-    .unwrap();
-    writeln!(
-        output,
-        "    fn external_table_size(&mut self, table: &str) -> u32;"
-    )
-    .unwrap();
-    writeln!(
-        output,
         "    /// Returns the modeled result selected by the harness contract."
     )
     .unwrap();
     writeln!(
         output,
-        "    fn external_call(&mut self, table: &str, function: &str, arguments: &[u32]) -> u32;"
+        "    fn external_call(&mut self, contract: &str, model: &str, arguments: &[u32]) -> u32;"
     )
     .unwrap();
     writeln!(

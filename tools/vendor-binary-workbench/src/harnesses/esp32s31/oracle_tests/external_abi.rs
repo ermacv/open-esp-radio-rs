@@ -8,7 +8,7 @@ fn wifi_osi_rand_tail_call_resolves_from_relocation() {
         &symbol,
         &map(),
         &BTreeMap::new(),
-        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        &reviewed_wifi_osi_context(),
         None,
     )
     .unwrap();
@@ -17,12 +17,15 @@ fn wifi_osi_rand_tail_call_resolves_from_relocation() {
     assert_eq!(trace.return_value, SymbolicValue::ExternalResult(0));
     assert!(matches!(
         trace.reference_events.as_slice(),
-        [DraftReferenceEvent::ExternalCall {
+        [DraftReferenceEvent::ReviewedExternalCall {
             token: 0,
-            table,
-            function,
+            candidates,
             ..
-        }] if *table == external_abi::WIFI_OSI_V9 && *function == external_abi::RAND
+        }] if candidates.len() == 1
+            && candidates[0].contract == "esp32s31-radio-rev0::wifi-osi-v9"
+            && candidates[0].name == "rand"
+            && candidates[0].execution_model.as_ref().is_some_and(|model|
+                model.id == "esp32s31-wifi-osi-v9.rand")
     ));
 
     let generated = generate_reference(
@@ -35,17 +38,11 @@ fn wifi_osi_rand_tail_call_resolves_from_relocation() {
     .unwrap();
     assert!(generated.source.contains("pub trait ReferencePlatform"));
     assert!(generated.source.contains(
-        "let external_result0 = platform.external_call(\"esp32s31-wifi-osi-v9\", \"rand\", &[]);"
+        "let external_result0 = platform.external_call(\"esp32s31-radio-rev0::wifi-osi-v9\", \"esp32s31-wifi-osi-v9.rand\", &[]);"
     ));
-    assert!(generated.source.contains(
-        "assert_eq!(platform.external_table_version(\"esp32s31-wifi-osi-v9\"), 0x00000009_u32"
-    ));
-    assert!(generated.source.contains(
-        "assert_eq!(platform.external_table_magic(\"esp32s31-wifi-osi-v9\"), 0xdeadbeaf_u32"
-    ));
-    assert!(generated.source.contains(
-        "assert_eq!(platform.external_table_size(\"esp32s31-wifi-osi-v9\"), 0x00000200_u32"
-    ));
+    assert!(!generated.source.contains("external_table_version"));
+    assert!(!generated.source.contains("external_table_magic"));
+    assert!(!generated.source.contains("external_table_size"));
     assert!(
         generated
             .source
@@ -60,7 +57,7 @@ fn unknown_wifi_osi_slot_fails_closed() {
         &symbol,
         &map(),
         &BTreeMap::new(),
-        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        &reviewed_wifi_osi_context(),
         None,
     )
     .unwrap();
@@ -74,9 +71,9 @@ fn unknown_wifi_osi_slot_fails_closed() {
 #[test]
 fn reviewed_wifi_osi_slot_is_named_without_an_execution_model() {
     let symbol = wifi_osi_tail_symbol(0x0c0);
-    let mut context = StructuralPointerContext::from_harness(&RISCV_HARNESS);
+    let mut context = reviewed_wifi_osi_context();
     context.reviewed_external_slots.insert(
-        (external_abi::WIFI_OSI_V9.spec().id.to_owned(), 0x0c0),
+        ("esp32s31-radio-rev0::wifi-osi-v9".to_owned(), 0x0c0),
         vec![ReviewedExternalCall {
             id: "fixture::wifi-osi-v9@+0xc0".to_owned(),
             contract: "fixture::wifi-osi-v9".to_owned(),
@@ -86,6 +83,7 @@ fn reviewed_wifi_osi_slot_is_named_without_an_execution_model() {
             variadic: false,
             semantic_operation: None,
             replacement_hint: None,
+            execution_model: None,
             tail: true,
             evidence: ReviewedExternalCallEvidence::ObservedCallSite,
             slot_load_site: None,
@@ -121,20 +119,25 @@ fn semantic_only_rtos_slot_is_visible_but_remains_a_reference_blocker() {
         &symbol,
         &map(),
         &BTreeMap::new(),
-        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        &reviewed_wifi_osi_context(),
         None,
     )
     .unwrap();
 
     assert!(!trace.is_reference_eligible());
-    assert_eq!(trace.return_value, SymbolicValue::ExternalResult(0));
+    assert_eq!(trace.return_value, SymbolicValue::Unknown);
     assert!(matches!(
         trace.reference_events.as_slice(),
-        [DraftReferenceEvent::ExternalCall { function, .. }]
-            if function.spec().semantic.operation == "rtos.queue.send-from-isr"
+        [DraftReferenceEvent::ReviewedExternalCall { candidates, .. }]
+            if candidates.len() == 1
+                && candidates[0].semantic_operation.as_deref()
+                    == Some("rtos.queue.send-from-isr")
+                && candidates[0].execution_model.as_ref().is_some_and(|model|
+                    model.return_model == ExternalReturnModel::Unmodeled)
     ));
     assert!(trace.reference_blockers.iter().any(|blocker| {
-        blocker.contains("unmodeled-external-semantics") && blocker.contains("_queue_send_from_isr")
+        blocker.contains("unmodeled-reviewed-external-call")
+            && blocker.contains("queue_send_from_isr")
     }));
 }
 
@@ -145,17 +148,20 @@ fn wifi_osi_output_pointer_outside_private_stack_fails_closed() {
         &symbol,
         &map(),
         &BTreeMap::new(),
-        &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+        &reviewed_wifi_osi_context(),
         None,
     )
     .unwrap();
 
     assert!(!trace.is_reference_eligible());
-    assert!(trace.reference_blockers.iter().any(|blocker| {
-        blocker.contains("unsupported-external-output-pointer")
-            && blocker.contains("_coex_pti_get")
-            && blocker.contains("a1")
-    }));
+    assert!(
+        trace.reference_blockers.iter().any(|blocker| {
+            blocker.contains("unsupported-reviewed-external-output-pointer")
+                && blocker.contains("coex_pti_get")
+                && blocker.contains("a1")
+        }),
+        "{trace:#?}"
+    );
 }
 
 #[test]
@@ -166,8 +172,7 @@ fn real_libpp_hal_random_resolves_through_wifi_osi_abi() {
         return;
     }
 
-    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
-        .unwrap()
+    let trace = reviewed_reference_resolver(&artifact, &[])
         .trace(Some("hal_mac.o"), "hal_random", &map())
         .unwrap();
     assert!(trace.is_reference_eligible(), "{trace:#?}");
@@ -215,8 +220,7 @@ fn real_wdev_append_rx_blocks_recognizes_wifi_assert_as_a_diagnostic_boundary() 
     ])
     .unwrap();
 
-    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
-        .unwrap()
+    let trace = reviewed_reference_resolver(&artifact, &[])
         .trace(Some("wdev.o"), "wDev_AppendRxBlocks", &svd)
         .unwrap();
 
@@ -253,8 +257,7 @@ fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
-        .unwrap()
+    let trace = reviewed_reference_resolver(&artifact, &[])
         .trace(Some("hal_coex.o"), "hal_set_ofdma_sequence_pti", &svd)
         .unwrap();
 
@@ -263,7 +266,7 @@ fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
         trace
             .reference_events
             .iter()
-            .filter(|event| matches!(event, DraftReferenceEvent::ExternalCall { .. }))
+            .filter(|event| matches!(event, DraftReferenceEvent::ReviewedExternalCall { .. }))
             .count(),
         12
     );
@@ -287,7 +290,13 @@ fn real_libpp_coex_output_bytes_reach_compilable_reference_codegen() {
         &[],
     )
     .unwrap();
-    assert_eq!(generated.source.matches("\"coex-pti-get\"").count(), 13);
+    assert_eq!(
+        generated
+            .source
+            .matches("\"esp32s31-wifi-osi-v9.coex-pti-get\"")
+            .count(),
+        13
+    );
     assert_generated_reference_compiles("hal_set_ofdma_sequence_pti", &generated.source);
 }
 
@@ -307,7 +316,7 @@ fn real_libpp_coex_runtime_leaves_generate_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for symbol in [
         "hal_set_rx_beacon_time",
@@ -346,7 +355,7 @@ fn real_libpp_tsf_runtime_leaves_generate_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for (member, symbol) in [
         ("hal_tsf.o", "hal_enable_nan_tsf"),
@@ -387,7 +396,7 @@ fn real_libpp_remaining_mmio_leaves_generate_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for (member, symbol) in [
         ("hal_mac.o", "hal_beacon_ie_crc_get"),
@@ -428,8 +437,7 @@ fn real_libpp_timer_update_generates_both_symbolic_cfg_paths() {
     ])
     .unwrap();
 
-    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
-        .unwrap()
+    let trace = reviewed_reference_resolver(&artifact, &[])
         .trace(Some("hal_tsf.o"), "hal_timer_update_by_rtc", &svd)
         .unwrap();
 
@@ -468,7 +476,7 @@ fn real_libpp_indexed_mmio_generates_guarded_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for (member, symbol) in [
         ("hal_mac.o", "hal_mac_is_txq_valid"),
@@ -526,7 +534,7 @@ fn real_libpp_caller_memory_accessors_generate_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for (member, name) in [
         ("hal_mac.o", "hal_mac_ftm_get_t3"),
@@ -565,7 +573,7 @@ fn real_libpp_relocated_state_accessors_generate_compilable_references() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
 
     for (member, name) in [
         ("hal_mac.o", "hal_mac_set_csi"),
@@ -600,7 +608,7 @@ fn real_libpp_hal_analysis_baseline_and_codegen_remain_stable() {
         root.join("svd/esp32s31-platform-radio-deps.svd"),
     ])
     .unwrap();
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
     let symbols = catalog
         .symbols
         .iter()
@@ -625,7 +633,7 @@ fn real_libpp_hal_analysis_baseline_and_codegen_remain_stable() {
             symbol,
             &svd,
             &BTreeMap::new(),
-            &StructuralPointerContext::from_harness(&RISCV_HARNESS),
+            &reviewed_wifi_osi_context(),
             None,
         )
         .unwrap();
@@ -670,19 +678,21 @@ fn real_libpp_mac_delay_names_both_wifi_osi_callbacks() {
         return;
     }
 
-    let trace = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS)
-        .unwrap()
+    let trace = reviewed_reference_resolver(&artifact, &[])
         .trace(Some("hal_mac_ctl.o"), "hal_he_set_mac_delay", &map())
         .unwrap();
     let functions = trace
         .reference_events
         .iter()
-        .filter_map(|event| match event {
-            DraftReferenceEvent::ExternalCall { function, .. } => Some(*function),
-            _ => None,
+        .flat_map(|event| match event {
+            DraftReferenceEvent::ReviewedExternalCall { candidates, .. } => candidates
+                .iter()
+                .map(|candidate| candidate.name.as_str())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
         })
         .collect::<Vec<_>>();
-    assert!(functions.starts_with(&[external_abi::ENV_IS_CHIP, external_abi::RANDOM,]));
+    assert!(functions.starts_with(&["env_is_chip", "random"]));
     assert!(trace.reference_blockers.iter().all(|blocker| {
         !blocker.contains("esp32s31-wifi-osi-v9+0x4")
             && !blocker.contains("esp32s31-wifi-osi-v9+0x144")
@@ -697,12 +707,12 @@ fn linked_rom_catalog_discovers_wifi_osi_pointer_cell_by_symbol() {
         return;
     }
 
-    let catalog = ReferenceResolver::load(&artifact, &[], &RISCV_HARNESS).unwrap();
+    let catalog = reviewed_reference_resolver(&artifact, &[]);
     assert_eq!(
         catalog
             .pointer_context
-            .external_pointer_cells
+            .reviewed_external_pointer_cells
             .get(&0x2f07_ff44),
-        Some(&external_abi::WIFI_OSI_V9)
+        Some(&"esp32s31-radio-rev0::wifi-osi-v9".to_owned())
     );
 }

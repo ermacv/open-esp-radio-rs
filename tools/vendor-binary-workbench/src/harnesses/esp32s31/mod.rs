@@ -61,5 +61,5 @@ pub(super) fn verify_named_contract_registered(
 }
 #[cfg(test)]
 pub(crate) use open_radio_vendor_harness_esp32s31_semantic::{
-    entry_contract, external_abi, wide_signed_divide_target_address,
+    entry_contract, wide_signed_divide_target_address,
 };

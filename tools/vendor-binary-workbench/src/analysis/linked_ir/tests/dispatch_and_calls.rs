@@ -1,6 +1,9 @@
 //! Event dispatch, call linking, compaction, and basic rendering.
 
 use super::*;
+use open_radio_vendor_analysis_model::{
+    ReviewedExternalCallEvidence, ReviewedExternalCallExecutionModel,
+};
 
 static LINK_UNIT_DELAY_ARGUMENTS: [crate::ExternalArgumentSpec; 1] =
     [crate::ExternalArgumentSpec {
@@ -310,40 +313,26 @@ fn direct_call_graph_survives_reference_summary_inlining() {
 
 #[test]
 fn external_call_keeps_reviewed_table_slot_semantics() {
-    static ARGUMENTS: [crate::ExternalArgumentSpec; 1] = [crate::ExternalArgumentSpec {
-        name: "micros",
-        c_type: "u32",
-        direction: crate::ExternalArgumentDirection::Input,
-    }];
-    static FUNCTIONS: [crate::ExternalFunctionSpec; 1] = [crate::ExternalFunctionSpec {
-        id: "delay_us",
-        offset: 0x20,
-        c_name: "ets_delay_us",
-        argument_count: 1,
-        return_model: ExternalReturnModel::Constant(0),
-        semantic: crate::ExternalSemanticSpec {
-            operation: "time.delay-micros",
-            arguments: &ARGUMENTS,
-            return_type: "void",
-            replacement: Some("Rust async timer"),
-            event_dispatch: None,
-        },
-    }];
-    static TABLE: crate::ExternalTableSpec = crate::ExternalTableSpec {
-        id: "wifi_osi",
-        pointer_symbol: "g_wifi_osi_funcs",
-        backing_symbol: "wifi_osi_funcs",
-        version: 3,
-        magic: 0x1234_5678,
-        size: 0x100,
-        magic_offset: 0,
-        functions: &FUNCTIONS,
-    };
-    let event = DraftReferenceEvent::ExternalCall {
+    let event = DraftReferenceEvent::ReviewedExternalCall {
         token: 0,
         site: 0x40,
-        table: crate::ExternalTableRef::new(&TABLE),
-        function: crate::ExternalFunctionRef::new(&FUNCTIONS[0]),
+        candidates: vec![ReviewedExternalCall {
+            id: "pack::wifi-osi@+0x20".to_owned(),
+            contract: "pack::wifi-osi".to_owned(),
+            name: "ets_delay_us".to_owned(),
+            argument_types: vec!["u32".to_owned()],
+            return_type: "void".to_owned(),
+            variadic: false,
+            semantic_operation: Some("time.delay-micros".to_owned()),
+            replacement_hint: Some("Rust async timer".to_owned()),
+            execution_model: Some(ReviewedExternalCallExecutionModel {
+                id: "wifi-osi-models.delay-us".to_owned(),
+                return_model: ExternalReturnModel::Constant(0),
+            }),
+            tail: false,
+            evidence: ReviewedExternalCallEvidence::ObservedCallSite,
+            slot_load_site: Some(0x3c),
+        }],
         arguments: vec![SymbolicValue::input(0)].into_boxed_slice(),
     };
     let mut calls = BTreeSet::new();
@@ -355,9 +344,9 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     render_event(&event, &mut pseudo, 1, &mut RenderState::default());
     let call = calls.into_iter().next().unwrap();
 
-    assert_eq!(call.kind, "external");
+    assert_eq!(call.kind, "reviewed-external");
     assert_eq!(call.site, Some(0x40));
-    assert_eq!(call.target, "wifi_osi::ets_delay_us");
+    assert_eq!(call.target, "pack::wifi-osi::ets_delay_us");
     assert_eq!(call.arguments, [SymbolicValue::input(0).canonical()]);
     assert_eq!(
         call.semantic_operation.as_deref(),
@@ -366,38 +355,29 @@ fn external_call_keeps_reviewed_table_slot_semantics() {
     assert_eq!(
         call.semantic_contract.as_ref(),
         Some(&LinkedSemanticContract {
-            source: "registered-external-table-slot",
-            id: "wifi_osi::delay_us".to_owned(),
-            evidence: "exact-pointer-cell-and-slot".to_owned(),
+            source: "reviewed-interface-pack",
+            id: "pack::wifi-osi@+0x20".to_owned(),
+            evidence: "reviewed-layout-and-observed-call-site".to_owned(),
             event_dispatch: None,
         })
     );
     assert_eq!(call.replacement_hint.as_deref(), Some("Rust async timer"));
     assert_eq!(call.typed_arguments.len(), 1);
-    assert_eq!(call.typed_arguments[0].name, "micros");
+    assert_eq!(call.typed_arguments[0].name, "arg0");
     assert_eq!(call.typed_arguments[0].c_type, "u32");
-    assert_eq!(call.typed_arguments[0].direction, "input");
-    let trampoline = call.trampoline.as_ref().unwrap();
-    assert_eq!(trampoline.table, "wifi_osi");
-    assert_eq!(trampoline.pointer_symbol, "g_wifi_osi_funcs");
-    assert_eq!(trampoline.backing_symbol, "wifi_osi_funcs");
-    assert_eq!(trampoline.version, 3);
-    assert_eq!(trampoline.magic, 0x1234_5678);
-    assert_eq!(trampoline.table_size, 0x100);
-    assert_eq!(trampoline.slot, 0x20);
-    assert_eq!(trampoline.function_id, "delay_us");
-    assert_eq!(trampoline.return_model, "constant:0x00000000");
-    assert_eq!(trampoline.return_type, "void");
+    assert_eq!(call.typed_arguments[0].direction, "unknown");
+    assert!(call.trampoline.is_none());
+    assert!(call.result_modeled);
     assert!(
-            pseudo.contains(
-                "semantic.time_delay_micros(micros /* u32 Input */ = arg0); // site 0x00000040; ABI wifi_osi+0x20 ets_delay_us, returns void; replacement: Rust async timer"
-            ),
-            "{pseudo}"
-        );
+        pseudo.contains(
+            "reviewed_abi.ets_delay_us(arg0); // site 0x00000040; model=wifi-osi-models.delay-us"
+        ),
+        "{pseudo}"
+    );
     assert!(
-        call.semantics
-            .as_deref()
-            .is_some_and(|semantics| semantics.contains("version=3 slot=0x20 args=1")),
+        call.semantics.as_deref().is_some_and(
+            |semantics| semantics.contains("executable-model=wifi-osi-models.delay-us")
+        ),
         "{:?}",
         call.semantics
     );

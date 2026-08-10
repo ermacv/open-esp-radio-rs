@@ -1,6 +1,6 @@
 //! Observable and draft reference events.
 
-use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalReturnModel, ExternalTableRef};
+use open_radio_vendor_contracts::ExternalReturnModel;
 
 use super::*;
 
@@ -49,6 +49,9 @@ pub struct ReviewedExternalCall {
     pub variadic: bool,
     pub semantic_operation: Option<String>,
     pub replacement_hint: Option<String>,
+    /// Executable behavior selected by the reviewed slot's explicit foreign
+    /// key. Semantic recognition alone never populates this field.
+    pub execution_model: Option<ReviewedExternalCallExecutionModel>,
     pub tail: bool,
     pub evidence: ReviewedExternalCallEvidence,
     /// Instruction that loaded the reviewed slot pointer for this call site.
@@ -56,6 +59,12 @@ pub struct ReviewedExternalCall {
     /// This is evidence used to retire the matching structural blocker; it is
     /// not part of the stable ABI identity.
     pub slot_load_site: Option<u32>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ReviewedExternalCallExecutionModel {
+    pub id: String,
+    pub return_model: ExternalReturnModel,
 }
 
 /// Reviewed executable model for a directly relocated platform call.
@@ -168,13 +177,6 @@ pub enum DraftReferenceEvent {
         width: u8,
         value: SymbolicValue,
     },
-    ExternalCall {
-        token: u32,
-        site: u32,
-        table: ExternalTableRef,
-        function: ExternalFunctionRef,
-        arguments: Box<[SymbolicValue]>,
-    },
     ModeledDirectCall {
         token: u32,
         site: u32,
@@ -183,6 +185,7 @@ pub enum DraftReferenceEvent {
     },
     /// A named reviewed ABI call whose runtime behavior is not modeled.
     ReviewedExternalCall {
+        token: u32,
         site: u32,
         candidates: Vec<ReviewedExternalCall>,
         arguments: Box<[SymbolicValue]>,

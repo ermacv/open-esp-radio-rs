@@ -302,11 +302,13 @@ of being silently discarded.
 
 The first registered table is the ESP32-S31 Wi-Fi OS adapter v9. For both
 relocatable archives and linked ELFs, the resolver recognizes the exact chain
-`g_osi_funcs_p -> fixed slot load -> JALR`. The platform harness declares
-version `9`, magic `0xDEADBEAF`, the 512-byte size and slot offsets. Generated
+`g_osi_funcs_p -> fixed slot load -> JALR`. The reviewed interface pack owns
+version `9`, magic `0xDEADBEAF`, the 512-byte size, pointer root and slot ABI.
+The platform harness supplies only explicitly selected executable behavior.
+Generated
 references expose modeled callbacks through
-the target-neutral `ReferencePlatform::external_call(table, function, args)`
-boundary, assert the version/magic/size precondition by table ID, and retain
+the target-neutral `ReferencePlatform::external_call(contract, model, args)`
+boundary and retain
 nondeterministic callback results as symbolic values. The generated trait does
 not acquire ESP32-S31 method names. `_env_is_chip`, `_rand`,
 `_random` and `_slowclk_cal_get` are modeled; `_coex_pti_get` is identified by

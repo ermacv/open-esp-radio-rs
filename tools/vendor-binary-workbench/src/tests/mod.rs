@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::*;
 
 mod architecture_boundaries;
@@ -206,7 +208,7 @@ const TEST_NONE_ENTRY_SPEC: EntryContractSpec = EntryContractSpec {
 };
 const TEST_NONE_ENTRY: EntryContractRef = EntryContractRef::new(&TEST_NONE_ENTRY_SPEC);
 const TEST_CONTRACTS: HarnessContractSpec = HarnessContractSpec {
-    external_tables: &[],
+    external_call_model_sets: &[],
     entry_contracts: &[TEST_NONE_ENTRY],
     diagnostic_calls: &[],
 };
@@ -334,6 +336,61 @@ fn wifi_osi_tail_symbol(slot_offset: u32) -> artifact::ArtifactSymbolDefinition 
             addend: 0,
         }],
     }
+}
+
+#[cfg(feature = "esp32s31-harness")]
+fn esp32s31_interface_workspace() -> interfaces::InterfaceWorkspace {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("workbench remains under tools");
+    let project = project::ProjectSpec::load(
+        &root.join("verification/vendor/targets/esp32s31/vendor-project.toml"),
+    )
+    .unwrap();
+    let mut target = TargetSpec::load(&project.target_spec).unwrap();
+    if let Some(pack) = &project.platform_pack {
+        pack.apply_to_target(&mut target).unwrap();
+    }
+    linked_ir_export::load_project_interfaces(&project, &target)
+        .unwrap()
+        .expect("ESP32-S31 project has a reviewed interface workspace")
+}
+
+#[cfg(feature = "esp32s31-harness")]
+fn reviewed_wifi_osi_context() -> StructuralPointerContext {
+    let interfaces = esp32s31_interface_workspace();
+    let mut resolver = ReferenceResolver {
+        symbols: Vec::new(),
+        symbols_by_address: BTreeMap::new(),
+        symbol_ids: BTreeMap::new(),
+        exported_symbol_keys: BTreeSet::new(),
+        relocated_calls: BTreeMap::new(),
+        pointer_context: StructuralPointerContext::from_harness(
+            &harnesses::esp32s31::RISCV_HARNESS,
+        ),
+        data_symbols: Vec::new(),
+    };
+    linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
+    let contract = interfaces
+        .contracts()
+        .iter()
+        .find(|contract| contract.anchor == "wifi-osi-v9")
+        .expect("reviewed Wi-Fi OSI contract exists");
+    resolver.pointer_context.relocated_pointer_symbols.insert(
+        "g_osi_funcs_p".to_owned(),
+        SymbolicValue::ReviewedExternalTable(contract.id.clone()),
+    );
+    resolver.pointer_context
+}
+
+#[cfg(feature = "esp32s31-harness")]
+fn reviewed_reference_resolver(artifact: &Path, companions: &[PathBuf]) -> ReferenceResolver {
+    let interfaces = esp32s31_interface_workspace();
+    let mut resolver =
+        ReferenceResolver::load(artifact, companions, &harnesses::esp32s31::RISCV_HARNESS).unwrap();
+    linked_ir_export::register_reviewed_external_calls(&mut resolver, &interfaces, "archive", &[]);
+    resolver
 }
 
 #[cfg(feature = "esp32s31-harness")]

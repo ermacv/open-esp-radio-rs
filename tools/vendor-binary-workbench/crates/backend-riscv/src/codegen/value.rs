@@ -184,17 +184,11 @@ pub(super) fn render_value_scoped(
                 ))
             }
         }
-        SymbolicValue::ExternalTable(table) => Err(format!(
-            "external ABI table {} escaped into generated behavior",
-            table.spec().id
+        SymbolicValue::ReviewedExternalTable(contract) => Err(format!(
+            "reviewed external ABI table {contract} escaped into generated behavior"
         )),
-        SymbolicValue::ExternalFunction { table, function } => Err(format!(
-            "external ABI function {}::{function:?} escaped into generated behavior",
-            table.spec().id
-        )),
-        SymbolicValue::ReviewedExternalFunction { table, offset } => Err(format!(
-            "reviewed external ABI pointer {}+{offset:#x} cannot be emitted as a scalar expression",
-            table.spec().id
+        SymbolicValue::ReviewedExternalFunction { contract, offset } => Err(format!(
+            "reviewed external ABI pointer {contract}+{offset:#x} cannot be emitted as a scalar expression"
         )),
         SymbolicValue::FunctionTable(table) => Err(format!(
             "function table {} escaped into generated behavior",

@@ -81,7 +81,7 @@ fn apply_reviewed_external_call(
     instruction: Inst,
     offset: u32,
     dest: Reg,
-    candidates: Vec<ReviewedExternalCall>,
+    mut candidates: Vec<ReviewedExternalCall>,
     state: &mut StructuralTraceState,
 ) -> StructuralCallControl {
     if offset != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
@@ -91,11 +91,19 @@ fn apply_reviewed_external_call(
         return StructuralCallControl::Stop;
     }
     let tail = dest == Reg::ZERO;
-    if candidates.iter().any(|candidate| candidate.tail != tail) {
+    if candidates
+        .iter()
+        .any(|candidate| candidate.slot_load_site.is_some() && candidate.tail != tail)
+    {
         state.blockers.push(format!(
             "reviewed external ABI call shape changed at {pc:#x}: {instruction}"
         ));
         return StructuralCallControl::Stop;
+    }
+    for candidate in &mut candidates {
+        if candidate.slot_load_site.is_none() {
+            candidate.tail = tail;
+        }
     }
     for load_site in candidates
         .iter()
@@ -121,38 +129,79 @@ fn apply_reviewed_external_call(
         &state.stack,
         state.private_stack_may_be_modified_by_call,
     );
-    let arguments = call_arguments
+    let mut arguments = call_arguments
         .iter()
-        .cloned()
         .take(argument_count)
+        .cloned()
         .collect::<Vec<_>>()
         .into_boxed_slice();
     state.private_stack_may_be_modified_by_call |= arguments
         .iter()
         .any(|argument| argument.private_stack_offset().is_some());
-    state.reference_blockers.push(format!(
-        "unmodeled-reviewed-external-call at {pc:#x}: {}",
-        candidates
-            .iter()
-            .map(|candidate| candidate.id.as_str())
-            .collect::<Vec<_>>()
-            .join(" | ")
-    ));
+    let execution_model = match candidates.as_slice() {
+        [candidate] => candidate.execution_model.as_ref(),
+        _ => None,
+    };
+    let mut private_stack_output = None;
+    let result = match execution_model.map(|model| model.return_model) {
+        Some(ExternalReturnModel::Constant(value)) => SymbolicValue::Constant(value),
+        Some(ExternalReturnModel::SymbolicU32) => {
+            SymbolicValue::ExternalResult(state.next_external_call_token)
+        }
+        Some(ExternalReturnModel::PrivateStackOutputU8 { pointer_argument }) => {
+            let Some(SymbolicValue::StackAddress(offset)) =
+                arguments.get(usize::from(pointer_argument))
+            else {
+                state.reference_blockers.push(format!(
+                    "unsupported-reviewed-external-output-pointer at {pc:#x}: {} ({}) argument a{pointer_argument} is not private stack",
+                    candidates[0].id, candidates[0].name
+                ));
+                return StructuralCallControl::Stop;
+            };
+            let output = SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
+            std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
+            private_stack_output = Some((*offset, output));
+            arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
+            SymbolicValue::Unknown
+        }
+        Some(ExternalReturnModel::Unmodeled) | None => {
+            state.reference_blockers.push(format!(
+                "unmodeled-reviewed-external-call at {pc:#x}: {}",
+                candidates
+                    .iter()
+                    .map(|candidate| format!("{} ({})", candidate.id, candidate.name))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            ));
+            SymbolicValue::Unknown
+        }
+    };
     state
         .reference_events
         .push(DraftReferenceEvent::ReviewedExternalCall {
+            token: state.next_external_call_token,
             site: pc,
             candidates,
             arguments,
         });
+    if let Some((offset, value)) = private_stack_output {
+        state
+            .reference_events
+            .push(DraftReferenceEvent::PrivateStackStore {
+                offset,
+                width: 8,
+                value,
+            });
+    }
+    state.next_external_call_token += 1;
     if dest == Reg::ZERO {
-        state.return_value = SymbolicValue::Unknown;
+        state.return_value = result;
         return StructuralCallControl::Stop;
     }
     structural_finish_call_with_result(
         &mut state.values,
         pc.wrapping_add(u32::from(width)),
-        SymbolicValue::Unknown,
+        result,
     );
     StructuralCallControl::Advance(1)
 }
@@ -487,107 +536,11 @@ pub(super) fn apply_call_instruction(
         Inst::Jalr { offset, base, dest }
             if matches!(
                 &state.values[usize::from(base.0)],
-                SymbolicValue::ExternalFunction { .. }
-            ) =>
-        {
-            let SymbolicValue::ExternalFunction { table, function } =
-                state.values[usize::from(base.0)].clone()
-            else {
-                unreachable!()
-            };
-            let slot = function.spec();
-            if offset.as_u32() != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
-                state.blockers.push(format!(
-                    "unsupported external ABI call shape at {pc:#x}: {instruction}"
-                ));
-                return StructuralCallControl::Stop;
-            }
-            let mut arguments = (0..usize::from(slot.argument_count))
-                .map(|index| state.values[10 + index].clone())
-                .collect::<Vec<_>>()
-                .into_boxed_slice();
-            let mut private_stack_output = None;
-            let result = match slot.return_model {
-                ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
-                ExternalReturnModel::SymbolicU32 => {
-                    SymbolicValue::ExternalResult(state.next_external_call_token)
-                }
-                ExternalReturnModel::PrivateStackOutputU8 { pointer_argument } => {
-                    let Some(SymbolicValue::StackAddress(offset)) =
-                        arguments.get(usize::from(pointer_argument))
-                    else {
-                        state.blockers.push(format!(
-                            "call/jump instruction at {pc:#x}: external ABI {}::{}",
-                            table.spec().id,
-                            slot.c_name
-                        ));
-                        state.reference_blockers.push(format!(
-                            "unsupported-external-output-pointer at {pc:#x}: {}::{} argument a{pointer_argument} is not private stack",
-                            table.spec().id,
-                            slot.c_name
-                        ));
-                        return StructuralCallControl::Stop;
-                    };
-                    let output =
-                        SymbolicValue::ExternalResult(state.next_external_call_token).and(0xff);
-                    std::sync::Arc::make_mut(&mut state.stack).store(*offset, 8, &output);
-                    private_stack_output = Some((*offset, output));
-                    // The validated private pointer has already been consumed by
-                    // the internal stack effect. Do not let a callee-local
-                    // address escape into call composition or generated behavior.
-                    arguments[usize::from(pointer_argument)] = SymbolicValue::Constant(0);
-                    // The C callback returns an int, but this model only claims
-                    // its output-byte effect. Later use of a0 remains fail-closed.
-                    SymbolicValue::Unknown
-                }
-                ExternalReturnModel::Unmodeled => {
-                    state.reference_blockers.push(format!(
-                        "unmodeled-external-semantics at {pc:#x}: {}::{} ({})",
-                        table.spec().id,
-                        slot.c_name,
-                        slot.semantic.operation,
-                    ));
-                    SymbolicValue::ExternalResult(state.next_external_call_token)
-                }
-            };
-            state
-                .reference_events
-                .push(DraftReferenceEvent::ExternalCall {
-                    token: state.next_external_call_token,
-                    site: pc as u32,
-                    table,
-                    function,
-                    arguments,
-                });
-            if let Some((offset, value)) = private_stack_output {
-                state
-                    .reference_events
-                    .push(DraftReferenceEvent::PrivateStackStore {
-                        offset,
-                        width: 8,
-                        value,
-                    });
-            }
-            state.next_external_call_token += 1;
-            if dest == Reg::ZERO {
-                state.return_value = result;
-                return StructuralCallControl::Stop;
-            }
-            structural_finish_call_with_result(
-                &mut state.values,
-                (pc as u32).wrapping_add(u32::from(width)),
-                result,
-            );
-            StructuralCallControl::Advance(1)
-        }
-        Inst::Jalr { offset, base, dest }
-            if matches!(
-                &state.values[usize::from(base.0)],
                 SymbolicValue::ReviewedExternalFunction { .. }
             ) =>
         {
             let SymbolicValue::ReviewedExternalFunction {
-                table,
+                contract,
                 offset: slot,
             } = state.values[usize::from(base.0)].clone()
             else {
@@ -595,7 +548,7 @@ pub(super) fn apply_call_instruction(
             };
             let candidates = pointer_context
                 .reviewed_external_slots
-                .get(&(table.spec().id.to_owned(), slot))
+                .get(&(contract, slot))
                 .expect("reviewed external slot pointer requires registered ABI candidates")
                 .clone();
             apply_reviewed_external_call(

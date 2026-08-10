@@ -22,8 +22,7 @@ impl SymbolicValue {
             }
             Self::StackAddress(_)
             | Self::SymbolAddress { .. }
-            | Self::ExternalTable(_)
-            | Self::ExternalFunction { .. }
+            | Self::ReviewedExternalTable(_)
             | Self::ReviewedExternalFunction { .. }
             | Self::FunctionTable(_)
             | Self::FunctionPointer { .. }

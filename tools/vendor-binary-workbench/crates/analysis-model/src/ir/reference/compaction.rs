@@ -256,7 +256,7 @@ fn event_uses_memory_tokens(event: &ResolvedReferenceEvent, start: u32, end: u32
             destination,
             ..
         } => value_uses(source) || value_uses(destination),
-        ResolvedReferenceEvent::ExternalCall { arguments, .. }
+        ResolvedReferenceEvent::ReviewedExternalCall { arguments, .. }
         | ResolvedReferenceEvent::ModeledDirectCall { arguments, .. }
         | ResolvedReferenceEvent::DiagnosticCall { arguments, .. }
         | ResolvedReferenceEvent::ComposedCall { arguments, .. }
@@ -567,7 +567,7 @@ fn event_uses_call_tokens(event: &ResolvedReferenceEvent, start: u32, end: u32) 
             destination,
             ..
         } => value_uses(source) || value_uses(destination),
-        ResolvedReferenceEvent::ExternalCall { arguments, .. }
+        ResolvedReferenceEvent::ReviewedExternalCall { arguments, .. }
         | ResolvedReferenceEvent::ModeledDirectCall { arguments, .. }
         | ResolvedReferenceEvent::DiagnosticCall { arguments, .. }
         | ResolvedReferenceEvent::ComposedCall { arguments, .. }

@@ -11,10 +11,9 @@ pub(super) fn render_event(
     indent: &str,
 ) -> Result<(), String> {
     match event {
-        ResolvedReferenceEvent::ExternalCall {
+        ResolvedReferenceEvent::ReviewedExternalCall {
             token,
-            table,
-            function,
+            call,
             arguments,
             ..
         } => {
@@ -23,57 +22,35 @@ pub(super) fn render_event(
                     "external call token {token} is not ordered in generated behavior"
                 ));
             }
-            let slot = function.spec();
-            let table_spec = table.spec();
-            if state.validated_external_tables.insert(*table) {
-                writeln!(
-                        output,
-                        "{indent}assert_eq!(platform.external_table_version({:?}), {:#010x}_u32, \"external ABI version mismatch for {}\");",
-                        table_spec.id,
-                        table_spec.version,
-                        table_spec.id
-                    )
-                    .unwrap();
-                writeln!(
-                        output,
-                        "{indent}assert_eq!(platform.external_table_magic({:?}), {:#010x}_u32, \"external ABI magic mismatch for {}\");",
-                        table_spec.id,
-                        table_spec.magic,
-                        table_spec.id
-                    )
-                    .unwrap();
-                writeln!(
-                        output,
-                        "{indent}assert_eq!(platform.external_table_size({:?}), {:#010x}_u32, \"external ABI size mismatch for {}\");",
-                        table_spec.id,
-                        table_spec.size,
-                        table_spec.id
-                    )
-                    .unwrap();
-            }
+            let model = call
+                .execution_model
+                .as_ref()
+                .expect("resolved reviewed external call has an execution model");
             writeln!(
                 output,
-                "{indent}// External ABI {}+{:#x}: {}.",
-                table_spec.id, slot.offset, slot.c_name
+                "{indent}// Reviewed external ABI {}: {} (model {}).",
+                comment_text(&call.contract),
+                comment_text(&call.name),
+                comment_text(&model.id),
             )
             .unwrap();
             let call_arguments = arguments
                 .iter()
-                .take(usize::from(slot.argument_count))
+                .take(call.argument_types.len())
                 .map(|value| render_state_value(value, state))
                 .collect::<Result<Vec<_>, _>>()?;
-            let call = format!(
+            let invocation = format!(
                 "platform.external_call({:?}, {:?}, &[{}])",
-                table_spec.id,
-                slot.id,
+                call.contract,
+                model.id,
                 call_arguments.join(", ")
             );
-            writeln!(output, "{indent}let external_result{token} = {call};").unwrap();
-            if let ExternalReturnModel::Constant(expected) = slot.return_model {
+            writeln!(output, "{indent}let external_result{token} = {invocation};").unwrap();
+            if let ExternalReturnModel::Constant(expected) = model.return_model {
                 writeln!(
                         output,
                         "{indent}assert_eq!(external_result{token}, {expected:#010x}_u32, \"external ABI profile mismatch for {}\");",
-                        slot.c_name
+                        comment_text(&call.name),
                     )
                     .unwrap();
             }

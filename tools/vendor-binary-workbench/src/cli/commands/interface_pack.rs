@@ -130,30 +130,6 @@ fn validate(
                     .execution_contract
                     .as_ref()
                     .map(|contract| contract.id.as_str()),
-                execution_pointer_symbol: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.pointer_symbol.as_str()),
-                execution_backing_symbol: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.backing_symbol.as_str()),
-                execution_version: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.version),
-                execution_magic: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.magic),
-                execution_size: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.size),
-                execution_magic_offset: contract
-                    .execution_contract
-                    .as_ref()
-                    .map(|contract| contract.magic_offset),
                 slots: contract.slots.len(),
             })
             .collect(),
@@ -206,9 +182,8 @@ fn validate(
                 execution_model: binding.execution_model.as_ref().map(|model| {
                     InterfaceExecutionModelDocument {
                         id: &model.id,
-                        table: &model.table,
-                        function: &model.function,
-                        c_name: &model.c_name,
+                        set: &model.set,
+                        model: &model.model,
                         return_model: execution_model_label(model.return_model),
                     }
                 }),

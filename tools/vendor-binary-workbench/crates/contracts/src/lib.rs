@@ -5,7 +5,7 @@
 
 use std::cmp::Ordering;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum ExternalReturnModel {
     Constant(u32),
     SymbolicU32,
@@ -88,97 +88,92 @@ pub struct DirectSemanticFunctionSpec {
     pub evidence: &'static str,
 }
 
+/// Executable behavior supplied by a compiled platform harness.
+///
+/// Layout, slot offsets, names, ABI types and semantic annotations belong to
+/// the reviewed interface pack.  The model ID is only a foreign-key target
+/// for an explicitly reviewed slot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExternalFunctionSpec {
+pub struct ExternalCallModelSpec {
     pub id: &'static str,
-    pub offset: u32,
-    pub c_name: &'static str,
-    pub argument_count: u8,
     pub return_model: ExternalReturnModel,
-    pub semantic: ExternalSemanticSpec,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ExternalTableSpec {
+pub struct ExternalCallModelSetSpec {
     pub id: &'static str,
-    pub pointer_symbol: &'static str,
-    pub backing_symbol: &'static str,
-    pub version: u32,
-    pub magic: u32,
-    pub size: u32,
-    pub magic_offset: u32,
-    pub functions: &'static [ExternalFunctionSpec],
+    pub models: &'static [ExternalCallModelSpec],
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ExternalTableRef(&'static ExternalTableSpec);
+pub struct ExternalCallModelSetRef(&'static ExternalCallModelSetSpec);
 
-impl ExternalTableRef {
-    pub const fn new(spec: &'static ExternalTableSpec) -> Self {
+impl ExternalCallModelSetRef {
+    pub const fn new(spec: &'static ExternalCallModelSetSpec) -> Self {
         Self(spec)
     }
 
-    pub const fn spec(self) -> &'static ExternalTableSpec {
+    pub const fn spec(self) -> &'static ExternalCallModelSetSpec {
         self.0
     }
 
-    pub fn function_at(self, offset: u32) -> Option<ExternalFunctionRef> {
+    pub fn model(self, id: &str) -> Option<ExternalCallModelRef> {
         self.0
-            .functions
+            .models
             .iter()
-            .find(|function| function.offset == offset)
-            .map(ExternalFunctionRef::new)
+            .find(|model| model.id == id)
+            .map(ExternalCallModelRef::new)
     }
 }
 
-impl PartialEq for ExternalTableRef {
+impl PartialEq for ExternalCallModelSetRef {
     fn eq(&self, other: &Self) -> bool {
         self.0.id == other.0.id
     }
 }
 
-impl Eq for ExternalTableRef {}
+impl Eq for ExternalCallModelSetRef {}
 
-impl PartialOrd for ExternalTableRef {
+impl PartialOrd for ExternalCallModelSetRef {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for ExternalTableRef {
+impl Ord for ExternalCallModelSetRef {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.id.cmp(other.0.id)
     }
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct ExternalFunctionRef(&'static ExternalFunctionSpec);
+pub struct ExternalCallModelRef(&'static ExternalCallModelSpec);
 
-impl ExternalFunctionRef {
-    pub const fn new(spec: &'static ExternalFunctionSpec) -> Self {
+impl ExternalCallModelRef {
+    pub const fn new(spec: &'static ExternalCallModelSpec) -> Self {
         Self(spec)
     }
 
-    pub const fn spec(self) -> &'static ExternalFunctionSpec {
+    pub const fn spec(self) -> &'static ExternalCallModelSpec {
         self.0
     }
 }
 
-impl PartialEq for ExternalFunctionRef {
+impl PartialEq for ExternalCallModelRef {
     fn eq(&self, other: &Self) -> bool {
         self.0.id == other.0.id
     }
 }
 
-impl Eq for ExternalFunctionRef {}
+impl Eq for ExternalCallModelRef {}
 
-impl PartialOrd for ExternalFunctionRef {
+impl PartialOrd for ExternalCallModelRef {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl Ord for ExternalFunctionRef {
+impl Ord for ExternalCallModelRef {
     fn cmp(&self, other: &Self) -> Ordering {
         self.0.id.cmp(other.0.id)
     }
@@ -285,7 +280,7 @@ pub struct DiagnosticCallSpec {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HarnessContractSpec {
-    pub external_tables: &'static [ExternalTableRef],
+    pub external_call_model_sets: &'static [ExternalCallModelSetRef],
     pub entry_contracts: &'static [EntryContractRef],
     pub diagnostic_calls: &'static [DiagnosticCallSpec],
 }

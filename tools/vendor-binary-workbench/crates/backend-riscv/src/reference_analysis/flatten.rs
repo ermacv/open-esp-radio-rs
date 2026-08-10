@@ -298,11 +298,10 @@ pub(super) fn flatten_reference_trace(
                 output.push(event.clone());
                 Ok(())
             }
-            DraftReferenceEvent::ExternalCall {
+            DraftReferenceEvent::ReviewedExternalCall {
                 token,
                 site,
-                table,
-                function,
+                candidates,
                 arguments,
             } => (|| -> std::result::Result<(), String> {
                 let arguments = arguments
@@ -323,17 +322,16 @@ pub(super) fn flatten_reference_trace(
                     .filter(|event| {
                         matches!(
                             event,
-                            DraftReferenceEvent::ExternalCall { .. }
+                            DraftReferenceEvent::ReviewedExternalCall { .. }
                                 | DraftReferenceEvent::ModeledDirectCall { .. }
                         )
                     })
                     .count() as u32;
                 external_tokens.push(mapped_token);
-                output.push(DraftReferenceEvent::ExternalCall {
+                output.push(DraftReferenceEvent::ReviewedExternalCall {
                     token: mapped_token,
                     site: *site,
-                    table: *table,
-                    function: *function,
+                    candidates: candidates.clone(),
                     arguments,
                 });
                 if usize::try_from(*token).ok() != Some(external_tokens.len() - 1) {
@@ -367,7 +365,7 @@ pub(super) fn flatten_reference_trace(
                     .filter(|event| {
                         matches!(
                             event,
-                            DraftReferenceEvent::ExternalCall { .. }
+                            DraftReferenceEvent::ReviewedExternalCall { .. }
                                 | DraftReferenceEvent::ModeledDirectCall { .. }
                         )
                     })

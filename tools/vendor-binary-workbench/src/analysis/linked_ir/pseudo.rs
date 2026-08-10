@@ -215,8 +215,7 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
         SymbolicValue::Bits(bits) => {
             pseudo_masked_bits(bits).unwrap_or_else(|| format!("symbolic({:?})", value.canonical()))
         }
-        SymbolicValue::ExternalTable(_)
-        | SymbolicValue::ExternalFunction { .. }
+        SymbolicValue::ReviewedExternalTable(_)
         | SymbolicValue::ReviewedExternalFunction { .. }
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. } => {
@@ -229,32 +228,6 @@ pub(super) fn pseudo_arguments(arguments: &[SymbolicValue]) -> String {
     arguments
         .iter()
         .map(pseudo_value)
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-pub(super) fn pseudo_external_arguments(
-    function: crate::ExternalFunctionRef,
-    arguments: &[SymbolicValue],
-) -> String {
-    let semantic = function.spec().semantic;
-    arguments
-        .iter()
-        .enumerate()
-        .map(|(position, value)| {
-            semantic.arguments.get(position).map_or_else(
-                || pseudo_value(value),
-                |argument| {
-                    format!(
-                        "{} /* {} {:?} */ = {}",
-                        argument.name,
-                        argument.c_type,
-                        argument.direction,
-                        pseudo_value(value)
-                    )
-                },
-            )
-        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -526,35 +499,19 @@ pub(super) fn render_event(
             pseudo_value(value)
         )
         .unwrap(),
-        DraftReferenceEvent::ExternalCall {
-            token,
-            site,
-            table,
-            function,
-            arguments,
-        } => {
-            let function_spec = function.spec();
-            writeln!(
-                output,
-                "{prefix}let external{token} = semantic.{}({}); // site {site:#010x}; ABI {}+{:#x} {}, returns {}; replacement: {}",
-                pseudo_identifier(function_spec.semantic.operation),
-                pseudo_external_arguments(*function, arguments),
-                table.spec().id,
-                function_spec.offset,
-                function_spec.c_name,
-                function_spec.semantic.return_type,
-                function_spec.semantic.replacement.unwrap_or("none"),
-            )
-            .unwrap();
-        }
         DraftReferenceEvent::ReviewedExternalCall {
+            token,
             site,
             candidates,
             arguments,
         } => {
+            let model = match candidates.as_slice() {
+                [candidate] => candidate.execution_model.as_ref(),
+                _ => None,
+            };
             writeln!(
                 output,
-                "{prefix}let _unmodeled = reviewed_abi.{}({}); // site {site:#010x}; {}",
+                "{prefix}let external{token} = reviewed_abi.{}({}); // site {site:#010x}; model={}; {}",
                 pseudo_identifier(
                     &candidates
                         .iter()
@@ -563,6 +520,7 @@ pub(super) fn render_event(
                         .join("_or_")
                 ),
                 pseudo_arguments(arguments),
+                model.map_or("none", |model| model.id.as_str()),
                 candidates
                     .iter()
                     .map(|candidate| format!(

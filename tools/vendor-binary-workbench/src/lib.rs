@@ -40,8 +40,6 @@ pub(crate) use digest::artifact_sha256;
 use error::WorkbenchError;
 #[cfg(all(test, feature = "esp32s31-harness"))]
 pub(crate) use harnesses::esp32s31::entry_contract;
-#[cfg(all(test, feature = "esp32s31-harness"))]
-pub(crate) use harnesses::esp32s31::external_abi;
 use memory_map::MemoryMap;
 #[cfg(all(test, feature = "esp32s31-harness"))]
 use open_radio_vendor_analysis_model::reject_register_collisions;

@@ -1,12 +1,15 @@
 //! Function index and reviewed logical-type projection for workspace browsing.
 
+use std::collections::{BTreeMap, BTreeSet};
+
 use super::{ProjectSession, push_error};
 use crate::{
     application::model::{
-        DiagnosticRecord, FunctionReviewState, FunctionSelection, FunctionSummary,
-        LogicalTypeBindingSummary, LogicalTypeFieldSummary, LogicalTypeSummary,
+        DiagnosticRecord, FunctionMmioSiteSummary, FunctionReviewState, FunctionSelection,
+        FunctionSummary, LogicalTypeBindingSummary, LogicalTypeFieldSummary, LogicalTypeSummary,
     },
     function_workspace::{FunctionReviewStatus, FunctionWorkspace, ReviewedMemoryObject},
+    registers::RegisterFacts,
 };
 
 pub(super) fn collect(
@@ -33,6 +36,24 @@ pub(super) fn collect(
             return (Vec::new(), Vec::new());
         }
     };
+    let static_mmio = resolved
+        .project
+        .registers
+        .as_ref()
+        .filter(|paths| paths.facts.is_file())
+        .and_then(|paths| match RegisterFacts::load(&paths.facts) {
+            Ok(facts) => Some(static_mmio_by_function(&facts)),
+            Err(error) => {
+                push_error(
+                    diagnostics,
+                    "function-static-mmio",
+                    error,
+                    Some(paths.facts.clone()),
+                );
+                None
+            }
+        })
+        .unwrap_or_default();
     let functions = workspace
         .facts
         .functions
@@ -50,6 +71,18 @@ pub(super) fn collect(
             if !fact.call_graph_closed {
                 blockers.push("call graph is not closed".to_owned());
             }
+            let static_sites = static_mmio
+                .get(&fact_function_key(fact))
+                .cloned()
+                .unwrap_or_default();
+            let registers = fact
+                .mmio_addresses
+                .iter()
+                .copied()
+                .chain(static_sites.iter().map(|site| site.address))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
             FunctionSummary {
                 profile: fact.profile.clone(),
                 source: fact.source.clone(),
@@ -87,7 +120,8 @@ pub(super) fn collect(
                     .into_iter()
                     .collect(),
                 semantic_operations: fact.semantic_operations.clone(),
-                registers: fact.mmio_addresses.clone(),
+                registers,
+                mmio_sites: static_sites,
                 calls: fact.calls.len(),
             }
         })
@@ -127,6 +161,48 @@ pub(super) fn collect(
     (functions, logical_types)
 }
 
+pub(super) fn static_mmio_by_function(
+    facts: &RegisterFacts,
+) -> BTreeMap<String, Vec<FunctionMmioSiteSummary>> {
+    let mut output = BTreeMap::<String, Vec<FunctionMmioSiteSummary>>::new();
+    for register in &facts.registers {
+        for site in &register.read_sites {
+            output
+                .entry(site.function.clone())
+                .or_default()
+                .push(FunctionMmioSiteSummary {
+                    address: register.address,
+                    width: register.width,
+                    access: "read".to_owned(),
+                    pc: site.pc,
+                });
+        }
+        for site in &register.write_sites {
+            output
+                .entry(site.function.clone())
+                .or_default()
+                .push(FunctionMmioSiteSummary {
+                    address: register.address,
+                    width: register.width,
+                    access: "write".to_owned(),
+                    pc: site.pc,
+                });
+        }
+    }
+    for sites in output.values_mut() {
+        sites.sort_by_key(|site| (site.pc, site.address, site.width, site.access.clone()));
+        sites.dedup();
+    }
+    output
+}
+
+pub(super) fn fact_function_key(fact: &crate::function_workspace::FunctionFact) -> String {
+    fact.member.as_deref().map_or_else(
+        || format!("{}:{}", fact.source, fact.symbol),
+        |member| format!("{}:{}:{}", fact.source, member, fact.symbol),
+    )
+}
+
 fn reviewed_memory_label(object: &ReviewedMemoryObject) -> String {
     match object {
         ReviewedMemoryObject::Argument { function, index } => {
@@ -153,7 +229,6 @@ fn reviewed_memory_label(object: &ReviewedMemoryObject) -> String {
 
 fn review_status(status: FunctionReviewStatus) -> FunctionReviewState {
     match status {
-        FunctionReviewStatus::Unreviewed => FunctionReviewState::Unreviewed,
         FunctionReviewStatus::Reviewed => FunctionReviewState::Reviewed,
         FunctionReviewStatus::Ignored => FunctionReviewState::Ignored,
     }
@@ -164,5 +239,50 @@ fn selection(selection: &str) -> FunctionSelection {
         "symbol-prefix-root" => FunctionSelection::SymbolPrefixRoot,
         "reachable-internal" => FunctionSelection::ReachableInternal,
         _ => unreachable!("validated linked-IR function selection"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::registers::{FactRange, RegisterAccessSiteFact, RegisterFact};
+
+    #[test]
+    fn artifact_wide_mmio_sites_survive_incomplete_linked_ir() {
+        let facts = RegisterFacts {
+            ranges: vec![FactRange {
+                name: "radio".to_owned(),
+                start: 0x2010_0000,
+                end: 0x2011_0000,
+            }],
+            registers: vec![RegisterFact {
+                address: 0x2010_4090,
+                width: 32,
+                catalog_name: "radio.REG_20104090".to_owned(),
+                reads: 1,
+                writes: 0,
+                read_functions: ["libpp:wdev_record_rx_linked_list".to_owned()].into(),
+                write_functions: BTreeSet::new(),
+                read_sites: [RegisterAccessSiteFact {
+                    function: "libpp:wdev_record_rx_linked_list".to_owned(),
+                    pc: 0x1002_3562,
+                }]
+                .into(),
+                write_sites: BTreeSet::new(),
+                write_patterns: Vec::new(),
+                candidate_masks: Vec::new(),
+            }],
+        };
+
+        let sites = static_mmio_by_function(&facts);
+        assert_eq!(
+            sites["libpp:wdev_record_rx_linked_list"],
+            [FunctionMmioSiteSummary {
+                address: 0x2010_4090,
+                width: 32,
+                access: "read".to_owned(),
+                pc: 0x1002_3562,
+            }]
+        );
     }
 }

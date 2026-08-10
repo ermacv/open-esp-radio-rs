@@ -219,6 +219,7 @@ fn test_reference_intrinsic(
     (symbol.name == "ets_delay_us").then(|| FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::DelayMicros {
             micros: SymbolicValue::input(0),
         }],
@@ -244,6 +245,28 @@ fn no_test_direct_semantic(
     None
 }
 
+fn test_direct_external_semantic(symbol: &str) -> Option<&'static DirectSemanticFunctionSpec> {
+    (symbol == "ets_delay_us").then_some(&TEST_DELAY_DIRECT_SEMANTIC)
+}
+
+static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "test-linked-ets-delay-us",
+    c_name: "ets_delay_us",
+    argument_count: 1,
+    semantic: ExternalSemanticSpec {
+        operation: "time.blocking-delay",
+        arguments: &[ExternalArgumentSpec {
+            name: "micros",
+            c_type: "u32",
+            direction: ExternalArgumentDirection::Input,
+        }],
+        return_type: "void",
+        replacement: Some("Rust async timer"),
+        event_dispatch: None,
+    },
+    evidence: "test-authoritative-link-unit-symbol",
+};
+
 fn no_test_wide_divide(
     _symbol: &artifact::ArtifactSymbolDefinition,
     _arguments: &Rv32CallArguments,
@@ -254,6 +277,7 @@ fn no_test_wide_divide(
 static TEST_SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: |_| false,
     direct_semantic: no_test_direct_semantic,
+    direct_external_semantic: test_direct_external_semantic,
     reference_intrinsic: test_reference_intrinsic,
     standard_memory_intrinsic: no_test_memory_intrinsic,
     wide_signed_divide: no_test_wide_divide,

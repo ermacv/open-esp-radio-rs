@@ -9,7 +9,6 @@ use crate::Result;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FunctionReviewStatus {
-    Unreviewed,
     Reviewed,
     Ignored,
 }
@@ -184,12 +183,12 @@ impl FunctionPack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(2) {
+        if document.get("schema").and_then(Item::as_integer) != Some(3) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "function pack",
                 path,
                 &input,
-                "requires schema = 2",
+                "requires schema = 3",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

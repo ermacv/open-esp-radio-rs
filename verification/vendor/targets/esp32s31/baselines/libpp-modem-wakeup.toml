@@ -1,43 +1,151 @@
-schema = 1
-# Focused finite WDEVPWR counter and TBTT register slice. Artifact
-# authentication stays caller-owned; these rows pin proof and verifier identity.
+schema = 2
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_limit"
-kind = "effect-contract/exact-effects-v1/sha256:22f3b9830aa2807d50c36f91bc878f04ce0c2df5035fea71c59a2ca33c744458"
+kind = "effect-contract/exact-effects-v1"
+digest = "ba3cc4a9a357824de1932877bdf995234212b9e992086a6cfde8a204fae80099"
+
+[evidence.components]
+binding = "8186b8ba7a21ddc5b99f2639fa5d4c8a7dbd879c2055283ccd1a1b89a2fa3741"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "20f53552613b29ef7cf52f4af0a8086e3ad2bfe01c787ed175d18b79a65f0f31"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "094d7188d9c91a0949bf3ee204459ee0b102fcf3bc6f6e5071ed4f1dd26ada2c"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_limit_exceeded_wakeup_enable"
-kind = "effect-contract/exact-effects-v1/sha256:ea2a8ec9ace13c1eaf496e7abf29b7de7fe4e8641c2ffc2fe0f343cddb4901b0"
+kind = "effect-contract/exact-effects-v1"
+digest = "ae09f7e5e74e48eeafa245bd18cd71bd68576e88a22fa35e26a7c23498b77767"
+
+[evidence.components]
+binding = "e7bbcfc12ff54c54318b665382fd17459d21d5980bca244c89c03a4277e249f2"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "aa9e80799b87b794b5fcdddb7f28097cfa6a9e5ca545d775424997c56774bc3e"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "094d7188d9c91a0949bf3ee204459ee0b102fcf3bc6f6e5071ed4f1dd26ada2c"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_beacon_miss_timeout"
-kind = "effect-contract/exact-effects-v1/sha256:a753951b459d4e3623b96026a1476daed7c4a0684bbe9c13ae182c3d1d4c1af9"
+kind = "effect-contract/exact-effects-v1"
+digest = "d19a7b436a009cce74b62f738f6ffaec19ae0f542f77d70fed3b3d46b13228c0"
+
+[evidence.components]
+binding = "80e12bd5204553b562888e0c883a874989b392c1a1c750a3e266bcb062be3a3f"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "902f1a62a29368abed2352885aff7925ff36aabed68d3a43618453eef253c8d1"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "295852878a361cbe1512d9b0c30a1f490d373f84b43b86c83a23e34432fc527d"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_sleep_limit"
-kind = "effect-contract/exact-effects-v1/sha256:6e0ca2398ee0fe73fcd18ef4e34f89d5184738d0175c21457a48d87107b49ec4"
+kind = "effect-contract/exact-effects-v1"
+digest = "3705582c6984f9a2d720a454ca16bd69cd8d1f2c6006201cb9a3e1e3ca5a808b"
+
+[evidence.components]
+binding = "50d0c181848b76024136fd65c25af5f627940de5a4be4aff8668c2e3e66dc5fd"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "ed4840c4d1cf31bd4af360772851210bb68f7d8924b5528b3afcd1e7ec5f1e59"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "094d7188d9c91a0949bf3ee204459ee0b102fcf3bc6f6e5071ed4f1dd26ada2c"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_sleep_limit_exceeded_wakeup_enable"
-kind = "effect-contract/exact-effects-v1/sha256:466fffbac8a4a765924213dec099c2706bfbb8f31ea49488e64f2ffc57779d6e"
+kind = "effect-contract/exact-effects-v1"
+digest = "b81d238c4200284741490e301b6c80520cfff6b92d1435496cdca7a734c81712"
+
+[evidence.components]
+binding = "779c39a2dacb293ac47349716f1ce573a2f55a90daffbf5097adf979c0e6364f"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "46e97609526f6a941320578cc0a531c0270f924f70a63cbaa4d18cb5b36651a9"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "094d7188d9c91a0949bf3ee204459ee0b102fcf3bc6f6e5071ed4f1dd26ada2c"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_early_time"
-kind = "effect-contract/exact-effects-v1/sha256:3127b4e51fe41237abcce35cb7c4d36825bbe00aa54bfaa35f059982c9266466"
+kind = "effect-contract/exact-effects-v1"
+digest = "61ee849e3db82341968de89fffbe87219c92442fb19bb58e99d995915f80eed3"
+
+[evidence.components]
+binding = "ef341739c2c5a470992a63d7d61728220d7736b640582973283216f1830b6daf"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "1ee6d92c1d8a2777b11725c720aca4596b728a60a2c92fe46bfab1c105f42dc3"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "972c1e8492d9d7682cd78e9dc30bdb6b7f8febdb9fc77f0346bb0d42b4f105ab"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_state_wakeup_protect_enable"
-kind = "effect-contract/exact-effects-v1/sha256:170688154352a21b2e56168da5347f7f126ae7137886b8d424dac9daba9ad19f"
+kind = "effect-contract/exact-effects-v1"
+digest = "2c05349c9e149683c997c844ae55fff9d1b5397ba9229d047a6b52ee00fed258"
+
+[evidence.components]
+binding = "800773a7ecc5ca1d90eb2ef791b64bdca49bfc3eea7192abd443088102efac21"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "fce3cd1f7ccb0abd4aeee6a471e4f485a43c4a54aad14c2bb4eb07f72ae0e52a"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "6343cfccdaf5b1459fa9b899acad079c84dbac7191072e12ba89748cc55bdc01"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_disable"
-kind = "effect-contract/exact-effects-v1/sha256:34669f350c34b351f2835cf8adeb61b8b731aa01331ba76f72841fc0c8b54c87"
+kind = "effect-contract/exact-effects-v1"
+digest = "1ad59b605f477422a6465f6fb5aefe44ad3a27293e609f6b38d0419a43d20ee8"
+
+[evidence.components]
+binding = "1d239bdb82c932564f65960fa6f1794540dd4c4857f558db0014406da7dde046"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "5a22f9cc81403f7d071f095fd257888deb5881b4a788358cdb6eaac36d13d8c4"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "972c1e8492d9d7682cd78e9dc30bdb6b7f8febdb9fc77f0346bb0d42b4f105ab"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_enable"
-kind = "effect-contract/exact-effects-v1/sha256:bae6b3f101bad7a53c71a62301a312a0c00ad13631868b80193b47b9eba30e31"
+kind = "effect-contract/exact-effects-v1"
+digest = "d41cbc516467e7c75988b8b533e9c1e8bf08f7d315d9c6b38de290eef14e0e52"
+
+[evidence.components]
+binding = "90557d0ad6ace782db751bff20d090f591c8412c8e21e8af4755205e78c46c3d"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "eb91305d7a8ae3bea6a9889f867e924db848aa09acea3343ca8f41ba40e5eef1"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "972c1e8492d9d7682cd78e9dc30bdb6b7f8febdb9fc77f0346bb0d42b4f105ab"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"
+
 [[evidence]]
 source = "libpp"
 symbol = "pwr_hal_set_mac_modem_tbtt_auto_period_interval"
-kind = "effect-contract/exact-effects-v1/sha256:00af6e2f70151231fce567e6f9b466155e09d120bac6373cb35124a0f9aed1ae"
+kind = "effect-contract/exact-effects-v1"
+digest = "a97e9dff711f846bae3b8c179d9b371ec6515254d93c5f47fc4f47ded16912f8"
+
+[evidence.components]
+binding = "47da877243f38c9c619266870951d3a7be04d382f91fb1d187770131dab78166"
+binding-verifier = "8a49056ff034bb6ccbcba50a8fbb5f592af78036508fc66b91e7d26dd88f5c5b"
+effect-comparator = "7e0c0424ae313df2bc7e5d8c282b5c38f04e8e53e472be08a56f4f89aabdb9ab"
+generated-reference-proof = "b0cb3f8ff6f52d5e3fd4c0046ac3588798fac97dde62c919a69efffb986ba6b4"
+generated-reference-verifier = "fcc52804603e6ad9b56c24260dee3e8d7543a25db44ebf4f8d4f49fbf0dc710b"
+policy = "972c1e8492d9d7682cd78e9dc30bdb6b7f8febdb9fc77f0346bb0d42b4f105ab"
+reference-code-generator = "d8fbd14c260c0bdbef1924df030791c5d400d6f188efdc797ec1a3c3b5c1d932"

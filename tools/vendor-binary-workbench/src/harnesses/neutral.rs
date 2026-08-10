@@ -33,6 +33,10 @@ fn no_direct_semantic(
     None
 }
 
+fn no_direct_external_semantic(_symbol: &str) -> Option<&'static DirectSemanticFunctionSpec> {
+    None
+}
+
 fn no_reference_intrinsic(
     _symbol: &artifact::ArtifactSymbolDefinition,
     _svd: &MmioMap,
@@ -58,6 +62,7 @@ fn no_wide_signed_divide(
 static SUMMARIES: RiscvSummaryHooks = RiscvSummaryHooks {
     secondary_return_target: no_secondary_return_target,
     direct_semantic: no_direct_semantic,
+    direct_external_semantic: no_direct_external_semantic,
     reference_intrinsic: no_reference_intrinsic,
     standard_memory_intrinsic: no_standard_memory_intrinsic,
     wide_signed_divide: no_wide_signed_divide,

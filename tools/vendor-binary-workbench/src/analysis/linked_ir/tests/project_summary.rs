@@ -78,25 +78,32 @@ fn duplicate_private_names_get_stable_address_qualified_ir_identities() {
         ]
     );
 
-    let serial = summarize_linked_ir(build_linked_functions_for_roots(
-        &resolver,
-        resolver.symbols.clone(),
-        "",
-        &map,
-        "primary",
-        "primary",
-        false,
-        false,
-    ));
-    let parallel = summarize_linked_ir(build_all_linked_functions_parallel(
-        &resolver,
-        resolver.symbols.clone(),
-        &map,
-        "primary",
-        false,
+    let serial = summarize_linked_ir_with_jobs(
+        build_linked_functions_for_roots(
+            &resolver,
+            resolver.symbols.clone(),
+            "",
+            &map,
+            "primary",
+            "primary",
+            false,
+            false,
+        ),
+        1,
+    );
+    let parallel = summarize_linked_ir_with_jobs(
+        build_all_linked_functions_parallel(
+            &resolver,
+            resolver.symbols.clone(),
+            &map,
+            "primary",
+            false,
+            2,
+        ),
         2,
-    ));
+    );
     assert_eq!(parallel, serial);
+    assert_eq!(merge_linked_ir_with_jobs(vec![serial.clone()], 2), serial);
 }
 
 #[test]

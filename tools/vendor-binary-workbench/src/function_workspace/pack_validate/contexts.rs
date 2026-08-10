@@ -75,23 +75,6 @@ pub(super) fn validate_function(
     reviewed_names: &mut BTreeSet<String>,
 ) -> ValidationResult<()> {
     match reviewed.status {
-        FunctionReviewStatus::Unreviewed => {
-            if reviewed.name.is_some()
-                || reviewed.role.is_some()
-                || reviewed.summary.is_some()
-                || reviewed.accept_incomplete
-            {
-                return Err(ValidationError::function(
-                    reviewed,
-                    "status",
-                    format!(
-                        "unreviewed function {}:{} cannot make reviewed claims",
-                        reviewed.profile, reviewed.identity
-                    ),
-                ));
-            }
-            summary.unreviewed_functions += usize::from(fact.is_root());
-        }
         FunctionReviewStatus::Ignored => {
             if reviewed.name.is_some()
                 || reviewed.role.is_some()
@@ -238,17 +221,6 @@ fn validate_contexts(
                 })?;
                 summary.reviewed_contexts += 1;
             }
-            FunctionReviewStatus::Unreviewed => {
-                if context.name.is_some() || context.type_name.is_some() {
-                    return Err(ValidationError::context(
-                        reviewed,
-                        context,
-                        "status",
-                        "unreviewed context cannot define a name or type-name",
-                    ));
-                }
-                summary.unreviewed_contexts += 1;
-            }
             FunctionReviewStatus::Ignored => {
                 if context.name.is_some()
                     || context.type_name.is_some()
@@ -391,18 +363,6 @@ fn validate_field(
                 ));
             }
             summary.reviewed_fields += 1;
-        }
-        FunctionReviewStatus::Unreviewed => {
-            if field.name.is_some() || field.display_type.is_some() || field.description.is_some() {
-                return Err(ValidationError::field(
-                    function,
-                    context,
-                    field,
-                    "status",
-                    "unreviewed context field cannot define reviewed claims",
-                ));
-            }
-            summary.unreviewed_fields += 1;
         }
         FunctionReviewStatus::Ignored => {
             if field.name.is_some() || field.display_type.is_some() || field.description.is_some() {

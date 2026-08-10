@@ -39,19 +39,23 @@ pub(super) fn parse(input: &str) -> Result<InterfaceFacts> {
         calls: document
             .calls
             .into_iter()
-            .map(|call| InterfaceCallFact {
-                artifact: call.artifact,
-                member: call.member,
-                function: call.function,
-                function_address: call.function_address,
-                site: call.site,
-                kind: call.kind,
-                root: root(call.target.root),
-                loads: call.target.loads.into_iter().map(step).collect(),
-                container_depth: call.target.container_depth,
-                slot_offset: call.target.slot_offset,
-                jalr_offset: call.target.jalr_offset,
-                arguments: call.arguments.into_iter().map(argument).collect(),
+            .map(|call| {
+                let slot_load_site = call.target.loads.last().and_then(|load| load.site);
+                InterfaceCallFact {
+                    artifact: call.artifact,
+                    member: call.member,
+                    function: call.function,
+                    function_address: call.function_address,
+                    site: call.site,
+                    slot_load_site,
+                    kind: call.kind,
+                    root: root(call.target.root),
+                    loads: call.target.loads.into_iter().map(step).collect(),
+                    container_depth: call.target.container_depth,
+                    slot_offset: call.target.slot_offset,
+                    jalr_offset: call.target.jalr_offset,
+                    arguments: call.arguments.into_iter().map(argument).collect(),
+                }
             })
             .collect(),
     };

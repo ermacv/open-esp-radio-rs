@@ -16143,7 +16143,7 @@ pub mod wifi_mac_he_init_prefix {
         pub const fn parent_enable(&self) -> &ParentEnable {
             &self.parent_enable
         }
-        #[doc = "0xbe8 - WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+        #[doc = "0xbe8 - WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank."]
         #[inline(always)]
         pub const fn interrupt_1_raw(&self) -> &Interrupt1Raw {
             &self.interrupt_1_raw
@@ -16604,15 +16604,19 @@ pub mod wifi_mac_he_init_prefix {
             type Safety = crate::Unsafe;
         }
     }
-    #[doc = "INTERRUPT_1_RAW (r) register accessor: WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_raw`] module"]
+    #[doc = "INTERRUPT_1_RAW (rw) register accessor: WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_raw::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_raw`] module"]
     #[doc(alias = "INTERRUPT_1_RAW")]
     pub type Interrupt1Raw = crate::Reg<interrupt_1_raw::Interrupt1RawSpec>;
-    #[doc = "WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+    #[doc = "WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank."]
     pub mod interrupt_1_raw {
         #[doc = "Register `INTERRUPT_1_RAW` reader"]
         pub type R = crate::R<Interrupt1RawSpec>;
+        #[doc = "Register `INTERRUPT_1_RAW` writer"]
+        pub type W = crate::W<Interrupt1RawSpec>;
         #[doc = "Field `EVENTS` reader - "]
         pub type EventsR = crate::FieldReader<u32>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -16620,13 +16624,24 @@ pub mod wifi_mac_he_init_prefix {
                 EventsR::new(self.bits)
             }
         }
-        #[doc = "WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, Interrupt1RawSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_raw::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`interrupt_1_raw::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct Interrupt1RawSpec;
         impl crate::RegisterSpec for Interrupt1RawSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`interrupt_1_raw::R`](R) reader structure"]
         impl crate::Readable for Interrupt1RawSpec {}
+        #[doc = "`write(|w| ..)` method takes [`interrupt_1_raw::W`](W) writer structure"]
+        impl crate::Writable for Interrupt1RawSpec {
+            type Safety = crate::Safe;
+        }
     }
     #[doc = "INTERRUPT_1_STATUS (r) register accessor: WDEV_INT1_STATUS diagnostic snapshot read by complete print_isr_regs.\n\nYou can [`read`](crate::Reg::read) this register and get [`interrupt_1_status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@interrupt_1_status`] module"]
     #[doc(alias = "INTERRUPT_1_STATUS")]
@@ -24697,7 +24712,7 @@ pub mod wifi_mac_interrupt {
         pub const fn enable(&self) -> &Enable {
             &self.enable
         }
-        #[doc = "0x04 - Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+        #[doc = "0x04 - Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE."]
         #[inline(always)]
         pub const fn raw(&self) -> &Raw {
             &self.raw
@@ -24752,15 +24767,19 @@ pub mod wifi_mac_interrupt {
             type Safety = crate::Safe;
         }
     }
-    #[doc = "RAW (r) register accessor: Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
+    #[doc = "RAW (rw) register accessor: Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`]. You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`raw::W`]. You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@raw`] module"]
     #[doc(alias = "RAW")]
     pub type Raw = crate::Reg<raw::RawSpec>;
-    #[doc = "Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."]
+    #[doc = "Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE."]
     pub mod raw {
         #[doc = "Register `RAW` reader"]
         pub type R = crate::R<RawSpec>;
+        #[doc = "Register `RAW` writer"]
+        pub type W = crate::W<RawSpec>;
         #[doc = "Field `EVENTS` reader - "]
         pub type EventsR = crate::FieldReader<u32>;
+        #[doc = "Field `EVENTS` writer - "]
+        pub type EventsW<'a, REG> = crate::FieldWriter<'a, REG, 32, u32, crate::Safe>;
         impl R {
             #[doc = "Bits 0:31"]
             #[inline(always)]
@@ -24768,13 +24787,24 @@ pub mod wifi_mac_interrupt {
                 EventsR::new(self.bits)
             }
         }
-        #[doc = "Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
+        impl W {
+            #[doc = "Bits 0:31"]
+            #[inline(always)]
+            pub fn events(&mut self) -> EventsW<'_, RawSpec> {
+                EventsW::new(self, 0)
+            }
+        }
+        #[doc = "Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.\n\nYou can [`read`](crate::Reg::read) this register and get [`raw::R`](R). You can [`write_with_zero`](crate::Reg::write_with_zero) this register using [`raw::W`](W). You can also [`modify`](crate::Reg::modify) this register. See [API](https://docs.rs/svd2rust/#read--modify--write-api)."]
         pub struct RawSpec;
         impl crate::RegisterSpec for RawSpec {
             type Ux = u32;
         }
         #[doc = "`read()` method returns [`raw::R`](R) reader structure"]
         impl crate::Readable for RawSpec {}
+        #[doc = "`write(|w| ..)` method takes [`raw::W`](W) writer structure"]
+        impl crate::Writable for RawSpec {
+            type Safety = crate::Safe;
+        }
     }
     #[doc = "STATUS (r) register accessor: Masked MAC event snapshot read by the complete hal_mac_interrupt_get_event leaf.\n\nYou can [`read`](crate::Reg::read) this register and get [`status::R`]. See [API](https://docs.rs/svd2rust/#read--modify--write-api).\n\nFor information about available fields see [`mod@status`] module"]
     #[doc(alias = "STATUS")]
@@ -33020,6 +33050,26 @@ pub mod zero_based_field_write {
 
 /// Safe, SVD-declared complete-register zero writes.
 pub mod zero_register_write {
+
+    /// Publish zero to every bit of `WIFI_MAC_INTERRUPT`.`RAW`.
+    #[inline]
+    pub fn disable_mac_interrupt_raw(registers: &crate::WifiMacInterrupt) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.raw().write_with_zero(|writer| writer);
+        }
+    }
+
+    /// Publish zero to every bit of `WIFI_MAC_HE_INIT_PREFIX`.`INTERRUPT_1_RAW`.
+    #[inline]
+    pub fn disable_mac_interrupt_1_raw(registers: &crate::WifiMacHeInitPrefix) {
+        // SAFETY: the SVD extension and its provenance explicitly
+        // qualify a complete zero write to this ordinary register.
+        unsafe {
+            registers.interrupt_1_raw().write_with_zero(|writer| writer);
+        }
+    }
 
     /// Publish zero to every bit of `WIFI_MAC_RX_DMA`.`RX_BLOCK_ACK_ENTRY%s_BITMAP_LOW_LOAD`.
     #[inline]

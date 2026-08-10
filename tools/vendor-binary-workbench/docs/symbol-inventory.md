@@ -121,6 +121,16 @@ coverage and member-level navigation. Do not silently merge them into one
 identity: one describes available objects, the other describes a selected
 link.
 
+Schema v4 adds origin navigation in the opposite direction. An externally
+selectable text definition in `source-artifact:NAME` is compared only with
+externally selectable text definitions in `source-inventory:NAME`. Exact
+symbol name and kind produce `unique-name-and-kind`,
+`ambiguous-name-and-kind`, or `missing` `origin_association` values plus the
+candidate artifact/member locations. Local `.L*` labels, data symbols, and
+unrelated sources are excluded. This is provenance for navigating from link
+truth back to source inventory; it does not claim which archive member the
+linker extracted, and `linker_resolution_claim` remains false.
+
 ## Project input roles
 
 A local run spec can expose both forms:

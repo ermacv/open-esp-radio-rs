@@ -199,3 +199,21 @@ argument-roles = ["level", "tag", "format", "argument-list"]
 return-role = "none"
 effects = ["diagnostic.emit"]
 replacement = "logging.formatted-record"
+
+[[operations]]
+id = "time.monotonic-micros.get"
+domain = "time"
+summary = "Read the platform monotonic microsecond clock"
+argument-roles = []
+return-role = "timestamp"
+effects = ["time.observe"]
+replacement = "async.clock-now-micros"
+
+[[operations]]
+id = "memory.internal.allocate"
+domain = "memory"
+summary = "Allocate caller-sized storage from internal memory"
+argument-roles = ["size"]
+return-role = "pointer"
+effects = ["memory.allocate"]
+replacement = "rust.owned-allocation-policy"

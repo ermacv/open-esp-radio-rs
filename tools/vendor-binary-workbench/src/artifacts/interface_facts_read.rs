@@ -101,8 +101,8 @@ pub(crate) struct StoredInterfaceTarget {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredInterfaceStep {
-    #[serde(default)]
-    site: Option<String>,
+    #[serde(default, deserialize_with = "optional_hex_u32")]
+    pub(crate) site: Option<u32>,
     pub(crate) offset: i32,
     pub(crate) width: u8,
     pub(crate) selector: Option<StoredInterfaceSelector>,
@@ -220,4 +220,18 @@ where
     let value = String::deserialize(deserializer)?;
     crate::parse_u32(&value)
         .ok_or_else(|| serde::de::Error::custom(format!("invalid hexadecimal u32 {value:?}")))
+}
+
+fn optional_hex_u32<'de, D>(deserializer: D) -> std::result::Result<Option<u32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    value
+        .map(|value| {
+            crate::parse_u32(&value).ok_or_else(|| {
+                serde::de::Error::custom(format!("invalid hexadecimal u32 {value:?}"))
+            })
+        })
+        .transpose()
 }

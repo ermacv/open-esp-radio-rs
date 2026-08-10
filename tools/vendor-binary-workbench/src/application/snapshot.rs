@@ -418,6 +418,11 @@ fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
             address_space,
             address,
         } => format!("absolute:{address_space}:{address:#010x}"),
+        FunctionMemoryObjectFact::Indexed {
+            object,
+            argument,
+            stride,
+        } => format!("{}[arg{argument} * {stride:#x}]", memory_fact_label(object)),
     }
 }
 

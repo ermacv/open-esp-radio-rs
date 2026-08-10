@@ -20,7 +20,7 @@ pub(crate) struct StoredNavigationSummary {
 pub(crate) fn inspect_report(path: &Path) -> Result<StoredNavigationSummary> {
     let document: NavigationDocument = serde_json::from_str(&fs::read_to_string(path)?)?;
     validate_header(&document)?;
-    validate_inputs(&document)?;
+    validate_inputs(&document, path.parent().unwrap_or_else(|| Path::new(".")))?;
     let artifact_ids = validate_artifacts(&document)?;
     validate_symbols(&document.symbols, &artifact_ids)?;
     validate_summary(&document)?;
@@ -39,9 +39,9 @@ fn validate_header(document: &NavigationDocument) -> Result<()> {
         || document.command != "project navigation"
         || document.identity_scheme != IDENTITY_SCHEME
     {
-        return Err(crate::Error::invalid(
-            "navigation index requires project navigation schema_version 1",
-        ));
+        return Err(crate::Error::invalid(format!(
+            "navigation index requires project navigation schema_version {SCHEMA_VERSION}"
+        )));
     }
     if document.semantic_claim || document.linker_resolution_claim {
         return Err(crate::Error::invalid(
@@ -51,7 +51,7 @@ fn validate_header(document: &NavigationDocument) -> Result<()> {
     Ok(())
 }
 
-fn validate_inputs(document: &NavigationDocument) -> Result<()> {
+fn validate_inputs(document: &NavigationDocument, base: &Path) -> Result<()> {
     let mut identities = BTreeSet::new();
     for input in &document.inputs {
         if input.kind.is_empty() || input.id.is_empty() || input.path.is_empty() {
@@ -65,7 +65,15 @@ fn validate_inputs(document: &NavigationDocument) -> Result<()> {
                 input.kind, input.id
             )));
         }
-        let actual = artifact_sha256(Path::new(&input.path))
+        let input_path = Path::new(&input.path);
+        if input_path.is_absolute() {
+            return Err(crate::Error::invalid(format!(
+                "navigation input path must be relative to the index: {}",
+                input.path
+            )));
+        }
+        let resolved = base.join(input_path);
+        let actual = artifact_sha256(&resolved)
             .map_err(|error| {
                 format!(
                     "cannot authenticate navigation input {}: {error}",

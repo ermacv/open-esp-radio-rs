@@ -13,16 +13,28 @@ pub(super) fn compare_profile(
             crate::Error::invalid("project has no [verification] profile workspace")
         })?;
     let mut selected = None;
-    for path in &workspace.profiles {
-        for profile in crate::verification::profiles::load(path)? {
-            if profile.name == name && selected.replace(profile).is_some() {
-                return Err(ApplicationError::from(crate::Error::invalid(format!(
-                    "comparison profile {name:?} is defined more than once"
-                ))));
+    for suite in &workspace.suites {
+        for path in &suite.profiles {
+            for profile in crate::verification::profiles::load(path)? {
+                if profile.name != name {
+                    continue;
+                }
+                if selected
+                    .replace((
+                        profile,
+                        suite.rust_artifact_role.clone(),
+                        suite.rust_companion_role.clone(),
+                    ))
+                    .is_some()
+                {
+                    return Err(ApplicationError::from(crate::Error::invalid(format!(
+                        "comparison profile {name:?} is defined more than once"
+                    ))));
+                }
             }
         }
     }
-    let profile = selected
+    let (profile, rust_artifact_role, rust_companion_role) = selected
         .ok_or_else(|| crate::Error::invalid(format!("unknown comparison profile {name:?}")))?;
     let run = resolved.run_spec.as_ref().ok_or_else(|| {
         crate::Error::invalid(
@@ -59,9 +71,10 @@ pub(super) fn compare_profile(
                 .then(|| input(crate::run_spec::InputRole::VendorCompanion))
                 .flatten()
         });
-    let rust_artifact = input(crate::run_spec::InputRole::RustArtifact)
-        .ok_or_else(|| crate::Error::invalid("run-spec has no rust-artifact input"))?;
-    let rust_companion = input(crate::run_spec::InputRole::RustCompanion);
+    let rust_artifact = input(rust_artifact_role.clone()).ok_or_else(|| {
+        crate::Error::invalid(format!("run-spec has no {rust_artifact_role} input"))
+    })?;
+    let rust_companion = rust_companion_role.and_then(input);
     let table_scenarios = profile
         .scenarios
         .iter()

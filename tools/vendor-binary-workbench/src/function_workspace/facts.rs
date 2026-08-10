@@ -42,6 +42,11 @@ pub(crate) enum FunctionMemoryObjectFact {
         address_space: String,
         address: u32,
     },
+    Indexed {
+        object: Box<FunctionMemoryObjectFact>,
+        argument: u8,
+        stride: i64,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]

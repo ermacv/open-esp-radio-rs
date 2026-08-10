@@ -1,7 +1,15 @@
-schema = 1
-# Focused coherent station TSF snapshot profile. Artifact authentication stays
-# caller-owned; this row pins proof and verifier identity.
+schema = 2
+
 [[evidence]]
 source = "rom"
 symbol = "hal_get_sta_tsf"
-kind = "scenario/profile:rom-sta-tsf-snapshot/sha256:664827b8384352186480849a7146bf69d1c87ef4f62bbe631fd69fe886f69f55"
+kind = "scenario/profile:rom-sta-tsf-snapshot"
+digest = "9227e6119a5de26556c54ec886142d95a215760de8253f279ab29e60a5a3445e"
+
+[evidence.components]
+comparison-orchestrator = "3dbec1c2f789536f5d969cd75fc2ae6cbd9175660bc0da798897768808863e7b"
+execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
+execution-machine = "03183f82c10867171c4f33ea3b159e5724b4c7efa037975d0ed305a473a1c516"
+execution-model = "dfa123e26045df2367eca71a103c9c8f1c719b0c6d670bd0a8208e8be71b5a2b"
+profile = "e5c4e16f8b54dca02f52a4ad047330d70142af731ed4f6a84ae5a5e6277504d6"
+profile-parser = "1199e4a215e61dc60696b696ac0295c63519d4c73099c47afab6b6576fe8df65"

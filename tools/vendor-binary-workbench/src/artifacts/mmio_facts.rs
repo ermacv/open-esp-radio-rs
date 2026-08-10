@@ -1,4 +1,4 @@
-//! Stored schema-v4 projection of artifact-wide MMIO evidence.
+//! Stored schema-v5 projection of artifact-wide MMIO evidence.
 
 use serde::Serialize;
 
@@ -54,7 +54,15 @@ struct RegisterDocument {
     writes: usize,
     read_functions: Vec<String>,
     write_functions: Vec<String>,
+    read_sites: Vec<AccessSiteDocument>,
+    write_sites: Vec<AccessSiteDocument>,
     write_patterns: Vec<WritePatternDocument>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+struct AccessSiteDocument {
+    function: String,
+    pc: String,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -135,6 +143,8 @@ pub(crate) fn build_mmio_facts(report: &MmioDiscoveryReport) -> crate::Result<Mm
                 writes: register.write_count,
                 read_functions: function_names(&register.read_functions),
                 write_functions: function_names(&register.write_functions),
+                read_sites: access_sites(&register.read_sites),
+                write_sites: access_sites(&register.write_sites),
                 write_patterns: register
                     .write_patterns
                     .iter()
@@ -184,6 +194,18 @@ fn function_names(
         .collect()
 }
 
+fn access_sites(
+    sites: &std::collections::BTreeSet<crate::analysis::DiscoveryAccessSite>,
+) -> Vec<AccessSiteDocument> {
+    sites
+        .iter()
+        .map(|site| AccessSiteDocument {
+            function: site.function.canonical(),
+            pc: format!("{:#010x}", site.site),
+        })
+        .collect()
+}
+
 fn mask_ranges(mask: u32) -> String {
     let mut ranges = Vec::new();
     let mut bit = 0_u8;
@@ -226,7 +248,7 @@ mod tests {
         };
         let rendered = render_mmio_facts(&build_mmio_facts(&report).unwrap()).unwrap();
         let parsed = serde_json::from_str::<serde_json::Value>(&rendered).unwrap();
-        assert_eq!(parsed["schema_version"], 4);
+        assert_eq!(parsed["schema_version"], 5);
         assert_eq!(parsed["command"], "mmio discover");
         assert_eq!(parsed["code_selection"]["symbols"], "all");
         assert_eq!(parsed["code_selection"]["symbol_prefix"], "");

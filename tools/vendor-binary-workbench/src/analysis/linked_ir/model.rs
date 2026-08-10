@@ -211,6 +211,11 @@ pub(crate) enum LinkedMemoryObject {
         address_space: String,
         address: u32,
     },
+    Indexed {
+        object: Box<LinkedMemoryObject>,
+        argument: u8,
+        stride: i64,
+    },
 }
 
 impl LinkedMemoryObject {
@@ -230,6 +235,15 @@ impl LinkedMemoryObject {
             MemoryObjectRoot::Absolute { address } => Self::Absolute {
                 address_space: address_space.to_owned(),
                 address,
+            },
+            MemoryObjectRoot::Indexed {
+                root,
+                argument,
+                stride,
+            } => Self::Indexed {
+                object: Box::new(Self::from_root(*root, address_space)),
+                argument,
+                stride,
             },
         }
     }

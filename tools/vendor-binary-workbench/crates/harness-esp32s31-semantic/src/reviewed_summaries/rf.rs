@@ -93,6 +93,7 @@ pub(super) fn rf_frequency_offset_scratch_trace(
     FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -265,6 +266,7 @@ pub(super) fn iq_estimator_poll_trace(
     Some(FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["ets_delay_us".to_owned()],
         blockers: Vec::new(),
@@ -320,6 +322,7 @@ pub(super) fn rfpll_cap_calibration_search_trace(
     FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["ets_delay_us".to_owned()],
         blockers: Vec::new(),
@@ -391,6 +394,7 @@ pub(super) fn rfpll_calibration_poll_trace(
     FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["ets_delay_us".to_owned(), "ets_printf".to_owned()],
         blockers: Vec::new(),

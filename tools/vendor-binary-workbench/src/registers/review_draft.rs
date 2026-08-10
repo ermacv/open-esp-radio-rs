@@ -147,6 +147,8 @@ mod tests {
             writes: 1,
             read_functions: BTreeSet::new(),
             write_functions: BTreeSet::new(),
+            read_sites: BTreeSet::new(),
+            write_sites: BTreeSet::new(),
             write_patterns: vec![],
             candidate_masks: vec![0x0f, 0xf0, 0xff],
         };
@@ -167,6 +169,8 @@ mod tests {
             writes: 1,
             read_functions: BTreeSet::new(),
             write_functions: BTreeSet::new(),
+            read_sites: BTreeSet::new(),
+            write_sites: BTreeSet::new(),
             write_patterns: vec![],
             candidate_masks: vec![0xf0],
         };

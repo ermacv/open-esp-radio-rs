@@ -38,6 +38,7 @@ impl WorkflowMode {
 pub(crate) enum StageSuccess {
     Written,
     Verified,
+    Current,
 }
 
 impl StageSuccess {
@@ -45,7 +46,30 @@ impl StageSuccess {
         match self {
             Self::Written => "written",
             Self::Verified => "verified",
+            Self::Current => "up-to-date",
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StageRun {
+    Executed,
+    Current,
+}
+
+pub(crate) trait StageActionResult {
+    fn stage_run(self) -> Option<StageRun>;
+}
+
+impl StageActionResult for StageRun {
+    fn stage_run(self) -> Option<StageRun> {
+        Some(self)
+    }
+}
+
+impl StageActionResult for bool {
+    fn stage_run(self) -> Option<StageRun> {
+        self.then_some(StageRun::Executed)
     }
 }
 
@@ -76,6 +100,8 @@ pub(crate) struct PipelineSummary {
     stages: Vec<StageReport>,
     pub(crate) written: usize,
     pub(crate) verified: usize,
+    #[serde(rename = "up-to-date")]
+    pub(crate) current: usize,
     pub(crate) failed: usize,
     pub(crate) blocked: usize,
     #[serde(rename = "not-configured")]
@@ -93,6 +119,7 @@ impl PipelineSummary {
         match outcome {
             StageOutcome::Complete(StageSuccess::Written) => self.written += 1,
             StageOutcome::Complete(StageSuccess::Verified) => self.verified += 1,
+            StageOutcome::Complete(StageSuccess::Current) => self.current += 1,
             StageOutcome::Failed(_) => self.failed += 1,
             StageOutcome::Blocked(_) => self.blocked += 1,
             StageOutcome::NotConfigured(_) => self.not_configured += 1,
@@ -108,17 +135,20 @@ impl PipelineSummary {
     }
 }
 
-pub(crate) fn execute(
+pub(crate) fn execute<T: StageActionResult>(
     name: &str,
     success: StageSuccess,
-    action: impl FnOnce() -> Result<bool>,
+    action: impl FnOnce() -> Result<T>,
 ) -> StageOutcome {
     let span = tracing::info_span!("project_stage", stage = name);
     let _entered = span.enter();
     tracing::info!("started");
     let outcome = match action() {
-        Ok(true) => StageOutcome::Complete(success),
-        Ok(false) => StageOutcome::Failed(format!("{name} reported an unsuccessful result")),
+        Ok(value) => match value.stage_run() {
+            Some(StageRun::Executed) => StageOutcome::Complete(success),
+            Some(StageRun::Current) => StageOutcome::Complete(StageSuccess::Current),
+            None => StageOutcome::Failed(format!("{name} reported an unsuccessful result")),
+        },
         Err(error) => StageOutcome::Failed(error.to_string()),
     };
     match &outcome {
@@ -154,8 +184,10 @@ mod tests {
     fn summary_preserves_typed_stage_counts() {
         let mut summary = PipelineSummary::default();
         summary.record("generated", &StageOutcome::Complete(StageSuccess::Written));
+        summary.record("current", &StageOutcome::Complete(StageSuccess::Current));
         summary.record("blocked", &StageOutcome::Blocked("missing".to_owned()));
         assert_eq!(summary.written, 1);
+        assert_eq!(summary.current, 1);
         assert_eq!(summary.blocked, 1);
         assert!(!summary.succeeded());
     }

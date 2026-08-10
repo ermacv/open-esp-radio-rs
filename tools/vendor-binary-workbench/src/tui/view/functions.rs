@@ -97,6 +97,22 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
                         .map(|blocker| Line::from(format!("- {blocker}"))),
                 );
             }
+            if !function.mmio_sites.is_empty() {
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled(
+                    "Artifact-wide MMIO sites",
+                    Style::new().add_modifier(Modifier::BOLD),
+                )));
+                lines.extend(function.mmio_sites.iter().map(|site| {
+                    Line::from(format!(
+                        "- {:5} {:#010x}/{} @ {:#010x}",
+                        site.access.to_ascii_uppercase(),
+                        site.address,
+                        site.width,
+                        site.pc,
+                    ))
+                }));
+            }
             if let Some(detail) =
                 function_detail.filter(|detail| !detail.decode_blockers.is_empty())
             {

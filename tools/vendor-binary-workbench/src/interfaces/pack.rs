@@ -116,7 +116,7 @@ impl InterfacePack {
             validate_anchor_evidence(anchor, facts, &matches)?;
             matches_by_anchor.push(matches);
         }
-        let execution_tables = resolve_execution_tables(self, execution_contracts)?;
+        let execution_tables = super::execution_models::resolve(self, execution_contracts)?;
         let bindings = build_bindings(self, facts, catalogs, &matches_by_anchor, &execution_tables);
         let unreviewed_observations = build_unreviewed_observations(self, facts, &matched_by);
         let contracts = build_contracts(self, &bindings, &execution_tables);
@@ -132,107 +132,6 @@ impl InterfacePack {
             .count();
         Ok((summary, contracts, bindings, unreviewed_observations))
     }
-}
-
-fn resolve_execution_tables(
-    pack: &InterfacePack,
-    contracts: Option<&HarnessContractSpec>,
-) -> ValidationResult<Vec<Option<ExternalTableRef>>> {
-    pack.anchors
-        .iter()
-        .map(|anchor| {
-            let Some(id) = anchor.execution_contract.as_deref() else {
-                return Ok(None);
-            };
-            let contracts = contracts.ok_or_else(|| {
-                ValidationError::anchor(
-                    anchor,
-                    "execution-contract",
-                    format!(
-                        "execution contract {id:?} requires a configured compiled platform harness"
-                    ),
-                )
-            })?;
-            let table = contracts
-                .external_tables
-                .iter()
-                .copied()
-                .find(|table| table.spec().id == id)
-                .ok_or_else(|| {
-                    ValidationError::anchor(
-                        anchor,
-                        "execution-contract",
-                        format!("compiled platform harness has no execution contract {id:?}"),
-                    )
-                })?;
-            let spec = table.spec();
-            if anchor.layout_size != Some(spec.size) {
-                return Err(ValidationError::anchor(
-                    anchor,
-                    "layout-size",
-                    format!(
-                        "reviewed layout size {:#x} does not match execution contract {id:?} size {:#x}",
-                        anchor.layout_size.unwrap_or_default(),
-                        spec.size
-                    ),
-                ));
-            }
-            for slot in &anchor.slots {
-                let Some(model_id) = slot.execution_model.as_deref() else {
-                    continue;
-                };
-                let model = spec
-                    .functions
-                    .iter()
-                    .find(|model| model.id == model_id)
-                    .ok_or_else(|| {
-                        ValidationError::slot(
-                            anchor,
-                            slot,
-                            "execution-model",
-                            format!(
-                                "execution contract {id:?} has no call model {model_id:?}"
-                            ),
-                        )
-                    })?;
-                if u32::try_from(slot.offset).ok() != Some(model.offset) {
-                    return Err(ValidationError::slot(
-                        anchor,
-                        slot,
-                        "execution-model",
-                        format!(
-                            "call model {id}.{model_id} belongs to offset {:#x}, not {:+#x}",
-                            model.offset, slot.offset
-                        ),
-                    ));
-                }
-                let argument_count = slot.arguments.as_ref().map_or(0, Vec::len);
-                if argument_count != usize::from(model.argument_count) {
-                    return Err(ValidationError::slot(
-                        anchor,
-                        slot,
-                        "arguments",
-                        format!(
-                            "reviewed ABI has {argument_count} arguments but call model {id}.{model_id} has {}",
-                            model.argument_count
-                        ),
-                    ));
-                }
-                if slot.semantic.as_deref() != Some(model.semantic.operation) {
-                    return Err(ValidationError::slot(
-                        anchor,
-                        slot,
-                        "semantic",
-                        format!(
-                            "call model {id}.{model_id} requires reviewed semantic {:?}, got {:?}",
-                            model.semantic.operation, slot.semantic
-                        ),
-                    ));
-                }
-            }
-            Ok(Some(table))
-        })
-        .collect()
 }
 
 fn validate_anchor_shape(
@@ -368,6 +267,7 @@ fn build_summary(
         fact_tables: facts.tables.len(),
         observed_slots: facts.observed_slots(),
         observed_calls: facts.observed_calls(),
+        unreviewed_anchors: matched_by.iter().filter(|anchor| anchor.is_none()).count(),
         semantic_operations: catalogs.len(),
         ..InterfaceWorkspaceSummary::default()
     };
@@ -648,6 +548,7 @@ fn build_bindings(
                         function: call.function.clone(),
                         function_address: call.function_address,
                         site: call.site,
+                        slot_load_site: call.slot_load_site,
                         kind: call.kind.clone(),
                         jalr_offset: call.jalr_offset,
                         slot_selector: selector.map(super::InterfaceFactSelector::canonical),
@@ -703,6 +604,7 @@ fn build_bindings(
                         replacement: operation.replacement.clone(),
                     }
                 }),
+                external_table: execution_table.map(|table| table.spec().id.to_owned()),
                 execution_model: slot.execution_model.as_deref().map(|model_id| {
                     let table = execution_table
                         .expect("an execution model requires a resolved execution contract")

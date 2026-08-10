@@ -21,6 +21,7 @@ pub(crate) struct ProjectIrBuildRequest {
     pub(crate) profiles: BTreeSet<String>,
     pub(crate) check: bool,
     pub(crate) jobs: usize,
+    pub(crate) refresh_review_scopes: bool,
 }
 
 struct BuiltProfileSummary<'a> {
@@ -71,6 +72,7 @@ pub(crate) fn build_project_ir<'a>(
 ) -> Result<BuildDocument<'a>> {
     let selected = select_profiles(&project.ir_profiles, &request.profiles)?;
     let effective_code = crate::analysis::EffectiveCodeCatalog::load(project)?;
+    let interfaces = linked_ir_export::load_project_interfaces(project, target)?;
     let mut built = Vec::with_capacity(selected.len());
     let mut stale = Vec::new();
     for profile in selected {
@@ -82,6 +84,7 @@ pub(crate) fn build_project_ir<'a>(
             svd,
             target,
             &effective_code,
+            interfaces.as_ref(),
             request.jobs,
         )?;
         if request.check {
@@ -112,7 +115,21 @@ pub(crate) fn build_project_ir<'a>(
         )));
     }
     let status = if request.check { "verified" } else { "written" };
-    let document_count = built.iter().map(|built| built.documents).sum::<usize>();
+    let mut document_count = built.iter().map(|built| built.documents).sum::<usize>();
+    if request.refresh_review_scopes && project.review.is_some() {
+        let workspace = project
+            .review
+            .as_ref()
+            .expect("review workspace is configured");
+        let document = crate::review_scopes::build_document(project)?;
+        super::generated_file::write_or_check(
+            &workspace.output,
+            &crate::review_scopes::render_document(&document)?,
+            request.check,
+            "review scope report",
+        )?;
+        document_count += 1;
+    }
     Ok(BuildDocument {
         schema: 1,
         command: "ir build",
@@ -292,6 +309,7 @@ mod tests {
             profiles: ["phy".to_owned()].into(),
             check: true,
             jobs: 2,
+            refresh_review_scopes: true,
         };
         assert_eq!(options.profiles, ["phy".to_owned()].into());
         assert!(options.check);

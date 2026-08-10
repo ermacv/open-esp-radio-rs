@@ -91,6 +91,19 @@ pub(crate) struct ProjectAnalyzeArgs {
 }
 
 #[derive(Clone, Debug, Default, Args)]
+pub(crate) struct ProjectVerifyArgs {
+    /// Run only the named verification suite; repeat to select multiple suites.
+    #[arg(long)]
+    pub(crate) suite: Vec<String>,
+    /// Reproduce the aggregate report without changing the checked-in file.
+    #[arg(long)]
+    pub(crate) check: bool,
+    /// Write one review-only evidence candidate per selected suite.
+    #[arg(long, value_name = "DIRECTORY")]
+    pub(crate) candidate_evidence_dir: Option<PathBuf>,
+}
+
+#[derive(Clone, Debug, Default, Args)]
 pub(crate) struct CheckArgs {
     /// Compare generated output with the checked-in file without changing it.
     #[arg(long)]
@@ -683,17 +696,11 @@ pub(crate) struct VerifyInventoryArgs {
     #[arg(long)]
     pub(crate) rust_companion: Option<PathBuf>,
     /// Execution profile manifest.
-    #[arg(long, conflicts_with = "no_profiles")]
-    pub(crate) profiles: Option<PathBuf>,
-    /// Disable project-provided execution profiles.
-    #[arg(long, conflicts_with = "profiles")]
-    pub(crate) no_profiles: bool,
+    #[arg(long)]
+    pub(crate) profiles: Vec<PathBuf>,
     /// Reviewed architectural disposition manifest.
-    #[arg(long, conflicts_with = "no_dispositions")]
-    pub(crate) dispositions: Option<PathBuf>,
-    /// Disable project-provided dispositions.
-    #[arg(long, conflicts_with = "dispositions")]
-    pub(crate) no_dispositions: bool,
+    #[arg(long)]
+    pub(crate) dispositions: Vec<PathBuf>,
     /// Rust symbol prefix mapped to vendor functions.
     #[arg(long)]
     pub(crate) rust_prefix: Option<String>,
@@ -704,11 +711,8 @@ pub(crate) struct VerifyInventoryArgs {
     #[arg(long)]
     pub(crate) match_floor: Option<usize>,
     /// Reviewed evidence baseline for regression gating.
-    #[arg(long, conflicts_with = "no_evidence_baseline")]
-    pub(crate) evidence_baseline: Option<PathBuf>,
-    /// Disable the project-provided evidence baseline.
-    #[arg(long, conflicts_with = "evidence_baseline")]
-    pub(crate) no_evidence_baseline: bool,
+    #[arg(long)]
+    pub(crate) evidence_baseline: Vec<PathBuf>,
     /// Write the machine-readable verification report.
     #[arg(long)]
     pub(crate) json_report: Option<PathBuf>,
@@ -720,11 +724,8 @@ pub(crate) struct VerifyEvidenceArgs {
     #[arg(long)]
     pub(crate) report: Option<PathBuf>,
     /// Reviewed evidence baseline used for comparison.
-    #[arg(long, conflicts_with = "no_evidence_baseline")]
+    #[arg(long)]
     pub(crate) evidence_baseline: Option<PathBuf>,
-    /// Review without loading a project-provided baseline.
-    #[arg(long, conflicts_with = "evidence_baseline")]
-    pub(crate) no_evidence_baseline: bool,
     /// Write a deterministic candidate baseline without promoting it.
     #[arg(long)]
     pub(crate) candidate: Option<PathBuf>,

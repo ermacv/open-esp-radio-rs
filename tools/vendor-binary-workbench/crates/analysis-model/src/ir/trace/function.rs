@@ -6,9 +6,19 @@ use super::validation::{
 use super::*;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct LocatedObservableEvent {
+    pub site: u32,
+    pub event: ObservableEvent,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FunctionAnalysis {
     pub symbol: String,
     pub events: Vec<ObservableEvent>,
+    /// Instruction-local evidence for directly observed events. Reviewed or
+    /// synthesized summaries may leave this empty because they do not claim a
+    /// binary instruction site.
+    pub located_events: Vec<LocatedObservableEvent>,
     pub reference_events: Vec<DraftReferenceEvent>,
     pub reference_dependencies: Vec<String>,
     pub blockers: Vec<String>,

@@ -72,6 +72,47 @@ fn unknown_wifi_osi_slot_fails_closed() {
 }
 
 #[test]
+fn reviewed_wifi_osi_slot_is_named_without_an_execution_model() {
+    let symbol = wifi_osi_tail_symbol(0x0c0);
+    let mut context = StructuralPointerContext::from_harness(&RISCV_HARNESS);
+    context.reviewed_external_slots.insert(
+        (external_abi::WIFI_OSI_V9.spec().id.to_owned(), 0x0c0),
+        vec![ReviewedExternalCall {
+            id: "fixture::wifi-osi-v9@+0xc0".to_owned(),
+            contract: "fixture::wifi-osi-v9".to_owned(),
+            name: "reviewed_slot".to_owned(),
+            argument_types: vec!["u32".to_owned()],
+            return_type: "u32".to_owned(),
+            variadic: false,
+            semantic_operation: None,
+            replacement_hint: None,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(&symbol, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(!trace.is_reference_eligible());
+    assert!(
+        !trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("unregistered-external-abi-slot"))
+    );
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("unmodeled-reviewed-external-call"))
+    );
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall { candidates, .. }]
+            if candidates[0].name == "reviewed_slot"
+    ));
+}
+
+#[test]
 fn semantic_only_rtos_slot_is_visible_but_remains_a_reference_blocker() {
     let symbol = wifi_osi_tail_symbol(0x068);
     let trace = trace_binary_symbol(

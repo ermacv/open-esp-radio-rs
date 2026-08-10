@@ -1,6 +1,7 @@
 //! Stable project entry point composing public target knowledge and local inputs.
 
 use std::{
+    collections::BTreeMap,
     io,
     path::{Path, PathBuf},
 };
@@ -13,6 +14,8 @@ use crate::{
     platform_pack::PlatformPack,
     project_analysis::{NavigationIndexSpec, SymbolInventorySpec},
     project_ir::ProjectIrProfile,
+    run_spec::InputRole,
+    source_id::SourceId,
 };
 
 mod load;
@@ -152,10 +155,45 @@ pub(crate) struct CodeWorkspacePaths {
     pub(crate) review_output: Option<PathBuf>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ProjectVerificationGate {
+    Completion,
+    Regression { match_floor: usize },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct VerificationSuiteSpec {
+    pub(crate) id: String,
+    pub(crate) sources: Vec<SourceId>,
+    pub(crate) source_prefixes: BTreeMap<SourceId, String>,
+    pub(crate) rust_artifact_role: InputRole,
+    pub(crate) rust_companion_role: Option<InputRole>,
+    pub(crate) rust_prefix: String,
+    pub(crate) profiles: Vec<PathBuf>,
+    pub(crate) dispositions: Vec<PathBuf>,
+    pub(crate) evidence_baselines: Vec<PathBuf>,
+    pub(crate) gate: ProjectVerificationGate,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct VerificationWorkspacePaths {
-    pub(crate) profiles: Vec<PathBuf>,
-    pub(crate) rust_prefix: Option<String>,
+    pub(crate) report: PathBuf,
+    pub(crate) suites: Vec<VerificationSuiteSpec>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewScopeSpec {
+    pub(crate) id: String,
+    pub(crate) profiles: Vec<String>,
+    pub(crate) roots: Vec<String>,
+    pub(crate) include_reachable: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ReviewWorkspaceSpec {
+    pub(crate) output: PathBuf,
+    pub(crate) release_scopes: Vec<String>,
+    pub(crate) scopes: Vec<ReviewScopeSpec>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -174,6 +212,7 @@ pub(crate) struct ProjectSpec {
     pub(crate) registers: Option<RegisterWorkspacePaths>,
     pub(crate) interfaces: Option<InterfaceWorkspacePaths>,
     pub(crate) functions: Option<FunctionWorkspacePaths>,
+    pub(crate) review: Option<ReviewWorkspaceSpec>,
     pub(crate) verification: Option<VerificationWorkspacePaths>,
 }
 

@@ -4,7 +4,7 @@ use super::*;
 
 impl SymbolicValue {
     pub fn direct_input_index(&self) -> Option<u8> {
-        if let Self::InputConstant { index, .. } = self {
+        if let Self::Input { index } | Self::InputConstant { index, .. } = self {
             return Some(*index);
         }
         let Self::Bits(bits) = self else {
@@ -76,10 +76,30 @@ impl SymbolicValue {
         &self,
         read_sources: &BTreeMap<u32, MemoryObjectLocation>,
     ) -> Option<MemoryObjectLocation> {
-        if let Some(location) = self.memory_object_location() {
-            return Some(location);
+        if let Some(index) = self.direct_input_index() {
+            return Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Argument { index },
+                offset: 0,
+            });
         }
         match self {
+            Self::Constant(address) => Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute { address: *address },
+                offset: 0,
+            }),
+            Self::SymbolAddress {
+                member,
+                symbol,
+                lo_addend: Some(addend),
+                post_offset,
+                ..
+            } => Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::RelocatedSymbol {
+                    member: member.clone(),
+                    symbol: symbol.clone(),
+                },
+                offset: addend.wrapping_add(*post_offset),
+            }),
             Self::MemoryImage {
                 read_token,
                 and_mask: u32::MAX,
@@ -102,25 +122,55 @@ impl SymbolicValue {
                 operation: ExpressionOperation::Add,
                 left,
                 right,
-            } => match (
-                left.memory_object_location_with_reads(read_sources),
-                right.as_constant(),
-            ) {
-                (Some(mut location), Some(offset)) => {
-                    location.offset = location.offset.wrapping_add(i64::from(offset as i32));
-                    Some(location)
+            } => {
+                if let Some((argument, stride)) = right.scaled_input() {
+                    return left
+                        .memory_object_location_with_reads(read_sources)
+                        .map(|location| location.with_index(argument, stride));
                 }
-                _ => match (
-                    right.memory_object_location_with_reads(read_sources),
-                    left.as_constant(),
-                ) {
-                    (Some(mut location), Some(offset)) => {
-                        location.offset = location.offset.wrapping_add(i64::from(offset as i32));
-                        Some(location)
-                    }
+                if let Some((argument, stride)) = left.scaled_input() {
+                    return right
+                        .memory_object_location_with_reads(read_sources)
+                        .map(|location| location.with_index(argument, stride));
+                }
+                if let Some(offset) = right.as_constant() {
+                    let mut location = left.memory_object_location_with_reads(read_sources)?;
+                    location.offset = location.offset.wrapping_add(i64::from(offset as i32));
+                    return Some(location);
+                }
+                if let Some(offset) = left.as_constant() {
+                    let mut location = right.memory_object_location_with_reads(read_sources)?;
+                    location.offset = location.offset.wrapping_add(i64::from(offset as i32));
+                    return Some(location);
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn scaled_input(&self) -> Option<(u8, i64)> {
+        match self {
+            Self::Expression {
+                operation: ExpressionOperation::Multiply,
+                left,
+                right,
+            } => match (left.direct_input_index(), right.as_constant()) {
+                (Some(argument), Some(stride)) => Some((argument, i64::from(stride))),
+                _ => match (right.direct_input_index(), left.as_constant()) {
+                    (Some(argument), Some(stride)) => Some((argument, i64::from(stride))),
                     _ => None,
                 },
             },
+            Self::Expression {
+                operation: ExpressionOperation::ShiftLeft,
+                left,
+                right,
+            } => {
+                let argument = left.direct_input_index()?;
+                let shift = right.as_constant()?;
+                (shift < 32).then_some((argument, 1_i64 << shift))
+            }
             _ => None,
         }
     }
@@ -340,6 +390,7 @@ impl SymbolicValue {
             Self::ExternalResult(_) => true,
             Self::ExternalTable(_)
             | Self::ExternalFunction { .. }
+            | Self::ReviewedExternalFunction { .. }
             | Self::FunctionTable(_)
             | Self::FunctionPointer { .. }
             | Self::StackAddress(_) => false,
@@ -351,6 +402,7 @@ impl SymbolicValue {
         match self {
             Self::Unknown => "unknown".to_owned(),
             Self::Constant(value) => format!("const:{value:#010x}"),
+            Self::Input { index } => format!("arg{index}"),
             Self::InputConstant { index, .. } => Self::input(*index).canonical(),
             Self::StackAddress(offset) => format!("private-stack:{offset:+#x}"),
             Self::SymbolAddress {
@@ -370,6 +422,9 @@ impl SymbolicValue {
             }
             Self::ExternalFunction { table, function } => {
                 format!("external-function:{}::{function:?}", table.spec().id)
+            }
+            Self::ReviewedExternalFunction { table, offset } => {
+                format!("reviewed-external-function:{}+{offset:#x}", table.spec().id)
             }
             Self::FunctionTable(table) => format!("function-table:{}", table.id()),
             Self::FunctionPointer { table, target } => {
@@ -493,6 +548,19 @@ impl SymbolicValue {
     }
 }
 
+impl MemoryObjectLocation {
+    fn with_index(self, argument: u8, stride: i64) -> Self {
+        Self {
+            root: MemoryObjectRoot::Indexed {
+                root: Box::new(self.root),
+                argument,
+                stride,
+            },
+            offset: self.offset,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,6 +582,36 @@ mod tests {
             SymbolicValue::input(1),
         );
 
+        assert_eq!(address.caller_memory_location(), None);
+    }
+
+    #[test]
+    fn memory_object_location_preserves_index_argument_and_stride() {
+        let index = SymbolicValue::expression(
+            ExpressionOperation::Multiply,
+            SymbolicValue::input(0),
+            SymbolicValue::Constant(0x2c),
+        );
+        let address = SymbolicValue::expression(
+            ExpressionOperation::Add,
+            index,
+            SymbolicValue::Constant(0x1002_f560),
+        )
+        .add_constant(0x14);
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&BTreeMap::new()),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Indexed {
+                    root: Box::new(MemoryObjectRoot::Absolute {
+                        address: 0x1002_f560,
+                    }),
+                    argument: 0,
+                    stride: 0x2c,
+                },
+                offset: 0x14,
+            })
+        );
         assert_eq!(address.caller_memory_location(), None);
     }
 

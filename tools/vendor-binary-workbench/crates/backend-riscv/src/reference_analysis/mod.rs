@@ -139,9 +139,9 @@ fn resolve_reference_trace_with_budget(
             specialized_arguments,
             budget,
         )
-        .and_then(|flow| {
+        .and_then(|explored| {
             compose_calls_in_reference_flow(
-                flow,
+                explored.flow,
                 &ReferenceCalleeContext {
                     symbols_by_address,
                     relocated_calls,
@@ -152,18 +152,28 @@ fn resolve_reference_trace_with_budget(
                 visiting,
                 &mut trace.reference_dependencies,
             )
+            .map(|flow| (flow, explored.incomplete_effects))
         }) {
-            Ok(flow) if reference_flow_calls_are_valid(&flow) => {
+            Ok((flow, incomplete_effects)) if reference_flow_calls_are_valid(&flow) => {
                 trace.events.clear();
                 trace.reference_events.clear();
                 trace.blockers.clear();
+                trace.reference_blockers = incomplete_effects;
                 trace.reference_flow = Some(flow);
                 trace.unresolved_branch = None;
             }
-            Ok(_) => trace.reference_blockers.push(
-                "symbolic-cfg: composed call result is used without a modeled callee `a0`"
-                    .to_owned(),
-            ),
+            Ok((flow, mut incomplete_effects)) => {
+                trace.events.clear();
+                trace.reference_events.clear();
+                trace.blockers.clear();
+                incomplete_effects.push(
+                    "symbolic-cfg: composed call result is used without a modeled callee `a0`"
+                        .to_owned(),
+                );
+                trace.reference_blockers = incomplete_effects;
+                trace.reference_flow = Some(flow);
+                trace.unresolved_branch = None;
+            }
             Err(error) => trace
                 .reference_blockers
                 .push(format!("symbolic-cfg: {error}")),

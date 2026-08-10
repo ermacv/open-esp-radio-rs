@@ -16,6 +16,21 @@ struct ReferencePath {
     return_value: SymbolicValue,
 }
 
+pub(super) struct ExploredReferenceFlow {
+    pub(super) flow: DraftReferenceFlow,
+    pub(super) incomplete_effects: Vec<String>,
+}
+
+fn preserves_partial_reference_flow(blocker: &str) -> bool {
+    [
+        "unmodeled-memory-load at ",
+        "unresolved-indirect-call at ",
+        "unresolved-memory-write at ",
+    ]
+    .iter()
+    .any(|prefix| blocker.starts_with(prefix))
+}
+
 fn build_reference_flow(
     mut paths: Vec<ReferencePath>,
 ) -> std::result::Result<DraftReferenceFlow, String> {
@@ -95,7 +110,7 @@ pub(super) fn explore_reference_flow(
     pointer_context: &StructuralPointerContext,
     specialized_arguments: Option<&Rv32CallArguments>,
     budget: StructuralTraceBudget,
-) -> std::result::Result<DraftReferenceFlow, String> {
+) -> std::result::Result<ExploredReferenceFlow, String> {
     let max_complete_paths = 64;
     let max_explored_states = max_complete_paths * 2 - 1;
     let max_branch_decisions = 12;
@@ -103,6 +118,7 @@ pub(super) fn explore_reference_flow(
     let mut queue = VecDeque::from([BTreeMap::<u32, bool>::new()]);
     let mut queued = BTreeSet::from([BTreeMap::<u32, bool>::new()]);
     let mut paths = Vec::new();
+    let mut incomplete_effects = BTreeSet::new();
     let mut explored_states = 0usize;
 
     while let Some(forced_branches) = queue.pop_front() {
@@ -140,6 +156,11 @@ pub(super) fn explore_reference_flow(
             .iter()
             .filter(|blocker| blocker.starts_with("call/jump instruction"))
             .count();
+        let opaque_call_blockers = trace
+            .reference_blockers
+            .iter()
+            .filter(|blocker| blocker.starts_with("unresolved-indirect-call at "))
+            .count();
         let reference_only_blockers = trace
             .blockers
             .iter()
@@ -152,10 +173,15 @@ pub(super) fn explore_reference_flow(
                 .iter()
                 .filter(|blocker| blocker.starts_with("input-dependent control-flow"))
                 .count();
-            if !trace.reference_blockers.is_empty()
+            let unsupported_reference_blockers = trace
+                .reference_blockers
+                .iter()
+                .filter(|blocker| !preserves_partial_reference_flow(blocker))
+                .count();
+            if unsupported_reference_blockers != 0
                 || branch_blockers != 1
                 || trace.blockers.len() != call_blockers + branch_blockers + reference_only_blockers
-                || typed_calls != call_blockers
+                || typed_calls + opaque_call_blockers != call_blockers
             {
                 return Err(format!(
                     "path to branch {:#010x} has unsupported effects: {}",
@@ -189,9 +215,14 @@ pub(super) fn explore_reference_flow(
             continue;
         }
 
-        if !trace.reference_blockers.is_empty()
+        let unsupported_reference_blockers = trace
+            .reference_blockers
+            .iter()
+            .filter(|blocker| !preserves_partial_reference_flow(blocker))
+            .count();
+        if unsupported_reference_blockers != 0
             || trace.blockers.len() != call_blockers + reference_only_blockers
-            || typed_calls != call_blockers
+            || typed_calls + opaque_call_blockers != call_blockers
         {
             return Err(format!(
                 "symbolic path has unsupported effects: {}",
@@ -204,6 +235,13 @@ pub(super) fn explore_reference_flow(
                     .join("; ")
             ));
         }
+        incomplete_effects.extend(
+            trace
+                .reference_blockers
+                .iter()
+                .filter(|blocker| preserves_partial_reference_flow(blocker))
+                .cloned(),
+        );
         paths.push(ReferencePath {
             events: trace.reference_events.into(),
             return_value: trace.return_value,
@@ -215,7 +253,10 @@ pub(super) fn explore_reference_flow(
         }
     }
 
-    build_reference_flow(paths)
+    Ok(ExploredReferenceFlow {
+        flow: build_reference_flow(paths)?,
+        incomplete_effects: incomplete_effects.into_iter().collect(),
+    })
 }
 
 pub(super) fn resolve_reference_callee(

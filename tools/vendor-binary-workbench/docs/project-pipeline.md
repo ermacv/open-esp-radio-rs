@@ -36,6 +36,14 @@ private-artifact readiness. Use write mode after changing inputs or the
 analyzer, and `project analyze --check` in CI when generated evidence is
 retained.
 
+Write mode maintains a local content-addressed stage cache at
+`generated/.project-analyze-cache.json`. It is derived evidence, not another
+project configuration file. A stage is `up-to-date` only when the analyzer
+executable, all declared inputs, and every output still have their recorded
+SHA-256 identity. Editing one reviewed pack therefore invalidates only stages
+that consume it. `--check` never accepts cache hits: it always reproduces and
+compares the complete configured analysis for CI.
+
 ## Pipeline boundary
 
 The pipeline owns only reproducible evidence and read-only validation:
@@ -104,6 +112,8 @@ serialize the typed report for scripts. Stage status values are:
 - `written`: analysis rendered and wrote the configured generated output;
 - `verified`: check mode reproduced the exact existing output, or a read-only
   validation succeeded;
+- `up-to-date`: write mode proved that the tool, inputs and outputs have the
+  same content identities as the last successful execution and skipped it;
 - `failed`: the stage ran but analysis, comparison, or validation failed;
 - `blocked`: a required input or upstream stage was unavailable;
 - `not-configured`: the optional project feature is absent.

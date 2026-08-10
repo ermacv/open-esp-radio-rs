@@ -36,6 +36,7 @@ fn pseudo_ir_keeps_a_named_call_and_structured_branch() {
     let trace = FunctionAnalysis {
         symbol: "vendor_parent".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["vendor_child".to_owned()],
         blockers: Vec::new(),
@@ -71,6 +72,7 @@ fn context_map_recovers_argument_offsets_branch_paths_and_rmw_masks() {
     let trace = FunctionAnalysis {
         symbol: "update_context".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -125,6 +127,7 @@ fn memory_object_map_keeps_relocated_global_symbol_identity() {
     let trace = FunctionAnalysis {
         symbol: "update_global".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
             width: 16,
@@ -171,6 +174,7 @@ fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
     let trace = FunctionAnalysis {
         symbol: "update_indirect_state".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: vec![
             DraftReferenceEvent::Memory {
                 access: MemoryAccess::Read,
@@ -222,6 +226,7 @@ fn memory_object_map_keeps_absolute_address_space() {
     let trace = FunctionAnalysis {
         symbol: "update_absolute".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::Memory {
             access: MemoryAccess::Write,
             width: 32,
@@ -264,6 +269,7 @@ fn mmio_index_keeps_static_indexed_poll_and_write_bit_evidence() {
     let trace = FunctionAnalysis {
         symbol: "touch_registers".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),

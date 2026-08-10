@@ -17,6 +17,14 @@ impl StructuralCallSite {
             address,
         }
     }
+
+    pub fn from_identity(member: Option<String>, symbol: String, address: u32) -> Self {
+        Self {
+            member,
+            symbol,
+            address,
+        }
+    }
 }
 
 pub type StructuralRelocatedCalls = BTreeMap<StructuralCallSite, (String, Option<u32>)>;
@@ -29,6 +37,8 @@ pub struct StructuralPointerContext {
     pub relocated_pointer_symbols: BTreeMap<String, SymbolicValue>,
     pub function_table_slots: BTreeMap<(FunctionTableRef, u32), u32>,
     pub diagnostic_calls: BTreeMap<String, u8>,
+    pub reviewed_external_calls: BTreeMap<StructuralCallSite, Vec<ReviewedExternalCall>>,
+    pub reviewed_external_slots: BTreeMap<(String, u32), Vec<ReviewedExternalCall>>,
     pub summary_hooks: Option<&'static RiscvSummaryHooks>,
 }
 

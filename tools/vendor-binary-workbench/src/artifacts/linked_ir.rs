@@ -62,7 +62,7 @@ mod tests {
             inspect_linked_ir(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 37")
+                .contains("expected schema_version 38")
         );
         std::fs::remove_file(path).unwrap();
     }

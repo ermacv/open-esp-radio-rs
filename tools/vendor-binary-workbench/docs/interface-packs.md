@@ -45,36 +45,10 @@ cargo vendor-binary-workbench interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
-`init-pack` creates exact, `status = "unreviewed"` anchors and slots for the
-current facts. It includes the artifact SHA-256 emitted by discovery and
-refuses to overwrite an existing pack. `--output PATH` creates a separate
-draft.
-
-After discovery changes, synchronize only the machine-owned unreviewed layer:
-
-```console
-cargo vendor-binary-workbench interfaces sync-pack \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
-cargo vendor-binary-workbench interfaces sync-pack --check \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-```
-
-`sync-pack` adds new observed anchors/slots and removes observations that
-disappeared only when their current pack entries are both
-`origin = "observed"` and `status = "unreviewed"`. It may refresh the digest
-and layout size of an unreviewed observed anchor. Reviewed, ignored and manual
-claims are never rewritten or removed. `--check` performs the same comparison
-without changing the file and fails with the exact repair command when the
-pack is out of date. Synchronization does not assign names, ABI, semantics or
-execution models.
-If a manual entry becomes observable, a protected observed entry disappears,
-or a new slot falls outside a reviewed layout, synchronization stops before
-writing and requires the reviewer to resolve the ownership/layout change.
-
-If one physical artifact was deliberately bound to several logical source
-IDs, initialize from a `interfaces discover --source ID` report. The template
-generator refuses to choose one identity arbitrarily.
+`init-pack` creates a small schema-v2 sparse overlay and refuses to overwrite
+an existing pack. It does not copy generated tables or slots. Add only actual
+human decisions (`reviewed` or `ignored`); every omitted fact remains visible
+as computed review backlog. `--output PATH` creates a separate draft.
 
 After editing, validate the complete workspace:
 
@@ -88,16 +62,17 @@ ABI, semantic operation, vendor functions, concrete call-site addresses, call
 kind, and recovered argument expressions. The default view uses separate
 coverage, binding and resolved-call tables, while JSON/JSONL emits the
 `interface-workspace` report with nested bindings,
-calls and typed arguments. `interfaces init-pack` similarly emits one
+calls, typed arguments, and the exact unreviewed observations needed to author
+the next sparse entry. `interfaces init-pack` similarly emits one
 `interface-pack` result.
 Use `--deny-unreviewed` in CI to return a non-success status while any observed
 slot or declared anchor remains unreviewed. That policy failure is represented
 as `status = "unreviewed"`, not as a structurally valid result.
 
 Regenerating facts never modifies the pack. Validation reports stale slots,
-stale artifact guards, ambiguous selectors, and new unreviewed observations;
-the explicit `sync-pack` command is the only generated-evidence reconciliation
-step.
+stale artifact guards, ambiguous selectors, and new unreviewed observations.
+There is no synchronization command: updating a reviewed digest, layout, ABI,
+or semantic binding is necessarily an explicit human edit.
 
 ## Anchor and layout format
 
@@ -107,7 +82,7 @@ stable review keys, but validation retains every current call site matched by
 the selected table and slot:
 
 ```toml
-schema = 1
+schema = 2
 id = "esp32s31-radio-rev0"
 calling-convention = "riscv-ilp32"
 
@@ -227,15 +202,15 @@ Slot status and origin have independent meanings:
 
 | Field | Meaning |
 | --- | --- |
-| `status = "unreviewed"` | Observation is preserved without a name, ABI, or semantic claim |
 | `status = "reviewed"` | Name and complete ABI are required; semantic binding is optional |
 | `status = "ignored"` | Observation is a reviewed false positive; metadata is forbidden |
 | `origin = "observed"` | Exact `(offset, width)` must exist in current facts |
 | `origin = "manual"` | Slot must be absent from facts and is an explicit human addition |
 
-A manual anchor is also allowed for a documented table not reached by current
-code, but it must be reviewed. Manual entries are kept visibly separate from
-machine observations.
+A missing table or slot is implicitly unreviewed and remains in generated
+facts/reports, not in this human file. A manual anchor is also allowed for a
+documented table not reached by current code, but it must be reviewed. Manual
+entries are kept visibly separate from machine observations.
 
 ## Semantic catalogs
 

@@ -140,6 +140,7 @@ pub(crate) struct ResolvedInterfaceCall {
     pub(crate) function: String,
     pub(crate) function_address: u32,
     pub(crate) site: u32,
+    pub(crate) slot_load_site: Option<u32>,
     pub(crate) kind: String,
     pub(crate) jalr_offset: i32,
     pub(crate) slot_selector: Option<String>,
@@ -172,6 +173,7 @@ pub(crate) struct ResolvedInterfaceSlot {
     pub(crate) variadic: bool,
     pub(crate) semantic: Option<String>,
     pub(crate) semantic_annotation: Option<ResolvedSemanticAnnotation>,
+    pub(crate) external_table: Option<String>,
     pub(crate) execution_model: Option<ResolvedExternalCallExecutionModel>,
     pub(crate) functions: BTreeSet<String>,
     pub(crate) calls: Vec<ResolvedInterfaceCall>,
@@ -363,12 +365,12 @@ impl InterfacePack {
             )
         })?;
         let document: DocumentMut = source_document.clone().into_mut();
-        if document.get("schema").and_then(Item::as_integer) != Some(1) {
+        if document.get("schema").and_then(Item::as_integer) != Some(2) {
             return Err(crate::error::WorkbenchError::manifest_source(
                 "interface pack",
                 path,
                 &input,
-                "requires schema = 1",
+                "requires schema = 2",
                 source_document.get("schema").and_then(Item::span),
             ));
         }

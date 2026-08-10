@@ -12,10 +12,18 @@ pub(super) use evidence::{
     record_predicate_field_mask, record_semantic_field_link,
 };
 
-pub(super) fn summarize_linked_ir(mut functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
+#[cfg(test)]
+pub(super) fn summarize_linked_ir(functions: Vec<LinkedIrFunction>) -> LinkedIrReport {
+    summarize_linked_ir_with_jobs(functions, 1)
+}
+
+pub(super) fn summarize_linked_ir_with_jobs(
+    mut functions: Vec<LinkedIrFunction>,
+    jobs: usize,
+) -> LinkedIrReport {
     functions.sort_by(|left, right| left.identity.cmp(&right.identity));
     link_guard_result_mmio_sources(&mut functions);
-    populate_effect_summaries(&mut functions);
+    populate_effect_summaries(&mut functions, jobs);
     let mmio_functions = functions
         .iter()
         .filter(|function| !function.mmio_accesses.is_empty())

@@ -34,7 +34,36 @@ that every user must learn.
 
 - [ ] Audit a complete real project from inputs through MMIO, linked IR,
   pseudo-code, interface/function review, verification and publication;
-  record every incomplete or misleading stage.
+  record every incomplete or misleading stage. The verification segment now
+  has nine typed project suites and a reproducible aggregate gate: the
+  2026-08-09 ESP32-S31 run matched all 138 reviewed proofs with zero mismatch,
+  incomplete result or orphan probe. Project status still correctly reports
+  the interface/function review backlog, so the end-to-end audit remains open.
+- [x] Make real-project verification one project operation rather than a set of
+  remembered leaf commands. Suites own source roles, probe roles/prefixes,
+  profile/disposition fragments, baseline and gate; `project verify --check`
+  reproduces one aggregate report. Candidate evidence is emitted only to a
+  separate review directory and cannot overwrite accepted baselines.
+- [x] Add a project-wide Replacement Graph. It deduplicates `(source, symbol)`
+  across suites, rejects conflicting reviewed mappings, and links disposition,
+  Rust component, probe, proof and qualification blockers. The 2026-08-09 real
+  run has 3,203 unique vendor nodes, 138 qualified matches and 42 reviewed Rust
+  components.
+- [x] Separate production ownership from verification-only probes in the
+  replacement graph. Probe symbols never imply a production item; reports now
+  distinguish `production_matches`, `probe_only_matches` and
+  `unmapped_matches`.
+- [ ] Assign reviewed production component identities where the 97 passing
+  probe-only matches correspond to actual production replacements. Keep true
+  reference/probe-only functions classified as such instead of inventing a
+  production module from their symbol names.
+- [x] Join reviewed Rust component identities to the Cargo workspace source
+  AST and exact suite ELF/DWARF evidence without adding another project
+  manifest. The real project resolves all 42 component source items and 34
+  compiled identities with 200 DWARF locations. Eight PHY transition types
+  still have no target-ELF occurrence because their executable authority is a
+  host semantic harness; keep that gap explicit until host harness artifacts
+  or target composition probes are indexed.
 - [x] Make artifact-wide IR the checked ESP32-S31 project default. The
   `rom-all` and `archive-all` profiles use `roots = "all"`; named local and
   externally visible code symbols plus reviewed recovered boundaries are
@@ -87,9 +116,21 @@ that every user must learn.
   whether the observed access exists. Concrete execution records unnamed
   accesses inside a declared MMIO region as ordered effects; comparison keeps
   their addresses in coverage diagnostics but does not make them incomplete.
-- [ ] Make the generated register inventory a practical review loop: address,
+- [x] Make the generated register inventory a practical review loop: address,
   width, read/write/RMW patterns, bit candidates, callers, evidence and a clear
-  path into the editable register model.
+  path into the editable register model. The real report identified the two
+  release blockers as diagnostic-only snapshots in
+  `libpp:wdev_record_rx_linked_list`; the reviewed non-operational policy now
+  preserves their evidence without inventing SVD identities.
+- [x] Add project review scopes as a persisted generated artifact. A scope
+  joins configured IR roots with their reachable closure, static and linked
+  MMIO, all blocker classes and replacement coverage. `project status` reads
+  the compact artifact instead of repeating scope reconstruction, while
+  `ir build` refreshes it after a focused profile rebuild.
+- [x] Gate SVD/PAC publication by explicit `release-scopes`, not every
+  artifact-wide observation. The 2026-08-09 ESP32-S31 run reduced 17 global
+  unreviewed observations to two release-relevant RX registers,
+  `0x20104090` and `0x20104094`; all other findings remain visible in review.
 - [x] Classify diagnostic bulk MMIO reads separately from operational driver
   accesses without hiding them. On ESP32-S31, `phy_reg_check` deliberately
   walks hundreds of consecutive registers for logging; these are real reads,
@@ -103,8 +144,11 @@ that every user must learn.
 - [ ] Make pseudo-code/function review practical for full artifacts: navigation
   by source and function, calls, MMIO, contexts, blockers and exact evidence,
   without treating best-effort reconstruction as decompilation proof.
-  The TUI and generated function review now expose typed per-PC decode blockers;
-  navigation and filtering across the full set still need a real-project pass.
+  The TUI and generated function/register review now expose typed per-PC decode
+  blockers and exact schema-v5 MMIO access sites even when CFG recovery is
+  incomplete. The Functions snapshot unions those sites with linked-IR MMIO,
+  so partial pseudo-code no longer produces a false zero-register view.
+  Navigation and filtering across the full set still need a real-project pass.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
@@ -131,16 +175,26 @@ that every user must learn.
   retain lifecycle evidence for slot and pointer installation.
 - [x] Represent bounded indexed table calls (`base + index * stride`) through
   reviewed index domains without guessing a single fixed slot.
-- [ ] Make resolved reviewed interface contracts the structural ABI registry.
-  Every reviewed slot must become a named opaque external call in linked IR;
-  only slots with an explicit compiled call model become executable semantic
-  actions. Remove table layout, version, magic and ordinary ABI-slot identity
-  from compiled harnesses once the backend consumes this registry. The real
-  ESP32-S31 Wi-Fi OSI v9 pack currently resolves 158 calls, while direct
-  pseudo-IR still reports reviewed non-modeled slots as
-  `unregistered-external-abi-slot`.
-- [ ] Treat a linked ELF as authoritative link selection and archives as source
-  inventory; add origin provenance instead of implementing a linker.
+- [x] Make resolved reviewed interface contracts the structural ABI registry.
+  Reviewed slots now become named opaque calls in linked IR on both discovered
+  and alternative CFG paths, while only explicit compiled models authorize
+  execution. The real `rom-all` profile contains 20 named opaque calls and no
+  `unregistered-external-abi-slot`; 16 calls correctly remain blocked as
+  `unmodeled-reviewed-external-call`.
+- [ ] Remove table layout, pointer-symbol, version, magic and ordinary slot ABI
+  duplication from compiled harnesses. Execution-model resolution now has its
+  own module; next reduce the harness contract to executable return/RAM/event
+  behavior joined by the reviewed pack's explicit model foreign key.
+- [x] Treat a linked ELF as authoritative link selection and archives as source
+  inventory; add origin provenance instead of implementing a linker. Direct
+  absolute LinkUnit symbols are now preserved: 15 archive calls formerly
+  rendered as `sub_2f80003c` are typed `ets_delay_us` boundaries and the PHY
+  scope's unresolved count fell from 20 to 7. Symbol-inventory schema v4 now
+  associates externally selectable linked-ELF text definitions with exact
+  same-source archive member candidates by name and kind, while retaining
+  `linker_resolution_claim = false`. The real project has 2,897 unique member
+  associations, zero ambiguous associations and 1,673 definitions with no
+  archive origin.
 - [x] Add pluggable peripheral execution models for W1C, read-to-clear,
   self-clearing bits, FIFO and indexed banks while retaining simple scripted
   MMIO as the generic baseline.
@@ -148,7 +202,13 @@ that every user must learn.
   concrete executor replay remaining the validation authority.
 - [ ] Validate memory objects, logical types, table instances, device models
   and generated scenario drafts in the real ESP32-S31 reviewed workflow; code
-  presence alone is not product completion.
+  presence alone is not product completion. The 2026-08-10 real `libpp-all`
+  pass now recovers `wdev_record_rx_linked_list` as a structured branch with
+  seven MMIO reads and eleven fields in
+  `0x1002f560[arg0 * 0x2c]`; the unresolved callback and two unknown values
+  remain explicit completeness blockers. This validates indexed absolute
+  objects, but reviewed nominal types and executable models still need real
+  project instances.
 
 ## P1 — project usability and maintainability
 
@@ -167,18 +227,32 @@ that every user must learn.
   pack, and explains the common publication blocker once.
 - [ ] Keep human output bounded and task-oriented; JSON/JSONL retain complete
   machine evidence on stdout, while diagnostics/progress remain on stderr.
+- [ ] Load the four linked-IR inputs once per project operation and share one
+  typed workspace snapshot between validation, review, navigation and TUI.
+  On the 2026-08-10 real run, `functions review` alone spent about 100 seconds
+  reparsing and projecting already generated IR; the full pipeline repeats
+  equivalent loads in multiple stages. Function validation/review and
+  interface-backed function review/interface validation now share their typed
+  workspaces during one cold pipeline run; review scopes, navigation, register
+  review and the TUI still need the common project snapshot.
+- [ ] Stream large persistent JSON documents to files and hash them while
+  writing instead of materializing a complete `String` and reparsing it for a
+  downstream stage. The schema-38 four-profile run peaked at 1,252,836 KiB;
+  correctness is stable, but the current ownership unnecessarily retains
+  duplicate document trees/strings.
 - [x] Bound `ir export` human function rows after the real all-ROM run emitted
   1,935 rows; show the 64 most active functions and an explicit omitted count.
 - [x] Apply a matching `source-companion:ID` to leaf IR export when its resolved
   run spec contains exactly one primary source; never attach source companions
   ambiguously to a multi-primary analysis.
-- [x] Add explicit `interfaces sync-pack [--check]` reconciliation. It updates
-  only unreviewed observed anchors/slots and preserves every reviewed, ignored
-  or manual claim; discovery and `project analyze` remain non-mutating with
-  respect to human-owned packs.
-- [ ] Decide whether large reviewed function/interface packs need composable
-  fragments by source or subsystem. Split only with stable identity, validation
-  across fragments and one project-level view.
+- [x] Replace generated-in-reviewed-pack synchronization with sparse overlays.
+  Function schema v3 and interface schema v2 store only reviewed/ignored human
+  decisions; omitted facts remain computed backlog. The obsolete `interfaces
+  sync-pack` path and its compatibility machinery were removed.
+- [x] Avoid premature pack fragmentation: the real function/interface packs
+  fell from 421 KiB to 11 KiB once generated `unreviewed` rows were removed.
+  Stable source/subsystem fragments are unnecessary until actual reviewed
+  knowledge grows enough to justify them.
 
 ## P2 — justified performance work
 
@@ -198,19 +272,40 @@ that every user must learn.
   dominates `archive-all` (47.32 s versus 10.71 s in debug), so profile workers
   would save at most the smaller profile while retaining both large documents;
   function-local scheduling gives better load balance.
-- [x] Keep mutation of linked-IR shared summaries serial. Parallel workers emit
-  function-local facts only; call-graph linking, SCC/fixed-point summaries,
-  indexing and rendering happen after the deterministic join.
+- [x] Parallelize independent per-root linked-IR effect summaries after the
+  deterministic function join. Workers only read the immutable graph and
+  publish `(root, summary)` pairs that are sorted before mutation; serial and
+  parallel reports are equality-tested. A one-artifact merge also reuses its
+  already computed report instead of calculating every summary twice.
 - [x] Use `petgraph` for standard SCC analysis through an adapter while keeping
   the serialized/domain graph model independent of the crate.
-- [ ] Consider debug/source enrichment and property-based executor testing
-  where they replace standard algorithms or strengthen correctness;
-  dependencies are not goals by themselves.
+- [x] Make `project analyze` dependency-aware and incremental. The expanded
+  four-source ESP32-S31 write workflow measured 6:43.71 and 1,236,708 KiB peak
+  RSS on 2026-08-09, even when only review scopes needed refresh after a schema
+  fix. A focused `ir build --profile archive-all` refreshed the same dependent
+  scope artifact in 8.96 s / 224,980 KiB. The 2026-08-10 schema-38 run still
+  needed 5:46.95 / 1,252,044 KiB merely to rebuild a stale navigation index,
+  although all-profile IR itself completed in 1:58.29. Reuse validated
+  unchanged stage outputs by content identity; do not add more user-facing
+  repair commands. The content-addressed implementation hashes the executable,
+  declared inputs and outputs, bypasses reuse in `--check`, and reports a
+  distinct `up-to-date` state. On the real schema-38 project, the cache-seeding
+  run completed all 13 stages in 5:56.13 / 1,249,016 KiB; an unchanged repeat
+  completed with 13 cache hits in 10.82 s / 410,896 KiB.
+- [x] Add source/ELF/DWARF enrichment where it strengthens navigation without
+  changing proof semantics. The project verification report now resolves all
+  42 reviewed Rust components in source, 34 in configured target ELFs and 200
+  DWARF locations; the remaining eight PHY components explicitly identify the
+  host-harness/target-artifact boundary.
+- [ ] Add property-based executor testing where generated and shrunk cases
+  strengthen instruction-semantic correctness; dependencies are not goals by
+  themselves.
 
 ## Later, after the functional base
 
 - [ ] Optional solver-assisted scenario suggestions with concrete replay.
-- [ ] Optional DWARF/source-line and Rust/C++ demangling enrichment.
+- [ ] Extend the active Rust DWARF/demangling index to vendor C++ names only
+  when a real artifact needs it.
 - [ ] Shell/man/wizard polish beyond the existing project happy path.
 - [ ] Additional ISA/lifting backends only when a second architecture provides
   a concrete maintenance and coverage requirement.
@@ -244,18 +339,35 @@ build cost; subsequent source changes remain incremental.
 
 After CFG-reachable blocker filtering, floating-memory provenance and opaque
 returning-call continuation, the same optimized `--jobs 4` check completed in
-5.30 s at 435,624 KiB on 2026-08-09. This is the current functional baseline;
-Cargo compilation remains excluded.
+5.30 s at 435,624 KiB on 2026-08-09. That historical profile predates the
+four-source schema-38 workspace; Cargo compilation remains excluded.
 
-ROM IR contains 1,935 roots, 492 MMIO identities and 416 complete functions;
-schema 37 inventories 593 CFG-reachable unsupported instruction sites across
-exactly 155 functions. Of those sites, 116 are all-zero illegal encodings now
+The artifact-wide schema-38 model changed that workload materially on
+2026-08-10. Before profiling, `libpp-all` still ran after seven minutes.
+`perf` showed repeated 32-bit rediscovery of unchanged ABI arguments and an
+eager four-way recursive affine-address query. Canonical `Input` values,
+lazy single-pass address matching, bounded parallel root summaries and removal
+of the duplicate one-artifact summary reduced the same 1,312-function debug
+build to 16.69 s at 591,684 KiB. The complete four-profile `ir build --jobs 4`
+finished in 1:58.29 at 1,252,836 KiB; the thirteen-stage `project analyze`
+finished in 5:49.29 at 1,252,008 KiB after final canonical-input regeneration.
+This is the current baseline. The gap is
+now repeated document parsing, review/navigation projection and non-streaming
+serialization, not instruction analysis or runaway symbolic recursion.
+
+ROM IR contains 1,935 roots, 453 MMIO identities and 426 complete functions;
+schema 38 inventories 593 CFG-reachable unsupported instruction sites across
+exactly 155 functions and additionally preserves indexed memory-object
+provenance. Of those sites, 116 are all-zero illegal encodings now
 separated as `zero-fill-or-illegal-trap`; no site remains in the generic
 `invalid` class. A whole-symbol scan found 945 unsupported byte sequences, but
 352 occur after a return or another path terminator and are intentionally not
 presented as function blockers.
-The linked archive image contains 171 roots, 106 MMIO identities, 66 complete
-functions and no decode blockers. Interface schema 5 retains 593 reached
+The linked archive image contains 171 roots, 547 MMIO identities, 66 complete
+functions and no decode blockers. `libpp-all` contains 1,312 roots, 566
+complete functions, 561 MMIO identities and 1,588 memory fields;
+`libnet80211-all` contains 1,714 roots, 209 complete functions, four MMIO
+identities and 3,342 memory fields. Interface schema 5 retains 593 reached
 blocker sites across all three scanned containers, including 116 zero/trap
 sites, and reports zero analysis failures. These are regression references,
 not universal performance promises: artifact hashes, build profile and host

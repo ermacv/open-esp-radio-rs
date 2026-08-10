@@ -27,11 +27,13 @@ fn affine_input(value: &SymbolicValue) -> Option<AffineInput> {
             scale: 0,
             offset: *value,
         }),
-        SymbolicValue::InputConstant { index, .. } => Some(AffineInput {
-            index: Some(*index),
-            scale: 1,
-            offset: 0,
-        }),
+        SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. } => {
+            Some(AffineInput {
+                index: Some(*index),
+                scale: 1,
+                offset: 0,
+            })
+        }
         SymbolicValue::Bits(bits) => {
             let first_input = bits.iter().find_map(|source| match source {
                 BitSource::Input { index, .. } => Some(*index),
@@ -136,7 +138,10 @@ fn collect_evaluable_input_bits_masked(
 ) -> bool {
     match value {
         SymbolicValue::Constant(_) => true,
-        SymbolicValue::InputConstant {
+        SymbolicValue::Input {
+            index: source_index,
+        }
+        | SymbolicValue::InputConstant {
             index: source_index,
             ..
         } => {
@@ -222,7 +227,11 @@ fn collect_evaluable_input_bits_masked(
 pub fn evaluate_for_input(value: &SymbolicValue, input_index: u8, input: u32) -> Option<u32> {
     match value {
         SymbolicValue::Constant(value) => Some(*value),
-        SymbolicValue::InputConstant { index, .. } if *index == input_index => Some(input),
+        SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. }
+            if *index == input_index =>
+        {
+            Some(input)
+        }
         SymbolicValue::Expression {
             operation,
             left,

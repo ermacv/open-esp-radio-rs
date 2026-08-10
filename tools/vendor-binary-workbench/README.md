@@ -42,11 +42,13 @@ cargo vendor-binary-workbench <workflow> <command> \
   ...
 ```
 
-The ESP32-S31 target specification selects the architecture, ABI, SVD catalog,
-profiles, dispositions, and evidence baseline. Its project-selected platform
-pack supplies the harness and reusable semantic catalogs. Vendor artifact paths
-and trusted digests stay outside both packs; callers authenticate inputs and
-pass them directly or through an untracked project-local `local.toml`.
+The ESP32-S31 target specification selects the architecture, ABI and SVD
+catalog. Project-owned verification suites select sources, Rust artifact
+roles, probe prefixes, profiles, dispositions, baselines and gates. The
+project-selected platform pack supplies the harness and reusable semantic
+catalogs. Vendor artifact paths and trusted digests stay outside these packs;
+callers authenticate inputs and bind them through an untracked project-local
+`local.toml`.
 
 ## Workflows
 
@@ -60,6 +62,7 @@ pass them directly or through an untracked project-local `local.toml`.
 | `project status` | Emit phase-based lifecycle and publication readiness as text or stable JSON | [Project status](docs/project-status.md) |
 | `project browse` | Browse project state and run typed trace comparisons in a read-only TUI | [Read-only project browser](docs/tui.md) |
 | `project analyze [--check]` | Generate or non-mutatingly verify project-owned symbol/navigation, MMIO, interface, IR, and review evidence | [Project analysis](docs/project-pipeline.md) |
+| `project verify [--check]` | Execute all project-owned vendor/Rust suites and write or reproduce one aggregate report | [Verification](docs/verification.md) |
 | `project publish` | Strictly validate reviewed registers and write or check configured SVD/PAC/bindings | [Project publication](docs/project-publication.md) |
 | `symbols inventory` | Preserve ELF/archive symbol facts and conservative cross-input associations | [Artifact and symbol inventory](docs/symbol-inventory.md) |
 | `code init-pack` / `validate` / `review` | Review conservative function-boundary candidates recovered inside executable-code gaps | [Reviewed code boundaries](docs/code-boundaries.md) |

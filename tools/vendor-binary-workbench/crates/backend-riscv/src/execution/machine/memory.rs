@@ -141,6 +141,13 @@ impl Machine<'_> {
             });
             return Ok(());
         }
+        let write_end = address.wrapping_add(u32::from(width / 8));
+        if self.word_reservation.is_some_and(|reserved| {
+            let reserved_end = reserved.wrapping_add(4);
+            address < reserved_end && reserved < write_end
+        }) {
+            self.word_reservation = None;
+        }
         for offset in 0..bytes {
             let byte_address = address.wrapping_add(offset as u32);
             if self.memory_ownership.iter().any(|ownership| {

@@ -26,11 +26,14 @@ pub(super) fn run(invocation: ResolvedInvocation) -> Result<bool> {
             commands::run_project_status(arguments, session.context())
         }
         ResolvedInvocation::ProjectAnalyze { arguments, session } => {
-            commands::run_project_analysis(
+            commands::run_project_analysis(arguments, &session)
+        }
+        ResolvedInvocation::ProjectVerify { arguments, session } => {
+            commands::run_project_verification(
                 arguments,
+                &session.manifest,
                 &session.project,
                 session.run_spec.as_ref(),
-                session.memory_map.as_ref(),
                 &session.mmio,
                 &session.target,
             )

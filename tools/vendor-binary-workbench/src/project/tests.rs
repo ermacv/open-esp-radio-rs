@@ -114,8 +114,31 @@ profiles = ["vendor"]
 [functions.review]
 output = "generated/function-review.md"
 
+[review]
+output = "generated/review-scopes.json"
+release-scopes = ["radio-init"]
+
+[[review.scopes]]
+id = "radio-init"
+profiles = ["vendor"]
+roots = ["archive:phy_init"]
+include-reachable = true
+
 [verification]
+report = "generated/verification.json"
+
+[[verification.suites]]
+id = "radio"
+sources = ["rom", "archive"]
+source-prefixes = ["rom=phy_"]
+rust-artifact-role = "rust-artifact:radio"
+rust-companion-role = "rust-companion:radio"
+rust-prefix = "open_trace_"
 profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
+dispositions = ["dispositions/radio.toml"]
+baselines = ["baselines/radio.toml"]
+gate = "regression"
+match-floor = 2
 "#,
     )
     .unwrap();
@@ -207,13 +230,39 @@ profiles = ["profiles/compiled.toml", "profiles/interrupts.toml"]
         )]
     );
     assert_eq!(
+        project.review,
+        Some(ReviewWorkspaceSpec {
+            output: directory.join("generated/review-scopes.json"),
+            release_scopes: vec!["radio-init".to_owned()],
+            scopes: vec![ReviewScopeSpec {
+                id: "radio-init".to_owned(),
+                profiles: vec!["vendor".to_owned()],
+                roots: vec!["archive:phy_init".to_owned()],
+                include_reachable: true,
+            }],
+        })
+    );
+    assert_eq!(
         project.verification,
         Some(VerificationWorkspacePaths {
-            profiles: vec![
-                directory.join("profiles/compiled.toml"),
-                directory.join("profiles/interrupts.toml"),
-            ],
-            rust_prefix: None,
+            report: directory.join("generated/verification.json"),
+            suites: vec![VerificationSuiteSpec {
+                id: "radio".to_owned(),
+                sources: vec!["rom".parse().unwrap(), "archive".parse().unwrap()],
+                source_prefixes: [("rom".parse().unwrap(), "phy_".to_owned())]
+                    .into_iter()
+                    .collect(),
+                rust_artifact_role: InputRole::parse("rust-artifact:radio").unwrap(),
+                rust_companion_role: Some(InputRole::parse("rust-companion:radio").unwrap()),
+                rust_prefix: "open_trace_".to_owned(),
+                profiles: vec![
+                    directory.join("profiles/compiled.toml"),
+                    directory.join("profiles/interrupts.toml"),
+                ],
+                dispositions: vec![directory.join("dispositions/radio.toml")],
+                evidence_baselines: vec![directory.join("baselines/radio.toml")],
+                gate: ProjectVerificationGate::Regression { match_floor: 2 },
+            }],
         })
     );
 }
@@ -318,6 +367,19 @@ fn rejects_removed_workspace_configuration_keys() {
             .unwrap_err()
             .to_string()
             .contains("semantic catalogs belong to the platform pack")
+    );
+
+    let legacy_verification = directory.join("legacy-verification.toml");
+    std::fs::write(
+        &legacy_verification,
+        "schema = 1\nid = \"fixture\"\ntarget-spec = \"target.toml\"\n[verification]\nprofiles = [\"profiles.toml\"]\n",
+    )
+    .unwrap();
+    assert!(
+        ProjectSpec::load(&legacy_verification)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown project verification key \"profiles\"")
     );
 
     std::fs::remove_dir_all(directory).unwrap();

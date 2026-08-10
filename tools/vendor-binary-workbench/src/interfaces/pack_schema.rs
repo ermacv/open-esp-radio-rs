@@ -642,6 +642,8 @@ fn validate_abi_type(
                 | "u16"
                 | "i32"
                 | "u32"
+                | "i64"
+                | "u64"
                 | "isize"
                 | "usize"
                 | "ptr"

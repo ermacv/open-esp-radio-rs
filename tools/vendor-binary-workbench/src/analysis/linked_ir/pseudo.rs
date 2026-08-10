@@ -132,6 +132,7 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
     }
     match value {
         SymbolicValue::Unknown => "unknown".to_owned(),
+        SymbolicValue::Input { index } => format!("arg{index}"),
         SymbolicValue::Constant(value) | SymbolicValue::InputConstant { value, .. } => {
             format!("{value:#010x}")
         }
@@ -216,6 +217,7 @@ pub(super) fn pseudo_value(value: &SymbolicValue) -> String {
         }
         SymbolicValue::ExternalTable(_)
         | SymbolicValue::ExternalFunction { .. }
+        | SymbolicValue::ReviewedExternalFunction { .. }
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. } => {
             format!("symbolic({:?})", value.canonical())
@@ -542,6 +544,36 @@ pub(super) fn render_event(
                 function_spec.c_name,
                 function_spec.semantic.return_type,
                 function_spec.semantic.replacement.unwrap_or("none"),
+            )
+            .unwrap();
+        }
+        DraftReferenceEvent::ReviewedExternalCall {
+            site,
+            candidates,
+            arguments,
+        } => {
+            writeln!(
+                output,
+                "{prefix}let _unmodeled = reviewed_abi.{}({}); // site {site:#010x}; {}",
+                pseudo_identifier(
+                    &candidates
+                        .iter()
+                        .map(|candidate| candidate.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("_or_")
+                ),
+                pseudo_arguments(arguments),
+                candidates
+                    .iter()
+                    .map(|candidate| format!(
+                        "{}::{}({}) -> {}",
+                        candidate.contract,
+                        candidate.name,
+                        candidate.argument_types.join(", "),
+                        candidate.return_type
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" | ")
             )
             .unwrap();
         }

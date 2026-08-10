@@ -9394,7 +9394,7 @@ access = "read-write"
 [[registers]]
 address = 537938992
 width = 32
-access = "read-only"
+access = "read-write"
 identity = "WIFI_MAC_HE_INIT_PREFIX.INTERRUPT_1_RAW"
 peripheral = "WIFI_MAC_HE_INIT_PREFIX"
 peripheral-type = "WifiMacHeInitPrefix"
@@ -9407,7 +9407,7 @@ svd-name = "EVENTS"
 method = "events"
 bit-offset = 0
 bit-width = 32
-access = "read-only"
+access = "read-write"
 
 [[registers]]
 address = 537938996
@@ -9466,7 +9466,7 @@ access = "read-write"
 [[registers]]
 address = 537939012
 width = 32
-access = "read-only"
+access = "read-write"
 identity = "WIFI_MAC_INTERRUPT.RAW"
 peripheral = "WIFI_MAC_INTERRUPT"
 peripheral-type = "WifiMacInterrupt"
@@ -9479,7 +9479,7 @@ svd-name = "EVENTS"
 method = "events"
 bit-offset = 0
 bit-width = 32
-access = "read-only"
+access = "read-write"
 
 [[registers]]
 address = 537939016

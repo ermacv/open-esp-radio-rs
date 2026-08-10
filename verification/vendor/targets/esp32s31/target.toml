@@ -12,6 +12,3 @@ svd = [
     "../../../../svd/esp32s31-platform-radio-deps.svd",
 ]
 pac-bindings = "../../../../svd/esp32s31-radio.bindings.toml"
-profiles = "profiles/compiled-equivalence.toml"
-dispositions = "dispositions/phy.toml"
-evidence-baseline = "baselines/phy.toml"

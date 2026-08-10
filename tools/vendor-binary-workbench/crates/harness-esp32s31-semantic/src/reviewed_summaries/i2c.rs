@@ -125,6 +125,7 @@ pub(super) fn chip_i2c_write_reg_trace(
     Some(FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -218,6 +219,7 @@ pub(super) fn chip_i2c_read_reg_org_trace(
     Some(FunctionAnalysis {
         symbol: symbol.name.clone(),
         events: vec![mask_write.clone()],
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -274,6 +276,7 @@ pub(super) fn host_id_trace(
     FunctionAnalysis {
         symbol: symbol.name.clone(),
         events,
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),

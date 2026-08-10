@@ -1,5 +1,6 @@
 //! Frontend-neutral orchestration of project-owned analysis and review stages.
 
+mod cache;
 mod operations;
 
 pub(crate) use operations::*;
@@ -8,7 +9,9 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::pipeline::{PipelineSummary, StageOutcome, StageSuccess, WorkflowMode, execute};
+use super::pipeline::{
+    PipelineSummary, StageOutcome, StageRun, StageSuccess, WorkflowMode, execute,
+};
 use crate::{Result, project::ProjectSpec};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -29,18 +32,19 @@ pub(crate) struct ProjectAnalysisInputs {
 /// The coordinator owns ordering and dependency policy. Implementations own
 /// the concrete analysis engines and artifact publication boundaries.
 pub(crate) trait ProjectAnalysisOperations {
-    fn symbol_inventory(&mut self, check: bool) -> Result<bool>;
-    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<bool>;
-    fn discover_interfaces(&mut self, check: bool) -> Result<bool>;
-    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<bool>;
-    fn build_navigation(&mut self, check: bool) -> Result<bool>;
-    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<bool>;
-    fn review_code(&mut self, check: bool) -> Result<bool>;
-    fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool>;
-    fn review_registers(&mut self, check: bool) -> Result<bool>;
-    fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<bool>;
-    fn review_functions(&mut self, check: bool) -> Result<bool>;
-    fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<bool>;
+    fn symbol_inventory(&mut self, check: bool) -> Result<StageRun>;
+    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
+    fn discover_interfaces(&mut self, check: bool) -> Result<StageRun>;
+    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun>;
+    fn build_review_scopes(&mut self, check: bool) -> Result<StageRun>;
+    fn build_navigation(&mut self, check: bool) -> Result<StageRun>;
+    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
+    fn review_code(&mut self, check: bool) -> Result<StageRun>;
+    fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
+    fn review_registers(&mut self, check: bool) -> Result<StageRun>;
+    fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
+    fn review_functions(&mut self, check: bool) -> Result<StageRun>;
+    fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<StageRun>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -52,6 +56,8 @@ pub(crate) struct ProjectAnalysisReport {
     pub(crate) stages: Vec<super::pipeline::StageReport>,
     pub(crate) written: usize,
     pub(crate) verified: usize,
+    #[serde(rename = "up-to-date")]
+    pub(crate) current: usize,
     pub(crate) failed: usize,
     pub(crate) blocked: usize,
     #[serde(rename = "not-configured")]
@@ -120,6 +126,20 @@ pub(crate) fn run(
         })
     };
     summary.record("linked-ir", &ir);
+
+    let review_scopes = match project.review.as_ref() {
+        None => StageOutcome::NotConfigured("[review] is absent".to_owned()),
+        Some(_) if ir.blocks_dependants() => {
+            StageOutcome::Blocked("linked-ir did not complete".to_owned())
+        }
+        Some(_) if project.registers.is_some() && mmio.blocks_dependants() => {
+            StageOutcome::Blocked("mmio-discovery did not complete".to_owned())
+        }
+        Some(_) => execute("review-scopes", generated, || {
+            operations.build_review_scopes(mode.is_check())
+        }),
+    };
+    summary.record("review-scopes", &review_scopes);
 
     let navigation = match project.navigation_index.as_ref() {
         None => StageOutcome::NotConfigured("[analysis.navigation] is absent".to_owned()),
@@ -244,13 +264,14 @@ pub(crate) fn run(
     summary.record("interface-validation", &interface_validation);
 
     ProjectAnalysisReport {
-        schema: 1,
+        schema: 2,
         command: "project analyze",
         mode: mode.label(),
         status: if summary.succeeded() { "ok" } else { "failed" },
         stages: summary.stages().to_vec(),
         written: summary.written,
         verified: summary.verified,
+        current: summary.current,
         failed: summary.failed,
         blocked: summary.blocked,
         not_configured: summary.not_configured,
@@ -272,61 +293,70 @@ mod tests {
     #[derive(Default)]
     struct FakeOperations {
         calls: Vec<&'static str>,
+        current: bool,
     }
 
     impl FakeOperations {
-        fn called(&mut self, name: &'static str) -> Result<bool> {
+        fn called(&mut self, name: &'static str) -> Result<StageRun> {
             self.calls.push(name);
-            Ok(true)
+            Ok(if self.current {
+                StageRun::Current
+            } else {
+                StageRun::Executed
+            })
         }
     }
 
     impl ProjectAnalysisOperations for FakeOperations {
-        fn symbol_inventory(&mut self, _: bool) -> Result<bool> {
+        fn symbol_inventory(&mut self, _: bool) -> Result<StageRun> {
             self.called("symbols")
         }
 
-        fn discover_mmio(&mut self, _: bool, _: usize) -> Result<bool> {
+        fn discover_mmio(&mut self, _: bool, _: usize) -> Result<StageRun> {
             self.called("mmio")
         }
 
-        fn discover_interfaces(&mut self, _: bool) -> Result<bool> {
+        fn discover_interfaces(&mut self, _: bool) -> Result<StageRun> {
             self.called("interfaces")
         }
 
-        fn build_linked_ir(&mut self, _: bool, _: usize) -> Result<bool> {
+        fn build_linked_ir(&mut self, _: bool, _: usize) -> Result<StageRun> {
             self.called("ir")
         }
 
-        fn build_navigation(&mut self, _: bool) -> Result<bool> {
+        fn build_review_scopes(&mut self, _: bool) -> Result<StageRun> {
+            self.called("review-scopes")
+        }
+
+        fn build_navigation(&mut self, _: bool) -> Result<StageRun> {
             self.called("navigation")
         }
 
-        fn validate_code(&mut self, _: bool) -> Result<bool> {
+        fn validate_code(&mut self, _: bool) -> Result<StageRun> {
             self.called("code-validation")
         }
 
-        fn review_code(&mut self, _: bool) -> Result<bool> {
+        fn review_code(&mut self, _: bool) -> Result<StageRun> {
             self.called("code-review")
         }
 
-        fn validate_registers(&mut self, _: bool) -> Result<bool> {
+        fn validate_registers(&mut self, _: bool) -> Result<StageRun> {
             self.called("register-validation")
         }
 
-        fn review_registers(&mut self, _: bool) -> Result<bool> {
+        fn review_registers(&mut self, _: bool) -> Result<StageRun> {
             self.called("register-review")
         }
 
-        fn validate_functions(&mut self, _: bool) -> Result<bool> {
+        fn validate_functions(&mut self, _: bool) -> Result<StageRun> {
             self.called("function-validation")
         }
 
-        fn review_functions(&mut self, _: bool) -> Result<bool> {
+        fn review_functions(&mut self, _: bool) -> Result<StageRun> {
             self.called("function-review")
         }
 
-        fn validate_interfaces(&mut self, _: bool) -> Result<bool> {
+        fn validate_interfaces(&mut self, _: bool) -> Result<StageRun> {
             self.called("interface-validation")
         }
     }
@@ -347,6 +377,7 @@ mod tests {
             registers: None,
             interfaces: None,
             functions: None,
+            review: None,
             verification: None,
         }
     }
@@ -362,7 +393,7 @@ mod tests {
         );
         assert!(operations.calls.is_empty());
         assert!(report.succeeded());
-        assert_eq!(report.not_configured, 12);
+        assert_eq!(report.not_configured, 13);
     }
 
     #[test]
@@ -382,5 +413,30 @@ mod tests {
         assert!(!report.succeeded());
         assert_eq!(report.blocked, 1);
         assert_eq!(report.stages[0].status, "blocked");
+    }
+
+    #[test]
+    fn current_stage_is_successful_and_reported_separately_from_a_write() {
+        let mut project = empty_project();
+        project.symbol_inventory = Some(SymbolInventorySpec {
+            output: "symbols.json".into(),
+        });
+        let mut operations = FakeOperations {
+            current: true,
+            ..FakeOperations::default()
+        };
+        let report = run(
+            &project,
+            ProjectAnalysisRequest::default(),
+            ProjectAnalysisInputs {
+                run_spec: true,
+                memory_map: false,
+            },
+            &mut operations,
+        );
+        assert!(report.succeeded());
+        assert_eq!(report.written, 0);
+        assert_eq!(report.current, 1);
+        assert_eq!(report.stages[0].status, "up-to-date");
     }
 }

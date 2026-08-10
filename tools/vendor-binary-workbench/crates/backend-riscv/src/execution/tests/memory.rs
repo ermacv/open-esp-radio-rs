@@ -352,6 +352,56 @@ fn executes_atomic_or_on_private_stack_memory() {
 }
 
 #[test]
+fn executes_load_reserved_store_conditional_on_private_stack_memory() {
+    let image = tiny_image(
+        [
+            0xffc1_0293_u32, // addi t0, sp, -4
+            0x0070_0313,     // addi t1, zero, 7
+            0x0062_a023,     // sw t1, 0(t0)
+            0x1002_a3af,     // lr.w t2, (t0)
+            0x0013_8393,     // addi t2, t2, 1
+            0x1872_a42f,     // sc.w s0, t2, (t0)
+            0x0002_a503,     // lw a0, 0(t0)
+            0x0085_6533,     // or a0, a0, s0
+            0x0000_8067,     // ret
+        ]
+        .into_iter()
+        .flat_map(u32::to_le_bytes)
+        .collect(),
+        36,
+    );
+    let result = execute(
+        &image,
+        &empty_svd(),
+        "test",
+        Scenario {
+            private_stack_fill: Some(0),
+            ..Scenario::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(result.return_value, 8);
+    assert!(result.timeline.iter().any(|event| matches!(
+        event,
+        ExecutionTimelineEvent::Atomic {
+            operation: AtomicOperation::LoadReserved,
+            ordering: AtomicOrdering::Relaxed,
+            succeeded: None,
+            ..
+        }
+    )));
+    assert!(result.timeline.iter().any(|event| matches!(
+        event,
+        ExecutionTimelineEvent::Atomic {
+            operation: AtomicOperation::StoreConditional,
+            ordering: AtomicOrdering::Relaxed,
+            succeeded: Some(true),
+            ..
+        }
+    )));
+}
+
+#[test]
 fn private_stack_fill_is_explicit_and_default_stack_remains_poison() {
     let image = tiny_image(
         [

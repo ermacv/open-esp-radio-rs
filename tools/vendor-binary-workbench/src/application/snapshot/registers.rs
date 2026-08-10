@@ -5,9 +5,9 @@ use std::collections::BTreeSet;
 use super::{ProjectSession, push_error};
 use crate::{
     application::model::{
-        DiagnosticRecord, RegisterDetailSummary, RegisterFieldSummary, RegisterNameSource,
-        RegisterPredicateSummary, RegisterReviewState, RegisterSummary, RegisterWorkspaceReport,
-        RegisterWritePatternSummary,
+        DiagnosticRecord, RegisterAccessSiteSummary, RegisterDetailSummary, RegisterFieldSummary,
+        RegisterNameSource, RegisterPredicateSummary, RegisterReviewState, RegisterSummary,
+        RegisterWorkspaceReport, RegisterWritePatternSummary,
     },
     registers::{ProjectRegisterWorkspace, RegisterFacts, RegisterModel, RegisterReviewIr},
 };
@@ -278,6 +278,24 @@ pub(super) fn detail(
         write_functions: fact.map_or_else(Vec::new, |fact| {
             fact.write_functions.iter().cloned().collect()
         }),
+        read_sites: fact.map_or_else(Vec::new, |fact| {
+            fact.read_sites
+                .iter()
+                .map(|site| RegisterAccessSiteSummary {
+                    function: site.function.clone(),
+                    pc: site.pc,
+                })
+                .collect()
+        }),
+        write_sites: fact.map_or_else(Vec::new, |fact| {
+            fact.write_sites
+                .iter()
+                .map(|site| RegisterAccessSiteSummary {
+                    function: site.function.clone(),
+                    pc: site.pc,
+                })
+                .collect()
+        }),
         functions: functions.into_iter().collect(),
         write_patterns,
         fields,
@@ -299,6 +317,8 @@ fn catalog_only_detail(address: u32, name: String) -> RegisterDetailSummary {
         read_modify_writes: 0,
         read_functions: Vec::new(),
         write_functions: Vec::new(),
+        read_sites: Vec::new(),
+        write_sites: Vec::new(),
         functions: Vec::new(),
         write_patterns: Vec::new(),
         fields: Vec::new(),

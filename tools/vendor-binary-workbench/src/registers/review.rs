@@ -327,6 +327,37 @@ fn render_report(
                 function_list(&fact.write_functions)
             )
             .expect("writing to String cannot fail");
+            if !fact.read_sites.is_empty() || !fact.write_sites.is_empty() {
+                let read_sites = fact
+                    .read_sites
+                    .iter()
+                    .map(|site| {
+                        format!("`{:#010x}` in `{}`", site.pc, markdown_code(&site.function))
+                    })
+                    .collect::<Vec<_>>();
+                let write_sites = fact
+                    .write_sites
+                    .iter()
+                    .map(|site| {
+                        format!("`{:#010x}` in `{}`", site.pc, markdown_code(&site.function))
+                    })
+                    .collect::<Vec<_>>();
+                writeln!(
+                    output,
+                    "Instruction sites: reads {}; writes {}.",
+                    if read_sites.is_empty() {
+                        "-".to_owned()
+                    } else {
+                        read_sites.join(", ")
+                    },
+                    if write_sites.is_empty() {
+                        "-".to_owned()
+                    } else {
+                        write_sites.join(", ")
+                    },
+                )
+                .expect("writing to String cannot fail");
+            }
             if let Some(identity) = identity
                 && let Some(annotation) = annotation_map.get(identity.as_str())
             {
@@ -453,6 +484,8 @@ mod tests {
                 writes: 2,
                 read_functions: ["rom:read_status".to_owned()].into(),
                 write_functions: ["lib:member.o:enable".to_owned()].into(),
+                read_sites: BTreeSet::new(),
+                write_sites: BTreeSet::new(),
                 write_patterns: vec![RegisterWritePatternFact {
                     occurrences: 2,
                     modified_mask: 0x33,

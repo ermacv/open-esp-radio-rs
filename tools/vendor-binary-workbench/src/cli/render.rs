@@ -25,7 +25,7 @@ pub(crate) fn trace(trace: &FunctionAnalysis) {
     crate::cli::output::text(output);
 }
 
-pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
+pub(crate) fn verification_human(report: &VerificationCommandReport) {
     let mut output = String::new();
     let _ = writeln!(
         &mut output,
@@ -37,7 +37,7 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
             "failed"
         }
     );
-    for source in report.sources {
+    for source in &report.sources {
         let _ = writeln!(
             &mut output,
             "  {}: {} functions, {} matched, {} mismatched, {} incomplete, {} missing",
@@ -57,7 +57,7 @@ pub(crate) fn verification_human(report: &VerificationCommandReport<'_>) {
             );
         }
     }
-    if let Some(comparison) = report.evidence_comparison {
+    if let Some(comparison) = &report.evidence_comparison {
         let _ = writeln!(
             &mut output,
             "  evidence baseline: {} ({} expected, {} actual, {} regressions)",
@@ -90,14 +90,28 @@ pub(crate) fn evidence_comparison(comparison: &EvidenceComparison) {
             regression.source,
             regression.symbol,
             regression.expected,
-            regression.actual.as_deref().unwrap_or("missing")
+            regression
+                .actual
+                .as_ref()
+                .map_or_else(|| "missing".to_owned(), ToString::to_string)
         );
+        for component in &regression.changed_components {
+            let _ = writeln!(
+                &mut output,
+                "EVIDENCE-COMPONENT\t{}\t{}\t{}\texpected={}\tactual={}",
+                regression.source,
+                regression.symbol,
+                component.name,
+                component.expected.as_deref().unwrap_or("missing"),
+                component.actual.as_deref().unwrap_or("missing")
+            );
+        }
     }
     for addition in &comparison.additions {
         let _ = writeln!(
             &mut output,
             "EVIDENCE-ADDITION\t{}\t{}\t{}",
-            addition.source, addition.symbol, addition.kind
+            addition.source, addition.symbol, addition.identity
         );
     }
     let _ = writeln!(

@@ -57,6 +57,8 @@ struct SymbolDocument {
     scope: &'static str,
     resolution: &'static str,
     candidates: Vec<CandidateDocument>,
+    origin_association: &'static str,
+    origin_candidates: Vec<CandidateDocument>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -119,6 +121,10 @@ struct SummaryDocument {
     named_zero_sized_code_symbols: usize,
     function_boundary_candidates: usize,
     code_recovery_blockers: usize,
+    link_unit_definitions: usize,
+    unique_archive_origins: usize,
+    ambiguous_archive_origins: usize,
+    missing_archive_origins: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -267,6 +273,17 @@ pub(crate) fn build_symbol_inventory_document(
                         kind: candidate.kind.label(),
                     })
                     .collect(),
+                origin_association: symbol.origin_association.label(),
+                origin_candidates: symbol
+                    .origin_candidates
+                    .iter()
+                    .map(|candidate| CandidateDocument {
+                        artifact: candidate.artifact,
+                        member: candidate.member.clone(),
+                        address: format!("{:#x}", candidate.address),
+                        kind: candidate.kind.label(),
+                    })
+                    .collect(),
             })
             .collect(),
         summary: SummaryDocument {
@@ -317,6 +334,37 @@ pub(crate) fn build_symbol_inventory_document(
                 .flat_map(|artifact| &artifact.code_sections)
                 .map(|section| section.coverage.recovery_blockers.len())
                 .sum(),
+            link_unit_definitions: inventory
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.origin_association
+                        != crate::analysis::LinkUnitOriginAssociation::NotApplicable
+                })
+                .count(),
+            unique_archive_origins: inventory
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.origin_association
+                        == crate::analysis::LinkUnitOriginAssociation::UniqueNameAndKind
+                })
+                .count(),
+            ambiguous_archive_origins: inventory
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.origin_association
+                        == crate::analysis::LinkUnitOriginAssociation::AmbiguousNameAndKind
+                })
+                .count(),
+            missing_archive_origins: inventory
+                .symbols
+                .iter()
+                .filter(|symbol| {
+                    symbol.origin_association == crate::analysis::LinkUnitOriginAssociation::Missing
+                })
+                .count(),
         },
     })
 }

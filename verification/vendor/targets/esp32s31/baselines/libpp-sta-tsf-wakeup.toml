@@ -1,7 +1,15 @@
-schema = 1
-# Focused station TSF wake bool-domain profile. Artifact authentication stays
-# caller-owned; this row pins proof and verifier identity.
+schema = 2
+
 [[evidence]]
 source = "libpp"
 symbol = "hal_set_sta_tsf_wakeup"
-kind = "scenario/profile:libpp-sta-tsf-wakeup/sha256:da6a6558601594bc72607234bb6566fe6bea20b0cc62f4b13c627cae3c025958"
+kind = "scenario/profile:libpp-sta-tsf-wakeup"
+digest = "de906842d36313f4e19e150e7f1c18907b69dfa718af3a466b1f6ebe8e0465d1"
+
+[evidence.components]
+comparison-orchestrator = "3dbec1c2f789536f5d969cd75fc2ae6cbd9175660bc0da798897768808863e7b"
+execution-image = "f46f7043c5bcc1c9ee1a8254cdd8792837871b62c63b77e6e8a4f7e5bde6822f"
+execution-machine = "03183f82c10867171c4f33ea3b159e5724b4c7efa037975d0ed305a473a1c516"
+execution-model = "dfa123e26045df2367eca71a103c9c8f1c719b0c6d670bd0a8208e8be71b5a2b"
+profile = "712914836b3965d3fb4ef04532edf2ed7ec7f4d7172545fb039894f9480ed48d"
+profile-parser = "1199e4a215e61dc60696b696ac0295c63519d4c73099c47afab6b6576fe8df65"

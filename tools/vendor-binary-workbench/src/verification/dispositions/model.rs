@@ -1,6 +1,6 @@
 //! Disposition manifest data model and entry invariants.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, ops::Deref};
 
 use super::super::bindings::{Binding, BindingVersion, DriverAdapter};
 use super::super::effect_contract::{
@@ -43,6 +43,47 @@ pub enum Disposition {
     ReplacedByComposition,
     GenerationCandidate,
     NotYetPorted,
+}
+
+/// Stable identity of the Rust item that owns a vendor replacement.
+///
+/// The canonical Rust module/item path is deliberately used as the component
+/// id. This keeps the reviewed manifest reproducible while preventing an
+/// arbitrary human description from becoming the join key for project-wide
+/// qualification reports.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct RustComponentId(String);
+
+impl RustComponentId {
+    pub(super) fn parse(value: &str, line: usize) -> Result<Self> {
+        let valid = !value.is_empty()
+            && value.split("::").all(|segment| {
+                let mut characters = segment.chars();
+                characters
+                    .next()
+                    .is_some_and(|character| character == '_' || character.is_ascii_alphabetic())
+                    && characters
+                        .all(|character| character == '_' || character.is_ascii_alphanumeric())
+            });
+        if !valid {
+            return Err(crate::Error::invalid(format!(
+                "invalid Rust component path {value:?} at line {line}"
+            )));
+        }
+        Ok(Self(value.to_owned()))
+    }
+
+    pub fn label(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Deref for RustComponentId {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        self.label()
+    }
 }
 
 impl Disposition {
@@ -101,7 +142,7 @@ pub struct Entry {
     pub symbol: String,
     pub disposition: Disposition,
     pub protocol: Option<Protocol>,
-    pub rust_component: Option<String>,
+    pub rust_component: Option<RustComponentId>,
     pub hil_evidence: Option<String>,
     pub semantic_contract: Option<SemanticContract>,
     pub effect_contract: Option<EffectPolicy>,
@@ -115,7 +156,7 @@ pub(super) struct EntryBuilder {
     pub(super) symbol: String,
     pub(super) disposition: Option<Disposition>,
     pub(super) protocol: Option<Protocol>,
-    pub(super) rust_component: Option<String>,
+    pub(super) rust_component: Option<RustComponentId>,
     pub(super) hil_evidence: Option<String>,
     pub(super) semantic_contract: Option<SemanticContract>,
     pub(super) effect_comparison: Option<EffectComparison>,

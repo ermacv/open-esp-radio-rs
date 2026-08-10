@@ -85,6 +85,26 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
     evidence: "exact-body-and-relocation-schema",
 };
 
+const ETS_DELAY_ARGUMENTS: &[ExternalArgumentSpec] = &[ExternalArgumentSpec {
+    name: "micros",
+    c_type: "u32",
+    direction: ExternalArgumentDirection::Input,
+}];
+
+static ETS_DELAY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "esp32s31-link-unit-ets-delay-us-v1",
+    c_name: "ets_delay_us",
+    argument_count: 1,
+    semantic: ExternalSemanticSpec {
+        operation: "time.blocking-delay",
+        arguments: ETS_DELAY_ARGUMENTS,
+        return_type: "void",
+        replacement: Some("Rust async timer"),
+        event_dispatch: None,
+    },
+    evidence: "authoritative-link-unit-relocation-symbol",
+};
+
 fn exact_pp_post(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
     symbol.member.as_deref() == Some("pp.o")
         && symbol.name == "pp_post"
@@ -106,4 +126,10 @@ pub(crate) fn direct_semantic_function(
     symbol: &artifact::ArtifactSymbolDefinition,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
     exact_pp_post(symbol).then_some(&PP_POST_SEMANTIC)
+}
+
+pub(crate) fn direct_external_semantic_function(
+    symbol: &str,
+) -> Option<&'static DirectSemanticFunctionSpec> {
+    (symbol == "ets_delay_us").then_some(&ETS_DELAY_SEMANTIC)
 }

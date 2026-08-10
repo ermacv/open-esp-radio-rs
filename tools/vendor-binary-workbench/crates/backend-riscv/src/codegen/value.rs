@@ -135,6 +135,10 @@ pub(super) fn render_value_scoped(
     match value {
         SymbolicValue::Unknown => Err("symbolic value is unresolved".to_owned()),
         SymbolicValue::Constant(value) => Ok(format!("{value:#010x}_u32")),
+        SymbolicValue::Input { index } => arguments
+            .get(usize::from(*index))
+            .map(|argument| format!("{argument} & 0xffffffff_u32"))
+            .ok_or_else(|| format!("argument index {index} is outside the modeled ABI")),
         SymbolicValue::InputConstant { index, .. } => render_value_scoped(
             &SymbolicValue::input(*index),
             reads,
@@ -186,6 +190,10 @@ pub(super) fn render_value_scoped(
         )),
         SymbolicValue::ExternalFunction { table, function } => Err(format!(
             "external ABI function {}::{function:?} escaped into generated behavior",
+            table.spec().id
+        )),
+        SymbolicValue::ReviewedExternalFunction { table, offset } => Err(format!(
+            "reviewed external ABI pointer {}+{offset:#x} cannot be emitted as a scalar expression",
             table.spec().id
         )),
         SymbolicValue::FunctionTable(table) => Err(format!(

@@ -83,6 +83,7 @@ dispatch path:
 | `application/resolve.rs` | Canonical project session: manifest, target/platform, run spec, memory map and register catalog |
 | `application/pipeline.rs` | Frontend-neutral stage outcomes, dependency state and aggregate workflow counts |
 | `application/project_analysis.rs` | Ordering, dependency policy and typed report for project analysis/review stages |
+| `application/project_analysis/cache.rs` | Local content identities and dependency-aware reuse for successful write-mode stages; check mode bypasses it |
 | `application/project_publication.rs` | Preflight, all-or-nothing preparation policy and typed report for reviewed register publications |
 | `cli/resolver.rs` | Positive, exhaustive resource planning plus standalone-target resolution and typed `ResolvedInvocation` construction |
 | `cli/resolver/defaults.rs` | Typed CLI > run-spec > project/target argument-default merge |
@@ -262,7 +263,7 @@ aggregate gates, protocol inventory and probe accounting. `evidence.rs` owns pro
 `evidence/report.rs` owns the persistent core; `execution.rs` owns comparison
 and `execution/scenario.rs` owns scenario normalization and coverage inputs.
 `execution_report.rs` owns concrete comparison DTOs, while `report.rs` owns
-the single schema-v4 command/file report plus its human renderer.
+the single schema-v6 command/file report plus its human renderer.
 `dispositions.rs` owns its strict parser and inventory validation;
 `dispositions/model.rs` owns entry, binding and effect-policy invariants.
 
@@ -489,7 +490,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, multi-report loading and queries |
-| `facts/parse.rs` | Strict schema-v37 linked-IR projection, including site-bearing calls and guard expressions |
+| `facts/parse.rs` | Strict schema-v38 linked-IR projection, including indexed memory objects, site-bearing calls and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -538,7 +539,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v37 Serde document |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v38 Serde document |
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |

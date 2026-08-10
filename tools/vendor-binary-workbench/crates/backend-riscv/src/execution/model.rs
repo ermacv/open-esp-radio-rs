@@ -39,9 +39,54 @@ pub enum ExecutionEvent {
 pub enum ExecutionTimelineEvent {
     Observable(ExecutionEvent),
     Call(OrderedCall),
-    Branch { site: u32, taken: bool },
-    RamRead { width: u8, address: u32, value: u32 },
-    RamWrite { width: u8, address: u32, value: u32 },
+    Branch {
+        site: u32,
+        taken: bool,
+    },
+    RamRead {
+        width: u8,
+        address: u32,
+        value: u32,
+    },
+    RamWrite {
+        width: u8,
+        address: u32,
+        value: u32,
+    },
+    Atomic {
+        operation: AtomicOperation,
+        ordering: AtomicOrdering,
+        address: u32,
+        /// `Some` only for store-conditional, whose architectural result is
+        /// itself part of the ownership transition.
+        succeeded: Option<bool>,
+    },
+}
+
+/// Normal-RAM atomic operation retained in the detailed execution timeline.
+/// It is not promoted to the MMIO effect trace, but reviewed ownership
+/// adapters can require its ordering semantics explicitly.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AtomicOperation {
+    LoadReserved,
+    StoreConditional,
+    Swap,
+    Add,
+    Xor,
+    And,
+    Or,
+    Min,
+    Max,
+    MinUnsigned,
+    MaxUnsigned,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AtomicOrdering {
+    Relaxed,
+    Acquire,
+    Release,
+    AcquireRelease,
 }
 
 /// Instruction that produced one observable event, resolved against the

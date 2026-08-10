@@ -17,6 +17,12 @@ use crate::{
 };
 
 pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
+    let navigation_output = &project
+        .navigation_index
+        .as_ref()
+        .ok_or("project navigation requires [analysis.navigation]")
+        .map_err(crate::Error::invalid)?
+        .output;
     let symbols_spec = project
         .symbol_inventory
         .as_ref()
@@ -32,6 +38,7 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         "symbol-inventory",
         "symbols".to_owned(),
         &symbols_spec.output,
+        navigation_output,
     )?];
     let mut artifacts = BTreeMap::<String, ArtifactDocument>::new();
     let mut inventory_artifacts = BTreeMap::new();
@@ -69,9 +76,20 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
         });
     }
 
-    add_linked_ir(project, &mut inputs, &mut artifacts, &mut symbols)?;
-    let unmatched_interface_roots =
-        add_interfaces(project, &mut inputs, &mut artifacts, &mut symbols)?;
+    add_linked_ir(
+        project,
+        navigation_output,
+        &mut inputs,
+        &mut artifacts,
+        &mut symbols,
+    )?;
+    let unmatched_interface_roots = add_interfaces(
+        project,
+        navigation_output,
+        &mut inputs,
+        &mut artifacts,
+        &mut symbols,
+    )?;
 
     let mut artifacts = artifacts.into_values().collect::<Vec<_>>();
     artifacts.sort_by(|left, right| left.sha256.cmp(&right.sha256));
@@ -112,6 +130,7 @@ pub(crate) fn build(project: &ProjectSpec) -> Result<NavigationDocument> {
 
 fn add_linked_ir(
     project: &ProjectSpec,
+    navigation_output: &Path,
     inputs: &mut Vec<super::model::InputDocument>,
     artifacts: &mut BTreeMap<String, ArtifactDocument>,
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
@@ -122,7 +141,12 @@ fn add_linked_ir(
             "linked-IR report",
             crate::artifacts::parse_linked_ir,
         )?;
-        inputs.push(input("linked-ir", profile.id.clone(), &profile.output)?);
+        inputs.push(input(
+            "linked-ir",
+            profile.id.clone(),
+            &profile.output,
+            navigation_output,
+        )?);
         let mut source_artifacts = BTreeMap::new();
         for item in report.artifacts {
             let document = artifact(artifacts, &item.artifact.sha256);
@@ -160,6 +184,7 @@ fn add_linked_ir(
 
 fn add_interfaces(
     project: &ProjectSpec,
+    navigation_output: &Path,
     inputs: &mut Vec<super::model::InputDocument>,
     artifacts: &mut BTreeMap<String, ArtifactDocument>,
     symbols: &mut BTreeMap<SymbolKey, SymbolDocument>,
@@ -176,6 +201,7 @@ fn add_interfaces(
         "interface-facts",
         "interfaces".to_owned(),
         &paths.facts,
+        navigation_output,
     )?);
     let mut interface_artifacts = BTreeMap::new();
     for item in report.artifacts {

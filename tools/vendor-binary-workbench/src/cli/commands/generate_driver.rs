@@ -67,8 +67,7 @@ pub(super) fn run(
     dispositions::validate_source_id(&source, 0)?;
     let dispositions = arguments
         .dispositions
-        .or_else(|| target.dispositions.clone())
-        .ok_or("driver generation requires --dispositions or target dispositions")
+        .ok_or("driver generation requires --dispositions")
         .map_err(crate::Error::invalid)?;
     let pac_bindings = arguments
         .pac_bindings

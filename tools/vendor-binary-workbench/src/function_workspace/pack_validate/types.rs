@@ -151,7 +151,7 @@ pub(super) fn validate_types(
                         "logical type field",
                     )?;
                 }
-                FunctionReviewStatus::Unreviewed | FunctionReviewStatus::Ignored => {
+                FunctionReviewStatus::Ignored => {
                     if field.name.is_some()
                         || field.display_type.is_some()
                         || field.description.is_some()
@@ -161,27 +161,14 @@ pub(super) fn validate_types(
                             "unreviewed or ignored logical type field cannot define reviewed claims",
                         ));
                     }
-                    match field.status {
-                        FunctionReviewStatus::Unreviewed => summary.unreviewed_type_fields += 1,
-                        FunctionReviewStatus::Ignored => summary.ignored_type_fields += 1,
-                        FunctionReviewStatus::Reviewed => unreachable!(),
-                    }
+                    summary.ignored_type_fields += 1;
                 }
             }
         }
-        if fields != observed_keys {
-            let missing = observed_keys.difference(&fields).collect::<Vec<_>>();
-            return Err(ValidationError::pack(
-                "types",
-                format!(
-                    "logical type {:?} does not classify observed fields {missing:?}",
-                    logical_type.id
-                ),
-            ));
-        }
+        summary.unreviewed_type_fields += observed_keys.difference(&fields).count();
         summary.logical_types += 1;
         summary.type_bindings += logical_type.bindings.len();
-        summary.type_fields += logical_type.fields.len();
+        summary.type_fields += observed_keys.len();
     }
     Ok(())
 }

@@ -13,13 +13,8 @@ pub(super) fn run(
     project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
 ) -> Result<bool> {
-    let paths = project
-        .registers
-        .as_ref()
-        .ok_or("project publish requires a [registers] workspace")
-        .map_err(crate::Error::invalid)?;
     let report = crate::application::project_publication::execute(
-        paths,
+        project,
         memory_map,
         ProjectPublicationRequest {
             check: arguments.check,

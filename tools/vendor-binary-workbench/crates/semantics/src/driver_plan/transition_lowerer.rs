@@ -179,7 +179,9 @@ fn render_value(value: &SymbolicValue) -> Result<String> {
     }
     match value {
         SymbolicValue::Constant(value) => Ok(format!("{value:#010x}_u32")),
-        SymbolicValue::InputConstant { index, .. } => Ok(format!("self.arg{index}")),
+        SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. } => {
+            Ok(format!("self.arg{index}"))
+        }
         SymbolicValue::Expression {
             operation,
             left,
@@ -266,6 +268,7 @@ fn render_value(value: &SymbolicValue) -> Result<String> {
         | SymbolicValue::CallResult(_)
         | SymbolicValue::ExternalTable(_)
         | SymbolicValue::ExternalFunction { .. }
+        | SymbolicValue::ReviewedExternalFunction { .. }
         | SymbolicValue::FunctionTable(_)
         | SymbolicValue::FunctionPointer { .. }
         | SymbolicValue::ExternalResult(_)

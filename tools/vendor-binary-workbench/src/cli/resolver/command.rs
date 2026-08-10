@@ -89,6 +89,10 @@ pub(super) fn resolve_command(
             arguments,
             session: Box::new(environment.into_project_session()?),
         },
+        Command::ProjectVerify(arguments) => ResolvedInvocation::ProjectVerify {
+            arguments,
+            session: Box::new(environment.into_project_session()?),
+        },
         Command::ProjectPublish(arguments) => ResolvedInvocation::ProjectPublish {
             arguments,
             session: Box::new(environment.into_project_session()?),
@@ -189,14 +193,6 @@ pub(super) fn resolve_command(
             let (project, target) = environment.into_project_target()?;
             ResolvedInvocation::InterfaceWorkspace {
                 command: InterfaceWorkspaceCommand::InitPack(arguments),
-                project,
-                target,
-            }
-        }
-        Command::InterfaceSyncPack(arguments) => {
-            let (project, target) = environment.into_project_target()?;
-            ResolvedInvocation::InterfaceWorkspace {
-                command: InterfaceWorkspaceCommand::SyncPack(arguments),
                 project,
                 target,
             }

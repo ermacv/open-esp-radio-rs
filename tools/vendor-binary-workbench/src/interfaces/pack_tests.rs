@@ -204,7 +204,7 @@ fn stored_interface_facts_reject_unknown_and_missing_fields() {
 
 fn reviewed_pack(digest: &str, semantic: &str) -> String {
     format!(
-        r#"schema = 1
+        r#"schema = 2
 id = "fixture"
 calling-convention = "riscv-ilp32"
 
@@ -594,7 +594,7 @@ fn unknown_semantic_operation_is_not_accepted_by_name() {
 }
 
 #[test]
-fn generated_pack_is_unreviewed_valid_and_never_overwritten() {
+fn sparse_pack_keeps_generated_backlog_outside_reviewed_toml() {
     let directory = fixture_directory();
     let facts_path = directory.join("facts.json");
     let pack_path = directory.join("pack.toml");
@@ -621,183 +621,8 @@ fn generated_pack_is_unreviewed_valid_and_never_overwritten() {
     assert_eq!(observation.width, 32);
     assert_eq!(observation.functions, ["post_event"]);
     assert_eq!(observation.call_sites, [0x120]);
-    assert_eq!(observation.contract, "fixture::libpp-g-services");
+    assert_eq!(observation.contract, "unmatched:libpp:relocated-symbol");
     assert!(overwrite.contains("refusing to overwrite"));
-
-    let before_noop = std::fs::read_to_string(&pack_path).unwrap();
-    let noop = sync_interface_pack(&pack_path, &facts, "riscv-ilp32", false).unwrap();
-    assert!(!noop.changed());
-    assert_eq!(std::fs::read_to_string(&pack_path).unwrap(), before_noop);
-
-    let next_digest = fake_digest('b');
-    write_facts(&facts_path, &next_digest);
-    let next_facts = InterfaceFacts::load(&facts_path).unwrap();
-    let stale = sync_interface_pack(&pack_path, &next_facts, "riscv-ilp32", true).unwrap_err();
-    assert!(
-        stale
-            .to_string()
-            .contains("differs from current observations")
-    );
-    let refreshed = sync_interface_pack(&pack_path, &next_facts, "riscv-ilp32", false).unwrap();
-    assert_eq!(refreshed.refreshed_anchors, 1);
-    assert_eq!(refreshed.added_slots, 0);
-    let refreshed_pack = std::fs::read_to_string(&pack_path).unwrap();
-    assert!(refreshed_pack.contains(&next_digest));
-    assert!(!refreshed_pack.contains(&digest));
-    InterfaceWorkspace::load(
-        &facts_path,
-        &pack_path,
-        &[] as &[PathBuf],
-        "riscv-ilp32",
-        None,
-    )
-    .unwrap();
-    std::fs::remove_dir_all(directory).unwrap();
-}
-
-#[test]
-fn pack_sync_only_changes_unreviewed_observed_slots() {
-    let directory = fixture_directory();
-    let facts_path = directory.join("facts.json");
-    let pack_path = directory.join("pack.toml");
-    let catalog = directory.join("semantics.toml");
-    let digest = fake_digest('a');
-    write_facts(&facts_path, &digest);
-    write_catalog(&catalog);
-    let original_facts = std::fs::read_to_string(&facts_path).unwrap();
-    let reviewed = reviewed_pack(&digest, "rtos.queue.send-from-isr")
-        + r#"
-
-[[anchors.slots]]
-offset = 24
-width = 32
-status = "reviewed"
-origin = "manual"
-name = "manual_slot"
-arguments = []
-return = "void"
-"#;
-    std::fs::write(&pack_path, &reviewed).unwrap();
-
-    let mut changed: serde_json::Value = serde_json::from_str(&original_facts).unwrap();
-    changed["table_candidates"][0]["slots"]
-        .as_array_mut()
-        .unwrap()
-        .push(serde_json::json!({
-            "offset": 20,
-            "width": 32,
-            "functions": ["post_event"],
-            "call_sites": 0
-        }));
-    std::fs::write(&facts_path, serde_json::to_string_pretty(&changed).unwrap()).unwrap();
-    let facts = InterfaceFacts::load(&facts_path).unwrap();
-
-    let before_check = std::fs::read_to_string(&pack_path).unwrap();
-    let stale = sync_interface_pack(&pack_path, &facts, "riscv-ilp32", true).unwrap_err();
-    assert!(stale.to_string().contains("rerun interfaces sync-pack"));
-    assert_eq!(std::fs::read_to_string(&pack_path).unwrap(), before_check);
-
-    let added = sync_interface_pack(&pack_path, &facts, "riscv-ilp32", false).unwrap();
-    assert_eq!(added.added_slots, 1);
-    assert_eq!(added.removed_slots, 0);
-    let synchronized = std::fs::read_to_string(&pack_path).unwrap();
-    assert!(synchronized.contains("name = \"queue_send_from_isr\""));
-    assert!(synchronized.contains("semantic = \"rtos.queue.send-from-isr\""));
-    assert!(synchronized.contains("name = \"manual_slot\""));
-    assert!(synchronized.contains("offset = 20"));
-    sync_interface_pack(&pack_path, &facts, "riscv-ilp32", true).unwrap();
-    let workspace = InterfaceWorkspace::load(
-        &facts_path,
-        &pack_path,
-        std::slice::from_ref(&catalog),
-        "riscv-ilp32",
-        None,
-    )
-    .unwrap();
-    assert_eq!(workspace.summary().reviewed_slots, 1);
-    assert_eq!(workspace.summary().unreviewed_slots, 1);
-    assert_eq!(workspace.summary().manual_slots, 1);
-
-    std::fs::write(&facts_path, &original_facts).unwrap();
-    let original = InterfaceFacts::load(&facts_path).unwrap();
-    let removed = sync_interface_pack(&pack_path, &original, "riscv-ilp32", false).unwrap();
-    assert_eq!(removed.added_slots, 0);
-    assert_eq!(removed.removed_slots, 1);
-    let synchronized = std::fs::read_to_string(&pack_path).unwrap();
-    assert!(!synchronized.contains("offset = 20"));
-    assert!(synchronized.contains("name = \"manual_slot\""));
-    assert!(synchronized.contains("name = \"queue_send_from_isr\""));
-
-    let mut stale_reviewed: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(&facts_path).unwrap()).unwrap();
-    stale_reviewed["table_candidates"][0]["slots"][0]["offset"] = serde_json::json!(28);
-    stale_reviewed["calls"][0]["target"]["loads"][1]["offset"] = serde_json::json!(28);
-    stale_reviewed["calls"][0]["target"]["slot_offset"] = serde_json::json!(28);
-    std::fs::write(
-        &facts_path,
-        serde_json::to_string_pretty(&stale_reviewed).unwrap(),
-    )
-    .unwrap();
-    let stale_facts = InterfaceFacts::load(&facts_path).unwrap();
-    let before_protected = std::fs::read_to_string(&pack_path).unwrap();
-    let protected =
-        sync_interface_pack(&pack_path, &stale_facts, "riscv-ilp32", false).unwrap_err();
-    assert!(protected.to_string().contains("protected interface slot"));
-    assert_eq!(
-        std::fs::read_to_string(&pack_path).unwrap(),
-        before_protected
-    );
-
-    let mut manual_collision: serde_json::Value = serde_json::from_str(&original_facts).unwrap();
-    manual_collision["table_candidates"][0]["slots"]
-        .as_array_mut()
-        .unwrap()
-        .push(serde_json::json!({
-            "offset": 24,
-            "width": 32,
-            "functions": ["post_event"],
-            "call_sites": 0
-        }));
-    std::fs::write(
-        &facts_path,
-        serde_json::to_string_pretty(&manual_collision).unwrap(),
-    )
-    .unwrap();
-    let manual_collision = InterfaceFacts::load(&facts_path).unwrap();
-    let error =
-        sync_interface_pack(&pack_path, &manual_collision, "riscv-ilp32", false).unwrap_err();
-    assert!(error.to_string().contains("manual interface slot"));
-    assert_eq!(
-        std::fs::read_to_string(&pack_path).unwrap(),
-        before_protected
-    );
-
-    let mut outside_layout: serde_json::Value = serde_json::from_str(&original_facts).unwrap();
-    outside_layout["table_candidates"][0]["slots"]
-        .as_array_mut()
-        .unwrap()
-        .push(serde_json::json!({
-            "offset": 32,
-            "width": 32,
-            "functions": ["post_event"],
-            "call_sites": 0
-        }));
-    std::fs::write(
-        &facts_path,
-        serde_json::to_string_pretty(&outside_layout).unwrap(),
-    )
-    .unwrap();
-    let outside_layout = InterfaceFacts::load(&facts_path).unwrap();
-    let error = sync_interface_pack(&pack_path, &outside_layout, "riscv-ilp32", false).unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("does not fit the reviewed layout")
-    );
-    assert_eq!(
-        std::fs::read_to_string(&pack_path).unwrap(),
-        before_protected
-    );
     std::fs::remove_dir_all(directory).unwrap();
 }
 
@@ -810,7 +635,7 @@ fn runtime_version_guard_can_replace_artifact_pinning() {
     write_facts(&facts, &digest);
     std::fs::write(
         &pack,
-        r#"schema = 1
+        r#"schema = 2
 id = "fixture"
 calling-convention = "riscv-ilp32"
 

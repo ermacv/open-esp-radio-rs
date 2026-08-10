@@ -242,7 +242,7 @@ fn reviewed_names_require_matching_digest_and_complete_explicit_claims() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let reviewed = r#"schema = 2
+    let reviewed = r#"schema = 3
 id = "fixture"
 
 [[inputs]]
@@ -337,6 +337,7 @@ display-type = "u16"
         variadic: false,
         semantic: Some("rtos.queue.send-from-isr".to_owned()),
         semantic_annotation: None,
+        external_table: Some("fixture.services-v1".to_owned()),
         execution_model: Some(crate::interfaces::ResolvedExternalCallExecutionModel {
             id: "fixture.services-v1.queue-send-from-isr".to_owned(),
             table: "fixture.services-v1".to_owned(),
@@ -351,6 +352,7 @@ display-type = "u16"
             function: "vendor_helper".to_owned(),
             function_address: 0x100,
             site: 0x120,
+            slot_load_site: Some(0x118),
             kind: "call".to_owned(),
             jalr_offset: 0,
             slot_selector: None,
@@ -397,9 +399,10 @@ display-type = "u16"
     assert!(report_text.contains("(arg0 & 0x00000001) != 0"));
     assert!(report_text.contains("`rtos.queue.send-from-isr`"));
     assert!(report_text.contains("`fixture.services-v1.queue-send-from-isr`"));
-    assert!(report_text.contains("Reachable internal function reading views"));
-    assert!(report_text.contains("`vendor_helper` — unreviewed"));
+    assert!(report_text.contains("Unreviewed reachable function inventory"));
+    assert!(report_text.contains("`vendor_helper`"));
     assert!(report_text.contains("fn vendor_irq(ctx0: *mut u8)"));
+    assert!(!report_text.contains("fn vendor_helper"));
     assert!(report_text.contains("Reviewed logical types"));
     assert!(report_text.contains("`PhyGlobalState`"));
     assert!(report_text.contains("`state.o::phy_state`"));
@@ -437,7 +440,7 @@ fn ignored_context_covers_its_observed_fields_without_claiming_names() {
     let pack = directory.join("functions.toml");
     write_ir(&report);
     let reports = vec![("rom-phy".to_owned(), report)];
-    let ignored = r#"schema = 2
+    let ignored = r#"schema = 3
 id = "fixture"
 
 [[inputs]]

@@ -85,10 +85,10 @@ mod tests {
         let candidate = directory.join(format!("vendor-workbench-review-{suffix}.candidate.toml"));
         fs::write(
             &report,
-            r#"{"schema_version":4,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
+            r#"{"schema_version":6,"command":"verify inventory","evidence":[{"source":"rom","symbol":"leaf","kind":"symbolic"}]}"#,
         )
         .unwrap();
-        let document = "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"leaf\"\nkind = \"symbolic\"\n";
+        let document = "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"leaf\"\nkind = \"symbolic\"\n";
         fs::write(&baseline, document).unwrap();
 
         assert!(

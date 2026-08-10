@@ -25,3 +25,27 @@ path = "/path/to/esp32s31_rev0_rom.elf"
 [[inputs]]
 role = "rust-artifact"
 path = "/path/to/rust-trace-probes.elf"
+
+[[inputs]]
+role = "source-artifact:libpp"
+path = "/path/to/linked-libpp.elf"
+
+[[inputs]]
+role = "source-inventory:libpp"
+path = "/path/to/libpp.a"
+
+[[inputs]]
+role = "source-companion:libpp"
+path = "/path/to/esp32s31_rev0_rom.elf"
+
+[[inputs]]
+role = "source-artifact:libnet80211"
+path = "/path/to/linked-libnet80211.elf"
+
+[[inputs]]
+role = "source-inventory:libnet80211"
+path = "/path/to/libnet80211.a"
+
+[[inputs]]
+role = "source-companion:libnet80211"
+path = "/path/to/esp32s31_rev0_rom.elf"

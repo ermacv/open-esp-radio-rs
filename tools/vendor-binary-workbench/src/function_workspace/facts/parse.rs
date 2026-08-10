@@ -195,6 +195,15 @@ fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
             address_space,
             address,
         },
+        StoredMemoryObject::Indexed {
+            object,
+            argument,
+            stride,
+        } => FunctionMemoryObjectFact::Indexed {
+            object: Box::new(memory_object_fact(*object)),
+            argument,
+            stride,
+        },
     }
 }
 

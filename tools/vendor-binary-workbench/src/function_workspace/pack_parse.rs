@@ -223,9 +223,13 @@ fn parse_fields(tables: &ArrayOfTables, context: &str) -> Result<Vec<ReviewedCon
 
 fn parse_status(table: &Table, context: &str) -> Result<FunctionReviewStatus> {
     Ok(match optional_string(table, "status").as_deref() {
-        None | Some("unreviewed") => FunctionReviewStatus::Unreviewed,
         Some("reviewed") => FunctionReviewStatus::Reviewed,
         Some("ignored") => FunctionReviewStatus::Ignored,
+        None | Some("unreviewed") => {
+            return Err(crate::Error::invalid(format!(
+                "{context} is a sparse review overlay and requires status = \"reviewed\" or \"ignored\"; omit unreviewed generated observations"
+            )));
+        }
         Some(status) => {
             return Err(crate::Error::invalid(format!(
                 "invalid review status {status:?} in {context}"

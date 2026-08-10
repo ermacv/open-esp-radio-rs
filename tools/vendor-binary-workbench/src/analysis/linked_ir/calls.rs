@@ -82,6 +82,37 @@ pub(super) fn direct_semantic_typed_arguments(
         .collect()
 }
 
+fn reviewed_external_typed_arguments(
+    candidates: &[ReviewedExternalCall],
+    arguments: &[SymbolicValue],
+) -> Vec<LinkedCallArgument> {
+    arguments
+        .iter()
+        .enumerate()
+        .map(|(position, value)| {
+            let types = candidates
+                .iter()
+                .filter_map(|candidate| candidate.argument_types.get(position))
+                .collect::<BTreeSet<_>>();
+            LinkedCallArgument {
+                position,
+                name: format!("arg{position}"),
+                c_type: if types.len() == 1 {
+                    (*types.first().expect("one reviewed argument type")).clone()
+                } else {
+                    types
+                        .into_iter()
+                        .map(String::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                },
+                direction: "unknown",
+                value: value.canonical(),
+            }
+        })
+        .collect()
+}
+
 pub(super) fn branch_operation(operation: BranchOperation) -> &'static str {
     match operation {
         BranchOperation::Equal => "equal",
@@ -537,6 +568,68 @@ pub(super) fn collect_call_event(
             typed_arguments: external_typed_arguments(*function, arguments),
             guard_paths: None,
         }),
+        DraftReferenceEvent::ReviewedExternalCall {
+            site,
+            candidates,
+            arguments,
+        } => {
+            let operations = candidates
+                .iter()
+                .filter_map(|candidate| candidate.semantic_operation.as_deref())
+                .collect::<BTreeSet<_>>();
+            let semantic_operation = (operations.len() == 1)
+                .then(|| (*operations.first().expect("one reviewed operation")).to_owned());
+            let replacements = candidates
+                .iter()
+                .filter_map(|candidate| candidate.replacement_hint.as_deref())
+                .collect::<BTreeSet<_>>();
+            Some(LinkedCall {
+                kind: "reviewed-external",
+                target: candidates
+                    .iter()
+                    .map(|candidate| format!("{}::{}", candidate.contract, candidate.name))
+                    .collect::<Vec<_>>()
+                    .join(" | "),
+                site: Some(*site),
+                tail: false,
+                result_modeled: false,
+                semantics: Some(format!(
+                    "reviewed ABI; candidates={}; executable-model=false",
+                    candidates
+                        .iter()
+                        .map(|candidate| format!(
+                            "{}({}) -> {}{}",
+                            candidate.name,
+                            candidate.argument_types.join(", "),
+                            candidate.return_type,
+                            if candidate.variadic { " variadic" } else { "" }
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                )),
+                semantic_operation,
+                semantic_contract: Some(LinkedSemanticContract {
+                    source: "reviewed-interface-pack",
+                    id: candidates
+                        .iter()
+                        .map(|candidate| candidate.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" | "),
+                    evidence: "reviewed-layout-and-observed-call-site".to_owned(),
+                    event_dispatch: None,
+                }),
+                replacement_hint: (replacements.len() == 1)
+                    .then(|| (*replacements.first().expect("one replacement hint")).to_owned()),
+                project_symbol: None,
+                project_candidates: Vec::new(),
+                trampoline: None,
+                argument_shapes: 1,
+                arguments: canonical_arguments(arguments),
+                argument_bindings: affine_argument_bindings(arguments),
+                typed_arguments: reviewed_external_typed_arguments(candidates, arguments),
+                guard_paths: None,
+            })
+        }
         DraftReferenceEvent::DiagnosticCall {
             function,
             arguments,

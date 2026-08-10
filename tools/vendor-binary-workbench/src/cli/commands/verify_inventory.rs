@@ -42,11 +42,11 @@ fn set_string(slot: &mut Option<String>, value: String, option: &str) -> Result<
     Ok(())
 }
 
-pub(super) fn run(
+pub(super) fn execute(
     arguments: VerifyInventoryArgs,
     svd: &MmioMap,
     target: &TargetSpec,
-) -> Result<bool> {
+) -> Result<VerificationCommandReport> {
     let mut source_inputs = BTreeMap::<String, SourceInput>::new();
     for value in arguments.source_artifact {
         set_path(
@@ -79,15 +79,15 @@ pub(super) fn run(
 
     let rust_artifact = arguments.rust_artifact;
     let rust_companion = arguments.rust_companion;
-    let profile_path = arguments.profiles;
-    let disposition_path = arguments.dispositions;
+    let profile_paths = arguments.profiles;
+    let disposition_paths = arguments.dispositions;
     let rust_prefix = arguments
         .rust_prefix
         .ok_or("verify inventory requires --rust-prefix or project verification.rust-prefix")
         .map_err(crate::Error::invalid)?;
     let gate_name = arguments.gate;
     let match_floor = arguments.match_floor;
-    let evidence_baseline = arguments.evidence_baseline;
+    let evidence_baselines = arguments.evidence_baseline;
     let json_report = arguments.json_report;
 
     if source_inputs.is_empty() {
@@ -116,20 +116,25 @@ pub(super) fn run(
         .ok_or("missing --rust-artifact")
         .map_err(crate::Error::invalid)?;
     let gate = VerificationGate::parse(&gate_name, match_floor)?;
-    if matches!(gate, VerificationGate::Regression { .. }) && evidence_baseline.is_none() {
+    if matches!(gate, VerificationGate::Regression { .. }) && evidence_baselines.is_empty() {
         return Err(crate::Error::invalid(
             "--gate regression requires --evidence-baseline",
         ));
     }
-    let execution_profiles = profile_path
-        .as_deref()
-        .map(profiles::load)
-        .transpose()?
-        .unwrap_or_default();
-    let disposition_manifest = disposition_path
-        .as_deref()
-        .map(dispositions::Manifest::load)
-        .transpose()?;
+    let mut execution_profiles = Vec::new();
+    let mut profile_names = BTreeSet::new();
+    for path in &profile_paths {
+        for profile in profiles::load(path)? {
+            if !profile_names.insert(profile.name.clone()) {
+                return Err(crate::Error::invalid(format!(
+                    "verification profile name {:?} is repeated across fragments",
+                    profile.name
+                )));
+            }
+            execution_profiles.push(profile);
+        }
+    }
+    let disposition_manifest = dispositions::Manifest::load_all(&disposition_paths)?;
 
     let verify_sources = sources
         .iter()
@@ -225,11 +230,14 @@ pub(super) fn run(
         &orphan_sources,
         &explicitly_bound_probes,
     )?;
-    let evidence_comparison = evidence_baseline
-        .as_deref()
-        .map(load_evidence_baseline)
-        .transpose()?
-        .map(|baseline| compare_evidence_baseline(&baseline, &evidence));
+    let mut baseline = EvidenceSet::new();
+    for path in &evidence_baselines {
+        for ((source, symbol), kind) in load_evidence_baseline(path)? {
+            record_evidence(&mut baseline, &source, &symbol, kind)?;
+        }
+    }
+    let evidence_comparison =
+        (!evidence_baselines.is_empty()).then(|| compare_evidence_baseline(&baseline, &evidence));
     let evidence_passed = evidence_comparison
         .as_ref()
         .is_none_or(|comparison| comparison.passed);
@@ -261,14 +269,14 @@ pub(super) fn run(
     if let Some(companion) = rust_companion.as_deref() {
         artifacts.push(("rust-companion".to_owned(), companion));
     }
-    if let Some(profiles) = profile_path.as_deref() {
-        artifacts.push(("profiles".to_owned(), profiles));
+    for (index, profiles) in profile_paths.iter().enumerate() {
+        artifacts.push((format!("profiles:{index}"), profiles));
     }
-    if let Some(dispositions) = disposition_path.as_deref() {
-        artifacts.push(("dispositions".to_owned(), dispositions));
+    for (index, dispositions) in disposition_paths.iter().enumerate() {
+        artifacts.push((format!("dispositions:{index}"), dispositions));
     }
-    if let Some(baseline) = evidence_baseline.as_deref() {
-        artifacts.push(("evidence-baseline".to_owned(), baseline));
+    for (index, baseline) in evidence_baselines.iter().enumerate() {
+        artifacts.push((format!("evidence-baseline:{index}"), baseline));
     }
     let verification = verification_core_report(VerificationCoreInputs {
         target,
@@ -295,16 +303,26 @@ pub(super) fn run(
     let report = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,
         command: "verify inventory",
-        verification: &verification,
-        sources: &source_reports,
+        verification,
+        sources: source_reports,
         inventory,
         protocols,
-        evidence_comparison: evidence_comparison.as_ref(),
+        evidence_comparison,
         report: publication,
     };
     if let Some(path) = json_report.as_deref() {
         write_verification_json_report(path, &report)?;
     }
+    Ok(report)
+}
+
+pub(super) fn run(
+    arguments: VerifyInventoryArgs,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<bool> {
+    let report = execute(arguments, svd, target)?;
+    let passed = report.verification.passed;
     crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));
     Ok(passed)
 }

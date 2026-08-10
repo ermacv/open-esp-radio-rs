@@ -10,6 +10,28 @@ pub enum MemoryAccess {
     Write,
 }
 
+/// Reviewed structural ABI identity for an indirect external call.
+///
+/// This is intentionally owned project data. It describes how a call should
+/// be named and rendered, but it does not authorize return propagation or any
+/// executable side-effect model.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub struct ReviewedExternalCall {
+    pub id: String,
+    pub contract: String,
+    pub name: String,
+    pub argument_types: Vec<String>,
+    pub return_type: String,
+    pub variadic: bool,
+    pub semantic_operation: Option<String>,
+    pub replacement_hint: Option<String>,
+    /// Instruction that loaded the reviewed slot pointer for this call site.
+    ///
+    /// This is evidence used to retire the matching structural blocker; it is
+    /// not part of the stable ABI identity.
+    pub slot_load_site: Option<u32>,
+}
+
 pub fn parse_fence_set(value: &str) -> Option<u8> {
     let mut encoded = 0_u8;
     for character in value.chars() {
@@ -109,6 +131,12 @@ pub enum DraftReferenceEvent {
         site: u32,
         table: ExternalTableRef,
         function: ExternalFunctionRef,
+        arguments: Box<[SymbolicValue]>,
+    },
+    /// A named reviewed ABI call whose runtime behavior is not modeled.
+    ReviewedExternalCall {
+        site: u32,
+        candidates: Vec<ReviewedExternalCall>,
         arguments: Box<[SymbolicValue]>,
     },
     DiagnosticCall {

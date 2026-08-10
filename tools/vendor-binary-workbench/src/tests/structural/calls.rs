@@ -700,3 +700,90 @@ fn unresolved_indirect_returning_call_continues_with_abi_clobbers() {
     assert!(address.canonical().contains("arg0"));
     assert_eq!(value, &Some(SymbolicValue::Unknown));
 }
+
+#[test]
+fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "linked_diagnostic_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let relocations = BTreeMap::from([(
+        StructuralCallSite::new(&parent, 0x1000),
+        ("wifi_log".to_owned(), Some(0x2f80_0040)),
+    )]);
+    let mut context = StructuralPointerContext::default();
+    context.diagnostic_calls.insert("wifi_log".to_owned(), 2);
+
+    let trace = trace_binary_symbol(&parent, &map(), &relocations, &context, None).unwrap();
+
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::DiagnosticCall {
+            function,
+            argument_count: 2,
+            arguments,
+        }] if function == "wifi_log" && arguments.len() == 2
+    ));
+}
+
+#[test]
+fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantics() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "reviewed_indirect_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0xe7, 0x00, 0x03, 0x00, // jalr ra, 0(t1)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let mut context = StructuralPointerContext::default();
+    context.reviewed_external_calls.insert(
+        StructuralCallSite::new(&parent, 0x1000),
+        vec![ReviewedExternalCall {
+            id: "pack::wifi-osi@+0x40".to_owned(),
+            contract: "pack::wifi-osi".to_owned(),
+            name: "semphr_give".to_owned(),
+            argument_types: vec!["opaque-handle".to_owned()],
+            return_type: "i32".to_owned(),
+            variadic: false,
+            semantic_operation: None,
+            replacement_hint: None,
+            slot_load_site: None,
+        }],
+    );
+
+    let trace = trace_binary_symbol(&parent, &map(), &BTreeMap::new(), &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{trace:#?}");
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.contains("unmodeled-reviewed-external-call"))
+    );
+    assert!(!trace.reference_blockers.iter().any(|blocker| {
+        blocker.contains("unresolved-indirect-call")
+            || blocker.contains("unregistered-external-abi-slot")
+    }));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ReviewedExternalCall {
+            site: 0x1000,
+            candidates,
+            arguments,
+        }] if candidates[0].name == "semphr_give" && arguments.len() == 1
+    ));
+}

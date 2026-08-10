@@ -148,7 +148,16 @@ pub struct FunctionSummary {
     pub decode_blocker_operations: Vec<String>,
     pub semantic_operations: Vec<String>,
     pub registers: Vec<u32>,
+    pub mmio_sites: Vec<FunctionMmioSiteSummary>,
     pub calls: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct FunctionMmioSiteSummary {
+    pub address: u32,
+    pub width: u8,
+    pub access: String,
+    pub pc: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -327,6 +336,12 @@ pub struct RegisterFieldSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RegisterAccessSiteSummary {
+    pub function: String,
+    pub pc: u32,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RegisterDetailSummary {
     pub address: u32,
     pub width: Option<u8>,
@@ -340,6 +355,8 @@ pub struct RegisterDetailSummary {
     pub read_modify_writes: usize,
     pub read_functions: Vec<String>,
     pub write_functions: Vec<String>,
+    pub read_sites: Vec<RegisterAccessSiteSummary>,
+    pub write_sites: Vec<RegisterAccessSiteSummary>,
     pub functions: Vec<String>,
     pub write_patterns: Vec<RegisterWritePatternSummary>,
     pub fields: Vec<RegisterFieldSummary>,

@@ -202,15 +202,19 @@ bitWidth = 1
 
 [peripherals.registers.register]
 name = "INTERRUPT_1_RAW"
-description = "WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader."
+description = "WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank."
 addressOffset = 0xBE8
 size = 32
-access = "read-only"
+access = "read-write"
 
 [[peripherals.registers.register.fields]]
 name = "EVENTS"
 bitOffset = 0
 bitWidth = 32
+
+[peripherals.registers.register.fields.writeConstraint.range]
+minimum = 0x0
+maximum = 0xFFFFFFFF
 
 [[peripherals.registers]]
 
@@ -412,7 +416,7 @@ confidence = "instruction-exact-partial"
 
 [[review]]
 entity = "WIFI_MAC_HE_INIT_PREFIX.INTERRUPT_1_RAW"
-sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP"]
+sources = ["BLOB_LIBPP_ISR_REGISTER_DUMP", "BLOB_LIBPP_HAL_DISABLE_MAC"]
 confidence = "instruction-exact"
 
 [[review]]

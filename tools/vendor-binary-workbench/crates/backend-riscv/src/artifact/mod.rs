@@ -3,6 +3,7 @@
 //! This module deliberately does not invoke binutils. Symbol boundaries and
 //! instruction bytes come from the binary containers themselves.
 
+mod debug;
 mod decode;
 mod inventory;
 mod model;
@@ -10,6 +11,7 @@ mod relocations;
 mod sections;
 mod symbols;
 
+pub use debug::{ArtifactDebugSymbol, inspect_rust_debug_symbols};
 pub use decode::{
     FloatingDataInstruction, FloatingDataOperation, FloatingMemoryAccess,
     FloatingMemoryInstruction, andi_immediate, decode_floating_data_instruction,

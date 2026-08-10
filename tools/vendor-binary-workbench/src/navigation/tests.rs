@@ -24,7 +24,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     fs::write(
         &symbols_path,
         serde_json::to_string(&json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,
@@ -54,7 +54,9 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "size": 4,
                     "scope": "linkage",
                     "resolution": "defined-exported",
-                    "candidates": []
+                    "candidates": [],
+                    "origin_association": "not-applicable",
+                    "origin_candidates": []
                 },
                 {
                     "artifact": 0,
@@ -71,7 +73,9 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                     "size": 4,
                     "scope": "linkage",
                     "resolution": "defined-exported",
-                    "candidates": []
+                    "candidates": [],
+                    "origin_association": "not-applicable",
+                    "origin_candidates": []
                 }
             ],
             "summary": {
@@ -87,7 +91,11 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
                 "uncovered_executable_bytes": 0,
                 "named_zero_sized_code_symbols": 0,
                 "function_boundary_candidates": 0,
-                "code_recovery_blockers": 0
+                "code_recovery_blockers": 0,
+                "link_unit_definitions": 0,
+                "unique_archive_origins": 0,
+                "ambiguous_archive_origins": 0,
+                "missing_archive_origins": 0
             }
         }))
         .unwrap(),
@@ -180,6 +188,7 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
             semantic_catalogs: Vec::new(),
         }),
         functions: None,
+        review: None,
         verification: None,
     };
     let document = build(&project).unwrap();
@@ -198,6 +207,12 @@ fn interface_caller_and_relocated_root_join_inventory_locations() {
     assert_eq!(document.summary.interface_callers, 1);
     assert_eq!(document.summary.interface_roots, 1);
     assert_eq!(document.summary.unmatched_interface_roots, 0);
+    assert!(
+        document
+            .inputs
+            .iter()
+            .all(|input| !PathBuf::from(&input.path).is_absolute())
+    );
     let navigation_path = directory.join("navigation.json");
     fs::write(
         &navigation_path,

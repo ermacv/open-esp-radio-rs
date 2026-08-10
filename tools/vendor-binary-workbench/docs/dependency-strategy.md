@@ -36,23 +36,15 @@ The first adapter replaces the local SCC implementation used to identify
 recursive call-graph components. CFG blocks, edges, addresses, evidence, and
 blockers remain workbench types.
 
-## Add when an owning workflow exists
+## Source and debug enrichment
 
-`addr2line`/`gimli` are now technically unblocked as optional enrichment:
-execution reports retain each event producer's PC, symbol and symbol-relative
-offset separately from the compared observable effect. DWARF may therefore add
-file, line, function and inline-frame labels without guessing from a surrounding
-path. The remaining prerequisite is an owning source-enrichment workflow and a
-stable presentation model. Missing or stale debug data must degrade to the
-existing symbol/address output and cannot change a trace result.
-
-`cargo_metadata` becomes appropriate when the workbench itself invokes Cargo
-to build a Rust probe. The build workflow should select the exact executable
-from Cargo JSON messages rather than guess target paths. It is unnecessary
-while callers already provide explicit ELF paths.
-
-Rust/C++ demangling belongs to the same optional presentation layer. Stable
-machine identities continue to use raw linkage names and addresses.
+The project verification workflow now owns the source-enrichment boundary.
+`cargo_metadata` discovers workspace crate roots without copying source paths
+into target projects; `syn` resolves reviewed Rust item identities; and
+`addr2line` plus `rustc-demangle` recover exact ELF/DWARF functions, inline
+frames and file/line locations. The architecture backend owns object/DWARF
+reading, while the facade owns Cargo/source/component joins. Missing debug data
+does not change trace comparison, raw linkage identities, or proof outcomes.
 
 ## Optional scenario-solving addon
 
@@ -63,7 +55,7 @@ result is always a `ScenarioSuggestion`; concrete replay by the existing
 executor is required before it contributes coverage. Unsupported operations,
 timeouts, and model gaps produce no candidate rather than weakening proof.
 
-The schema-v37 bounded suggestion rules therefore precede Z3: they cover
+The schema-v38 bounded suggestion rules therefore precede Z3: they cover
 simple equalities and polls without a native solver dependency and establish
 the candidate/replay boundary first.
 

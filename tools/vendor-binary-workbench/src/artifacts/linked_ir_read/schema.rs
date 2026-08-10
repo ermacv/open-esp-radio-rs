@@ -157,6 +157,40 @@ pub(crate) struct StoredFunction {
     pub(crate) pseudo: String,
 }
 
+impl StoredFunction {
+    pub(crate) fn dependencies(&self) -> &[String] {
+        &self.dependencies
+    }
+
+    pub(crate) fn context_field_count(&self) -> usize {
+        self.context_fields.len()
+    }
+
+    pub(crate) fn memory_field_count(&self) -> usize {
+        self.memory_fields.len()
+    }
+
+    pub(crate) fn blockers(&self) -> impl Iterator<Item = &str> {
+        self.call_graph_blockers
+            .iter()
+            .chain(&self.direct_blockers)
+            .chain(&self.reference_blockers)
+            .map(String::as_str)
+    }
+
+    pub(crate) fn direct_blocker_count(&self) -> usize {
+        self.direct_blockers.len()
+    }
+
+    pub(crate) fn call_graph_blocker_count(&self) -> usize {
+        self.call_graph_blockers.len()
+    }
+
+    pub(crate) fn reference_blocker_count(&self) -> usize {
+        self.reference_blockers.len()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct StoredDecodeBlocker {
@@ -373,6 +407,12 @@ pub(crate) struct StoredMmioAccess {
     dynamic_mask: Option<u32>,
 }
 
+impl StoredMmioAccess {
+    pub(crate) const fn width(&self) -> u8 {
+        self.width
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredDelay {
@@ -458,6 +498,11 @@ pub(crate) enum StoredMemoryObject {
     Absolute {
         address_space: String,
         address: u32,
+    },
+    Indexed {
+        object: Box<StoredMemoryObject>,
+        argument: u8,
+        stride: i64,
     },
 }
 

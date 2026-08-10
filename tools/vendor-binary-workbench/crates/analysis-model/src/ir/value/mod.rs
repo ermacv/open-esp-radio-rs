@@ -26,6 +26,14 @@ pub enum MemoryObjectRoot {
     Absolute {
         address: u32,
     },
+    /// A family of objects selected by one ABI argument and a fixed byte
+    /// stride. This preserves array provenance without claiming an index
+    /// domain or a nominal element type.
+    Indexed {
+        root: Box<MemoryObjectRoot>,
+        argument: u8,
+        stride: i64,
+    },
 }
 
 /// A byte offset within a recovered memory object.
@@ -39,6 +47,11 @@ pub struct MemoryObjectLocation {
 pub enum SymbolicValue {
     Unknown,
     Constant(u32),
+    /// Unmodified ABI input. Keeping this canonical avoids repeatedly
+    /// rediscovering the same identity from 32 individual bit sources.
+    Input {
+        index: u8,
+    },
     InputConstant {
         index: u8,
         value: u32,
@@ -56,6 +69,12 @@ pub enum SymbolicValue {
     ExternalFunction {
         table: ExternalTableRef,
         function: ExternalFunctionRef,
+    },
+    /// Function pointer loaded from a reviewed table slot without an
+    /// executable call model.
+    ReviewedExternalFunction {
+        table: ExternalTableRef,
+        offset: u32,
     },
     FunctionTable(FunctionTableRef),
     FunctionPointer {

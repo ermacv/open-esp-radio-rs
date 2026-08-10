@@ -11,6 +11,7 @@ pub(super) enum StructuralAddress {
     CallerMemory(SymbolicValue),
     SymbolMemory(SymbolicValue),
     DereferencedGlobalMemory(SymbolicValue),
+    IndexedMemory(SymbolicValue),
 }
 
 pub(super) fn structural_effective_address(
@@ -44,8 +45,13 @@ pub(super) fn structural_effective_address(
         _ => {
             let address = base.clone().add_constant(offset as u32);
             let location = address.memory_object_location_with_reads(memory_read_sources)?;
-            matches!(location.root, MemoryObjectRoot::DereferencedGlobal { .. })
-                .then_some(StructuralAddress::DereferencedGlobalMemory(address))
+            match location.root {
+                MemoryObjectRoot::DereferencedGlobal { .. } => {
+                    Some(StructuralAddress::DereferencedGlobalMemory(address))
+                }
+                MemoryObjectRoot::Indexed { .. } => Some(StructuralAddress::IndexedMemory(address)),
+                _ => None,
+            }
         }
     }
 }
@@ -64,6 +70,13 @@ pub(super) fn structural_value_address(value: &SymbolicValue) -> Option<Structur
             lo_addend: Some(_), ..
         } => Some(StructuralAddress::SymbolMemory(value.clone())),
         _ if value.caller_memory_address() => Some(StructuralAddress::CallerMemory(value.clone())),
+        _ if matches!(
+            value.memory_object_location().map(|location| location.root),
+            Some(MemoryObjectRoot::Indexed { .. })
+        ) =>
+        {
+            Some(StructuralAddress::IndexedMemory(value.clone()))
+        }
         _ => None,
     }
 }
@@ -111,6 +124,18 @@ pub(super) fn memory_intrinsic_load_byte(
                 width: 8,
                 address,
                 region: "dereferenced relocated global pointer RAM".to_owned(),
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(StructuralAddress::IndexedMemory(address)) => {
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                address,
+                region: "indexed RAM object".to_owned(),
                 value: None,
             });
             Ok(SymbolicValue::memory_read(read_token, 8, false))
@@ -189,6 +214,16 @@ pub(super) fn memory_intrinsic_store_byte(
                 width: 8,
                 address,
                 region: "dereferenced relocated global pointer RAM".to_owned(),
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::IndexedMemory(address)) => {
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address,
+                region: "indexed RAM object".to_owned(),
                 value: Some(value),
             });
             Ok(())

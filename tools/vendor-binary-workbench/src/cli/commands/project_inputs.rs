@@ -24,7 +24,7 @@ struct ProjectInputsReport {
     status: &'static str,
     project: String,
     output: String,
-    required_sources: Vec<String>,
+    required_roles: Vec<String>,
     bindings: Vec<InputBindingReport>,
     next_command: String,
 }
@@ -50,8 +50,9 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
             .unwrap_or_else(|| Path::new("."))
             .join("local.toml")
     });
-    let required_sources = required_sources(&project);
-    let bindings = resolve_bindings(arguments.bind, &required_sources)?;
+    let known_sources = known_sources(&project);
+    let required_roles = required_roles(&project, &known_sources);
+    let bindings = resolve_bindings(arguments.bind, &known_sources, &required_roles)?;
     reject_artifact_output_alias(&output, &bindings)?;
     let rendered = render_run_spec(&bindings);
     let (status, succeeded) = if arguments.check {
@@ -79,7 +80,10 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
         status,
         project: project.id,
         output: output.display().to_string(),
-        required_sources: required_sources.into_iter().collect(),
+        required_roles: required_roles
+            .into_iter()
+            .map(|role| role.to_string())
+            .collect(),
         bindings: bindings
             .iter()
             .map(|binding| InputBindingReport {
@@ -97,17 +101,43 @@ pub(super) fn run(arguments: ProjectInputsInitArgs, manifest: &Path) -> Result<b
     Ok(succeeded)
 }
 
-fn required_sources(project: &ProjectSpec) -> BTreeSet<String> {
-    project
+fn known_sources(project: &ProjectSpec) -> BTreeSet<String> {
+    let mut sources = project
         .ir_profiles
         .iter()
         .flat_map(|profile| profile.sources.iter().cloned())
-        .collect()
+        .collect::<BTreeSet<_>>();
+    if let Some(workspace) = &project.verification {
+        sources.extend(
+            workspace
+                .suites
+                .iter()
+                .flat_map(|suite| suite.sources.iter().map(ToString::to_string)),
+        );
+    }
+    sources
+}
+
+fn required_roles(project: &ProjectSpec, known_sources: &BTreeSet<String>) -> BTreeSet<InputRole> {
+    let mut roles = known_sources
+        .iter()
+        .map(|source| InputRole::SourceArtifact(source.parse().expect("validated project source")))
+        .collect::<BTreeSet<_>>();
+    if let Some(workspace) = &project.verification {
+        for suite in &workspace.suites {
+            roles.insert(suite.rust_artifact_role.clone());
+            if let Some(role) = &suite.rust_companion_role {
+                roles.insert(role.clone());
+            }
+        }
+    }
+    roles
 }
 
 fn resolve_bindings(
     bindings: Vec<ProjectInputBinding>,
-    required_sources: &BTreeSet<String>,
+    known_sources: &BTreeSet<String>,
+    required_roles: &BTreeSet<InputRole>,
 ) -> Result<Vec<ResolvedBinding>> {
     let mut roles = BTreeSet::new();
     let mut resolved = Vec::with_capacity(bindings.len());
@@ -119,11 +149,11 @@ fn resolve_bindings(
             )));
         }
         if let Some(source) = binding.role.qualified_source_id()
-            && !required_sources.is_empty()
-            && !required_sources.contains(source)
+            && !known_sources.is_empty()
+            && !known_sources.contains(source)
         {
             return Err(crate::Error::invalid(format!(
-                "input role {} references source {source:?}, which is absent from project IR profiles",
+                "input role {} references source {source:?}, which is absent from project analysis and verification suites",
                 binding.role
             )));
         }
@@ -155,15 +185,10 @@ fn resolve_bindings(
             container: inventory.container,
         });
     }
-    for source in required_sources {
-        if !resolved.iter().any(|binding| {
-            matches!(
-                &binding.role,
-                InputRole::SourceArtifact(bound) if bound.as_str() == source
-            )
-        }) {
+    for role in required_roles {
+        if !resolved.iter().any(|binding| &binding.role == role) {
             return Err(crate::Error::invalid(format!(
-                "project requires --bind source-artifact:{source}=PATH"
+                "project requires --bind {role}=PATH"
             )));
         }
     }

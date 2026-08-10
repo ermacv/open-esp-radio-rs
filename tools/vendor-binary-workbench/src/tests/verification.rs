@@ -38,7 +38,7 @@ fn checked_in_evidence_baseline_locks_symbol_and_evidence_identity() {
     let mut downgraded = expected.clone();
     downgraded.insert(
         ("archive".to_owned(), "phy_rf_init".to_owned()),
-        "scenario/profile:weaker".to_owned(),
+        EvidenceIdentity::plain("scenario/profile:weaker"),
     );
     assert!(!compare_evidence_baseline(&expected, &downgraded).passed);
 
@@ -96,6 +96,7 @@ fn semantic_evidence_is_bound_to_workbench_sources() {
     assert_ne!(original, other_contract);
     assert!(
         semantic_contract_evidence("esp32s31-radio-v1", "esp32s31-channel")
+            .label()
             .starts_with("composition-state-scenario/esp32s31-channel/sha256:")
     );
 }
@@ -132,7 +133,11 @@ fn effect_contract_evidence_is_bound_to_closed_policy_rules() {
     )
     .unwrap();
     let evidence = effect_contract_evidence(&exact, &binding, "generated-proof-v1");
-    assert!(evidence.starts_with("effect-contract/exact-effects-v1/sha256:"));
+    assert!(
+        evidence
+            .label()
+            .starts_with("effect-contract/exact-effects-v1/sha256:")
+    );
     assert_ne!(
         evidence,
         effect_contract_evidence(&forbidden, &binding, "generated-proof-v1")
@@ -164,7 +169,13 @@ fn verification_json_report_contains_reproducible_inputs() {
         std::process::id()
     ));
     let mut evidence = EvidenceSet::new();
-    record_evidence(&mut evidence, "archive", "symbol", "symbolic").unwrap();
+    record_evidence(
+        &mut evidence,
+        "archive",
+        "symbol",
+        EvidenceIdentity::plain("symbolic"),
+    )
+    .unwrap();
     let verification = verification_core_report(VerificationCoreInputs {
         target: &target,
         gate: VerificationGate::Regression { match_floor: 1 },
@@ -182,12 +193,11 @@ fn verification_json_report_contains_reproducible_inputs() {
         qualification_gaps: &[],
     })
     .unwrap();
-    let sources = [];
     let document = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,
         command: "verify inventory",
-        verification: &verification,
-        sources: &sources,
+        verification,
+        sources: Vec::new(),
         inventory: Vec::new(),
         protocols: None,
         evidence_comparison: None,
@@ -197,7 +207,7 @@ fn verification_json_report_contains_reproducible_inputs() {
     let report = fs::read_to_string(&path).unwrap();
     let loaded_evidence = load_evidence_report(&path).unwrap();
     fs::remove_file(path).unwrap();
-    assert!(report.contains("\"schema_version\": 4"));
+    assert!(report.contains("\"schema_version\": 6"));
     assert!(report.contains("\"command\": \"verify inventory\""));
     assert!(report.contains("\"calling_convention\": \"riscv-ilp32\""));
     assert!(report.contains("\"passed\": true"));
@@ -213,11 +223,23 @@ fn evidence_candidate_is_deterministic_and_cannot_replace_the_baseline() {
     let baseline = directory.join(format!("vendor-workbench-baseline-{suffix}.toml"));
     let candidate = directory.join(format!("vendor-workbench-candidate-{suffix}.toml"));
     let mut evidence = EvidenceSet::new();
-    record_evidence(&mut evidence, "rom", "second", "symbolic").unwrap();
-    record_evidence(&mut evidence, "archive", "first", "state/profile:reviewed").unwrap();
+    record_evidence(
+        &mut evidence,
+        "rom",
+        "second",
+        EvidenceIdentity::plain("symbolic"),
+    )
+    .unwrap();
+    record_evidence(
+        &mut evidence,
+        "archive",
+        "first",
+        EvidenceIdentity::plain("state/profile:reviewed"),
+    )
+    .unwrap();
     fs::write(
         &baseline,
-        "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"old\"\nkind = \"symbolic\"\n",
+        "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"old\"\nkind = \"symbolic\"\n",
     )
     .unwrap();
 
@@ -228,7 +250,7 @@ fn evidence_candidate_is_deterministic_and_cannot_replace_the_baseline() {
     assert_eq!(load_evidence_baseline(&candidate).unwrap(), evidence);
     assert_eq!(
         fs::read_to_string(&candidate).unwrap(),
-        "schema = 1\n\n[[evidence]]\nsource = \"archive\"\nsymbol = \"first\"\nkind = \"state/profile:reviewed\"\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"second\"\nkind = \"symbolic\"\n"
+        "schema = 2\n\n[[evidence]]\nsource = \"archive\"\nsymbol = \"first\"\nkind = \"state/profile:reviewed\"\n\n[[evidence]]\nsource = \"rom\"\nsymbol = \"second\"\nkind = \"symbolic\"\n"
     );
 
     fs::remove_file(baseline).unwrap();

@@ -9,10 +9,12 @@ publish = false
 description = "RISC-V 32-bit analysis, execution and reference-code backend"
 
 [dependencies]
+addr2line = { version = "=0.27.1", default-features = false, features = ["loader", "rustc-demangle"] }
 object = { version = "=0.39.1", default-features = false, features = ["archive", "elf", "read", "std"] }
 open-radio-vendor-analysis-model = { path = "../analysis-model" }
 open-radio-vendor-execution-model = { path = "../execution-model" }
 rv-asm = "=0.2.1"
+rustc-demangle = "=0.1.28"
 serde = { version = "=1.0.229", features = ["derive"] }
 thiserror = "=2.0.19"
 tracing = "=0.1.44"

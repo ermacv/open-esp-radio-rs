@@ -354,6 +354,28 @@ impl ReferenceResolver {
                 );
             }
         }
+        for (name, target) in relocated_calls.values() {
+            let Some(target) = *target else {
+                continue;
+            };
+            if symbols_by_address.contains_key(&target)
+                || (harness.summaries.direct_external_semantic)(name).is_none()
+            {
+                continue;
+            }
+            symbols_by_address.insert(
+                target,
+                artifact::ArtifactSymbolDefinition {
+                    member: None,
+                    name: name.clone(),
+                    address: u64::from(target),
+                    bytes: Vec::new(),
+                    addresses_resolved: true,
+                    memory_regions: Vec::new(),
+                    relocations: Vec::new(),
+                },
+            );
+        }
         Ok(Self {
             symbols,
             symbols_by_address,

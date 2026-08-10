@@ -36,6 +36,18 @@ register = "CLEAR"
 field = "EVENTS"
 sources = ["BLOB_LIBPP_HAL_MAC_INTERRUPT_CLR_EVENT"]
 
+[[zero-register-writes]]
+name = "disable_mac_interrupt_raw"
+peripheral = "WIFI_MAC_INTERRUPT"
+register = "RAW"
+sources = ["BLOB_LIBPP_HAL_DISABLE_MAC"]
+
+[[zero-register-writes]]
+name = "disable_mac_interrupt_1_raw"
+peripheral = "WIFI_MAC_HE_INIT_PREFIX"
+register = "INTERRUPT_1_RAW"
+sources = ["BLOB_LIBPP_HAL_DISABLE_MAC"]
+
 [[full-register-writes]]
 name = "mac_power_interrupt_clear"
 peripheral = "WIFI_MAC_POWER_INTERRUPT"

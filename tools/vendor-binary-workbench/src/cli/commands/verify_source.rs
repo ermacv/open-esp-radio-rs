@@ -96,18 +96,17 @@ pub(super) fn run(arguments: VerifySourceArgs, svd: &MmioMap, target: &TargetSpe
         artifacts: &artifacts,
         qualification_gaps: &[],
     })?;
-    let sources = [source_report];
     let report = VerificationCommandReport {
         schema_version: VERIFICATION_REPORT_SCHEMA,
         command: "verify source",
-        verification: &verification,
-        sources: &sources,
+        verification,
+        sources: vec![source_report],
         inventory: vec![SourceInventoryReport {
             source: "vendor".to_owned(),
             symbols: symbols.len(),
         }],
         protocols: None,
-        evidence_comparison: evidence_comparison.as_ref(),
+        evidence_comparison,
         report: None,
     };
     crate::cli::output::render_report(&report, || crate::cli::render::verification_human(&report));

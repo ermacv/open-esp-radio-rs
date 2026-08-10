@@ -9,6 +9,7 @@ fn does_not_compact_a_composed_call_result_that_escapes_the_loop() {
     let trace = FunctionAnalysis {
         symbol: "escaping_call_result".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events,
         reference_dependencies: vec!["phy_byte_to_word".to_owned()],
         blockers: Vec::new(),
@@ -72,9 +73,13 @@ fn nested_composed_call_arguments_do_not_shadow_the_parent_binding() {
 
     let generated = generate(&program, "oracle.elf", "abc123", None, &[]).unwrap();
 
-    assert!(generated.source.contains(
-        "let call0_call0_arg0 = (call0_arg0 & 0xffffffff_u32).wrapping_add(0x0000000c_u32);"
-    ));
+    assert!(
+        generated.source.contains(
+            "let call0_call0_arg0 = (call0_arg0 & 0xffffffff_u32).wrapping_add(0x0000000c_u32);"
+        ),
+        "{}",
+        generated.source
+    );
     assert!(generated.source.contains(
         "let call0_call1_arg0 = (call0_arg0 & 0xffffffff_u32).wrapping_add(0x00000010_u32);"
     ));
@@ -90,6 +95,7 @@ fn renders_both_words_of_one_ordered_wide_division() {
     let trace = FunctionAnalysis {
         symbol: "wide_divide".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: vec![DraftReferenceEvent::WideSignedDivide {
             token: 0,
             dividend_low: SymbolicValue::input(0),

@@ -26,6 +26,7 @@ mod project_ir_doctor;
 mod project_pipeline;
 mod project_publication;
 pub(crate) mod project_status;
+mod project_verification;
 mod registers;
 mod symbol_inventory;
 mod tooling;
@@ -88,13 +89,9 @@ pub(super) fn run_project_browser(manifest: &std::path::Path) -> Result<bool> {
 
 pub(super) fn run_project_analysis(
     arguments: super::ProjectAnalyzeArgs,
-    project: &crate::project::ProjectSpec,
-    run_spec: Option<&crate::run_spec::RunSpec>,
-    memory_map: Option<&crate::MemoryMap>,
-    svd: &MmioMap,
-    target: &TargetSpec,
+    session: &crate::application::ProjectSession,
 ) -> Result<bool> {
-    project_pipeline::run(arguments, project, run_spec, memory_map, svd, target)
+    project_pipeline::run(arguments, session)
 }
 
 pub(super) fn run_project_publication(
@@ -103,6 +100,17 @@ pub(super) fn run_project_publication(
     memory_map: Option<&crate::MemoryMap>,
 ) -> Result<bool> {
     project_publication::run(arguments, project, memory_map)
+}
+
+pub(super) fn run_project_verification(
+    arguments: super::ProjectVerifyArgs,
+    project_manifest: &std::path::Path,
+    project: &crate::project::ProjectSpec,
+    run_spec: Option<&crate::run_spec::RunSpec>,
+    svd: &MmioMap,
+    target: &TargetSpec,
+) -> Result<bool> {
+    project_verification::run(arguments, project_manifest, project, run_spec, svd, target)
 }
 
 pub(super) fn run_symbol_inventory(

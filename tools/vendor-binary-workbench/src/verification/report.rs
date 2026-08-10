@@ -4,9 +4,10 @@ use std::path::Path;
 
 use serde::Serialize;
 
+use super::EvidenceSet;
 use super::{EvidenceComparison, ExecutionComparisonReport, VerificationCoreReport, VerifySummary};
 
-pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 4;
+pub(crate) const VERIFICATION_REPORT_SCHEMA: u32 = 6;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -35,6 +36,7 @@ pub(crate) struct FunctionVerificationReport {
     pub(crate) profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) disposition: Option<String>,
+    pub(crate) disposition_reviewed: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) protocol: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,6 +77,7 @@ impl FunctionVerificationReport {
             contract: None,
             profile: None,
             disposition: None,
+            disposition_reviewed: false,
             protocol: None,
             driver_adapter: None,
             hil_evidence: None,
@@ -132,20 +135,35 @@ impl PublishedVerificationReport {
 }
 
 #[derive(Serialize)]
-pub(crate) struct VerificationCommandReport<'a> {
+pub(crate) struct VerificationCommandReport {
     pub(crate) schema_version: u32,
     pub(crate) command: &'static str,
     #[serde(flatten)]
-    pub(crate) verification: &'a VerificationCoreReport,
-    pub(crate) sources: &'a [SourceVerificationReport],
+    pub(crate) verification: VerificationCoreReport,
+    pub(crate) sources: Vec<SourceVerificationReport>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) inventory: Vec<SourceInventoryReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) protocols: Option<ProtocolInventoryReport>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) evidence_comparison: Option<&'a EvidenceComparison>,
+    pub(crate) evidence_comparison: Option<EvidenceComparison>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) report: Option<PublishedVerificationReport>,
+}
+
+impl VerificationCommandReport {
+    pub(crate) fn evidence_set(&self) -> EvidenceSet {
+        self.verification
+            .evidence
+            .iter()
+            .map(|entry| {
+                (
+                    (entry.source.clone(), entry.symbol.clone()),
+                    entry.identity.clone(),
+                )
+            })
+            .collect()
+    }
 }
 
 impl FunctionVerificationStatus {

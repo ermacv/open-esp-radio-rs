@@ -86,7 +86,12 @@ impl SymbolicValue {
         if let Self::StackAddress(_) = self {
             return Ok(self.clone());
         }
-        if matches!(self, Self::ExternalTable(_) | Self::ExternalFunction { .. }) {
+        if matches!(
+            self,
+            Self::ExternalTable(_)
+                | Self::ExternalFunction { .. }
+                | Self::ReviewedExternalFunction { .. }
+        ) {
             return Err("non-scalar value escaped across a call boundary".to_owned());
         }
         let bits = self.bits();
@@ -267,7 +272,12 @@ impl SymbolicValue {
         if let Self::StackAddress(_) = self {
             return Ok(self.clone());
         }
-        if matches!(self, Self::ExternalTable(_) | Self::ExternalFunction { .. }) {
+        if matches!(
+            self,
+            Self::ExternalTable(_)
+                | Self::ExternalFunction { .. }
+                | Self::ReviewedExternalFunction { .. }
+        ) {
             return Err("non-scalar value escaped across a call boundary".to_owned());
         }
         let bits = self.bits();
@@ -404,6 +414,7 @@ impl SymbolicValue {
                 | Self::StackAddress(_)
                 | Self::ExternalTable(_)
                 | Self::ExternalFunction { .. }
+                | Self::ReviewedExternalFunction { .. }
                 | Self::FunctionTable(_)
                 | Self::FunctionPointer { .. }
         ) {

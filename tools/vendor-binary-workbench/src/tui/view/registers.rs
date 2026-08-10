@@ -98,6 +98,25 @@ fn render_detail(lines: &mut Vec<Line<'_>>, detail: &crate::RegisterDetailSummar
     if !detail.functions.is_empty() {
         lines.push(field("Functions", detail.functions.join(", ")));
     }
+    if !detail.read_sites.is_empty() || !detail.write_sites.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Instruction sites",
+            Style::new().add_modifier(Modifier::BOLD),
+        )));
+        for site in &detail.read_sites {
+            lines.push(Line::from(format!(
+                "READ  {:#010x}  {}",
+                site.pc, site.function
+            )));
+        }
+        for site in &detail.write_sites {
+            lines.push(Line::from(format!(
+                "WRITE {:#010x}  {}",
+                site.pc, site.function
+            )));
+        }
+    }
     if !detail.semantic_operations.is_empty() {
         lines.push(field("Semantics", detail.semantic_operations.join(", ")));
     }

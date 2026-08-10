@@ -1,5 +1,10 @@
 # Project navigation index
 
+The current index schema is version 2. Authenticated input paths are stored
+relative to the index itself, so checking the same generated project from the
+workspace root or from the project directory has identical results. Absolute
+host paths are rejected by the strict reader.
+
 The optional project navigation index joins independently generated symbol,
 linked-IR, and interface facts without changing their schemas or making one
 analyzer semantically depend on another:

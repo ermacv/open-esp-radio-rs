@@ -8,10 +8,11 @@ use crate::{
     BitSource, BranchCondition, BranchOperation, DEFERRED_CALLER_MEMORY_REGION,
     DirectSemanticFunctionSpec, DraftReferenceEvent, ExpressionOperation, ExternalReturnModel,
     ExternalTableRef, FunctionAnalysis, FunctionTableRef, IndexedMmioDomain, IndexedMmioRegister,
-    MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap, ObservableEvent,
-    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result, Rv32CallArguments,
-    SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue, artifact, collect_evaluable_input_bits,
-    encode_fence_set, evaluate_for_input, indexed_mmio_domain,
+    LocatedObservableEvent, MemoryAccess, MemoryObjectLocation, MemoryObjectRoot, MmioMap,
+    ObservableEvent, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, Result,
+    ReviewedExternalCall, Rv32CallArguments, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
+    artifact, collect_evaluable_input_bits, encode_fence_set, evaluate_for_input,
+    indexed_mmio_domain,
 };
 
 mod alu;
@@ -68,6 +69,7 @@ pub struct RiscvSummaryHooks {
     pub secondary_return_target: fn(u32) -> bool,
     pub direct_semantic:
         fn(&artifact::ArtifactSymbolDefinition) -> Option<&'static DirectSemanticFunctionSpec>,
+    pub direct_external_semantic: fn(&str) -> Option<&'static DirectSemanticFunctionSpec>,
     pub reference_intrinsic: fn(
         &artifact::ArtifactSymbolDefinition,
         &MmioMap,
@@ -476,6 +478,10 @@ pub fn trace_binary_symbol_with_branches_bounded(
                     successor: encode_fence_set(fence.succ),
                 };
                 state.events.push(event.clone());
+                state.located_events.push(LocatedObservableEvent {
+                    site: pc as u32,
+                    event: event.clone(),
+                });
                 state
                     .reference_events
                     .push(DraftReferenceEvent::Observable(event));

@@ -21,6 +21,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         | Command::RegisterInitModel(_)
         | Command::VerifyEvidence(_) => return None,
         Command::ProjectAnalyze(_) => "Project analysis",
+        Command::ProjectVerify(_) => "Project verification",
         Command::ProjectPublish(_) => "Project publication",
         Command::FunctionValidate(_) => "Function validation",
         Command::FunctionReview(_) => "Function review",
@@ -34,7 +35,6 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::RegisterGenerateBindings(_) => "PAC binding generation",
         Command::SymbolInventory(_) => "Symbol inventory",
         Command::InterfaceDiscover(_) => "Interface discovery",
-        Command::InterfaceSyncPack(_) => "Interface pack synchronization",
         Command::InterfaceValidate(_) => "Interface validation",
         Command::AuditImageTargets(_) => "Linked-image audit",
         Command::DiscoverMmio(_) => "MMIO discovery",
@@ -126,6 +126,7 @@ mod tests {
     fn long_commands_get_root_spans_but_inspection_commands_do_not() {
         assert!(command_span(&Command::DiscoverMmio(Default::default())).is_some());
         assert!(command_span(&Command::ProjectAnalyze(Default::default())).is_some());
+        assert!(command_span(&Command::ProjectVerify(Default::default())).is_some());
         assert!(command_span(&Command::ProjectStatus(Default::default())).is_none());
         assert!(
             command_span(&Command::GenerateCompletions(CompletionArgs {

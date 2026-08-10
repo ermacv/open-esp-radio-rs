@@ -110,6 +110,10 @@ id = "BLOB_LIBPP_HAL_ENABLE_MAC"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_enable_mac body, size 0x18. It performs one fresh-read RMW clearing bits 7:4 at 0x20104c00, then stores its full event-mask argument at 0x20104c40. Complete hal_disable_mac independently sets the same four gate bits before clearing interrupt state."
 
 [[sources]]
+id = "BLOB_LIBPP_HAL_DISABLE_MAC"
+description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_disable_mac body, size 0x2c. It sets bits 7:4 at 0x20104c00, reads and returns 0x20104c40, then stores zero in order to 0x20104c40, 0x20104c44 and 0x20104c30."
+
+[[sources]]
 id = "BLOB_LIBPP_HAL_INIT_PREFIX"
 description = "_oracles/libpp.a sha256 f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e; complete hal_mac.o hal_init body, offsets 0x00..0x3a. It proves the 0x20104de0 REQUEST-bit RMW, READY-bit polling loop, then the ordered interrupt-disable and all-events-clear stores."
 

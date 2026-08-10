@@ -93,6 +93,7 @@ pub(crate) struct InterfaceCallFact {
     pub(crate) function: String,
     pub(crate) function_address: u32,
     pub(crate) site: u32,
+    pub(crate) slot_load_site: Option<u32>,
     pub(crate) kind: String,
     pub(crate) root: InterfaceFactRoot,
     pub(crate) loads: Vec<InterfaceFactStep>,

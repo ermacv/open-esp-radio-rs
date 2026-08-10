@@ -75,6 +75,10 @@ fn command_resources_are_classified_by_one_positive_plan() {
         ResolutionNeeds::new(true, true, false, false, true, true, true)
     );
     assert_eq!(
+        ResolutionNeeds::for_command(&Command::ProjectVerify(Default::default())),
+        ResolutionNeeds::new(true, true, false, true, true, true, true)
+    );
+    assert_eq!(
         ResolutionNeeds::for_command(&Command::RegisterValidate(Default::default())),
         ResolutionNeeds::new(true, false, false, false, true, true, false)
     );

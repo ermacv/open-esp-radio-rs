@@ -433,6 +433,7 @@ mod tests {
             decode_blocker_operations: vec!["illegal-zero".to_owned()],
             semantic_operations: Vec::new(),
             registers: Vec::new(),
+            mmio_sites: Vec::new(),
             calls: 1,
         });
         workspace.interfaces.slots.push(InterfaceSlotSummary {
@@ -501,6 +502,7 @@ mod tests {
             decode_blocker_operations: Vec::new(),
             semantic_operations: Vec::new(),
             registers: vec![0x4000],
+            mmio_sites: Vec::new(),
             calls: 0,
         };
         workspace.functions.push(function);
@@ -538,6 +540,7 @@ mod tests {
             decode_blocker_operations: Vec::new(),
             semantic_operations: Vec::new(),
             registers: Vec::new(),
+            mmio_sites: Vec::new(),
             calls: 0,
         });
         let mut state = BrowserState::new(workspace);

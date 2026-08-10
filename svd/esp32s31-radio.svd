@@ -6656,15 +6656,21 @@
         </register>
         <register>
           <name>INTERRUPT_1_RAW</name>
-          <description>WDEV_INT1_RAW diagnostic snapshot read by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.</description>
+          <description>WDEV_INT1_RAW snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking the primary MAC interrupt bank.</description>
           <addressOffset>0xBE8</addressOffset>
           <size>0x20</size>
-          <access>read-only</access>
+          <access>read-write</access>
           <fields>
             <field>
               <name>EVENTS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>
@@ -10398,15 +10404,21 @@
         </register>
         <register>
           <name>RAW</name>
-          <description>Unmasked WDEV interrupt snapshot read and named by complete print_isr_regs. No write behavior is inferred from this diagnostic reader.</description>
+          <description>Unmasked WDEV interrupt snapshot read by print_isr_regs. Complete hal_disable_mac writes zero after masking ENABLE.</description>
           <addressOffset>0x4</addressOffset>
           <size>0x20</size>
-          <access>read-only</access>
+          <access>read-write</access>
           <fields>
             <field>
               <name>EVENTS</name>
               <bitOffset>0</bitOffset>
               <bitWidth>32</bitWidth>
+              <writeConstraint>
+                <range>
+                  <minimum>0</minimum>
+                  <maximum>4294967295</maximum>
+                </range>
+              </writeConstraint>
             </field>
           </fields>
         </register>

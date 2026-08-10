@@ -24,6 +24,10 @@ pub(crate) struct SymbolInventorySummary {
     pub(crate) named_zero_sized_code_symbols: usize,
     pub(crate) function_boundary_candidates: usize,
     pub(crate) code_recovery_blockers: usize,
+    pub(crate) link_unit_definitions: usize,
+    pub(crate) unique_archive_origins: usize,
+    pub(crate) ambiguous_archive_origins: usize,
+    pub(crate) missing_archive_origins: usize,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -159,6 +163,8 @@ pub(crate) struct StoredSymbolFact {
     scope: String,
     pub(crate) resolution: String,
     candidates: Vec<StoredSymbolCandidate>,
+    origin_association: String,
+    origin_candidates: Vec<StoredSymbolCandidate>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -262,6 +268,20 @@ pub(crate) fn parse_symbol_inventory(input: &str) -> crate::Result<StoredSymbolI
         function_boundary_candidates += section.function_candidates.len();
         code_recovery_blockers += section.recovery_blockers.len();
     }
+    for symbol in &document.symbols {
+        let valid_origin = match symbol.origin_association.as_str() {
+            "not-applicable" | "missing" => symbol.origin_candidates.is_empty(),
+            "unique-name-and-kind" => symbol.origin_candidates.len() == 1,
+            "ambiguous-name-and-kind" => symbol.origin_candidates.len() > 1,
+            _ => false,
+        };
+        if !valid_origin {
+            return Err(crate::Error::invalid(format!(
+                "invalid link-unit origin association {:?} for symbol {:?}",
+                symbol.origin_association, symbol.name
+            )));
+        }
+    }
     if document.summary.executable_sections != document.code_sections.len()
         || document.summary.executable_bytes != executable_bytes
         || document.summary.symbol_covered_bytes != symbol_covered_bytes
@@ -304,6 +324,10 @@ struct StoredSummaryDocument {
     named_zero_sized_code_symbols: usize,
     function_boundary_candidates: usize,
     code_recovery_blockers: usize,
+    link_unit_definitions: usize,
+    unique_archive_origins: usize,
+    ambiguous_archive_origins: usize,
+    missing_archive_origins: usize,
 }
 
 pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInventorySummary> {
@@ -326,6 +350,10 @@ pub(crate) fn inspect_symbol_inventory(path: &Path) -> crate::Result<SymbolInven
         named_zero_sized_code_symbols: document.summary.named_zero_sized_code_symbols,
         function_boundary_candidates: document.summary.function_boundary_candidates,
         code_recovery_blockers: document.summary.code_recovery_blockers,
+        link_unit_definitions: document.summary.link_unit_definitions,
+        unique_archive_origins: document.summary.unique_archive_origins,
+        ambiguous_archive_origins: document.summary.ambiguous_archive_origins,
+        missing_archive_origins: document.summary.missing_archive_origins,
     })
 }
 
@@ -407,7 +435,7 @@ mod tests {
         ));
         std::fs::write(
             &path,
-            r#"{"schema_version":3,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0}}"#,
+            r#"{"schema_version":4,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":3,"symbol_facts":40,"emitted":40,"exported_definitions":12,"undefined":7,"unresolved_or_associated":5,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#,
         )
         .unwrap();
         let summary = inspect_symbol_inventory(&path).unwrap();
@@ -424,14 +452,14 @@ mod tests {
             inspect_symbol_inventory(&path)
                 .unwrap_err()
                 .to_string()
-                .contains("expected schema_version 3")
+                .contains("expected schema_version 4")
         );
         std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn stored_inventory_rejects_unknown_and_missing_fields() {
-        let input = r#"{"schema_version":3,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0}}"#;
+        let input = r#"{"schema_version":4,"command":"symbols inventory","linkage_mode":"association-only","linker_resolution_claim":false,"artifacts":[],"code_sections":[],"symbols":[],"summary":{"artifacts":0,"symbol_facts":0,"emitted":0,"exported_definitions":0,"undefined":0,"unresolved_or_associated":0,"executable_sections":0,"executable_bytes":0,"symbol_covered_bytes":0,"uncovered_executable_bytes":0,"named_zero_sized_code_symbols":0,"function_boundary_candidates":0,"code_recovery_blockers":0,"link_unit_definitions":0,"unique_archive_origins":0,"ambiguous_archive_origins":0,"missing_archive_origins":0}}"#;
         let mut unknown: serde_json::Value = serde_json::from_str(input).unwrap();
         unknown["summary"]["legacy_field"] = serde_json::json!(true);
         let error = parse_symbol_inventory(&unknown.to_string()).unwrap_err();
@@ -449,7 +477,7 @@ mod tests {
     #[test]
     fn generated_inventory_cannot_promote_a_recovery_candidate_to_reviewed() {
         let input = serde_json::json!({
-            "schema_version": 3,
+            "schema_version": 4,
             "command": "symbols inventory",
             "linkage_mode": "association-only",
             "linker_resolution_claim": false,
@@ -489,7 +517,11 @@ mod tests {
                 "uncovered_executable_bytes": 4,
                 "named_zero_sized_code_symbols": 1,
                 "function_boundary_candidates": 1,
-                "code_recovery_blockers": 0
+                "code_recovery_blockers": 0,
+                "link_unit_definitions": 0,
+                "unique_archive_origins": 0,
+                "ambiguous_archive_origins": 0,
+                "missing_archive_origins": 0
             }
         });
         let error = parse_symbol_inventory(&input.to_string()).unwrap_err();

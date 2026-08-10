@@ -119,9 +119,6 @@ pub(crate) struct TargetSpec {
     pub(crate) memory_map: Option<PathBuf>,
     pub(crate) svd_paths: Vec<PathBuf>,
     pub(crate) pac_bindings: Option<PathBuf>,
-    pub(crate) profiles: Option<PathBuf>,
-    pub(crate) dispositions: Option<PathBuf>,
-    pub(crate) evidence_baseline: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -140,12 +137,6 @@ struct TargetDocument {
     svd: Vec<PathBuf>,
     #[serde(default)]
     pac_bindings: Option<PathBuf>,
-    #[serde(default)]
-    profiles: Option<PathBuf>,
-    #[serde(default)]
-    dispositions: Option<PathBuf>,
-    #[serde(default)]
-    evidence_baseline: Option<PathBuf>,
 }
 
 impl TargetSpec {
@@ -181,11 +172,6 @@ impl TargetSpec {
                 .map(|path| resolve_path(base, path))
                 .collect(),
             pac_bindings: document.pac_bindings.map(|path| resolve_path(base, path)),
-            profiles: document.profiles.map(|path| resolve_path(base, path)),
-            dispositions: document.dispositions.map(|path| resolve_path(base, path)),
-            evidence_baseline: document
-                .evidence_baseline
-                .map(|path| resolve_path(base, path)),
         };
         target.validate_pair()?;
         Ok(target)

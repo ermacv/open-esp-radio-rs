@@ -340,7 +340,6 @@ fn expected_rust_events(case: Case) -> Vec<execution::ExecutionEvent> {
         write(RX_CONTROL, WALKER_ENABLE),
         full_fence(),
         read(RX_CONTROL, WALKER_ENABLE),
-        ownership_fence(),
         read(RX_CONTROL, WALKER_ENABLE),
         read(RX_CONTROL, WALKER_ENABLE),
         full_fence(),
@@ -355,7 +354,6 @@ fn expected_rust_events(case: Case) -> Vec<execution::ExecutionEvent> {
         }
     }
     if case.timeout {
-        events.push(ownership_fence());
         return events;
     }
     events.push(read(RX_CONTROL, WALKER_ENABLE));
@@ -372,8 +370,48 @@ fn expected_rust_events(case: Case) -> Vec<execution::ExecutionEvent> {
         events.push(write(RX_BASE, DESCRIPTOR_BASE));
         events.push(full_fence());
     }
-    events.extend([ownership_fence(), ownership_fence(), ownership_fence()]);
+    events.push(ownership_fence());
     events
+}
+
+fn atomic_ownership_matches(result: &execution::ExecutionResult, case: Case) -> bool {
+    let atomics = result
+        .timeline
+        .iter()
+        .filter_map(|event| match event {
+            execution::ExecutionTimelineEvent::Atomic {
+                operation,
+                ordering,
+                address,
+                succeeded,
+            } => Some((*operation, *ordering, *address, *succeeded)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let pair_count = if case.timeout { 2 } else { 4 };
+    if atomics.len() != pair_count * 2 {
+        return false;
+    }
+    let Some(address) = atomics.first().map(|atomic| atomic.2) else {
+        return false;
+    };
+    address & 3 == 0
+        && atomics.chunks_exact(2).all(|pair| {
+            pair[0]
+                == (
+                    execution::AtomicOperation::LoadReserved,
+                    execution::AtomicOrdering::Acquire,
+                    address,
+                    None,
+                )
+                && pair[1]
+                    == (
+                        execution::AtomicOperation::StoreConditional,
+                        execution::AtomicOrdering::Release,
+                        address,
+                        Some(true),
+                    )
+        })
 }
 
 fn rust_scenario(case: Case, stack_fill: u8) -> execution::Scenario {
@@ -501,6 +539,7 @@ fn event_sequences_match(
 fn rust_case_matches(result: &execution::ExecutionResult, case: Case) -> bool {
     result.return_value == expected_return(case)
         && event_sequences_match(&result.events, &expected_rust_events(case))
+        && atomic_ownership_matches(result, case)
 }
 
 #[allow(
@@ -552,13 +591,14 @@ pub fn verify_esp32s31_wdev_append_rx_blocks(
         let case_matched = rust_case_matches(&first, *case) && padding_independent;
         matched &= case_matched;
         canonical.push_str(&format!(
-            "scenario {} pending-samples={} repair-base={} timeout={} return={:#010x} events={} branches={} padding-independent={}\n",
+            "scenario {} pending-samples={} repair-base={} timeout={} return={:#010x} events={} atomic-pairs={} branches={} padding-independent={}\n",
             case.name,
             case.pending_samples,
             case.repair_base,
             case.timeout,
             first.return_value,
             first.events.len(),
+            if case.timeout { 2 } else { 4 },
             first.ordered_branches.len(),
             padding_independent,
         ));

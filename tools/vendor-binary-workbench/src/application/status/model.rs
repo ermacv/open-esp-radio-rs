@@ -48,6 +48,36 @@ pub struct ArtifactDetail {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewScopeDetail {
+    pub id: String,
+    pub release: bool,
+    pub profiles: Vec<String>,
+    pub roots: usize,
+    pub functions: usize,
+    pub complete_functions: usize,
+    pub mmio_registers: usize,
+    pub linked_mmio_registers: usize,
+    pub static_mmio_registers: usize,
+    pub table_calls: usize,
+    pub context_fields: usize,
+    pub memory_fields: usize,
+    pub decode_blockers: usize,
+    pub decode_blocker_functions: usize,
+    pub direct_blockers: usize,
+    pub call_graph_blockers: usize,
+    pub reference_blockers: usize,
+    pub unresolved_calls: usize,
+    pub replacement_behavioral_matches: usize,
+    pub replacement_production_matches: usize,
+    pub replacement_probe_only_matches: usize,
+    pub replacement_unmapped_matches: usize,
+    pub replacement_mismatches: usize,
+    pub replacement_incomplete: usize,
+    pub replacement_unqualified: usize,
+    pub replacement_uncovered: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum DetailValue {
     String(String),
@@ -57,6 +87,7 @@ pub enum DetailValue {
     LinkedIrProfiles(Vec<LinkedIrProfileDetail>),
     MmioRegions(Vec<MmioRegionDetail>),
     Artifacts(Vec<ArtifactDetail>),
+    ReviewScopes(Vec<ReviewScopeDetail>),
 }
 
 impl From<String> for DetailValue {
@@ -110,6 +141,12 @@ impl From<Vec<MmioRegionDetail>> for DetailValue {
 impl From<Vec<ArtifactDetail>> for DetailValue {
     fn from(value: Vec<ArtifactDetail>) -> Self {
         Self::Artifacts(value)
+    }
+}
+
+impl From<Vec<ReviewScopeDetail>> for DetailValue {
+    fn from(value: Vec<ReviewScopeDetail>) -> Self {
+        Self::ReviewScopes(value)
     }
 }
 

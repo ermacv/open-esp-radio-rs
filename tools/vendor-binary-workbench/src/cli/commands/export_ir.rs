@@ -32,6 +32,10 @@ pub(super) fn run(
     let effective_code = project
         .map(crate::analysis::EffectiveCodeCatalog::load)
         .transpose()?;
+    let interfaces = project
+        .map(|project| crate::linked_ir_export::load_project_interfaces(project, target))
+        .transpose()?
+        .flatten();
     if let Some(catalog) = &effective_code {
         for artifact in &mut artifacts {
             artifact.reviewed_code = catalog.reviewed_ranges(&artifact.source, &artifact.path)?;
@@ -45,6 +49,7 @@ pub(super) fn run(
         &arguments.entry_contract,
         svd,
         target,
+        interfaces.as_ref(),
         usize::from(arguments.jobs),
     )?;
 

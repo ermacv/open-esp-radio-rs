@@ -9,31 +9,7 @@ use crate::{
 
 use super::super::{NamedAddressRange, SourcePath, args::Command, arguments};
 
-pub(super) fn apply_target_defaults(command: &mut Command, target: &TargetSpec) {
-    match command {
-        Command::VerifyInventory(arguments) => {
-            if !arguments.no_profiles && arguments.profiles.is_none() {
-                arguments.profiles.clone_from(&target.profiles);
-            }
-            if !arguments.no_dispositions && arguments.dispositions.is_none() {
-                arguments.dispositions.clone_from(&target.dispositions);
-            }
-            if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() {
-                arguments
-                    .evidence_baseline
-                    .clone_from(&target.evidence_baseline);
-            }
-        }
-        Command::VerifyEvidence(arguments)
-            if !arguments.no_evidence_baseline && arguments.evidence_baseline.is_none() =>
-        {
-            arguments
-                .evidence_baseline
-                .clone_from(&target.evidence_baseline);
-        }
-        _ => {}
-    }
-}
+pub(super) fn apply_target_defaults(_command: &mut Command, _target: &TargetSpec) {}
 
 pub(super) fn apply_project_defaults(
     command: &mut Command,
@@ -43,12 +19,6 @@ pub(super) fn apply_project_defaults(
     if let Some(project) = project {
         match command {
             Command::VerifySource(arguments) => {
-                if arguments.rust_prefix.is_none() {
-                    arguments.rust_prefix = project
-                        .verification
-                        .as_ref()
-                        .and_then(|verification| verification.rust_prefix.clone());
-                }
                 if arguments.vendor_prefix.is_empty() {
                     let prefixes = project
                         .ir_profiles
@@ -65,12 +35,6 @@ pub(super) fn apply_project_defaults(
                 }
             }
             Command::VerifyInventory(arguments) => {
-                if arguments.rust_prefix.is_none() {
-                    arguments.rust_prefix = project
-                        .verification
-                        .as_ref()
-                        .and_then(|verification| verification.rust_prefix.clone());
-                }
                 let explicit = arguments
                     .source_prefix
                     .iter()

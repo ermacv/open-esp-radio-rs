@@ -12,6 +12,7 @@ fn renders_a_compact_bounded_poll_with_an_exhaustion_diagnostic() {
     let trace = FunctionAnalysis {
         symbol: "bounded_poll".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events: Vec::new(),
         reference_dependencies: vec!["poll_read".to_owned(), "ets_printf".to_owned()],
         blockers: Vec::new(),

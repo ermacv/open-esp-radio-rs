@@ -221,6 +221,85 @@ fn backward_edge_to_an_unvisited_return_block_is_not_a_loop() {
 }
 
 #[test]
+fn partial_cfg_keeps_indexed_memory_evidence_across_an_opaque_call() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "partial_indexed_snapshot".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x63, 0x04, 0x05, 0x00, // beq a0, zero, 0x1008
+            0x67, 0x80, 0x00, 0x00, // ret
+            0x13, 0x04, 0x05, 0x00, // mv s0, a0
+            0xe7, 0x80, 0x07, 0x00, // jalr a5 (opaque callback)
+            0x93, 0x07, 0xc0, 0x02, // li a5, 44
+            0x33, 0x04, 0xf4, 0x02, // mul s0, s0, a5
+            0xb7, 0xf7, 0x02, 0x10, // lui a5, 0x1002f
+            0x93, 0x87, 0x07, 0x56, // addi a5, a5, 0x560
+            0xb3, 0x87, 0x87, 0x00, // add a5, a5, s0
+            0x23, 0xa0, 0xb7, 0x00, // sw a1, 0(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let symbols = BTreeMap::from([(0x1000, symbol.clone())]);
+
+    let trace = resolve_reference_trace(
+        &symbol,
+        &symbols,
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+        &map(),
+        &mut BTreeSet::new(),
+    )
+    .unwrap();
+
+    assert!(!trace.is_reference_eligible(), "{trace:#?}");
+    assert!(
+        trace
+            .reference_blockers
+            .iter()
+            .any(|blocker| blocker.starts_with("unresolved-indirect-call at ")),
+        "{trace:#?}"
+    );
+    let flow = trace
+        .reference_flow
+        .as_ref()
+        .expect("partial evidence retains structured control flow");
+    let DraftReferenceTerminator::Branch {
+        taken, not_taken, ..
+    } = &flow.terminator
+    else {
+        panic!("expected the input branch, got {flow:#?}");
+    };
+    let memory_event = taken
+        .events
+        .iter()
+        .chain(&not_taken.events)
+        .find(|event| matches!(event, DraftReferenceEvent::Memory { .. }))
+        .expect("one branch retains the indexed write");
+    let DraftReferenceEvent::Memory { address, value, .. } = memory_event else {
+        unreachable!();
+    };
+    assert_eq!(value, &Some(SymbolicValue::Unknown));
+    assert_eq!(
+        address.memory_object_location_with_reads(&BTreeMap::new()),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Indexed {
+                root: Box::new(MemoryObjectRoot::Absolute {
+                    address: 0x1002_f560,
+                }),
+                argument: 0,
+                stride: 0x2c,
+            },
+            offset: 0,
+        })
+    );
+}
+
+#[test]
 fn delay_intrinsic_is_composed_without_decoding_its_rom_body() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

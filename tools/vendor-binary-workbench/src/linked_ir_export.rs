@@ -15,8 +15,9 @@ pub(crate) use render_common::{
 };
 
 use crate::{
-    EntryContractRef, LinkedIrReport, MmioMap, ReferenceResolver, Result, TargetSpec,
-    build_linked_ir_for_source, harnesses, link_project_calls, merge_linked_ir,
+    EntryContractRef, LinkedIrReport, MmioMap, ReferenceResolver, Result, ReviewedExternalCall,
+    StructuralCallSite, TargetSpec, build_linked_ir_for_source, harnesses,
+    interfaces::InterfaceWorkspace, link_project_calls, merge_linked_ir_with_jobs,
     project_ir::ProjectIrProfile,
 };
 
@@ -38,6 +39,7 @@ pub(crate) fn generate_project_profile(
     svd: &MmioMap,
     target: &TargetSpec,
     effective_code: &crate::analysis::EffectiveCodeCatalog,
+    interfaces: Option<&InterfaceWorkspace>,
     jobs: usize,
 ) -> Result<ProjectIrDocuments> {
     let mut artifacts = inputs
@@ -56,6 +58,7 @@ pub(crate) fn generate_project_profile(
         &profile.entry_contract,
         svd,
         target,
+        interfaces,
         jobs,
     )?;
     let (_, field_candidates, _, _) = field_candidate_summary(&report);
@@ -105,6 +108,7 @@ pub(crate) fn analyze(
     entry_contract_id: &str,
     svd: &MmioMap,
     target: &TargetSpec,
+    interfaces: Option<&InterfaceWorkspace>,
     jobs: usize,
 ) -> Result<(EntryContractRef, LinkedIrReport)> {
     let harness = target.harness.as_deref();
@@ -113,13 +117,16 @@ pub(crate) fn analyze(
     validate_artifact_inputs(artifacts, companions)?;
     let mut reports = Vec::with_capacity(artifacts.len());
     for artifact in artifacts {
-        let resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
+        let mut resolver = ReferenceResolver::load_all_code_with_reviewed_ranges(
             &artifact.path,
             companions,
             riscv_harness,
             entry_contract,
             &artifact.reviewed_code,
         )?;
+        if let Some(interfaces) = interfaces {
+            register_reviewed_external_calls(&mut resolver, interfaces);
+        }
         reports.push(build_linked_ir_for_source(
             &resolver,
             symbol_prefix,
@@ -133,7 +140,7 @@ pub(crate) fn analyze(
     if artifacts.len() > 1 {
         link_project_calls(&mut reports);
     }
-    let report = merge_linked_ir(reports);
+    let report = merge_linked_ir_with_jobs(reports, jobs);
     if report.functions.is_empty() {
         return Err(crate::Error::invalid(if symbol_prefix.is_empty() {
             "no named code symbols were found in any IR artifact".to_owned()
@@ -142,6 +149,82 @@ pub(crate) fn analyze(
         }));
     }
     Ok((entry_contract, report))
+}
+
+pub(crate) fn load_project_interfaces(
+    project: &crate::project::ProjectSpec,
+    target: &TargetSpec,
+) -> Result<Option<InterfaceWorkspace>> {
+    let Some(paths) = project.interfaces.as_ref() else {
+        return Ok(None);
+    };
+    let Some(pack) = paths.pack.as_deref() else {
+        return Ok(None);
+    };
+    Ok(Some(InterfaceWorkspace::load(
+        &paths.facts,
+        pack,
+        &paths.semantic_catalogs,
+        target.calling_convention.label(),
+        target
+            .harness
+            .as_deref()
+            .map(harnesses::contracts)
+            .transpose()?,
+    )?))
+}
+
+fn register_reviewed_external_calls(
+    resolver: &mut ReferenceResolver,
+    interfaces: &InterfaceWorkspace,
+) {
+    for slot in interfaces.bindings() {
+        let reviewed = ReviewedExternalCall {
+            id: slot.id.clone(),
+            contract: slot.contract.clone(),
+            name: slot.name.clone(),
+            argument_types: slot.arguments.clone(),
+            return_type: slot.return_type.clone(),
+            variadic: slot.variadic,
+            semantic_operation: slot
+                .semantic_annotation
+                .as_ref()
+                .map(|semantic| semantic.operation.clone()),
+            replacement_hint: slot
+                .semantic_annotation
+                .as_ref()
+                .and_then(|semantic| semantic.replacement.clone()),
+            slot_load_site: None,
+        };
+        if let (Some(table), Ok(offset)) = (&slot.external_table, u32::try_from(slot.offset)) {
+            let candidates = resolver
+                .pointer_context
+                .reviewed_external_slots
+                .entry((table.clone(), offset))
+                .or_default();
+            if !candidates.contains(&reviewed) {
+                candidates.push(reviewed.clone());
+                candidates.sort();
+            }
+        }
+        for call in &slot.calls {
+            let mut reviewed = reviewed.clone();
+            reviewed.slot_load_site = call.slot_load_site;
+            let candidates = resolver
+                .pointer_context
+                .reviewed_external_calls
+                .entry(StructuralCallSite::from_identity(
+                    call.member.clone(),
+                    call.function.clone(),
+                    call.site,
+                ))
+                .or_default();
+            if !candidates.contains(&reviewed) {
+                candidates.push(reviewed);
+                candidates.sort();
+            }
+        }
+    }
 }
 
 pub(crate) fn provenance_summary(report: &LinkedIrReport) -> (usize, usize, usize, usize, usize) {

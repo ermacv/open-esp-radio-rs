@@ -49,6 +49,10 @@ pub(super) struct Machine<'a> {
     pub(super) table_lifecycle: Vec<TableLifecycleEvent>,
     pub(super) table_lifecycle_complete: bool,
     pub(super) call_returns: BTreeMap<String, VecDeque<u32>>,
+    /// Address reserved by the most recent `lr.w` on this hart. The concrete
+    /// executor is intentionally single-hart, so an overlapping local RAM
+    /// write is the only modeled cause of reservation loss.
+    pub(super) word_reservation: Option<u32>,
     pub(super) steps: u64,
     pub(super) max_steps: u64,
 }
@@ -140,6 +144,7 @@ impl<'a> Machine<'a> {
             table_lifecycle,
             table_lifecycle_complete: true,
             call_returns: scenario.call_returns,
+            word_reservation: None,
             steps: 0,
             max_steps: if scenario.max_steps == 0 {
                 100_000

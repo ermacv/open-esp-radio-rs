@@ -75,6 +75,81 @@ fn structural_prepare_opaque_call(state: &mut StructuralTraceState, return_addre
     structural_finish_call_with_result(&mut state.values, return_address, SymbolicValue::Unknown);
 }
 
+fn apply_reviewed_external_call(
+    pc: u32,
+    width: u8,
+    instruction: Inst,
+    offset: u32,
+    dest: Reg,
+    candidates: Vec<ReviewedExternalCall>,
+    state: &mut StructuralTraceState,
+) -> StructuralCallControl {
+    if offset != 0 || !matches!(dest, Reg::ZERO | Reg::RA) {
+        state.blockers.push(format!(
+            "unsupported reviewed external ABI call shape at {pc:#x}: {instruction}"
+        ));
+        return StructuralCallControl::Stop;
+    }
+    for load_site in candidates
+        .iter()
+        .filter_map(|candidate| candidate.slot_load_site)
+        .collect::<BTreeSet<_>>()
+    {
+        let prefix = format!("unregistered-external-abi-slot at {load_site:#x}:");
+        if let Some(index) = state
+            .reference_blockers
+            .iter()
+            .position(|blocker| blocker.starts_with(&prefix))
+        {
+            state.reference_blockers.remove(index);
+        }
+    }
+    let argument_count = candidates
+        .iter()
+        .map(|candidate| candidate.argument_types.len())
+        .max()
+        .unwrap_or(0);
+    let call_arguments = structural_call_arguments(
+        &state.values,
+        &state.stack,
+        state.private_stack_may_be_modified_by_call,
+    );
+    let arguments = call_arguments
+        .iter()
+        .cloned()
+        .take(argument_count)
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    state.private_stack_may_be_modified_by_call |= arguments
+        .iter()
+        .any(|argument| argument.private_stack_offset().is_some());
+    state.reference_blockers.push(format!(
+        "unmodeled-reviewed-external-call at {pc:#x}: {}",
+        candidates
+            .iter()
+            .map(|candidate| candidate.id.as_str())
+            .collect::<Vec<_>>()
+            .join(" | ")
+    ));
+    state
+        .reference_events
+        .push(DraftReferenceEvent::ReviewedExternalCall {
+            site: pc,
+            candidates,
+            arguments,
+        });
+    if dest == Reg::ZERO {
+        state.return_value = SymbolicValue::Unknown;
+        return StructuralCallControl::Stop;
+    }
+    structural_finish_call_with_result(
+        &mut state.values,
+        pc.wrapping_add(u32::from(width)),
+        SymbolicValue::Unknown,
+    );
+    StructuralCallControl::Advance(1)
+}
+
 pub(super) fn apply_relocated_call(
     decoded: artifact::DecodedInstruction,
     next_instruction: Option<artifact::DecodedInstruction>,
@@ -155,9 +230,7 @@ pub(super) fn apply_relocated_call(
         return StructuralCallControl::Advance(2);
     }
 
-    if target.is_none()
-        && let Some(&argument_count) = pointer_context.diagnostic_calls.get(name)
-    {
+    if let Some(&argument_count) = pointer_context.diagnostic_calls.get(name) {
         if dest != Reg::RA {
             state.reference_blockers.push(format!(
                 "unsupported-diagnostic-call-link-register at {pc:#x}: {name} uses {dest}"
@@ -447,6 +520,54 @@ pub(super) fn apply_call_instruction(
                 result,
             );
             StructuralCallControl::Advance(1)
+        }
+        Inst::Jalr { offset, base, dest }
+            if matches!(
+                &state.values[usize::from(base.0)],
+                SymbolicValue::ReviewedExternalFunction { .. }
+            ) =>
+        {
+            let SymbolicValue::ReviewedExternalFunction {
+                table,
+                offset: slot,
+            } = state.values[usize::from(base.0)].clone()
+            else {
+                unreachable!()
+            };
+            let candidates = pointer_context
+                .reviewed_external_slots
+                .get(&(table.spec().id.to_owned(), slot))
+                .expect("reviewed external slot pointer requires registered ABI candidates")
+                .clone();
+            apply_reviewed_external_call(
+                pc as u32,
+                width,
+                instruction,
+                offset.as_u32(),
+                dest,
+                candidates,
+                state,
+            )
+        }
+        Inst::Jalr { offset, dest, .. }
+            if pointer_context
+                .reviewed_external_calls
+                .contains_key(&StructuralCallSite::new(symbol, pc as u32)) =>
+        {
+            let candidates = pointer_context
+                .reviewed_external_calls
+                .get(&StructuralCallSite::new(symbol, pc as u32))
+                .expect("reviewed call site was matched")
+                .clone();
+            apply_reviewed_external_call(
+                pc as u32,
+                width,
+                instruction,
+                offset.as_u32(),
+                dest,
+                candidates,
+                state,
+            )
         }
         Inst::Jalr { offset, base, dest }
             if dest == Reg::ZERO && base == Reg::RA && offset.as_u32() == 0 =>

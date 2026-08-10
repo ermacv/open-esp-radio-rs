@@ -5,6 +5,7 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(super) struct StructuralCheckpoint {
     pub(super) events_len: usize,
+    pub(super) located_events_len: usize,
     pub(super) reference_events_len: usize,
     pub(super) blockers_len: usize,
     pub(super) reference_blockers_len: usize,

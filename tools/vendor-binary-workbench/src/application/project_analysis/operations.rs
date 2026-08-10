@@ -1,7 +1,7 @@
 //! Frontend-neutral project analysis/review operations over domain workspaces.
 
 use crate::{
-    MemoryMap, MmioMap, Result, TargetSpec,
+    MemoryMap, MmioMap, Result,
     analysis::{
         DiscoveryRange, EffectiveCodeCatalog, ProjectInterfaceDiscoveryOptions,
         build_project_linkage_inventory, discover_mmio, discover_project_interfaces,
@@ -24,117 +24,569 @@ use crate::{
 };
 
 use super::{
-    ProjectAnalysisInputs, ProjectAnalysisOperations, ProjectAnalysisReport, ProjectAnalysisRequest,
+    ProjectAnalysisInputs, ProjectAnalysisOperations, ProjectAnalysisReport,
+    ProjectAnalysisRequest, cache::ProjectAnalysisCache,
 };
+use crate::application::{ProjectSession, pipeline::StageRun};
 
 pub(crate) fn analyze_project(
-    project: &ProjectSpec,
+    session: &ProjectSession,
     request: ProjectAnalysisRequest,
-    run_spec: Option<&RunSpec>,
-    memory_map: Option<&MemoryMap>,
-    svd: &MmioMap,
-    target: &TargetSpec,
 ) -> ProjectAnalysisReport {
     let inputs = ProjectAnalysisInputs {
-        run_spec: run_spec.is_some(),
-        memory_map: memory_map.is_some(),
+        run_spec: session.run_spec.is_some(),
+        memory_map: session.memory_map.is_some(),
     };
     let mut operations = ResolvedProjectAnalysisOperations {
-        project,
-        run_spec,
-        memory_map,
-        svd,
-        target,
+        session,
+        cache: ProjectAnalysisCache::load(&session.manifest),
+        check: request.check,
+        functions: None,
+        interfaces: None,
     };
-    super::run(project, request, inputs, &mut operations)
+    super::run(&session.project, request, inputs, &mut operations)
 }
 
 struct ResolvedProjectAnalysisOperations<'a> {
-    project: &'a ProjectSpec,
-    run_spec: Option<&'a RunSpec>,
-    memory_map: Option<&'a MemoryMap>,
-    svd: &'a MmioMap,
-    target: &'a TargetSpec,
+    session: &'a ProjectSession,
+    cache: ProjectAnalysisCache,
+    check: bool,
+    functions: Option<FunctionWorkspace>,
+    interfaces: Option<InterfaceWorkspace>,
 }
 
 impl ResolvedProjectAnalysisOperations<'_> {
     fn run_spec(&self) -> Result<&RunSpec> {
-        self.run_spec
+        self.session
+            .run_spec
+            .as_ref()
             .ok_or_else(|| crate::Error::invalid("run-spec is not configured"))
     }
 
     fn memory_map(&self) -> Result<&MemoryMap> {
-        self.memory_map
+        self.session
+            .memory_map
+            .as_ref()
             .ok_or_else(|| crate::Error::invalid("memory-map is not configured"))
+    }
+
+    fn linked_ir_inputs(&self) -> Vec<std::path::PathBuf> {
+        let project = &self.session.project;
+        let mut paths = vec![
+            self.session.manifest.clone(),
+            self.session.target_path.clone(),
+        ];
+        paths.extend(self.session.run_spec_path.iter().cloned());
+        paths.extend(self.session.svd_paths.iter().cloned());
+        if let Some(pack) = project.platform_pack.as_ref() {
+            paths.push(pack.path.clone());
+            paths.extend(pack.semantic_catalogs.iter().cloned());
+        }
+        if let Some(run_spec) = self.session.run_spec.as_ref() {
+            paths.extend(run_spec.inputs().iter().map(|input| input.path.clone()));
+        }
+        if let Some(code) = project.code.as_ref() {
+            paths.push(code.pack.clone());
+        }
+        if let Some(interfaces) = project.interfaces.as_ref() {
+            paths.push(interfaces.facts.clone());
+            paths.extend(interfaces.pack.iter().cloned());
+            paths.extend(interfaces.semantic_catalogs.iter().cloned());
+        }
+        paths
+    }
+
+    fn common_inputs(&self) -> Vec<std::path::PathBuf> {
+        vec![self.session.manifest.clone()]
+    }
+
+    fn run_inputs(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = self.common_inputs();
+        paths.extend(self.session.run_spec_path.iter().cloned());
+        if let Some(run_spec) = self.session.run_spec.as_ref() {
+            paths.extend(run_spec.inputs().iter().map(|input| input.path.clone()));
+        }
+        paths
+    }
+
+    fn target_inputs(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = vec![self.session.target_path.clone()];
+        if let Some(pack) = self.session.project.platform_pack.as_ref() {
+            paths.push(pack.path.clone());
+            paths.extend(pack.semantic_catalogs.iter().cloned());
+        }
+        paths
+    }
+
+    fn interface_workspace_inputs(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = self.target_inputs();
+        if let Some(interfaces) = self.session.project.interfaces.as_ref() {
+            paths.push(interfaces.facts.clone());
+            paths.extend(interfaces.pack.iter().cloned());
+            paths.extend(interfaces.semantic_catalogs.iter().cloned());
+        }
+        paths
+    }
+
+    fn function_workspace_inputs(&self) -> Result<Vec<std::path::PathBuf>> {
+        let mut paths = self.common_inputs();
+        if let Some(functions) = self.session.project.functions.as_ref() {
+            paths.push(functions.pack.clone());
+        }
+        paths.extend(
+            self.session
+                .project
+                .function_ir_reports()?
+                .into_iter()
+                .map(|(_, path)| path),
+        );
+        Ok(paths)
+    }
+
+    fn ensure_function_workspace(&mut self) -> Result<()> {
+        if self.functions.is_none() {
+            let paths = self
+                .session
+                .project
+                .functions
+                .as_ref()
+                .ok_or_else(|| crate::Error::invalid("[functions] is absent"))?;
+            let reports = self.session.project.function_ir_reports()?;
+            self.functions = Some(FunctionWorkspace::load(&reports, &paths.pack)?);
+        }
+        Ok(())
+    }
+
+    fn ensure_interface_workspace(&mut self) -> Result<()> {
+        if self.interfaces.is_none() {
+            let paths = self
+                .session
+                .project
+                .interfaces
+                .as_ref()
+                .ok_or_else(|| crate::Error::invalid("[interfaces] is absent"))?;
+            let pack = paths
+                .pack
+                .as_deref()
+                .ok_or_else(|| crate::Error::invalid("[interfaces].pack is absent"))?;
+            self.interfaces = Some(InterfaceWorkspace::load(
+                &paths.facts,
+                pack,
+                &paths.semantic_catalogs,
+                self.session.target.calling_convention.label(),
+                self.session
+                    .target
+                    .harness
+                    .as_deref()
+                    .map(crate::harnesses::contracts)
+                    .transpose()?,
+            )?);
+        }
+        Ok(())
+    }
+
+    fn register_workspace_inputs(&self, include_ir: bool) -> Vec<std::path::PathBuf> {
+        let mut paths = self.common_inputs();
+        paths.extend(self.session.project.memory_map.iter().cloned());
+        if let Some(registers) = self.session.project.registers.as_ref() {
+            paths.push(registers.facts.clone());
+            paths.push(registers.model.clone());
+            paths.extend(registers.api_pack.iter().cloned());
+            paths.extend(registers.lint_pack.iter().cloned());
+            paths.extend(registers.evidence_catalogs.iter().cloned());
+            if include_ir {
+                paths.extend(registers.review_ir_reports.iter().cloned());
+            }
+        }
+        paths
+    }
+
+    fn cache_hit(
+        &mut self,
+        stage: &str,
+        check: bool,
+        inputs: &[std::path::PathBuf],
+        outputs: &[std::path::PathBuf],
+    ) -> Result<bool> {
+        if check {
+            return Ok(false);
+        }
+        let current = self.cache.is_current(stage, inputs, outputs)?;
+        if current {
+            tracing::info!(cache_stage = stage, "content-addressed outputs are current");
+        }
+        Ok(current)
+    }
+
+    fn cache_record(
+        &mut self,
+        stage: &str,
+        check: bool,
+        inputs: &[std::path::PathBuf],
+        outputs: &[std::path::PathBuf],
+    ) -> Result<()> {
+        if !check {
+            self.cache.record(stage, inputs, outputs)?;
+        }
+        Ok(())
+    }
+
+    fn linked_ir_outputs(&self) -> Vec<std::path::PathBuf> {
+        self.session
+            .project
+            .ir_profiles
+            .iter()
+            .flat_map(|profile| {
+                std::iter::once(profile.output.clone()).chain(profile.pseudo_rust.iter().cloned())
+            })
+            .collect()
     }
 }
 
 impl ProjectAnalysisOperations for ResolvedProjectAnalysisOperations<'_> {
-    fn symbol_inventory(&mut self, check: bool) -> Result<bool> {
-        build_symbol_inventory(self.project, self.run_spec()?, check)
+    fn symbol_inventory(&mut self, check: bool) -> Result<StageRun> {
+        let inputs = self.run_inputs();
+        let outputs = vec![
+            self.session
+                .project
+                .symbol_inventory
+                .as_ref()
+                .expect("configured stage")
+                .output
+                .clone(),
+        ];
+        if self.cache_hit("symbol-inventory", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        build_symbol_inventory(&self.session.project, self.run_spec()?, check)?;
+        self.cache_record("symbol-inventory", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<bool> {
+    fn discover_mmio(&mut self, check: bool, jobs: usize) -> Result<StageRun> {
+        let mut inputs = self.run_inputs();
+        inputs.extend(self.session.project.memory_map.iter().cloned());
+        inputs.extend(self.session.svd_paths.iter().cloned());
+        if let Some(code) = self.session.project.code.as_ref() {
+            inputs.push(code.pack.clone());
+        }
+        let outputs = vec![
+            self.session
+                .project
+                .registers
+                .as_ref()
+                .expect("configured stage")
+                .facts
+                .clone(),
+        ];
+        if self.cache_hit("mmio-discovery", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
         discover_project_mmio(
-            self.project,
+            &self.session.project,
             self.run_spec()?,
             self.memory_map()?,
-            self.svd,
+            &self.session.mmio,
             check,
             jobs,
-        )
+        )?;
+        self.cache_record("mmio-discovery", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn discover_interfaces(&mut self, check: bool) -> Result<bool> {
-        discover_project_interfaces_operation(self.project, self.run_spec()?, check)
+    fn discover_interfaces(&mut self, check: bool) -> Result<StageRun> {
+        let mut inputs = self.run_inputs();
+        if let Some(code) = self.session.project.code.as_ref() {
+            inputs.push(code.pack.clone());
+        }
+        let outputs = vec![
+            self.session
+                .project
+                .interfaces
+                .as_ref()
+                .expect("configured stage")
+                .facts
+                .clone(),
+        ];
+        if self.cache_hit("interface-discovery", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        discover_project_interfaces_operation(&self.session.project, self.run_spec()?, check)?;
+        self.cache_record("interface-discovery", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<bool> {
+    fn build_linked_ir(&mut self, check: bool, jobs: usize) -> Result<StageRun> {
+        let inputs = self.linked_ir_inputs();
+        let outputs = self.linked_ir_outputs();
+        if self.cache_hit("linked-ir", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
         crate::application::project_ir_build::build_project_ir(
             crate::application::project_ir_build::ProjectIrBuildRequest {
                 profiles: Default::default(),
                 check,
                 jobs,
+                refresh_review_scopes: false,
             },
-            self.project,
+            &self.session.project,
             self.run_spec()?,
-            self.svd,
-            self.target,
+            &self.session.mmio,
+            &self.session.target,
         )?;
-        Ok(true)
+        self.cache_record("linked-ir", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn build_navigation(&mut self, check: bool) -> Result<bool> {
-        build_navigation(self.project, check)
+    fn build_review_scopes(&mut self, check: bool) -> Result<StageRun> {
+        let mut inputs = self.common_inputs();
+        inputs.extend(self.linked_ir_outputs());
+        if let Some(registers) = self.session.project.registers.as_ref() {
+            inputs.push(registers.facts.clone());
+        }
+        let outputs = vec![
+            self.session
+                .project
+                .review
+                .as_ref()
+                .expect("configured stage")
+                .output
+                .clone(),
+        ];
+        if self.cache_hit("review-scopes", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        build_review_scopes(&self.session.project, check)?;
+        self.cache_record("review-scopes", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        validate_code_boundaries(self.project, deny_unreviewed)
+    fn build_navigation(&mut self, check: bool) -> Result<StageRun> {
+        let mut inputs = self.common_inputs();
+        inputs.extend(self.linked_ir_outputs());
+        if let Some(symbols) = self.session.project.symbol_inventory.as_ref() {
+            inputs.push(symbols.output.clone());
+        }
+        if let Some(interfaces) = self.session.project.interfaces.as_ref() {
+            inputs.push(interfaces.facts.clone());
+        }
+        let outputs = vec![
+            self.session
+                .project
+                .navigation_index
+                .as_ref()
+                .expect("configured stage")
+                .output
+                .clone(),
+        ];
+        if self.cache_hit("navigation-index", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        build_navigation(&self.session.project, check)?;
+        self.cache_record("navigation-index", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn review_code(&mut self, check: bool) -> Result<bool> {
-        review_code_boundaries(self.project, check)
+    fn validate_code(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
+        let mut inputs = self.common_inputs();
+        let code = self
+            .session
+            .project
+            .code
+            .as_ref()
+            .expect("configured stage");
+        inputs.push(code.pack.clone());
+        inputs.push(
+            self.session
+                .project
+                .symbol_inventory
+                .as_ref()
+                .expect("dependency checked")
+                .output
+                .clone(),
+        );
+        let stage = validation_key("code-boundary-validation", deny_unreviewed);
+        if self.cache_hit(&stage, self.check, &inputs, &[])? {
+            return Ok(StageRun::Current);
+        }
+        successful(validate_code_boundaries(
+            &self.session.project,
+            deny_unreviewed,
+        )?)?;
+        self.cache_record(&stage, self.check, &inputs, &[])?;
+        Ok(StageRun::Executed)
     }
 
-    fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        validate_registers(self.project, self.memory_map, deny_unreviewed)
+    fn review_code(&mut self, check: bool) -> Result<StageRun> {
+        let mut inputs = self.common_inputs();
+        let code = self
+            .session
+            .project
+            .code
+            .as_ref()
+            .expect("configured stage");
+        inputs.push(code.pack.clone());
+        inputs.push(
+            self.session
+                .project
+                .symbol_inventory
+                .as_ref()
+                .expect("dependency checked")
+                .output
+                .clone(),
+        );
+        let outputs = code.review_output.iter().cloned().collect::<Vec<_>>();
+        if self.cache_hit("code-boundary-review", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        successful(review_code_boundaries(&self.session.project, check)?)?;
+        self.cache_record("code-boundary-review", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn review_registers(&mut self, check: bool) -> Result<bool> {
-        review_registers(self.project, check)
+    fn validate_registers(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
+        let inputs = self.register_workspace_inputs(false);
+        let stage = validation_key("register-validation", deny_unreviewed);
+        if self.cache_hit(&stage, self.check, &inputs, &[])? {
+            return Ok(StageRun::Current);
+        }
+        successful(validate_registers(
+            &self.session.project,
+            self.session.memory_map.as_ref(),
+            deny_unreviewed,
+        )?)?;
+        self.cache_record(&stage, self.check, &inputs, &[])?;
+        Ok(StageRun::Executed)
     }
 
-    fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        validate_functions(self.project, deny_unreviewed)
+    fn review_registers(&mut self, check: bool) -> Result<StageRun> {
+        let inputs = self.register_workspace_inputs(true);
+        let outputs = self
+            .session
+            .project
+            .registers
+            .as_ref()
+            .expect("configured stage")
+            .review_output
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if self.cache_hit("register-review", check, &inputs, &outputs)? {
+            return Ok(StageRun::Current);
+        }
+        successful(review_registers(&self.session.project, check)?)?;
+        self.cache_record("register-review", check, &inputs, &outputs)?;
+        Ok(StageRun::Executed)
     }
 
-    fn review_functions(&mut self, check: bool) -> Result<bool> {
-        review_functions(self.project, self.target, check)
+    fn validate_functions(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
+        let inputs = self.function_workspace_inputs()?;
+        let stage = validation_key("function-validation", deny_unreviewed);
+        if self.cache_hit(&stage, self.check, &inputs, &[])? {
+            return Ok(StageRun::Current);
+        }
+        self.ensure_function_workspace()?;
+        let summary = self
+            .functions
+            .as_ref()
+            .expect("function workspace was loaded")
+            .summary();
+        successful(
+            !deny_unreviewed
+                || (summary.unreviewed_functions == 0
+                    && summary.unreviewed_contexts == 0
+                    && summary.unreviewed_fields == 0
+                    && summary.unreviewed_type_fields == 0),
+        )?;
+        self.cache_record(&stage, self.check, &inputs, &[])?;
+        Ok(StageRun::Executed)
     }
 
-    fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<bool> {
-        validate_interfaces(self.project, self.target, deny_unreviewed)
+    fn review_functions(&mut self, check: bool) -> Result<StageRun> {
+        let mut inputs = self.function_workspace_inputs()?;
+        inputs.extend(self.interface_workspace_inputs());
+        let outputs = self
+            .session
+            .project
+            .functions
+            .as_ref()
+            .expect("configured stage")
+            .review_output
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>();
+        if self.cache_hit("function-review", check, &inputs, &outputs)? {
+            self.functions = None;
+            return Ok(StageRun::Current);
+        }
+        self.ensure_function_workspace()?;
+        let has_interface_pack = self
+            .session
+            .project
+            .interfaces
+            .as_ref()
+            .and_then(|paths| paths.pack.as_deref())
+            .is_some_and(std::path::Path::is_file);
+        if has_interface_pack {
+            self.ensure_interface_workspace()?;
+        }
+        let workspace = self
+            .functions
+            .as_ref()
+            .expect("function workspace was loaded");
+        let interface_links = self
+            .interfaces
+            .as_ref()
+            .map(|interfaces| link_reviewed_interfaces(workspace, interfaces.bindings()))
+            .transpose()?;
+        let contents = render_function_review(workspace, interface_links.as_deref())?;
+        super::super::generated_file::write_or_check(
+            &outputs[0],
+            &contents,
+            check,
+            "function review",
+        )?;
+        self.cache_record("function-review", check, &inputs, &outputs)?;
+        // Function validation and review share one heavyweight projection, but
+        // no later pipeline stage consumes it. Release it before interface
+        // validation instead of extending the cold-run memory peak.
+        self.functions = None;
+        Ok(StageRun::Executed)
     }
+
+    fn validate_interfaces(&mut self, deny_unreviewed: bool) -> Result<StageRun> {
+        let mut inputs = self.common_inputs();
+        inputs.extend(self.interface_workspace_inputs());
+        let stage = validation_key("interface-validation", deny_unreviewed);
+        if self.cache_hit(&stage, self.check, &inputs, &[])? {
+            return Ok(StageRun::Current);
+        }
+        self.ensure_interface_workspace()?;
+        let summary = self
+            .interfaces
+            .as_ref()
+            .expect("interface workspace was loaded")
+            .summary();
+        successful(
+            !deny_unreviewed || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0),
+        )?;
+        self.cache_record(&stage, self.check, &inputs, &[])?;
+        Ok(StageRun::Executed)
+    }
+}
+
+fn successful(value: bool) -> Result<StageRun> {
+    if value {
+        Ok(StageRun::Executed)
+    } else {
+        Err(crate::Error::invalid(
+            "stage reported an unsuccessful result",
+        ))
+    }
+}
+
+fn validation_key(stage: &str, deny_unreviewed: bool) -> String {
+    format!("{stage}:deny-unreviewed={deny_unreviewed}")
 }
 
 pub(crate) fn build_symbol_inventory(
@@ -263,6 +715,22 @@ pub(crate) fn build_navigation(project: &ProjectSpec, check: bool) -> Result<boo
     Ok(true)
 }
 
+pub(crate) fn build_review_scopes(project: &ProjectSpec, check: bool) -> Result<bool> {
+    let output = &project
+        .review
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("[review] is absent"))?
+        .output;
+    let document = crate::review_scopes::build_document(project)?;
+    super::super::generated_file::write_or_check(
+        output,
+        &crate::review_scopes::render_document(&document)?,
+        check,
+        "review scope report",
+    )?;
+    Ok(true)
+}
+
 pub(crate) fn validate_code_boundaries(
     project: &ProjectSpec,
     deny_unreviewed: bool,
@@ -347,95 +815,4 @@ pub(crate) fn review_registers(project: &ProjectSpec, check: bool) -> Result<boo
     )?;
     super::super::generated_file::write_or_check(output, &contents, check, "register review")?;
     Ok(true)
-}
-
-pub(crate) fn validate_functions(project: &ProjectSpec, deny_unreviewed: bool) -> Result<bool> {
-    let paths = project
-        .functions
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[functions] is absent"))?;
-    let reports = project.function_ir_reports()?;
-    let summary = FunctionWorkspace::load(&reports, &paths.pack)?.summary();
-    Ok(!deny_unreviewed
-        || (summary.unreviewed_functions == 0
-            && summary.unreviewed_contexts == 0
-            && summary.unreviewed_fields == 0
-            && summary.unreviewed_type_fields == 0))
-}
-
-pub(crate) fn review_functions(
-    project: &ProjectSpec,
-    target: &TargetSpec,
-    check: bool,
-) -> Result<bool> {
-    let paths = project
-        .functions
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[functions] is absent"))?;
-    let output = paths
-        .review_output
-        .as_deref()
-        .ok_or_else(|| crate::Error::invalid("[functions.review] is absent"))?;
-    let reports = project.function_ir_reports()?;
-    let workspace = FunctionWorkspace::load(&reports, &paths.pack)?;
-    let interface_links = reviewed_interface_links(project, target, &workspace)?;
-    let contents = render_function_review(&workspace, interface_links.as_deref())?;
-    super::super::generated_file::write_or_check(output, &contents, check, "function review")?;
-    Ok(true)
-}
-
-pub(crate) fn validate_interfaces(
-    project: &ProjectSpec,
-    target: &TargetSpec,
-    deny_unreviewed: bool,
-) -> Result<bool> {
-    let paths = project
-        .interfaces
-        .as_ref()
-        .ok_or_else(|| crate::Error::invalid("[interfaces] is absent"))?;
-    let pack = paths
-        .pack
-        .as_deref()
-        .ok_or_else(|| crate::Error::invalid("[interfaces].pack is absent"))?;
-    let workspace = InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        target.calling_convention.label(),
-        target
-            .harness
-            .as_deref()
-            .map(crate::harnesses::contracts)
-            .transpose()?,
-    )?;
-    let summary = workspace.summary();
-    Ok(!deny_unreviewed || (summary.unreviewed_anchors == 0 && summary.unreviewed_slots == 0))
-}
-
-fn reviewed_interface_links(
-    project: &ProjectSpec,
-    target: &TargetSpec,
-    functions: &FunctionWorkspace,
-) -> Result<Option<Vec<crate::function_workspace::FunctionInterfaceLink>>> {
-    let Some(paths) = project.interfaces.as_ref() else {
-        return Ok(None);
-    };
-    let Some(pack) = paths.pack.as_deref().filter(|pack| pack.is_file()) else {
-        return Ok(None);
-    };
-    let interfaces = InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        target.calling_convention.label(),
-        target
-            .harness
-            .as_deref()
-            .map(crate::harnesses::contracts)
-            .transpose()?,
-    )?;
-    Ok(Some(link_reviewed_interfaces(
-        functions,
-        interfaces.bindings(),
-    )?))
 }

@@ -12,7 +12,8 @@ use tracing_indicatif::span_ext::IndicatifSpanExt;
 use crate::{
     BitSource, BranchCondition, BranchOperation, DraftReferenceEvent, DraftReferenceFlow,
     DraftReferenceTerminator, ExpressionOperation, ExternalReturnModel, FunctionAnalysis,
-    MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver, SymbolicValue, artifact, direct,
+    MemoryAccess, MmioMap, ObservableEvent, ReferenceResolver, ReviewedExternalCall, SymbolicValue,
+    artifact, direct,
 };
 
 const MAX_CALL_GRAPH_STATES: usize = 127;
@@ -91,6 +92,7 @@ fn calls_for_trace(
 
 fn annotate_direct_semantic_calls(
     calls: &mut [LinkedCall],
+    owner: &artifact::ArtifactSymbolDefinition,
     resolver: &ReferenceResolver,
     identities: &IrIdentityCatalog,
 ) {
@@ -101,12 +103,29 @@ fn annotate_direct_semantic_calls(
         .iter_mut()
         .filter(|call| call.kind == "internal" && call.semantic_operation.is_none())
     {
-        let Some(symbol) = identities.selectable_symbol(&call.target) else {
-            continue;
-        };
-        let Some(function) = (hooks.direct_semantic)(symbol) else {
-            continue;
-        };
+        let (function, contract_source) =
+            if let Some(symbol) = identities.selectable_symbol(&call.target) {
+                let Some(function) = (hooks.direct_semantic)(symbol) else {
+                    continue;
+                };
+                (function, "reviewed-internal-function")
+            } else {
+                let Some(site) = call.site else {
+                    continue;
+                };
+                let Some((symbol, Some(_))) = resolver
+                    .relocated_calls
+                    .get(&crate::StructuralCallSite::new(owner, site))
+                else {
+                    continue;
+                };
+                let Some(function) = (hooks.direct_external_semantic)(symbol) else {
+                    continue;
+                };
+                call.kind = "external";
+                call.target = symbol.clone();
+                (function, "authoritative-link-unit-symbol")
+            };
         debug_assert_eq!(
             function.semantic.arguments.len(),
             usize::from(function.argument_count),
@@ -118,7 +137,7 @@ fn annotate_direct_semantic_calls(
         ));
         call.semantic_operation = Some(function.semantic.operation.to_owned());
         call.semantic_contract = Some(LinkedSemanticContract {
-            source: "reviewed-internal-function",
+            source: contract_source,
             id: function.id.to_owned(),
             evidence: function.evidence.to_owned(),
             event_dispatch: linked_event_dispatch_contract(function.semantic),
@@ -187,7 +206,7 @@ pub(crate) fn build_linked_ir_for_source(
             include_reachable,
         )
     };
-    summarize_linked_ir(functions)
+    summarize_linked_ir_with_jobs(functions, jobs)
 }
 
 fn build_linked_functions_for_roots(
@@ -270,7 +289,7 @@ fn build_linked_functions_for_roots(
                 } else {
                     compact_calls(direct_calls)
                 };
-                annotate_direct_semantic_calls(&mut calls, resolver, &identities);
+                annotate_direct_semantic_calls(&mut calls, &symbol, resolver, &identities);
                 let flow_kind = if trace.reference_flow.is_some() {
                     "structured"
                 } else if trace.is_reference_eligible() {
@@ -340,7 +359,7 @@ fn build_linked_functions_for_roots(
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
                 let direct_blockers = rendered_diagnostics(&direct_diagnostics);
                 let mut calls = compact_calls(direct_calls);
-                annotate_direct_semantic_calls(&mut calls, resolver, &identities);
+                annotate_direct_semantic_calls(&mut calls, &symbol, resolver, &identities);
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
@@ -496,12 +515,23 @@ fn linked_ir_progress_span(source: &str, functions: usize) -> tracing::Span {
     span
 }
 
+#[cfg(test)]
 pub(crate) fn merge_linked_ir(reports: Vec<LinkedIrReport>) -> LinkedIrReport {
+    merge_linked_ir_with_jobs(reports, 1)
+}
+
+pub(crate) fn merge_linked_ir_with_jobs(
+    mut reports: Vec<LinkedIrReport>,
+    jobs: usize,
+) -> LinkedIrReport {
+    if reports.len() == 1 {
+        return reports.pop().expect("one linked-IR report is present");
+    }
     let functions = reports
         .into_iter()
         .flat_map(|report| report.functions)
         .collect();
-    summarize_linked_ir(functions)
+    summarize_linked_ir_with_jobs(functions, jobs)
 }
 
 pub(crate) fn link_project_calls(reports: &mut [LinkedIrReport]) {

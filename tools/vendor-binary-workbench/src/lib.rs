@@ -24,6 +24,7 @@ mod project_analysis;
 mod project_ir;
 mod register_catalog;
 mod registers;
+mod review_scopes;
 mod run_spec;
 mod source_id;
 mod target;

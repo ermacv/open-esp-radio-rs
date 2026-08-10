@@ -88,6 +88,57 @@ impl ProjectRegisterWorkspace {
         })
     }
 
+    pub(crate) fn unreviewed_in_mmio_scope(&self, scope: &BTreeSet<(u32, u8)>) -> Result<usize> {
+        Ok(self.unreviewed_mmio_in_scope(scope)?.len())
+    }
+
+    pub(crate) fn unreviewed_mmio_in_scope(
+        &self,
+        scope: &BTreeSet<(u32, u8)>,
+    ) -> Result<BTreeSet<(u32, u8)>> {
+        if scope.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let identities = self.model.register_identities()?;
+        let model_keys = identities.keys().copied().collect::<BTreeSet<_>>();
+        let facts = self.facts.as_ref().ok_or_else(|| {
+            crate::Error::invalid(
+                "release-scoped register validation requires MMIO discovery facts",
+            )
+        })?;
+        validate_non_operational_functions(facts, &self.non_operational_functions)?;
+        let mut unreviewed = BTreeSet::new();
+        for &(address, width) in scope {
+            let byte_width = u64::from(width).div_ceil(8);
+            let end = u64::from(address).saturating_add(byte_width);
+            let Some(range) = facts
+                .ranges
+                .iter()
+                .find(|range| range.contains(address) && end <= u64::from(range.end))
+            else {
+                return Err(crate::Error::invalid(format!(
+                    "release scope MMIO {address:#010x}/{width} lies outside discovery ranges"
+                )));
+            };
+            if !self.owned_ranges.contains(&range.name) {
+                continue;
+            }
+            let key = (u64::from(address), u32::from(width));
+            if model_keys.contains(&key) {
+                continue;
+            }
+            let non_operational = facts
+                .registers
+                .iter()
+                .find(|fact| fact.address == address && fact.width == width)
+                .is_some_and(|fact| fact_is_non_operational(fact, &self.non_operational_functions));
+            if !non_operational {
+                unreviewed.insert((address, width));
+            }
+        }
+        Ok(unreviewed)
+    }
+
     pub(crate) fn render_svd(&self) -> Result<(String, SvdExportSummary)> {
         Ok(self.model.render_svd()?)
     }
@@ -195,6 +246,8 @@ mod tests {
             writes: 0,
             read_functions: BTreeSet::new(),
             write_functions: BTreeSet::new(),
+            read_sites: BTreeSet::new(),
+            write_sites: BTreeSet::new(),
             write_patterns: Vec::new(),
             candidate_masks: Vec::new(),
         }

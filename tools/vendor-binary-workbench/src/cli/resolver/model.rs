@@ -39,6 +39,10 @@ pub(in crate::cli) enum ResolvedInvocation {
         arguments: ProjectAnalyzeArgs,
         session: Box<ProjectSession>,
     },
+    ProjectVerify {
+        arguments: ProjectVerifyArgs,
+        session: Box<ProjectSession>,
+    },
     ProjectPublish {
         arguments: CheckArgs,
         session: Box<ProjectSession>,
@@ -111,7 +115,6 @@ pub(in crate::cli) enum RegisterWorkspaceCommand {
 
 pub(in crate::cli) enum InterfaceWorkspaceCommand {
     InitPack(OutputArgs),
-    SyncPack(CheckArgs),
     Validate(ValidationArgs),
 }
 

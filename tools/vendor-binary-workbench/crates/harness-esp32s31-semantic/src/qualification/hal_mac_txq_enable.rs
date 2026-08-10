@@ -156,16 +156,9 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
         &StructuralPointerContext::default(),
         None,
     )?;
-    let [
-        read,
-        write,
-        context_flags_read,
-        context_owner_read,
-        context_flags_write,
-    ] = trace.reference_events.as_slice()
-    else {
+    let [read, write] = trace.reference_events.as_slice() else {
         return Err(format!(
-            "{SYMBOL} must expose the indexed CONTROL transaction followed by its three queue-context effects, got {:?}",
+            "{SYMBOL} must expose the indexed CONTROL transaction before GetAccess, got {:?}",
             trace.reference_events
         )
         .into());
@@ -211,6 +204,43 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
         )
         .into());
     }
+
+    // `GetAccess(queue)` is an unresolved vendor-private ABI in the raw
+    // archive. Treat its returned `a0` as the reviewed input of the suffix,
+    // while retaining the relocation/call-list check above as the boundary
+    // evidence. This avoids inventing a concrete address or pretending that
+    // the generic backend knows the private scheduler context layout.
+    const POST_GET_ACCESS: usize = 0x2a;
+    let suffix = artifact::ArtifactSymbolDefinition {
+        member: symbol.member.clone(),
+        name: format!("{SYMBOL}::post-GetAccess"),
+        address: symbol.address + POST_GET_ACCESS as u64,
+        bytes: symbol.bytes[POST_GET_ACCESS..].to_vec(),
+        addresses_resolved: symbol.addresses_resolved,
+        memory_regions: symbol.memory_regions.clone(),
+        relocations: symbol
+            .relocations
+            .iter()
+            .filter(|relocation| relocation.address >= POST_GET_ACCESS as u32)
+            .cloned()
+            .collect(),
+    };
+    let suffix_trace = trace_binary_symbol(
+        &suffix,
+        svd,
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )?;
+    let [context_flags_read, context_owner_read, context_flags_write] =
+        suffix_trace.reference_events.as_slice()
+    else {
+        return Err(format!(
+            "{SYMBOL} post-GetAccess suffix must expose three queue-context effects, got {:?}",
+            suffix_trace.reference_events
+        )
+        .into());
+    };
     let context_flags_address = SymbolicValue::Expression {
         operation: ExpressionOperation::Add,
         left: Box::new(SymbolicValue::input(0)),
@@ -251,11 +281,11 @@ fn validate_vendor_register_slice(vendor_inventory: &Path, svd: &MmioMap) -> Res
     ) {
         return Err(format!(
             "{SYMBOL} vendor queue-context suffix no longer clears only access bits 0..1: {:?}",
-            &trace.reference_events[2..]
+            &suffix_trace.reference_events
         )
         .into());
     }
-    if trace.blockers.is_empty() && trace.reference_blockers.is_empty() {
+    if suffix_trace.blockers.is_empty() && suffix_trace.reference_blockers.is_empty() {
         return Err(format!(
             "{SYMBOL} unexpectedly became a flat leaf; the register-slice boundary must be reviewed"
         )

@@ -11,11 +11,12 @@ SVD register names.
 
 ## Normal workflow
 
-Most users need only three project commands:
+Most users need four project commands:
 
 1. `project inputs init` once per machine, to bind private artifacts;
 2. `project analyze --jobs 2`, to refresh all reverse-engineering evidence;
-3. `project analyze --check`, to reproduce and verify that evidence.
+3. `project verify`, to execute every configured vendor/Rust proof suite;
+4. `project analyze --check` and `project verify --check` in CI.
 
 The checked project deliberately omits private artifact paths. Initialize an
 ignored sibling `local.toml` from authenticated local artifacts:
@@ -27,7 +28,14 @@ cargo vendor-binary-workbench-esp32s31 project inputs init \
   --bind source-artifact:archive=/path/to/linked-libphy.elf \
   --bind source-inventory:archive=/path/to/libphy.a \
   --bind source-companion:rom=/path/to/linked-libphy.elf \
-  --bind source-companion:archive=/path/to/esp32s31_rev0_rom.elf
+  --bind source-companion:archive=/path/to/esp32s31_rev0_rom.elf \
+  --bind source-artifact:libpp=/path/to/linked-libpp.elf \
+  --bind source-inventory:libpp=/path/to/libpp.a \
+  --bind source-companion:libpp=/path/to/esp32s31_rev0_rom.elf \
+  --bind source-artifact:libnet80211=/path/to/linked-libnet80211.elf \
+  --bind source-inventory:libnet80211=/path/to/libnet80211.a \
+  --bind source-companion:libnet80211=/path/to/esp32s31_rev0_rom.elf \
+  --bind rust-artifact=/path/to/rust-trace-probes.elf
 ```
 
 `project inputs init` checks the role names, required profile sources and
@@ -46,9 +54,9 @@ cargo vendor-binary-workbench-esp32s31 project status \
 ```
 
 The missing run spec is a readiness warning rather than a configuration error.
-The status report therefore shows ready configuration, verification and
-publication phases and incomplete private-input/analysis phases until a local
-run spec is supplied.
+The status report distinguishes parseable verification suites, missing suite
+input roles and the last aggregate verification result. A configured suite is
+not reported as executed merely because its TOML files parse.
 
 Once sibling `local.toml` exists, the complete generated-evidence workflow is:
 
@@ -59,13 +67,27 @@ cargo vendor-binary-workbench-esp32s31 project analyze \
 
 cargo vendor-binary-workbench-esp32s31 project analyze --check \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench-esp32s31 project verify \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
+
+cargo vendor-binary-workbench-esp32s31 project verify --check \
+  --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
 
 This generates or checks the complete symbol inventory, the cross-report
 navigation index, MMIO/interface facts, both linked-IR profiles, and the register/function reviews, then validates the
 reviewed register, interface, and function files.
-`--jobs 2` parallelizes only independent MMIO functions; linked-IR graph
-construction remains serial. Omit it for the conservative one-worker default.
+`project verify` executes the nine checked proof boundaries with their own
+source selection, probe prefix, profiles, dispositions, baselines and gate,
+then writes one `generated/reports/verification.json`. Use `--suite ID` for a
+focused non-publishing run; partial selection never replaces the aggregate
+report. `--candidate-evidence-dir /tmp/esp32s31-evidence` writes separate
+review-only baseline candidates and refuses to overwrite accepted baselines.
+The aggregate report includes a deduplicated replacement graph connecting
+`(source, symbol)` to reviewed Rust components, probe symbols and every suite
+proof. `--jobs 2` bounds both independent MMIO function analysis and
+artifact-wide linked-IR workers. Omit it for safe automatic worker selection.
 It deliberately does not update `svd/esp32s31-radio.svd` or production PAC
 code. The public register release gate needs no private run spec:
 
@@ -206,9 +228,6 @@ cargo vendor-binary-workbench-esp32s31 interfaces discover \
 cargo vendor-binary-workbench-esp32s31 interfaces init-pack \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 
-cargo vendor-binary-workbench-esp32s31 interfaces sync-pack \
-  --project verification/vendor/targets/esp32s31/vendor-project.toml
-
 cargo vendor-binary-workbench-esp32s31 interfaces validate \
   --project verification/vendor/targets/esp32s31/vendor-project.toml
 ```
@@ -221,20 +240,26 @@ only ESP32-S31 anchors, layout versions, and slot ABI. Validation also retains
 the generic discovery evidence for each concrete call site and recovered
 argument expression; those facts do not make the reviewed semantic a runtime
 execution claim.
-Use `interfaces sync-pack --check` in CI after refreshing discovery. The write
-form changes only unreviewed observed anchors/slots; reviewed and manual
-claims remain entirely human-owned.
+The schema-v2 interface pack is a sparse overlay: generated unreviewed
+anchors/slots remain in facts and validation output, while the TOML contains
+only reviewed or ignored decisions. Vendor updates never rewrite it.
 
 The first reviewed table is the ROM Wi-Fi OS adapter v9 reached through
 `g_osi_funcs_p`: the pack records its 0x200-byte layout, version and magic
-guards, 41 observed ABI slots, 11 documented manual slots and 18 explicit
-execution-model links. `_esp_timer_get_time` remains unreviewed because its
-64-bit RV32 return ABI is not yet represented by the generic slot schema.
-Interface validation resolves 158 concrete ROM call sites against this table.
-The structural tracer still obtains its executable table registry from the
-compiled harness, so reviewed slots without an execution model can still
-appear as `unregistered-external-abi-slot` in pseudo-code; migrating that
-registry to resolved interface contracts is the next generic backend step.
+guards, 42 observed ABI slots, 12 documented manual slots and 18 explicit
+execution-model links. The ABI vocabulary includes RV32 `i64`/`u64` returns,
+so `_esp_timer_get_time` is represented without pretending that its return or
+clock effects are executable. Interface validation currently resolves 176
+concrete ROM call sites against this table.
+
+Resolved interface contracts are also the structural ABI registry used by
+project IR builds. A reviewed slot is rendered as a named opaque call even on
+an alternative CFG path that was absent from discovery facts. Only an explicit
+execution-model link permits modeled continuation; otherwise the call retains
+`unmodeled-reviewed-external-call`. The real `rom-all` profile currently has
+20 such named calls and no `unregistered-external-abi-slot`. The remaining
+cleanup is to remove layout/version/magic and ABI duplication from the compiled
+ESP32-S31 harness, leaving it responsible only for executable behavior.
 
 The same project configures a reviewed function/context workspace over both IR
 profiles. Generate IR, initialize the pack once, then edit names and roles in
@@ -252,10 +277,11 @@ cargo vendor-binary-workbench-esp32s31 functions review \
 ```
 
 The ignored `generated/reports/function-review.md` puts reviewed roles and
-context field names beside pseudo-code, exact validated interface call sites,
-recovered call arguments, exact linked-IR CFG guards when available,
-RTOS/NVS/logging/delay links, trampoline counts, and closure blockers. It is
-not source reconstruction and
+context field names beside detailed pseudo-code, exact validated interface
+call sites, recovered call arguments, linked-IR CFG guards,
+RTOS/NVS/logging/delay links, trampoline counts, and closure blockers. Omitted
+facts stay in a compact inventory; their complete pseudo-code remains in the
+per-profile reports and TUI. It is not source reconstruction and
 does not feed the register SVD. Register names remain in `registers/`, and
 external table ABI/semantics remain in `interfaces/` plus the reusable catalog.
 
@@ -324,7 +350,7 @@ cargo vendor-binary-workbench-esp32s31 verify inventory \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-interrupt.toml \
-  --no-profiles --gate regression --match-floor 3 \
+  --gate regression --match-floor 3 \
   --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-interrupt.toml
 ```
 
@@ -350,7 +376,7 @@ cargo vendor-binary-workbench-esp32s31 verify inventory \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_irq_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-power-interrupt.toml \
-  --no-profiles --gate regression --match-floor 2 \
+  --gate regression --match-floor 2 \
   --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-power-interrupt.toml
 ```
 
@@ -377,7 +403,7 @@ cargo vendor-binary-workbench-esp32s31 verify inventory \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_power_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-modem-wakeup.toml \
-  --no-profiles --gate regression --match-floor 10 \
+  --gate regression --match-floor 10 \
   --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-modem-wakeup.toml
 ```
 
@@ -486,7 +512,7 @@ cargo vendor-binary-workbench-esp32s31 verify inventory \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libpp_rx_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libpp-rx-dma.toml \
-  --no-profiles --gate regression --match-floor 9 \
+  --gate regression --match-floor 9 \
   --evidence-baseline verification/vendor/targets/esp32s31/baselines/libpp-rx-dma.toml
 ```
 
@@ -521,7 +547,7 @@ cargo vendor-binary-workbench-esp32s31 verify inventory \
   --rust-artifact "$ESP32S31_RUST_TRACE_PROBES_ELF" \
   --rust-prefix open_libnet80211_trace_ \
   --dispositions verification/vendor/targets/esp32s31/dispositions/libnet80211-sta-join.toml \
-  --no-profiles --gate regression --match-floor 1 \
+  --gate regression --match-floor 1 \
   --evidence-baseline verification/vendor/targets/esp32s31/baselines/libnet80211-sta-join.toml
 ```
 

@@ -43,6 +43,8 @@ pub(crate) enum InputRole {
     VendorCompanion,
     RustArtifact,
     RustCompanion,
+    NamedRustArtifact(SourceId),
+    NamedRustCompanion(SourceId),
     SourceArtifact(SourceId),
     SourceInventory(SourceId),
     SourceCompanion(SourceId),
@@ -65,6 +67,8 @@ impl InputRole {
                     "source-artifact" => Some(Self::SourceArtifact(source)),
                     "source-inventory" => Some(Self::SourceInventory(source)),
                     "source-companion" => Some(Self::SourceCompanion(source)),
+                    "rust-artifact" => Some(Self::NamedRustArtifact(source)),
+                    "rust-companion" => Some(Self::NamedRustCompanion(source)),
                     _ => None,
                 }
             }
@@ -78,6 +82,7 @@ impl InputRole {
                 | Self::VendorArtifact
                 | Self::VendorInventory
                 | Self::RustArtifact
+                | Self::NamedRustArtifact(_)
                 | Self::SourceArtifact(_)
                 | Self::SourceInventory(_)
         )
@@ -87,6 +92,7 @@ impl InputRole {
         match self {
             Self::VendorArtifact | Self::VendorInventory | Self::VendorCompanion => "vendor",
             Self::RustArtifact | Self::RustCompanion => "rust",
+            Self::NamedRustArtifact(source) | Self::NamedRustCompanion(source) => source.as_str(),
             Self::SourceArtifact(source)
             | Self::SourceInventory(source)
             | Self::SourceCompanion(source) => source.as_str(),
@@ -119,6 +125,8 @@ impl fmt::Display for InputRole {
             Self::VendorCompanion => formatter.write_str("vendor-companion"),
             Self::RustArtifact => formatter.write_str("rust-artifact"),
             Self::RustCompanion => formatter.write_str("rust-companion"),
+            Self::NamedRustArtifact(source) => write!(formatter, "rust-artifact:{source}"),
+            Self::NamedRustCompanion(source) => write!(formatter, "rust-companion:{source}"),
             Self::SourceArtifact(source) => write!(formatter, "source-artifact:{source}"),
             Self::SourceInventory(source) => write!(formatter, "source-inventory:{source}"),
             Self::SourceCompanion(source) => write!(formatter, "source-companion:{source}"),
@@ -262,6 +270,26 @@ mod tests {
         assert!(run.inputs[0].path.ends_with("inputs/libpp.elf"));
         assert_eq!(run.inputs[1].role.to_string(), "source-inventory:libpp");
         assert!(run.inputs[1].path.ends_with("inputs/libpp.a"));
+    }
+
+    #[test]
+    fn named_rust_artifacts_are_independent_suite_bindings() {
+        let directory = std::env::temp_dir().join(format!(
+            "open-radio-workbench-named-rust-run-spec-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("local.toml");
+        std::fs::write(
+            &path,
+            "schema = 1\n\n[[inputs]]\nrole = \"rust-artifact:phy\"\npath = \"phy.elf\"\n\n[[inputs]]\nrole = \"rust-companion:phy\"\npath = \"support.elf\"\n",
+        )
+        .unwrap();
+        let run = RunSpec::load(&path).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(run.inputs[0].role.to_string(), "rust-artifact:phy");
+        assert_eq!(run.inputs[1].role.to_string(), "rust-companion:phy");
+        assert_ne!(run.inputs[0].role, InputRole::RustArtifact);
     }
 
     #[test]

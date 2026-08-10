@@ -6,6 +6,7 @@ pub(super) struct StructuralTraceState {
     pub(super) values: [SymbolicValue; 32],
     pub(super) floating_values: [SymbolicValue; 32],
     pub(super) events: Vec<ObservableEvent>,
+    pub(super) located_events: Vec<LocatedObservableEvent>,
     pub(super) reference_events: Vec<DraftReferenceEvent>,
     pub(super) blockers: Vec<String>,
     pub(super) reference_blockers: Vec<String>,
@@ -54,6 +55,7 @@ impl StructuralTraceState {
             values,
             floating_values: core::array::from_fn(|_| SymbolicValue::Unknown),
             events: Vec::new(),
+            located_events: Vec::new(),
             reference_events: Vec::new(),
             blockers: Vec::new(),
             reference_blockers: Vec::new(),
@@ -79,6 +81,7 @@ impl StructuralTraceState {
     pub(super) fn checkpoint(&self) -> StructuralCheckpoint {
         StructuralCheckpoint {
             events_len: self.events.len(),
+            located_events_len: self.located_events.len(),
             reference_events_len: self.reference_events.len(),
             blockers_len: self.blockers.len(),
             reference_blockers_len: self.reference_blockers.len(),
@@ -93,6 +96,7 @@ impl StructuralTraceState {
 
     pub(super) fn restore_checkpoint(&mut self, checkpoint: StructuralCheckpoint) {
         self.events.truncate(checkpoint.events_len);
+        self.located_events.truncate(checkpoint.located_events_len);
         self.reference_events
             .truncate(checkpoint.reference_events_len);
         self.blockers.truncate(checkpoint.blockers_len);
@@ -131,6 +135,7 @@ impl StructuralTraceState {
         FunctionAnalysis {
             symbol: symbol.name.clone(),
             events: self.events,
+            located_events: self.located_events,
             reference_events: self.reference_events,
             reference_dependencies: Vec::new(),
             blockers: self.blockers,

@@ -30,6 +30,12 @@ pub(crate) struct RegisterWritePatternFact {
     pub(crate) functions: BTreeSet<String>,
 }
 
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct RegisterAccessSiteFact {
+    pub(crate) function: String,
+    pub(crate) pc: u32,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RegisterFact {
     pub(crate) address: u32,
@@ -39,6 +45,8 @@ pub(crate) struct RegisterFact {
     pub(crate) writes: usize,
     pub(crate) read_functions: BTreeSet<String>,
     pub(crate) write_functions: BTreeSet<String>,
+    pub(crate) read_sites: BTreeSet<RegisterAccessSiteFact>,
+    pub(crate) write_sites: BTreeSet<RegisterAccessSiteFact>,
     pub(crate) write_patterns: Vec<RegisterWritePatternFact>,
     pub(crate) candidate_masks: Vec<u32>,
 }
@@ -102,6 +110,22 @@ impl RegisterFacts {
                     writes: register.writes,
                     read_functions: register.read_functions.into_iter().collect(),
                     write_functions: register.write_functions.into_iter().collect(),
+                    read_sites: register
+                        .read_sites
+                        .into_iter()
+                        .map(|site| RegisterAccessSiteFact {
+                            function: site.function,
+                            pc: site.pc,
+                        })
+                        .collect(),
+                    write_sites: register
+                        .write_sites
+                        .into_iter()
+                        .map(|site| RegisterAccessSiteFact {
+                            function: site.function,
+                            pc: site.pc,
+                        })
+                        .collect(),
                     write_patterns,
                     candidate_masks,
                 }
@@ -140,6 +164,20 @@ impl RegisterFacts {
         }
         let mut keys = BTreeSet::new();
         for register in &self.registers {
+            if register
+                .read_sites
+                .iter()
+                .any(|site| !register.read_functions.contains(&site.function))
+                || register
+                    .write_sites
+                    .iter()
+                    .any(|site| !register.write_functions.contains(&site.function))
+            {
+                return Err(crate::Error::invalid(format!(
+                    "MMIO register {:#010x}/{} has an access site whose function is absent from the matching function inventory",
+                    register.address, register.width
+                )));
+            }
             if !matches!(register.width, 8 | 16 | 32) {
                 return Err(crate::Error::invalid(format!(
                     "MMIO fact at {:#010x} has unsupported width {}",
@@ -226,7 +264,7 @@ mod tests {
         std::fs::write(
             &path,
             r#"{
-  "schema_version": 4,
+  "schema_version": 5,
   "command": "mmio discover",
   "analysis_mode": "best-effort",
   "access_count_mode": "maximum-per-path",
@@ -234,7 +272,7 @@ mod tests {
   "code_selection": {"symbols":"all","symbol_prefix":""},
   "ranges": [{"name":"radio","start":"0x1000","end_exclusive":"0x2000"}],
   "artifacts": [],
-  "registers": [{"address":"0x1010","width":32,"name":"UNMAPPED","reads":1,"writes":2,"read_functions":["rom:read"],"write_functions":["lib:member.o:write"],"write_patterns":[{"occurrences":2,"modified_mask":"0x3","candidate_bit_ranges":"0-1","preserved_mask":"0xfffffffc","inverted_mask":"0x0","forced_zero_mask":"0x0","forced_one_mask":"0x1","read_derived_mask":"0x0","dynamic_mask":"0x2","functions":["lib:member.o:write"]}]}],
+  "registers": [{"address":"0x1010","width":32,"name":"UNMAPPED","reads":1,"writes":2,"read_functions":["rom:read"],"write_functions":["lib:member.o:write"],"read_sites":[{"function":"rom:read","pc":"0x00001020"}],"write_sites":[{"function":"lib:member.o:write","pc":"0x00001024"}],"write_patterns":[{"occurrences":2,"modified_mask":"0x3","candidate_bit_ranges":"0-1","preserved_mask":"0xfffffffc","inverted_mask":"0x0","forced_zero_mask":"0x0","forced_one_mask":"0x1","read_derived_mask":"0x0","dynamic_mask":"0x2","functions":["lib:member.o:write"]}]}],
   "diagnostics": []
 }"#,
         )
@@ -248,6 +286,10 @@ mod tests {
         );
         assert_eq!(facts.registers[0].write_patterns[0].occurrences, 2);
         assert_eq!(facts.registers[0].write_patterns[0].dynamic_mask, 2);
+        assert_eq!(
+            facts.registers[0].read_sites.iter().next().unwrap().pc,
+            0x1020
+        );
         assert_eq!(facts.ranges[0].name, "radio");
         assert!(facts.ranges[0].contains(0x1010));
     }
@@ -276,6 +318,8 @@ mod tests {
                     writes: 0,
                     read_functions: ["read_radio".to_owned()].into(),
                     write_functions: BTreeSet::new(),
+                    read_sites: BTreeSet::new(),
+                    write_sites: BTreeSet::new(),
                     write_patterns: Vec::new(),
                     candidate_masks: Vec::new(),
                 },
@@ -287,6 +331,8 @@ mod tests {
                     writes: 0,
                     read_functions: BTreeSet::new(),
                     write_functions: BTreeSet::new(),
+                    read_sites: BTreeSet::new(),
+                    write_sites: BTreeSet::new(),
                     write_patterns: Vec::new(),
                     candidate_masks: Vec::new(),
                 },

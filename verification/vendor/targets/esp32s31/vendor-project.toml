@@ -37,6 +37,24 @@ entry-contract = "esp32s31-phy-registered"
 output = "generated/findings/archive-all.ir.json"
 pseudo-rust = "generated/reports/archive-all.pseudo.rs"
 
+[[analysis.ir]]
+id = "libpp-all"
+sources = ["libpp"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/libpp-all.ir.json"
+pseudo-rust = "generated/reports/libpp-all.pseudo.rs"
+
+[[analysis.ir]]
+id = "libnet80211-all"
+sources = ["libnet80211"]
+roots = "all"
+include-reachable = true
+entry-contract = "none"
+output = "generated/findings/libnet80211-all.ir.json"
+pseudo-rust = "generated/reports/libnet80211-all.pseudo.rs"
+
 [registers]
 facts = "generated/findings/mmio.json"
 model = "registers/device.toml"
@@ -51,12 +69,20 @@ output = "generated/reports/register-review.md"
 linked-ir = [
     "generated/findings/rom-all.ir.json",
     "generated/findings/archive-all.ir.json",
+    "generated/findings/libpp-all.ir.json",
+    "generated/findings/libnet80211-all.ir.json",
 ]
 # `phy_reg_check` is a diagnostic register dump: it reads every word in broad
 # MMIO windows and prints the values without using them to control hardware.
 # Preserve those raw observations, but do not make diagnostic-only addresses
 # part of the release register-model review debt.
-non-operational-functions = ["archive:phy_reg_check"]
+# `wdev_record_rx_linked_list` snapshots descriptor/MMIO state into the debug
+# ring consumed by `wdev_dump_rx_linked_list`; its two otherwise unknown reads
+# at 0x20104090/0x20104094 do not control the RX path.
+non-operational-functions = [
+    "archive:phy_reg_check",
+    "libpp:wdev_record_rx_linked_list",
+]
 
 [registers.svd]
 output = "../../../../svd/esp32s31-radio.svd"
@@ -95,16 +121,170 @@ pack = "interfaces/reviewed.toml"
 
 [functions]
 pack = "functions/reviewed.toml"
-profiles = ["rom-all", "archive-all"]
+profiles = ["rom-all", "archive-all", "libpp-all", "libnet80211-all"]
 
 [functions.review]
 output = "generated/reports/function-review.md"
 
-[verification]
-rust-prefix = "open_phy_trace_"
-profiles = [
-    "profiles/compiled-equivalence.toml",
-    "profiles/libpp-sta-tsf-wakeup.toml",
-    "profiles/libpp-tx-dma.toml",
-    "profiles/rom-sta-tsf-snapshot.toml",
+# Human-sized review surfaces over artifact-wide IR. Roots may use the stable
+# SOURCE:SYMBOL shorthand; the workbench resolves the concrete archive identity
+# and follows only calls present in the selected profiles.
+[review]
+output = "generated/findings/review-scopes.json"
+release-scopes = [
+    "phy-init",
+    "wifi-rx",
+    "wifi-tx",
+    "wifi-interrupts",
+    "station-state",
 ]
+
+[[review.scopes]]
+id = "phy-init"
+profiles = ["archive-all"]
+roots = ["archive:phy_bb_init", "archive:register_chipv7_phy"]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-rx"
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_rx_disable",
+    "libpp:hal_mac_rx_enable",
+    "libpp:wDev_AppendRxBlocks",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-tx"
+profiles = ["libpp-all"]
+roots = [
+    "libpp:hal_mac_txq_enable",
+    "libpp:hal_mac_txq_disable",
+    "libpp:hal_mac_tx_config_edca",
+    "libpp:hal_mac_tx_get_blockack",
+]
+include-reachable = true
+
+[[review.scopes]]
+id = "wifi-interrupts"
+profiles = ["libpp-all"]
+roots = ["libpp:wDev_ProcessFiq"]
+include-reachable = true
+
+[[review.scopes]]
+id = "station-state"
+profiles = ["libnet80211-all"]
+roots = ["libnet80211:ieee80211_sta_new_state"]
+include-reachable = true
+
+[verification]
+report = "generated/reports/verification.json"
+
+[[verification.suites]]
+id = "phy"
+sources = ["archive", "rom"]
+source-prefixes = ["rom=phy_"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_phy_trace_"
+profiles = ["profiles/compiled-equivalence.toml"]
+dispositions = ["dispositions/phy.toml"]
+baselines = ["baselines/phy.toml"]
+gate = "regression"
+match-floor = 104
+
+[[verification.suites]]
+id = "libpp-interrupt"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-interrupt.toml"]
+baselines = ["baselines/libpp-interrupt.toml"]
+gate = "regression"
+match-floor = 3
+
+[[verification.suites]]
+id = "libpp-power-interrupt"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_irq_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-power-interrupt.toml"]
+baselines = ["baselines/libpp-power-interrupt.toml"]
+gate = "regression"
+match-floor = 2
+
+[[verification.suites]]
+id = "libpp-modem-wakeup"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-modem-wakeup.toml"]
+baselines = ["baselines/libpp-modem-wakeup.toml"]
+gate = "regression"
+match-floor = 10
+
+[[verification.suites]]
+id = "libpp-sta-tsf-wakeup"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_power_tsf_trace_"
+profiles = ["profiles/libpp-sta-tsf-wakeup.toml"]
+dispositions = ["dispositions/libpp-sta-tsf-wakeup.toml"]
+baselines = ["baselines/libpp-sta-tsf-wakeup.toml"]
+gate = "regression"
+match-floor = 1
+
+[[verification.suites]]
+id = "rom-sta-tsf-snapshot"
+sources = ["rom"]
+source-prefixes = ["rom=hal_get_sta_tsf"]
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_rom_power_tsf_trace_"
+profiles = ["profiles/rom-sta-tsf-snapshot.toml"]
+dispositions = ["dispositions/rom-sta-tsf-snapshot.toml"]
+baselines = ["baselines/rom-sta-tsf-snapshot.toml"]
+gate = "regression"
+match-floor = 1
+
+[[verification.suites]]
+id = "libpp-tx-dma"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_tx_trace_"
+profiles = ["profiles/libpp-tx-dma.toml"]
+dispositions = ["dispositions/libpp-tx-dma.toml"]
+baselines = ["baselines/libpp-tx-dma.toml"]
+gate = "regression"
+match-floor = 7
+
+[[verification.suites]]
+id = "libpp-rx-dma"
+sources = ["libpp"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libpp_rx_trace_"
+profiles = []
+dispositions = ["dispositions/libpp-rx-dma.toml"]
+baselines = ["baselines/libpp-rx-dma.toml"]
+gate = "regression"
+match-floor = 9
+
+[[verification.suites]]
+id = "libnet80211-sta-join"
+sources = ["libnet80211"]
+source-prefixes = []
+rust-artifact-role = "rust-artifact"
+rust-prefix = "open_libnet80211_trace_"
+profiles = []
+dispositions = ["dispositions/libnet80211-sta-join.toml"]
+baselines = ["baselines/libnet80211-sta-join.toml"]
+gate = "regression"
+match-floor = 1

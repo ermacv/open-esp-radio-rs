@@ -22,3 +22,31 @@ artifact-sha256 = "2aa7a828f9a0ff6fe92026545e9ef4cae8867bf1b12367c0dabe9bc4f95d6
 [[inputs]]
 source = "rom"
 artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "libpp"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "libpp"
+artifact-sha256 = "f863c65c3ed89cf5d2a2cbe0d6bca3b783ca35788a704bb68e13958e4b94958e"
+
+[[inputs]]
+source = "libpp"
+artifact-sha256 = "fe37745f692a55bc930cdd7597b5f0c66c470ba208af9d109badc3801aa0a1b9"
+
+[[inputs]]
+source = "libnet80211"
+artifact-sha256 = "92550813de20ed0d51110dbd72b646e891a86a8a2f81fa53714ebf2ebf9c8f40"
+
+[[inputs]]
+source = "libnet80211"
+artifact-sha256 = "d01bde81d9b3806e37ef1d9ac3b58af4f5b3d91eeef4f44d20e79d6a9f227542"
+
+[[inputs]]
+source = "libnet80211"
+artifact-sha256 = "f850d4044a89888856a8d2ee50835e37c61f4dd92045ba4ea4dfa1b2cd7d77e8"
+
+[[inputs]]
+source = "rust"
+artifact-sha256 = "02f1892aee1f7b62f88ac886a858bbdf7fde0f76381cbd52726864959b7682e2"

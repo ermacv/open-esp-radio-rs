@@ -1,0 +1,248 @@
+//! Content-addressed cache for expensive project-analysis stages.
+//!
+//! This is derived local state, never project configuration. A cache hit is
+//! accepted only when the tool, every declared input and every generated
+//! output still have exactly the recorded content digest.
+
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
+
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+
+use crate::Result;
+
+const CACHE_SCHEMA: u32 = 1;
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CacheDocument {
+    schema: u32,
+    stages: BTreeMap<String, CacheStage>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct CacheStage {
+    signature: String,
+    outputs: BTreeMap<String, String>,
+}
+
+pub(super) struct ProjectAnalysisCache {
+    path: PathBuf,
+    tool_digest: String,
+    document: CacheDocument,
+    digests: BTreeMap<PathBuf, DigestMemo>,
+}
+
+struct DigestMemo {
+    len: u64,
+    modified: Option<std::time::SystemTime>,
+    value: String,
+}
+
+impl ProjectAnalysisCache {
+    pub(super) fn load(project_manifest: &Path) -> Self {
+        let root = project_manifest.parent().unwrap_or_else(|| Path::new("."));
+        let path = root.join("generated/.project-analyze-cache.json");
+        let document = fs::read_to_string(&path)
+            .ok()
+            .and_then(|contents| serde_json::from_str::<CacheDocument>(&contents).ok())
+            .filter(|document| document.schema == CACHE_SCHEMA)
+            .unwrap_or_else(|| CacheDocument {
+                schema: CACHE_SCHEMA,
+                stages: BTreeMap::new(),
+            });
+        let tool_digest = std::env::current_exe()
+            .ok()
+            .and_then(|path| crate::artifact_sha256(&path).ok())
+            .unwrap_or_else(|| format!("package:{}", env!("CARGO_PKG_VERSION")));
+        Self {
+            path,
+            tool_digest,
+            document,
+            digests: BTreeMap::new(),
+        }
+    }
+
+    pub(super) fn is_current(
+        &mut self,
+        stage: &str,
+        inputs: &[PathBuf],
+        outputs: &[PathBuf],
+    ) -> Result<bool> {
+        if outputs.iter().any(|path| !path.is_file()) {
+            return Ok(false);
+        }
+        let signature = self.signature(stage, inputs)?;
+        let Some(cached) = self.document.stages.get(stage) else {
+            return Ok(false);
+        };
+        if cached.signature != signature || cached.outputs.len() != outputs.len() {
+            return Ok(false);
+        }
+        let expected_outputs = cached.outputs.clone();
+        for path in outputs {
+            let key = path_key(path);
+            let Some(expected) = expected_outputs.get(&key) else {
+                return Ok(false);
+            };
+            if &self.digest(path)? != expected {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub(super) fn record(
+        &mut self,
+        stage: &str,
+        inputs: &[PathBuf],
+        outputs: &[PathBuf],
+    ) -> Result<()> {
+        let signature = self.signature(stage, inputs)?;
+        let mut output_digests = BTreeMap::new();
+        for path in outputs {
+            self.digests.remove(path);
+            output_digests.insert(path_key(path), self.digest(path)?);
+        }
+        self.document.stages.insert(
+            stage.to_owned(),
+            CacheStage {
+                signature,
+                outputs: output_digests,
+            },
+        );
+        if let Some(parent) = self.path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(
+            &self.path,
+            serde_json::to_string_pretty(&self.document)? + "\n",
+        )?;
+        Ok(())
+    }
+
+    fn signature(&mut self, stage: &str, inputs: &[PathBuf]) -> Result<String> {
+        let mut inputs = inputs.to_vec();
+        inputs.sort();
+        inputs.dedup();
+        let mut digest = Sha256::new();
+        digest.update(b"vendor-binary-workbench-project-stage-v1\0");
+        digest.update(stage.as_bytes());
+        digest.update([0]);
+        digest.update(self.tool_digest.as_bytes());
+        for path in inputs {
+            digest.update([0]);
+            digest.update(path_key(&path).as_bytes());
+            digest.update([0]);
+            let content = if path.is_file() {
+                self.digest(&path)?
+            } else {
+                "<missing>".to_owned()
+            };
+            digest.update(content.as_bytes());
+        }
+        Ok(format!("{:x}", digest.finalize()))
+    }
+
+    fn digest(&mut self, path: &Path) -> Result<String> {
+        let metadata = fs::metadata(path)?;
+        let modified = metadata.modified().ok();
+        if let Some(existing) = self.digests.get(path)
+            && existing.len == metadata.len()
+            && existing.modified == modified
+        {
+            return Ok(existing.value.clone());
+        }
+        let value = crate::artifact_sha256(path)?;
+        self.digests.insert(
+            path.to_owned(),
+            DigestMemo {
+                len: metadata.len(),
+                modified,
+                value: value.clone(),
+            },
+        );
+        Ok(value)
+    }
+}
+
+fn path_key(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cache_requires_unchanged_inputs_and_outputs() {
+        let directory = std::env::temp_dir().join(format!(
+            "vendor-workbench-analysis-cache-{}",
+            std::process::id()
+        ));
+        let manifest = directory.join("vendor-project.toml");
+        let input = directory.join("input.bin");
+        let output = directory.join("generated/output.json");
+        fs::create_dir_all(output.parent().unwrap()).unwrap();
+        fs::write(&manifest, "schema = 1\n").unwrap();
+        fs::write(&input, "input-a").unwrap();
+        fs::write(&output, "output-a").unwrap();
+
+        let mut cache = ProjectAnalysisCache::load(&manifest);
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+        cache
+            .record(
+                "linked-ir",
+                std::slice::from_ref(&input),
+                std::slice::from_ref(&output),
+            )
+            .unwrap();
+        assert!(
+            cache
+                .is_current(
+                    "linked-ir",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+
+        fs::write(&output, "output-b").unwrap();
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+        fs::write(&output, "output-a").unwrap();
+        fs::write(&input, "input-b").unwrap();
+        cache.digests.clear();
+        assert!(
+            !cache
+                .is_current(
+                    "linked-ir",
+                    std::slice::from_ref(&input),
+                    std::slice::from_ref(&output)
+                )
+                .unwrap()
+        );
+
+        fs::remove_dir_all(directory).unwrap();
+    }
+}

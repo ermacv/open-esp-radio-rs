@@ -9,6 +9,7 @@ use crate::*;
 
 mod body_identity;
 mod direct_semantic;
+pub(crate) use direct_semantic::direct_external_semantic_function;
 mod i2c;
 mod intrinsics;
 mod rf;
@@ -37,6 +38,7 @@ pub(super) fn reference_intrinsic_trace(
         return Some(FunctionAnalysis {
             symbol: symbol.name.clone(),
             events: Vec::new(),
+            located_events: Vec::new(),
             reference_events: Vec::new(),
             reference_dependencies: Vec::new(),
             blockers: Vec::new(),
@@ -67,6 +69,7 @@ pub(super) fn reference_intrinsic_trace(
         return Some(FunctionAnalysis {
             symbol: symbol.name.clone(),
             events: Vec::new(),
+            located_events: Vec::new(),
             reference_events: vec![DraftReferenceEvent::DelayMicros {
                 micros: SymbolicValue::input(0),
             }],

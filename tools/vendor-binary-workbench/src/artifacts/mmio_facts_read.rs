@@ -1,4 +1,4 @@
-//! Typed consumer projection for schema-v4 MMIO discovery facts.
+//! Typed consumer projection for schema-v5 MMIO discovery facts.
 
 #![allow(
     dead_code,
@@ -73,7 +73,17 @@ pub(crate) struct StoredRegisterFact {
     pub(crate) writes: usize,
     pub(crate) read_functions: Vec<String>,
     pub(crate) write_functions: Vec<String>,
+    pub(crate) read_sites: Vec<StoredAccessSite>,
+    pub(crate) write_sites: Vec<StoredAccessSite>,
     pub(crate) write_patterns: Vec<StoredWritePattern>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct StoredAccessSite {
+    pub(crate) function: String,
+    #[serde(deserialize_with = "hex_u32")]
+    pub(crate) pc: u32,
 }
 
 #[derive(Debug, Deserialize)]

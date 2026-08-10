@@ -7,7 +7,7 @@ use super::pipeline::{
 };
 use crate::{
     MemoryMap, Result,
-    project::RegisterWorkspacePaths,
+    project::{ProjectSpec, RegisterWorkspacePaths},
     registers::{
         PreparedPublication, ProjectRegisterWorkspace, prepare_project_bindings,
         prepare_project_pac, prepare_project_svd, validate_pac_api, validate_register_evidence,
@@ -63,11 +63,20 @@ struct PublicationStage<T> {
 }
 
 pub(crate) fn execute(
-    paths: &RegisterWorkspacePaths,
+    project: &ProjectSpec,
     memory_map: Option<&MemoryMap>,
     request: ProjectPublicationRequest,
 ) -> Result<ProjectPublicationReport> {
-    let mut operations = RegisterPublicationOperations { paths, memory_map };
+    let paths = project
+        .registers
+        .as_ref()
+        .ok_or_else(|| crate::Error::invalid("project publish requires [registers]"))?;
+    let release_mmio = crate::review_scopes::load_for_project(project)?.release_mmio();
+    let mut operations = RegisterPublicationOperations {
+        paths,
+        memory_map,
+        release_mmio,
+    };
     run_with_operations(paths, request, &mut operations)
 }
 
@@ -136,6 +145,7 @@ fn run_with_operations<O: ProjectPublicationOperations>(
 struct RegisterPublicationOperations<'a> {
     paths: &'a RegisterWorkspacePaths,
     memory_map: Option<&'a MemoryMap>,
+    release_mmio: std::collections::BTreeSet<(u32, u8)>,
 }
 
 impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
@@ -143,24 +153,36 @@ impl ProjectPublicationOperations for RegisterPublicationOperations<'_> {
 
     fn validate_registers(&mut self) -> Result<bool> {
         let workspace = ProjectRegisterWorkspace::load(self.paths)?;
-        let summary = workspace.summary()?;
+        let unreviewed = workspace.unreviewed_mmio_in_scope(&self.release_mmio)?;
         validate_pac_api(self.paths)?;
         validate_register_lints(self.paths)?;
         validate_register_memory_map(self.paths, self.memory_map)?;
         validate_register_evidence(self.paths, self.memory_map)?;
-        Ok(summary.unreviewed == 0)
+        if !unreviewed.is_empty() {
+            return Err(crate::Error::invalid(format!(
+                "release scopes contain {} unreviewed MMIO register(s): {}; edit {} and rerun project analyze",
+                unreviewed.len(),
+                unreviewed
+                    .iter()
+                    .map(|(address, width)| format!("{address:#010x}/{width}"))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                self.paths.model.display()
+            )));
+        }
+        Ok(true)
     }
 
     fn prepare_svd(&mut self) -> Result<Self::Prepared> {
-        prepare_project_svd(self.paths)
+        prepare_project_svd(self.paths, &self.release_mmio)
     }
 
     fn prepare_pac(&mut self) -> Result<Self::Prepared> {
-        prepare_project_pac(self.paths)
+        prepare_project_pac(self.paths, &self.release_mmio)
     }
 
     fn prepare_bindings(&mut self) -> Result<Self::Prepared> {
-        prepare_project_bindings(self.paths)
+        prepare_project_bindings(self.paths, &self.release_mmio)
     }
 
     fn publish(&mut self, publication: &Self::Prepared, check: bool) -> Result<bool> {

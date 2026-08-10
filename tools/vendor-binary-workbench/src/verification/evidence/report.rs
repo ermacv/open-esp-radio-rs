@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::super::{VerificationCommandReport, dispositions};
-use super::EvidenceSet;
+use super::{EvidenceIdentity, EvidenceSet};
 use crate::{Result, TargetSpec, VerificationGate, VerifySummary};
 
 #[derive(Serialize)]
@@ -71,7 +71,8 @@ pub(crate) struct VerificationArtifactDocument {
 pub(crate) struct VerificationEvidenceDocument {
     pub(crate) source: String,
     pub(crate) symbol: String,
-    pub(crate) kind: String,
+    #[serde(flatten)]
+    pub(crate) identity: EvidenceIdentity,
 }
 
 #[derive(Serialize)]
@@ -83,7 +84,7 @@ pub(crate) struct VerificationCoreReport {
     summary: VerificationSummaryDocument,
     qualification_gaps: Vec<QualificationGapDocument>,
     artifacts: Vec<VerificationArtifactDocument>,
-    evidence: Vec<VerificationEvidenceDocument>,
+    pub(crate) evidence: Vec<VerificationEvidenceDocument>,
 }
 
 pub(crate) struct VerificationCoreInputs<'a, S> {
@@ -152,7 +153,8 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
                 symbol: gap.symbol.clone(),
                 rust_component: gap
                     .rust_component
-                    .clone()
+                    .as_ref()
+                    .map(|component| component.label().to_owned())
                     .unwrap_or_else(|| "missing".to_owned()),
                 blocked_by: gap
                     .qualification_blockers
@@ -176,18 +178,20 @@ pub(crate) fn verification_core_report<S: AsRef<str>>(
             .collect::<Result<Vec<_>>>()?,
         evidence: evidence
             .iter()
-            .map(|((source, symbol), kind)| VerificationEvidenceDocument {
-                source: source.clone(),
-                symbol: symbol.clone(),
-                kind: kind.clone(),
-            })
+            .map(
+                |((source, symbol), identity)| VerificationEvidenceDocument {
+                    source: source.clone(),
+                    symbol: symbol.clone(),
+                    identity: identity.clone(),
+                },
+            )
             .collect(),
     })
 }
 
 pub(crate) fn write_verification_json_report(
     path: &Path,
-    report: &VerificationCommandReport<'_>,
+    report: &VerificationCommandReport,
 ) -> Result<()> {
     fs::write(path, serde_json::to_string_pretty(report)? + "\n")?;
     Ok(())

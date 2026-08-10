@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::Path,
+    path::{Component, Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{Result, artifact_sha256, parse_u32};
 
-pub(super) const SCHEMA_VERSION: u32 = 1;
+pub(super) const SCHEMA_VERSION: u32 = 2;
 pub(super) const IDENTITY_SCHEME: &str = "artifact-sha256-member-symbol-object-address-v1";
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -140,13 +140,55 @@ pub(crate) struct NavigationDocument {
     pub(super) summary: SummaryDocument,
 }
 
-pub(super) fn input(kind: &'static str, id: String, path: &Path) -> Result<InputDocument> {
+pub(super) fn input(
+    kind: &'static str,
+    id: String,
+    path: &Path,
+    navigation_output: &Path,
+) -> Result<InputDocument> {
+    let base = navigation_output.parent().unwrap_or_else(|| Path::new("."));
     Ok(InputDocument {
         kind: kind.to_owned(),
         id,
-        path: path.display().to_string(),
+        path: relative_path(base, path)?.display().to_string(),
         sha256: artifact_sha256(path)?,
     })
+}
+
+fn relative_path(base: &Path, target: &Path) -> Result<PathBuf> {
+    let base = base.components().collect::<Vec<_>>();
+    let target = target.components().collect::<Vec<_>>();
+    let common = base
+        .iter()
+        .zip(&target)
+        .take_while(|(left, right)| left == right)
+        .count();
+    let base_is_absolute = matches!(
+        base.first(),
+        Some(Component::RootDir | Component::Prefix(_))
+    );
+    let target_is_absolute = matches!(
+        target.first(),
+        Some(Component::RootDir | Component::Prefix(_))
+    );
+    if base_is_absolute != target_is_absolute || (base_is_absolute && common == 0) {
+        return Err(crate::Error::invalid(
+            "navigation index and input do not share a filesystem root",
+        ));
+    }
+    let mut output = PathBuf::new();
+    for _ in &base[common..] {
+        output.push(Component::ParentDir.as_os_str());
+    }
+    for component in &target[common..] {
+        output.push(component.as_os_str());
+    }
+    if output.as_os_str().is_empty() {
+        return Err(crate::Error::invalid(
+            "navigation input cannot be the navigation index directory",
+        ));
+    }
+    Ok(output)
 }
 
 pub(super) fn address(value: &str, context: &str) -> Result<u32> {

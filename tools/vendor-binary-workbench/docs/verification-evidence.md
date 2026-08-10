@@ -6,7 +6,7 @@
 The human view is a renderer over that model; JSON and JSONL serialize the same
 data. Diagnostics and tracing use stderr and cannot corrupt stdout.
 
-`verify inventory --json-report PATH` persists the complete schema-v4 command
+`verify inventory --json-report PATH` persists the complete schema-v6 command
 report, including:
 
 - target and gate identity;
@@ -32,12 +32,18 @@ domain, observations, scripted responses, reachability and execution sources.
 The baseline is strict TOML:
 
 ```toml
-schema = 1
+schema = 2
 
 [[evidence]]
 source = "rom"
 symbol = "phy_disable_agc"
-kind = "effect-contract:<digest>"
+kind = "effect-contract/exact-effects-v1"
+digest = "<aggregate-sha256>"
+
+[evidence.components]
+binding = "<sha256>"
+effect-comparator = "<sha256>"
+policy = "<sha256>"
 ```
 
 The baseline is not rewritten during protected verification. First persist the
@@ -64,7 +70,7 @@ diff -u \
   /tmp/esp32s31.candidate.toml
 ```
 
-`verify evidence` needs only the public project, the persisted schema-v4
+`verify evidence` needs only the public project, the persisted schema-v6
 report and its baseline. It does not load vendor artifacts, the run spec or an
 analysis backend. Entries are sorted by source and symbol. The command refuses
 to overwrite either the accepted baseline or its source report, and reports
@@ -78,7 +84,10 @@ report are provenance, not an authenticity decision. Protected CI must
 authenticate inputs before invoking the tool and must not execute untrusted
 pull-request code with proprietary oracle access.
 
-The evidence digest changes whenever a profile, policy, binding, generated
-reference, adapter, comparator, execution engine or another registered proof
-source changes. The correct response is review, not silently editing the
+The aggregate evidence digest changes whenever a profile, policy, binding,
+generated reference, adapter, comparator, execution engine or another
+registered proof source changes. Schema v2 also records each named component
+digest, so review identifies the exact inputs that changed instead of exposing
+only one opaque aggregate hash. Schema v1 baselines are rejected; there is no
+compatibility reader. The correct response is review, not silently editing the
 accepted baseline in the protected job.

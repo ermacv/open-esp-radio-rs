@@ -64,7 +64,10 @@ symbol still require code-boundary recovery before they can be analyzed.
 The report groups statically addressed 8/16/32-bit reads and writes by
 address, names known SVD registers, assigns stable `RANGE.REG_ADDRESS`
 candidate names to unknown addresses, and lists every artifact/member/function
-that used each register. For writes it reports output-bit provenance as
+that used each register. Schema v5 also records every recovered instruction PC
+in `read_sites` and `write_sites`; these are binary navigation evidence even
+when later control flow prevents complete pseudo-code recovery. Reviewed or
+synthesized summaries do not invent instruction sites. For writes it reports output-bit provenance as
 preserved, inverted, forced zero, forced one, derived from a register read, or
 dynamic. `modified_mask`, `candidate_bit_ranges` and `field_candidates` are
 mechanical data-flow facts; they do not claim field names, reset values, W1C
@@ -76,6 +79,11 @@ outside the reviewed model. The richer
 `ir export` register index additionally combines partial writes, poll masks and
 MMIO-backed branch predicates into `field_candidates` linked to access
 functions and guarded semantic actions.
+
+The project snapshot joins these artifact-wide sites back into the Functions
+view. A function whose linked IR is incomplete therefore still shows its exact
+static MMIO reads/writes and instruction PCs; linked-IR registers and static
+sites are unioned, never treated as competing truth sources.
 
 Discovery deliberately retains events recovered before unsupported control
 flow and emits per-function diagnostics without failing the run. Its JSON says

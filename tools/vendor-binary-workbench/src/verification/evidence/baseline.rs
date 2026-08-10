@@ -1,13 +1,14 @@
 //! Reviewed evidence baselines, comparisons, and candidate publication.
 
 use std::{
+    collections::{BTreeMap, BTreeSet},
     env, fs,
     path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
 
-use super::{EvidenceSet, VerificationEvidenceDocument, record_evidence};
+use super::{EvidenceIdentity, EvidenceSet, VerificationEvidenceDocument, record_evidence};
 use crate::{Result, error::WorkbenchError};
 
 #[derive(Deserialize)]
@@ -23,6 +24,10 @@ struct BaselineEntry {
     source: String,
     symbol: String,
     kind: String,
+    #[serde(default)]
+    digest: Option<String>,
+    #[serde(default)]
+    components: BTreeMap<String, String>,
 }
 
 #[tracing::instrument(name = "load_evidence_baseline", fields(path = %path.display()))]
@@ -37,14 +42,19 @@ pub(crate) fn load_evidence_baseline(path: &Path) -> Result<EvidenceSet> {
 }
 
 fn finish_evidence_baseline(path: &Path, document: BaselineDocument) -> Result<EvidenceSet> {
-    if document.schema != 1 {
+    if document.schema != 2 {
         return Err(crate::Error::invalid(
-            "evidence baseline TOML requires schema = 1",
+            "evidence baseline TOML requires schema = 2",
         ));
     }
     let mut evidence = EvidenceSet::new();
     for entry in document.evidence {
-        record_evidence(&mut evidence, &entry.source, &entry.symbol, entry.kind)?;
+        let identity = EvidenceIdentity {
+            kind: entry.kind,
+            digest: entry.digest,
+            components: entry.components,
+        };
+        record_evidence(&mut evidence, &entry.source, &entry.symbol, identity)?;
     }
     if evidence.is_empty() {
         return Err(crate::Error::invalid(format!(
@@ -59,7 +69,15 @@ fn finish_evidence_baseline(path: &Path, document: BaselineDocument) -> Result<E
 pub(crate) struct EvidenceRegression {
     pub(crate) source: String,
     pub(crate) symbol: String,
-    pub(crate) expected: String,
+    pub(crate) expected: EvidenceIdentity,
+    pub(crate) actual: Option<EvidenceIdentity>,
+    pub(crate) changed_components: Vec<EvidenceComponentRegression>,
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct EvidenceComponentRegression {
+    pub(crate) name: String,
+    pub(crate) expected: Option<String>,
     pub(crate) actual: Option<String>,
 }
 
@@ -67,7 +85,8 @@ pub(crate) struct EvidenceRegression {
 pub(crate) struct EvidenceAddition {
     pub(crate) source: String,
     pub(crate) symbol: String,
-    pub(crate) kind: String,
+    #[serde(flatten)]
+    pub(crate) identity: EvidenceIdentity,
 }
 
 #[derive(Debug, Serialize)]
@@ -92,22 +111,32 @@ pub(crate) fn compare_evidence_baseline(
                 symbol: symbol.clone(),
                 expected: expected_kind.clone(),
                 actual: Some(actual_kind.clone()),
+                changed_components: changed_components(expected_kind, actual_kind),
             }),
             None => regressions.push(EvidenceRegression {
                 source: source.clone(),
                 symbol: symbol.clone(),
                 expected: expected_kind.clone(),
                 actual: None,
+                changed_components: expected_kind
+                    .components
+                    .iter()
+                    .map(|(name, digest)| EvidenceComponentRegression {
+                        name: name.clone(),
+                        expected: Some(digest.clone()),
+                        actual: None,
+                    })
+                    .collect(),
             }),
         }
     }
     let additions = actual
         .iter()
         .filter(|((source, symbol), _)| !expected.contains_key(&(source.clone(), symbol.clone())))
-        .map(|((source, symbol), kind)| EvidenceAddition {
+        .map(|((source, symbol), identity)| EvidenceAddition {
             source: source.clone(),
             symbol: symbol.clone(),
-            kind: kind.clone(),
+            identity: identity.clone(),
         })
         .collect::<Vec<_>>();
     EvidenceComparison {
@@ -117,6 +146,28 @@ pub(crate) fn compare_evidence_baseline(
         regressions,
         additions,
     }
+}
+
+fn changed_components(
+    expected: &EvidenceIdentity,
+    actual: &EvidenceIdentity,
+) -> Vec<EvidenceComponentRegression> {
+    expected
+        .components
+        .keys()
+        .chain(actual.components.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|name| {
+            let expected = expected.components.get(name);
+            let actual = actual.components.get(name);
+            (expected != actual).then(|| EvidenceComponentRegression {
+                name: name.clone(),
+                expected: expected.cloned(),
+                actual: actual.cloned(),
+            })
+        })
+        .collect()
 }
 
 fn evidence_path_identity(path: &Path) -> Result<PathBuf> {
@@ -178,17 +229,18 @@ pub(crate) fn write_evidence_candidate(
     struct BaselineEntry<'a> {
         source: &'a str,
         symbol: &'a str,
-        kind: &'a str,
+        #[serde(flatten)]
+        identity: &'a EvidenceIdentity,
     }
 
     let output = toml_edit::ser::to_string_pretty(&BaselineDocument {
-        schema: 1,
+        schema: 2,
         evidence: evidence
             .iter()
-            .map(|((source, symbol), kind)| BaselineEntry {
+            .map(|((source, symbol), identity)| BaselineEntry {
                 source,
                 symbol,
-                kind,
+                identity,
             })
             .collect(),
     })?;
@@ -226,7 +278,7 @@ fn parse_evidence_report(path: &Path, text: &str) -> Result<EvidenceSet> {
     }
     let mut evidence = EvidenceSet::new();
     for entry in report.evidence {
-        record_evidence(&mut evidence, &entry.source, &entry.symbol, entry.kind)?;
+        record_evidence(&mut evidence, &entry.source, &entry.symbol, entry.identity)?;
     }
     if evidence.is_empty() {
         return Err(crate::Error::invalid(format!(
@@ -266,7 +318,7 @@ mod tests {
     #[test]
     fn malformed_baseline_retains_its_physical_source_line() {
         let input =
-            "schema = 1\n\n[[evidence]]\nsource = \"rom\"\nsymbol = 42\nkind = \"symbolic\"\n";
+            "schema = 2\n\n[[evidence]]\nsource = \"rom\"\nsymbol = 42\nkind = \"symbolic\"\n";
         let path = std::env::temp_dir().join(format!(
             "vendor-workbench-evidence-diagnostic-{}.toml",
             std::process::id()

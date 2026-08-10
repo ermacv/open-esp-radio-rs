@@ -25,60 +25,8 @@ pub(super) fn run(
         InterfaceWorkspaceCommand::InitPack(arguments) => {
             init_pack(arguments, project, target, paths)
         }
-        InterfaceWorkspaceCommand::SyncPack(arguments) => sync_pack(arguments, target, paths),
         InterfaceWorkspaceCommand::Validate(arguments) => validate(arguments, target, paths),
     }
-}
-
-fn sync_pack(
-    arguments: CheckArgs,
-    target: &TargetSpec,
-    paths: &crate::project::InterfaceWorkspacePaths,
-) -> Result<bool> {
-    let pack = paths
-        .pack
-        .as_deref()
-        .ok_or("interfaces sync-pack requires [interfaces].pack")
-        .map_err(crate::Error::invalid)?;
-    let facts = InterfaceFacts::load(&paths.facts)?;
-    let summary = crate::interfaces::sync_interface_pack(
-        pack,
-        &facts,
-        target.calling_convention.label(),
-        arguments.check,
-    )?;
-    InterfaceWorkspace::load(
-        &paths.facts,
-        pack,
-        &paths.semantic_catalogs,
-        target.calling_convention.label(),
-        target
-            .harness
-            .as_deref()
-            .map(crate::harnesses::contracts)
-            .transpose()?,
-    )?;
-    let report = InterfacePackSyncDocument {
-        schema: 1,
-        command: "interfaces sync-pack",
-        status: if arguments.check {
-            "verified"
-        } else if summary.changed() {
-            "updated"
-        } else {
-            "unchanged"
-        },
-        check: arguments.check,
-        added_anchors: summary.added_anchors,
-        refreshed_anchors: summary.refreshed_anchors,
-        removed_anchors: summary.removed_anchors,
-        added_slots: summary.added_slots,
-        removed_slots: summary.removed_slots,
-        facts: &paths.facts,
-        pack,
-    };
-    crate::cli::output::render_report(&report, || print_sync_human(&report));
-    Ok(true)
 }
 
 fn init_pack(
@@ -297,6 +245,20 @@ fn validate(
                             .collect(),
                     })
                     .collect(),
+            })
+            .collect(),
+        unreviewed: workspace
+            .unreviewed_observations()
+            .iter()
+            .map(|observation| UnreviewedInterfaceDocument {
+                id: &observation.id,
+                contract: &observation.contract,
+                source: &observation.source,
+                offset: observation.offset,
+                width: observation.width,
+                selector: observation.selector.as_deref(),
+                functions: observation.functions.iter().map(String::as_str).collect(),
+                call_sites: observation.call_sites.clone(),
             })
             .collect(),
     };

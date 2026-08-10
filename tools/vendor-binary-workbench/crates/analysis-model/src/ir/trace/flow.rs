@@ -38,7 +38,7 @@ pub struct DraftReferenceFlow {
 
 pub fn collect_value_inputs(value: &SymbolicValue, output: &mut BTreeSet<u8>) {
     match value {
-        SymbolicValue::InputConstant { index, .. } => {
+        SymbolicValue::Input { index } | SymbolicValue::InputConstant { index, .. } => {
             output.insert(*index);
         }
         SymbolicValue::Expression { left, right, .. } => {

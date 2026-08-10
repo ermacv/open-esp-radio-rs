@@ -22,11 +22,16 @@ pub(super) fn run(
             "ir build --jobs accepts 0 (safe automatic mode) or 1..=8",
         ));
     }
+    let refresh_review_scopes = arguments.profile.is_empty();
     let document = build_project_ir(
         ProjectIrBuildRequest {
             profiles: arguments.profile.into_iter().collect::<BTreeSet<_>>(),
             check: arguments.check,
             jobs: usize::from(arguments.jobs),
+            // A partial profile build must not parse unrelated stale IR
+            // documents. The aggregate scope is refreshed by the all-profile
+            // build that owns the complete input set.
+            refresh_review_scopes,
         },
         project,
         run_spec,

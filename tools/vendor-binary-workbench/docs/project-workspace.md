@@ -90,9 +90,30 @@ profiles = ["vendor"]
 [functions.review]
 output = "generated/reports/function-review.md"
 
+[review]
+output = "generated/findings/review-scopes.json"
+release-scopes = ["radio-init"]
+
+[[review.scopes]]
+id = "radio-init"
+profiles = ["vendor"]
+roots = ["archive:radio_init"]
+include-reachable = true
+
 [verification]
+report = "generated/reports/verification.json"
+
+[[verification.suites]]
+id = "phy"
+sources = ["archive", "rom"]
+source-prefixes = ["rom=phy_"]
+rust-artifact-role = "rust-artifact:phy"
 rust-prefix = "open_phy_trace_"
 profiles = ["profiles/compiled-equivalence.toml"]
+dispositions = ["dispositions/phy.toml"]
+baselines = ["baselines/phy.toml"]
+gate = "regression"
+match-floor = 104
 ```
 
 `target-spec` selects the architecture and ABI. It does not select a platform
@@ -136,6 +157,19 @@ profiles from `source-artifact:ID` bindings in the local run spec; `--check`
 verifies that existing JSON and pseudo-Rust documents match. See
 [project linked-IR builds](project-ir-build.md) for the schema and companion
 rules.
+
+The optional `[review]` workspace turns artifact-wide analysis into stable,
+human-sized surfaces. `project analyze` writes its `output` after linked IR and
+MMIO discovery; a focused `ir build --profile ...` refreshes the same artifact.
+Each `[[review.scopes]]` records the reachable function closure, the union of
+static and linked MMIO evidence, every blocker class, unresolved calls and Rust
+replacement coverage. `project status` reads this compact artifact instead of
+reconstructing the scopes from all large IR documents.
+
+`release-scopes` is the explicit publication boundary. SVD, PAC and binding
+generation require reviewed register-model entries only for MMIO in those
+scopes and owned memory-map ranges. Other artifact-wide findings remain in the
+review reports but do not block a deliberately smaller release.
 
 Optional `[analysis.symbols]` gives the complete cross-input symbol inventory
 a stable project-relative `output`. `symbols inventory` uses that destination
@@ -215,16 +249,21 @@ remain in the register model, while trampoline ABI and RTOS/NVS/logging/delay
 semantics remain in interface and semantic packs. See
 [function and context packs](function-packs.md).
 
-The optional `[verification]` table makes one or more concrete execution
-profile files part of the project rather than an ad-hoc CLI argument. Profile
-names must be unique across the listed files. Artifact paths remain private:
-`vendor-source` is resolved through `source-artifact:ID` and
-`source-companion:ID` entries in `local.toml`, while the Rust side uses
-`rust-artifact` and `rust-companion`. This split lets the read-only browser run
-a reviewed comparison without copying local binary paths into the shareable
-manifest.
-The optional `rust-prefix` is the project-owned convention for unbound Rust
-verification probes. Generic CLI commands do not assume ESP/PHY symbol names.
+The optional `[verification]` workspace owns an aggregate report and one or
+more `[[verification.suites]]`. Each suite is an independent proof boundary:
+it selects vendor source IDs, an exact Rust artifact role, its probe prefix,
+zero or more execution-profile fragments, disposition fragments, accepted
+baseline fragments and a completion or regression gate. IDs and profile names
+must be unique; conflicting disposition or baseline entries fail loading.
+
+Artifact paths remain private. Vendor sources resolve through
+`source-artifact:ID`, optional `source-inventory:ID` and
+`source-companion:ID` entries in `local.toml`. Rust inputs resolve through the
+exact configured role, such as `rust-artifact:phy`; the unqualified
+`rust-artifact` role remains available when suites deliberately share one
+probe ELF. This lets the browser and `project verify` use reviewed
+configuration without copying local binary paths into the manifest. Generic
+leaf commands do not inherit suite values.
 
 ## Project-wide generation
 
@@ -277,7 +316,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v37 reports and their register/field-candidate counts are reported;
+as schema-v38 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -288,7 +327,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v37 facts, artifact provenance guards, the pack lifecycle, review
+schema-v38 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 

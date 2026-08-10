@@ -322,62 +322,8 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
             })
         })
         .transpose()?;
-    let verification = document
-        .get("verification")
-        .map(|item| -> Result<VerificationWorkspacePaths> {
-            let table = item.as_table().ok_or_else(|| {
-                source.item(Some(item), "project manifest verification must be a table")
-            })?;
-            let profiles = table
-                .get("profiles")
-                .and_then(Item::as_array)
-                .ok_or_else(|| {
-                    source.table_key(
-                        table,
-                        "profiles",
-                        "project verification.profiles must be a non-empty array",
-                    )
-                })?
-                .iter()
-                .enumerate()
-                .map(|(index, value)| {
-                    value
-                        .as_str()
-                        .map(|path| resolve_path(base, path))
-                        .ok_or_else(|| {
-                            source.error(
-                                value.span(),
-                                format!("project verification.profiles[{index}] must be a string"),
-                            )
-                        })
-                })
-                .collect::<Result<Vec<_>>>()?;
-            if profiles.is_empty() {
-                return Err(source.table_key(
-                    table,
-                    "profiles",
-                    "project verification.profiles must not be empty",
-                ));
-            }
-            let mut unique = std::collections::BTreeSet::new();
-            if let Some(duplicate) = profiles.iter().find(|path| !unique.insert(*path)) {
-                return Err(source.table_key(
-                    table,
-                    "profiles",
-                    format!(
-                        "project verification repeats profile file {}",
-                        duplicate.display()
-                    ),
-                ));
-            }
-            let rust_prefix =
-                optional_table_string(table, "rust-prefix", "project verification", source)?;
-            Ok(VerificationWorkspacePaths {
-                profiles,
-                rust_prefix,
-            })
-        })
-        .transpose()?;
+    let review = load_review_workspace(&document, base, &ir_profiles, source)?;
+    let verification = load_verification_workspace(&document, base, source)?;
     if let Some(symbols) = &symbol_inventory {
         let conflicting_fact = registers
             .as_ref()
@@ -504,8 +450,121 @@ pub(super) fn load(path: &Path) -> Result<ProjectSpec> {
         registers,
         interfaces,
         functions,
+        review,
         verification,
     })
+}
+
+fn load_review_workspace(
+    document: &Table,
+    base: &Path,
+    ir_profiles: &[crate::project_ir::ProjectIrProfile],
+    source: ProjectSource<'_>,
+) -> Result<Option<ReviewWorkspaceSpec>> {
+    let Some(item) = document.get("review") else {
+        return Ok(None);
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| source.item(Some(item), "project manifest review must be a table"))?;
+    reject_unknown_keys(
+        table,
+        &["output", "release-scopes", "scopes"],
+        "project review",
+        source,
+    )?;
+    let output = resolve_path(
+        base,
+        &table_string(table, "output", "project review", source)?,
+    );
+    let release_scopes =
+        table_string_array(table, "release-scopes", "project review", source, false)?;
+    let scopes_item = table.get("scopes").ok_or_else(|| {
+        source.table_key(table, "scopes", "project review requires [[review.scopes]]")
+    })?;
+    let scopes = scopes_item.as_array_of_tables().ok_or_else(|| {
+        source.item(
+            Some(scopes_item),
+            "project review.scopes must be an array of tables",
+        )
+    })?;
+    if scopes.is_empty() {
+        return Err(source.item(Some(scopes_item), "project review.scopes must not be empty"));
+    }
+    let all_profiles = ir_profiles
+        .iter()
+        .map(|profile| profile.id.clone())
+        .collect::<Vec<_>>();
+    let mut scope_ids = std::collections::BTreeSet::new();
+    let scopes = scopes
+        .iter()
+        .enumerate()
+        .map(|(index, scope)| {
+            let context = format!("project review.scopes[{index}]");
+            reject_unknown_keys(
+                scope,
+                &["id", "profiles", "roots", "include-reachable"],
+                &context,
+                source,
+            )?;
+            let id = table_string(scope, "id", &context, source)?;
+            validate_id(&id).map_err(|message| source.table_key(scope, "id", message))?;
+            if !scope_ids.insert(id.clone()) {
+                return Err(source.table_key(
+                    scope,
+                    "id",
+                    format!("duplicate project review scope {id:?}"),
+                ));
+            }
+            let profiles = if scope.get("profiles").is_some() {
+                table_string_array(scope, "profiles", &context, source, false)?
+            } else {
+                all_profiles.clone()
+            };
+            for profile in &profiles {
+                if !ir_profiles.iter().any(|candidate| candidate.id == *profile) {
+                    return Err(source.table_key(
+                        scope,
+                        "profiles",
+                        format!("{context} refers to unknown IR profile {profile:?}"),
+                    ));
+                }
+            }
+            let roots = table_string_array(scope, "roots", &context, source, false)?;
+            let include_reachable = scope
+                .get("include-reachable")
+                .map(|item| {
+                    item.as_bool().ok_or_else(|| {
+                        source.item(
+                            Some(item),
+                            format!("{context}.include-reachable must be a boolean"),
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(true);
+            Ok(ReviewScopeSpec {
+                id,
+                profiles,
+                roots,
+                include_reachable,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    for release_scope in &release_scopes {
+        if !scopes.iter().any(|scope| scope.id == *release_scope) {
+            return Err(source.table_key(
+                table,
+                "release-scopes",
+                format!("project review refers to unknown release scope {release_scope:?}"),
+            ));
+        }
+    }
+    Ok(Some(ReviewWorkspaceSpec {
+        output,
+        release_scopes,
+        scopes,
+    }))
 }
 
 fn nested_output_path(
@@ -575,6 +634,308 @@ fn required_table_string_array(
             Ok(value.to_owned())
         })
         .collect()
+}
+
+fn load_verification_workspace(
+    document: &Table,
+    base: &Path,
+    source: ProjectSource<'_>,
+) -> Result<Option<VerificationWorkspacePaths>> {
+    let Some(item) = document.get("verification") else {
+        return Ok(None);
+    };
+    let table = item
+        .as_table()
+        .ok_or_else(|| source.item(Some(item), "project manifest verification must be a table"))?;
+    reject_unknown_keys(table, &["report", "suites"], "project verification", source)?;
+    let report = resolve_path(
+        base,
+        &table_string(table, "report", "project verification", source)?,
+    );
+    let suites_item = table.get("suites").ok_or_else(|| {
+        source.table_key(
+            table,
+            "suites",
+            "project verification requires [[verification.suites]]",
+        )
+    })?;
+    let suites = suites_item.as_array_of_tables().ok_or_else(|| {
+        source.item(
+            Some(suites_item),
+            "project verification.suites must be an array of tables",
+        )
+    })?;
+    if suites.is_empty() {
+        return Err(source.item(
+            Some(suites_item),
+            "project verification.suites must not be empty",
+        ));
+    }
+
+    let mut suite_ids = std::collections::BTreeSet::new();
+    let suites = suites
+        .iter()
+        .enumerate()
+        .map(|(index, suite)| {
+            let context = format!("project verification.suites[{index}]");
+            reject_unknown_keys(
+                suite,
+                &[
+                    "id",
+                    "sources",
+                    "source-prefixes",
+                    "rust-artifact-role",
+                    "rust-companion-role",
+                    "rust-prefix",
+                    "profiles",
+                    "dispositions",
+                    "baselines",
+                    "gate",
+                    "match-floor",
+                ],
+                &context,
+                source,
+            )?;
+            let id = table_string(suite, "id", &context, source)?;
+            validate_id(&id).map_err(|message| source.table_key(suite, "id", message))?;
+            if !suite_ids.insert(id.clone()) {
+                return Err(source.table_key(
+                    suite,
+                    "id",
+                    format!("duplicate project verification suite {id:?}"),
+                ));
+            }
+            let sources = table_string_array(suite, "sources", &context, source, false)?
+                .into_iter()
+                .map(|value| {
+                    value.parse().map_err(|message| {
+                        source.table_key(suite, "sources", format!("{context}: {message}"))
+                    })
+                })
+                .collect::<Result<Vec<crate::source_id::SourceId>>>()?;
+            let source_prefixes =
+                table_string_array(suite, "source-prefixes", &context, source, true)?
+                    .into_iter()
+                    .map(|value| {
+                        let (source_id, prefix) = value.split_once('=').ok_or_else(|| {
+                            source.table_key(
+                        suite,
+                        "source-prefixes",
+                        format!("{context}.source-prefixes entry {value:?} must be SOURCE=PREFIX"),
+                    )
+                        })?;
+                        let source_id = source_id.parse().map_err(|message| {
+                            source.table_key(
+                                suite,
+                                "source-prefixes",
+                                format!("{context}: {message}"),
+                            )
+                        })?;
+                        Ok((source_id, prefix.to_owned()))
+                    })
+                    .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+            if let Some(unknown) = source_prefixes
+                .keys()
+                .find(|source_id| !sources.contains(source_id))
+            {
+                return Err(source.table_key(
+                    suite,
+                    "source-prefixes",
+                    format!(
+                        "{context}.source-prefixes configures {unknown}, which is not in sources"
+                    ),
+                ));
+            }
+
+            let rust_artifact_role =
+                parse_rust_input_role(suite, "rust-artifact-role", &context, source, false)?
+                    .expect("required Rust artifact role");
+            let rust_companion_role =
+                parse_rust_input_role(suite, "rust-companion-role", &context, source, true)?;
+            let rust_prefix = table_string(suite, "rust-prefix", &context, source)?;
+            let profiles = table_path_array(suite, "profiles", &context, base, source, true)?;
+            let dispositions =
+                table_path_array(suite, "dispositions", &context, base, source, false)?;
+            let evidence_baselines =
+                table_path_array(suite, "baselines", &context, base, source, false)?;
+            let gate_name = table_string(suite, "gate", &context, source)?;
+            let match_floor = suite
+                .get("match-floor")
+                .map(|item| {
+                    item.as_integer()
+                        .and_then(|value| usize::try_from(value).ok())
+                        .ok_or_else(|| {
+                            source.item(
+                                Some(item),
+                                format!("{context}.match-floor must be a non-negative integer"),
+                            )
+                        })
+                })
+                .transpose()?;
+            let gate = match (gate_name.as_str(), match_floor) {
+                ("completion", None) => ProjectVerificationGate::Completion,
+                ("regression", Some(match_floor)) => {
+                    ProjectVerificationGate::Regression { match_floor }
+                }
+                ("completion", Some(_)) => {
+                    return Err(source.table_key(
+                        suite,
+                        "match-floor",
+                        format!("{context}.match-floor is only valid for gate = \"regression\""),
+                    ));
+                }
+                ("regression", None) => {
+                    return Err(source.table_key(
+                        suite,
+                        "match-floor",
+                        format!("{context} regression gate requires match-floor"),
+                    ));
+                }
+                _ => {
+                    return Err(source.table_key(
+                        suite,
+                        "gate",
+                        format!("{context}.gate must be \"completion\" or \"regression\""),
+                    ));
+                }
+            };
+            Ok(VerificationSuiteSpec {
+                id,
+                sources,
+                source_prefixes,
+                rust_artifact_role,
+                rust_companion_role,
+                rust_prefix,
+                profiles,
+                dispositions,
+                evidence_baselines,
+                gate,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(Some(VerificationWorkspacePaths { report, suites }))
+}
+
+fn reject_unknown_keys(
+    table: &Table,
+    allowed: &[&str],
+    context: &str,
+    source: ProjectSource<'_>,
+) -> Result<()> {
+    if let Some((key, item)) = table.iter().find(|(key, _)| !allowed.contains(key)) {
+        return Err(source.item(Some(item), format!("unknown {context} key {key:?}")));
+    }
+    Ok(())
+}
+
+fn parse_rust_input_role(
+    table: &Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+    optional: bool,
+) -> Result<Option<crate::run_spec::InputRole>> {
+    let value = if optional {
+        optional_table_string(table, key, context, source)?
+    } else {
+        Some(table_string(table, key, context, source)?)
+    };
+    value
+        .map(|value| {
+            let role = crate::run_spec::InputRole::parse(&value).ok_or_else(|| {
+                source.table_key(
+                    table,
+                    key,
+                    format!("{context}.{key} has invalid role {value:?}"),
+                )
+            })?;
+            let valid = if key == "rust-artifact-role" {
+                matches!(
+                    role,
+                    crate::run_spec::InputRole::RustArtifact
+                        | crate::run_spec::InputRole::NamedRustArtifact(_)
+                )
+            } else {
+                matches!(
+                    role,
+                    crate::run_spec::InputRole::RustCompanion
+                        | crate::run_spec::InputRole::NamedRustCompanion(_)
+                )
+            };
+            if !valid {
+                return Err(source.table_key(
+                    table,
+                    key,
+                    format!(
+                        "{context}.{key} must name a Rust {kind} role",
+                        kind = if key == "rust-artifact-role" {
+                            "artifact"
+                        } else {
+                            "companion"
+                        }
+                    ),
+                ));
+            }
+            Ok(role)
+        })
+        .transpose()
+}
+
+fn table_string_array(
+    table: &Table,
+    key: &str,
+    context: &str,
+    source: ProjectSource<'_>,
+    allow_empty: bool,
+) -> Result<Vec<String>> {
+    let item = table
+        .get(key)
+        .ok_or_else(|| source.table_key(table, key, format!("{context} requires {key:?}")))?;
+    let array = item
+        .as_array()
+        .ok_or_else(|| source.item(Some(item), format!("{context}.{key} must be an array")))?;
+    if !allow_empty && array.is_empty() {
+        return Err(source.item(Some(item), format!("{context}.{key} must not be empty")));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    array
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            let span = value.span();
+            let value = value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    source.error(
+                        span.clone(),
+                        format!("{context}.{key}[{index}] must be a non-empty string"),
+                    )
+                })?;
+            if !unique.insert(value) {
+                return Err(
+                    source.error(span, format!("duplicate {context}.{key} value {value:?}"))
+                );
+            }
+            Ok(value.to_owned())
+        })
+        .collect()
+}
+
+fn table_path_array(
+    table: &Table,
+    key: &str,
+    context: &str,
+    base: &Path,
+    source: ProjectSource<'_>,
+    allow_empty: bool,
+) -> Result<Vec<PathBuf>> {
+    table_string_array(table, key, context, source, allow_empty).map(|values| {
+        values
+            .into_iter()
+            .map(|value| resolve_path(base, &value))
+            .collect()
+    })
 }
 
 fn nested_path_array(

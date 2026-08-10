@@ -36,6 +36,12 @@ enum TimelineEventDocument {
         address: u32,
         value: u32,
     },
+    Atomic {
+        operation: String,
+        ordering: String,
+        address: u32,
+        succeeded: Option<bool>,
+    },
 }
 
 #[derive(Serialize)]
@@ -185,6 +191,17 @@ fn timeline_document(
             width: *width,
             address: *address,
             value: *value,
+        },
+        execution::ExecutionTimelineEvent::Atomic {
+            operation,
+            ordering,
+            address,
+            succeeded,
+        } => TimelineEventDocument::Atomic {
+            operation: format!("{operation:?}"),
+            ordering: format!("{ordering:?}"),
+            address: *address,
+            succeeded: *succeeded,
         },
     }
 }
@@ -420,6 +437,14 @@ fn render_execution(input: &ExecutionRenderInput<'_>) {
                     value,
                 } => outputln!(
                     "TIMELINE-EVENT\t{index}\tRAM-WRITE\t{width}\t{address:#010x}\tvalue={value:#010x}"
+                ),
+                execution::ExecutionTimelineEvent::Atomic {
+                    operation,
+                    ordering,
+                    address,
+                    succeeded,
+                } => outputln!(
+                    "TIMELINE-EVENT\t{index}\tATOMIC\t{operation:?}\t{ordering:?}\t{address:#010x}\tsucceeded={succeeded:?}"
                 ),
             }
         }

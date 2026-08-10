@@ -147,6 +147,12 @@ pub(super) fn apply_memory_instruction(
                     };
                     match table.function_at(offset) {
                         Some(function) => SymbolicValue::ExternalFunction { table, function },
+                        None if pointer_context
+                            .reviewed_external_slots
+                            .contains_key(&(table.spec().id.to_owned(), offset)) =>
+                        {
+                            SymbolicValue::ReviewedExternalFunction { table, offset }
+                        }
                         None => {
                             state.reference_blockers.push(format!(
                                 "unregistered-external-abi-slot at {pc:#x}: {}+{offset:#x}",
@@ -242,6 +248,18 @@ pub(super) fn apply_memory_instruction(
                     });
                     SymbolicValue::memory_read(read_token, width, signed)
                 }
+                (_, Some(StructuralAddress::IndexedMemory(address))) => {
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address,
+                        region: "indexed RAM object".to_owned(),
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
                 (_, Some(StructuralAddress::Absolute(address))) if svd.contains_mmio(address) => {
                     let read_token = state.next_mmio_read_token;
                     state.next_mmio_read_token += 1;
@@ -253,6 +271,10 @@ pub(super) fn apply_memory_instruction(
                         value: None,
                     };
                     state.events.push(event.clone());
+                    state.located_events.push(LocatedObservableEvent {
+                        site: pc as u32,
+                        event: event.clone(),
+                    });
                     state
                         .reference_events
                         .push(DraftReferenceEvent::Observable(event));
@@ -425,6 +447,20 @@ pub(super) fn apply_memory_instruction(
                         value: Some(value),
                     });
                 }
+                Some(StructuralAddress::IndexedMemory(address)) => {
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address,
+                        region: "indexed RAM object".to_owned(),
+                        value: Some(value),
+                    });
+                }
                 Some(StructuralAddress::Absolute(address)) if svd.contains_mmio(address) => {
                     if !value.is_resolved() {
                         state.blockers.push(format!(
@@ -439,6 +475,10 @@ pub(super) fn apply_memory_instruction(
                         value: Some(value),
                     };
                     state.events.push(event.clone());
+                    state.located_events.push(LocatedObservableEvent {
+                        site: pc as u32,
+                        event: event.clone(),
+                    });
                     state
                         .reference_events
                         .push(DraftReferenceEvent::Observable(event));

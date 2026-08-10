@@ -14,7 +14,9 @@ use super::effect_contract::{EffectComparison, EffectDisposition, EffectSelector
 
 mod model;
 
-pub use model::{Disposition, Entry, Manifest, Protocol, ResolvedDisposition, SemanticContract};
+pub use model::{
+    Disposition, Entry, Manifest, Protocol, ResolvedDisposition, RustComponentId, SemanticContract,
+};
 use model::{EntryBuilder, ProtocolPrefix};
 
 #[derive(Deserialize)]
@@ -105,6 +107,57 @@ impl Manifest {
         })
     }
 
+    pub(crate) fn load_all(paths: &[std::path::PathBuf]) -> Result<Option<Self>> {
+        let mut manifests = paths.iter();
+        let Some(first) = manifests.next() else {
+            return Ok(None);
+        };
+        let mut merged = Self::load(first)?;
+        for path in manifests {
+            merged.merge(Self::load(path)?, path)?;
+        }
+        Ok(Some(merged))
+    }
+
+    fn merge(&mut self, other: Self, path: &Path) -> Result<()> {
+        if self.default_disposition != other.default_disposition
+            || self.default_protocol != other.default_protocol
+        {
+            return Err(crate::Error::invalid(format!(
+                "disposition fragment {} has different defaults",
+                path.display()
+            )));
+        }
+        let mut prefix_keys = self
+            .protocol_prefixes
+            .iter()
+            .map(|prefix| (prefix.source.clone(), prefix.prefix.clone()))
+            .collect::<BTreeSet<_>>();
+        for prefix in other.protocol_prefixes {
+            let key = (prefix.source.clone(), prefix.prefix.clone());
+            if !prefix_keys.insert(key.clone()) {
+                return Err(crate::Error::invalid(format!(
+                    "disposition fragment {} repeats protocol prefix {} {}",
+                    path.display(),
+                    key.0,
+                    key.1
+                )));
+            }
+            self.protocol_prefixes.push(prefix);
+        }
+        for (key, entry) in other.entries {
+            if self.entries.insert(key.clone(), entry).is_some() {
+                return Err(crate::Error::invalid(format!(
+                    "disposition fragment {} repeats function {} {}",
+                    path.display(),
+                    key.0,
+                    key.1
+                )));
+            }
+        }
+        Ok(())
+    }
+
     fn finish(document: DispositionDocument) -> Result<Self> {
         if document.schema != 1 {
             return Err(crate::Error::invalid(
@@ -130,6 +183,11 @@ impl Manifest {
         let mut entries = BTreeMap::new();
         for (index, function) in document.functions.into_iter().enumerate() {
             validate_source_id(&function.source, index + 1)?;
+            let rust_component = function
+                .rust_component
+                .as_deref()
+                .map(|value| RustComponentId::parse(value, index + 1))
+                .transpose()?;
             let semantic_contract = function
                 .semantic_contract
                 .as_deref()
@@ -150,7 +208,7 @@ impl Manifest {
                 symbol: function.symbol,
                 disposition: Some(function.disposition),
                 protocol: function.protocol,
-                rust_component: function.rust_component,
+                rust_component,
                 hil_evidence: function.hil_evidence,
                 semantic_contract,
                 effect_comparison: function.effect_contract,

@@ -158,25 +158,96 @@ pub(crate) fn render_function_review(
             )
         })
         .collect::<BTreeMap<_, _>>();
-    output.push_str("\n## Root function reading views\n");
-    for fact in workspace.facts.root_functions() {
-        write_fact(&mut output, fact, &reviewed, interface_links)?;
-    }
-    if workspace.facts.functions.iter().any(|fact| !fact.is_root()) {
-        output.push_str("\n## Reachable internal function reading views\n\n");
-        output.push_str(
-            "These functions were included through the configured reachable-call closure. They are visible for navigation but are not part of the root-function coverage gate.\n",
-        );
-        for fact in workspace
-            .facts
-            .functions
-            .iter()
-            .filter(|fact| !fact.is_root())
-        {
+    output.push_str("\n## Reviewed function reading views\n\n");
+    output.push_str(
+        "Detailed pseudo-code and joined interface evidence are emitted only for explicit `reviewed` overlay entries. Complete generated pseudo-code remains in each linked-IR profile's `.pseudo.rs` report and in the TUI.\n",
+    );
+    for fact in &workspace.facts.functions {
+        let function = reviewed_function(fact, &reviewed);
+        if function.is_some_and(|function| function.status == FunctionReviewStatus::Reviewed) {
             write_fact(&mut output, fact, &reviewed, interface_links)?;
         }
     }
+
+    let ignored = workspace.facts.functions.iter().filter(|fact| {
+        reviewed_function(fact, &reviewed)
+            .is_some_and(|function| function.status == FunctionReviewStatus::Ignored)
+    });
+    write_function_inventory(&mut output, "Ignored function decisions", ignored);
+
+    let unreviewed_roots = workspace
+        .facts
+        .root_functions()
+        .filter(|fact| reviewed_function(fact, &reviewed).is_none());
+    write_function_inventory(
+        &mut output,
+        "Unreviewed root function inventory",
+        unreviewed_roots,
+    );
+
+    let unreviewed_reachable = workspace
+        .facts
+        .functions
+        .iter()
+        .filter(|fact| !fact.is_root() && reviewed_function(fact, &reviewed).is_none());
+    write_function_inventory(
+        &mut output,
+        "Unreviewed reachable function inventory",
+        unreviewed_reachable,
+    );
     Ok(output)
+}
+
+fn reviewed_function<'a>(
+    fact: &FunctionFact,
+    reviewed: &'a BTreeMap<(&str, &str, &str), &ReviewedFunction>,
+) -> Option<&'a ReviewedFunction> {
+    reviewed
+        .get(&(
+            fact.profile.as_str(),
+            fact.source.as_str(),
+            fact.identity.as_str(),
+        ))
+        .copied()
+}
+
+fn write_function_inventory<'a>(
+    output: &mut String,
+    title: &str,
+    facts: impl Iterator<Item = &'a FunctionFact>,
+) {
+    let facts = facts.collect::<Vec<_>>();
+    if facts.is_empty() {
+        return;
+    }
+    writeln!(output, "\n## {title}\n").expect("writing to String cannot fail");
+    output.push_str(
+        "This is a navigation index, not a source reconstruction. Use the profile pseudo-code, linked IR, JSON output or TUI for complete per-function evidence.\n\n",
+    );
+    output.push_str(
+        "| Profile | Source | Function | Evidence closure | Calls | MMIO | Context fields | Memory fields | Semantics | Blockers |\n",
+    );
+    output.push_str("| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
+    for fact in facts {
+        let blockers = fact.decode_blockers.len() + fact.context_projection_blockers.len();
+        writeln!(
+            output,
+            "| `{}` | `{}` | `{}` | `{}/{}/{}` | {} | {} | {} | {} | {} | {} |",
+            markdown_code(&fact.profile),
+            markdown_code(&fact.source),
+            markdown_code(&fact.symbol),
+            yes_no(fact.direct_complete),
+            yes_no(fact.call_graph_closed),
+            yes_no(fact.context_projection_complete),
+            fact.calls.len(),
+            fact.mmio_addresses.len(),
+            fact.context_fields.len(),
+            fact.memory_fields.len(),
+            fact.semantic_operations.len(),
+            blockers,
+        )
+        .expect("writing to String cannot fail");
+    }
 }
 
 fn reviewed_object_label(object: &ReviewedMemoryObject) -> String {
@@ -206,7 +277,6 @@ fn review_status(status: FunctionReviewStatus) -> &'static str {
     match status {
         FunctionReviewStatus::Reviewed => "reviewed",
         FunctionReviewStatus::Ignored => "ignored",
-        FunctionReviewStatus::Unreviewed => "unreviewed",
     }
 }
 
@@ -242,7 +312,6 @@ fn write_function(
     let state = reviewed.map_or("unreviewed", |function| match function.status {
         FunctionReviewStatus::Reviewed => "reviewed",
         FunctionReviewStatus::Ignored => "ignored",
-        FunctionReviewStatus::Unreviewed => "unreviewed",
     });
     let title = reviewed
         .and_then(|function| function.name.as_deref())
@@ -378,25 +447,7 @@ fn write_memory_objects(output: &mut String, fact: &FunctionFact) {
     output.push_str("| Object | Offset | Width | Reads | Writes | Write mask |\n");
     output.push_str("| --- | ---: | ---: | ---: | ---: | ---: |\n");
     for field in &fact.memory_fields {
-        let object = match &field.object {
-            super::FunctionMemoryObjectFact::Argument { index } => format!("argument:{index}"),
-            super::FunctionMemoryObjectFact::Global { member, symbol } => format!(
-                "global:{}::{symbol}",
-                member.as_deref().unwrap_or("<linked>")
-            ),
-            super::FunctionMemoryObjectFact::DereferencedGlobal {
-                member,
-                symbol,
-                pointer_offset,
-            } => format!(
-                "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
-                member.as_deref().unwrap_or("<linked>")
-            ),
-            super::FunctionMemoryObjectFact::Absolute {
-                address_space,
-                address,
-            } => format!("absolute:{address_space}:{address:#010x}"),
-        };
+        let object = function_memory_object_label(&field.object);
         writeln!(
             output,
             "| `{}` | `{:+#x}` | {} | {} | {} | `{:#010x}` |",
@@ -411,13 +462,43 @@ fn write_memory_objects(output: &mut String, fact: &FunctionFact) {
     }
 }
 
+fn function_memory_object_label(object: &super::FunctionMemoryObjectFact) -> String {
+    match object {
+        super::FunctionMemoryObjectFact::Argument { index } => format!("argument:{index}"),
+        super::FunctionMemoryObjectFact::Global { member, symbol } => format!(
+            "global:{}::{symbol}",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        super::FunctionMemoryObjectFact::DereferencedGlobal {
+            member,
+            symbol,
+            pointer_offset,
+        } => format!(
+            "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        super::FunctionMemoryObjectFact::Absolute {
+            address_space,
+            address,
+        } => format!("absolute:{address_space}:{address:#010x}"),
+        super::FunctionMemoryObjectFact::Indexed {
+            object,
+            argument,
+            stride,
+        } => format!(
+            "{}[arg{argument} * {stride:#x}]",
+            function_memory_object_label(object)
+        ),
+    }
+}
+
 fn write_interface_links(output: &mut String, links: &[&FunctionInterfaceLink]) {
     if links.is_empty() {
         return;
     }
     output.push_str("\n#### Validated interface call sites\n\n");
     output.push_str(
-        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v37 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
+        "Each row joins a reviewed interface slot to a concrete static call instruction and the argument expressions recovered by generic provenance analysis. When schema-v38 linked IR contains exactly the same caller and site, its factorized CFG guard paths are attached as separate evidence. The reviewed semantic is a catalog claim attached to that slot. This evidence does not establish runtime order, branch feasibility, callee side effects, return values or scheduler/storage behavior.\n\n",
     );
     output.push_str("| Contract/version | Slot | Static site | Caller/kind | Recovered arguments | Linked-IR CFG evidence | ABI | Semantic | Execution model |\n");
     output.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");

@@ -1,8 +1,11 @@
 //! One-step RV32 instruction and call dispatch.
 
-use rv_asm::{AmoOp, Inst, Reg};
+use rv_asm::{AmoOp, AmoOrdering, Inst, Reg};
 
-use super::super::{ExecutionEvent, IndirectCall, RETURN_SENTINEL};
+use super::super::{
+    AtomicOperation, AtomicOrdering, ExecutionEvent, ExecutionTimelineEvent, IndirectCall,
+    RETURN_SENTINEL,
+};
 use super::Machine;
 use crate::{Result, artifact::andi_immediate};
 
@@ -29,6 +32,29 @@ pub(in crate::execution) fn atomic_word_result(operation: AmoOp, current: u32, s
         }
         AmoOp::Minu => current.min(source),
         AmoOp::Maxu => current.max(source),
+    }
+}
+
+const fn atomic_ordering(ordering: AmoOrdering) -> AtomicOrdering {
+    match ordering {
+        AmoOrdering::Relaxed => AtomicOrdering::Relaxed,
+        AmoOrdering::Acquire => AtomicOrdering::Acquire,
+        AmoOrdering::Release => AtomicOrdering::Release,
+        AmoOrdering::SeqCst => AtomicOrdering::AcquireRelease,
+    }
+}
+
+const fn atomic_operation(operation: AmoOp) -> AtomicOperation {
+    match operation {
+        AmoOp::Swap => AtomicOperation::Swap,
+        AmoOp::Add => AtomicOperation::Add,
+        AmoOp::Xor => AtomicOperation::Xor,
+        AmoOp::And => AtomicOperation::And,
+        AmoOp::Or => AtomicOperation::Or,
+        AmoOp::Min => AtomicOperation::Min,
+        AmoOp::Max => AtomicOperation::Max,
+        AmoOp::Minu => AtomicOperation::MinUnsigned,
+        AmoOp::Maxu => AtomicOperation::MaxUnsigned,
     }
 }
 
@@ -287,31 +313,59 @@ impl Machine<'_> {
                     self.register(src),
                 )?;
             }
+            Inst::LrW { order, dest, addr } => {
+                let address = self.register(addr);
+                self.validate_atomic_word_address(address)?;
+                let value = self.read(address, 32)?;
+                self.word_reservation = Some(address);
+                self.set_register(dest, value);
+                self.timeline.push(ExecutionTimelineEvent::Atomic {
+                    operation: AtomicOperation::LoadReserved,
+                    ordering: atomic_ordering(order),
+                    address,
+                    succeeded: None,
+                });
+            }
+            Inst::ScW {
+                order,
+                dest,
+                addr,
+                src,
+            } => {
+                let address = self.register(addr);
+                self.validate_atomic_word_address(address)?;
+                let succeeds = self.word_reservation == Some(address);
+                self.word_reservation = None;
+                if succeeds {
+                    self.write(address, 32, self.register(src))?;
+                }
+                self.set_register(dest, u32::from(!succeeds));
+                self.timeline.push(ExecutionTimelineEvent::Atomic {
+                    operation: AtomicOperation::StoreConditional,
+                    ordering: atomic_ordering(order),
+                    address,
+                    succeeded: Some(succeeds),
+                });
+            }
             Inst::AmoW {
-                order: _,
+                order,
                 op,
                 dest,
                 addr,
                 src,
             } => {
                 let address = self.register(addr);
-                if address & 3 != 0 {
-                    return Err(format!(
-                        "misaligned atomic word access at {address:#010x} from pc={:#010x}",
-                        self.pc
-                    )
-                    .into());
-                }
-                if self.svd.intersects_mmio(address, 32) {
-                    return Err(format!(
-                        "atomic word access to MMIO at {address:#010x} requires an explicit peripheral model"
-                    )
-                    .into());
-                }
+                self.validate_atomic_word_address(address)?;
                 let source = self.register(src);
                 let previous = self.read(address, 32)?;
                 self.write(address, 32, atomic_word_result(op, previous, source))?;
                 self.set_register(dest, previous);
+                self.timeline.push(ExecutionTimelineEvent::Atomic {
+                    operation: atomic_operation(op),
+                    ordering: atomic_ordering(order),
+                    address,
+                    succeeded: None,
+                });
             }
             Inst::Beq { offset, src1, src2 } => {
                 self.branch(
@@ -459,5 +513,22 @@ impl Machine<'_> {
         self.pc = next;
         self.registers[0] = 0;
         Ok(true)
+    }
+
+    fn validate_atomic_word_address(&self, address: u32) -> Result<()> {
+        if address & 3 != 0 {
+            return Err(format!(
+                "misaligned atomic word access at {address:#010x} from pc={:#010x}",
+                self.pc
+            )
+            .into());
+        }
+        if self.svd.intersects_mmio(address, 32) {
+            return Err(format!(
+                "atomic word access to MMIO at {address:#010x} requires an explicit peripheral model"
+            )
+            .into());
+        }
+        Ok(())
     }
 }

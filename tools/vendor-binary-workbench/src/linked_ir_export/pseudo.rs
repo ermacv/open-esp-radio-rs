@@ -386,24 +386,7 @@ pub(crate) fn render_pseudo(
             .expect("writing to String cannot fail");
         }
         for field in &summary.memory_fields {
-            let object = match &field.object {
-                LinkedMemoryObject::Argument { index } => format!("arg{index}"),
-                LinkedMemoryObject::Global { member, symbol } => {
-                    format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
-                }
-                LinkedMemoryObject::DereferencedGlobal {
-                    member,
-                    symbol,
-                    pointer_offset,
-                } => format!(
-                    "*({}::{symbol}{pointer_offset:+#x})",
-                    member.as_deref().unwrap_or("<linked>")
-                ),
-                LinkedMemoryObject::Absolute {
-                    address_space,
-                    address,
-                } => format!("absolute<{address_space}>({address:#010x})"),
-            };
+            let object = memory_object_label(&field.object);
             writeln!(
                 output,
                 "// REACHABLE-MEMORY: {object}{:+#x} width={} reads={} writes={} mask={:#010x} via {}",
@@ -510,6 +493,35 @@ pub(crate) fn render_pseudo(
         output.push('\n');
     }
     output
+}
+
+fn memory_object_label(object: &LinkedMemoryObject) -> String {
+    match object {
+        LinkedMemoryObject::Argument { index } => format!("arg{index}"),
+        LinkedMemoryObject::Global { member, symbol } => {
+            format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
+        }
+        LinkedMemoryObject::DereferencedGlobal {
+            member,
+            symbol,
+            pointer_offset,
+        } => format!(
+            "*({}::{symbol}{pointer_offset:+#x})",
+            member.as_deref().unwrap_or("<linked>")
+        ),
+        LinkedMemoryObject::Absolute {
+            address_space,
+            address,
+        } => format!("absolute<{address_space}>({address:#010x})"),
+        LinkedMemoryObject::Indexed {
+            object,
+            argument,
+            stride,
+        } => format!(
+            "{}[arg{argument} * {stride:#x}]",
+            memory_object_label(object)
+        ),
+    }
 }
 
 pub(crate) fn write_pseudo(

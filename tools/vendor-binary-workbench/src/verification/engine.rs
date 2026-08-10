@@ -232,7 +232,10 @@ pub(crate) fn verify_source(
                                 FunctionVerificationStatus::Mismatch
                             },
                         );
-                        function.rust_component = entry.rust_component.clone();
+                        function.rust_component = entry
+                            .rust_component
+                            .as_ref()
+                            .map(|component| component.label().to_owned());
                         function.evidence =
                             matched.then(|| "composition-state-scenario".to_owned());
                         function.contract = Some(contract.label().to_owned());
@@ -251,7 +254,10 @@ pub(crate) fn verify_source(
                             &vendor.name,
                             FunctionVerificationStatus::ImplementedUnqualified,
                         );
-                        function.rust_component = entry.rust_component.clone();
+                        function.rust_component = entry
+                            .rust_component
+                            .as_ref()
+                            .map(|component| component.label().to_owned());
                         function.disposition = Some(resolved.disposition.label().to_owned());
                         function.protocol = Some(resolved.protocol.label().to_owned());
                         function.hil_evidence = entry.hil_evidence.clone();
@@ -534,7 +540,12 @@ pub(crate) fn verify_source(
         {
             summary.matched += 1;
             summary.symbolic_matches += 1;
-            record_evidence(evidence, source.name, &vendor.name, "symbolic")?;
+            record_evidence(
+                evidence,
+                source.name,
+                &vendor.name,
+                super::EvidenceIdentity::plain("symbolic"),
+            )?;
             let mut function = FunctionVerificationReport::new(
                 source.name,
                 &vendor.name,
@@ -560,11 +571,48 @@ pub(crate) fn verify_source(
             functions.push(function);
         }
     }
+    if let Some(manifest) = disposition_manifest {
+        for function in &mut functions {
+            annotate_replacement(function, manifest);
+        }
+    }
     Ok(SourceVerificationReport {
         source: source.name.to_owned(),
         summary,
         functions,
     })
+}
+
+fn annotate_replacement(
+    function: &mut FunctionVerificationReport,
+    manifest: &dispositions::Manifest,
+) {
+    let resolved = manifest.resolve(&function.source, &function.vendor_symbol);
+    function
+        .disposition
+        .get_or_insert_with(|| resolved.disposition.label().to_owned());
+    function
+        .protocol
+        .get_or_insert_with(|| resolved.protocol.label().to_owned());
+    let Some(entry) = resolved.entry else {
+        return;
+    };
+    function.disposition_reviewed = true;
+    if let Some(component) = &entry.rust_component {
+        function
+            .rust_component
+            .get_or_insert_with(|| component.label().to_owned());
+    }
+    if let Some(binding) = &entry.binding {
+        function
+            .rust_symbol
+            .get_or_insert_with(|| binding.rust_probe.clone());
+    }
+    if let Some(hil_evidence) = &entry.hil_evidence {
+        function
+            .hil_evidence
+            .get_or_insert_with(|| hil_evidence.clone());
+    }
 }
 
 fn require_platform_harness<'a>(harness: Option<&'a str>, capability: &str) -> Result<&'a str> {

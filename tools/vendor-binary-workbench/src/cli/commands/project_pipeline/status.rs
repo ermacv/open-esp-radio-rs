@@ -17,9 +17,10 @@ fn print_human(document: &ProjectAnalysisReport) {
         );
     }
     outputln!(
-        "  written={} verified={} failed={} blocked={} not-configured={}",
+        "  written={} verified={} up-to-date={} failed={} blocked={} not-configured={}",
         document.written,
         document.verified,
+        document.current,
         document.failed,
         document.blocked,
         document.not_configured
@@ -56,7 +57,7 @@ mod tests {
     #[test]
     fn analysis_document_keeps_stage_states_and_counts_typed() {
         let document = ProjectAnalysisReport {
-            schema: 1,
+            schema: 2,
             command: "project analyze",
             mode: "check",
             status: "failed",
@@ -67,6 +68,7 @@ mod tests {
             }],
             written: 0,
             verified: 0,
+            current: 0,
             failed: 0,
             blocked: 1,
             not_configured: 0,

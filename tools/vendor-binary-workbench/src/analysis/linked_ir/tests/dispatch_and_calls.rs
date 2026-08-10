@@ -2,6 +2,96 @@
 
 use super::*;
 
+static LINK_UNIT_DELAY_ARGUMENTS: [crate::ExternalArgumentSpec; 1] =
+    [crate::ExternalArgumentSpec {
+        name: "micros",
+        c_type: "u32",
+        direction: crate::ExternalArgumentDirection::Input,
+    }];
+static LINK_UNIT_DELAY_SEMANTIC: crate::DirectSemanticFunctionSpec =
+    crate::DirectSemanticFunctionSpec {
+        id: "test-link-unit-delay",
+        c_name: "ets_delay_us",
+        argument_count: 1,
+        semantic: crate::ExternalSemanticSpec {
+            operation: "time.blocking-delay",
+            arguments: &LINK_UNIT_DELAY_ARGUMENTS,
+            return_type: "void",
+            replacement: Some("Rust async timer"),
+            event_dispatch: None,
+        },
+        evidence: "authoritative-link-unit-relocation-symbol",
+    };
+
+#[test]
+fn authoritative_link_unit_symbol_names_and_types_a_direct_external_call() {
+    let owner = symbol("vendor_init", 0x1000, vec![0x67, 0x80, 0x00, 0x00]);
+    let external = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "ets_delay_us".to_owned(),
+        address: 0x2f80_003c,
+        bytes: Vec::new(),
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let hooks = Box::leak(Box::new(crate::RiscvSummaryHooks {
+        secondary_return_target: |_| false,
+        direct_semantic: |_| None,
+        direct_external_semantic: |name| {
+            (name == "ets_delay_us").then_some(&LINK_UNIT_DELAY_SEMANTIC)
+        },
+        reference_intrinsic: |_, _, _| None,
+        standard_memory_intrinsic: |_, _| None,
+        wide_signed_divide: |_, _| None,
+    }));
+    let mut resolver = empty_resolver();
+    resolver.symbols = vec![owner.clone()];
+    resolver.symbols_by_address.insert(0x2f80_003c, external);
+    resolver.relocated_calls.insert(
+        crate::StructuralCallSite::new(&owner, 0x1004),
+        ("ets_delay_us".to_owned(), Some(0x2f80_003c)),
+    );
+    resolver.pointer_context.summary_hooks = Some(hooks);
+    let identities = IrIdentityCatalog::new(&resolver, None);
+    let mut calls = vec![LinkedCall {
+        kind: "internal",
+        target: "ets_delay_us".to_owned(),
+        site: Some(0x1004),
+        tail: false,
+        result_modeled: false,
+        semantics: None,
+        semantic_operation: None,
+        semantic_contract: None,
+        replacement_hint: None,
+        project_symbol: None,
+        project_candidates: Vec::new(),
+        trampoline: None,
+        argument_shapes: 1,
+        arguments: vec!["const:0x0000000a".to_owned()],
+        argument_bindings: Vec::new(),
+        typed_arguments: Vec::new(),
+        guard_paths: None,
+    }];
+
+    annotate_direct_semantic_calls(&mut calls, &owner, &resolver, &identities);
+
+    assert_eq!(calls[0].kind, "external");
+    assert_eq!(calls[0].target, "ets_delay_us");
+    assert_eq!(
+        calls[0].semantic_operation.as_deref(),
+        Some("time.blocking-delay")
+    );
+    assert_eq!(
+        calls[0]
+            .semantic_contract
+            .as_ref()
+            .map(|contract| contract.source),
+        Some("authoritative-link-unit-symbol")
+    );
+    assert_eq!(calls[0].typed_arguments[0].name, "micros");
+}
+
 #[test]
 fn event_dispatch_projection_assigns_reviewed_argument_roles() {
     let actions = vec![

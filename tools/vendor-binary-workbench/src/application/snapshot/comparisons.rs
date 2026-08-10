@@ -14,37 +14,39 @@ pub(super) fn collect(
     };
     let mut output = Vec::new();
     let mut names = BTreeSet::new();
-    for path in &workspace.profiles {
-        let profiles = match crate::verification::profiles::load(path) {
-            Ok(profiles) => profiles,
-            Err(error) => {
-                push_error(
-                    diagnostics,
-                    "verification.profiles",
-                    error,
-                    Some(path.clone()),
-                );
-                continue;
-            }
-        };
-        for profile in profiles {
-            if !names.insert(profile.name.clone()) {
-                diagnostics.push(DiagnosticRecord {
-                    severity: DiagnosticSeverity::Error,
-                    component: "verification.profiles".to_owned(),
-                    message: format!("duplicate comparison profile {:?}", profile.name),
-                    path: Some(path.clone()),
+    for suite in &workspace.suites {
+        for path in &suite.profiles {
+            let profiles = match crate::verification::profiles::load(path) {
+                Ok(profiles) => profiles,
+                Err(error) => {
+                    push_error(
+                        diagnostics,
+                        "verification.profiles",
+                        error,
+                        Some(path.clone()),
+                    );
+                    continue;
+                }
+            };
+            for profile in profiles {
+                if !names.insert(profile.name.clone()) {
+                    diagnostics.push(DiagnosticRecord {
+                        severity: DiagnosticSeverity::Error,
+                        component: "verification.profiles".to_owned(),
+                        message: format!("duplicate comparison profile {:?}", profile.name),
+                        path: Some(path.clone()),
+                    });
+                    continue;
+                }
+                output.push(ComparisonProfileSummary {
+                    name: profile.name,
+                    path: path.clone(),
+                    vendor_source: profile.vendor_source,
+                    vendor_symbol: profile.vendor_symbol,
+                    rust_symbol: profile.rust_symbol,
+                    scenarios: profile.scenarios.len(),
                 });
-                continue;
             }
-            output.push(ComparisonProfileSummary {
-                name: profile.name,
-                path: path.clone(),
-                vendor_source: profile.vendor_source,
-                vendor_symbol: profile.vendor_symbol,
-                rust_symbol: profile.rust_symbol,
-                scenarios: profile.scenarios.len(),
-            });
         }
     }
     output.sort_by(|left, right| left.name.cmp(&right.name));

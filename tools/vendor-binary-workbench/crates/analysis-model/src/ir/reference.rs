@@ -435,6 +435,18 @@ impl ResolvedReferenceEvent {
                 function: *function,
                 arguments: arguments.clone(),
             },
+            DraftReferenceEvent::ReviewedExternalCall {
+                site, candidates, ..
+            } => {
+                return Err(format!(
+                    "reviewed external call at {site:#010x} has no executable model: {}",
+                    candidates
+                        .iter()
+                        .map(|candidate| candidate.id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                ));
+            }
             DraftReferenceEvent::DiagnosticCall {
                 function,
                 argument_count,

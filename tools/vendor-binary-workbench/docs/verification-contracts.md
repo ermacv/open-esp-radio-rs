@@ -23,6 +23,13 @@ Each `[[functions.blocked-by]]` table expresses an exact qualification
 dependency through `source` and `symbol`. The loader rejects missing blocker
 targets and duplicate entries.
 
+The component id is checked against the current Cargo workspace source AST and
+the exact suite ELF/DWARF facts in the aggregate project report. This catches
+stale module paths and distinguishes a compiled production item or inline
+frame from a merely present `no_mangle` probe. The join is navigation and
+currency evidence; qualification still comes only from the declared semantic
+or effect contract.
+
 Protocol classification is independent from completion. Shared PHY/RF,
 Wi-Fi, Bluetooth, BLE, Coex and 802.15.4 counts therefore remain visible even
 when a function is not yet ported.

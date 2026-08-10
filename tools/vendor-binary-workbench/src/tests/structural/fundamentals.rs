@@ -1,6 +1,64 @@
 use super::super::*;
 
 #[test]
+fn indexed_absolute_ram_preserves_argument_stride_and_field_offset() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("diagnostic.o".to_owned()),
+        name: "record_slot".to_owned(),
+        address: 0x1000_0000,
+        bytes: vec![
+            0x13, 0x07, 0xc0, 0x02, // li a4, 44
+            0xb3, 0x07, 0xe5, 0x02, // mul a5, a0, a4
+            0x37, 0xf7, 0x02, 0x10, // lui a4, 0x1002f
+            0x13, 0x07, 0x07, 0x56, // addi a4, a4, 0x560
+            0xb3, 0x87, 0xe7, 0x00, // add a5, a5, a4
+            0x23, 0xaa, 0xb7, 0x00, // sw a1, 20(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let trace = trace_binary_symbol(
+        &symbol,
+        &map(),
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert!(trace.reference_blockers.is_empty(), "{trace:#?}");
+    let DraftReferenceEvent::Memory {
+        access: MemoryAccess::Write,
+        address,
+        region,
+        ..
+    } = &trace.reference_events[0]
+    else {
+        panic!(
+            "expected indexed RAM write, got {:#?}",
+            trace.reference_events
+        );
+    };
+    assert_eq!(region, "indexed RAM object");
+    assert_eq!(
+        address.memory_object_location_with_reads(&BTreeMap::new()),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Indexed {
+                root: Box::new(MemoryObjectRoot::Absolute {
+                    address: 0x1002_f560,
+                }),
+                argument: 0,
+                stride: 0x2c,
+            },
+            offset: 0x14,
+        })
+    );
+}
+
+#[test]
 fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: None,
@@ -28,9 +86,7 @@ fn unsigned_set_less_than_keeps_snez_dataflow_codegen_ready() {
     assert!(trace.is_reference_eligible(), "{trace:#?}");
     assert_eq!(
         trace.events[0].memory_value().as_deref(),
-        Some(
-            "expr:LessThanUnsigned(const:0x00000000,bits:0=arg0.0,1=arg0.1,2=arg0.2,3=arg0.3,4=arg0.4,5=arg0.5,6=arg0.6,7=arg0.7,8=arg0.8,9=arg0.9,10=arg0.10,11=arg0.11,12=arg0.12,13=arg0.13,14=arg0.14,15=arg0.15,16=arg0.16,17=arg0.17,18=arg0.18,19=arg0.19,20=arg0.20,21=arg0.21,22=arg0.22,23=arg0.23,24=arg0.24,25=arg0.25,26=arg0.26,27=arg0.27,28=arg0.28,29=arg0.29,30=arg0.30,31=arg0.31)"
-        )
+        Some("expr:LessThanUnsigned(const:0x00000000,arg0)")
     );
     let generated = generate_reference(&trace, "fixture.elf", "sha256", None, &[]).unwrap();
     assert!(

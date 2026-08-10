@@ -201,9 +201,13 @@ fn parse_steps(array: &Array, context: &str) -> Result<Vec<InterfaceFactStep>> {
 
 fn parse_status(table: &Table, context: &str) -> Result<ReviewStatus> {
     Ok(match optional_table_string(table, "status").as_deref() {
-        None | Some("unreviewed") => ReviewStatus::Unreviewed,
         Some("reviewed") => ReviewStatus::Reviewed,
         Some("ignored") => ReviewStatus::Ignored,
+        None | Some("unreviewed") => {
+            return Err(crate::Error::invalid(format!(
+                "{context} is a sparse review overlay and requires status = \"reviewed\" or \"ignored\"; omit unreviewed generated observations"
+            )));
+        }
         Some(value) => {
             return Err(crate::Error::invalid(format!(
                 "invalid review status {value:?} in {context}"

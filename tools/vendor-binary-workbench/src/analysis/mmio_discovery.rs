@@ -18,8 +18,8 @@ use indicatif::ProgressStyle;
 use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 use crate::{
-    BitSource, FunctionAnalysis, MemoryAccess, MmioMap, MmioRegion, ObservableEvent, Result,
-    StructuralPointerContext, SymbolicValue, artifact, direct,
+    BitSource, FunctionAnalysis, LocatedObservableEvent, MemoryAccess, MmioMap, MmioRegion,
+    ObservableEvent, Result, StructuralPointerContext, SymbolicValue, artifact, direct,
 };
 
 // Artifact-wide discovery remains bounded, but these are analysis-coverage
@@ -130,7 +130,15 @@ pub(crate) struct RegisterFinding {
     pub(crate) write_count: usize,
     pub(crate) read_functions: BTreeSet<DiscoveryFunction>,
     pub(crate) write_functions: BTreeSet<DiscoveryFunction>,
+    pub(crate) read_sites: BTreeSet<DiscoveryAccessSite>,
+    pub(crate) write_sites: BTreeSet<DiscoveryAccessSite>,
     pub(crate) write_patterns: Vec<WritePatternFinding>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DiscoveryAccessSite {
+    pub(crate) function: DiscoveryFunction,
+    pub(crate) site: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -170,15 +178,16 @@ struct RegisterAccumulator {
     write_count: usize,
     read_functions: BTreeSet<DiscoveryFunction>,
     write_functions: BTreeSet<DiscoveryFunction>,
+    read_sites: BTreeSet<DiscoveryAccessSite>,
+    write_sites: BTreeSet<DiscoveryAccessSite>,
     write_patterns: BTreeMap<WriteBitPattern, (usize, BTreeSet<DiscoveryFunction>)>,
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
 struct FunctionExploration {
-    /// One representative observable plus its maximum multiplicity on any
-    /// explored path. ObservableEvent does not retain the instruction site,
-    /// so summing paths would duplicate their common prefix.
-    events: Vec<(ObservableEvent, usize)>,
+    /// One instruction-local observable plus its maximum multiplicity on any
+    /// explored path. Summing paths would duplicate their common prefix.
+    events: Vec<(LocatedObservableEvent, usize)>,
     diagnostics: BTreeSet<(&'static str, String)>,
     explored_states: usize,
     terminal_paths: usize,
@@ -271,9 +280,10 @@ fn record_event(
     accumulators: &mut BTreeMap<(u32, u8), RegisterAccumulator>,
     ranges: &[DiscoveryRange],
     function: &DiscoveryFunction,
-    event: &ObservableEvent,
+    located: &LocatedObservableEvent,
     occurrences: usize,
 ) -> bool {
+    let event = &located.event;
     let ObservableEvent::Memory {
         access,
         width,
@@ -296,10 +306,18 @@ fn record_event(
         MemoryAccess::Read => {
             entry.read_count += occurrences;
             entry.read_functions.insert(function.clone());
+            entry.read_sites.insert(DiscoveryAccessSite {
+                function: function.clone(),
+                site: located.site,
+            });
         }
         MemoryAccess::Write => {
             entry.write_count += occurrences;
             entry.write_functions.insert(function.clone());
+            entry.write_sites.insert(DiscoveryAccessSite {
+                function: function.clone(),
+                site: located.site,
+            });
             let pattern = classify_write_bits(value.as_ref(), *address, *width);
             let (pattern_occurrences, functions) = entry.write_patterns.entry(pattern).or_default();
             *pattern_occurrences += occurrences;
@@ -310,11 +328,11 @@ fn record_event(
 }
 
 fn merge_path_events(
-    merged: &mut Vec<(ObservableEvent, usize)>,
-    path_events: &[ObservableEvent],
+    merged: &mut Vec<(LocatedObservableEvent, usize)>,
+    path_events: &[LocatedObservableEvent],
 ) -> bool {
     let mut truncated = false;
-    let mut path_counts = Vec::<(ObservableEvent, usize)>::new();
+    let mut path_counts = Vec::<(LocatedObservableEvent, usize)>::new();
     for event in path_events {
         if let Some((_, count)) = path_counts
             .iter_mut()
@@ -400,7 +418,7 @@ fn explore_symbol(
                 continue;
             }
         };
-        if merge_path_events(&mut result.events, &trace.events) {
+        if merge_path_events(&mut result.events, &trace.located_events) {
             result.diagnostics.insert((
                 "exploration",
                 format!(
@@ -643,6 +661,8 @@ pub(crate) fn discover_mmio(
             write_count: accumulator.write_count,
             read_functions: accumulator.read_functions,
             write_functions: accumulator.write_functions,
+            read_sites: accumulator.read_sites,
+            write_sites: accumulator.write_sites,
             write_patterns: accumulator
                 .write_patterns
                 .into_iter()
@@ -700,12 +720,15 @@ mod tests {
 
     #[test]
     fn path_merge_does_not_double_count_a_common_prefix() {
-        let event = ObservableEvent::Memory {
-            access: MemoryAccess::Read,
-            width: 32,
-            address: 0x2010_7030,
-            register: "AGC.CONTROL".to_owned(),
-            value: None,
+        let event = LocatedObservableEvent {
+            site: 0x1004,
+            event: ObservableEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 32,
+                address: 0x2010_7030,
+                register: "AGC.CONTROL".to_owned(),
+                value: None,
+            },
         };
         let mut merged = Vec::new();
 
@@ -756,13 +779,23 @@ mod tests {
         let addresses = exploration
             .events
             .iter()
-            .filter_map(|(event, _)| match event {
+            .filter_map(|(event, _)| match &event.event {
                 ObservableEvent::Memory { address, .. } => Some(*address),
                 ObservableEvent::Fence { .. } => None,
             })
             .collect::<BTreeSet<_>>();
+        let sites = exploration
+            .events
+            .iter()
+            .filter_map(|(located, _)| match &located.event {
+                ObservableEvent::Memory { address, .. } => Some((*address, located.site)),
+                ObservableEvent::Fence { .. } => None,
+            })
+            .collect::<BTreeMap<_, _>>();
 
         assert_eq!(addresses, BTreeSet::from([0x2010_7030, 0x2010_7034]));
+        assert_eq!(sites[&0x2010_7030], 0x1008);
+        assert_eq!(sites[&0x2010_7034], 0x1014);
         assert_eq!(exploration.explored_states, 3);
         assert_eq!(exploration.terminal_paths, 2);
         assert_eq!(exploration.branch_sites, BTreeSet::from([0x1000]));

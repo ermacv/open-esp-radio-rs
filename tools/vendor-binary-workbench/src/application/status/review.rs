@@ -1,6 +1,6 @@
 //! Reviewed register, interface, function, and context workspace readiness.
 
-use super::model::{Component, Phase, Readiness};
+use super::model::{Component, Phase, Readiness, ReviewScopeDetail};
 use crate::application::ProjectContext;
 use crate::{
     artifacts::symbol_inventory::load_code_boundary_facts,
@@ -21,8 +21,76 @@ pub(super) fn collect(context: &ProjectContext<'_>) -> Phase {
             registers(context),
             interfaces(context),
             functions(context),
+            scopes(context),
         ],
     )
+}
+
+fn scopes(context: &ProjectContext<'_>) -> Component {
+    let Some(workspace) = context.project.review.as_ref() else {
+        return Component::new("scopes", Readiness::NotConfigured);
+    };
+    if !workspace.output.is_file() {
+        return Component::new("scopes", Readiness::Incomplete)
+            .detail("report", workspace.output.display().to_string())
+            .diagnostic("review scope report has not been generated")
+            .next_action(project_command(context, "project analyze"));
+    }
+    match crate::review_scopes::load_for_project(context.project) {
+        Ok(document) => {
+            let reports = document.scopes;
+            let blocked = reports.iter().any(|report| report.has_blockers());
+            let details = reports
+                .iter()
+                .map(|report| ReviewScopeDetail {
+                    id: report.id.clone(),
+                    release: report.release,
+                    profiles: report.profiles.clone(),
+                    roots: report.roots,
+                    functions: report.functions,
+                    complete_functions: report.complete_functions,
+                    mmio_registers: report.mmio_registers,
+                    linked_mmio_registers: report.linked_mmio_registers,
+                    static_mmio_registers: report.static_mmio_registers,
+                    table_calls: report.table_calls,
+                    context_fields: report.context_fields,
+                    memory_fields: report.memory_fields,
+                    decode_blockers: report.decode_blockers,
+                    decode_blocker_functions: report.decode_blocker_functions,
+                    direct_blockers: report.direct_blockers,
+                    call_graph_blockers: report.call_graph_blockers,
+                    reference_blockers: report.reference_blockers,
+                    unresolved_calls: report.unresolved_calls,
+                    replacement_behavioral_matches: report.replacement_behavioral_matches,
+                    replacement_production_matches: report.replacement_production_matches,
+                    replacement_probe_only_matches: report.replacement_probe_only_matches,
+                    replacement_unmapped_matches: report.replacement_unmapped_matches,
+                    replacement_mismatches: report.replacement_mismatches,
+                    replacement_incomplete: report.replacement_incomplete,
+                    replacement_unqualified: report.replacement_unqualified,
+                    replacement_uncovered: report.replacement_uncovered,
+                })
+                .collect::<Vec<_>>();
+            let mut component = Component::new(
+                "scopes",
+                if blocked {
+                    Readiness::Incomplete
+                } else {
+                    Readiness::Ready
+                },
+            )
+            .detail("report", workspace.output.display().to_string())
+            .detail("count", reports.len())
+            .detail("scopes", details);
+            if blocked {
+                component = component.next_action(
+                    "resolve decode/control-flow blockers in the configured review scopes",
+                );
+            }
+            component
+        }
+        Err(error) => Component::new("scopes", Readiness::Invalid).diagnostic(error),
+    }
 }
 
 fn code(context: &ProjectContext<'_>) -> Component {

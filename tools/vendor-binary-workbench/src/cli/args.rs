@@ -252,6 +252,11 @@ enum ProjectCommand {
         after_long_help = "Use `--check` in CI to compare generated evidence without writing it. Follow with `project status` to inspect readiness."
     )]
     Analyze(ProjectAnalyzeArgs),
+    /// Execute every configured Rust/vendor verification suite.
+    #[command(
+        after_long_help = "Verification uses project suites and caller-owned run bindings. Use `--check` in CI to reproduce the aggregate report without writing it."
+    )]
+    Verify(ProjectVerifyArgs),
     /// Generate or verify reviewed SVD, PAC and binding outputs.
     #[command(
         after_long_help = "Use `--check` in CI to validate publication outputs without writing them."
@@ -269,6 +274,7 @@ impl ProjectCommand {
             Self::Status(arguments) => Command::ProjectStatus(arguments),
             Self::Browse(arguments) => Command::ProjectBrowse(arguments),
             Self::Analyze(arguments) => Command::ProjectAnalyze(arguments),
+            Self::Verify(arguments) => Command::ProjectVerify(arguments),
             Self::Publish(arguments) => Command::ProjectPublish(arguments),
         }
     }
@@ -297,7 +303,6 @@ leaf_commands!(SymbolCommand {
 leaf_commands!(InterfaceCommand {
     Discover(InterfaceDiscoverArgs) => Command::InterfaceDiscover, InterfaceDiscover,
     InitPack(OutputArgs) => Command::InterfaceInitPack, Output,
-    SyncPack(CheckArgs) => Command::InterfaceSyncPack, Check,
     Validate(ValidationArgs) => Command::InterfaceValidate, Validation,
 });
 
@@ -406,6 +411,7 @@ pub(crate) enum Command {
     ProjectStatus(ProjectStatusArgs),
     ProjectBrowse(EmptyArgs),
     ProjectAnalyze(ProjectAnalyzeArgs),
+    ProjectVerify(ProjectVerifyArgs),
     ProjectPublish(CheckArgs),
     FunctionInitPack(OutputArgs),
     FunctionValidate(ValidationArgs),
@@ -416,7 +422,6 @@ pub(crate) enum Command {
     SymbolInventory(SymbolInventoryArgs),
     InterfaceDiscover(InterfaceDiscoverArgs),
     InterfaceInitPack(OutputArgs),
-    InterfaceSyncPack(CheckArgs),
     InterfaceValidate(ValidationArgs),
     RegisterInitModel(RegisterModelArgs),
     RegisterImportSvd(RegisterImportArgs),
@@ -581,20 +586,6 @@ mod tests {
                 ParsedInvocation::parse(["project".to_owned(), removed.to_owned()]).unwrap_err();
             assert!(error.to_string().contains("unrecognized subcommand"));
         }
-    }
-
-    #[test]
-    fn interface_pack_sync_has_an_explicit_non_mutating_check_mode() {
-        let invocation = ParsedInvocation::parse([
-            "interfaces".to_owned(),
-            "sync-pack".to_owned(),
-            "--check".to_owned(),
-        ])
-        .unwrap();
-        let Command::InterfaceSyncPack(arguments) = invocation.command else {
-            panic!("unexpected argument type")
-        };
-        assert!(arguments.check);
     }
 
     #[test]

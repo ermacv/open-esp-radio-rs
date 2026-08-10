@@ -8,15 +8,18 @@ old-schema compatibility readers.
 
 | Artifact | Version | Command identity | Owner |
 | --- | ---: | --- | --- |
-| Symbol inventory | 3 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
-| MMIO discovery facts | 4 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
+| Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
+| MMIO discovery facts | 5 | `mmio discover` | `artifacts/mmio_facts.rs`, `artifacts/mmio_facts_read.rs` |
 | Interface discovery facts | 5 | `interfaces discover` | `artifacts/interface_facts.rs`, `artifacts/interface_facts_read.rs` |
-| Linked IR | 37 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
+| Linked IR | 38 | `ir export` | `artifacts/linked_ir_document.rs`, `artifacts/linked_ir_read.rs` |
 
-MMIO schema 4, interface schema 5 and linked-IR schema 37 carry
+MMIO schema 5, interface schema 5 and linked-IR schema 38 carry
 reviewed-code-boundary provenance. MMIO and interface artifacts record the accepted boundary count per
 input. Linked IR retains the complete reviewed physical ranges so downstream
 reviewers can distinguish ordinary ELF symbol roots from promoted gap roots.
+MMIO schema 5 adds exact instruction PCs for every direct read/write finding;
+the locations remain best-effort evidence and do not strengthen the artifact's
+explicit `completeness_claim = false` contract.
 Interface schema 5 replaces symbol-wide decode failures with per-instruction
 `decode_blockers` carrying PC, raw word, width, extension class and whether
 linear continuation is architecturally safe. Linked-IR blockers are restricted
@@ -50,3 +53,6 @@ symbol/MMIO/interface/linked-IR data.
 `project status` currently emits command-result schema 2. Each non-ready
 component may carry a typed `next_action`; human output groups identical
 actions while JSON keeps the action attached to every responsible component.
+`project analyze` emits command-result schema 2, which distinguishes a
+content-verified write-mode `up-to-date` stage from a stage executed as
+`written` or `verified`.

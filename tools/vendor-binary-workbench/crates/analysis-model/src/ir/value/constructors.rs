@@ -4,11 +4,7 @@ use super::*;
 
 impl SymbolicValue {
     pub fn input(index: u8) -> Self {
-        Self::Bits(Box::new(core::array::from_fn(|bit| BitSource::Input {
-            index,
-            bit: bit as u8,
-            inverted: false,
-        })))
+        Self::Input { index }
     }
 
     pub fn bits(&self) -> [BitSource; 32] {
@@ -17,15 +13,18 @@ impl SymbolicValue {
             Self::Constant(value) => {
                 core::array::from_fn(|bit| BitSource::Constant(value & (1 << bit) != 0))
             }
-            Self::InputConstant { index, .. } => core::array::from_fn(|bit| BitSource::Input {
-                index: *index,
-                bit: bit as u8,
-                inverted: false,
-            }),
+            Self::Input { index } | Self::InputConstant { index, .. } => {
+                core::array::from_fn(|bit| BitSource::Input {
+                    index: *index,
+                    bit: bit as u8,
+                    inverted: false,
+                })
+            }
             Self::StackAddress(_)
             | Self::SymbolAddress { .. }
             | Self::ExternalTable(_)
             | Self::ExternalFunction { .. }
+            | Self::ReviewedExternalFunction { .. }
             | Self::FunctionTable(_)
             | Self::FunctionPointer { .. }
             | Self::Expression { .. }
@@ -318,6 +317,10 @@ impl SymbolicValue {
                 };
             }
         }
-        Self::Bits(Box::new(bits))
+        let value = Self::Bits(Box::new(bits));
+        if let Some(index) = value.direct_input_index() {
+            return Self::Input { index };
+        }
+        value
     }
 }

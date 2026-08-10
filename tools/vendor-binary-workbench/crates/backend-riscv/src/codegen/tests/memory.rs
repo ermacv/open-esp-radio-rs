@@ -88,6 +88,7 @@ fn compacts_complete_word_to_bytes_groups_without_changing_the_access_shape() {
     let trace = FunctionAnalysis {
         symbol: "word_to_bytes".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events,
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -120,6 +121,7 @@ fn does_not_compact_a_memory_read_token_that_escapes_the_loop() {
     let trace = FunctionAnalysis {
         symbol: "escaping_word".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events,
         reference_dependencies: Vec::new(),
         blockers: Vec::new(),
@@ -153,6 +155,7 @@ fn compacts_proven_little_endian_loaders_and_preserves_read_order() {
     let trace = FunctionAnalysis {
         symbol: "bytes_to_word".to_owned(),
         events: Vec::new(),
+        located_events: Vec::new(),
         reference_events,
         reference_dependencies: vec!["phy_byte_to_word".to_owned(); 2],
         blockers: Vec::new(),

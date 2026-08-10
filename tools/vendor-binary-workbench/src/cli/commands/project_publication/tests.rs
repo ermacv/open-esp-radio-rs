@@ -1,7 +1,9 @@
 use std::{fs, path::PathBuf};
 
 use super::*;
-use crate::project::{PacBindingsOutputSpec, PacOutputSpec, RegisterWorkspacePaths};
+use crate::project::{
+    PacBindingsOutputSpec, PacOutputSpec, RegisterWorkspacePaths, ReviewWorkspaceSpec,
+};
 
 #[test]
 fn publishes_and_checks_a_complete_register_project() {
@@ -141,8 +143,22 @@ bitWidth = 1
         lint_pack: None,
         evidence_catalogs: Vec::new(),
     };
+    let project_id = format!("publication-{name}");
+    let review_output = directory.join("generated/review-scopes.json");
+    fs::create_dir_all(review_output.parent().unwrap()).unwrap();
+    fs::write(
+        &review_output,
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schema_version": crate::review_scopes::REVIEW_SCOPES_SCHEMA,
+            "command": "project review scopes",
+            "project": project_id,
+            "scopes": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     let project = ProjectSpec {
-        id: format!("publication-{name}"),
+        id: project_id,
         target_spec: directory.join("target.toml"),
         platform_pack: None,
         run_spec: None,
@@ -156,6 +172,11 @@ bitWidth = 1
         registers: Some(paths),
         interfaces: None,
         functions: None,
+        review: Some(ReviewWorkspaceSpec {
+            output: review_output,
+            release_scopes: Vec::new(),
+            scopes: Vec::new(),
+        }),
         verification: None,
     };
     (directory, project)

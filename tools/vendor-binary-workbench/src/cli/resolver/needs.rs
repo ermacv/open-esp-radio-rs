@@ -54,6 +54,7 @@ impl ResolutionNeeds {
             Command::ProjectDoctor(_) => Self::new(true, false, false, false, true, true, true),
             Command::ProjectStatus(_) => Self::new(true, false, false, false, true, false, true),
             Command::ProjectAnalyze(_) => Self::new(true, true, false, false, true, true, true),
+            Command::ProjectVerify(_) => Self::new(true, true, false, true, true, true, true),
             Command::ProjectPublish(_) => Self::new(true, false, false, false, true, false, false),
 
             Command::FunctionInitPack(_)
@@ -63,7 +64,6 @@ impl ResolutionNeeds {
             | Command::CodeValidate(_)
             | Command::CodeReview(_)
             | Command::InterfaceInitPack(_)
-            | Command::InterfaceSyncPack(_)
             | Command::InterfaceValidate(_)
             | Command::RegisterReview(_)
             | Command::RegisterExportSvd(_)

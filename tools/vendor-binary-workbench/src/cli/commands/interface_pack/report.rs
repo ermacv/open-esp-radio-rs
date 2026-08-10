@@ -4,6 +4,11 @@ use std::path::Path;
 
 use serde::Serialize;
 
+const HUMAN_BINDING_LIMIT: usize = 64;
+const HUMAN_CALL_LIMIT: usize = 32;
+const HUMAN_ARGUMENT_LIMIT: usize = 4;
+const HUMAN_EXPRESSION_LIMIT: usize = 48;
+
 #[derive(Serialize)]
 pub(super) struct InterfacePackDocument<'a> {
     pub(super) schema: u32,
@@ -13,21 +18,6 @@ pub(super) struct InterfacePackDocument<'a> {
     pub(super) observed_slots: usize,
     pub(super) observed_calls: usize,
     pub(super) path: &'a Path,
-}
-
-#[derive(Serialize)]
-pub(super) struct InterfacePackSyncDocument<'a> {
-    pub(super) schema: u32,
-    pub(super) command: &'static str,
-    pub(super) status: &'static str,
-    pub(super) check: bool,
-    pub(super) added_anchors: usize,
-    pub(super) refreshed_anchors: usize,
-    pub(super) removed_anchors: usize,
-    pub(super) added_slots: usize,
-    pub(super) removed_slots: usize,
-    pub(super) facts: &'a Path,
-    pub(super) pack: &'a Path,
 }
 
 #[derive(Serialize)]
@@ -59,6 +49,20 @@ pub(super) struct InterfaceWorkspaceDocument<'a> {
     pub(super) pack: &'a Path,
     pub(super) contracts: Vec<InterfaceContractDocument<'a>>,
     pub(super) bindings: Vec<InterfaceBindingDocument<'a>>,
+    pub(super) unreviewed: Vec<UnreviewedInterfaceDocument<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct UnreviewedInterfaceDocument<'a> {
+    pub(super) id: &'a str,
+    pub(super) contract: &'a str,
+    pub(super) source: &'a str,
+    pub(super) offset: i32,
+    pub(super) width: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) selector: Option<&'a str>,
+    pub(super) functions: Vec<&'a str>,
+    pub(super) call_sites: Vec<u32>,
 }
 
 #[derive(Serialize)]
@@ -183,34 +187,6 @@ pub(super) fn print_pack_human(report: &InterfacePackDocument<'_>) {
     );
 }
 
-pub(super) fn print_sync_human(report: &InterfacePackSyncDocument<'_>) {
-    outputln!(
-        "Interface pack synchronization: {} — {}",
-        report.status,
-        report.pack.display()
-    );
-    outputln!(
-        "{}",
-        crate::cli::table::render(
-            ["Scope", "Added", "Refreshed", "Removed"],
-            [
-                [
-                    "Anchors".to_owned(),
-                    report.added_anchors.to_string(),
-                    report.refreshed_anchors.to_string(),
-                    report.removed_anchors.to_string(),
-                ],
-                [
-                    "Slots".to_owned(),
-                    report.added_slots.to_string(),
-                    "-".to_owned(),
-                    report.removed_slots.to_string(),
-                ],
-            ],
-        )
-    );
-}
-
 pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
     outputln!(
         "Interface workspace: {} — {}",
@@ -292,35 +268,64 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                     "Execution",
                     "Calls",
                 ],
-                report.bindings.iter().map(|binding| [
-                    binding.id.to_owned(),
-                    binding.source.to_owned(),
-                    binding.layout_version.to_owned(),
-                    format!("{:+#x}", binding.offset),
-                    binding.width.to_string(),
-                    binding.name.to_owned(),
-                    format!(
-                        "{}({})->{}{}",
-                        report.calling_convention,
-                        binding.arguments.join(", "),
-                        binding.return_type,
-                        if binding.variadic { ", ..." } else { "" },
-                    ),
-                    binding.semantic.unwrap_or("-").to_owned(),
-                    binding
-                        .execution_model
-                        .as_ref()
-                        .map_or("-", |model| model.id)
-                        .to_owned(),
-                    binding.calls.len().to_string(),
-                ]),
+                report
+                    .bindings
+                    .iter()
+                    .take(HUMAN_BINDING_LIMIT)
+                    .map(|binding| [
+                        binding.id.to_owned(),
+                        binding.source.to_owned(),
+                        binding.layout_version.to_owned(),
+                        format!("{:+#x}", binding.offset),
+                        binding.width.to_string(),
+                        binding.name.to_owned(),
+                        format!(
+                            "{}({})->{}{}",
+                            report.calling_convention,
+                            binding.arguments.join(", "),
+                            binding.return_type,
+                            if binding.variadic { ", ..." } else { "" },
+                        ),
+                        binding.semantic.unwrap_or("-").to_owned(),
+                        binding
+                            .execution_model
+                            .as_ref()
+                            .map_or("-", |model| model.id)
+                            .to_owned(),
+                        binding.calls.len().to_string(),
+                    ]),
             )
         );
+        if report.bindings.len() > HUMAN_BINDING_LIMIT {
+            outputln!(
+                "Bindings: {} more omitted; use `--format json` for the complete result",
+                report.bindings.len() - HUMAN_BINDING_LIMIT
+            );
+        }
         let calls = report
             .bindings
             .iter()
             .flat_map(|binding| {
                 binding.calls.iter().map(move |call| {
+                    let mut arguments = call
+                        .arguments
+                        .iter()
+                        .take(HUMAN_ARGUMENT_LIMIT)
+                        .map(|argument| {
+                            format!(
+                                "a{}:{}={}",
+                                argument.index,
+                                argument.kind,
+                                compact_text(argument.expression, HUMAN_EXPRESSION_LIMIT)
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    if call.arguments.len() > HUMAN_ARGUMENT_LIMIT {
+                        arguments.push(format!(
+                            "+{} arg(s)",
+                            call.arguments.len() - HUMAN_ARGUMENT_LIMIT
+                        ));
+                    }
                     [
                         binding.anchor.to_owned(),
                         call.function.to_owned(),
@@ -345,19 +350,11 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                                 )
                             },
                         ),
-                        call.arguments
-                            .iter()
-                            .map(|argument| {
-                                format!(
-                                    "a{}:{}={}",
-                                    argument.index, argument.kind, argument.expression
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join(", "),
+                        arguments.join(", "),
                     ]
                 })
             })
+            .take(HUMAN_CALL_LIMIT)
             .collect::<Vec<_>>();
         if !calls.is_empty() {
             outputln!(
@@ -367,6 +364,12 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
                     calls,
                 )
             );
+            if report.resolved_calls > HUMAN_CALL_LIMIT {
+                outputln!(
+                    "Resolved calls: {} more omitted; use `--format json` for exact call sites and arguments",
+                    report.resolved_calls - HUMAN_CALL_LIMIT
+                );
+            }
         }
     }
     outputln!(
@@ -380,4 +383,31 @@ pub(super) fn print_workspace_human(report: &InterfaceWorkspaceDocument<'_>) {
         report.artifact_guards,
         report.runtime_guards,
     );
+    if !report.unreviewed.is_empty() {
+        outputln!(
+            "Unreviewed observations: {} (use `--format json` for exact selectors, functions, and call sites)",
+            report.unreviewed.len()
+        );
+    }
+}
+
+fn compact_text(value: &str, limit: usize) -> String {
+    let mut characters = value.chars();
+    let prefix = characters.by_ref().take(limit).collect::<String>();
+    if characters.next().is_some() {
+        format!("{prefix}…")
+    } else {
+        prefix
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compact_text;
+
+    #[test]
+    fn human_expression_preview_is_bounded_on_character_boundaries() {
+        assert_eq!(compact_text("short", 8), "short");
+        assert_eq!(compact_text("абвгд", 3), "абв…");
+    }
 }

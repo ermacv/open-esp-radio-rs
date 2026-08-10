@@ -499,14 +499,7 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
         .arg(format!("fixture={}", artifact.display()))
         .args(["--source-prefix", "fixture=fixture_", "--rust-artifact"])
         .arg(&artifact)
-        .args([
-            "--rust-prefix",
-            "fixture_",
-            "--no-profiles",
-            "--no-dispositions",
-            "--no-evidence-baseline",
-            "--json-report",
-        ])
+        .args(["--rust-prefix", "fixture_", "--json-report"])
         .arg(&report_path)
         .args(["--format", "json", "--color", "never"])
         .output()
@@ -529,11 +522,166 @@ fn verify_inventory_json_combines_results_and_publication_in_one_report() {
 
     let persistent: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report_path).unwrap()).unwrap();
-    assert_eq!(persistent["schema_version"], 4);
+    assert_eq!(persistent["schema_version"], 6);
     assert_eq!(persistent["command"], "verify inventory");
     assert_eq!(persistent["sources"][0]["functions"][0]["status"], "match");
     std::fs::remove_file(artifact).unwrap();
     std::fs::remove_file(report_path).unwrap();
+}
+
+#[test]
+fn project_verify_executes_typed_suites_and_reproduces_the_aggregate_report() {
+    let suffix = std::process::id();
+    let directory =
+        std::env::temp_dir().join(format!("vendor-workbench-project-verify-contract-{suffix}"));
+    if directory.exists() {
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+    std::fs::create_dir_all(&directory).unwrap();
+    let artifact = directory.join("fixture.o");
+    write_rv32_symbol_fixture(&artifact);
+    std::fs::write(
+        directory.join("memory.toml"),
+        include_str!("fixtures/generic-project/memory.toml"),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("target.toml"),
+        include_str!("fixtures/generic-project/target.toml"),
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("dispositions.toml"),
+        "schema = 1\ndefault-disposition = \"not-yet-ported\"\ndefault-protocol = \"unknown\"\nfunctions = []\n",
+    )
+    .unwrap();
+    std::fs::write(
+        directory.join("baseline.toml"),
+        "schema = 2\n\n[[evidence]]\nsource = \"fixture\"\nsymbol = \"fixture_entry\"\nkind = \"symbolic\"\n",
+    )
+    .unwrap();
+    let manifest = directory.join("vendor-project.toml");
+    std::fs::write(
+        &manifest,
+        r#"schema = 1
+id = "project-verify-fixture"
+target-spec = "target.toml"
+memory-map = "memory.toml"
+
+[verification]
+report = "verification.json"
+
+[[verification.suites]]
+id = "fixture"
+sources = ["fixture"]
+source-prefixes = ["fixture=fixture_"]
+rust-artifact-role = "rust-artifact:fixture"
+rust-prefix = "fixture_"
+profiles = []
+dispositions = ["dispositions.toml"]
+baselines = ["baseline.toml"]
+gate = "completion"
+"#,
+    )
+    .unwrap();
+    let run_spec = directory.join("local.toml");
+    std::fs::write(
+        &run_spec,
+        format!(
+            "schema = 1\n\n[[inputs]]\nrole = \"source-artifact:fixture\"\npath = {:?}\n\n[[inputs]]\nrole = \"rust-artifact:fixture\"\npath = {:?}\n",
+            artifact, artifact
+        ),
+    )
+    .unwrap();
+    let candidates = directory.join("candidates");
+    std::fs::create_dir(&candidates).unwrap();
+
+    let output = workbench()
+        .args(["project", "verify", "--project"])
+        .arg(&manifest)
+        .args(["--run-spec"])
+        .arg(&run_spec)
+        .args(["--candidate-evidence-dir"])
+        .arg(&candidates)
+        .args([
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .expect("run project verification");
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let document: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(document["command"], "project verify");
+    assert_eq!(document["schema_version"], 5);
+    assert_eq!(document["passed"], true);
+    assert_eq!(document["complete_project_run"], true);
+    assert_eq!(document["suites"][0]["id"], "fixture");
+    assert_eq!(document["suites"][0]["summary"]["matched"], 1);
+    assert_eq!(
+        document["replacement_graph"]["summary"]["vendor_functions"],
+        1
+    );
+    assert_eq!(
+        document["replacement_graph"]["summary"]["behavioral_matches"],
+        1
+    );
+    assert_eq!(
+        document["replacement_graph"]["summary"]["probe_only_matches"],
+        1
+    );
+    assert_eq!(
+        document["rust_component_index"]["summary"]["reviewed_components"],
+        0
+    );
+    assert_eq!(
+        document["replacement_graph"]["replacements"][0]["proofs"][0]["suite"],
+        "fixture"
+    );
+    let candidate = std::fs::read_to_string(candidates.join("fixture.toml")).unwrap();
+    assert!(candidate.contains("symbol = \"fixture_entry\""));
+    assert!(candidate.contains("kind = \"symbolic\""));
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(
+            &std::fs::read_to_string(directory.join("verification.json")).unwrap()
+        )
+        .unwrap(),
+        document
+    );
+
+    let check = workbench()
+        .args(["project", "verify", "--project"])
+        .arg(&manifest)
+        .args(["--run-spec"])
+        .arg(&run_spec)
+        .args([
+            "--check",
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "--progress",
+            "never",
+        ])
+        .output()
+        .expect("check project verification");
+    assert!(
+        check.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&check.stdout).unwrap(),
+        document
+    );
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -608,7 +756,7 @@ fn project_analysis_emits_a_typed_summary_when_inputs_are_blocked() {
     assert_eq!(output.status.code(), Some(2));
     let document: serde_json::Value =
         serde_json::from_slice(&output.stdout).expect("analysis stdout must be valid JSON");
-    assert_eq!(document["schema"], 1);
+    assert_eq!(document["schema"], 2);
     assert_eq!(document["command"], "project analyze");
     assert_eq!(document["mode"], "check");
     assert_eq!(document["status"], "failed");
@@ -744,7 +892,11 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let checked_inputs: serde_json::Value = serde_json::from_slice(&checked_inputs.stdout).unwrap();
     assert_eq!(checked_inputs["status"], "verified");
 
-    for (check, expected_stage_status) in [(false, "written"), (true, "verified")] {
+    for (check, expected_stage_status) in [
+        (false, "written"),
+        (false, "up-to-date"),
+        (true, "verified"),
+    ] {
         let mut command = workbench();
         command
             .current_dir(repository_root())
@@ -903,7 +1055,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
     let report = directory.join("generated/symbols.json");
     let document: serde_json::Value =
         serde_json::from_slice(&std::fs::read(&report).unwrap()).unwrap();
-    assert_eq!(document["schema_version"], 3);
+    assert_eq!(document["schema_version"], 4);
     assert_eq!(document["command"], "symbols inventory");
     assert!(document["summary"]["symbol_facts"].as_u64().unwrap() > 0);
     assert!(document["summary"]["executable_bytes"].as_u64().unwrap() > 0);
@@ -921,7 +1073,7 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
         &std::fs::read(directory.join("generated/navigation.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(navigation["schema_version"], 1);
+    assert_eq!(navigation["schema_version"], 2);
     assert_eq!(navigation["summary"]["linked_ir_functions"], 1);
     let fixture = navigation["symbols"]
         .as_array()
@@ -994,6 +1146,57 @@ fn project_symbol_inventory_writes_and_checks_its_manifest_owned_report() {
 #[test]
 fn project_publication_json_is_one_typed_report() {
     let (directory, manifest) = init_temporary_project("publication-report");
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(&manifest)
+        .unwrap()
+        .write_all(
+            b"\n[review]\noutput = \"generated/findings/review-scopes.json\"\nrelease-scopes = [\"publication\"]\n\n[[review.scopes]]\nid = \"publication\"\nprofiles = [\"vendor\"]\nroots = [\"vendor:fixture_entry\"]\ninclude-reachable = true\n",
+        )
+        .unwrap();
+    let review_output = directory.join("generated/findings/review-scopes.json");
+    std::fs::create_dir_all(review_output.parent().unwrap()).unwrap();
+    std::fs::write(
+        review_output,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version": 2,
+            "command": "project review scopes",
+            "project": "publication-report",
+            "scopes": [{
+                "id": "publication",
+                "release": true,
+                "profiles": ["vendor"],
+                "roots": 1,
+                "functions": 0,
+                "function_identities": [],
+                "function_keys": [],
+                "complete_functions": 0,
+                "mmio_registers": 0,
+                "linked_mmio_registers": 0,
+                "static_mmio_registers": 0,
+                "mmio": [],
+                "table_calls": 0,
+                "context_fields": 0,
+                "memory_fields": 0,
+                "decode_blockers": 0,
+                "decode_blocker_functions": 0,
+                "direct_blockers": 0,
+                "call_graph_blockers": 0,
+                "reference_blockers": 0,
+                "unresolved_calls": 0,
+                "replacement_behavioral_matches": 0,
+                "replacement_production_matches": 0,
+                "replacement_probe_only_matches": 0,
+                "replacement_unmapped_matches": 0,
+                "replacement_mismatches": 0,
+                "replacement_incomplete": 0,
+                "replacement_unqualified": 0,
+                "replacement_uncovered": 0
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     let written = workbench()
         .current_dir(repository_root())
         .args(["project", "publish", "--project"])

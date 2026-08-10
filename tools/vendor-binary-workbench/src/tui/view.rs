@@ -562,7 +562,13 @@ mod tests {
             decode_blocker_classes: vec!["zero-fill-or-illegal-trap".to_owned()],
             decode_blocker_operations: vec!["illegal-zero".to_owned()],
             semantic_operations: Vec::new(),
-            registers: Vec::new(),
+            registers: vec![0x2010_4090],
+            mmio_sites: vec![crate::FunctionMmioSiteSummary {
+                address: 0x2010_4090,
+                width: 32,
+                access: "read".to_owned(),
+                pc: 0x1002_3562,
+            }],
             calls: 0,
         };
         state.function_detail_finished(
@@ -604,9 +610,21 @@ mod tests {
             .iter()
             .map(ratatui::buffer::Cell::symbol)
             .collect::<String>();
+        assert!(rendered.contains("0x20104090/32"));
+        assert!(rendered.contains("0x10023562"));
+
+        state.scroll_detail_down(4);
+        terminal.draw(|frame| render(frame, &state)).unwrap();
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect::<String>();
         assert!(rendered.contains("zero-fill-or-illegal-trap"));
 
-        state.scroll_detail_down(8);
+        state.scroll_detail_down(4);
         terminal.draw(|frame| render(frame, &state)).unwrap();
         let rendered = terminal
             .backend()

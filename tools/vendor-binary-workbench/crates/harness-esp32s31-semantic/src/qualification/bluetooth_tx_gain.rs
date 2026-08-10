@@ -260,12 +260,7 @@ pub fn rust_bluetooth_tx_gain_init_events(
 ) -> Result<(Vec<BluetoothTxGainInitEvent>, PhyState)> {
     let mut transition = state.bluetooth_tx_gain_init_transition();
     let mut events = Vec::new();
-    // Reused child completion drivers also support detailed child contracts.
-    // This parent deliberately discards their local events and compares only
-    // the reviewed composition boundary.
-    let mut tx_power_events = Vec::new();
-    let mut txdc_events = Vec::new();
-    let mut pwdet_events = Vec::new();
+    let mut completion_driver = DeterministicPhyCompletion::default();
     for _ in 0..5_000_000 {
         match transition
             .step_local()
@@ -273,48 +268,27 @@ pub fn rust_bluetooth_tx_gain_init_events(
         {
             PhyBluetoothTxGainInitLocalStep::StateAdvanced => continue,
             PhyBluetoothTxGainInitLocalStep::External(action) => {
-                tx_power_events.clear();
-                txdc_events.clear();
-                pwdet_events.clear();
-                let completion = match action {
-                    PhyBluetoothTxGainInitAction::Rfpll(action) => {
+                match action {
+                    PhyBluetoothTxGainInitAction::Rfpll(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::ConfigureRfpll);
-                        PhyBluetoothTxGainInitCompletion::Rfpll(append_rfpll_action(
-                            &mut tx_power_events,
-                            action,
-                        ))
                     }
-                    PhyBluetoothTxGainInitAction::TxCap(action) => {
+                    PhyBluetoothTxGainInitAction::TxCap(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::ConfigureTxCap);
-                        let completion = PhyBluetoothTxGainInitCompletion::TxCap(
-                            tx_power_completion(&mut tx_power_events, action),
-                        );
-                        completion
                     }
-                    PhyBluetoothTxGainInitAction::TxDc(action) => {
+                    PhyBluetoothTxGainInitAction::TxDc(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::CalibrateTxDc);
-                        PhyBluetoothTxGainInitCompletion::TxDc(bluetooth_txdc_action_completion(
-                            &mut txdc_events,
-                            action,
-                        )?)
                     }
-                    PhyBluetoothTxGainInitAction::TxPower(action) => {
+                    PhyBluetoothTxGainInitAction::TxPower(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::CalibrateTxPower);
-                        PhyBluetoothTxGainInitCompletion::TxPower(
-                            bluetooth_tx_power_action_completion(&mut tx_power_events, action)?,
-                        )
                     }
-                    PhyBluetoothTxGainInitAction::TxDcPwdet(action) => {
+                    PhyBluetoothTxGainInitAction::TxDcPwdet(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::CalibrateTxDcPwdet);
-                        PhyBluetoothTxGainInitCompletion::TxDcPwdet(
-                            bluetooth_txdc_pwdet_action_completion(&mut pwdet_events, action)?,
-                        )
                     }
-                    PhyBluetoothTxGainInitAction::Publish(publication) => {
+                    PhyBluetoothTxGainInitAction::Publish(_) => {
                         push_phase(&mut events, BluetoothTxGainInitEvent::PublishGain);
-                        PhyBluetoothTxGainInitCompletion::Published(publication)
                     }
-                };
+                }
+                let completion = completion_driver.bluetooth_tx_gain(action)?;
                 transition.advance_external(completion).map_err(|error| {
                     format!("Rust BT gain parent rejected completion: {error:?}")
                 })?;

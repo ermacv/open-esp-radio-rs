@@ -421,7 +421,7 @@ pub(super) fn append_rfpll_action(
     }
 }
 
-fn tone_sar_completion(
+pub(super) fn tone_sar_completion(
     events: &mut Vec<BluetoothTxPowerEvent>,
     action: PhyToneSarAction,
 ) -> PhyToneSarCompletion {
@@ -481,7 +481,7 @@ fn tone_sar_completion(
     }
 }
 
-fn point_completion(
+pub(super) fn point_completion(
     events: &mut Vec<BluetoothTxPowerEvent>,
     action: PhyPowerControlPointAction,
 ) -> PhyPowerControlPointCompletion {

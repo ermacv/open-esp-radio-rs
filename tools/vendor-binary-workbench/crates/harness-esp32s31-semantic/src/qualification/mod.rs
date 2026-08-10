@@ -9,11 +9,13 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+mod bb_init;
 mod bluetooth_tx_gain;
 mod bluetooth_tx_power;
 mod bluetooth_txdc;
 mod bluetooth_txdc_pwdet;
 mod channel;
+mod completion;
 mod hal_mac_txq_enable;
 mod iq_estimator;
 mod report;
@@ -24,11 +26,13 @@ mod state;
 mod wdev_append_rx_blocks;
 mod wdev_process_fiq;
 
+pub use bb_init::*;
 pub use bluetooth_tx_gain::*;
 pub use bluetooth_tx_power::*;
 pub use bluetooth_txdc::*;
 pub use bluetooth_txdc_pwdet::*;
 pub use channel::*;
+use completion::DeterministicPhyCompletion;
 pub use hal_mac_txq_enable::*;
 pub use iq_estimator::*;
 pub use report::*;

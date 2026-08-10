@@ -253,7 +253,12 @@ that every user must learn.
 - [ ] Qualify the two remaining release parents hierarchically:
   `phy_bb_init` over the reviewed baseband children, then
   `register_chipv7_phy` over RF-init and baseband. Do not duplicate leaf
-  effect models in the parents.
+  effect models in the parents. The shared deterministic completion layer is
+  now split by TX, RX-IQ, RX-gain and parent responsibilities; both cold and
+  retained `PhyBbInitTransition` paths complete through it, and the existing
+  Bluetooth parent still matches the real linked image. The remaining work is
+  the vendor `phy_bb_init` projection/footprint comparison and then the outer
+  registration composition.
 
 ## P1 — project usability and maintainability
 

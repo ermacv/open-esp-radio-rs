@@ -86,7 +86,7 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     rx_reorder::{RX_REORDER_BACKING_SLOT_COUNT, RxReorderCommandResources, RxReorderFrameStorage},
     sta_tx_epoch::Esp32s31StaTxEpochExt,
     station::{
-        ConnectedControlShutdown as Esp32s31ConnectedControlShutdown,
+        ConnectedControlShutdown as Esp32s31ConnectedControlShutdown, ConnectedWpa2Security,
         Esp32s31ConnectedDriverAssembly, Esp32s31ConnectedDriverAssemblyResources,
         Esp32s31ConnectedDriverServices, Esp32s31ConnectedDriverTeardownFailure,
         Esp32s31ConnectedEpochResources, Esp32s31ConnectedEpochStartFailure,
@@ -1116,6 +1116,7 @@ pub async fn run_connected<'state, 'security>(
         supplicant_nonce,
         sequences,
         message4_protection,
+        connected,
         ..
     } = security;
     let (_phy, platform) = role.radio_mut();
@@ -1229,10 +1230,21 @@ pub async fn run_connected<'state, 'security>(
             }
         };
     let Esp32s31ConnectedDriverAssembly {
-        runner: radio_runner,
+        runner: mut radio_runner,
         protocol: rx_protocol,
         report,
     } = assembled;
+    if radio_runner
+        .services_mut()
+        .control_mut()
+        .install_wpa2_security(ConnectedWpa2Security::new(
+            connected.expect("installed WPA2 keys retain connected supplicant state"),
+            group,
+        ))
+        .is_err()
+    {
+        unreachable!("a fresh connected control owner has no WPA2 session");
+    }
 
     let (tasks, protocol_endpoint) = task_reservation.into_endpoints();
 
@@ -1266,7 +1278,7 @@ pub async fn run_connected<'state, 'security>(
     }
 
     let mut observer = NoopEsp32s31ConnectedRunObserver;
-    let stopped = match await_stack_boundary!(run_and_quiesce_esp32s31_connected_epoch(
+    let mut stopped = match await_stack_boundary!(run_and_quiesce_esp32s31_connected_epoch(
         interrupt_epoch,
         platform,
         radio_runner,
@@ -1279,12 +1291,13 @@ pub async fn run_connected<'state, 'security>(
                 let control = runner.services().control();
                 let beacon = control.beacon_monitor();
                 qualification_event!(
-                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} dropped_events={}",
+                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} dropped_events={} security={:?}",
                     control.beacon_lost(),
                     beacon.map_or(0, |monitor| monitor.observed()),
                     beacon.and_then(|monitor| monitor.deadline_micros()),
                     control.last_event(),
                     control.dropped_events(),
+                    control.wpa2_security().map(|security| security.evidence()),
                 );
             }
             match exit {
@@ -1334,6 +1347,13 @@ pub async fn run_connected<'state, 'security>(
         shutdown.reorder_commands,
         shutdown.active_reorders,
     );
+    let security = stopped
+        .quiesced
+        .services
+        .control_mut()
+        .take_wpa2_security()
+        .expect("connected WPA2 control returns its association security owner");
+    let (_connected, group) = security.into_parts();
     let teardown = match stopped.try_teardown(group) {
         Ok(teardown) => teardown,
         Err(failure) => {

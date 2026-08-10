@@ -78,6 +78,7 @@ pub struct StaPairwiseCcmpSlot {
 #[must_use = "the installed hardware key must remain owned until it is explicitly cleared"]
 pub struct StaGroupCcmpSlot {
     key_id: u8,
+    installed: bool,
 }
 
 /// Hardware indices cleared at the connected-to-disconnected boundary.
@@ -97,7 +98,9 @@ impl StaGroupCcmpSlot {
     }
 
     pub fn clear<H: CcmpKeyHardware>(self, hardware: &mut H) {
-        hardware.clear_ccmp_entry(STA_GROUP_HARDWARE_INDEX);
+        if self.installed {
+            hardware.clear_ccmp_entry(STA_GROUP_HARDWARE_INDEX);
+        }
     }
 }
 
@@ -219,5 +222,104 @@ pub fn install_sta_group_ccmp<H: CcmpKeyHardware>(
         MacKeyInstallOutcome::Occupied => return Err(CryptoKeyError::Occupied),
         MacKeyInstallOutcome::Rejected => return Err(CryptoKeyError::HardwareRejected),
     }
-    Ok(StaGroupCcmpSlot { key_id })
+    Ok(StaGroupCcmpSlot {
+        key_id,
+        installed: true,
+    })
+}
+
+/// Replace the association-owned STA group key in its single hardware slot.
+///
+/// The existing token remains the unique authority for slot 1. Clearing is
+/// performed before publication because the recovered hardware primitive
+/// rejects an occupied entry. If publication fails, the token is marked
+/// uninstalled so later teardown cannot claim or clear a key which hardware
+/// never accepted; the association must then be terminated.
+pub fn replace_sta_group_ccmp<H: CcmpKeyHardware>(
+    hardware: &mut H,
+    slot: &mut StaGroupCcmpSlot,
+    key_id: u8,
+    temporal_key: &[u8; CCMP_KEY_BYTES],
+) -> Result<(), CryptoKeyError> {
+    if key_id > MAX_WPA2_GTK_ID {
+        return Err(CryptoKeyError::InvalidGroupKeyId);
+    }
+    if slot.installed {
+        hardware.clear_ccmp_entry(STA_GROUP_HARDWARE_INDEX);
+        slot.installed = false;
+    }
+    match install_sta_group_ccmp(hardware, key_id, temporal_key) {
+        Ok(replacement) => {
+            *slot = replacement;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Hardware {
+        occupied: bool,
+        reject_next: bool,
+        installs: u8,
+        clears: u8,
+    }
+
+    impl CcmpKeyHardware for Hardware {
+        fn install_sta_ccmp_entry(
+            &mut self,
+            _index: u8,
+            _words: [u32; CCMP_ENTRY_WORDS],
+        ) -> MacKeyInstallOutcome {
+            if self.reject_next {
+                self.reject_next = false;
+                return MacKeyInstallOutcome::Rejected;
+            }
+            if self.occupied {
+                return MacKeyInstallOutcome::Occupied;
+            }
+            self.occupied = true;
+            self.installs += 1;
+            MacKeyInstallOutcome::Installed
+        }
+
+        fn clear_ccmp_entry(&mut self, _index: u8) {
+            self.occupied = false;
+            self.clears += 1;
+        }
+    }
+
+    #[test]
+    fn group_rekey_reuses_one_authority_and_clears_the_replacement_once() {
+        let mut hardware = Hardware::default();
+        let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+
+        replace_sta_group_ccmp(&mut hardware, &mut slot, 2, &[2; 16]).unwrap();
+        assert_eq!(slot.key_id(), 2);
+        assert_eq!(hardware.installs, 2);
+        assert_eq!(hardware.clears, 1);
+
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 2);
+        assert!(!hardware.occupied);
+    }
+
+    #[test]
+    fn rejected_rekey_invalidates_the_token_and_teardown_does_not_double_clear() {
+        let mut hardware = Hardware::default();
+        let mut slot = install_sta_group_ccmp(&mut hardware, 1, &[1; 16]).unwrap();
+        hardware.reject_next = true;
+
+        assert_eq!(
+            replace_sta_group_ccmp(&mut hardware, &mut slot, 2, &[2; 16]),
+            Err(CryptoKeyError::HardwareRejected)
+        );
+        assert_eq!(hardware.clears, 1);
+        slot.clear(&mut hardware);
+        assert_eq!(hardware.clears, 1);
+    }
 }

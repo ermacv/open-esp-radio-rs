@@ -350,7 +350,9 @@ where
             match result {
                 Ok(established) => {
                     owner.report.wpa2 = Some(established.metadata());
-                    owner.installed_keys = Some(established.into_keys().into_parts());
+                    let (keys, connected) = established.into_parts();
+                    owner.installed_keys = Some(keys.into_parts());
+                    owner.security.connected = Some(connected);
                     Ok(())
                 }
                 Err(error) => Err(Esp32s31StaAttemptStepError::retry_current(
@@ -374,6 +376,8 @@ where
                 Some(Esp32s31StaAttemptStateError::MissingConnectedPeer)
             } else if owner.installed_keys.is_none() {
                 Some(Esp32s31StaAttemptStateError::MissingKeys)
+            } else if owner.security.connected.is_none() {
+                Some(Esp32s31StaAttemptStateError::MissingConnectedSecurity)
             } else {
                 None
             };

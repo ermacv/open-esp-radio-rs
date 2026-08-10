@@ -313,6 +313,55 @@ pub fn parse_gtk_key_data(
     gtk.ok_or(Wpa2FrameError::MissingGtk)
 }
 
+/// Parse the encrypted key-data body of a connected-state Group Message 1.
+///
+/// Unlike pairwise Message 3, a group rekey carries a GTK KDE without a copy
+/// of the association RSN IEs. Only the recovered RSN GTK KDE and key-wrap
+/// padding are accepted; unrelated elements fail closed.
+pub fn parse_group_gtk_key_data(bytes: &[u8]) -> Result<Wpa2Gtk, Wpa2FrameError> {
+    let mut offset = 0;
+    let mut gtk = None;
+    while offset < bytes.len() {
+        let remaining = &bytes[offset..];
+        if remaining.iter().all(|byte| *byte == 0)
+            || (remaining[0] == VENDOR_ELEMENT_ID && remaining[1..].iter().all(|byte| *byte == 0))
+        {
+            break;
+        }
+        if remaining.len() < 2 {
+            return Err(Wpa2FrameError::MalformedKeyData);
+        }
+        let element_len = remaining[1] as usize + 2;
+        if element_len > remaining.len() {
+            return Err(Wpa2FrameError::MalformedKeyData);
+        }
+        let element = &remaining[..element_len];
+        if element[0] != VENDOR_ELEMENT_ID
+            || element.len() != 24
+            || element[2..5] != RSN_OUI
+            || element[5] != GTK_KDE_TYPE
+            || element[7] != 0
+            || element[6] & !0x07 != 0
+            || gtk.is_some()
+        {
+            return Err(if gtk.is_some() {
+                Wpa2FrameError::DuplicateGtk
+            } else {
+                Wpa2FrameError::UnsupportedKeyData
+            });
+        }
+        let mut key = [0; WPA2_GTK_LEN];
+        key.copy_from_slice(&element[8..24]);
+        gtk = Some(Wpa2Gtk::new(
+            element[6] & 0x03,
+            element[6] & 0x04 != 0,
+            key,
+        )?);
+        offset += element_len;
+    }
+    gtk.ok_or(Wpa2FrameError::MissingGtk)
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Wpa2TxFrame<const N: usize = WPA2_TX_EAPOL_CAPACITY> {
     interface: Wpa2Interface,
@@ -412,6 +461,49 @@ impl<const N: usize> Wpa2TxFrame<N> {
         )
     }
 
+    /// Build the station response to one connected-state Group Message 1.
+    pub fn group_message2(peer: [u8; 6], replay_counter: u64) -> Result<Self, Wpa2FrameError> {
+        Self::build(
+            Wpa2Interface::Station,
+            peer,
+            1,
+            KEY_INFO_MIC | KEY_INFO_SECURE | KEY_DESCRIPTOR_VERSION_HMAC_SHA1,
+            0,
+            replay_counter,
+            [0; 32],
+            [0; 8],
+            &[],
+        )
+    }
+
+    /// Build an authenticator Group Message 1 for protocol tests and the
+    /// future AP authenticator. The caller supplies RFC3394-wrapped GTK data.
+    pub fn group_message1(
+        peer: [u8; 6],
+        replay_counter: u64,
+        key_rsc: [u8; 8],
+        encrypted_key_data: &[u8],
+    ) -> Result<Self, Wpa2FrameError> {
+        if encrypted_key_data.is_empty() {
+            return Err(Wpa2FrameError::EmptyKeyData);
+        }
+        Self::build(
+            Wpa2Interface::AccessPoint,
+            peer,
+            2,
+            KEY_INFO_ACK
+                | KEY_INFO_MIC
+                | KEY_INFO_SECURE
+                | KEY_INFO_ENCRYPTED_KEY_DATA
+                | KEY_DESCRIPTOR_VERSION_HMAC_SHA1,
+            WPA2_GTK_LEN as u16,
+            replay_counter,
+            [0; 32],
+            key_rsc,
+            encrypted_key_data,
+        )
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn build(
         interface: Wpa2Interface,
@@ -424,7 +516,9 @@ impl<const N: usize> Wpa2TxFrame<N> {
         key_rsc: [u8; 8],
         key_data: &[u8],
     ) -> Result<Self, Wpa2FrameError> {
-        if key_info & KEY_INFO_ACK != 0 && nonce.iter().all(|byte| *byte == 0) {
+        if key_info & (KEY_INFO_PAIRWISE | KEY_INFO_ACK) == (KEY_INFO_PAIRWISE | KEY_INFO_ACK)
+            && nonce.iter().all(|byte| *byte == 0)
+        {
             return Err(Wpa2FrameError::ZeroNonce);
         }
         let len = EAPOL_KEY_PACKET_LEN

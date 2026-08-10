@@ -8,6 +8,7 @@ use core::future::Future;
 
 use embassy_futures::select::{Either, select};
 use open_esp_radio_embassy_net::RawMutex;
+use open_esp_radio_esp32s31_wifi_mac::crypto::{CryptoKeyError, StaGroupCcmpSlot};
 pub use open_esp_radio_esp32s31_wifi_sta::{
     connected_control::{
         ConnectedControlError, ConnectedControlReorder, ConnectedControlTx,
@@ -19,6 +20,14 @@ pub use open_esp_radio_esp32s31_wifi_sta::{
 use open_esp_radio_wifi_sta::{
     link_monitor::{StaBeaconLossConfig, StaBeaconMonitor},
     power_save::{StaDozePermit, StaPowerSavePlanner, StaPowerSavePolicy},
+};
+use open_esp_radio_wpa2::{
+    aes::{SoftwareAesKeyUnwrapError, Wpa2SoftwareAes},
+    keys::Wpa2KeyKind,
+    supplicant::{
+        Wpa2ConnectedAction, Wpa2ConnectedProcessError, Wpa2ConnectedSupplicant,
+        Wpa2ConnectedSupplicantError,
+    },
 };
 
 use crate::{
@@ -63,6 +72,149 @@ pub struct ConnectedControlShutdown {
     pub in_flight: Option<ConnectedControlTxKind>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConnectedWpa2SecurityFailure {
+    Protocol(Wpa2ConnectedSupplicantError),
+    KeyUnwrap(SoftwareAesKeyUnwrapError),
+    InvalidGroupKeyKind,
+    KeyInstall(CryptoKeyError),
+    TxStart(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxError),
+    TxOutcome(open_esp_radio_esp32s31_wifi_sta::single_mpdu_tx::SingleMpduTxOutcome),
+    MissingTxOutcome,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ConnectedWpa2SecurityEvidence {
+    pub replay_counter: u64,
+    pub group_message1: u32,
+    pub installed: u32,
+    pub retransmitted: u32,
+    pub tx_in_flight: bool,
+    pub last_failure: Option<ConnectedWpa2SecurityFailure>,
+}
+
+/// Association-scoped WPA2 state and the unique installed GTK authority.
+///
+/// This owner lives inside connected control while RX may publish Group
+/// Message 1. It is explicitly recovered after IRQ/task quiescence, before
+/// the ordinary station teardown clears the hardware key.
+pub struct ConnectedWpa2Security {
+    supplicant: Wpa2ConnectedSupplicant,
+    group: StaGroupCcmpSlot,
+    unwrap: Wpa2SoftwareAes,
+    tx_in_flight: bool,
+    group_message1: u32,
+    installed: u32,
+    retransmitted: u32,
+    last_failure: Option<ConnectedWpa2SecurityFailure>,
+}
+
+impl ConnectedWpa2Security {
+    pub const fn new(supplicant: Wpa2ConnectedSupplicant, group: StaGroupCcmpSlot) -> Self {
+        Self {
+            supplicant,
+            group,
+            unwrap: Wpa2SoftwareAes::new(),
+            tx_in_flight: false,
+            group_message1: 0,
+            installed: 0,
+            retransmitted: 0,
+            last_failure: None,
+        }
+    }
+
+    const fn tx_in_flight(&self) -> bool {
+        self.tx_in_flight
+    }
+
+    pub const fn evidence(&self) -> ConnectedWpa2SecurityEvidence {
+        ConnectedWpa2SecurityEvidence {
+            replay_counter: self.supplicant.replay_counter(),
+            group_message1: self.group_message1,
+            installed: self.installed,
+            retransmitted: self.retransmitted,
+            tx_in_flight: self.tx_in_flight,
+            last_failure: self.last_failure,
+        }
+    }
+
+    pub fn into_parts(self) -> (Wpa2ConnectedSupplicant, StaGroupCcmpSlot) {
+        (self.supplicant, self.group)
+    }
+
+    fn fail(&mut self, failure: ConnectedWpa2SecurityFailure) -> WifiControlProgress {
+        self.last_failure = Some(failure);
+        WifiControlProgress::Disconnected(
+            open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
+        )
+    }
+
+    fn complete_tx<X: ConnectedControlTx>(&mut self, tx: &mut X) -> WifiControlProgress {
+        let Some(outcome) = tx.take_last_outcome() else {
+            return self.fail(ConnectedWpa2SecurityFailure::MissingTxOutcome);
+        };
+        self.tx_in_flight = false;
+        if outcome.is_success() {
+            WifiControlProgress::More
+        } else {
+            self.fail(ConnectedWpa2SecurityFailure::TxOutcome(outcome))
+        }
+    }
+
+    async fn process<H: ConnectedControlHardware, X: ConnectedControlTx>(
+        &mut self,
+        hardware: &mut H,
+        tx: &mut X,
+        frame: open_esp_radio_wpa2::OwnedEapolFrame,
+    ) -> WifiControlProgress {
+        self.group_message1 = self.group_message1.saturating_add(1);
+        let action = match self
+            .supplicant
+            .on_group_message1(frame, &mut self.unwrap)
+            .await
+        {
+            Ok(action) => action,
+            Err(Wpa2ConnectedProcessError::Supplicant(error)) => {
+                return self.fail(ConnectedWpa2SecurityFailure::Protocol(error));
+            }
+            Err(Wpa2ConnectedProcessError::KeyUnwrap(error)) => {
+                return self.fail(ConnectedWpa2SecurityFailure::KeyUnwrap(error));
+            }
+        };
+        let response = match action {
+            Wpa2ConnectedAction::Retransmit(response) => {
+                self.retransmitted = self.retransmitted.saturating_add(1);
+                response
+            }
+            Wpa2ConnectedAction::InstallGroupKey(request) => {
+                let Wpa2KeyKind::Group { key_id, .. } = request.group().kind() else {
+                    return self.fail(ConnectedWpa2SecurityFailure::InvalidGroupKeyKind);
+                };
+                if let Err(error) = hardware.replace_sta_group_ccmp(
+                    &mut self.group,
+                    key_id,
+                    request.group().key().as_bytes(),
+                ) {
+                    let _ = self.supplicant.complete_group_key_install(request, false);
+                    return self.fail(ConnectedWpa2SecurityFailure::KeyInstall(error));
+                }
+                self.installed = self.installed.saturating_add(1);
+                match self.supplicant.complete_group_key_install(request, true) {
+                    Ok(response) => response,
+                    Err(error) => return self.fail(ConnectedWpa2SecurityFailure::Protocol(error)),
+                }
+            }
+        };
+        match tx.start_protected_eapol(hardware, response.as_bytes()) {
+            Ok(progress) => {
+                self.tx_in_flight = true;
+                progress
+            }
+            Err(error) => self.fail(ConnectedWpa2SecurityFailure::TxStart(error)),
+        }
+    }
+}
+
 struct EmbassyReorderSink<'sender, 'resources, M: RawMutex> {
     sender: Option<&'sender RxReorderCommandSender<'resources, M>>,
 }
@@ -81,6 +233,7 @@ pub struct Esp32s31ConnectedControl<'resources, M: RawMutex, const CAPACITY: usi
     receiver: ConnectedControlReceiver<'resources, M, CAPACITY>,
     core: Esp32s31ConnectedControlCore,
     rx_reorder_commands: Option<RxReorderCommandSender<'resources, M>>,
+    security: Option<ConnectedWpa2Security>,
 }
 
 impl<'resources, M: RawMutex, const CAPACITY: usize>
@@ -96,7 +249,27 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
             receiver,
             core: Esp32s31ConnectedControlCore::new(peer, he_enabled, tx_block_ack),
             rx_reorder_commands: None,
+            security: None,
         }
+    }
+
+    pub fn install_wpa2_security(
+        &mut self,
+        security: ConnectedWpa2Security,
+    ) -> Result<(), ConnectedWpa2Security> {
+        if self.security.is_some() {
+            return Err(security);
+        }
+        self.security = Some(security);
+        Ok(())
+    }
+
+    pub fn take_wpa2_security(&mut self) -> Option<ConnectedWpa2Security> {
+        self.security.take()
+    }
+
+    pub const fn wpa2_security(&self) -> Option<&ConnectedWpa2Security> {
+        self.security.as_ref()
     }
 
     pub fn with_rx_reorder_commands(
@@ -191,6 +364,9 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         while self.receiver.try_receive().is_some() {
             discarded_events = discarded_events.saturating_add(1);
         }
+        while self.receiver.try_receive_security().is_some() {
+            discarded_events = discarded_events.saturating_add(1);
+        }
         Ok(ConnectedControlShutdown {
             rx_block_ack_agreements: shutdown.rx_block_ack_agreements,
             tx_block_ack_sessions: shutdown.tx_block_ack_sessions,
@@ -200,7 +376,10 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
     }
 
     fn has_immediate_work(&self) -> bool {
-        self.core.has_immediate_work(self.receiver.len() != 0)
+        self.security
+            .as_ref()
+            .is_some_and(ConnectedWpa2Security::tx_in_flight)
+            || self.core.has_immediate_work(self.receiver.len() != 0)
     }
 
     /// Wait without consuming the event that made control work ready.
@@ -245,23 +424,56 @@ impl<'resources, M: RawMutex, const CAPACITY: usize>
         X: ConnectedControlTx + 'a,
     {
         async move {
-            // A completion owns priority over newly queued RX control.  Do not
-            // dequeue an event until the core can consume it in this step.
-            let event = if self.core.tx_in_flight() {
-                None
-            } else {
-                self.receiver.try_receive()
-            };
-            let control_event_pending = self.receiver.len() != 0;
+            // The shared ordinary-TX completion always precedes newly queued
+            // RX work. Security and the generic control core can never both
+            // own that transaction.
+            if let Some(security) = self.security.as_mut()
+                && security.tx_in_flight()
+            {
+                return Ok(security.complete_tx(tx));
+            }
+
             let mut reorder = EmbassyReorderSink {
                 sender: self.rx_reorder_commands.as_ref(),
             };
+            if self.core.tx_in_flight() {
+                return self.core.service_step(
+                    hardware,
+                    tx,
+                    &mut reorder,
+                    None,
+                    self.receiver.len() != 0,
+                    context,
+                );
+            }
+
+            // A peer disconnect keeps terminal priority once TX ownership is
+            // free. GTK rekey then precedes non-terminal BlockAck work.
+            if let Some(event) = self.receiver.try_receive_terminal() {
+                return self.core.service_step(
+                    hardware,
+                    tx,
+                    &mut reorder,
+                    Some(event),
+                    self.receiver.len() != 0,
+                    context,
+                );
+            }
+            if let Some(frame) = self.receiver.try_receive_security() {
+                let Some(security) = self.security.as_mut() else {
+                    return Ok(WifiControlProgress::Disconnected(
+                        open_esp_radio_esp32s31_wifi_sta::connected_control::ConnectedDisconnectReason::GroupKeyHandshakeFailed,
+                    ));
+                };
+                return Ok(security.process(hardware, tx, frame).await);
+            }
+            let event = self.receiver.try_receive_control();
             self.core.service_step(
                 hardware,
                 tx,
                 &mut reorder,
                 event,
-                control_event_pending,
+                self.receiver.len() != 0,
                 context,
             )
         }

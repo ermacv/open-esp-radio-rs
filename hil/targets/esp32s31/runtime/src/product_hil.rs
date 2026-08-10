@@ -108,6 +108,9 @@ fn observe_station_lifecycle(observation: Esp32s31StationLifecycleObservation) {
                 ConnectedDisconnectReason::ActiveStateRestoreFailed => {
                     StationDisconnectReason::ActiveStateRestoreFailed
                 }
+                ConnectedDisconnectReason::GroupKeyHandshakeFailed => {
+                    StationDisconnectReason::GroupKeyHandshakeFailed
+                }
             })
         }
     };

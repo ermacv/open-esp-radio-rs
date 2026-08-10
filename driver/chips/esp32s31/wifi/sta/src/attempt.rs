@@ -18,7 +18,9 @@ use open_esp_radio_wifi_sta::{
     join::{StaAssociationSuccess, StaAuthenticationSuccess},
     station::{StaFailureDisposition, StaLifecycleStage},
 };
-use open_esp_radio_wpa2::{Pmk, runner::Wpa2KeyInstallMetadata};
+use open_esp_radio_wpa2::{
+    Pmk, runner::Wpa2KeyInstallMetadata, supplicant::Wpa2ConnectedSupplicant,
+};
 
 use crate::{
     peer::Esp32s31StaPeerProgrammingReport,
@@ -65,6 +67,7 @@ pub struct Esp32s31StaAttemptSecurity<'role> {
     pub supplicant_nonce: [u8; 32],
     pub sequences: StaTxSequenceCounters,
     pub message4_protection: Esp32s31Wpa2Message4Protection,
+    pub connected: Option<Wpa2ConnectedSupplicant>,
     role: PhantomData<&'role mut ()>,
 }
 
@@ -80,6 +83,7 @@ impl Esp32s31StaAttemptSecurity<'_> {
             supplicant_nonce,
             sequences,
             message4_protection,
+            connected: None,
             role: PhantomData,
         }
     }
@@ -109,6 +113,7 @@ pub enum Esp32s31StaAttemptStateError {
     MissingConnectedPeer,
     MissingHandshake,
     MissingKeys,
+    MissingConnectedSecurity,
 }
 
 /// Value-only reports produced by the real driver phases.

@@ -315,8 +315,9 @@ impl ColdRadioRegisters {
         }
     }
 
-    #[cfg(test)]
-    fn for_test() -> Self {
+    #[cfg(any(test, feature = "validation-probes"))]
+    #[doc(hidden)]
+    pub fn for_validation() -> Self {
         Self::from_peripherals(svd::peripheral_ownership::peripherals_for_validation())
     }
 
@@ -416,7 +417,7 @@ mod tests {
     fn cold_owner_is_consumed_by_interrupt_setup_split() {
         // This host test does not access MMIO and creates no second
         // radio owner; it exercises only the type-level ownership transition.
-        let registers = ColdRadioRegisters::for_test();
+        let registers = ColdRadioRegisters::for_validation();
         let (_running, _setup) = registers.into_running();
     }
 

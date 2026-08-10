@@ -24,3 +24,78 @@ max_move_bytes = 4096
 runtime_minimum_free_percent = 25
 
 reported_frame_count = 30
+
+# These are async owner graphs, not local packet arrays. Their executor and
+# call-chain use is independently bounded by the runtime high-water check.
+# Selectors omit crate hashes so the policy survives ordinary rebuilds.
+[[reviewed_frames]]
+function_contains = "::station::StaLifecycleService<"
+source_ends_with = "driver/wifi/sta/src/station.rs"
+max_bytes = 18432
+reason = "station lifecycle future retains the unique disconnected/connected owner union"
+
+[[reviewed_frames]]
+function_contains = "::esp32s31::start::start_esp32s31_radio"
+source_ends_with = "driver/radio/src/esp32s31/start.rs"
+max_bytes = 18432
+reason = "one-time radio start future returns the complete initialized radio owner graph"
+
+[[reviewed_frames]]
+function_contains = "::station::composer::Esp32s31StationEngine<"
+source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/station/composer.rs"
+max_bytes = 18432
+reason = "station attempt future retains every recoverable phase owner until disposition"
+
+[[reviewed_frames]]
+function_contains = "::station::new::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+max_bytes = 16384
+reason = "production station constructor transfers its unique resource graph into static task ownership"
+
+[[reviewed_frames]]
+function_contains = "ProductionWifiEpochRunner as"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+max_bytes = 16384
+reason = "role epoch future retains station or monitor return ownership"
+
+[[reviewed_frames]]
+function_contains = "::product_hil::run::{closure#0}"
+source_ends_with = "hil/targets/esp32s31/runtime/src/product_hil.rs"
+max_bytes = 14336
+reason = "HIL root future assembles product-owned static resources once"
+
+[[reviewed_frames]]
+function_contains = "ProductionStationEnginePort<"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/station.rs"
+max_bytes = 13312
+reason = "connected transition future preserves the exact join and teardown owners"
+
+[[reviewed_frames]]
+function_contains = "::connected::run_connected::{closure#0}"
+source_ends_with = "driver/integration/esp32s31/embassy-wifi/src/connected.rs"
+max_bytes = 13312
+reason = "connected epoch future owns the recoverable DMA, WPA2 rekey, key and network frontier"
+
+[[reviewed_frames]]
+function_contains = "::attempt::Esp32s31StaAttempt<"
+source_ends_with = "driver/chips/esp32s31/wifi/sta/src/attempt.rs"
+max_bytes = 11264
+reason = "shared initial/reconnect attempt future retains the exact phase owner and one active WPA2 operation"
+
+[[reviewed_frames]]
+function_contains = "run_esp32s31_station_supervisor_epoch"
+source_ends_with = "driver/radio/src/esp32s31/supervisor.rs"
+max_bytes = 11264
+reason = "chip station supervisor retains the typed role return across one epoch"
+
+[[reviewed_frames]]
+function_contains = "::station::lifecycle::Esp32s31StationTask<"
+source_ends_with = "driver/adapters/embassy/esp32s31-wifi/src/station/lifecycle.rs"
+max_bytes = 10240
+reason = "station task future retains lifecycle command and returned owner state"
+
+[[reviewed_frames]]
+function_contains = "EmbassyWifiSupervisorTask<"
+source_ends_with = "driver/radio/src/embassy_supervisor.rs"
+max_bytes = 10240
+reason = "radio supervisor task retains the current affine Wi-Fi role owner"

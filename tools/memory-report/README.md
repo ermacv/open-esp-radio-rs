@@ -31,6 +31,11 @@ headroom. Generated async `poll` functions are included. Local frames do not
 prove indirect call chains, so HIL stack painting remains independently
 mandatory.
 
+Every frame above the review threshold must match a `reviewed_frames` policy
+entry and stay below its individual ceiling. A new large frame or growth of a
+reviewed frame therefore fails the build instead of producing an unactioned
+warning.
+
 The analyzer reports linker-region capacity, allocated sections, explicit
 reservations, genuinely unassigned address space, policy-attributed consumers
 and the largest unclassified symbols. `diff` compares both region totals and

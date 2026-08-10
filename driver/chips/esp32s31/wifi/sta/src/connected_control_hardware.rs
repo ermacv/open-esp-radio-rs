@@ -7,6 +7,7 @@
 
 use open_esp_radio_esp32s31_registers::{MacHeTid, RadioRegisters};
 use open_esp_radio_esp32s31_wifi_mac::{
+    crypto::{CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     rx_ampdu_hw::{self, S31RxBlockAckAgreement, S31RxBlockAckAgreementError},
     tx::TxHardware,
 };
@@ -28,6 +29,18 @@ pub trait ConnectedControlHardware: TxHardware {
         tid: u8,
         enabled: bool,
     ) -> Result<(), S31RxBlockAckAgreementError>;
+
+    /// Atomically consume the current association's authority to replace its
+    /// single active group-key entry. Hardware test doubles which do not
+    /// exercise WPA2 rekey may retain the fail-closed default.
+    fn replace_sta_group_ccmp(
+        &mut self,
+        _slot: &mut StaGroupCcmpSlot,
+        _key_id: u8,
+        _temporal_key: &[u8; 16],
+    ) -> Result<(), CryptoKeyError> {
+        Err(CryptoKeyError::HardwareRejected)
+    }
 }
 
 impl ConnectedControlHardware for RadioRegisters {
@@ -57,5 +70,14 @@ impl ConnectedControlHardware for RadioRegisters {
         let tid = MacHeTid::new(tid).ok_or(S31RxBlockAckAgreementError::Tid(tid))?;
         RadioRegisters::set_he_trigger_based_tid_enabled(self, tid, enabled);
         Ok(())
+    }
+
+    fn replace_sta_group_ccmp(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        key_id: u8,
+        temporal_key: &[u8; 16],
+    ) -> Result<(), CryptoKeyError> {
+        replace_sta_group_ccmp(self, slot, key_id, temporal_key)
     }
 }

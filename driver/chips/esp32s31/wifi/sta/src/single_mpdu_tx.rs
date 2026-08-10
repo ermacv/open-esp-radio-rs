@@ -406,6 +406,61 @@ where
             .map_err(Into::into)
     }
 
+    /// Publish a protected EAPOL packet through the connected ordinary-TX
+    /// owner. Group-key responses share this transaction with management and
+    /// network traffic, so they cannot bypass DMA ownership or IRQ ordering.
+    pub fn start_protected_eapol<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        payload: &[u8],
+    ) -> Result<WifiTxProgress, SingleMpduTxError> {
+        if self.ordinary.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        let sequence_number = self
+            .sequences
+            .take_data(self.config.peer_qos.then_some(0))
+            .expect("selected EAPOL sequence-number owner exists");
+        let ccmp_header = self.key.next_tx_ccmp_header();
+        let frame_length = {
+            let buffer = self.ordinary.buffer_mut()?;
+            StaProtectedDataFrame {
+                source: self.config.station_address,
+                bssid: self.config.bssid,
+                destination: self.config.bssid,
+                sequence_number,
+                user_priority: 7,
+                peer_qos: self.config.peer_qos,
+                ccmp_header,
+                ether_type: 0x888e,
+                payload,
+            }
+            .encode(&mut buffer[TX_METADATA_SIZE..])
+            .map_err(SingleMpduTxError::Encode)?
+        };
+        self.ordinary
+            .start(
+                hardware,
+                OrdinaryTxPlan {
+                    frame_length,
+                    descriptor_capacity: None,
+                    exchange: MacTxPlan {
+                        access_category: LegacyTxQueue::Voice.access_category(),
+                        initial_rate: TxPhyRate::Legacy(
+                            open_esp_radio_esp32s31_wifi_mac::tx::LegacyRate::Dsss1MLong,
+                        ),
+                        publication_limit: self.config.exchange.publication_limit,
+                        publication_timeout_micros: self.config.exchange.publication_timeout_micros,
+                    },
+                    hardware_mic_length: TX_CCMP_MIC_SIZE,
+                    hardware_key_selector: self.key.hardware_index(),
+                    scheduler_priority: LegacyTxQueue::Voice.vendor_data_scheduler_priority(),
+                    packet_priority: LegacyTxQueue::Voice.vendor_data_packet_priority(),
+                },
+            )
+            .map_err(Into::into)
+    }
+
     /// Encode and publish one unprotected connected Action management frame.
     ///
     /// The same pinned descriptor is shared with network data, so this method

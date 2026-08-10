@@ -346,8 +346,7 @@ mod tests {
 
     #[test]
     fn stable_publication_reclaims_exactly_once_and_drop_poison_is_sticky() {
-        let cold = ColdRadioRegisters::take()
-            .unwrap_or_else(|| panic!("register singleton must be free for the arena test"));
+        let cold = ColdRadioRegisters::for_validation();
         let (registers, _interrupt_setup) = cold.into_running();
         let arena = Esp32s31RadioRegistersArena::new();
         let published = arena
@@ -383,8 +382,7 @@ mod tests {
 
     #[test]
     fn reclaimed_owner_republishes_only_through_its_exact_arena_binding() {
-        let cold = ColdRadioRegisters::take()
-            .unwrap_or_else(|| panic!("register singleton must be free for republish test"));
+        let cold = ColdRadioRegisters::for_validation();
         let (registers, _interrupt_setup) = cold.into_running();
         let arena = Esp32s31RadioRegistersArena::new();
         let published = arena

@@ -65,6 +65,7 @@ pub enum ConnectedDisconnectReason {
     PeerDeauthentication { reason_code: u16 },
     PeerDisassociation { reason_code: u16 },
     ActiveStateRestoreFailed,
+    GroupKeyHandshakeFailed,
 }
 
 impl From<StaDisconnect> for ConnectedDisconnectReason {
@@ -152,6 +153,12 @@ pub trait ConnectedControlTx {
         power_management: StaPowerManagement,
     ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
 
+    fn start_protected_eapol<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        payload: &[u8],
+    ) -> Result<ConnectedControlProgress, SingleMpduTxError>;
+
     fn set_tx_block_ack_operational(&mut self, tid: u8, operational: bool);
 }
 
@@ -190,6 +197,15 @@ where
         power_management: StaPowerManagement,
     ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
         Esp32s31SingleMpduTx::start_power_management_null(self, hardware, power_management)
+            .map(|_| ConnectedControlProgress::TxPending)
+    }
+
+    fn start_protected_eapol<H: TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        payload: &[u8],
+    ) -> Result<ConnectedControlProgress, SingleMpduTxError> {
+        Esp32s31SingleMpduTx::start_protected_eapol(self, hardware, payload)
             .map(|_| ConnectedControlProgress::TxPending)
     }
 

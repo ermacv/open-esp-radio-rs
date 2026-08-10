@@ -5,12 +5,15 @@ use core::{
     sync::atomic::{AtomicU32, Ordering},
 };
 
-use embassy_futures::select::select;
-use embassy_sync::channel::{Channel, Receiver, Sender, TryReceiveError, TrySendError};
+use embassy_futures::select::select3;
+use embassy_sync::channel::{Channel, Receiver, Sender, TrySendError};
 use open_esp_radio_embassy_net::RawMutex;
 use open_esp_radio_esp32s31_wifi_mac::connected_rx::{
     ConnectedRxControlEvent, ConnectedRxEvent, ConnectedRxSink,
 };
+use open_esp_radio_wpa2::{OwnedEapolFrame, Wpa2Interface};
+
+const EAPOL_ETHERTYPE: u16 = 0x888e;
 
 /// Explicit observer for profiles that intentionally ignore control-plane
 /// events. Production association/BlockAck state should supply a real sink.
@@ -104,6 +107,7 @@ impl<const CAPACITY: usize> Default for ConnectedControlQueue<CAPACITY> {
 pub struct ConnectedControlResources<M: RawMutex, const CAPACITY: usize> {
     channel: Channel<M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Channel<M, ConnectedRxControlEvent, 1>,
+    security: Channel<M, OwnedEapolFrame, 1>,
     dropped: AtomicU32,
 }
 
@@ -112,6 +116,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
         Self {
             channel: Channel::new(),
             terminal: Channel::new(),
+            security: Channel::new(),
             dropped: AtomicU32::new(0),
         }
     }
@@ -136,11 +141,13 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlResources<M, CAPACITY> 
             ConnectedControlPublisher {
                 sender: resources.channel.sender(),
                 terminal: resources.terminal.sender(),
+                security: resources.security.sender(),
                 dropped: &resources.dropped,
             },
             ConnectedControlReceiver {
                 receiver: resources.channel.receiver(),
                 terminal: resources.terminal.receiver(),
+                security: resources.security.receiver(),
                 dropped: &resources.dropped,
                 dropped_at_start: resources.dropped.load(Ordering::Relaxed),
             },
@@ -160,6 +167,7 @@ impl<M: RawMutex, const CAPACITY: usize> Default for ConnectedControlResources<M
 pub struct ConnectedControlPublisher<'resources, M: RawMutex, const CAPACITY: usize> {
     sender: Sender<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Sender<'resources, M, ConnectedRxControlEvent, 1>,
+    security: Sender<'resources, M, OwnedEapolFrame, 1>,
     dropped: &'resources AtomicU32,
 }
 
@@ -167,6 +175,18 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
     for ConnectedControlPublisher<'_, M, CAPACITY>
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
+        if let ConnectedRxEvent::Ethernet { frame, .. } = event
+            && frame.ether_type == EAPOL_ETHERTYPE
+        {
+            let result =
+                OwnedEapolFrame::try_copy(Wpa2Interface::Station, frame.source, frame.payload)
+                    .ok()
+                    .map(|frame| self.security.try_send(frame));
+            if !matches!(result, Some(Ok(()))) {
+                self.dropped.fetch_add(1, Ordering::Relaxed);
+            }
+            return;
+        }
         let Some(event) = scheduled_connected_control(event) else {
             return;
         };
@@ -185,25 +205,36 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedRxSink
 pub struct ConnectedControlReceiver<'resources, M: RawMutex, const CAPACITY: usize> {
     receiver: Receiver<'resources, M, ConnectedRxControlEvent, CAPACITY>,
     terminal: Receiver<'resources, M, ConnectedRxControlEvent, 1>,
+    security: Receiver<'resources, M, OwnedEapolFrame, 1>,
     dropped: &'resources AtomicU32,
     dropped_at_start: u32,
 }
 
 impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACITY> {
+    pub fn try_receive_terminal(&self) -> Option<ConnectedRxControlEvent> {
+        self.terminal.try_receive().ok()
+    }
+
+    pub fn try_receive_control(&self) -> Option<ConnectedRxControlEvent> {
+        self.receiver.try_receive().ok()
+    }
+
     pub fn try_receive(&self) -> Option<ConnectedRxControlEvent> {
-        if let Ok(event) = self.terminal.try_receive() {
+        if let Some(event) = self.try_receive_terminal() {
             return Some(event);
         }
-        match self.receiver.try_receive() {
-            Ok(event) => Some(event),
-            Err(TryReceiveError::Empty) => None,
-        }
+        self.try_receive_control()
+    }
+
+    pub fn try_receive_security(&self) -> Option<OwnedEapolFrame> {
+        self.security.try_receive().ok()
     }
 
     pub fn ready(&self) -> impl Future<Output = ()> + '_ {
         async {
-            select(
+            select3(
                 self.terminal.ready_to_receive(),
+                self.security.ready_to_receive(),
                 self.receiver.ready_to_receive(),
             )
             .await;
@@ -211,7 +242,7 @@ impl<M: RawMutex, const CAPACITY: usize> ConnectedControlReceiver<'_, M, CAPACIT
     }
 
     pub fn len(&self) -> usize {
-        self.terminal.len() + self.receiver.len()
+        self.terminal.len() + self.security.len() + self.receiver.len()
     }
 
     pub fn dropped(&self) -> u32 {
@@ -329,6 +360,40 @@ mod tests {
             receiver.try_receive(),
             Some(ConnectedRxControlEvent::BlockAck(action))
         );
+    }
+
+    #[test]
+    fn connected_eapol_uses_the_security_lane_and_never_the_control_fifo() {
+        let resources = ConnectedControlResources::<NoopRawMutex, 1>::new();
+        let (mut publisher, receiver) = resources.split();
+        let ap = [2, 0, 0, 0, 0, 2];
+        let packet = open_esp_radio_wpa2::frames::Wpa2TxFrame::<512>::group_message1(
+            [2, 0, 0, 0, 0, 1],
+            3,
+            [0; 8],
+            &[0x55; 24],
+        )
+        .unwrap();
+
+        publisher.publish(ConnectedRxEvent::Ethernet {
+            frame: EthernetFrameParts {
+                destination: [2, 0, 0, 0, 0, 1],
+                source: ap,
+                ether_type: EAPOL_ETHERTYPE,
+                payload: packet.as_bytes(),
+            },
+            raw: &[],
+            amsdu: false,
+            metadata: open_esp_radio_wifi_softmac::MacRxMetadata::unavailable(),
+        });
+
+        assert_eq!(receiver.try_receive(), None);
+        let received = receiver
+            .try_receive_security()
+            .expect("EAPOL must use the security lane");
+        assert_eq!(received.peer(), &ap);
+        assert_eq!(received.as_bytes(), packet.as_bytes());
+        assert_eq!(receiver.dropped(), 0);
     }
 
     #[test]

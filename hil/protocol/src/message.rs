@@ -3,7 +3,7 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 21;
+pub const PROTOCOL_VERSION: u16 = 22;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
 // Keep the largest protocol enum comfortably below one RX frame. This value
 // bounds executor poll-stack pressure as well as wire latency; complete MPDUs
@@ -694,6 +694,8 @@ pub enum StationDisconnectReason {
     PeerDisassociation { reason_code: u16 },
     /// Restoring active power-management state failed at the peer-visible TX edge.
     ActiveStateRestoreFailed,
+    /// Connected-state WPA2 Group Key Handshake failed closed.
+    GroupKeyHandshakeFailed,
     /// Another connected link policy returned the peer owner without claiming
     /// a beacon deadline; this must not qualify an AP-loss test.
     LinkPolicy,

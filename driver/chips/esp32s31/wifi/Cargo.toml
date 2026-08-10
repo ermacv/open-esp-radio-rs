@@ -15,5 +15,8 @@ open-esp-radio-esp32s31-wifi-mac = { path = "mac" }
 open-esp-radio-ieee80211 = { path = "../../../wifi/ieee80211" }
 open-esp-radio-wifi-softmac = { path = "../../../wifi/softmac" }
 
+[dev-dependencies]
+open-esp-radio-esp32s31-registers = { path = "../registers", features = ["validation-probes"] }
+
 [lints]
 workspace = true

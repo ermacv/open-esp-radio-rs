@@ -146,6 +146,14 @@ impl Wpa2StaState {
         &self.authenticator_nonce
     }
 
+    /// Replay frontier authenticated by the completed four-way handshake.
+    pub const fn completed_replay_counter(&self) -> Option<u64> {
+        match self.phase {
+            Wpa2StaPhase::Completed => Some(self.message3_replay),
+            _ => None,
+        }
+    }
+
     pub fn on_frame<const N: usize>(
         &mut self,
         frame: OwnedEapolFrame<N>,

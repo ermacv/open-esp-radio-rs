@@ -13,8 +13,9 @@ use crate::{
     frames::Wpa2TxFrame,
     keys::Wpa2KeyKind,
     supplicant::{
-        Wpa2StaKeyInstallRequest, Wpa2StaProcessError, Wpa2StaResponseDeadline,
-        Wpa2StaResponseWait, Wpa2StaSupplicant, Wpa2StaSupplicantAction, Wpa2StaSupplicantError,
+        Wpa2ConnectedSupplicant, Wpa2StaKeyInstallRequest, Wpa2StaProcessError,
+        Wpa2StaResponseDeadline, Wpa2StaResponseWait, Wpa2StaSupplicant, Wpa2StaSupplicantAction,
+        Wpa2StaSupplicantError,
     },
 };
 
@@ -124,6 +125,11 @@ pub struct Wpa2PendingKeyInstall {
     message2_transmissions: u16,
 }
 
+pub struct Wpa2CompletedKeyInstall {
+    pub message4: Wpa2TxFrame<EAPOL_CAPACITY>,
+    pub connected: Wpa2ConnectedSupplicant,
+}
+
 impl Wpa2PendingKeyInstall {
     pub const fn request(&self) -> &Wpa2StaKeyInstallRequest {
         &self.request
@@ -140,14 +146,17 @@ impl Wpa2PendingKeyInstall {
     pub fn complete(
         self,
         installed: bool,
-    ) -> Result<Wpa2TxFrame<EAPOL_CAPACITY>, Wpa2StaSupplicantError> {
+    ) -> Result<Wpa2CompletedKeyInstall, Wpa2StaSupplicantError> {
         let Self {
             mut supplicant,
             request,
             ..
         } = self;
         match supplicant.complete_key_install::<EAPOL_CAPACITY>(request, installed)? {
-            Wpa2StaSupplicantAction::Transmit(message4) => Ok(message4),
+            Wpa2StaSupplicantAction::Transmit(message4) => Ok(Wpa2CompletedKeyInstall {
+                message4,
+                connected: supplicant.into_connected()?,
+            }),
             _ => Err(Wpa2StaSupplicantError::UnexpectedAction),
         }
     }
@@ -199,6 +208,7 @@ pub struct Wpa2KeyInstallMetadata {
 
 pub struct Wpa2Established<Keys> {
     keys: Keys,
+    connected: Wpa2ConnectedSupplicant,
     metadata: Wpa2KeyInstallMetadata,
 }
 
@@ -207,8 +217,8 @@ impl<Keys> Wpa2Established<Keys> {
         self.metadata
     }
 
-    pub fn into_keys(self) -> Keys {
-        self.keys
+    pub fn into_parts(self) -> (Keys, Wpa2ConnectedSupplicant) {
+        (self.keys, self.connected)
     }
 }
 
@@ -308,23 +318,31 @@ impl<B: Wpa2KeyInstallBackend> Wpa2KeyInstallRunner<B> {
                 return Err(Wpa2KeyInstallError::Install(error));
             }
         };
-        let message4 = match pending.complete(true) {
-            Ok(message4) => message4,
+        let completed = match pending.complete(true) {
+            Ok(completed) => completed,
             Err(error) => {
                 return Err(self.rollback(keys, Wpa2KeyInstallFailure::Complete(error)));
             }
         };
-        if message4.key_frame().message() != EapolKeyMessage::PairwiseMessage4
-            || message4.key_frame().replay_counter() != replay_counter
-            || message4.key_frame().protocol_version() != 1
+        if completed.message4.key_frame().message() != EapolKeyMessage::PairwiseMessage4
+            || completed.message4.key_frame().replay_counter() != replay_counter
+            || completed.message4.key_frame().protocol_version() != 1
         {
             return Err(self.rollback(keys, Wpa2KeyInstallFailure::InvalidMessage4));
         }
-        metadata.message4_len = message4.as_bytes().len();
-        if let Err(error) = self.backend.transmit_message4(&message4, &mut keys).await {
+        metadata.message4_len = completed.message4.as_bytes().len();
+        if let Err(error) = self
+            .backend
+            .transmit_message4(&completed.message4, &mut keys)
+            .await
+        {
             return Err(self.rollback(keys, Wpa2KeyInstallFailure::Transmit(error)));
         }
-        Ok(Wpa2Established { keys, metadata })
+        Ok(Wpa2Established {
+            keys,
+            connected: completed.connected,
+            metadata,
+        })
     }
 }
 
@@ -843,7 +861,7 @@ mod tests {
         assert_eq!(established.metadata().group_key_id, 2);
         assert_eq!(established.metadata().completed_frames, 2);
         assert_eq!(established.metadata().message2_transmissions, 1);
-        assert_eq!(established.into_keys(), 0xa5);
+        assert_eq!(established.into_parts().0, 0xa5);
         assert_eq!(runner.backend().installs, 1);
         assert_eq!(runner.backend().transmissions, 1);
         assert_eq!(runner.backend().rollbacks, 0);

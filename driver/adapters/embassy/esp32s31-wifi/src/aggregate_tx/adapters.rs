@@ -70,6 +70,19 @@ impl<
         Ok(WifiControlProgress::TxPending)
     }
 
+    fn start_protected_eapol<H: open_esp_radio_esp32s31_wifi_mac::tx::TxHardware>(
+        &mut self,
+        hardware: &mut H,
+        payload: &[u8],
+    ) -> Result<WifiControlProgress, SingleMpduTxError> {
+        if self.active() {
+            return Err(SingleMpduTxError::Busy);
+        }
+        self.ordinary.start_protected_eapol(hardware, payload)?;
+        self.active = ConnectedTxActive::Ordinary;
+        Ok(WifiControlProgress::TxPending)
+    }
+
     fn set_tx_block_ack_operational(&mut self, tid: u8, operational: bool) {
         self.set_block_ack_operational(tid, operational);
     }

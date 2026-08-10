@@ -31,6 +31,21 @@ pub struct StackBudget {
     pub runtime_minimum_free_percent: u8,
     #[serde(default = "default_reported_frame_count")]
     pub reported_frame_count: usize,
+    #[serde(default)]
+    pub reviewed_frames: Vec<ReviewedStackFrame>,
+}
+
+/// Explicit exception for one understood generated frame above the ordinary
+/// review threshold. The selector is matched against complete demangled
+/// function names; crate disambiguator hashes therefore do not enter policy.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReviewedStackFrame {
+    pub function_contains: String,
+    #[serde(default)]
+    pub source_ends_with: Option<String>,
+    pub max_bytes: u64,
+    pub reason: String,
 }
 
 impl StackBudget {
@@ -78,6 +93,30 @@ impl StackBudget {
             return Err(Error::InvalidPolicy(
                 "reported stack frame count must be greater than zero".into(),
             ));
+        }
+        for reviewed in &self.reviewed_frames {
+            if reviewed.function_contains.is_empty() || reviewed.reason.is_empty() {
+                return Err(Error::InvalidPolicy(
+                    "reviewed stack frames require a selector and reason".into(),
+                ));
+            }
+            if reviewed
+                .source_ends_with
+                .as_ref()
+                .is_some_and(String::is_empty)
+            {
+                return Err(Error::InvalidPolicy(
+                    "reviewed stack frame source suffix must not be empty".into(),
+                ));
+            }
+            if reviewed.max_bytes <= self.warn_frame_bytes
+                || reviewed.max_bytes > self.max_frame_bytes
+            {
+                return Err(Error::InvalidPolicy(format!(
+                    "reviewed frame `{}` must have a limit above the warning threshold and at or below the hard frame budget",
+                    reviewed.function_contains
+                )));
+            }
         }
         Ok(())
     }
@@ -201,34 +240,67 @@ pub fn analyze_stack(elf_path: &Path, budget: &StackBudget) -> Result<StackRepor
     let measured_frame_count = frames_by_address.len();
     let mut frames = frames_by_address.into_values().collect::<Vec<_>>();
     frames.sort_by_key(|frame| (core::cmp::Reverse(frame.size), frame.address));
-    let violations = frames
+    let mut violations = Vec::new();
+    let mut audit = AuditReport::default();
+    for frame in frames
         .iter()
-        .filter(|frame| frame.size > budget.max_frame_bytes)
-        .cloned()
-        .collect::<Vec<_>>();
+        .filter(|frame| frame.size > budget.warn_frame_bytes)
+    {
+        let reviewed = budget.reviewed_frames.iter().find(|reviewed| {
+            frame
+                .functions
+                .iter()
+                .any(|function| function.contains(&reviewed.function_contains))
+                && reviewed.source_ends_with.as_ref().is_none_or(|suffix| {
+                    frame
+                        .source
+                        .as_ref()
+                        .is_some_and(|source| source.file.ends_with(suffix))
+                })
+        });
+        let error = if frame.size > budget.max_frame_bytes {
+            Some(format!(
+                "frame {} is {} bytes, exceeding the {}-byte hard budget",
+                compact_function(frame),
+                frame.size,
+                budget.max_frame_bytes
+            ))
+        } else if let Some(reviewed) = reviewed {
+            if frame.size > reviewed.max_bytes {
+                Some(format!(
+                    "reviewed frame {} grew to {} bytes, exceeding its {}-byte limit (`{}`)",
+                    compact_function(frame),
+                    frame.size,
+                    reviewed.max_bytes,
+                    reviewed.function_contains
+                ))
+            } else {
+                audit.warnings.push(format!(
+                    "reviewed frame {} is {} bytes within its {}-byte limit: {}",
+                    compact_function(frame),
+                    frame.size,
+                    reviewed.max_bytes,
+                    reviewed.reason
+                ));
+                None
+            }
+        } else {
+            Some(format!(
+                "unreviewed frame {} is {} bytes, above the {}-byte review threshold",
+                compact_function(frame),
+                frame.size,
+                budget.warn_frame_bytes
+            ))
+        };
+        if let Some(error) = error {
+            violations.push(frame.clone());
+            audit.errors.push(error);
+        }
+    }
     let largest_frames = frames
         .into_iter()
         .take(budget.reported_frame_count)
         .collect::<Vec<_>>();
-    let mut audit = AuditReport::default();
-    for frame in &violations {
-        audit.errors.push(format!(
-            "frame {} is {} bytes, exceeding the {}-byte budget",
-            compact_function(frame),
-            frame.size,
-            budget.max_frame_bytes
-        ));
-    }
-    for frame in largest_frames.iter().filter(|frame| {
-        frame.size > budget.warn_frame_bytes && frame.size <= budget.max_frame_bytes
-    }) {
-        audit.warnings.push(format!(
-            "frame {} is {} bytes; investigate above the {}-byte warning threshold",
-            compact_function(frame),
-            frame.size,
-            budget.warn_frame_bytes
-        ));
-    }
 
     Ok(StackReport {
         schema: 1,
@@ -427,7 +499,9 @@ mod tests {
         write::{Object, Symbol, SymbolSection},
     };
 
-    use super::{StackBudget, StackFrame, analyze_stack, audit_stack, decode_stack_sizes};
+    use super::{
+        ReviewedStackFrame, StackBudget, StackFrame, analyze_stack, audit_stack, decode_stack_sizes,
+    };
 
     static NEXT_FIXTURE: AtomicUsize = AtomicUsize::new(0);
 
@@ -441,6 +515,12 @@ mod tests {
             max_move_bytes: 4 * 1024,
             runtime_minimum_free_percent: 25,
             reported_frame_count: 30,
+            reviewed_frames: vec![ReviewedStackFrame {
+                function_contains: "<unknown function at".into(),
+                source_ends_with: None,
+                max_bytes: 32 * 1024,
+                reason: "synthetic fixture".into(),
+            }],
         }
     }
 
@@ -494,6 +574,27 @@ mod tests {
         assert_eq!(report.violations.len(), 1);
         assert!(audit_stack(&report).is_err());
         fs::remove_file(over_limit).unwrap();
+    }
+
+    #[test]
+    fn unreviewed_large_frame_and_reviewed_growth_fail() {
+        let path = test_elf(true, 9 * 1024, 0x2000, 0x1000);
+        let mut policy = budget();
+        policy.reviewed_frames.clear();
+        let report = analyze_stack(&path, &policy).unwrap();
+        assert!(report.audit.errors[0].contains("unreviewed frame"));
+        assert!(audit_stack(&report).is_err());
+
+        policy.reviewed_frames.push(ReviewedStackFrame {
+            function_contains: "<unknown function at".into(),
+            source_ends_with: None,
+            max_bytes: 8 * 1024 + 512,
+            reason: "synthetic fixture".into(),
+        });
+        let report = analyze_stack(&path, &policy).unwrap();
+        assert!(report.audit.errors[0].contains("reviewed frame"));
+        assert!(audit_stack(&report).is_err());
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

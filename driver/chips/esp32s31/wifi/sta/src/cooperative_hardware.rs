@@ -18,7 +18,7 @@ use open_esp_radio_esp32s31_wifi::register_arena::{
     Esp32s31RadioRegistersArenaError, Esp32s31ReclaimedRadioRegisters,
 };
 use open_esp_radio_esp32s31_wifi_mac::{
-    crypto::CcmpKeyHardware,
+    crypto::{CcmpKeyHardware, CryptoKeyError, StaGroupCcmpSlot, replace_sta_group_ccmp},
     he::He20PeerHardware,
     init::{StaLinkRxPolicyHardware, StaNoiseFloorHardware},
     rate_control::BeamformingReportHardware,
@@ -347,5 +347,19 @@ impl ConnectedControlHardware for CooperativeRadioHardware<'_> {
             .borrow_mut()
             .set_he_trigger_based_tid_enabled(tid, enabled);
         Ok(())
+    }
+
+    fn replace_sta_group_ccmp(
+        &mut self,
+        slot: &mut StaGroupCcmpSlot,
+        key_id: u8,
+        temporal_key: &[u8; 16],
+    ) -> Result<(), CryptoKeyError> {
+        replace_sta_group_ccmp(
+            &mut *self.registers.borrow_mut(),
+            slot,
+            key_id,
+            temporal_key,
+        )
     }
 }

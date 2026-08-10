@@ -26,7 +26,10 @@ mod scan;
 
 pub use backend::Esp32s31StationAttemptRunner;
 
-pub use crate::connected_control::ConnectedControlShutdown;
+pub use crate::connected_control::{
+    ConnectedControlShutdown, ConnectedWpa2Security, ConnectedWpa2SecurityEvidence,
+    ConnectedWpa2SecurityFailure,
+};
 pub use command::{
     Esp32s31StationCommand, Esp32s31StationCommandReceiver, Esp32s31StationCompletion,
     Esp32s31StationControlError, Esp32s31StationControlResources, Esp32s31StationController,

@@ -11,7 +11,7 @@ use crate::{
     aes::AsyncWpa2KeyUnwrap,
     frames::{
         OwnedAssociationSecurityIes, OwnedRsnIe, Wpa2FrameError, Wpa2TxFrame,
-        build_sta_action_frame, parse_gtk_key_data,
+        build_sta_action_frame, parse_group_gtk_key_data, parse_gtk_key_data,
     },
     keys::Wpa2KeyInstall,
     state::{Wpa2StaAction, Wpa2StaPhase, Wpa2StaState, Wpa2StateError, Wpa2Transmit},
@@ -151,6 +151,173 @@ pub enum Wpa2StaSupplicantAction<const N: usize> {
     Deauthenticate,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2ConnectedSupplicantError {
+    WrongInterface,
+    WrongPeer,
+    UnsupportedDescriptorVersion,
+    UnsupportedMessage,
+    MissingEncryptedKeyData,
+    InvalidMic,
+    StaleReplayCounter,
+    Busy,
+    StaleCompletion,
+    InstallFailed,
+    Frame(Wpa2FrameError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Wpa2ConnectedProcessError<E> {
+    Supplicant(Wpa2ConnectedSupplicantError),
+    KeyUnwrap(E),
+}
+
+/// Exact connected-state GTK publication ticket.
+pub struct Wpa2GroupKeyInstallRequest<const N: usize> {
+    ticket: u32,
+    replay_counter: u64,
+    group: Wpa2KeyInstall,
+    response: Wpa2TxFrame<N>,
+}
+
+impl<const N: usize> Wpa2GroupKeyInstallRequest<N> {
+    pub const fn replay_counter(&self) -> u64 {
+        self.replay_counter
+    }
+
+    pub const fn group(&self) -> &Wpa2KeyInstall {
+        &self.group
+    }
+}
+
+pub enum Wpa2ConnectedAction<const N: usize> {
+    InstallGroupKey(Wpa2GroupKeyInstallRequest<N>),
+    Retransmit(Wpa2TxFrame<N>),
+}
+
+/// WPA2 state which must survive for the complete connected association.
+///
+/// It retains only PTK-derived authentication material and replay state. PMK
+/// and association retry policy remain owned by the outer station lifecycle.
+pub struct Wpa2ConnectedSupplicant {
+    authenticator: [u8; 6],
+    ptk: Ptk,
+    replay_counter: u64,
+    last_group_replay: Option<u64>,
+    pending: Option<(u32, u64)>,
+    next_ticket: u32,
+}
+
+impl Wpa2ConnectedSupplicant {
+    pub const fn replay_counter(&self) -> u64 {
+        self.replay_counter
+    }
+
+    pub async fn on_group_message1<const N: usize, U: AsyncWpa2KeyUnwrap>(
+        &mut self,
+        frame: crate::OwnedEapolFrame<N>,
+        unwrap: &mut U,
+    ) -> Result<Wpa2ConnectedAction<N>, Wpa2ConnectedProcessError<U::Error>> {
+        if self.pending.is_some() {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::Busy,
+            ));
+        }
+        if frame.interface() != Wpa2Interface::Station {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::WrongInterface,
+            ));
+        }
+        if frame.peer() != &self.authenticator {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::WrongPeer,
+            ));
+        }
+        let key = frame.key_frame();
+        if key.key_info().descriptor_version() != 2 {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::UnsupportedDescriptorVersion,
+            ));
+        }
+        if key.message() != crate::EapolKeyMessage::GroupMessage1 {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::UnsupportedMessage,
+            ));
+        }
+        let replay_counter = key.replay_counter();
+        if replay_counter < self.replay_counter
+            || (replay_counter == self.replay_counter
+                && self.last_group_replay != Some(replay_counter))
+        {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::StaleReplayCounter,
+            ));
+        }
+        if self.last_group_replay == Some(replay_counter) {
+            let response = Wpa2TxFrame::group_message2(self.authenticator, replay_counter)
+                .map_err(|error| {
+                    Wpa2ConnectedProcessError::Supplicant(Wpa2ConnectedSupplicantError::Frame(
+                        error,
+                    ))
+                })?
+                .authenticate(&self.ptk);
+            return Ok(Wpa2ConnectedAction::Retransmit(response));
+        }
+        if !key.verify_mic(&self.ptk) {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::InvalidMic,
+            ));
+        }
+        if !key.key_info().encrypted_key_data() || key.key_data().is_empty() {
+            return Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::MissingEncryptedKeyData,
+            ));
+        }
+        let plain = unwrap
+            .unwrap_key_data(self.ptk.kek(), key.key_data())
+            .await
+            .map_err(Wpa2ConnectedProcessError::KeyUnwrap)?;
+        let gtk = parse_group_gtk_key_data(plain.as_bytes()).map_err(|error| {
+            Wpa2ConnectedProcessError::Supplicant(Wpa2ConnectedSupplicantError::Frame(error))
+        })?;
+        let group =
+            Wpa2KeyInstall::group(Wpa2Interface::Station, &gtk, *key.key_receive_sequence());
+        let response = Wpa2TxFrame::group_message2(self.authenticator, replay_counter)
+            .map_err(|error| {
+                Wpa2ConnectedProcessError::Supplicant(Wpa2ConnectedSupplicantError::Frame(error))
+            })?
+            .authenticate(&self.ptk);
+        let ticket = self.next_ticket;
+        self.next_ticket = self.next_ticket.wrapping_add(1).max(1);
+        self.pending = Some((ticket, replay_counter));
+        Ok(Wpa2ConnectedAction::InstallGroupKey(
+            Wpa2GroupKeyInstallRequest {
+                ticket,
+                replay_counter,
+                group,
+                response,
+            },
+        ))
+    }
+
+    pub fn complete_group_key_install<const N: usize>(
+        &mut self,
+        request: Wpa2GroupKeyInstallRequest<N>,
+        installed: bool,
+    ) -> Result<Wpa2TxFrame<N>, Wpa2ConnectedSupplicantError> {
+        if self.pending != Some((request.ticket, request.replay_counter)) {
+            return Err(Wpa2ConnectedSupplicantError::StaleCompletion);
+        }
+        self.pending = None;
+        if !installed {
+            return Err(Wpa2ConnectedSupplicantError::InstallFailed);
+        }
+        self.replay_counter = request.replay_counter;
+        self.last_group_replay = Some(request.replay_counter);
+        Ok(request.response)
+    }
+}
+
 /// One WPA2-Personal station handshake with owned cryptographic state.
 pub struct Wpa2StaSupplicant {
     state: Wpa2StaState,
@@ -189,6 +356,22 @@ impl Wpa2StaSupplicant {
 
     pub const fn phase(&self) -> Wpa2StaPhase {
         self.state.phase()
+    }
+
+    pub fn into_connected(self) -> Result<Wpa2ConnectedSupplicant, Wpa2StaSupplicantError> {
+        let replay_counter = self
+            .state
+            .completed_replay_counter()
+            .ok_or(Wpa2StaSupplicantError::UnexpectedAction)?;
+        let ptk = self.ptk.ok_or(Wpa2StaSupplicantError::MissingPtk)?;
+        Ok(Wpa2ConnectedSupplicant {
+            authenticator: *self.state.peer(),
+            ptk,
+            replay_counter,
+            last_group_replay: None,
+            pending: None,
+            next_ticket: 1,
+        })
     }
 
     /// Consume one validated peer EAPOL-Key frame and resolve every
@@ -372,7 +555,7 @@ mod tests {
     use super::*;
     use crate::{
         EAPOL_KEY_FIXED_LEN, EAPOL_KEY_PACKET_LEN, EAPOL_PACKET_TYPE_KEY, RSN_KEY_DESCRIPTOR_TYPE,
-        aes::Wpa2SoftwareAes,
+        aes::{Wpa2SoftwareAes, Wpa2UnwrappedKeyData},
         frames::{Wpa2Gtk, Wpa2PlainKeyData},
         keys::Wpa2KeyKind,
     };
@@ -433,6 +616,40 @@ mod tests {
         mac.update(&bytes[..len]);
         bytes[81..97].copy_from_slice(&mac.finalize().into_bytes()[..16]);
         crate::OwnedEapolFrame::<512>::try_copy(Wpa2Interface::Station, AP, &bytes[..len]).unwrap()
+    }
+
+    struct GroupKeyUnwrap {
+        plain: [u8; 24],
+    }
+
+    impl AsyncWpa2KeyUnwrap for GroupKeyUnwrap {
+        type Error = ();
+
+        async fn unwrap_key_data(
+            &mut self,
+            _kek: &[u8; 16],
+            _encrypted: &[u8],
+        ) -> Result<Wpa2UnwrappedKeyData, Self::Error> {
+            Ok(Wpa2UnwrappedKeyData::try_copy(&self.plain).unwrap())
+        }
+    }
+
+    fn connected(ptk: Ptk) -> Wpa2ConnectedSupplicant {
+        Wpa2ConnectedSupplicant {
+            authenticator: AP,
+            ptk,
+            replay_counter: 2,
+            last_group_replay: None,
+            pending: None,
+            next_ticket: 1,
+        }
+    }
+
+    fn group_kde(key_id: u8, key: u8) -> [u8; 24] {
+        let mut kde = [0; 24];
+        kde[..8].copy_from_slice(&[0xdd, 22, 0, 0x0f, 0xac, 1, key_id, 0]);
+        kde[8..].fill(key);
+        kde
     }
 
     #[test]
@@ -518,6 +735,85 @@ mod tests {
             ))
         ));
         assert_eq!(supplicant.phase(), Wpa2StaPhase::Failed);
+    }
+
+    #[test]
+    fn connected_group_rekey_installs_once_and_retransmits_idempotently() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let ptk = pmk.derive_ptk(context());
+        let frame = Wpa2TxFrame::<512>::group_message1(LOCAL, 3, [9; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let mut connected = connected(pmk.derive_ptk(context()));
+        let mut unwrap = GroupKeyUnwrap {
+            plain: group_kde(1, 0x6a),
+        };
+        let Wpa2ConnectedAction::InstallGroupKey(request) =
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap()
+        else {
+            panic!("new Group Message 1 must request one GTK replacement")
+        };
+        assert_eq!(request.replay_counter(), 3);
+        assert_eq!(
+            request.group().kind(),
+            Wpa2KeyKind::Group {
+                key_id: 1,
+                transmit: false,
+            }
+        );
+        assert_eq!(request.group().key().as_bytes(), &[0x6a; 16]);
+        let response = connected.complete_group_key_install(request, true).unwrap();
+        assert_eq!(
+            response.key_frame().message(),
+            crate::EapolKeyMessage::GroupMessage2
+        );
+        assert!(response.key_frame().verify_mic(&ptk));
+        assert_eq!(connected.replay_counter(), 3);
+
+        let Wpa2ConnectedAction::Retransmit(repeated) =
+            block_on(connected.on_group_message1(owned(&frame), &mut unwrap)).unwrap()
+        else {
+            panic!("repeated Group Message 1 must not reinstall GTK")
+        };
+        assert!(repeated.key_frame().verify_mic(&ptk));
+    }
+
+    #[test]
+    fn connected_group_rekey_rejects_bad_mic_and_stale_replay() {
+        let pmk = Pmk::derive(b"password", b"ssid").unwrap();
+        let ptk = pmk.derive_ptk(context());
+        let valid = Wpa2TxFrame::<512>::group_message1(LOCAL, 3, [0; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        let mut bytes = [0; 512];
+        bytes[..valid.as_bytes().len()].copy_from_slice(valid.as_bytes());
+        bytes[81] ^= 1;
+        let invalid = crate::OwnedEapolFrame::<512>::try_copy(
+            Wpa2Interface::Station,
+            AP,
+            &bytes[..valid.as_bytes().len()],
+        )
+        .unwrap();
+        let mut connected = connected(pmk.derive_ptk(context()));
+        let mut unwrap = GroupKeyUnwrap {
+            plain: group_kde(1, 0x6a),
+        };
+        assert!(matches!(
+            block_on(connected.on_group_message1(invalid, &mut unwrap)),
+            Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::InvalidMic
+            ))
+        ));
+
+        let stale = Wpa2TxFrame::<512>::group_message1(LOCAL, 1, [0; 8], &[0x55; 24])
+            .unwrap()
+            .authenticate(&ptk);
+        assert!(matches!(
+            block_on(connected.on_group_message1(owned(&stale), &mut unwrap)),
+            Err(Wpa2ConnectedProcessError::Supplicant(
+                Wpa2ConnectedSupplicantError::StaleReplayCounter
+            ))
+        ));
     }
 
     #[test]

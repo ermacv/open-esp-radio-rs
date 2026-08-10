@@ -77,6 +77,13 @@ impl<M: RawMutex, O: ConnectedRxSink, const FRAME_CAPACITY: usize, const QUEUE_D
 {
     fn publish(&mut self, event: ConnectedRxEvent<'_>) {
         if let ConnectedRxEvent::Ethernet { frame, .. } = event {
+            // Connected-state EAPOL belongs to the WPA2 control owner. It is
+            // still forwarded to `observer` below, but must never escape into
+            // embassy-net as application traffic.
+            if frame.ether_type == 0x888e {
+                self.observer.publish(event);
+                return;
+            }
             let publish_started = self.pipeline_observer.map(|observer| observer.now_micros());
             let result = self.network.try_send_parts(
                 frame.destination,
@@ -206,6 +213,23 @@ mod tests {
         assert_eq!(sink.observer().0, 2);
         let mut context = Context::from_waker(Waker::noop());
         assert!(matches!(device.receive(&mut context), Some(_)));
+        assert!(matches!(device.receive(&mut context), None));
+
+        let eapol = ConnectedRxEvent::Ethernet {
+            frame: EthernetFrameParts {
+                destination: [0; 6],
+                source: [1; 6],
+                ether_type: 0x888e,
+                payload: &[1, 2, 3],
+            },
+            raw: &ethernet,
+            amsdu: false,
+            metadata: open_esp_radio_wifi_softmac::MacRxMetadata::unavailable(),
+        };
+        sink.publish(eapol);
+        assert_eq!(sink.enqueued(), 1);
+        assert_eq!(sink.dropped(), 1);
+        assert_eq!(sink.observer().0, 3);
         assert!(matches!(device.receive(&mut context), None));
     }
 }

@@ -6,6 +6,10 @@ adapters only publish an already-built document. Consumers validate both the
 version and command identity and fail closed on schema drift. There are no
 old-schema compatibility readers.
 
+Large generated JSON artifacts use compact canonical serialization to reduce
+cold-build time, peak transient memory and repository size. Whitespace is not
+part of their contract; consumers must parse the typed structure.
+
 | Artifact | Version | Command identity | Owner |
 | --- | ---: | --- | --- |
 | Symbol inventory | 4 | `symbols inventory` | `artifacts/symbol_inventory.rs`, `artifacts/symbol_inventory/read.rs` |
@@ -57,6 +61,9 @@ actions while JSON keeps the action attached to every responsible component.
 `project analyze` emits command-result schema 2, which distinguishes a
 content-verified write-mode `up-to-date` stage from a stage executed as
 `written` or `verified`.
-`project check` emits command-result schema 1 and combines the non-mutating
+`project check` emits command-result schema 2 and combines the non-mutating
 analysis, verification and publication verdicts without embedding or
-duplicating their persistent evidence documents.
+duplicating their persistent evidence documents. Every failed aggregate stage
+contains typed component issues and one concrete next action; verification
+summary counts distinguish mismatches, incomplete comparisons and implemented
+but unqualified replacements.

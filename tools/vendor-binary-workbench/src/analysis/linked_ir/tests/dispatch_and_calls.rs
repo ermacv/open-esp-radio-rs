@@ -13,6 +13,7 @@ static LINK_UNIT_DELAY_SEMANTIC: crate::DirectSemanticFunctionSpec =
         id: "test-link-unit-delay",
         c_name: "ets_delay_us",
         argument_count: 1,
+        return_model: crate::ExternalReturnModel::Unmodeled,
         semantic: crate::ExternalSemanticSpec {
             operation: "time.blocking-delay",
             arguments: &LINK_UNIT_DELAY_ARGUMENTS,
@@ -587,6 +588,30 @@ fn diagnostic_compaction_leaves_a_single_fragment_unchanged() {
         diagnostic.rendered,
         "decoder stopped at unsupported instruction"
     );
+}
+
+#[test]
+fn diagnostics_expose_stable_root_cause_metadata() {
+    let first = compact_diagnostic(
+        "unmodeled-memory-load at 0x10002ea6: lw a4, 0(a2); base a2 = expr:Add(arg1,arg0)",
+    );
+    let second = compact_diagnostic(
+        "unmodeled-memory-load at 0x10002ea6: lw a4, 0(a2); base a2 = expr:Add(arg1,const:0x4)",
+    );
+
+    assert_eq!(first.kind, "memory-load");
+    assert_eq!(first.site, Some(0x1000_2ea6));
+    assert_eq!(first.root_id, second.root_id);
+    assert!(first.root_id.starts_with("blocker-"));
+}
+
+#[test]
+fn diagnostic_root_ids_distinguish_sites() {
+    let first = compact_diagnostic("input-dependent control-flow at 0x1000: beq a0, zero, 4");
+    let second = compact_diagnostic("input-dependent control-flow at 0x1004: beq a0, zero, 4");
+
+    assert_eq!(first.kind, "control-flow");
+    assert_ne!(first.root_id, second.root_id);
 }
 
 #[test]

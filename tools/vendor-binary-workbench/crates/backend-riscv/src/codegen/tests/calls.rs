@@ -4,6 +4,49 @@ use super::memory::bytes_to_word_events;
 use super::*;
 
 #[test]
+fn renders_modeled_direct_platform_call_and_constant_guard() {
+    let trace = FunctionAnalysis {
+        symbol: "fixed_xtal".to_owned(),
+        events: Vec::new(),
+        located_events: Vec::new(),
+        reference_events: vec![DraftReferenceEvent::ModeledDirectCall {
+            token: 0,
+            site: 0x1000,
+            function: open_radio_vendor_analysis_model::ModeledDirectCall {
+                id: "fixed-xtal-40mhz".to_owned(),
+                name: "rtc_clk_xtal_freq_get".to_owned(),
+                argument_count: 0,
+                return_model: ExternalReturnModel::Constant(40),
+                operation: "clock.xtal-frequency.read".to_owned(),
+                return_type: "u32".to_owned(),
+                replacement_hint: Some("fixed target crystal contract".to_owned()),
+                evidence: "test-target-contract".to_owned(),
+            },
+            arguments: Box::new([]),
+        }],
+        reference_dependencies: Vec::new(),
+        blockers: Vec::new(),
+        reference_blockers: Vec::new(),
+        return_value: SymbolicValue::Constant(40),
+        reference_flow: None,
+        unresolved_branch: None,
+    };
+
+    let generated = generate_from_trace(&trace, "oracle.elf", "digest", None, &[]).unwrap();
+
+    assert!(
+        generated
+            .source
+            .contains("platform.direct_external_call(\"fixed-xtal-40mhz\", &[])")
+    );
+    assert!(
+        generated
+            .source
+            .contains("assert_eq!(external_result0, 0x00000028_u32")
+    );
+}
+
+#[test]
 fn does_not_compact_a_composed_call_result_that_escapes_the_loop() {
     let reference_events = bytes_to_word_events(SymbolicValue::input(0), 0x1000_8000, 0);
     let trace = FunctionAnalysis {

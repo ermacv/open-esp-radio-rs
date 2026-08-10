@@ -73,8 +73,8 @@ pub(in crate::analysis::linked_ir) fn populate_effect_summaries(
             local_blockers[index]
                 .insert(format!("incomplete function body: {}", function.identity));
         }
-        for blocker in &function.call_graph_blockers {
-            local_blockers[index].insert(format!("{}: {blocker}", function.identity));
+        for blocker in &function.call_graph_diagnostics {
+            local_blockers[index].insert(format!("{}: {}", function.identity, blocker.rendered));
         }
         for call in &function.calls {
             match call.kind {

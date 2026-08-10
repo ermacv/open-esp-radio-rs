@@ -62,9 +62,8 @@ pub(crate) enum ReviewedMemoryObject {
         member: Option<String>,
         symbol: String,
     },
-    DereferencedGlobal {
-        member: Option<String>,
-        symbol: String,
+    Dereferenced {
+        pointer: Box<ReviewedMemoryObject>,
         pointer_offset: i64,
     },
     Absolute {

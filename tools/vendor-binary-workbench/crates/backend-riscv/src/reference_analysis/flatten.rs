@@ -320,7 +320,13 @@ pub(super) fn flatten_reference_trace(
                     .into_boxed_slice();
                 let mapped_token = output
                     .iter()
-                    .filter(|event| matches!(event, DraftReferenceEvent::ExternalCall { .. }))
+                    .filter(|event| {
+                        matches!(
+                            event,
+                            DraftReferenceEvent::ExternalCall { .. }
+                                | DraftReferenceEvent::ModeledDirectCall { .. }
+                        )
+                    })
                     .count() as u32;
                 external_tokens.push(mapped_token);
                 output.push(DraftReferenceEvent::ExternalCall {
@@ -333,6 +339,49 @@ pub(super) fn flatten_reference_trace(
                 if usize::try_from(*token).ok() != Some(external_tokens.len() - 1) {
                     return Err(format!(
                         "external call token {token} is not ordered in the source trace"
+                    ));
+                }
+                Ok(())
+            })(),
+            DraftReferenceEvent::ModeledDirectCall {
+                token,
+                site,
+                function,
+                arguments,
+            } => (|| -> std::result::Result<(), String> {
+                let arguments = arguments
+                    .iter()
+                    .map(|value| {
+                        value.rewrite_call_context(
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                            &call_results,
+                            &private_stack_reads,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .into_boxed_slice();
+                let mapped_token = output
+                    .iter()
+                    .filter(|event| {
+                        matches!(
+                            event,
+                            DraftReferenceEvent::ExternalCall { .. }
+                                | DraftReferenceEvent::ModeledDirectCall { .. }
+                        )
+                    })
+                    .count() as u32;
+                external_tokens.push(mapped_token);
+                output.push(DraftReferenceEvent::ModeledDirectCall {
+                    token: mapped_token,
+                    site: *site,
+                    function: function.clone(),
+                    arguments,
+                });
+                if usize::try_from(*token).ok() != Some(external_tokens.len() - 1) {
+                    return Err(format!(
+                        "modeled direct call token {token} is not ordered in the source trace"
                     ));
                 }
                 Ok(())

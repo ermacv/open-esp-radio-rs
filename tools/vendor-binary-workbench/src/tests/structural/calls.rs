@@ -736,6 +736,44 @@ fn linked_diagnostic_symbol_remains_a_modeled_boundary() {
 }
 
 #[test]
+fn modeled_direct_platform_call_propagates_constant_result() {
+    let parent = artifact::ArtifactSymbolDefinition {
+        member: None,
+        name: "fixed_xtal_parent".to_owned(),
+        address: 0x1000,
+        bytes: vec![
+            0x97, 0x00, 0x00, 0x00, // auipc ra, 0
+            0xe7, 0x80, 0x00, 0x00, // jalr ra, 0(ra)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: Vec::new(),
+        relocations: Vec::new(),
+    };
+    let relocations = BTreeMap::from([(
+        StructuralCallSite::new(&parent, 0x1000),
+        ("rtc_clk_xtal_freq_get".to_owned(), None),
+    )]);
+    let context = synthetic_delay_pointer_context();
+
+    let trace = trace_binary_symbol(&parent, &map(), &relocations, &context, None).unwrap();
+
+    assert!(trace.blockers.is_empty(), "{:#?}", trace.blockers);
+    assert!(
+        trace.reference_blockers.is_empty(),
+        "{:#?}",
+        trace.reference_blockers
+    );
+    assert_eq!(trace.return_value, SymbolicValue::Constant(40));
+    assert!(matches!(
+        trace.reference_events.as_slice(),
+        [DraftReferenceEvent::ModeledDirectCall { function, .. }]
+            if function.name == "rtc_clk_xtal_freq_get"
+                && function.return_model == ExternalReturnModel::Constant(40)
+    ));
+}
+
+#[test]
 fn reviewed_indirect_call_keeps_abi_identity_without_claiming_execution_semantics() {
     let parent = artifact::ArtifactSymbolDefinition {
         member: None,

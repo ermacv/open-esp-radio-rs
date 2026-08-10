@@ -33,6 +33,9 @@ The implementation is split by responsibility:
   semantics to the backend;
 - `project_analysis` owns project-level generic analysis artifacts such as the
   complete symbol inventory and their output-collision invariants;
+- `review_scopes` joins release roots, linked-IR evidence and replacement
+  coverage; `review_scopes/queue.rs` alone owns root-cause grouping, priority
+  and deterministic queue ordering;
 - `navigation` builds and strictly validates the optional navigation-only join
   over the artifact layer's typed symbol, linked-IR and interface projections,
   without private report DTOs and without feeding facts or semantics back into
@@ -290,7 +293,7 @@ subsystem modules:
 | Module | Responsibility |
 | --- | --- |
 | `body_identity.rs` | Shared exact name, address, and body-size identity predicate |
-| `direct_semantic.rs` | Direct semantic overlay for the reviewed `pp_post` body and relocation schema |
+| `direct_semantic.rs` | Direct semantic overlay for reviewed bodies plus modeled direct platform inputs such as the fixed crystal frequency |
 | `intrinsics.rs` | Bounded `memcpy`/`memset` effects and the reviewed wide signed divide intrinsic |
 | `rf.rs` | RFPLL calibration, frequency-offset scratch, and IQ-estimator traces |
 | `i2c.rs` | Analog-I2C register access and host-table summaries |
@@ -313,8 +316,8 @@ that do not need to control that walk:
 | `alu.rs` | Register-only RV32 integer semantics and ALU-related relocations |
 | `calls.rs` | Relocated, direct, function-table, and external-ABI call semantics |
 | `context.rs` | Relocated calls, pointer cells, tables, and harness summary context |
-| `memory.rs` | Effective addresses, data relocations, indexed-memory proofs, and bounded memory intrinsics |
-| `memory_access.rs` | Load/store effects over MMIO, ELF memory, caller RAM, and private stack |
+| `memory.rs` | Effective addresses, data relocations, indexed/dereferenced memory proofs, and bounded memory intrinsics |
+| `memory_access.rs` | Load/store effects over MMIO, ELF memory, caller RAM, loaded-pointer RAM, dynamic RAM, and private stack |
 | `poll.rs` | Structural polling-loop recognition and checkpoint validation |
 | `stack.rs` | Symbolic private stack and RV32 call-argument recovery |
 | `state.rs` | Register file, effect streams, blockers, tokens, checkpoints, and trace finalization |
@@ -490,7 +493,7 @@ claims, validation, and presentation separate:
 | Module | Responsibility |
 | --- | --- |
 | `facts.rs` | Stable generated-fact model, multi-report loading and queries |
-| `facts/parse.rs` | Strict schema-v38 linked-IR projection, including indexed memory objects, site-bearing calls and guard expressions |
+| `facts/parse.rs` | Strict schema-v39 linked-IR projection, including indexed/dereferenced memory objects, site-bearing calls, typed diagnostics and guard expressions |
 | `facts/json.rs` | Low-level JSON shape, integer, address and digest readers |
 | `facts/validate.rs` | Cross-report identities, source ownership and field invariants |
 | `interface_links.rs` | Exact caller/site join from validated interface bindings to optional linked-IR CFG evidence |
@@ -539,7 +542,7 @@ project-profile generation and reusable artifact rendering are outside CLI:
 | `linked_ir_export.rs` | CLI-independent analysis and project-profile generation |
 | `linked_ir_export/pseudo.rs` | Pseudo-Rust artifact rendering |
 | `linked_ir_export/render_common.rs` | Shared guard/MMIO formatting and traversal |
-| `artifacts/linked_ir_document.rs` | Persistent schema-v38 Serde document |
+| `artifacts/linked_ir_document.rs` | Persistent schema-v39 Serde document |
 | `cli/commands/export_ir/human.rs` | Terminal presentation orchestration and one output-boundary write |
 | `cli/commands/export_ir/human/header.rs` | Project and artifact section |
 | `cli/commands/export_ir/human/functions/` | Local function facts and transitive effect sections |
@@ -594,6 +597,7 @@ boundary:
 | `snapshot/registers.rs` | Register index plus lazy discovery/review/IR detail join |
 | `snapshot/interfaces.rs` | Reviewed table contracts, slots and semantic bindings |
 | `snapshot/comparisons.rs` | Verification profile inventory and duplicate-name diagnostics |
+| `snapshot/review_queue.rs` | Release-scope root-cause queue loaded from the compact review artifact |
 
 On-demand function detail/pseudo-Rust and register evidence remain behind the
 snapshot façade because both frontends load them lazily. See

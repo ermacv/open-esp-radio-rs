@@ -80,6 +80,10 @@ pub struct DirectSemanticFunctionSpec {
     pub id: &'static str,
     pub c_name: &'static str,
     pub argument_count: u8,
+    /// Executable result model for an external boundary. Internal reviewed
+    /// summaries use `Unmodeled` because their body, not the ABI boundary,
+    /// determines the result.
+    pub return_model: ExternalReturnModel,
     pub semantic: ExternalSemanticSpec,
     pub evidence: &'static str,
 }

@@ -212,14 +212,10 @@ fn reviewed_memory_label(object: &ReviewedMemoryObject) -> String {
             "global:{}::{symbol}",
             member.as_deref().unwrap_or("<linked>")
         ),
-        ReviewedMemoryObject::DereferencedGlobal {
-            member,
-            symbol,
+        ReviewedMemoryObject::Dereferenced {
+            pointer,
             pointer_offset,
-        } => format!(
-            "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
-            member.as_deref().unwrap_or("<linked>")
-        ),
+        } => format!("*({}{pointer_offset:+#x})", reviewed_memory_label(pointer)),
         ReviewedMemoryObject::Absolute {
             address_space,
             address,

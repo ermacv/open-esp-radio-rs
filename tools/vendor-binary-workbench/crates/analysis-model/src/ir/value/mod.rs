@@ -16,10 +16,11 @@ pub enum MemoryObjectRoot {
         member: Option<String>,
         symbol: String,
     },
-    /// Storage reached through a pointer loaded from a relocated global.
-    DereferencedGlobal {
-        member: Option<String>,
-        symbol: String,
+    /// Storage reached through a pointer loaded from another known memory
+    /// object. The pointer cell remains explicit so an absolute RAM cell,
+    /// context field and relocated global never collapse into one object.
+    Dereferenced {
+        pointer: Box<MemoryObjectRoot>,
         pointer_offset: i64,
     },
     /// Statically known RAM address without a symbol identity.

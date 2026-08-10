@@ -10,11 +10,12 @@ use crate::{
     registers::RegisterFacts,
 };
 
-pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 2;
+pub(crate) const REVIEW_SCOPES_SCHEMA: u32 = 3;
 
 mod model;
 pub(crate) use model::{ReviewScopeMmio, ReviewScopeReport, ReviewScopesDocument};
 use model::{StoredReplacement, VerificationDocument};
+mod queue;
 
 impl ReviewScopesDocument {
     pub(crate) fn release_mmio(&self) -> BTreeSet<(u32, u8)> {
@@ -35,12 +36,35 @@ struct FunctionNode {
     table_calls: usize,
     context_fields: usize,
     memory_fields: usize,
-    decode_blockers: usize,
+    decode_blockers: Vec<DecodeIssue>,
+    diagnostics: Vec<DiagnosticIssue>,
+    unresolved_call_sites: Vec<CallIssue>,
     direct_blockers: usize,
     call_graph_blockers: usize,
     reference_blockers: usize,
     unresolved_calls: usize,
     complete: bool,
+}
+
+#[derive(Debug)]
+struct DecodeIssue {
+    address: u32,
+    class: String,
+}
+
+#[derive(Debug)]
+struct DiagnosticIssue {
+    root_id: String,
+    kind: String,
+    site: Option<u32>,
+    channel: &'static str,
+    message: String,
+}
+
+#[derive(Debug)]
+struct CallIssue {
+    site: Option<u32>,
+    target: String,
 }
 
 pub(crate) fn analyze(project: &ProjectSpec) -> Result<Vec<ReviewScopeReport>> {
@@ -175,11 +199,15 @@ fn analyze_scope(
             );
             dependencies.sort();
             dependencies.dedup();
-            let unresolved_calls = function
+            let unresolved_call_sites = function
                 .calls
                 .iter()
                 .filter(|call| matches!(call.kind.as_str(), "unresolved" | "ambiguous-project"))
-                .count();
+                .map(|call| CallIssue {
+                    site: call.site,
+                    target: call.target.clone(),
+                })
+                .collect::<Vec<_>>();
             let table_calls = function
                 .calls
                 .iter()
@@ -195,6 +223,37 @@ fn analyze_scope(
             let direct_blockers = function.direct_blocker_count();
             let call_graph_blockers = function.call_graph_blocker_count();
             let reference_blockers = function.reference_blocker_count();
+            let call_sites = function
+                .calls
+                .iter()
+                .filter_map(|call| call.site)
+                .collect::<BTreeSet<_>>();
+            let diagnostics = function
+                .diagnostics()
+                .filter(|(_, diagnostic)| {
+                    diagnostic.kind != "aggregate"
+                        && diagnostic.kind != "unresolved-call"
+                        && !(diagnostic.kind == "call-boundary"
+                            && diagnostic
+                                .site
+                                .is_some_and(|site| call_sites.contains(&site)))
+                })
+                .map(|(channel, diagnostic)| DiagnosticIssue {
+                    root_id: diagnostic.root_id.clone(),
+                    kind: diagnostic.kind.clone(),
+                    site: diagnostic.site,
+                    channel,
+                    message: diagnostic.rendered.clone(),
+                })
+                .collect();
+            let decode_blockers = function
+                .decode_blockers
+                .iter()
+                .map(|blocker| DecodeIssue {
+                    address: blocker.address as u32,
+                    class: blocker.class.clone(),
+                })
+                .collect();
             let node = FunctionNode {
                 source: function.source,
                 symbol: function.symbol,
@@ -207,11 +266,17 @@ fn analyze_scope(
                 table_calls,
                 context_fields,
                 memory_fields,
-                decode_blockers: function.decode_blockers.len(),
+                decode_blockers,
+                diagnostics,
+                unresolved_call_sites,
                 direct_blockers,
                 call_graph_blockers,
                 reference_blockers,
-                unresolved_calls,
+                unresolved_calls: function
+                    .calls
+                    .iter()
+                    .filter(|call| matches!(call.kind.as_str(), "unresolved" | "ambiguous-project"))
+                    .count(),
                 complete: function.complete,
             };
             if nodes.insert(function.identity.clone(), node).is_some() {
@@ -286,7 +351,9 @@ fn analyze_scope(
         replacement_incomplete: 0,
         replacement_unqualified: 0,
         replacement_uncovered: 0,
+        review_queue: Vec::new(),
     };
+    let mut review_queue = queue::new();
     for identity in selected {
         let node = &nodes[&identity];
         for key in &node.mmio {
@@ -297,12 +364,47 @@ fn analyze_scope(
         report.table_calls += node.table_calls;
         report.context_fields += node.context_fields;
         report.memory_fields += node.memory_fields;
-        report.decode_blockers += node.decode_blockers;
-        report.decode_blocker_functions += usize::from(node.decode_blockers != 0);
+        report.decode_blockers += node.decode_blockers.len();
+        report.decode_blocker_functions += usize::from(!node.decode_blockers.is_empty());
         report.direct_blockers += node.direct_blockers;
         report.call_graph_blockers += node.call_graph_blockers;
         report.reference_blockers += node.reference_blockers;
         report.unresolved_calls += node.unresolved_calls;
+        for issue in &node.diagnostics {
+            queue::insert(
+                &mut review_queue,
+                issue.root_id.clone(),
+                &issue.kind,
+                &identity,
+                issue.site,
+                issue.channel,
+                issue.message.clone(),
+            );
+        }
+        for issue in &node.decode_blockers {
+            let key = format!("{}:{:#x}", issue.class, issue.address);
+            queue::insert(
+                &mut review_queue,
+                queue::id("decode", &key),
+                "decode",
+                &identity,
+                Some(issue.address),
+                "decode",
+                format!("unsupported instruction class {}", issue.class),
+            );
+        }
+        for issue in &node.unresolved_call_sites {
+            let key = issue.target.clone();
+            queue::insert(
+                &mut review_queue,
+                queue::id("unresolved-call", &key),
+                "unresolved-call",
+                &identity,
+                issue.site,
+                "call",
+                format!("unresolved call to {}", issue.target),
+            );
+        }
     }
     if let Some(register_facts) = register_facts {
         let function_keys = function_keys.iter().collect::<BTreeSet<_>>();
@@ -335,10 +437,20 @@ fn analyze_scope(
         )
         .collect();
     for (source, symbol) in &vendors {
+        let function = format!("{source}::{symbol}");
         let Some(replacement) = replacements.iter().find(|replacement| {
             replacement.vendor.source == *source && replacement.vendor.symbol == *symbol
         }) else {
             report.replacement_uncovered += 1;
+            queue::insert(
+                &mut review_queue,
+                queue::id("replacement-uncovered", &function),
+                "replacement-uncovered",
+                &function,
+                None,
+                "replacement",
+                "vendor function has no reviewed Rust replacement".to_owned(),
+            );
             continue;
         };
         match replacement.status.as_str() {
@@ -350,16 +462,49 @@ fn analyze_scope(
                     }
                     Some(rust) if !rust.verification_probes.is_empty() => {
                         report.replacement_probe_only_matches += 1;
+                        queue::insert(
+                            &mut review_queue,
+                            queue::id("replacement-probe-only", &function),
+                            "replacement-probe-only",
+                            &function,
+                            None,
+                            "replacement",
+                            "behavioral match is bound only to a verification probe".to_owned(),
+                        );
                     }
                     _ => {
                         report.replacement_unmapped_matches += 1;
+                        queue::insert(
+                            &mut review_queue,
+                            queue::id("replacement-unmapped", &function),
+                            "replacement-unmapped",
+                            &function,
+                            None,
+                            "replacement",
+                            "behavioral match has no Rust component binding".to_owned(),
+                        );
                     }
                 }
             }
-            "mismatch" => report.replacement_mismatches += 1,
-            "incomplete" => report.replacement_incomplete += 1,
-            "implemented-unqualified" => report.replacement_unqualified += 1,
-            "uncovered" => report.replacement_uncovered += 1,
+            "mismatch" | "incomplete" | "implemented-unqualified" | "uncovered" => {
+                match replacement.status.as_str() {
+                    "mismatch" => report.replacement_mismatches += 1,
+                    "incomplete" => report.replacement_incomplete += 1,
+                    "implemented-unqualified" => report.replacement_unqualified += 1,
+                    "uncovered" => report.replacement_uncovered += 1,
+                    _ => unreachable!(),
+                }
+                let kind = format!("replacement-{}", replacement.status);
+                queue::insert(
+                    &mut review_queue,
+                    queue::id(&kind, &function),
+                    &kind,
+                    &function,
+                    None,
+                    "replacement",
+                    format!("replacement status is {}", replacement.status),
+                );
+            }
             status => {
                 return Err(crate::Error::invalid(format!(
                     "unknown replacement status {status:?}"
@@ -367,6 +512,7 @@ fn analyze_scope(
             }
         }
     }
+    report.review_queue = queue::finish(review_queue);
     Ok(report)
 }
 

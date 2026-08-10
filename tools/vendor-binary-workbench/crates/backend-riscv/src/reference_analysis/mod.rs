@@ -119,6 +119,7 @@ fn resolve_reference_trace_with_budget(
                 event,
                 DraftReferenceEvent::TailCall { .. }
                     | DraftReferenceEvent::Call { .. }
+                    | DraftReferenceEvent::ModeledDirectCall { .. }
                     | DraftReferenceEvent::DiagnosticCall { .. }
             )
         })

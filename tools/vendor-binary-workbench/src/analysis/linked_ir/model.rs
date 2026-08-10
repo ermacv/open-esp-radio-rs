@@ -202,9 +202,8 @@ pub(crate) enum LinkedMemoryObject {
         member: Option<String>,
         symbol: String,
     },
-    DereferencedGlobal {
-        member: Option<String>,
-        symbol: String,
+    Dereferenced {
+        pointer: Box<LinkedMemoryObject>,
         pointer_offset: i64,
     },
     Absolute {
@@ -223,13 +222,11 @@ impl LinkedMemoryObject {
         match value {
             MemoryObjectRoot::Argument { index } => Self::Argument { index },
             MemoryObjectRoot::RelocatedSymbol { member, symbol } => Self::Global { member, symbol },
-            MemoryObjectRoot::DereferencedGlobal {
-                member,
-                symbol,
+            MemoryObjectRoot::Dereferenced {
+                pointer,
                 pointer_offset,
-            } => Self::DereferencedGlobal {
-                member,
-                symbol,
+            } => Self::Dereferenced {
+                pointer: Box::new(Self::from_root(*pointer, address_space)),
                 pointer_offset,
             },
             MemoryObjectRoot::Absolute { address } => Self::Absolute {
@@ -563,6 +560,12 @@ pub(crate) struct LinkedDiagnosticFragment {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct LinkedDiagnostic {
+    /// Stable identity of the underlying analysis limitation. The identifier
+    /// is derived from the classified root fragment, not from presentation
+    /// truncation or the function through which it was observed.
+    pub(crate) root_id: String,
+    pub(crate) kind: &'static str,
+    pub(crate) site: Option<u32>,
     pub(crate) rendered: String,
     pub(crate) original_fragments: usize,
     pub(crate) fragments: Vec<LinkedDiagnosticFragment>,
@@ -637,9 +640,6 @@ pub(crate) struct LinkedIrFunction {
     pub(crate) direct_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) reference_diagnostics: Vec<LinkedDiagnostic>,
     pub(crate) decode_blockers: Vec<LinkedDecodeBlocker>,
-    pub(crate) call_graph_blockers: Vec<String>,
-    pub(crate) direct_blockers: Vec<String>,
-    pub(crate) reference_blockers: Vec<String>,
     pub(crate) pseudo: String,
 }
 

@@ -1,6 +1,6 @@
 //! Observable and draft reference events.
 
-use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalTableRef};
+use open_radio_vendor_contracts::{ExternalFunctionRef, ExternalReturnModel, ExternalTableRef};
 
 use super::*;
 
@@ -30,6 +30,22 @@ pub struct ReviewedExternalCall {
     /// This is evidence used to retire the matching structural blocker; it is
     /// not part of the stable ABI identity.
     pub slot_load_site: Option<u32>,
+}
+
+/// Reviewed executable model for a directly relocated platform call.
+///
+/// Unlike a semantic annotation, this record carries the return model that
+/// authorizes structural execution to continue across the boundary.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ModeledDirectCall {
+    pub id: String,
+    pub name: String,
+    pub argument_count: u8,
+    pub return_model: ExternalReturnModel,
+    pub operation: String,
+    pub return_type: String,
+    pub replacement_hint: Option<String>,
+    pub evidence: String,
 }
 
 pub fn parse_fence_set(value: &str) -> Option<u8> {
@@ -131,6 +147,12 @@ pub enum DraftReferenceEvent {
         site: u32,
         table: ExternalTableRef,
         function: ExternalFunctionRef,
+        arguments: Box<[SymbolicValue]>,
+    },
+    ModeledDirectCall {
+        token: u32,
+        site: u32,
+        function: ModeledDirectCall,
         arguments: Box<[SymbolicValue]>,
     },
     /// A named reviewed ABI call whose runtime behavior is not modeled.

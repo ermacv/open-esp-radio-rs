@@ -147,6 +147,7 @@ pub(super) fn explore_reference_flow(
                     event,
                     DraftReferenceEvent::Call { .. }
                         | DraftReferenceEvent::TailCall { .. }
+                        | DraftReferenceEvent::ModeledDirectCall { .. }
                         | DraftReferenceEvent::DiagnosticCall { .. }
                 )
             })

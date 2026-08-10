@@ -67,9 +67,6 @@ fn linked_test_function(
         direct_diagnostics: Vec::new(),
         reference_diagnostics: Vec::new(),
         decode_blockers: Vec::new(),
-        call_graph_blockers: Vec::new(),
-        direct_blockers: Vec::new(),
-        reference_blockers: Vec::new(),
         pseudo: format!("// vendor symbol: {source}::{symbol}\n"),
     }
 }

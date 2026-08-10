@@ -14,10 +14,10 @@ use std::{
 };
 
 use crate::{
-    BranchCondition, BranchOperation, ExternalFunctionRef, ExternalReturnModel, ExternalTableRef,
-    IndexedMmioGuard, IndexedMmioRegister, MemoryAccess, ObservableEvent,
-    RV32_MODELED_ARGUMENT_COUNT, RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT,
-    ResolvedReferenceBody, ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
+    BranchCondition, BranchOperation, ExternalReturnModel, ExternalTableRef, IndexedMmioGuard,
+    IndexedMmioRegister, MemoryAccess, ObservableEvent, RV32_MODELED_ARGUMENT_COUNT,
+    RV32_REGISTER_ARGUMENT_COUNT, RV32_STACK_ARGUMENT_COUNT, ResolvedReferenceBody,
+    ResolvedReferenceEvent, ResolvedReferenceFlow, ResolvedReferenceProgram,
     ResolvedReferenceTerminator, SECONDARY_CALL_RESULT_TOKEN_FLAG, SymbolicValue,
 };
 use events::render_events;
@@ -56,7 +56,7 @@ pub(in crate::codegen) struct RenderState {
     pub(in crate::codegen) memory_access_count: usize,
     pub(in crate::codegen) bounded_poll_count: usize,
     pub(in crate::codegen) call_results: Vec<CallResultAvailability>,
-    pub(in crate::codegen) external_results: Vec<ExternalFunctionRef>,
+    pub(in crate::codegen) external_results: Vec<()>,
     pub(in crate::codegen) validated_external_tables: BTreeSet<ExternalTableRef>,
     pub(in crate::codegen) arguments: [String; RV32_MODELED_ARGUMENT_COUNT],
     /// Lexical prefix for argument bindings of nested composed calls.
@@ -452,6 +452,11 @@ pub fn generate(
     writeln!(
         output,
         "    fn external_call(&mut self, table: &str, function: &str, arguments: &[u32]) -> u32;"
+    )
+    .unwrap();
+    writeln!(
+        output,
+        "    fn direct_external_call(&mut self, function: &str, arguments: &[u32]) -> u32;"
     )
     .unwrap();
     writeln!(

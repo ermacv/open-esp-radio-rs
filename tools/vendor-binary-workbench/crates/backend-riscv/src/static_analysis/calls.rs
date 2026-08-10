@@ -256,6 +256,58 @@ pub(super) fn apply_relocated_call(
         return StructuralCallControl::Advance(2);
     }
 
+    if let Some(function) = pointer_context
+        .summary_hooks
+        .and_then(|hooks| (hooks.direct_external_semantic)(name))
+        && !matches!(function.return_model, ExternalReturnModel::Unmodeled)
+    {
+        if dest != Reg::RA {
+            state.reference_blockers.push(format!(
+                "unsupported-modeled-direct-call-link-register at {pc:#x}: {name} uses {dest}"
+            ));
+            return StructuralCallControl::Stop;
+        }
+        let result = match function.return_model {
+            ExternalReturnModel::Constant(value) => SymbolicValue::Constant(value),
+            ExternalReturnModel::SymbolicU32 => {
+                SymbolicValue::ExternalResult(state.next_external_call_token)
+            }
+            ExternalReturnModel::PrivateStackOutputU8 { .. } => {
+                state.reference_blockers.push(format!(
+                    "unsupported-modeled-direct-output at {pc:#x}: {name}"
+                ));
+                return StructuralCallControl::Stop;
+            }
+            ExternalReturnModel::Unmodeled => unreachable!(),
+        };
+        let arguments = (0..usize::from(function.argument_count))
+            .map(|index| state.values[10 + index].clone())
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        let removed = state.blockers.pop();
+        debug_assert!(removed.is_some_and(|blocker| blocker.starts_with("call/jump instruction")));
+        state
+            .reference_events
+            .push(DraftReferenceEvent::ModeledDirectCall {
+                token: state.next_external_call_token,
+                site: pc as u32,
+                function: crate::ModeledDirectCall {
+                    id: function.id.to_owned(),
+                    name: function.c_name.to_owned(),
+                    argument_count: function.argument_count,
+                    return_model: function.return_model,
+                    operation: function.semantic.operation.to_owned(),
+                    return_type: function.semantic.return_type.to_owned(),
+                    replacement_hint: function.semantic.replacement.map(str::to_owned),
+                    evidence: function.evidence.to_owned(),
+                },
+                arguments,
+            });
+        state.next_external_call_token += 1;
+        structural_finish_call_with_result(&mut state.values, (pc as u32).wrapping_add(8), result);
+        return StructuralCallControl::Advance(2);
+    }
+
     let Some(target) = *target else {
         state
             .reference_blockers

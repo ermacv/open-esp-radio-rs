@@ -15,6 +15,7 @@ pub(super) enum Section {
     Overview,
     Code,
     Functions,
+    Blockers,
     Registers,
     Interfaces,
     Comparisons,
@@ -23,10 +24,11 @@ pub(super) enum Section {
 }
 
 impl Section {
-    pub(super) const ALL: [Self; 8] = [
+    pub(super) const ALL: [Self; 9] = [
         Self::Overview,
         Self::Code,
         Self::Functions,
+        Self::Blockers,
         Self::Registers,
         Self::Interfaces,
         Self::Comparisons,
@@ -39,6 +41,7 @@ impl Section {
             Self::Overview => "Overview",
             Self::Code => "Code",
             Self::Functions => "Functions",
+            Self::Blockers => "Blockers",
             Self::Registers => "Registers",
             Self::Interfaces => "Interfaces",
             Self::Comparisons => "Comparisons",
@@ -345,6 +348,7 @@ mod tests {
                 contracts: Vec::new(),
                 slots: Vec::new(),
             },
+            review_queue: Vec::new(),
             comparisons: Vec::new(),
             diagnostics: (0..diagnostics)
                 .map(|index| DiagnosticRecord {

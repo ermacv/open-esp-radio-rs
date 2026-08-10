@@ -23,6 +23,13 @@ const DIAGNOSTIC_CALLS: &[DiagnosticCallSpec] = &[
         symbol: "wifi_assert",
         argument_count: 4,
     },
+    // The PHY archive uses a printf-style diagnostic hook. Only the format
+    // pointer has a stable ABI position; variadic values are intentionally
+    // excluded so they cannot accidentally become verification inputs.
+    DiagnosticCallSpec {
+        symbol: "phy_printf",
+        argument_count: 1,
+    },
 ];
 
 pub const CONTRACTS: HarnessContractSpec = HarnessContractSpec {
@@ -41,5 +48,7 @@ mod tests {
         assert_eq!(DIAGNOSTIC_CALLS[0].argument_count, 6);
         assert_eq!(DIAGNOSTIC_CALLS[1].symbol, "wifi_assert");
         assert_eq!(DIAGNOSTIC_CALLS[1].argument_count, 4);
+        assert_eq!(DIAGNOSTIC_CALLS[2].symbol, "phy_printf");
+        assert_eq!(DIAGNOSTIC_CALLS[2].argument_count, 1);
     }
 }

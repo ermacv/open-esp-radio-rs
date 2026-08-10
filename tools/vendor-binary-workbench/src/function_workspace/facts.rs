@@ -33,9 +33,8 @@ pub(crate) enum FunctionMemoryObjectFact {
         member: Option<String>,
         symbol: String,
     },
-    DereferencedGlobal {
-        member: Option<String>,
-        symbol: String,
+    Dereferenced {
+        pointer: Box<FunctionMemoryObjectFact>,
         pointer_offset: i64,
     },
     Absolute {

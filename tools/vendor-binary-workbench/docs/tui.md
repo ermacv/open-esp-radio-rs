@@ -25,6 +25,7 @@ and key hints without hiding a readiness state or exit key.
 | Registers | Resolved catalog plus lazy review/access/field/predicate/poll/semantic evidence |
 | Interfaces | Reviewed table slots plus unreviewed discovered slot evidence, ABI, semantics, execution models and sites |
 | Comparisons | Project profiles, concrete MATCH/DIFF/INCOMPLETE, first trace difference, artifact provenance, model evidence and blockers |
+| Blockers | Scope-driven priority queue grouped by stable root cause, with affected functions, sites and diagnostic channels |
 | Diagnostics | Missing, incomplete and invalid component details |
 | Types | Reviewed logical types, their exact memory-object bindings and fields |
 
@@ -83,6 +84,11 @@ reviewed cross-links. Code, function, register, interface and comparison views a
 separate renderers; none performs project I/O or analysis.
 The terminal redraws only after input, resize or a worker result; the periodic
 worker poll does not repaint an unchanged frame.
+The Blockers view reads the generated review-scope report. Release scopes are
+selected by default, repeated diagnostics share one stable root ID, and Enter
+follows the first affected function when it exists. Priorities are review
+ordering, not proof results; the underlying typed diagnostic and its exact
+sites remain authoritative.
 Reviewed logical-type and field names are applied to the pseudo-Rust detail
 without erasing the recovered access width. Scenario candidates also include
 an editable verification-profile draft with explicit TODO arguments; the

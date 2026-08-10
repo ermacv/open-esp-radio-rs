@@ -187,7 +187,7 @@ fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
                 access: MemoryAccess::Write,
                 width: 16,
                 address: SymbolicValue::memory_read(0, 32, false).add_constant(0x1c),
-                region: "dereferenced relocated global pointer RAM".to_owned(),
+                region: "dereferenced known pointer RAM".to_owned(),
                 value: Some(SymbolicValue::Constant(9)),
             },
         ],
@@ -208,15 +208,15 @@ fn memory_object_map_distinguishes_global_pointer_from_its_runtime_pointee() {
     );
     let pointee = accesses
         .iter()
-        .find(|access| matches!(access.object, LinkedMemoryObject::DereferencedGlobal { .. }))
+        .find(|access| matches!(access.object, LinkedMemoryObject::Dereferenced { .. }))
         .expect("dereferenced global access");
     assert!(matches!(
         &pointee.object,
-        LinkedMemoryObject::DereferencedGlobal {
-            member,
-            symbol,
+        LinkedMemoryObject::Dereferenced {
+            pointer,
             pointer_offset: 0,
-        } if member.as_deref() == Some("state.o") && symbol == "g_state"
+        } if matches!(pointer.as_ref(), LinkedMemoryObject::Global { member, symbol }
+            if member.as_deref() == Some("state.o") && symbol == "g_state")
     ));
     assert_eq!(pointee.offset, 0x1c);
 }

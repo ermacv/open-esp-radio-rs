@@ -53,7 +53,9 @@ println!("{} registers", snapshot.registers.registers.len());
 - resolved interface contracts, slot ABI, semantic annotations, executable
   model links and concrete call sites;
 - checked-in comparison profile identities and their source/symbol/scenario
-  summary.
+  summary;
+- the release-scope review queue, grouped by typed diagnostic root cause and
+  joined with replacement coverage.
 
 Missing generated facts are represented as incomplete components and
 diagnostics. They do not prevent a frontend from opening the rest of a valid

@@ -81,9 +81,8 @@ fn parse_type_bindings(
                     member: optional_string(table, "member"),
                     symbol: required_table_string(table, "symbol", &context)?,
                 },
-                "dereferenced-global" => ReviewedMemoryObject::DereferencedGlobal {
-                    member: optional_string(table, "member"),
-                    symbol: required_table_string(table, "symbol", &context)?,
+                "dereferenced" => ReviewedMemoryObject::Dereferenced {
+                    pointer: Box::new(parse_pointer_object(table, &context)?),
                     pointer_offset: required_integer(table, "pointer-offset", &context)?,
                 },
                 "absolute" => ReviewedMemoryObject::Absolute {
@@ -107,6 +106,32 @@ fn parse_type_bindings(
             })
         })
         .collect()
+}
+
+fn parse_pointer_object(table: &Table, context: &str) -> Result<ReviewedMemoryObject> {
+    match required_table_string(table, "pointer-kind", context)?.as_str() {
+        "argument" => Ok(ReviewedMemoryObject::Argument {
+            function: required_table_string(table, "pointer-function", context)?,
+            index: required_integer(table, "pointer-argument", context)?
+                .try_into()
+                .map_err(|_| format!("{context}.pointer-argument must fit u8"))
+                .map_err(crate::Error::invalid)?,
+        }),
+        "global" => Ok(ReviewedMemoryObject::Global {
+            member: optional_string(table, "pointer-member"),
+            symbol: required_table_string(table, "pointer-symbol", context)?,
+        }),
+        "absolute" => Ok(ReviewedMemoryObject::Absolute {
+            address_space: required_table_string(table, "pointer-address-space", context)?,
+            address: required_integer(table, "pointer-address", context)?
+                .try_into()
+                .map_err(|_| format!("{context}.pointer-address must fit u32"))
+                .map_err(crate::Error::invalid)?,
+        }),
+        kind => Err(crate::Error::invalid(format!(
+            "invalid pointer memory object kind {kind:?} in {context}"
+        ))),
+    }
 }
 
 fn parse_type_fields(tables: &ArrayOfTables, logical_type: &str) -> Result<Vec<ReviewedTypeField>> {

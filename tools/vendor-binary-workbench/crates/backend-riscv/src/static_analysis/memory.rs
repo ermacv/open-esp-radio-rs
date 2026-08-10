@@ -10,8 +10,9 @@ pub(super) enum StructuralAddress {
     FunctionTableSlot(FunctionTableRef, i32),
     CallerMemory(SymbolicValue),
     SymbolMemory(SymbolicValue),
-    DereferencedGlobalMemory(SymbolicValue),
+    DereferencedMemory(SymbolicValue),
     IndexedMemory(SymbolicValue),
+    DynamicMemory(SymbolicValue),
 }
 
 pub(super) fn structural_effective_address(
@@ -44,14 +45,19 @@ pub(super) fn structural_effective_address(
         )),
         _ => {
             let address = base.clone().add_constant(offset as u32);
-            let location = address.memory_object_location_with_reads(memory_read_sources)?;
-            match location.root {
-                MemoryObjectRoot::DereferencedGlobal { .. } => {
-                    Some(StructuralAddress::DereferencedGlobalMemory(address))
+            if let Some(location) = address.memory_object_location_with_reads(memory_read_sources) {
+                match location.root {
+                    MemoryObjectRoot::Dereferenced { .. } => {
+                        return Some(StructuralAddress::DereferencedMemory(address));
+                    }
+                    MemoryObjectRoot::Indexed { .. } => {
+                        return Some(StructuralAddress::IndexedMemory(address));
+                    }
+                    _ => {}
                 }
-                MemoryObjectRoot::Indexed { .. } => Some(StructuralAddress::IndexedMemory(address)),
-                _ => None,
             }
+            (address.is_resolved() && address.has_memory_address_provenance(memory_read_sources))
+                .then_some(StructuralAddress::DynamicMemory(address))
         }
     }
 }
@@ -116,14 +122,14 @@ pub(super) fn memory_intrinsic_load_byte(
             });
             Ok(SymbolicValue::memory_read(read_token, 8, false))
         }
-        Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+        Some(StructuralAddress::DereferencedMemory(address)) => {
             let read_token = *next_memory_read_token;
             *next_memory_read_token += 1;
             reference_events.push(DraftReferenceEvent::Memory {
                 access: MemoryAccess::Read,
                 width: 8,
                 address,
-                region: "dereferenced relocated global pointer RAM".to_owned(),
+                region: "dereferenced known pointer RAM".to_owned(),
                 value: None,
             });
             Ok(SymbolicValue::memory_read(read_token, 8, false))
@@ -136,6 +142,18 @@ pub(super) fn memory_intrinsic_load_byte(
                 width: 8,
                 address,
                 region: "indexed RAM object".to_owned(),
+                value: None,
+            });
+            Ok(SymbolicValue::memory_read(read_token, 8, false))
+        }
+        Some(StructuralAddress::DynamicMemory(address)) => {
+            let read_token = *next_memory_read_token;
+            *next_memory_read_token += 1;
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Read,
+                width: 8,
+                address,
+                region: "dynamic RAM address".to_owned(),
                 value: None,
             });
             Ok(SymbolicValue::memory_read(read_token, 8, false))
@@ -208,12 +226,12 @@ pub(super) fn memory_intrinsic_store_byte(
             });
             Ok(())
         }
-        Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+        Some(StructuralAddress::DereferencedMemory(address)) => {
             reference_events.push(DraftReferenceEvent::Memory {
                 access: MemoryAccess::Write,
                 width: 8,
                 address,
-                region: "dereferenced relocated global pointer RAM".to_owned(),
+                region: "dereferenced known pointer RAM".to_owned(),
                 value: Some(value),
             });
             Ok(())
@@ -224,6 +242,16 @@ pub(super) fn memory_intrinsic_store_byte(
                 width: 8,
                 address,
                 region: "indexed RAM object".to_owned(),
+                value: Some(value),
+            });
+            Ok(())
+        }
+        Some(StructuralAddress::DynamicMemory(address)) => {
+            reference_events.push(DraftReferenceEvent::Memory {
+                access: MemoryAccess::Write,
+                width: 8,
+                address,
+                region: "dynamic RAM address".to_owned(),
                 value: Some(value),
             });
             Ok(())

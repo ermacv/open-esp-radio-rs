@@ -5,6 +5,7 @@ mod comparisons;
 mod functions;
 mod interfaces;
 mod registers;
+mod review_queue;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -43,6 +44,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
     let (functions, logical_types) = self::functions::collect(resolved, &mut diagnostics);
     let registers = self::registers::collect(resolved, &mut diagnostics);
     let interfaces = self::interfaces::collect(resolved, &mut diagnostics);
+    let review_queue = self::review_queue::collect(resolved, &mut diagnostics);
     let comparisons = self::comparisons::collect(resolved, &mut diagnostics);
     diagnostics.sort_by(|left, right| {
         (&left.component, &left.message).cmp(&(&right.component, &right.message))
@@ -56,6 +58,7 @@ pub(super) fn collect(resolved: &ProjectSession, generation: u64) -> WorkspaceSn
         logical_types,
         registers,
         interfaces,
+        review_queue,
         comparisons,
         diagnostics,
     }
@@ -406,14 +409,10 @@ fn memory_fact_label(object: &FunctionMemoryObjectFact) -> String {
             "global:{}::{symbol}",
             member.as_deref().unwrap_or("<linked>")
         ),
-        FunctionMemoryObjectFact::DereferencedGlobal {
-            member,
-            symbol,
+        FunctionMemoryObjectFact::Dereferenced {
+            pointer,
             pointer_offset,
-        } => format!(
-            "dereferenced-global:{}::{symbol}{pointer_offset:+#x}",
-            member.as_deref().unwrap_or("<linked>")
-        ),
+        } => format!("*({}{pointer_offset:+#x})", memory_fact_label(pointer)),
         FunctionMemoryObjectFact::Absolute {
             address_space,
             address,

@@ -263,7 +263,6 @@ fn build_linked_functions_for_roots(
         }
         let call_graph_messages = blockers.into_iter().collect::<Vec<_>>();
         let call_graph_diagnostics = compact_diagnostics(&call_graph_messages);
-        let call_graph_blockers = rendered_diagnostics(&call_graph_diagnostics);
         match resolver.trace_symbol_bounded(
             &symbol,
             svd,
@@ -299,15 +298,13 @@ fn build_linked_functions_for_roots(
                 };
                 let direct_diagnostics = compact_diagnostics(&trace.blockers);
                 let reference_diagnostics = compact_diagnostics(&trace.reference_blockers);
-                let direct_blockers = rendered_diagnostics(&direct_diagnostics);
-                let reference_blockers = rendered_diagnostics(&reference_diagnostics);
                 let pseudo = render_pseudo(
                     &function_identity,
                     &trace,
                     &calls,
-                    &direct_blockers,
-                    &reference_blockers,
-                    &call_graph_blockers,
+                    &direct_diagnostics,
+                    &reference_diagnostics,
+                    &call_graph_diagnostics,
                 );
                 functions.push(LinkedIrFunction {
                     source: source.to_owned(),
@@ -349,15 +346,11 @@ fn build_linked_functions_for_roots(
                     direct_diagnostics,
                     reference_diagnostics,
                     decode_blockers,
-                    call_graph_blockers,
-                    direct_blockers,
-                    reference_blockers,
                     pseudo,
                 });
             }
             Err(error) => {
                 let direct_diagnostics = vec![compact_diagnostic(&error.to_string())];
-                let direct_blockers = rendered_diagnostics(&direct_diagnostics);
                 let mut calls = compact_calls(direct_calls);
                 annotate_direct_semantic_calls(&mut calls, &symbol, resolver, &identities);
                 let scenario_suggestions = scenario_suggestions(None, &direct_mmio_predicates, &[]);
@@ -395,9 +388,6 @@ fn build_linked_functions_for_roots(
                     direct_diagnostics,
                     reference_diagnostics: Vec::new(),
                     decode_blockers,
-                    call_graph_blockers,
-                    direct_blockers,
-                    reference_blockers: Vec::new(),
                     pseudo: format!(
                         "// vendor symbol: {function_identity}\n// DECODE-BLOCKER: {error}\nfn {}(args: [u32; 16]) -> u32 {{ unknown }}\n",
                         pseudo_identifier(&function_identity)

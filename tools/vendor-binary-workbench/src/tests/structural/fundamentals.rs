@@ -343,7 +343,7 @@ fn caller_owned_argument_ram_is_preserved_as_a_symbolic_memory_contract() {
 }
 
 #[test]
-fn pointer_loaded_from_caller_ram_does_not_inherit_argument_provenance() {
+fn pointer_loaded_from_caller_ram_preserves_distinct_pointee_provenance() {
     let symbol = artifact::ArtifactSymbolDefinition {
         member: Some("indirect_pointer.o".to_owned()),
         name: "indirect_pointer".to_owned(),
@@ -366,21 +366,24 @@ fn pointer_loaded_from_caller_ram_does_not_inherit_argument_provenance() {
     )
     .unwrap();
 
-    assert!(!trace.is_reference_eligible());
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
     assert_eq!(
         trace
             .reference_events
             .iter()
             .filter(|event| matches!(event, DraftReferenceEvent::Memory { .. }))
             .count(),
-        1
+        2
     );
-    assert!(
-        trace
-            .reference_blockers
-            .iter()
-            .any(|blocker| blocker.contains("unmodeled-memory-load"))
-    );
+    let second = trace.reference_events.get(1).expect("pointee load");
+    let DraftReferenceEvent::Memory {
+        address, region, ..
+    } = second
+    else {
+        panic!("expected pointee memory load");
+    };
+    assert_eq!(region, "dereferenced known pointer RAM");
+    assert!(address.canonical().starts_with("ram:read0"));
 }
 
 #[test]
@@ -685,7 +688,7 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     else {
         panic!("expected pointee read");
     };
-    assert_eq!(region, "dereferenced relocated global pointer RAM");
+    assert_eq!(region, "dereferenced known pointer RAM");
     let sources = BTreeMap::from([(
         0,
         MemoryObjectLocation {
@@ -699,14 +702,78 @@ fn relocated_global_pointer_load_preserves_pointee_memory_provenance() {
     assert!(matches!(
         address.memory_object_location_with_reads(&sources),
         Some(MemoryObjectLocation {
-            root: MemoryObjectRoot::DereferencedGlobal {
-                ref symbol,
+            root: MemoryObjectRoot::Dereferenced {
+                pointer,
                 pointer_offset: 0,
-                ..
             },
             offset: 0x1c,
-        }) if symbol == "g_state"
+        }) if matches!(pointer.as_ref(), MemoryObjectRoot::RelocatedSymbol { symbol, .. } if symbol == "g_state")
     ));
+}
+
+#[test]
+fn absolute_ram_pointer_load_preserves_pointee_memory_provenance() {
+    let symbol = artifact::ArtifactSymbolDefinition {
+        member: Some("absolute_pointer.o".to_owned()),
+        name: "read_absolute_pointee".to_owned(),
+        address: 0,
+        bytes: vec![
+            0xb7, 0x47, 0x10, 0x20, // lui a5, 0x20104
+            0x83, 0xa7, 0x07, 0x00, // lw a5, 0(a5)
+            0x03, 0xa5, 0x87, 0x02, // lw a0, 0x28(a5)
+            0x67, 0x80, 0x00, 0x00, // ret
+        ],
+        addresses_resolved: true,
+        memory_regions: vec![artifact::MemoryRegion {
+            start: 0x2010_4000,
+            length: 4,
+            writable: true,
+            name: "dram".to_owned(),
+        }],
+        relocations: Vec::new(),
+    };
+    let trace = trace_binary_symbol(
+        &symbol,
+        &MmioMap {
+            registers: Vec::new(),
+            regions: Vec::new(),
+        },
+        &BTreeMap::new(),
+        &StructuralPointerContext::default(),
+        None,
+    )
+    .unwrap();
+
+    assert!(trace.is_reference_eligible(), "{trace:#?}");
+    assert_eq!(trace.reference_events.len(), 2);
+    let DraftReferenceEvent::Memory {
+        address, region, ..
+    } = &trace.reference_events[1]
+    else {
+        panic!("expected pointee read");
+    };
+    assert_eq!(region, "dereferenced known pointer RAM");
+    let sources = BTreeMap::from([(
+        0,
+        MemoryObjectLocation {
+            root: MemoryObjectRoot::Absolute {
+                address: 0x2010_4000,
+            },
+            offset: 0,
+        },
+    )]);
+    assert_eq!(
+        address.memory_object_location_with_reads(&sources),
+        Some(MemoryObjectLocation {
+            root: MemoryObjectRoot::Dereferenced {
+                pointer: Box::new(MemoryObjectRoot::Absolute {
+                    address: 0x2010_4000,
+                }),
+                pointer_offset: 0,
+            },
+            offset: 0x28,
+        })
+    );
 }
 
 #[test]

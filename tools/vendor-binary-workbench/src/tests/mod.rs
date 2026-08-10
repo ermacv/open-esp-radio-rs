@@ -246,13 +246,18 @@ fn no_test_direct_semantic(
 }
 
 fn test_direct_external_semantic(symbol: &str) -> Option<&'static DirectSemanticFunctionSpec> {
-    (symbol == "ets_delay_us").then_some(&TEST_DELAY_DIRECT_SEMANTIC)
+    match symbol {
+        "ets_delay_us" => Some(&TEST_DELAY_DIRECT_SEMANTIC),
+        "rtc_clk_xtal_freq_get" => Some(&TEST_XTAL_DIRECT_SEMANTIC),
+        _ => None,
+    }
 }
 
 static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
     id: "test-linked-ets-delay-us",
     c_name: "ets_delay_us",
     argument_count: 1,
+    return_model: ExternalReturnModel::Unmodeled,
     semantic: ExternalSemanticSpec {
         operation: "time.blocking-delay",
         arguments: &[ExternalArgumentSpec {
@@ -265,6 +270,21 @@ static TEST_DELAY_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFu
         event_dispatch: None,
     },
     evidence: "test-authoritative-link-unit-symbol",
+};
+
+static TEST_XTAL_DIRECT_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "test-fixed-xtal-frequency",
+    c_name: "rtc_clk_xtal_freq_get",
+    argument_count: 0,
+    return_model: ExternalReturnModel::Constant(40),
+    semantic: ExternalSemanticSpec {
+        operation: "clock.xtal-frequency.read",
+        arguments: &[],
+        return_type: "u32",
+        replacement: Some("fixed target crystal contract"),
+        event_dispatch: None,
+    },
+    evidence: "test-target-contract",
 };
 
 fn no_test_wide_divide(

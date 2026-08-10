@@ -179,13 +179,11 @@ fn memory_object_fact(object: StoredMemoryObject) -> FunctionMemoryObjectFact {
         StoredMemoryObject::Global { member, symbol } => {
             FunctionMemoryObjectFact::Global { member, symbol }
         }
-        StoredMemoryObject::DereferencedGlobal {
-            member,
-            symbol,
+        StoredMemoryObject::Dereferenced {
+            pointer,
             pointer_offset,
-        } => FunctionMemoryObjectFact::DereferencedGlobal {
-            member,
-            symbol,
+        } => FunctionMemoryObjectFact::Dereferenced {
+            pointer: Box::new(memory_object_fact(*pointer)),
             pointer_offset,
         },
         StoredMemoryObject::Absolute {

@@ -49,6 +49,20 @@ impl BrowserState {
                         .position(|function| function.registers.contains(&register.address))
                 })
                 .map(|index| (Section::Functions, index, "register user")),
+            Section::Blockers => self
+                .snapshot
+                .review_queue
+                .get(self.selected())
+                .and_then(|blocker| {
+                    blocker.functions.iter().find_map(|name| {
+                        self.snapshot.functions.iter().position(|function| {
+                            function.identity == *name
+                                || function.symbol == *name
+                                || name.ends_with(&format!("::{}", function.symbol))
+                        })
+                    })
+                })
+                .map(|index| (Section::Functions, index, "blocked function")),
             Section::Interfaces => self
                 .snapshot
                 .interfaces

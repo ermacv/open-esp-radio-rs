@@ -99,6 +99,12 @@ pub enum ResolvedReferenceEvent {
         function: ExternalFunctionRef,
         arguments: Box<[SymbolicValue]>,
     },
+    ModeledDirectCall {
+        token: u32,
+        site: u32,
+        function: super::ModeledDirectCall,
+        arguments: Box<[SymbolicValue]>,
+    },
     DiagnosticCall {
         function: String,
         argument_count: u8,
@@ -238,6 +244,15 @@ fn collect_resolved_flow_inputs(flow: &ResolvedReferenceFlow, output: &mut BTree
             } => {
                 let argument_count = function.spec().argument_count;
                 for value in arguments.iter().take(usize::from(argument_count)) {
+                    collect_value_inputs(value, output);
+                }
+            }
+            ResolvedReferenceEvent::ModeledDirectCall {
+                function,
+                arguments,
+                ..
+            } => {
+                for value in arguments.iter().take(usize::from(function.argument_count)) {
                     collect_value_inputs(value, output);
                 }
             }
@@ -433,6 +448,17 @@ impl ResolvedReferenceEvent {
                 site: *site,
                 table: *table,
                 function: *function,
+                arguments: arguments.clone(),
+            },
+            DraftReferenceEvent::ModeledDirectCall {
+                token,
+                site,
+                function,
+                arguments,
+            } => Self::ModeledDirectCall {
+                token: *token,
+                site: *site,
+                function: function.clone(),
                 arguments: arguments.clone(),
             },
             DraftReferenceEvent::ReviewedExternalCall {

@@ -78,7 +78,48 @@ pub(super) fn render_event(
                     .unwrap();
             }
             writeln!(output, "{indent}let _ = external_result{token};").unwrap();
-            state.external_results.push(*function);
+            state.external_results.push(());
+        }
+        ResolvedReferenceEvent::ModeledDirectCall {
+            token,
+            function,
+            arguments,
+            ..
+        } => {
+            if usize::try_from(*token).ok() != Some(state.external_results.len()) {
+                return Err(format!(
+                    "direct external call token {token} is not ordered in generated behavior"
+                ));
+            }
+            let arguments = arguments
+                .iter()
+                .take(usize::from(function.argument_count))
+                .map(|value| render_state_value(value, state))
+                .collect::<Result<Vec<_>, _>>()?;
+            writeln!(
+                output,
+                "{indent}// Modeled direct platform call: {} ({}).",
+                comment_text(&function.name),
+                comment_text(&function.operation),
+            )
+            .unwrap();
+            writeln!(
+                output,
+                "{indent}let external_result{token} = platform.direct_external_call({:?}, &[{}]);",
+                function.id,
+                arguments.join(", "),
+            )
+            .unwrap();
+            if let ExternalReturnModel::Constant(expected) = function.return_model {
+                writeln!(
+                    output,
+                    "{indent}assert_eq!(external_result{token}, {expected:#010x}_u32, \"direct external profile mismatch for {}\");",
+                    comment_text(&function.name),
+                )
+                .unwrap();
+            }
+            writeln!(output, "{indent}let _ = external_result{token};").unwrap();
+            state.external_results.push(());
         }
         ResolvedReferenceEvent::DiagnosticCall {
             function,

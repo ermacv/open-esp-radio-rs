@@ -46,7 +46,13 @@ pub fn inline_reference_summary(
         .count() as u32;
     let mut next_external_token = prefix
         .iter()
-        .filter(|event| matches!(event, DraftReferenceEvent::ExternalCall { .. }))
+        .filter(|event| {
+            matches!(
+                event,
+                DraftReferenceEvent::ExternalCall { .. }
+                    | DraftReferenceEvent::ModeledDirectCall { .. }
+            )
+        })
         .count() as u32;
     let mut next_private_stack_read_token = prefix
         .iter()
@@ -338,6 +344,35 @@ pub fn inline_reference_summary(
                     site: *site,
                     table: *table,
                     function: *function,
+                    arguments: mapped_arguments,
+                }
+            }
+            DraftReferenceEvent::ModeledDirectCall {
+                site,
+                function,
+                arguments: external_arguments,
+                ..
+            } => {
+                let mapped_arguments = external_arguments
+                    .iter()
+                    .map(|value| {
+                        substitute(
+                            value,
+                            &read_tokens,
+                            &memory_read_tokens,
+                            &external_tokens,
+                            &private_stack_reads,
+                        )
+                    })
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .into_boxed_slice();
+                let token = next_external_token;
+                next_external_token += 1;
+                external_tokens.push(token);
+                DraftReferenceEvent::ModeledDirectCall {
+                    token,
+                    site: *site,
+                    function: function.clone(),
                     arguments: mapped_arguments,
                 }
             }

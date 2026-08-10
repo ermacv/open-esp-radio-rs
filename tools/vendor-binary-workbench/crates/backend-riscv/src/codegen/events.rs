@@ -48,6 +48,7 @@ pub(super) fn render_events(
                 memory::render_event(output, event, state, indent)?;
             }
             ResolvedReferenceEvent::ExternalCall { .. }
+            | ResolvedReferenceEvent::ModeledDirectCall { .. }
             | ResolvedReferenceEvent::DiagnosticCall { .. }
             | ResolvedReferenceEvent::ComposedCall { .. }
             | ResolvedReferenceEvent::ComposedCallWithScratch { .. }

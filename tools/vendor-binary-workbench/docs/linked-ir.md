@@ -25,7 +25,7 @@ cargo vendor-binary-workbench ir export \
 By default the prefix selects only report roots. `--include-reachable` also
 exports the transitive internal callees recovered from those roots within the
 same primary artifact. Each function is marked `symbol-prefix-root` or
-`reachable-internal`, and schema v37 records the selection mode plus root and
+`reachable-internal`, and schema v39 records the selection mode plus root and
 included-callee counts. This is an opt-in analysis-size tradeoff: only exactly
 resolved internal edges enqueue a callee, exploration limits remain visible as
 blockers, and companion or independently named primary definitions are not
@@ -97,7 +97,7 @@ cargo vendor-binary-workbench ir export \
 Project identities are namespaced, for example `rom::ets_delay_us` and
 `libphy::phy_init`. Semantic boundaries and all summary counts are aggregated
 across sources. Each named primary is analyzed in its own address space;
-schema v37 records `"linkage_mode": "independent-artifacts"` and does not claim
+schema v39 records `"linkage_mode": "independent-artifacts"` and does not claim
 that separate inputs share an address space or were fully linked. Use one
 linked ELF primary plus `--companion` inputs when cross-image addresses and
 relocations belong to one executable address space.
@@ -144,12 +144,14 @@ than a renderer-specific JSON transformation.
 
 Exploratory blocker messages can contain thousands of repeated exact clauses
 when branch recovery reaches the same unsupported call or jump through many
-symbolic states. Schema v33 records
+symbolic states. Schema v39 records
 `diagnostic_compaction_mode: "exact-semicolon-fragment-inventory"`. Each
-function's structured `diagnostics` keeps the original fragment count, every
+function's channel-specific structured diagnostics keep the original fragment count, every
 unique exact fragment, its number of occurrences and its first ordinal. The
-human-readable blocker arrays and pseudo-source use the compact `rendered` form with an
-explicit `[repeated N times]` suffix. This is mechanical report compaction, not
+diagnostic record also carries a classified `kind`, an optional instruction
+`site`, and a stable `root_id` used by review queues. Pseudo-source uses the
+compact `rendered` form with an explicit `[repeated N times]` suffix. The old
+parallel string blocker arrays are not part of schema v39. This is mechanical report compaction, not
 semantic parsing: later duplicate ordering is not retained, counts are not
 runtime occurrence counts, and backend completeness remains fail-closed.
 
@@ -180,24 +182,30 @@ counted once while retaining both provenance paths.
 
 ## Memory objects and reviewed type evidence
 
-Schema v33 generalizes caller-context observations into `memory_accesses` and
-`memory_fields`. A recovered affine address has one of two fail-closed roots:
+Schema v39 generalizes caller-context observations into `memory_accesses` and
+`memory_fields`. A recovered affine address has one of these fail-closed roots:
 
 - `argument`, identified by an ABI argument index;
-- `relocated-symbol`, identified by the archive member containing a completed
+- `global`, identified by the archive member containing a completed
   relocation and its symbol name. The member is relocation provenance, not a
-  linker-definition claim; it is absent for a resolved linked image.
+  linker-definition claim; it is absent for a resolved linked image;
+- `dereferenced`, identifying a pointer-bearing memory object plus the exact
+  offset of the loaded 32-bit pointer cell;
+- `absolute`, retaining the address space and address of a known RAM root;
+- `indexed`, retaining a base object, selector argument and proven stride.
 
 Each access retains signed byte offset, width, read/write kind, path and value
 evidence. A field aggregates equal `(object, offset, width)` accesses while
-keeping counts and write masks. Incomplete HI/LO relocations, dynamic pointer
-arithmetic and unknown roots are not promoted to memory objects.
+keeping counts and write masks. A resolved address whose value depends on a
+known RAM pointer read but whose offset remains dynamic is reported as dynamic
+RAM evidence, not promoted to a fixed field. Incomplete HI/LO relocations and
+unknown roots remain blockers.
 
 `context_accesses` and `context_fields` remain the argument-only projection
 used for affine interprocedural composition. Reachable `effect_summary`
 `memory_fields` contains those projected root arguments plus relocation-rooted
 fields observed in the reachable closure. It is an origin-preserving
-inventory, not a nominal-type or aliasing proof. Function-pack schema 2 is the
+inventory, not a nominal-type or aliasing proof. Function-pack schema 3 is the
 separate, reviewed layer that may bind several exact objects to one logical
 type.
 
@@ -223,7 +231,7 @@ contract source, stable ID and evidence rule that justified the semantic name.
 The `site_path` array records the lexical call-site chain from the report root
 to the action, and actions are stably ordered by that chain.
 
-Schema v33 additionally projects reviewed event-like contracts into
+Schema v39 projects reviewed event-like contracts into
 `event_dispatches`. This is a higher-level navigation view over
 `semantic_actions`, not a second source of effects. Each record has a
 zero-based `semantic_action_index`, a reviewed mechanism and execution context,
@@ -354,7 +362,7 @@ contiguous `candidate_bit_ranges`. Each range lists the functions that produced
 it. This write-pattern inventory remains available alongside the richer field
 candidate evidence.
 
-Schema v33 exposes `field_candidates`. It merges equal contiguous subregister
+Schema v39 exposes `field_candidates`. It merges equal contiguous subregister
 ranges recovered from four independent evidence classes: write masks, poll
 predicates, direct local MMIO branch conditions, and guard-result links to a
 producer function's MMIO-backed return bits. Every candidate keeps separate
@@ -445,6 +453,14 @@ ESP32-S31 `libpp.a` contract this recognizes `pp_post(signal)` as
 schema stays an ordinary internal call. This lets callers such as
 `wDev_ProcessFiq` expose the recovered signal argument without pretending that
 the helper is an RTOS event API or weakening its ordinary body analysis.
+
+A directly relocated platform function may additionally carry an executable
+return model. This is a stronger contract than a semantic annotation: only a
+reviewed `constant` or `symbolic-u32` model lets structural execution cross an
+otherwise unresolved boundary. The resulting `modeled-direct-external` call
+retains its operation, evidence ID and replacement hint. ESP32-S31 uses this
+for the fixed 40 MHz `rtc_clk_xtal_freq_get` platform input. An annotation with
+`unmodeled` return/effects remains fail-closed.
 
 Known function-table calls additionally carry a structured `trampoline`
 record. It includes the table pointer and backing symbols, version, magic and

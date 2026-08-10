@@ -14,6 +14,7 @@ impl BrowserState {
             Section::Overview => self.snapshot.project_status.phases.len(),
             Section::Code => self.snapshot.code.boundaries.len(),
             Section::Functions => self.snapshot.functions.len(),
+            Section::Blockers => self.snapshot.review_queue.len(),
             Section::Registers => self.snapshot.registers.registers.len(),
             Section::Interfaces => self.snapshot.interfaces.slots.len(),
             Section::Comparisons => self.snapshot.comparisons.len(),
@@ -76,6 +77,12 @@ impl BrowserState {
                         .decode_blocker_operations
                         .iter()
                         .any(|value| contains(value))
+            }),
+            Section::Blockers => self.snapshot.review_queue.get(index).is_some_and(|item| {
+                contains(&item.scope)
+                    || contains(&item.kind)
+                    || contains(&item.message)
+                    || item.functions.iter().any(|value| contains(value))
             }),
             Section::Registers => {
                 self.snapshot

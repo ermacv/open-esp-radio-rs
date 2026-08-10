@@ -238,14 +238,14 @@ mod tests {
         std::fs::write(
             &path,
             report(1, "rtos.event.send").replacen(
-                "\"schema_version\": 38",
+                "\"schema_version\": 39",
                 "\"schema_version\": 32",
                 1,
             ),
         )
         .unwrap();
         let error = RegisterReviewIr::load_all(std::slice::from_ref(&path)).unwrap_err();
-        assert!(error.to_string().contains("requires linked-IR schema 38"));
+        assert!(error.to_string().contains("requires linked-IR schema 39"));
 
         std::fs::write(
             &path,

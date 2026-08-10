@@ -45,7 +45,7 @@ is retained.
 analysis explicit instead of encoding it as an empty prefix. `include-reachable`
 defaults to `true`. `entry-contract` defaults to
 `none` and is validated against the selected generic or platform harness.
-`pseudo-rust` is optional; schema-v38 JSON is always generated.
+`pseudo-rust` is optional; schema-v39 JSON is always generated.
 
 ## Local artifact bindings
 
@@ -109,7 +109,7 @@ cargo vendor-binary-workbench ir build \
 ```
 
 Missing or different documents make `--check` fail and name every stale path.
-Artifact identities and digests remain embedded in the schema-v38 report, so a
+Artifact identities and digests remain embedded in the schema-v39 report, so a
 successful check also binds the generated view to the supplied local inputs.
 
 ## Command result formats
@@ -118,7 +118,7 @@ The default human view summarizes each selected profile, its function,
 register and field-candidate counts, and the generated paths. `--format json`
 and `--format jsonl` emit the typed `ir-build`
 report directly, with schema, mode, status, ordered profiles and document count. The
-generated linked-IR JSON remains a separate schema-v38 project artifact; the
+generated linked-IR JSON remains a separate schema-v39 project artifact; the
 command result only describes the build operation.
 
 ## Register-review integration
@@ -133,7 +133,7 @@ linked-ir = ["generated/findings/phy.ir.json"]
 ```
 
 `project doctor` reports whether each profile has usable source bindings, a
-valid entry contract, generated schema-v38 output and an optional pseudo-Rust
+valid entry contract, generated schema-v39 output and an optional pseudo-Rust
 document. It also reports whether the JSON output is linked into register
 review. The register report still treats functions, predicates and semantic
 operations as navigation evidence; clean SVD and PAC generation reads only the

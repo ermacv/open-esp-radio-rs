@@ -132,6 +132,15 @@ pub fn collect_reference_flow_inputs(flow: &DraftReferenceFlow, output: &mut BTr
                     collect_value_inputs(value, output);
                 }
             }
+            DraftReferenceEvent::ModeledDirectCall {
+                function,
+                arguments,
+                ..
+            } => {
+                for value in arguments.iter().take(usize::from(function.argument_count)) {
+                    collect_value_inputs(value, output);
+                }
+            }
             DraftReferenceEvent::DiagnosticCall {
                 argument_count,
                 arguments,

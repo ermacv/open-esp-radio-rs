@@ -127,6 +127,11 @@ that every user must learn.
   MMIO, all blocker classes and replacement coverage. `project status` reads
   the compact artifact instead of repeating scope reconstruction, while
   `ir build` refreshes it after a focused profile rebuild.
+- [x] Turn release scopes into an actionable root-cause queue. Linked-IR
+  schema 39 carries typed diagnostic kind/site/root IDs, review-scope schema 3
+  groups repeated causes and joins replacement coverage, and the read-only TUI
+  exposes a Blockers view with function navigation. Parallel legacy string
+  blocker arrays were removed from the persistent IR schema.
 - [x] Gate SVD/PAC publication by explicit `release-scopes`, not every
   artifact-wide observation. The 2026-08-09 ESP32-S31 run reduced 17 global
   unreviewed observations to two release-relevant RX registers,
@@ -152,6 +157,11 @@ that every user must learn.
 - [x] Preserve the distinction between a recognized external operation and an
   executable external-call model. A semantic label alone does not make
   execution complete.
+- [x] Model reviewed directly relocated platform inputs separately from
+  diagnostics and table slots. The structural executor can propagate an
+  explicit constant or symbolic return and codegen calls a distinct platform
+  boundary; ESP32-S31 now declares the fixed 40 MHz
+  `rtc_clk_xtal_freq_get`, while `phy_printf` remains a diagnostic-only ABI.
 - [x] Provide typed first-difference trace presentation for vendor/Rust
   comparison, including nearby effects, producer PCs and linked offsets.
 - [ ] Exercise that trace presentation on real ESP32-S31 mismatch and
@@ -168,7 +178,10 @@ that every user must learn.
 ## P1 — generic model gaps
 
 - [x] Generalize context recovery into reviewed memory objects covering
-  arguments, globals, dereferenced globals and absolute objects.
+  arguments, globals, absolute objects, indexed objects and pointers loaded
+  from any exact known memory object. Dynamic pointer-dependent addresses stay
+  visible as RAM evidence without becoming false fixed fields. On the real
+  `wDev_AppendRxBlocks` slice this reduced diagnostics from 78 to 23.
 - [x] Add explicit reviewed logical-type unification across functions and
   globals without inferring nominal identity from matching offsets.
 - [x] Separate reviewed function-table layout from runtime table instances and
@@ -233,8 +246,10 @@ that every user must learn.
   reparsing and projecting already generated IR; the full pipeline repeats
   equivalent loads in multiple stages. Function validation/review and
   interface-backed function review/interface validation now share their typed
-  workspaces during one cold pipeline run; review scopes, navigation, register
-  review and the TUI still need the common project snapshot.
+  workspaces during one cold pipeline run. The TUI receives code, functions,
+  registers, interfaces, root-cause queue and comparisons through one typed
+  snapshot, but its collectors still parse some IR inputs independently and
+  project navigation remains a separate load/projection stage.
 - [ ] Stream large persistent JSON documents to files and hash them while
   writing instead of materializing a complete `String` and reparsing it for a
   downstream stage. The schema-38 four-profile run peaked at 1,252,836 KiB;

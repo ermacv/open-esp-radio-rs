@@ -6,6 +6,81 @@ const MAX_DIAGNOSTICS_PER_CATEGORY: usize = 64;
 const MAX_DIAGNOSTIC_FRAGMENTS: usize = 64;
 const MAX_DIAGNOSTIC_FRAGMENT_CHARS: usize = 512;
 
+fn diagnostic_kind(message: &str) -> &'static str {
+    match message {
+        message
+            if message.starts_with("symbolic-cfg:")
+                && message.contains("has unsupported effects") =>
+        {
+            "aggregate"
+        }
+        message
+            if message.starts_with("call graph exceeds")
+                || message.starts_with("symbolic-cfg: symbolic CFG exceeds") =>
+        {
+            "analysis-budget"
+        }
+        message if message.starts_with("call/jump instruction") => "call-boundary",
+        message if message.starts_with("unmodeled-memory-load") => "memory-load",
+        message if message.starts_with("unmodeled-memory-store") => "memory-store",
+        message if message.starts_with("unresolved-memory-write") => "memory-store",
+        message if message.starts_with("unresolved-memory-read") => "memory-load",
+        message
+            if message.starts_with("input-dependent control-flow")
+                || message.starts_with("unresolved input-dependent control-flow") =>
+        {
+            "control-flow"
+        }
+        message if message.starts_with("unresolved-indirect") => "indirect-control-flow",
+        message
+            if message.starts_with("unresolved call")
+                || message.starts_with("unresolved-call-relocation") =>
+        {
+            "unresolved-call"
+        }
+        message if message.contains("composed call result is used without a modeled callee") => {
+            "call-result-model"
+        }
+        message if message.starts_with("unsupported-call-shape") => "call-shape",
+        message if message.starts_with("reference-only-poll") => "poll-model",
+        message if message.starts_with("reference-only-memory-intrinsic") => "memory-intrinsic",
+        message
+            if message.contains("budget")
+                || message.contains("additional diagnostics omitted")
+                || message.contains("additional diagnostic fragments omitted") =>
+        {
+            "analysis-budget"
+        }
+        _ => "other",
+    }
+}
+
+fn diagnostic_site(message: &str) -> Option<u32> {
+    let start = message.find(" at 0x")? + " at 0x".len();
+    let digits = message[start..]
+        .chars()
+        .take_while(|character| character.is_ascii_hexdigit())
+        .collect::<String>();
+    (!digits.is_empty())
+        .then(|| u32::from_str_radix(&digits, 16).ok())
+        .flatten()
+}
+
+fn stable_root_id(kind: &str, root_fragment: &str) -> String {
+    // FNV-1a is deliberately used instead of DefaultHasher: generated IR must
+    // remain stable across Rust versions and processes.
+    let mut hash = 0xcbf29ce484222325_u64;
+    for byte in kind
+        .bytes()
+        .chain(std::iter::once(0))
+        .chain(root_fragment.bytes())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("blocker-{hash:016x}")
+}
+
 fn bounded_fragment(fragment: &str) -> String {
     let mut chars = fragment.chars();
     let bounded = chars
@@ -71,7 +146,14 @@ pub(super) fn compact_diagnostic(message: &str) -> LinkedDiagnostic {
         .collect::<Vec<_>>()
         .join("; ");
 
+    let root_fragment = fragments
+        .first()
+        .map_or(message, |fragment| fragment.message.as_str());
+    let kind = diagnostic_kind(root_fragment);
     LinkedDiagnostic {
+        root_id: stable_root_id(kind, root_fragment),
+        kind,
+        site: diagnostic_site(root_fragment),
         rendered,
         original_fragments,
         fragments,
@@ -93,14 +175,22 @@ pub(super) fn compact_diagnostics(messages: &[String]) -> Vec<LinkedDiagnostic> 
     diagnostics
 }
 
-pub(super) fn rendered_diagnostics(diagnostics: &[LinkedDiagnostic]) -> Vec<String> {
-    diagnostics
-        .iter()
-        .map(|diagnostic| diagnostic.rendered.clone())
-        .collect()
-}
-
 pub(super) type SymbolKey = (Option<String>, String, u64);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classifies_symbolic_cfg_wrapper_as_aggregate() {
+        let diagnostic = compact_diagnostic(
+            "symbolic-cfg: path to branch 0x1001b5a2 has unsupported effects: \
+             unresolved-call-relocation at 0x1001b576: wifi_assert",
+        );
+
+        assert_eq!(diagnostic.kind, "aggregate");
+    }
+}
 
 pub(super) fn symbol_key(symbol: &artifact::ArtifactSymbolDefinition) -> SymbolKey {
     (symbol.member.clone(), symbol.name.clone(), symbol.address)

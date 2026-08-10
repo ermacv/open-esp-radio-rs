@@ -166,6 +166,15 @@ static and linked MMIO evidence, every blocker class, unresolved calls and Rust
 replacement coverage. `project status` reads this compact artifact instead of
 reconstructing the scopes from all large IR documents.
 
+Review-scope schema 3 also emits an ordered `review_queue`. Repeated typed IR
+diagnostics are grouped by stable root cause and retain affected functions,
+instruction sites and diagnostic channels. Resolved call boundaries and
+aggregate wrapper messages are omitted from this queue so it remains an
+actionable work list rather than a second raw log. Unresolved calls are grouped
+by target symbol, and replacement gaps are joined from the verification
+report. The CLI/TUI may reorder presentation only by the stored priority; they
+do not infer a proof verdict from queue text.
+
 `release-scopes` is the explicit publication boundary. SVD, PAC and binding
 generation require reviewed register-model entries only for MMIO in those
 scopes and owned memory-map ranges. Other artifact-wide findings remain in the
@@ -316,7 +325,7 @@ not been generated, a model that has not been initialized, an invalid model,
 and a ready schema-2 workspace. Coverage reports
 reviewed, ignored, manual and unreviewed registers plus reviewed fields and
 configured review/SVD/PAC outputs. Configured linked-IR review inputs are parsed
-as schema-v38 reports and their register/field-candidate counts are reported;
+as schema-v39 reports and their register/field-candidate counts are reported;
 missing outputs owned by `[[analysis.ir]]` are reported as not generated,
 while missing external inputs or incompatible existing reports are errors
 rather than silently disabling enrichment.
@@ -327,7 +336,7 @@ workspace. Coverage includes reviewed/ignored/unreviewed anchors and slots,
 semantic links, and loaded semantic operations.
 
 If `[functions]` is configured, the doctor checks selected IR outputs, strict
-schema-v38 facts, artifact provenance guards, the pack lifecycle, review
+schema-v39 facts, artifact provenance guards, the pack lifecycle, review
 coverage for root functions/contexts/fields, explicitly accepted incomplete
 evidence, and the configured generated report destination.
 

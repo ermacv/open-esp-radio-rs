@@ -501,14 +501,10 @@ fn memory_object_label(object: &LinkedMemoryObject) -> String {
         LinkedMemoryObject::Global { member, symbol } => {
             format!("{}::{symbol}", member.as_deref().unwrap_or("<linked>"))
         }
-        LinkedMemoryObject::DereferencedGlobal {
-            member,
-            symbol,
+        LinkedMemoryObject::Dereferenced {
+            pointer,
             pointer_offset,
-        } => format!(
-            "*({}::{symbol}{pointer_offset:+#x})",
-            member.as_deref().unwrap_or("<linked>")
-        ),
+        } => format!("*({}{pointer_offset:+#x})", memory_object_label(pointer)),
         LinkedMemoryObject::Absolute {
             address_space,
             address,

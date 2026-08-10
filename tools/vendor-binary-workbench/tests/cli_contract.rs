@@ -1159,7 +1159,7 @@ fn project_publication_json_is_one_typed_report() {
     std::fs::write(
         review_output,
         serde_json::to_vec_pretty(&serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "command": "project review scopes",
             "project": "publication-report",
             "scopes": [{
@@ -1191,7 +1191,8 @@ fn project_publication_json_is_one_typed_report() {
                 "replacement_mismatches": 0,
                 "replacement_incomplete": 0,
                 "replacement_unqualified": 0,
-                "replacement_uncovered": 0
+                "replacement_uncovered": 0,
+                "review_queue": []
             }]
         }))
         .unwrap(),

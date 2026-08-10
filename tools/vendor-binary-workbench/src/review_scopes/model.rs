@@ -18,6 +18,21 @@ pub(crate) struct ReviewScopeMmio {
     pub(crate) static_discovery: bool,
 }
 
+/// A root-cause-grouped item in the scope-driven human review queue.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ReviewQueueItem {
+    pub(crate) id: String,
+    pub(crate) kind: String,
+    pub(crate) priority: u8,
+    pub(crate) severity: String,
+    pub(crate) occurrences: usize,
+    pub(crate) functions: Vec<String>,
+    pub(crate) sites: Vec<u32>,
+    pub(crate) channels: Vec<String>,
+    pub(crate) message: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReviewScopeReport {
@@ -50,6 +65,8 @@ pub(crate) struct ReviewScopeReport {
     pub(crate) replacement_incomplete: usize,
     pub(crate) replacement_unqualified: usize,
     pub(crate) replacement_uncovered: usize,
+    /// Ordered by actionable priority and then stable root-cause identity.
+    pub(crate) review_queue: Vec<ReviewQueueItem>,
 }
 
 impl ReviewScopeReport {

@@ -261,6 +261,17 @@ pub(super) fn validate_reference_events_detailed(
                 .find_map(|(index, value)| {
                     value_error(&format!("external-call argument {index}"), value)
                 }),
+            DraftReferenceEvent::ModeledDirectCall {
+                function,
+                arguments,
+                ..
+            } => arguments
+                .iter()
+                .take(usize::from(function.argument_count))
+                .enumerate()
+                .find_map(|(index, value)| {
+                    value_error(&format!("modeled-direct-call argument {index}"), value)
+                }),
             DraftReferenceEvent::DiagnosticCall {
                 argument_count,
                 arguments,

@@ -577,6 +577,22 @@ pub(super) fn render_event(
             )
             .unwrap();
         }
+        DraftReferenceEvent::ModeledDirectCall {
+            token,
+            site,
+            function,
+            arguments,
+        } => writeln!(
+            output,
+            "{prefix}let external_result{token} = platform.{}({}); // site {site:#010x}; operation={}; return={}; model={}; replacement={} ",
+            pseudo_identifier(&function.name),
+            pseudo_arguments(arguments),
+            function.operation,
+            function.return_type,
+            external_return_model(function.return_model),
+            function.replacement_hint.as_deref().unwrap_or("none"),
+        )
+        .unwrap(),
         DraftReferenceEvent::DiagnosticCall {
             function,
             arguments,
@@ -726,20 +742,35 @@ pub(super) fn render_pseudo(
     identity: &str,
     trace: &FunctionAnalysis,
     calls: &[LinkedCall],
-    direct_blockers: &[String],
-    reference_blockers: &[String],
-    call_graph_blockers: &[String],
+    direct_blockers: &[LinkedDiagnostic],
+    reference_blockers: &[LinkedDiagnostic],
+    call_graph_blockers: &[LinkedDiagnostic],
 ) -> String {
     let mut output = String::new();
     writeln!(output, "// vendor symbol: {identity}").unwrap();
     for blocker in direct_blockers {
-        writeln!(output, "// DIRECT-BLOCKER: {blocker}").unwrap();
+        writeln!(
+            output,
+            "// DIRECT-BLOCKER [{}]: {}",
+            blocker.kind, blocker.rendered
+        )
+        .unwrap();
     }
     for blocker in reference_blockers {
-        writeln!(output, "// REFERENCE-BLOCKER: {blocker}").unwrap();
+        writeln!(
+            output,
+            "// REFERENCE-BLOCKER [{}]: {}",
+            blocker.kind, blocker.rendered
+        )
+        .unwrap();
     }
     for blocker in call_graph_blockers {
-        writeln!(output, "// CALL-GRAPH-BLOCKER: {blocker}").unwrap();
+        writeln!(
+            output,
+            "// CALL-GRAPH-BLOCKER [{}]: {}",
+            blocker.kind, blocker.rendered
+        )
+        .unwrap();
     }
     for call in calls {
         let site = call

@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use super::super::validation::{ValidationError, ValidationResult};
 use super::super::{
-    FunctionFacts, FunctionMemoryFieldFact, FunctionMemoryObjectFact, FunctionReviewStatus,
-    FunctionWorkspaceSummary, ReviewedLogicalType, ReviewedMemoryObject, ReviewedTypeBinding,
+    FunctionFact, FunctionFacts, FunctionMemoryFieldFact, FunctionMemoryObjectFact,
+    FunctionReviewStatus, FunctionWorkspaceSummary, ReviewedLogicalType, ReviewedMemoryObject,
+    ReviewedTypeBinding,
 };
 use super::primitives::{
     validate_id, validate_identifier, validate_one_line, validate_optional_description,
@@ -176,104 +177,76 @@ fn observed_fields<'a>(
     binding: &ReviewedTypeBinding,
     facts: &'a FunctionFacts,
 ) -> ValidationResult<Vec<&'a FunctionMemoryFieldFact>> {
-    let mut observed = Vec::new();
-    match &binding.object {
-        ReviewedMemoryObject::Argument { function, index } => {
-            if *index >= 8 {
-                return Err(ValidationError::pack(
-                    "types",
-                    "logical type argument binding must address arg0..arg7",
-                ));
-            }
-            let fact = facts
-                .function(&binding.profile, &binding.source, function)
-                .ok_or_else(|| {
-                    ValidationError::pack(
-                        "types",
-                        format!(
-                            "stale logical type binding {}:{}:{function}",
-                            binding.profile, binding.source
-                        ),
-                    )
-                })?;
-            observed.extend(fact.memory_fields.iter().filter(|field| {
-                matches!(
-                    field.object,
-                    FunctionMemoryObjectFact::Argument { index: observed } if observed == *index
-                )
-            }));
-        }
-        ReviewedMemoryObject::Global { member, symbol } => {
-            observed.extend(
-                facts
-                    .functions
-                    .iter()
-                    .filter(|function| {
-                        function.profile == binding.profile && function.source == binding.source
-                    })
-                    .flat_map(|function| &function.memory_fields)
-                    .filter(|field| {
-                        matches!(
-                            &field.object,
-                            FunctionMemoryObjectFact::Global {
-                                member: observed_member,
-                                symbol: observed_symbol,
-                            } if observed_member == member && observed_symbol == symbol
-                        )
-                    }),
-            );
-        }
-        ReviewedMemoryObject::DereferencedGlobal {
-            member,
-            symbol,
-            pointer_offset,
-        } => {
-            observed.extend(
-                facts
-                    .functions
-                    .iter()
-                    .filter(|function| {
-                        function.profile == binding.profile && function.source == binding.source
-                    })
-                    .flat_map(|function| &function.memory_fields)
-                    .filter(|field| {
-                        matches!(
-                            &field.object,
-                            FunctionMemoryObjectFact::DereferencedGlobal {
-                                member: observed_member,
-                                symbol: observed_symbol,
-                                pointer_offset: observed_offset,
-                            } if observed_member == member
-                                && observed_symbol == symbol
-                                && observed_offset == pointer_offset
-                        )
-                    }),
-            );
-        }
-        ReviewedMemoryObject::Absolute {
-            address_space,
-            address,
-        } => {
-            observed.extend(
-                facts
-                    .functions
-                    .iter()
-                    .filter(|function| {
-                        function.profile == binding.profile && function.source == binding.source
-                    })
-                    .flat_map(|function| &function.memory_fields)
-                    .filter(|field| {
-                        matches!(
-                            &field.object,
-                            FunctionMemoryObjectFact::Absolute {
-                                address_space: observed_space,
-                                address: observed_address,
-                            } if observed_space == address_space && observed_address == address
-                        )
-                    }),
-            );
+    fn valid_argument(object: &ReviewedMemoryObject) -> bool {
+        match object {
+            ReviewedMemoryObject::Argument { index, .. } => *index < 8,
+            ReviewedMemoryObject::Dereferenced { pointer, .. } => valid_argument(pointer),
+            _ => true,
         }
     }
+    fn matches_object(
+        reviewed: &ReviewedMemoryObject,
+        observed: &FunctionMemoryObjectFact,
+        function: &FunctionFact,
+    ) -> bool {
+        match (reviewed, observed) {
+            (
+                ReviewedMemoryObject::Argument {
+                    function: expected,
+                    index: left,
+                },
+                FunctionMemoryObjectFact::Argument { index: right },
+            ) => (function.identity == *expected || function.symbol == *expected) && left == right,
+            (
+                ReviewedMemoryObject::Global {
+                    member: left_member,
+                    symbol: left_symbol,
+                },
+                FunctionMemoryObjectFact::Global {
+                    member: right_member,
+                    symbol: right_symbol,
+                },
+            ) => left_member == right_member && left_symbol == right_symbol,
+            (
+                ReviewedMemoryObject::Absolute {
+                    address_space: left_space,
+                    address: left_address,
+                },
+                FunctionMemoryObjectFact::Absolute {
+                    address_space: right_space,
+                    address: right_address,
+                },
+            ) => left_space == right_space && left_address == right_address,
+            (
+                ReviewedMemoryObject::Dereferenced {
+                    pointer: left,
+                    pointer_offset: left_offset,
+                },
+                FunctionMemoryObjectFact::Dereferenced {
+                    pointer: right,
+                    pointer_offset: right_offset,
+                },
+            ) => left_offset == right_offset && matches_object(left, right, function),
+            _ => false,
+        }
+    }
+    if !valid_argument(&binding.object) {
+        return Err(ValidationError::pack(
+            "types",
+            "logical type argument binding must address arg0..arg7",
+        ));
+    }
+    let observed = facts
+        .functions
+        .iter()
+        .filter(|function| function.profile == binding.profile && function.source == binding.source)
+        .flat_map(|function| {
+            function
+                .memory_fields
+                .iter()
+                .filter(move |field| matches_object(&binding.object, &field.object, function))
+        })
+        .collect::<Vec<_>>();
     if observed.is_empty() {
         return Err(ValidationError::pack(
             "types",

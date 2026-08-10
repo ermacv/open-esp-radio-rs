@@ -4,6 +4,37 @@ use super::state::StructuralTraceState;
 use super::*;
 use rv_asm::Imm;
 
+fn remember_pointer_read_source(
+    state: &mut StructuralTraceState,
+    read_token: u32,
+    width: u8,
+    address: &SymbolicValue,
+) {
+    if width != 32 {
+        return;
+    }
+    if let Some(location) = address.memory_object_location_with_reads(&state.memory_read_sources) {
+        state.memory_read_sources.insert(read_token, location);
+    }
+}
+
+fn remember_absolute_pointer_read_source(
+    state: &mut StructuralTraceState,
+    read_token: u32,
+    width: u8,
+    address: u32,
+) {
+    if width == 32 {
+        state.memory_read_sources.insert(
+            read_token,
+            MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute { address },
+                offset: 0,
+            },
+        );
+    }
+}
+
 pub(super) fn apply_floating_memory_instruction(
     blocker: artifact::UnsupportedInstruction,
     symbol: &artifact::ArtifactSymbolDefinition,
@@ -209,6 +240,7 @@ pub(super) fn apply_memory_instruction(
                 (_, Some(StructuralAddress::CallerMemory(address))) => {
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
+                    remember_pointer_read_source(state, read_token, width, &address);
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
@@ -221,12 +253,7 @@ pub(super) fn apply_memory_instruction(
                 (_, Some(StructuralAddress::SymbolMemory(address))) => {
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
-                    if width == 32
-                        && let Some(location) = address.memory_object_location()
-                        && matches!(location.root, MemoryObjectRoot::RelocatedSymbol { .. })
-                    {
-                        state.memory_read_sources.insert(read_token, location);
-                    }
+                    remember_pointer_read_source(state, read_token, width, &address);
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
@@ -236,14 +263,15 @@ pub(super) fn apply_memory_instruction(
                     });
                     SymbolicValue::memory_read(read_token, width, signed)
                 }
-                (_, Some(StructuralAddress::DereferencedGlobalMemory(address))) => {
+                (_, Some(StructuralAddress::DereferencedMemory(address))) => {
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
+                    remember_pointer_read_source(state, read_token, width, &address);
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
                         address,
-                        region: "dereferenced relocated global pointer RAM".to_owned(),
+                        region: "dereferenced known pointer RAM".to_owned(),
                         value: None,
                     });
                     SymbolicValue::memory_read(read_token, width, signed)
@@ -251,11 +279,24 @@ pub(super) fn apply_memory_instruction(
                 (_, Some(StructuralAddress::IndexedMemory(address))) => {
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
+                    remember_pointer_read_source(state, read_token, width, &address);
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
                         address,
                         region: "indexed RAM object".to_owned(),
+                        value: None,
+                    });
+                    SymbolicValue::memory_read(read_token, width, signed)
+                }
+                (_, Some(StructuralAddress::DynamicMemory(address))) => {
+                    let read_token = state.next_memory_read_token;
+                    state.next_memory_read_token += 1;
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Read,
+                        width,
+                        address,
+                        region: "dynamic RAM address".to_owned(),
                         value: None,
                     });
                     SymbolicValue::memory_read(read_token, width, signed)
@@ -286,6 +327,7 @@ pub(super) fn apply_memory_instruction(
                     let region = symbol.memory_region(address, width).unwrap();
                     let read_token = state.next_memory_read_token;
                     state.next_memory_read_token += 1;
+                    remember_absolute_pointer_read_source(state, read_token, width, address);
                     state.reference_events.push(DraftReferenceEvent::Memory {
                         access: MemoryAccess::Read,
                         width,
@@ -324,6 +366,7 @@ pub(super) fn apply_memory_instruction(
                     {
                         let read_token = state.next_memory_read_token;
                         state.next_memory_read_token += 1;
+                        remember_pointer_read_source(state, read_token, width, &address);
                         state.reference_events.push(DraftReferenceEvent::Memory {
                             access: MemoryAccess::Read,
                             width,
@@ -337,12 +380,14 @@ pub(super) fn apply_memory_instruction(
                     {
                         let read_token = state.next_memory_read_token;
                         state.next_memory_read_token += 1;
+                        let address = state.values[usize::from(base.0)]
+                            .clone()
+                            .add_constant(offset.as_u32());
+                        remember_pointer_read_source(state, read_token, width, &address);
                         state.reference_events.push(DraftReferenceEvent::Memory {
                             access: MemoryAccess::Read,
                             width,
-                            address: state.values[usize::from(base.0)]
-                                .clone()
-                                .add_constant(offset.as_u32()),
+                            address,
                             region: DEFERRED_CALLER_MEMORY_REGION.to_owned(),
                             value: None,
                         });
@@ -433,7 +478,7 @@ pub(super) fn apply_memory_instruction(
                         value: Some(value),
                     });
                 }
-                Some(StructuralAddress::DereferencedGlobalMemory(address)) => {
+                Some(StructuralAddress::DereferencedMemory(address)) => {
                     if !value.is_resolved() {
                         state
                             .reference_blockers
@@ -443,7 +488,7 @@ pub(super) fn apply_memory_instruction(
                         access: MemoryAccess::Write,
                         width,
                         address,
-                        region: "dereferenced relocated global pointer RAM".to_owned(),
+                        region: "dereferenced known pointer RAM".to_owned(),
                         value: Some(value),
                     });
                 }
@@ -458,6 +503,20 @@ pub(super) fn apply_memory_instruction(
                         width,
                         address,
                         region: "indexed RAM object".to_owned(),
+                        value: Some(value),
+                    });
+                }
+                Some(StructuralAddress::DynamicMemory(address)) => {
+                    if !value.is_resolved() {
+                        state
+                            .reference_blockers
+                            .push(format!("unresolved-memory-write at {pc:#x}: {instruction}"));
+                    }
+                    state.reference_events.push(DraftReferenceEvent::Memory {
+                        access: MemoryAccess::Write,
+                        width,
+                        address,
+                        region: "dynamic RAM address".to_owned(),
                         value: Some(value),
                     });
                 }

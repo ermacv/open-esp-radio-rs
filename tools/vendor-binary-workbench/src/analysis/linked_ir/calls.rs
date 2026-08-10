@@ -630,6 +630,41 @@ pub(super) fn collect_call_event(
                 guard_paths: None,
             })
         }
+        DraftReferenceEvent::ModeledDirectCall {
+            site,
+            function,
+            arguments,
+            ..
+        } => Some(LinkedCall {
+            kind: "modeled-direct-external",
+            target: function.name.clone(),
+            site: Some(*site),
+            tail: false,
+            result_modeled: !matches!(function.return_model, ExternalReturnModel::Unmodeled),
+            semantics: Some(format!(
+                "reviewed direct platform ABI; args={}; return={}; model={}; operation={}",
+                function.argument_count,
+                function.return_type,
+                external_return_model(function.return_model),
+                function.operation,
+            )),
+            semantic_operation: Some(function.operation.clone()),
+            semantic_contract: Some(LinkedSemanticContract {
+                source: "reviewed-direct-external-model",
+                id: function.id.clone(),
+                evidence: function.evidence.clone(),
+                event_dispatch: None,
+            }),
+            replacement_hint: function.replacement_hint.clone(),
+            project_symbol: Some(function.name.clone()),
+            project_candidates: Vec::new(),
+            trampoline: None,
+            argument_shapes: 1,
+            arguments: canonical_arguments(arguments),
+            argument_bindings: affine_argument_bindings(arguments),
+            typed_arguments: Vec::new(),
+            guard_paths: None,
+        }),
         DraftReferenceEvent::DiagnosticCall {
             function,
             arguments,

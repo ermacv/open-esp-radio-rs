@@ -450,6 +450,21 @@ pub struct ComparisonProfileSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ReviewQueueSummary {
+    pub scope: String,
+    pub release: bool,
+    pub id: String,
+    pub kind: String,
+    pub priority: u8,
+    pub severity: String,
+    pub occurrences: usize,
+    pub functions: Vec<String>,
+    pub sites: Vec<u32>,
+    pub channels: Vec<String>,
+    pub message: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct WorkspaceSnapshot {
     pub generation: u64,
     pub project_status: crate::ProjectStatusReport,
@@ -458,6 +473,7 @@ pub struct WorkspaceSnapshot {
     pub logical_types: Vec<LogicalTypeSummary>,
     pub registers: RegisterWorkspaceReport,
     pub interfaces: InterfaceWorkspaceReport,
+    pub review_queue: Vec<ReviewQueueSummary>,
     pub comparisons: Vec<ComparisonProfileSummary>,
     pub diagnostics: Vec<DiagnosticRecord>,
 }

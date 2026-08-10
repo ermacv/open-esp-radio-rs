@@ -11,6 +11,7 @@ use ratatui::{
 use super::state::{BrowserState, Section};
 use crate::{DiagnosticSeverity, Readiness};
 
+mod blockers;
 mod code;
 mod comparisons;
 mod functions;
@@ -47,6 +48,7 @@ pub(super) fn render(frame: &mut Frame<'_>, state: &BrowserState) {
         Section::Overview => render_overview(frame, state, content),
         Section::Code => code::render(frame, state, content),
         Section::Functions => functions::render(frame, state, content),
+        Section::Blockers => blockers::render(frame, state, content),
         Section::Registers => registers::render(frame, state, content),
         Section::Interfaces => interfaces::render(frame, state, content),
         Section::Comparisons => comparisons::render(frame, state, content),
@@ -102,7 +104,7 @@ fn render_tabs(frame: &mut Frame<'_>, state: &BrowserState, area: Rect) {
             .select(selected)
             .block(Block::default().borders(Borders::ALL))
             .highlight_style(Style::new().fg(Color::Cyan).add_modifier(Modifier::BOLD))
-            .divider(" │ "),
+            .divider(if compact { " " } else { " │ " }),
         area,
     );
 }
@@ -369,6 +371,7 @@ fn section_title(section: Section, compact: bool) -> &'static str {
         Section::Overview => "Overview",
         Section::Code => "Code",
         Section::Functions => "Funcs",
+        Section::Blockers => "Blocks",
         Section::Registers => "Regs",
         Section::Interfaces => "APIs",
         Section::Comparisons => "Compare",
@@ -502,6 +505,7 @@ mod tests {
                 contracts: Vec::new(),
                 slots: Vec::new(),
             },
+            review_queue: Vec::new(),
             comparisons: vec![ComparisonProfileSummary {
                 name: "trace-init".to_owned(),
                 path: "profiles/init.toml".into(),

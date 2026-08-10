@@ -199,6 +199,7 @@ fn harness_source(reference_function: &str, probe_symbol: &str) -> String {
     writeln!(output, "    fn external_table_magic(&mut self, _table: &str) -> u32 {{ unsupported(\"external-table-magic\") }}").unwrap();
     writeln!(output, "    fn external_table_size(&mut self, _table: &str) -> u32 {{ unsupported(\"external-table-size\") }}").unwrap();
     writeln!(output, "    fn external_call(&mut self, _table: &str, _function: &str, _arguments: &[u32]) -> u32 {{ unsupported(\"external-call\") }}").unwrap();
+    writeln!(output, "    fn direct_external_call(&mut self, _function: &str, _arguments: &[u32]) -> u32 {{ unsupported(\"direct-external-call\") }}").unwrap();
     writeln!(output, "    fn diagnostic_call(&mut self, _function: &str, _arguments: &[u32]) {{ unsupported(\"diagnostic-call\") }}").unwrap();
     writeln!(output, "}}").unwrap();
     writeln!(output).unwrap();

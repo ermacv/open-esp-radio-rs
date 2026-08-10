@@ -70,6 +70,7 @@ static PP_POST_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec
     id: "esp32s31-libpp-pp-post-v1",
     c_name: "pp_post",
     argument_count: 1,
+    return_model: ExternalReturnModel::Unmodeled,
     semantic: ExternalSemanticSpec {
         operation: "wifi.internal-signal.post",
         arguments: PP_POST_ARGUMENTS,
@@ -95,6 +96,7 @@ static ETS_DELAY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSp
     id: "esp32s31-link-unit-ets-delay-us-v1",
     c_name: "ets_delay_us",
     argument_count: 1,
+    return_model: ExternalReturnModel::Unmodeled,
     semantic: ExternalSemanticSpec {
         operation: "time.blocking-delay",
         arguments: ETS_DELAY_ARGUMENTS,
@@ -103,6 +105,21 @@ static ETS_DELAY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSp
         event_dispatch: None,
     },
     evidence: "authoritative-link-unit-relocation-symbol",
+};
+
+static RTC_XTAL_FREQUENCY_SEMANTIC: DirectSemanticFunctionSpec = DirectSemanticFunctionSpec {
+    id: "esp32s31-rtc-xtal-frequency-v1",
+    c_name: "rtc_clk_xtal_freq_get",
+    argument_count: 0,
+    return_model: ExternalReturnModel::Constant(40),
+    semantic: ExternalSemanticSpec {
+        operation: "clock.xtal-frequency.read",
+        arguments: &[],
+        return_type: "u32",
+        replacement: Some("fixed ESP32-S31 40 MHz crystal contract"),
+        event_dispatch: None,
+    },
+    evidence: "esp32s31-fixed-crystal-target-contract",
 };
 
 fn exact_pp_post(symbol: &artifact::ArtifactSymbolDefinition) -> bool {
@@ -131,5 +148,9 @@ pub(crate) fn direct_semantic_function(
 pub(crate) fn direct_external_semantic_function(
     symbol: &str,
 ) -> Option<&'static DirectSemanticFunctionSpec> {
-    (symbol == "ets_delay_us").then_some(&ETS_DELAY_SEMANTIC)
+    match symbol {
+        "ets_delay_us" => Some(&ETS_DELAY_SEMANTIC),
+        "rtc_clk_xtal_freq_get" => Some(&RTC_XTAL_FREQUENCY_SEMANTIC),
+        _ => None,
+    }
 }

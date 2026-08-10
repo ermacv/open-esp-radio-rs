@@ -106,13 +106,9 @@ impl SymbolicValue {
                 or_mask: 0,
             } => {
                 let source = read_sources.get(read_token)?;
-                let MemoryObjectRoot::RelocatedSymbol { member, symbol } = &source.root else {
-                    return None;
-                };
                 Some(MemoryObjectLocation {
-                    root: MemoryObjectRoot::DereferencedGlobal {
-                        member: member.clone(),
-                        symbol: symbol.clone(),
+                    root: MemoryObjectRoot::Dereferenced {
+                        pointer: Box::new(source.root.clone()),
                         pointer_offset: source.offset,
                     },
                     offset: 0,
@@ -146,6 +142,43 @@ impl SymbolicValue {
                 None
             }
             _ => None,
+        }
+    }
+
+    /// Whether this exact symbolic value retains at least one pointer/value
+    /// dependency on a read from a known memory object. This is intentionally
+    /// weaker than `memory_object_location_with_reads`: it permits a dynamic
+    /// address effect while making no static field or object-offset claim.
+    pub fn has_memory_address_provenance(
+        &self,
+        read_sources: &BTreeMap<u32, MemoryObjectLocation>,
+    ) -> bool {
+        match self {
+            Self::MemoryImage { read_token, .. } => read_sources.contains_key(read_token),
+            Self::Bits(bits) => bits.iter().any(|source| {
+                matches!(
+                    source,
+                    BitSource::Memory { read_token, .. }
+                        if read_sources.contains_key(read_token)
+                )
+            }),
+            Self::Expression { left, right, .. } => {
+                left.has_memory_address_provenance(read_sources)
+                    || right.has_memory_address_provenance(read_sources)
+            }
+            Self::WideSignedDivide {
+                dividend_low,
+                dividend_high,
+                divisor_low,
+                divisor_high,
+                ..
+            } => {
+                dividend_low.has_memory_address_provenance(read_sources)
+                    || dividend_high.has_memory_address_provenance(read_sources)
+                    || divisor_low.has_memory_address_provenance(read_sources)
+                    || divisor_high.has_memory_address_provenance(read_sources)
+            }
+            _ => false,
         }
     }
 
@@ -637,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn memory_object_location_recovers_exact_dereferenced_global_pointer() {
+    fn memory_object_location_recovers_exact_dereferenced_pointer() {
         let mut reads = BTreeMap::new();
         reads.insert(
             3,
@@ -654,12 +687,41 @@ mod tests {
         assert_eq!(
             address.memory_object_location_with_reads(&reads),
             Some(MemoryObjectLocation {
-                root: MemoryObjectRoot::DereferencedGlobal {
-                    member: Some("globals.o".to_owned()),
-                    symbol: "g_state".to_owned(),
+                root: MemoryObjectRoot::Dereferenced {
+                    pointer: Box::new(MemoryObjectRoot::RelocatedSymbol {
+                        member: Some("globals.o".to_owned()),
+                        symbol: "g_state".to_owned(),
+                    }),
                     pointer_offset: 4,
                 },
                 offset: 0x1c,
+            })
+        );
+    }
+
+    #[test]
+    fn memory_object_location_recovers_pointer_loaded_from_absolute_ram() {
+        let reads = BTreeMap::from([(
+            7,
+            MemoryObjectLocation {
+                root: MemoryObjectRoot::Absolute {
+                    address: 0x2010_4000,
+                },
+                offset: 0,
+            },
+        )]);
+        let address = SymbolicValue::memory_read(7, 32, false).add_constant(0x28);
+
+        assert_eq!(
+            address.memory_object_location_with_reads(&reads),
+            Some(MemoryObjectLocation {
+                root: MemoryObjectRoot::Dereferenced {
+                    pointer: Box::new(MemoryObjectRoot::Absolute {
+                        address: 0x2010_4000,
+                    }),
+                    pointer_offset: 0,
+                },
+                offset: 0x28,
             })
         );
     }

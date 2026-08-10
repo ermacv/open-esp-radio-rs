@@ -1,4 +1,4 @@
-//! Complete owned DTO for linked-IR schema v37.
+//! Complete owned DTO for linked-IR schema v39.
 
 #![allow(
     dead_code,
@@ -151,9 +151,6 @@ pub(crate) struct StoredFunction {
     direct_diagnostics: Vec<StoredDiagnostic>,
     reference_diagnostics: Vec<StoredDiagnostic>,
     pub(crate) decode_blockers: Vec<StoredDecodeBlocker>,
-    call_graph_blockers: Vec<String>,
-    direct_blockers: Vec<String>,
-    reference_blockers: Vec<String>,
     pub(crate) pseudo: String,
 }
 
@@ -171,23 +168,39 @@ impl StoredFunction {
     }
 
     pub(crate) fn blockers(&self) -> impl Iterator<Item = &str> {
-        self.call_graph_blockers
+        self.call_graph_diagnostics
             .iter()
-            .chain(&self.direct_blockers)
-            .chain(&self.reference_blockers)
-            .map(String::as_str)
+            .chain(&self.direct_diagnostics)
+            .chain(&self.reference_diagnostics)
+            .map(|diagnostic| diagnostic.rendered.as_str())
     }
 
     pub(crate) fn direct_blocker_count(&self) -> usize {
-        self.direct_blockers.len()
+        self.direct_diagnostics.len()
     }
 
     pub(crate) fn call_graph_blocker_count(&self) -> usize {
-        self.call_graph_blockers.len()
+        self.call_graph_diagnostics.len()
     }
 
     pub(crate) fn reference_blocker_count(&self) -> usize {
-        self.reference_blockers.len()
+        self.reference_diagnostics.len()
+    }
+
+    pub(crate) fn diagnostics(&self) -> impl Iterator<Item = (&'static str, &StoredDiagnostic)> {
+        self.call_graph_diagnostics
+            .iter()
+            .map(|diagnostic| ("call-graph", diagnostic))
+            .chain(
+                self.direct_diagnostics
+                    .iter()
+                    .map(|diagnostic| ("direct", diagnostic)),
+            )
+            .chain(
+                self.reference_diagnostics
+                    .iter()
+                    .map(|diagnostic| ("reference", diagnostic)),
+            )
     }
 }
 
@@ -490,9 +503,8 @@ pub(crate) enum StoredMemoryObject {
         member: Option<String>,
         symbol: String,
     },
-    DereferencedGlobal {
-        member: Option<String>,
-        symbol: String,
+    Dereferenced {
+        pointer: Box<StoredMemoryObject>,
         pointer_offset: i64,
     },
     Absolute {
@@ -801,8 +813,11 @@ struct StoredTrampolineSlot {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct StoredDiagnostic {
-    rendered: String,
+pub(crate) struct StoredDiagnostic {
+    pub(crate) root_id: String,
+    pub(crate) kind: String,
+    pub(crate) site: Option<u32>,
+    pub(crate) rendered: String,
     original_fragments: usize,
     fragments: Vec<StoredDiagnosticFragment>,
 }

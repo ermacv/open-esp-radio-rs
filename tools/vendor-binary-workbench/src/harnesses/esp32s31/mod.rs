@@ -44,6 +44,11 @@ pub(super) fn verify_named_contract_registered(
             vendor_artifact,
             vendor_companion,
         )?),
+        "baseband-init" => Ok(verification::verify_esp32s31_baseband_init(
+            svd,
+            vendor_artifact,
+            vendor_companion,
+        )?),
         _ => Err(crate::Error::invalid(format!(
             "selected harness has no contract {name:?}"
         ))),

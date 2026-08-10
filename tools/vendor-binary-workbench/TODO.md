@@ -250,17 +250,13 @@ that every user must learn.
   arguments, drives `PhyBluetoothTxGainInitTransition` through the same
   deterministic child models, and matches both cold and retained state. The
   real linked image completed 506,725 concrete steps across the two cases.
-- [ ] Qualify the two remaining release parents hierarchically:
-  `phy_bb_init` over the reviewed baseband children, then
-  `register_chipv7_phy` over RF-init and baseband. Do not duplicate leaf
-  effect models in the parents. The shared deterministic completion layer is
-  now split by TX, RX-IQ, RX-gain and parent responsibilities; both cold and
-  retained `PhyBbInitTransition` paths complete through it, and the existing
-  Bluetooth parent still matches the real linked image. The vendor projection
-  now locks all 26 direct-call sites, ordering and reviewed arguments without
-  promoting that structural evidence to a verdict. The remaining work is its
-  concrete cold/retained execution plus reviewed footprint comparison and then
-  the outer registration composition.
+- [ ] Qualify the final release parent `register_chipv7_phy` over RF-init and
+  baseband without duplicating leaf effect models. `phy_bb_init` is now a real
+  semantic contract: its linked 26-call topology, arguments and reviewed RAM
+  footprint match `PhyBbInitTransition` in both cold and retained cases. The
+  pinned linked image completed 959,177 concrete steps across those cases.
+  The remaining release-parent work is the outer registration prelude/tail,
+  RF/baseband child ordering and final state projection.
 
 ## P1 — project usability and maintainability
 

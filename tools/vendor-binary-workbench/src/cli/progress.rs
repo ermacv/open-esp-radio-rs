@@ -47,6 +47,7 @@ pub(super) fn command_span(command: &Command) -> Option<Span> {
         Command::VerifyContractBluetoothTxGainInit(_) => {
             "Bluetooth TX-gain parent contract verification"
         }
+        Command::VerifyContractBasebandInit(_) => "Baseband-init parent contract verification",
         Command::ExecuteRun(_) => "Vendor function execution",
         Command::ExecuteCompare(_) => "Function comparison",
         Command::VerifyProfiles(_) => "Profile verification",

@@ -180,6 +180,7 @@ pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result
         "esp32s31-bluetooth-txdc-pwdet" => ("archive", "phy_txdc_cal_pwdet_init"),
         "esp32s31-bluetooth-tx-power" => ("archive", "phy_bt_tx_pwctrl_init"),
         "esp32s31-bluetooth-tx-gain-init" => ("archive", "phy_bt_tx_gain_init"),
+        "esp32s31-baseband-init" => ("archive", "phy_bb_init"),
         _ => return Ok(None),
     };
     if (source, vendor_symbol) != expected {
@@ -225,6 +226,14 @@ pub fn verify_semantic_contract(request: &SemanticContractRequest<'_>) -> Result
         }
         "esp32s31-bluetooth-tx-gain-init" => {
             verification::verify_esp32s31_bluetooth_tx_gain_init(
+                request.svd,
+                request.vendor_artifact,
+                companion,
+            )?
+            .matched
+        }
+        "esp32s31-baseband-init" => {
+            verification::verify_esp32s31_baseband_init(
                 request.svd,
                 request.vendor_artifact,
                 companion,
@@ -351,6 +360,10 @@ pub fn semantic_contract_evidence_sources(id: &str) -> Option<SemanticContractEv
         "esp32s31-bluetooth-tx-gain-init" => EvidenceSource {
             name: "qualification/bluetooth_tx_gain.rs",
             contents: include_str!("qualification/bluetooth_tx_gain.rs"),
+        },
+        "esp32s31-baseband-init" => EvidenceSource {
+            name: "qualification/bb_init.rs",
+            contents: include_str!("qualification/bb_init.rs"),
         },
         _ => return None,
     };

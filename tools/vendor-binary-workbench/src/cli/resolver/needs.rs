@@ -96,6 +96,7 @@ impl ResolutionNeeds {
             | Command::VerifyContractRfInit(_)
             | Command::VerifyContractBluetoothTxPower(_)
             | Command::VerifyContractBluetoothTxGainInit(_)
+            | Command::VerifyContractBasebandInit(_)
             | Command::GenerateReference(_)
             | Command::GenerateReferenceBatch(_)
             | Command::GenerateDriver(_)

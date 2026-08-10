@@ -211,6 +211,12 @@ pub(super) fn run_target(
             target.require_available_harness()?,
             "bluetooth-tx-gain-init",
         ),
+        TargetCommand::VerifyContractBasebandInit(arguments) => verify_contract::run(
+            arguments,
+            svd,
+            target.require_available_harness()?,
+            "baseband-init",
+        ),
         TargetCommand::ExecuteRun(arguments) => execute_run::run(arguments, svd),
         TargetCommand::ExecuteCompare(arguments) => execute_compare::run(arguments, svd),
         TargetCommand::VerifyProfiles(arguments) => verify_profiles::run(arguments, svd),

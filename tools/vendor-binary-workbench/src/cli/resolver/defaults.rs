@@ -254,7 +254,8 @@ pub(super) fn apply_run_spec_defaults(command: &mut Command, run_spec: &RunSpec)
             Command::VerifyContractChannel(args)
             | Command::VerifyContractRfInit(args)
             | Command::VerifyContractBluetoothTxPower(args)
-            | Command::VerifyContractBluetoothTxGainInit(args) => match role {
+            | Command::VerifyContractBluetoothTxGainInit(args)
+            | Command::VerifyContractBasebandInit(args) => match role {
                 InputRole::VendorArtifact if args.vendor_artifact.is_none() => {
                     args.vendor_artifact = Some(path.clone())
                 }

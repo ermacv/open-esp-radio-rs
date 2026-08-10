@@ -45,13 +45,15 @@ fn checked_in_manifest_is_strict_and_resolves_defaults() {
     assert_eq!(root.protocol, Protocol::Shared);
     let root = root.entry.unwrap();
     assert!(root.rust_component.is_some());
-    assert_eq!(
-        root.qualification_blockers,
-        [("archive".to_owned(), "phy_bb_init".to_owned())]
-    );
+    assert!(root.qualification_blockers.is_empty());
 
     let bb_init = manifest.resolve("archive", "phy_bb_init");
-    assert!(bb_init.entry.unwrap().qualification_blockers.is_empty());
+    let bb_init = bb_init.entry.unwrap();
+    assert!(bb_init.qualification_blockers.is_empty());
+    assert_eq!(
+        bb_init.semantic_contract.as_ref().unwrap().label(),
+        "esp32s31-baseband-init"
+    );
 
     let bluetooth_tx_gain = manifest.resolve("archive", "phy_bt_tx_gain_init");
     assert_eq!(

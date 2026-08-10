@@ -333,7 +333,12 @@ fn composed_manifest_diagnostics_highlight_the_physical_value() {
 
 #[test]
 fn semantic_contract_commands_keep_failed_qualifications_off_stdout() {
-    for contract in ["channel", "rf-init", "bluetooth-tx-gain-init"] {
+    for contract in [
+        "channel",
+        "rf-init",
+        "bluetooth-tx-gain-init",
+        "baseband-init",
+    ] {
         let output = run(&[
             "verify",
             "contract",

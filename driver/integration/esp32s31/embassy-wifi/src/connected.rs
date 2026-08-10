@@ -1262,16 +1262,33 @@ pub async fn run_connected<'state, 'security>(
         station_control,
         tasks,
         &mut observer,
-        |exit, _runner| match exit {
-            Esp32s31ConnectedStationExit::Disconnected => ConnectedStationOutcome::Disconnected,
-            Esp32s31ConnectedStationExit::ReconnectRequested { .. } => {
-                ConnectedStationOutcome::ReconnectRequested
+        |exit, runner| {
+            #[cfg(feature = "qualification")]
+            {
+                let control = runner.services().control();
+                let beacon = control.beacon_monitor();
+                qualification_event!(
+                    "open-radio: connected exit evidence beacon_lost={} beacons={} deadline={:?} last_event={:?} dropped_events={}",
+                    control.beacon_lost(),
+                    beacon.map_or(0, |monitor| monitor.observed()),
+                    beacon.and_then(|monitor| monitor.deadline_micros()),
+                    control.last_event(),
+                    control.dropped_events(),
+                );
             }
-            Esp32s31ConnectedStationExit::StationStopped(command) => {
-                ConnectedStationOutcome::StationStopped(command)
-            }
-            Esp32s31ConnectedStationExit::HardwareFailure(_) => {
-                ConnectedStationOutcome::HardwareFailure
+            match exit {
+                Esp32s31ConnectedStationExit::Disconnected => {
+                    ConnectedStationOutcome::Disconnected
+                },
+                Esp32s31ConnectedStationExit::ReconnectRequested { .. } => {
+                    ConnectedStationOutcome::ReconnectRequested
+                },
+                Esp32s31ConnectedStationExit::StationStopped(command) => {
+                    ConnectedStationOutcome::StationStopped(command)
+                },
+                Esp32s31ConnectedStationExit::HardwareFailure(_) => {
+                    ConnectedStationOutcome::HardwareFailure
+                },
             }
         },
     )

@@ -32,7 +32,15 @@ pub const ESP32S31_DEFAULT_RX_STAGE_CAPACITY: usize = 1_700;
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 16;
 #[cfg(feature = "high-throughput")]
 pub const ESP32S31_DEFAULT_RX_STAGE_SLOT_COUNT: usize = 64;
+// Keep the compact agreement bounded by its small hot working set. The
+// high-throughput composition already owns 64 independent reorder slots and
+// previously qualified a 32-frame receive agreement; reducing that agreement
+// to eight during lifecycle consolidation made the peer recycle failed
+// downlink traffic behind newer packets.
+#[cfg(not(feature = "high-throughput"))]
 pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 8;
+#[cfg(feature = "high-throughput")]
+pub const ESP32S31_DEFAULT_RX_REORDER_WINDOW: usize = 32;
 pub const ESP32S31_DEFAULT_CONTROL_QUEUE_DEPTH: usize = 16;
 
 pub const ESP32S31_DEFAULT_NETWORK_FRAME_CAPACITY: usize = 1_600;
@@ -173,6 +181,10 @@ mod tests {
             Esp32s31DefaultWifiResourceProfile::TX_AMPDU_FRAME_COUNT,
             ESP32S31_DEFAULT_TX_AMPDU_FRAME_COUNT
         );
+        #[cfg(not(feature = "high-throughput"))]
+        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 8);
+        #[cfg(feature = "high-throughput")]
+        assert_eq!(Esp32s31DefaultWifiResourceProfile::RX_REORDER_WINDOW, 32);
     }
 
     #[test]

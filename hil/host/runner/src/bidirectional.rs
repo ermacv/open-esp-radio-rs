@@ -55,9 +55,11 @@ impl Phy {
         }
     }
 
-    const fn expected_tx(self) -> (u16, u64) {
+    const fn required_tx(self) -> (u16, u64) {
         match self {
-            Self::Ht40 => (40, 150_000),
+            // HT40 MCS7 is 135 Mbit/s with the mandatory long guard interval
+            // and 150 Mbit/s when the peer-qualified short GI is selected.
+            Self::Ht40 => (40, 135_000),
             Self::He20 => (20, 114_700),
         }
     }
@@ -1783,7 +1785,7 @@ fn parse_device_report(log: &str) -> DeviceReport {
                     report.dma_health.push((buffer_full, fifo_overflow));
                 }
             }
-        } else if line.starts_with("OTX ") || line.contains(" OTX ") {
+        } else if line.contains("OTX ") {
             if let (Some(throughput_kbps), Some(bandwidth_mhz), Some(rate_kbps)) =
                 (field(line, "k"), field(line, "w"), field(line, "r"))
             {
@@ -1943,17 +1945,19 @@ fn qualify_runtime_marker(report: &DeviceReport) -> Result<()> {
 
 fn qualify_tx_samples(
     report: &DeviceReport,
-    expected_width: u16,
-    expected_rate: u64,
+    required_width: u16,
+    minimum_rate: u64,
 ) -> Result<u64> {
     if report.tx.is_empty()
-        || report.tx.iter().any(|sample| {
-            sample.bandwidth_mhz != expected_width || sample.rate_kbps != expected_rate
-        })
+        || report
+            .tx
+            .iter()
+            .any(|sample| sample.bandwidth_mhz != required_width || sample.rate_kbps < minimum_rate)
     {
-        return Err(
-            format!("TX did not remain at {expected_width} MHz / {expected_rate} kbit/s").into(),
-        );
+        return Err(format!(
+            "TX did not remain at {required_width} MHz / at least {minimum_rate} kbit/s"
+        )
+        .into());
     }
     Ok(report
         .tx
@@ -2365,12 +2369,12 @@ pub(crate) fn assess_rx_log(log: &str, expected_format: u8) -> Result<RxAssessme
 
 pub(crate) fn qualify_tx_log(
     log: &str,
-    expected_width: u16,
-    expected_rate: u64,
+    required_width: u16,
+    minimum_rate: u64,
 ) -> Result<TxQualification> {
     let report = parse_device_report(log);
     qualify_runtime_marker(&report)?;
-    let throughput_floor_kbps = qualify_tx_samples(&report, expected_width, expected_rate)?;
+    let throughput_floor_kbps = qualify_tx_samples(&report, required_width, minimum_rate)?;
     let ampdu = qualify_ampdu(&report)?;
     if let Some(failure) = report.failures.first() {
         return Err(format!("device reported a data-path failure: {failure}").into());
@@ -2400,8 +2404,8 @@ fn qualify(
         .into());
     }
     validate_exact_rx_delivery(host.datagrams, rx.received_datagrams, rx.sequence, rx.order)?;
-    let (expected_width, expected_rate) = options.phy.expected_tx();
-    qualify_tx_samples(report, expected_width, expected_rate)?;
+    let (required_width, minimum_rate) = options.phy.required_tx();
+    qualify_tx_samples(report, required_width, minimum_rate)?;
     qualify_ampdu(report)?;
     Ok(rx)
 }
@@ -2939,6 +2943,28 @@ mod tests {
     }
 
     #[test]
+    fn ht40_tx_accepts_mcs7_long_or_short_gi_but_not_a_lower_vector() {
+        let mut report = DeviceReport {
+            tx: vec![TxSample {
+                throughput_kbps: 80_000,
+                bandwidth_mhz: 40,
+                rate_kbps: 135_000,
+            }],
+            ..DeviceReport::default()
+        };
+        assert_eq!(qualify_tx_samples(&report, 40, 135_000).unwrap(), 80_000);
+
+        report.tx[0].rate_kbps = 150_000;
+        assert_eq!(qualify_tx_samples(&report, 40, 135_000).unwrap(), 80_000);
+
+        report.tx[0].rate_kbps = 121_500;
+        assert!(qualify_tx_samples(&report, 40, 135_000).is_err());
+        report.tx[0].rate_kbps = 135_000;
+        report.tx[0].bandwidth_mhz = 20;
+        assert!(qualify_tx_samples(&report, 40, 135_000).is_err());
+    }
+
+    #[test]
     fn quantifies_delivery_loss_after_positive_block_ack() {
         let ampdu = AmpduEvidence {
             subframes: 31_101,
@@ -3078,7 +3104,7 @@ mod tests {
     #[test]
     fn qualifies_complete_he20_evidence() {
         let report = parse_device_report(
-            "OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
+            "\0OTX b=50000000 d=1 u=5000000 k=80000 e=0 w=20 r=114700 g=1 x=0 l=1 a=1342257664\n\
              OAMP aggregates=120 publications=121 completed=120 subframes=3744 acknowledged=3744 single=2 individual_retry=0 timeout=0 collision=0 min=2 max=32 stop_frame=116 stop_capacity=0 stop_empty=4\n\
              OAMPH one=0 two_three=1 four_seven=1 eight_fifteen=1 sixteen_twentythree=1 twentyfour_thirty=0 thirtyone=0 full32=116\n\
              OAMPT preparation_us=1200 preparation_max_us=14 publication_us=605 publication_max_us=8 exchange_us=24000 exchange_max_us=240 first_exchanges=119 first_exchange_us=23760 first_exchange_max_us=210 retried_exchanges=1 retry_publications=2 retry_exchange_us=240 retry_exchange_max_us=240\n\

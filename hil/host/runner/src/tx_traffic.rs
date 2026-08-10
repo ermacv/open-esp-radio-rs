@@ -59,7 +59,7 @@ struct Options {
     offered_rate_bps: Option<u64>,
     serial: PathBuf,
     bandwidth_mhz: u16,
-    rate_kbps: u64,
+    minimum_rate_kbps: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -297,7 +297,7 @@ pub(crate) fn run(arguments: Vec<String>, root: &Path) -> Result<()> {
     let missing: u64 = qualified.iter().map(|burst| burst.missing).sum();
     let reordered: u64 = qualified.iter().map(|burst| burst.reordered).sum();
     let duplicates: u64 = qualified.iter().map(|burst| burst.duplicates).sum();
-    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.rate_kbps)?;
+    let tx = qualify_tx_log(&log, options.bandwidth_mhz, options.minimum_rate_kbps)?;
     if missing != 0 || reordered != 0 || duplicates != 0 {
         let received_datagrams = qualified.iter().map(|burst| burst.datagrams).sum::<u64>();
         let lowest_sequence = qualified
@@ -445,7 +445,7 @@ fn print_help() {
          --rate <bps>       optional target offered-load bound\n\
          --port <port>      host UDP sink (default 9002)\n\
          --serial <path>    diagnostics device (default /dev/ttyACM0)\n\
-         --phy <he20|ht40> expected TX vector (default he20)\n\n\
+         --phy <he20|ht40> required TX bandwidth/rate floor (default he20)\n\n\
          Flash `cargo hil flash udp-tx`; host address and traffic parameters \
          are provisioned at runtime."
     );
@@ -464,7 +464,7 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
         offered_rate_bps: None,
         serial: PathBuf::from("/dev/ttyACM0"),
         bandwidth_mhz: 20,
-        rate_kbps: 114_700,
+        minimum_rate_kbps: 114_700,
     };
     let mut index = 1;
     while index < arguments.len() {
@@ -491,11 +491,11 @@ fn parse_options(arguments: &[String]) -> Result<Options> {
             "--phy" => match value.as_str() {
                 "he20" => {
                     options.bandwidth_mhz = 20;
-                    options.rate_kbps = 114_700;
+                    options.minimum_rate_kbps = 114_700;
                 }
                 "ht40" => {
                     options.bandwidth_mhz = 40;
-                    options.rate_kbps = 150_000;
+                    options.minimum_rate_kbps = 135_000;
                 }
                 _ => return Err("--phy must be he20 or ht40".into()),
             },
@@ -736,7 +736,7 @@ mod tests {
         assert_eq!(options.payload, 1_200);
         assert_eq!(options.offered_rate_bps, Some(80_000_000));
         assert_eq!(options.bandwidth_mhz, 40);
-        assert_eq!(options.rate_kbps, 150_000);
+        assert_eq!(options.minimum_rate_kbps, 135_000);
     }
 
     #[test]

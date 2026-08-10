@@ -155,6 +155,10 @@ pub(crate) struct StoredFunction {
 }
 
 impl StoredFunction {
+    pub(crate) fn is_exported(&self) -> bool {
+        self.binding == "global-or-weak"
+    }
+
     pub(crate) fn dependencies(&self) -> &[String] {
         &self.dependencies
     }
@@ -261,6 +265,12 @@ pub(crate) struct StoredCall {
     argument_bindings: Vec<StoredArgumentBinding>,
     typed_arguments: Vec<StoredCallArgument>,
     pub(crate) guard_paths: Option<Vec<StoredGuardPath>>,
+}
+
+impl StoredCall {
+    pub(crate) fn project_symbol(&self) -> Option<&str> {
+        self.project_symbol.as_deref()
+    }
 }
 
 #[derive(Debug, Deserialize)]

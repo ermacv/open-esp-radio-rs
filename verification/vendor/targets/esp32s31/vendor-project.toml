@@ -174,7 +174,7 @@ include-reachable = true
 
 [[review.scopes]]
 id = "station-state"
-profiles = ["libnet80211-all"]
+profiles = ["libnet80211-all", "libpp-all"]
 roots = ["libnet80211:ieee80211_sta_new_state"]
 include-reachable = true
 

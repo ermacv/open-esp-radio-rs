@@ -172,7 +172,7 @@ fn analyze_scope(
     replacements: &[StoredReplacement],
     register_facts: Option<&RegisterFacts>,
 ) -> Result<ReviewScopeReport> {
-    let mut nodes = BTreeMap::<String, FunctionNode>::new();
+    let mut documents = Vec::with_capacity(scope.profiles.len());
     for profile_id in &scope.profiles {
         let profile = project
             .ir_profiles
@@ -187,22 +187,22 @@ fn analyze_scope(
                 profile.output.display()
             ))
         })?;
-        let document = parse_linked_ir(&input)?;
+        documents.push(parse_linked_ir(&input)?);
+    }
+    let project_definitions = project_definitions(&documents);
+    let mut nodes = BTreeMap::<String, FunctionNode>::new();
+    for document in documents {
         for function in document.functions {
             let mut dependencies = function.dependencies().to_vec();
-            dependencies.extend(
-                function
-                    .calls
-                    .iter()
-                    .filter(|call| matches!(call.kind.as_str(), "internal" | "project-linked"))
-                    .map(|call| call.target.clone()),
-            );
+            dependencies.extend(function.calls.iter().filter_map(|call| {
+                effective_call_target(call, &project_definitions).map(ToOwned::to_owned)
+            }));
             dependencies.sort();
             dependencies.dedup();
             let unresolved_call_sites = function
                 .calls
                 .iter()
-                .filter(|call| matches!(call.kind.as_str(), "unresolved" | "ambiguous-project"))
+                .filter(|call| call_is_unresolved(call, &project_definitions))
                 .map(|call| CallIssue {
                     site: call.site,
                     target: call.target.clone(),
@@ -220,9 +220,6 @@ fn analyze_scope(
                 .count();
             let context_fields = function.context_field_count();
             let memory_fields = function.memory_field_count();
-            let direct_blockers = function.direct_blocker_count();
-            let call_graph_blockers = function.call_graph_blocker_count();
-            let reference_blockers = function.reference_blocker_count();
             let call_sites = function
                 .calls
                 .iter()
@@ -245,7 +242,19 @@ fn analyze_scope(
                     channel,
                     message: diagnostic.rendered.clone(),
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            let direct_blockers = diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.channel == "direct")
+                .count();
+            let call_graph_blockers = diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.channel == "call-graph")
+                .count();
+            let reference_blockers = diagnostics
+                .iter()
+                .filter(|diagnostic| diagnostic.channel == "reference")
+                .count();
             let decode_blockers = function
                 .decode_blockers
                 .iter()
@@ -253,7 +262,11 @@ fn analyze_scope(
                     address: blocker.address as u32,
                     class: blocker.class.clone(),
                 })
-                .collect();
+                .collect::<Vec<_>>();
+            let complete = function.complete
+                || (decode_blockers.is_empty()
+                    && diagnostics.is_empty()
+                    && unresolved_call_sites.is_empty());
             let node = FunctionNode {
                 source: function.source,
                 symbol: function.symbol,
@@ -275,9 +288,9 @@ fn analyze_scope(
                 unresolved_calls: function
                     .calls
                     .iter()
-                    .filter(|call| matches!(call.kind.as_str(), "unresolved" | "ambiguous-project"))
+                    .filter(|call| call_is_unresolved(call, &project_definitions))
                     .count(),
-                complete: function.complete,
+                complete,
             };
             if nodes.insert(function.identity.clone(), node).is_some() {
                 return Err(crate::Error::invalid(format!(
@@ -516,6 +529,57 @@ fn analyze_scope(
     Ok(report)
 }
 
+fn project_definitions(
+    documents: &[crate::artifacts::LinkedIrStoredDocument],
+) -> BTreeMap<String, Vec<String>> {
+    let mut definitions = BTreeMap::<String, BTreeSet<String>>::new();
+    for function in documents
+        .iter()
+        .flat_map(|document| document.functions.iter())
+        .filter(|function| function.is_exported())
+    {
+        definitions
+            .entry(function.symbol.clone())
+            .or_default()
+            .insert(function.identity.clone());
+    }
+    definitions
+        .into_iter()
+        .map(|(symbol, identities)| (symbol, identities.into_iter().collect()))
+        .collect()
+}
+
+fn effective_call_target<'a>(
+    call: &'a crate::artifacts::StoredCall,
+    definitions: &'a BTreeMap<String, Vec<String>>,
+) -> Option<&'a str> {
+    linked_call_target(&call.kind, &call.target, call.project_symbol(), definitions)
+}
+
+fn linked_call_target<'a>(
+    kind: &str,
+    target: &'a str,
+    project_symbol: Option<&str>,
+    definitions: &'a BTreeMap<String, Vec<String>>,
+) -> Option<&'a str> {
+    if matches!(kind, "internal" | "project-linked") {
+        return Some(target);
+    }
+    let candidates = project_symbol.and_then(|symbol| definitions.get(symbol))?;
+    match candidates.as_slice() {
+        [target] => Some(target),
+        _ => None,
+    }
+}
+
+fn call_is_unresolved(
+    call: &crate::artifacts::StoredCall,
+    definitions: &BTreeMap<String, Vec<String>>,
+) -> bool {
+    matches!(call.kind.as_str(), "unresolved" | "ambiguous-project")
+        && effective_call_target(call, definitions).is_none()
+}
+
 fn resolve_root(root: &str, nodes: &BTreeMap<String, FunctionNode>) -> Result<String> {
     if nodes.contains_key(root) {
         return Ok(root.to_owned());
@@ -582,4 +646,56 @@ fn load_replacements(project: &ProjectSpec) -> Result<Vec<StoredReplacement>> {
         )));
     }
     Ok(document.replacement_graph.replacements)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unique_exported_definition_links_an_unresolved_cross_profile_call() {
+        let definitions = BTreeMap::from([(
+            "external_call".to_owned(),
+            vec!["provider::external_call".to_owned()],
+        )]);
+
+        assert_eq!(
+            linked_call_target(
+                "unresolved",
+                "external_call",
+                Some("external_call"),
+                &definitions,
+            ),
+            Some("provider::external_call")
+        );
+    }
+
+    #[test]
+    fn ambiguous_exported_definitions_remain_unresolved() {
+        let definitions = BTreeMap::from([(
+            "external_call".to_owned(),
+            vec![
+                "first::external_call".to_owned(),
+                "second::external_call".to_owned(),
+            ],
+        )]);
+
+        assert_eq!(
+            linked_call_target(
+                "unresolved",
+                "external_call",
+                Some("external_call"),
+                &definitions,
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn internal_calls_keep_their_authoritative_target() {
+        assert_eq!(
+            linked_call_target("internal", "consumer::child", None, &BTreeMap::new(),),
+            Some("consumer::child")
+        );
+    }
 }

@@ -25,9 +25,10 @@ use open_esp_radio_hil_protocol::{
     FrameDecoder, FrameEncoder, NetworkConfiguration, PROTOCOL_VERSION, RejectReason,
     ResultSummary, STARTUP_ARTIFACT_CHUNK_MAX_LEN, SessionConfig, SessionState,
     StartupArtifactChunk, StartupArtifactDisposition, StartupArtifactStatus, StateChange,
-    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence, WifiMonitorEvidence,
-    WifiMonitorRequest, WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
-    evidence_crc32c, startup_artifact_crc32c,
+    StationEpochEvidence, StationLifecycleEvent, Transport, TransportEvidence,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk, WifiMonitorRequest,
+    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    startup_artifact_crc32c,
 };
 
 const MESSAGE_CAPACITY: usize = 384;
@@ -104,6 +105,10 @@ pub enum WifiControlRequest {
     },
     StopMonitor {
         request_id: u32,
+    },
+    CaptureMonitor {
+        request_id: u32,
+        request: WifiMonitorCaptureRequest,
     },
 }
 
@@ -394,6 +399,16 @@ pub async fn complete_monitor_start(request_id: u32, evidence: WifiRoleTransitio
 
 pub async fn complete_monitor_stop(request_id: u32, evidence: WifiMonitorEvidence) {
     let sequence = queue_event_reliably(0, request_id, Event::WifiMonitorStopped(evidence)).await;
+    wait_until_serialized(sequence).await;
+}
+
+pub async fn publish_monitor_frame(request_id: u32, chunk: WifiMonitorFrameChunk) {
+    queue_event_reliably(0, request_id, Event::WifiMonitorFrame(chunk)).await;
+}
+
+pub async fn complete_monitor_capture(request_id: u32, evidence: WifiMonitorEvidence) {
+    let sequence =
+        queue_event_reliably(0, request_id, Event::WifiMonitorCaptureCompleted(evidence)).await;
     wait_until_serialized(sequence).await;
 }
 
@@ -792,6 +807,33 @@ pub async fn protocol_task(capabilities: Capabilities) {
                         };
                         publish_event_reliably(session_id, request_id, response).await;
                     }
+                    Command::CaptureMonitor(request) => {
+                        let valid = (1..=13).contains(&request.channel)
+                            && request.snapshot_length <= 2_304
+                            && (100..=30_000).contains(&request.duration_millis);
+                        let response = if !capabilities.features.wifi_monitor_capture {
+                            Event::Rejected(RejectReason::Unsupported)
+                        } else if !valid {
+                            Event::Rejected(RejectReason::InvalidConfiguration)
+                        } else if !network_provisioned
+                            || state != SessionState::Idle
+                            || session_id != 0
+                            || !wifi_role_is(WifiRole::Idle)
+                        {
+                            Event::Rejected(RejectReason::InvalidState)
+                        } else if WIFI_CONTROL_REQUESTS
+                            .try_send(WifiControlRequest::CaptureMonitor {
+                                request_id,
+                                request,
+                            })
+                            .is_err()
+                        {
+                            Event::Rejected(RejectReason::Busy)
+                        } else {
+                            Event::Accepted
+                        };
+                        publish_event_reliably(session_id, request_id, response).await;
+                    }
                     Command::Stop => {
                         publish_event_reliably(
                             session_id,
@@ -992,6 +1034,7 @@ async fn write_event_async(
                 | Event::WifiScanCompleted(_)
                 | Event::WifiMonitorStarted(_)
                 | Event::WifiMonitorStopped(_)
+                | Event::WifiMonitorCaptureCompleted(_)
         ) {
             SERIALIZED_WIFI_EVENT_NEXT
                 .store(event.message_sequence.wrapping_add(1), Ordering::Release);

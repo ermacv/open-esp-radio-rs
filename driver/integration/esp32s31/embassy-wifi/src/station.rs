@@ -1627,7 +1627,8 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                     let channel = request.channel();
                     let snapshot_length = request.capture_policy().snapshot_length();
                     let (wifi, station_resources, monitor_resources) = stopped.into_parts();
-                    self.monitor_capture.discard_queued();
+                    let discarded = self.monitor_capture.discard_queued();
+                    crate::monitor::record_discarded_monitor_frames(discarded);
                     let (mut controller, mut task) = match prepare_esp32s31_monitor_task(
                         monitor_plan,
                         wifi,
@@ -1682,7 +1683,8 @@ impl EmbassyWifiRoleEpochRunner<CriticalSectionRawMutex> for ProductionWifiEpoch
                         exit,
                         |output| match output {
                             Esp32s31MonitorTaskExit::Stopped { stopped, .. } => {
-                                self.monitor_capture.discard_queued();
+                                let discarded = self.monitor_capture.discard_queued();
+                                crate::monitor::record_discarded_monitor_frames(discarded);
                                 EmbassyWifiRoleFrontier::Stopped(
                                     Esp32s31WifiSupervisorStopped::new(
                                         stopped.wifi,

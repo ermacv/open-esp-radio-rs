@@ -604,7 +604,7 @@ mod tests {
         let network = pool.try_stage(completed(64), &bytes).unwrap().publish();
 
         let metadata = network.normalized_metadata().unwrap();
-        assert_eq!(metadata.channel, MacRxEvidence::HardwareObserved(11));
+        assert_eq!(metadata.channel, MacRxEvidence::Unavailable);
         assert_eq!(metadata.rssi_dbm, MacRxEvidence::HardwareObserved(-52));
         assert_eq!(metadata.crypto, MacRxEvidence::Unavailable);
         assert_eq!(metadata.s_mpdu, MacRxEvidence::HardwareObserved(true));

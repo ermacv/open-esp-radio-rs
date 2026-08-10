@@ -11,12 +11,12 @@ use core::{
 };
 
 use embassy_executor::{SendSpawner, SpawnError};
+#[cfg(feature = "qualification")]
+use embassy_sync::blocking_mutex::Mutex;
 use embassy_sync::{
     blocking_mutex::raw::CriticalSectionRawMutex,
     channel::{Channel, Receiver},
 };
-#[cfg(feature = "qualification")]
-use embassy_sync::blocking_mutex::Mutex;
 use embassy_time::Timer;
 use open_esp_radio::esp32s31::wifi::device::register_arena::Esp32s31RadioRegistersArena;
 #[cfg(feature = "qualification")]
@@ -46,6 +46,8 @@ use open_esp_radio::wifi::{ieee80211::station::StaTxSequenceCounters, wpa2::Pmk}
 use open_esp_radio_embassy_net::{
     PinnedTxFrame, PinnedTxPool, SplitPinnedDevice, SplitPinnedRadioRunner, SplitPinnedResources,
 };
+#[cfg(feature = "qualification")]
+use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_embassy::{
     aggregate_tx::{AggregateTxResources, Esp32s31ConnectedTx},
     connected_rx_protocol::{
@@ -98,8 +100,6 @@ use open_esp_radio_esp32s31_wifi_embassy::{
     },
     station_epoch::{Esp32s31DisconnectedStaEpoch, Esp32s31ReconnectedStaEpoch},
 };
-#[cfg(feature = "qualification")]
-use open_esp_radio_esp32s31_wifi_embassy::connected_rx_protocol::ConnectedRxProtocolSink;
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_esp32s31_wifi_esp_hal::mac_interrupt_epoch::{
     EspHalMacInterruptRoute, service_mac_interrupt, service_power_interrupt,

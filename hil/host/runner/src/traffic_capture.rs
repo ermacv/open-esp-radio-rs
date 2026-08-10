@@ -18,8 +18,9 @@ use open_esp_radio_hil_protocol::{
     FrameEncoder, NetworkConfiguration, NetworkCredentials, NetworkIpv4Configuration,
     SessionConfig, SessionLinkRequirements, SessionReady, SessionState, StartupArtifactChunk,
     StartupArtifactStatus, StateChange, StationEpochEvidence, StationLifecycleEvent, Transport,
-    TransportEvidence, WifiMonitorEvidence, WifiMonitorRequest, WifiRoleTransitionEvidence,
-    WifiScanEvidence, WifiScanRequest, evidence_crc32c,
+    TransportEvidence, WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorFrameChunk,
+    WifiMonitorRequest, WifiRoleTransitionEvidence, WifiScanEvidence, WifiScanRequest,
+    evidence_crc32c,
 };
 use zeroize::Zeroizing;
 
@@ -91,6 +92,11 @@ pub(crate) struct WifiCommandHandle {
 pub(crate) struct SessionEvidence {
     pub(crate) transport: TransportEvidence,
     pub(crate) finished: Finished,
+}
+
+pub(crate) struct MonitorCaptureEvidence {
+    pub(crate) chunks: Vec<WifiMonitorFrameChunk>,
+    pub(crate) summary: WifiMonitorEvidence,
 }
 
 impl SerialCapture {
@@ -604,6 +610,13 @@ impl SerialCapture {
         self.request_wifi_command(Command::StopMonitor, "monitor stop")
     }
 
+    pub(crate) fn request_monitor_capture(
+        &self,
+        request: WifiMonitorCaptureRequest,
+    ) -> Result<WifiCommandHandle> {
+        self.request_wifi_command(Command::CaptureMonitor(request), "finite monitor capture")
+    }
+
     pub(crate) fn wait_wifi_role_transition(
         &self,
         handle: WifiCommandHandle,
@@ -670,6 +683,43 @@ impl SerialCapture {
             Event::WifiMonitorStopped(evidence) => Ok(evidence),
             _ => unreachable!("monitor-stop predicate accepted only its completion event"),
         }
+    }
+
+    pub(crate) fn wait_monitor_capture(
+        &self,
+        handle: WifiCommandHandle,
+        timeout: Duration,
+    ) -> Result<MonitorCaptureEvidence> {
+        let completion = self
+            .wait_for_protocol_after(handle.first_event, timeout, |message| {
+                message.request_id == handle.request_id
+                    && matches!(message.body, Event::WifiMonitorCaptureCompleted(_))
+            })
+            .ok_or("device did not complete finite monitor capture")?;
+        let summary = match completion.body {
+            Event::WifiMonitorCaptureCompleted(evidence) => evidence,
+            _ => unreachable!("capture predicate accepted only terminal capture evidence"),
+        };
+        let messages = self
+            .protocol
+            .messages
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let chunks = messages
+            .get(handle.first_event..)
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|message| {
+                if message.request_id != handle.request_id {
+                    return None;
+                }
+                match &message.body {
+                    Event::WifiMonitorFrame(chunk) => Some(chunk.clone()),
+                    _ => None,
+                }
+            })
+            .collect();
+        Ok(MonitorCaptureEvidence { chunks, summary })
     }
 
     pub(crate) fn wait_for_connected_station(&self, timeout: Duration) -> Result<u32> {

@@ -41,7 +41,6 @@ const RX_PHY_RATE_OFFSET: usize = 0x01;
 const RX_PHY_RSSI_OFFSET: usize = 0x00;
 const RX_PHY_HE_SIGA1_OFFSET: usize = 0x04;
 const RX_PHY_HE_SIGA2_OFFSET: usize = 0x09;
-const RX_PHY_CHANNEL_OFFSET: usize = 0x1c;
 const RX_PHY_SINGLE_MPDU_OFFSET: usize = 0x1f;
 const RX_PHY_BB_FORMAT_OFFSET: usize = 0x25;
 const RX_PHY_HE_MU_RU_SIZE_OFFSET: usize = 0x1a;
@@ -678,9 +677,13 @@ pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {
 
 /// Decode the portable metadata available at the S31 staged-frame boundary.
 ///
-/// RSSI, rate and channel come from named fields in the pinned public
-/// `esp_wifi_rxctrl_t` ABI. The adjacent public `cur_single_mpdu` bit is
-/// preserved as S-MPDU evidence: the Espressif header defines it as the IEEE
+/// RSSI and rate come from instruction-proved raw-DMA fields. Channel does
+/// not: S31 HIL observed raw byte `0x1c` reporting 12 for a Probe Request whose
+/// DS Parameter Set was 1 while the radio was tuned to 1. The similarly laid
+/// out public `esp_wifi_rxctrl_t.channel` is therefore a later vendor callback
+/// value, not evidence available at this raw boundary. The adjacent public
+/// `cur_single_mpdu` bit is preserved as S-MPDU evidence: the Espressif header
+/// defines it as the IEEE
 /// VHT/HE single-MPDU A-MPDU form, not as the inverse of arbitrary physical
 /// aggregation. Complete vendor `dbg_dump_rx_ppdu` independently proves byte
 /// `0x1f`, bit zero. HT obtains A-MPDU containment from the independently
@@ -691,12 +694,8 @@ pub fn decode_rx_phy_info(buffer: &[u8]) -> Option<RxPhyInfo> {
 /// an active BA agreement and the 802.11 Protected bit are not substitutes.
 pub fn decode_normalized_rx_metadata(buffer: &[u8]) -> Option<MacRxMetadata<RxPhyInfo>> {
     let rate = decode_rx_phy_info(buffer)?;
-    let channel = match *buffer.get(RX_PHY_CHANNEL_OFFSET)? {
-        channel @ 1..=14 => MacRxEvidence::HardwareObserved(channel),
-        _ => MacRxEvidence::Unavailable,
-    };
     Some(MacRxMetadata {
-        channel,
+        channel: MacRxEvidence::Unavailable,
         rate: MacRxEvidence::HardwareObserved(rate),
         rssi_dbm: MacRxEvidence::HardwareObserved(*buffer.get(RX_PHY_RSSI_OFFSET)? as i8),
         crypto: MacRxEvidence::Unavailable,

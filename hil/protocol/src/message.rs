@@ -3,8 +3,12 @@ use core::fmt;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroize;
 
-pub const PROTOCOL_VERSION: u16 = 18;
+pub const PROTOCOL_VERSION: u16 = 19;
 pub const STARTUP_ARTIFACT_CHUNK_MAX_LEN: usize = 384;
+// Keep the largest protocol enum comfortably below one RX frame. This value
+// bounds executor poll-stack pressure as well as wire latency; complete MPDUs
+// are reconstructed from ordered chunks on the host.
+pub const WIFI_MONITOR_FRAME_CHUNK_MAX_LEN: usize = 160;
 pub const WPA2_SSID_MAX_LEN: usize = 32;
 pub const WPA2_PASSPHRASE_MIN_LEN: usize = 8;
 pub const WPA2_PASSPHRASE_MAX_LEN: usize = 63;
@@ -132,6 +136,9 @@ pub struct FeatureCapabilities {
     pub station_epoch_control: bool,
     /// This image exposes explicit role-neutral Wi-Fi lifecycle commands.
     pub wifi_role_control: bool,
+    /// This image can run one finite normalized monitor capture and export
+    /// typed frame chunks without using UART text as a data protocol.
+    pub wifi_monitor_capture: bool,
     /// This image reliably reports connected generations and proved peer-loss
     /// transitions independently of lossy text diagnostics.
     pub station_lifecycle_events: bool,
@@ -430,6 +437,9 @@ pub enum Command {
     StartMonitor(WifiMonitorRequest),
     /// Stop the active monitor and return to role-neutral Wi-Fi ownership.
     StopMonitor,
+    /// Run one finite monitor epoch, export its captured frames, return to
+    /// idle and publish a terminal capture summary.
+    CaptureMonitor(WifiMonitorCaptureRequest),
     Stop,
     Abort,
     GetLastResult,
@@ -493,6 +503,122 @@ pub struct WifiMonitorRequest {
     pub snapshot_length: u16,
 }
 
+/// Finite typed monitor export request. Duration is owned by the target so a
+/// congested serial link cannot postpone the role stop indefinitely.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorCaptureRequest {
+    pub channel: u8,
+    pub snapshot_length: u16,
+    pub duration_millis: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiMonitorEvidenceSource {
+    Hardware,
+    Protocol,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorObserved<T> {
+    pub source: WifiMonitorEvidenceSource,
+    pub value: T,
+}
+
+/// Typed transport form of the ESP32-S31 receive vector. The raw hardware
+/// rate code remains explicitly scoped to its decoded PHY format.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorPhyEvidence {
+    pub format: WifiMonitorPhyFormat,
+    pub hardware_rate_code: u8,
+    pub he_siga1: u32,
+    pub he_siga2: u16,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum WifiMonitorPhyFormat {
+    Dot11b,
+    Ofdm,
+    Ht,
+    Vht,
+    HeSu,
+    HeMu,
+    HeExtendedRangeSu,
+    HeTriggerBased,
+    VhtMu,
+    Unknown(u8),
+}
+
+/// One independently checksummed piece of one captured normalized MPDU.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WifiMonitorFrameChunk {
+    pub generation: u32,
+    pub frame_sequence: u32,
+    pub dequeued_at_micros: u64,
+    pub captured_length: u16,
+    pub logical_length: u16,
+    pub offset: u16,
+    pub channel: Option<WifiMonitorObserved<u8>>,
+    pub rssi_dbm: Option<WifiMonitorObserved<i8>>,
+    pub rate: Option<WifiMonitorObserved<WifiMonitorPhyEvidence>>,
+    bytes: heapless::Vec<u8, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN>,
+}
+
+impl WifiMonitorFrameChunk {
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_new(
+        generation: u32,
+        frame_sequence: u32,
+        dequeued_at_micros: u64,
+        captured_length: u16,
+        logical_length: u16,
+        offset: u16,
+        channel: Option<WifiMonitorObserved<u8>>,
+        rssi_dbm: Option<WifiMonitorObserved<i8>>,
+        rate: Option<WifiMonitorObserved<WifiMonitorPhyEvidence>>,
+        bytes: &[u8],
+    ) -> Result<Self, WifiMonitorFrameChunkError> {
+        if captured_length == 0 || bytes.is_empty() {
+            return Err(WifiMonitorFrameChunkError::Empty);
+        }
+        let end = usize::from(offset)
+            .checked_add(bytes.len())
+            .ok_or(WifiMonitorFrameChunkError::Range)?;
+        if end > usize::from(captured_length) {
+            return Err(WifiMonitorFrameChunkError::Range);
+        }
+        let mut body = heapless::Vec::new();
+        body.extend_from_slice(bytes)
+            .map_err(|_| WifiMonitorFrameChunkError::TooLarge)?;
+        Ok(Self {
+            generation,
+            frame_sequence,
+            dequeued_at_micros,
+            captured_length,
+            logical_length,
+            offset,
+            channel,
+            rssi_dbm,
+            rate,
+            bytes: body,
+        })
+    }
+
+    pub fn bytes(&self) -> &[u8] {
+        self.bytes.as_slice()
+    }
+
+    pub fn is_final(&self) -> bool {
+        usize::from(self.offset) + self.bytes.len() == usize::from(self.captured_length)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WifiMonitorFrameChunkError {
+    Empty,
+    TooLarge,
+    Range,
+}
+
 /// Completion of one explicit role ownership transition.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct WifiRoleTransitionEvidence {
@@ -528,6 +654,14 @@ pub struct WifiMonitorEvidence {
     pub channel_unavailable: u32,
     /// Most recent explicit hardware/protocol channel, or zero if unavailable.
     pub last_observed_channel: u8,
+    /// Capture-pool publication counters for this exact generation.
+    pub published_frames: u32,
+    pub full_drops: u32,
+    pub oversized_drops: u32,
+    pub discarded_frames: u32,
+    /// Frames whose complete ordered chunk set was admitted to the protocol
+    /// queue before this terminal evidence.
+    pub exported_frames: u32,
 }
 
 impl StationEpochEvidence {
@@ -707,6 +841,10 @@ pub enum Event {
     WifiMonitorStarted(WifiRoleTransitionEvidence),
     /// Reliable completion of `StopMonitor` and its bounded capture summary.
     WifiMonitorStopped(WifiMonitorEvidence),
+    /// One ordered chunk emitted by `CaptureMonitor`.
+    WifiMonitorFrame(WifiMonitorFrameChunk),
+    /// Terminal completion of one finite `CaptureMonitor` request.
+    WifiMonitorCaptureCompleted(WifiMonitorEvidence),
     /// Unsolicited, reliable station generation/link transition.
     StationLifecycle(StationLifecycleEvent),
     NetworkReady(NetworkInfo),

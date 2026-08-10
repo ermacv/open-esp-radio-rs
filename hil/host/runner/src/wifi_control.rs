@@ -168,19 +168,22 @@ fn qualify(capture: &SerialCapture, operation: Operation, options: &Options) -> 
     Ok(())
 }
 
-fn stop_station(capture: &SerialCapture, timeout: Duration) -> Result<WifiRoleTransitionEvidence> {
+pub(crate) fn stop_station(
+    capture: &SerialCapture,
+    timeout: Duration,
+) -> Result<WifiRoleTransitionEvidence> {
     let evidence = capture.wait_wifi_role_transition(capture.request_station_stop()?, timeout)?;
     require_transition(evidence, WifiRole::Station, WifiRole::Idle)?;
     Ok(evidence)
 }
 
-fn start_station(capture: &SerialCapture, timeout: Duration) -> Result<()> {
+pub(crate) fn start_station(capture: &SerialCapture, timeout: Duration) -> Result<()> {
     let evidence = capture.wait_wifi_role_transition(capture.request_station_start()?, timeout)?;
     require_transition(evidence, WifiRole::Idle, WifiRole::Station)?;
     Ok(())
 }
 
-fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiScanEvidence> {
+pub(crate) fn scan(capture: &SerialCapture, timeout: Duration) -> Result<WifiScanEvidence> {
     let evidence = capture.wait_wifi_scan(
         capture.request_wifi_scan(WifiScanRequest {
             channel_mask_2_4_ghz: 0x1fff,

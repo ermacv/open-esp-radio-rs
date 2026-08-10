@@ -33,7 +33,10 @@ pub use facade::{
     Esp32s31NewError, Esp32s31Radio, Esp32s31RadioError, Esp32s31RadioInitialization,
     Esp32s31RadioParts, Esp32s31Wifi, Esp32s31WifiControl, Esp32s31WifiParts,
 };
-pub use monitor::Esp32s31MonitorFrames;
+pub use monitor::{
+    ESP32S31_MONITOR_CAPTURE_CAPACITY, Esp32s31MonitorCaptureStatistics, Esp32s31MonitorFrame,
+    Esp32s31MonitorFrames,
+};
 pub use station::{Esp32s31RadioRunner, new};
 
 /// Board-derived radio identity. Reading eFuse remains an application

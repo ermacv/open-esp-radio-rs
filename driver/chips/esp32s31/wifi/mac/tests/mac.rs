@@ -3597,7 +3597,7 @@ fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
     assert_eq!(
         decode_normalized_rx_metadata(&metadata),
         Some(MacRxMetadata {
-            channel: MacRxEvidence::HardwareObserved(6),
+            channel: MacRxEvidence::Unavailable,
             rate: MacRxEvidence::HardwareObserved(RxPhyInfo {
                 rate: 11,
                 bb_format: 4,
@@ -3613,7 +3613,8 @@ fn staged_rx_metadata_decodes_only_instruction_proved_s31_fields() {
     );
     assert_eq!(decode_normalized_rx_metadata(&metadata[..0x1c]), None);
 
-    metadata[0x1c] = 0;
+    // A plausible callback-ABI value still is not raw-DMA evidence.
+    metadata[0x1c] = 11;
     assert_eq!(
         decode_normalized_rx_metadata(&metadata)
             .expect("complete metadata")

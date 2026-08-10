@@ -488,6 +488,43 @@ mod tests {
     }
 
     #[test]
+    fn maximum_monitor_frame_chunk_fits_and_round_trips() {
+        use crate::{
+            Event, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN, WifiMonitorEvidenceSource,
+            WifiMonitorFrameChunk, WifiMonitorObserved,
+        };
+
+        let bytes = [0xa5; WIFI_MONITOR_FRAME_CHUNK_MAX_LEN];
+        let chunk = WifiMonitorFrameChunk::try_new(
+            7,
+            11,
+            123_456,
+            WIFI_MONITOR_FRAME_CHUNK_MAX_LEN as u16,
+            1_024,
+            0,
+            Some(WifiMonitorObserved {
+                source: WifiMonitorEvidenceSource::Hardware,
+                value: 6,
+            }),
+            Some(WifiMonitorObserved {
+                source: WifiMonitorEvidenceSource::Hardware,
+                value: -42,
+            }),
+            None,
+            &bytes,
+        )
+        .unwrap();
+        let expected = Envelope::new(9, 3, 0, 77, Event::WifiMonitorFrame(chunk));
+        let mut encoder = FrameEncoder::new();
+        let wire = encoder.encode(&expected).unwrap();
+        assert!(wire.len() <= MAX_WIRE_FRAME_BYTES);
+        let mut decoder = FrameDecoder::new();
+        let mut observed = None;
+        decoder.feed(wire, |result| observed = Some(result.unwrap()));
+        assert_eq!(observed, Some(expected));
+    }
+
+    #[test]
     fn maximum_startup_artifact_chunk_fits_and_round_trips() {
         let bytes = [0x5a; crate::STARTUP_ARTIFACT_CHUNK_MAX_LEN];
         let checksum = startup_artifact_crc32c(&bytes);

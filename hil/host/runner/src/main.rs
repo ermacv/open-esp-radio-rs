@@ -24,6 +24,7 @@ mod traffic_capture;
 mod trigger;
 mod tx_traffic;
 mod udp_socket;
+mod wifi_capture;
 mod wifi_control;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -136,8 +137,14 @@ fn run() -> Result<()> {
                 .into()),
         },
         Some("wifi") => match arguments.next() {
+            Some(operation) if operation == "capture" => {
+                wifi_capture::run(arguments.collect(), &root)
+            }
             Some(operation) => wifi_control::run(&operation, arguments.collect(), &root),
-            None => Err("usage: cargo hil wifi <stop|start|scan|monitor|roundtrip> [options]".into()),
+            None => Err(
+                "usage: cargo hil wifi <stop|start|scan|monitor|roundtrip|capture> [options]"
+                    .into(),
+            ),
         },
         Some("oracle") => oracle_command(&root, arguments.collect()),
         Some("help" | "--help" | "-h") | None => {
@@ -203,6 +210,7 @@ fn print_help() {
          cargo hil wifi scan [options]\n\
          cargo hil wifi monitor [options]\n\
          cargo hil wifi roundtrip [options]\n\
+         cargo hil wifi capture --output <capture.pcapng> [options]\n\
          cargo hil oracle build\n\
          cargo hil oracle flash [--port /dev/ttyACM0]\n\n\
          The build command compiles and packs both HIL stages, audits the \

@@ -25,6 +25,7 @@ use open_esp_radio::{
     esp32s31::phy::{
         PhyCalibrationIdentity, phy_cold::PhyCalibrationRecord, phy_rfpll::phy_get_rf_cal_version,
     },
+    esp32s31::wifi::mac::rx::RxBasebandFormat,
     wifi::{
         ieee80211::{channel::WifiChannel, station::StaAssociationPreference},
         softmac::MacRxEvidence,
@@ -33,8 +34,9 @@ use open_esp_radio::{
     },
 };
 use open_esp_radio_esp32s31_embassy_wifi::{
-    Esp32s31MacIrqObservation, Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts,
-    Esp32s31RadioRunner, Esp32s31WifiDevice, Esp32s31WifiParts,
+    Esp32s31MacIrqObservation, Esp32s31MonitorFrame, Esp32s31MonitorFrames,
+    Esp32s31QualificationHooks, Esp32s31RadioConfig, Esp32s31RadioParts, Esp32s31RadioRunner,
+    Esp32s31WifiControl, Esp32s31WifiDevice, Esp32s31WifiParts,
 };
 use open_esp_radio_esp32s31_wifi_esp_hal::EspHalRadioPeripheral;
 use open_esp_radio_hil_esp32s31_telemetry::{
@@ -44,16 +46,18 @@ use open_esp_radio_hil_esp32s31_telemetry::{
 use open_esp_radio_hil_protocol::{
     Capabilities, Event as HilEvent, FeatureCapabilities, MAX_WIRE_FRAME_BYTES, NetworkInfo,
     NetworkIpv4Configuration, StartupArtifactDisposition, StationDisconnectReason,
-    StationEpochEvidence, StationLifecycleEvent, WifiMonitorEvidence, WifiRole,
-    WifiRoleTransitionEvidence, WifiScanEvidence,
+    StationEpochEvidence, StationLifecycleEvent, WIFI_MONITOR_FRAME_CHUNK_MAX_LEN,
+    WifiMonitorCaptureRequest, WifiMonitorEvidence, WifiMonitorEvidenceSource,
+    WifiMonitorFrameChunk, WifiMonitorObserved, WifiMonitorPhyEvidence, WifiMonitorPhyFormat,
+    WifiRole, WifiRoleTransitionEvidence, WifiScanEvidence,
 };
 use static_cell::ConstStaticCell;
 
 use crate::console::{
-    WifiControlRequest, complete_monitor_start, complete_monitor_stop,
+    WifiControlRequest, complete_monitor_capture, complete_monitor_start, complete_monitor_stop,
     complete_station_epoch_cycle, complete_wifi_role_transition, complete_wifi_scan, emergency_log,
-    publish_event_reliably, publish_startup_artifact, publish_station_lifecycle,
-    receive_wifi_control_request, set_wifi_role,
+    publish_event_reliably, publish_monitor_frame, publish_startup_artifact,
+    publish_station_lifecycle, receive_wifi_control_request, set_wifi_role,
 };
 
 mod rx_qualification;
@@ -93,6 +97,195 @@ fn now_micros() -> u64 {
     Instant::now().as_micros()
 }
 
+fn protocol_observed<T>(evidence: MacRxEvidence<T>) -> Option<WifiMonitorObserved<T>> {
+    match evidence {
+        MacRxEvidence::HardwareObserved(value) => Some(WifiMonitorObserved {
+            source: WifiMonitorEvidenceSource::Hardware,
+            value,
+        }),
+        MacRxEvidence::ProtocolValidated(value) => Some(WifiMonitorObserved {
+            source: WifiMonitorEvidenceSource::Protocol,
+            value,
+        }),
+        MacRxEvidence::Unavailable => None,
+    }
+}
+
+fn protocol_rate(
+    evidence: MacRxEvidence<open_esp_radio::esp32s31::wifi::mac::rx::RxPhyInfo>,
+) -> Option<WifiMonitorObserved<WifiMonitorPhyEvidence>> {
+    protocol_observed(evidence).map(|observed| WifiMonitorObserved {
+        source: observed.source,
+        value: WifiMonitorPhyEvidence {
+            format: match observed.value.baseband_format() {
+                RxBasebandFormat::Dot11b => WifiMonitorPhyFormat::Dot11b,
+                RxBasebandFormat::Ofdm => WifiMonitorPhyFormat::Ofdm,
+                RxBasebandFormat::Ht => WifiMonitorPhyFormat::Ht,
+                RxBasebandFormat::Vht => WifiMonitorPhyFormat::Vht,
+                RxBasebandFormat::HeSu => WifiMonitorPhyFormat::HeSu,
+                RxBasebandFormat::HeMu => WifiMonitorPhyFormat::HeMu,
+                RxBasebandFormat::HeExtendedRangeSu => WifiMonitorPhyFormat::HeExtendedRangeSu,
+                RxBasebandFormat::HeTriggerBased => WifiMonitorPhyFormat::HeTriggerBased,
+                RxBasebandFormat::VhtMu => WifiMonitorPhyFormat::VhtMu,
+                RxBasebandFormat::Unknown(raw) => WifiMonitorPhyFormat::Unknown(raw),
+            },
+            hardware_rate_code: observed.value.rate,
+            he_siga1: observed.value.he_siga1,
+            he_siga2: observed.value.he_siga2,
+        },
+    })
+}
+
+struct ExportedMonitorFrame {
+    captured_bytes: u64,
+    generation_mismatch: bool,
+    channel_mismatch: bool,
+    channel_unavailable: bool,
+    last_observed_channel: u8,
+}
+
+async fn export_monitor_frame(
+    request_id: u32,
+    generation: u32,
+    frame_sequence: u32,
+    requested_channel: u8,
+    frame: &Esp32s31MonitorFrame,
+) -> ExportedMonitorFrame {
+    let channel = protocol_observed(frame.metadata().rx.channel);
+    let (channel_mismatch, channel_unavailable, last_observed_channel) = match channel {
+        Some(observed) => (observed.value != requested_channel, false, observed.value),
+        None => (false, true, 0),
+    };
+    let rssi_dbm = protocol_observed(frame.metadata().rx.rssi_dbm);
+    let rate = protocol_rate(frame.metadata().rx.rate);
+    let captured_length = u16::try_from(frame.captured_length())
+        .expect("monitor frame fits the configured capture slot");
+    let logical_length = u16::try_from(frame.metadata().logical_length.min(u16::MAX as usize))
+        .expect("bounded logical length fits u16");
+    let dequeued_at_micros = now_micros();
+    for (index, bytes) in frame
+        .bytes()
+        .chunks(WIFI_MONITOR_FRAME_CHUNK_MAX_LEN)
+        .enumerate()
+    {
+        let offset = u16::try_from(index * WIFI_MONITOR_FRAME_CHUNK_MAX_LEN)
+            .expect("capture offset fits u16");
+        let chunk = WifiMonitorFrameChunk::try_new(
+            generation,
+            frame_sequence,
+            dequeued_at_micros,
+            captured_length,
+            logical_length,
+            offset,
+            channel,
+            rssi_dbm,
+            rate,
+            bytes,
+        )
+        .expect("bounded monitor chunk fits the HIL protocol");
+        publish_monitor_frame(request_id, chunk).await;
+    }
+    ExportedMonitorFrame {
+        captured_bytes: u64::from(captured_length),
+        generation_mismatch: frame.metadata().generation != generation,
+        channel_mismatch,
+        channel_unavailable,
+        last_observed_channel,
+    }
+}
+
+async fn run_finite_monitor_capture(
+    idle: Esp32s31WifiControl,
+    monitor_frames: &Esp32s31MonitorFrames,
+    request_id: u32,
+    request: WifiMonitorCaptureRequest,
+) -> Esp32s31WifiControl {
+    let mut monitor_request = MonitorRequest::new(
+        WifiChannel::mhz20(request.channel).expect("console validates the monitor channel"),
+        WifiMonitorConfig::normalized(),
+    );
+    if let Some(snapshot_length) = NonZeroU16::new(request.snapshot_length) {
+        monitor_request =
+            monitor_request.with_capture_policy(MonitorCapturePolicy::truncate_at(snapshot_length));
+    }
+    let owner = idle
+        .start_monitor(monitor_request)
+        .await
+        .unwrap_or_else(|error| panic!("production finite monitor start failed: {error:?}"));
+    let generation = owner.generation().value();
+    set_wifi_role(WifiRole::Monitor);
+    complete_monitor_start(
+        request_id,
+        WifiRoleTransitionEvidence {
+            previous: WifiRole::Idle,
+            current: WifiRole::Monitor,
+            generation,
+        },
+    )
+    .await;
+
+    let deadline = Timer::after_millis(u64::from(request.duration_millis));
+    let mut deadline = core::pin::pin!(deadline);
+    let mut captured_frames = 0_u32;
+    let mut captured_bytes = 0_u64;
+    let mut generation_mismatches = 0_u32;
+    let mut channel_mismatches = 0_u32;
+    let mut channel_unavailable = 0_u32;
+    let mut last_observed_channel = 0_u8;
+    loop {
+        match select(deadline.as_mut(), monitor_frames.receive()).await {
+            Either::First(()) => break,
+            Either::Second(frame) => {
+                let observation = export_monitor_frame(
+                    request_id,
+                    generation,
+                    captured_frames,
+                    request.channel,
+                    &frame,
+                )
+                .await;
+                captured_frames = captured_frames.saturating_add(1);
+                captured_bytes = captured_bytes.saturating_add(observation.captured_bytes);
+                generation_mismatches = generation_mismatches
+                    .saturating_add(u32::from(observation.generation_mismatch));
+                channel_mismatches =
+                    channel_mismatches.saturating_add(u32::from(observation.channel_mismatch));
+                channel_unavailable =
+                    channel_unavailable.saturating_add(u32::from(observation.channel_unavailable));
+                if !observation.channel_unavailable {
+                    last_observed_channel = observation.last_observed_channel;
+                }
+            }
+        }
+    }
+    let idle = owner
+        .stop()
+        .await
+        .unwrap_or_else(|error| panic!("production finite monitor stop failed: {error:?}"));
+    let statistics = monitor_frames.statistics();
+    set_wifi_role(WifiRole::Idle);
+    complete_monitor_capture(
+        request_id,
+        WifiMonitorEvidence {
+            generation,
+            channel: request.channel,
+            captured_frames,
+            captured_bytes,
+            generation_mismatches,
+            channel_mismatches,
+            channel_unavailable,
+            last_observed_channel,
+            published_frames: statistics.published_frames,
+            full_drops: statistics.full_drops,
+            oversized_drops: statistics.oversized_drops,
+            discarded_frames: statistics.discarded_frames,
+            exported_frames: captured_frames,
+        },
+    )
+    .await;
+    idle
+}
+
 fn observe_mac_irq(observation: Esp32s31MacIrqObservation) {
     match observation {
         Esp32s31MacIrqObservation::RxEpoch => RX_PIPELINE.record_rx_irq_epoch(),
@@ -123,6 +316,7 @@ pub const fn hil_capabilities() -> Capabilities {
             startup_artifact: true,
             station_epoch_control: true,
             wifi_role_control: true,
+            wifi_monitor_capture: true,
             station_lifecycle_events: true,
         },
         maximum_payload_bytes: if OPEN_RADIO_TCP_BENCH {
@@ -507,6 +701,12 @@ pub async fn run(
                         last_observed_channel: 0,
                     }
                 }
+                WifiControlRequest::CaptureMonitor {
+                    request_id,
+                    request,
+                } => ProductWifiRole::Idle(
+                    run_finite_monitor_capture(idle, &monitor_frames, request_id, request).await,
+                ),
                 _ => unreachable!("console admits only idle commands while Wi-Fi is idle"),
             },
             ProductWifiRole::Monitor {
@@ -539,8 +739,7 @@ pub async fn run(
                                 | MacRxEvidence::ProtocolValidated(observed) => {
                                     last_observed_channel = observed;
                                     if observed != channel {
-                                        channel_mismatches =
-                                            channel_mismatches.saturating_add(1);
+                                        channel_mismatches = channel_mismatches.saturating_add(1);
                                     }
                                 }
                                 MacRxEvidence::Unavailable => {
@@ -555,6 +754,7 @@ pub async fn run(
                     .stop()
                     .await
                     .unwrap_or_else(|error| panic!("production monitor stop failed: {error:?}"));
+                let statistics = monitor_frames.statistics();
                 set_wifi_role(WifiRole::Idle);
                 complete_monitor_stop(
                     request_id,
@@ -567,6 +767,11 @@ pub async fn run(
                         channel_mismatches,
                         channel_unavailable,
                         last_observed_channel,
+                        published_frames: statistics.published_frames,
+                        full_drops: statistics.full_drops,
+                        oversized_drops: statistics.oversized_drops,
+                        discarded_frames: statistics.discarded_frames,
+                        exported_frames: captured_frames,
                     },
                 )
                 .await;
